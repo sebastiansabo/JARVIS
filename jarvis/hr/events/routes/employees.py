@@ -136,6 +136,22 @@ def api_employee_work_stats():
     ''', (start.isoformat(), end.isoformat()))
     connecteam_map = {r['mapped_jarvis_user_id']: r for r in connecteam_leave}
 
+    # 3. JARVIS forms — Bilet de Invoire (partial-day, in hours)
+    jarvis_form_leave = _base.query_all('''
+        SELECT fs.respondent_user_id AS user_id,
+               COUNT(*) AS form_permit_count,
+               COALESCE(SUM((fs.answers->>'f_bi_hours')::numeric), 0) AS form_permit_hours
+        FROM form_submissions fs
+        JOIN forms f ON f.id = fs.form_id
+        WHERE f.slug = 'bilet-de-invoire'
+          AND fs.respondent_user_id IS NOT NULL
+          AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
+          AND (fs.answers->>'f_bi_leave_date') ~ %s
+          AND (fs.answers->>'f_bi_leave_date')::date BETWEEN %s AND %s
+        GROUP BY fs.respondent_user_id
+    ''', (r'^\d{4}-\d{2}-\d{2}$', start.isoformat(), end.isoformat()))
+    jarvis_form_map = {r['user_id']: r for r in jarvis_form_leave}
+
     result = {}
     for row in range_data:
         uid = row.get('mapped_jarvis_user_id')
@@ -146,12 +162,12 @@ def api_employee_work_stats():
         single_punch_days = int(row.get('single_punch_days') or 0)
         # Single-punch days don't count as present for stats (no measurable work time)
         days_present = raw_days_present - single_punch_days
-        adjusted_total = float(row.get('adjusted_total_duration_seconds') or 0)
+        raw_duration = float(row.get('total_duration_seconds') or 0)
         lunch_mins = int(row.get('lunch_break_minutes') or 0)
         working_h = float(row.get('working_hours') or 8)
 
-        # Total hours: adjusted duration minus lunch for each REAL present day
-        total_hours = max(0, (adjusted_total - (lunch_mins * 60 * days_present)) / 3600)
+        # Total hours: raw punch duration (last-first per day) minus lunch for each REAL present day
+        total_hours = max(0, (raw_duration - (lunch_mins * 60 * days_present)) / 3600)
         total_hours = round(total_hours, 1)
 
         # Avg daily hours (only days with proper in/out)
@@ -167,17 +183,17 @@ def api_employee_work_stats():
         # Motivated absences reduce working potential
         s_leave = sincron_map.get(uid, {})
         c_leave = connecteam_map.get(uid, {})
+        j_leave = jarvis_form_map.get(uid, {})
         sincron_leave_days = int(s_leave.get('leave_days', 0))
         sincron_leave_types = s_leave.get('leave_types', '')
-        permit_count = int(c_leave.get('permit_count', 0))
-        permit_hours = round(float(c_leave.get('permit_hours', 0)), 1)
-        # Sincron = full days, Connecteam = hours (convert to fractional days)
+        permit_count = int(c_leave.get('permit_count', 0)) + int(j_leave.get('form_permit_count', 0))
+        permit_hours = round(float(c_leave.get('permit_hours', 0)) + float(j_leave.get('form_permit_hours', 0)), 1)
+        # Sincron = full days, Connecteam + JARVIS forms = partial hours
         leave_days = sincron_leave_days
-        leave_hours = permit_hours
         effective_days = max(1, working_days - leave_days)
 
-        # Efficiency score (100-point scale) — based on effective working days
-        expected_hours = working_h * effective_days
+        # Expected hours: schedule × effective days minus all permit hours (Connecteam + JARVIS forms)
+        expected_hours = max(0, working_h * effective_days - permit_hours)
         utilization = min((total_hours / expected_hours * 100), 100) if expected_hours > 0 else 0
         attendance = min((days_present / effective_days * 100), 100) if effective_days > 0 else 0
         punctuality = max(0, 100 - (variance_minutes * 1.5))
@@ -215,13 +231,14 @@ def api_employee_work_stats():
         lunch_mins = int(emp.get('lunch_break_minutes') or 0)
         s_leave = sincron_map.get(uid, {})
         c_leave = connecteam_map.get(uid, {})
+        j_leave = jarvis_form_map.get(uid, {})
         sincron_leave_days = int(s_leave.get('leave_days', 0))
         sincron_leave_types = s_leave.get('leave_types', '')
-        permit_count = int(c_leave.get('permit_count', 0))
-        permit_hours = round(float(c_leave.get('permit_hours', 0)), 1)
+        permit_count = int(c_leave.get('permit_count', 0)) + int(j_leave.get('form_permit_count', 0))
+        permit_hours = round(float(c_leave.get('permit_hours', 0)) + float(j_leave.get('form_permit_hours', 0)), 1)
         leave_days = sincron_leave_days
         effective_days = max(1, working_days - leave_days)
-        expected_hours = working_h * effective_days
+        expected_hours = max(0, working_h * effective_days - permit_hours)
 
         # If fully on leave, skip — they're accounted for
         if leave_days >= working_days:
