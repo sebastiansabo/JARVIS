@@ -185,10 +185,10 @@ export default function EmployeesTab({ search }: Props) {
       byCompany.set(c, (byCompany.get(c) ?? 0) + 1)
     })
     // Aggregate work stats for visible employees
-    // Gross = all employees with stats; Net = only employees who actually worked (days_present > 0)
+    // Gross = all employees with stats; Net = excludes motivated leave only (unmotivated absences stay with 0h)
     const ws = workStats ?? {} as Record<number, EmployeeWorkStats>
     let totalHours = 0, totalExpected = 0, empWithStats = 0
-    let netExpected = 0, netEmpCount = 0, netScoreSum = 0, netScoreCount = 0
+    let netHours = 0, netExpected = 0, netEmpCount = 0, netScoreSum = 0, netScoreCount = 0
     let grossScoreSum = 0, grossScoreCount = 0
     let varianceSum = 0, varianceCount = 0
     filtered.forEach((e) => {
@@ -199,21 +199,24 @@ export default function EmployeesTab({ search }: Props) {
       empWithStats++
       grossScoreSum += s.productivity_score; grossScoreCount++
       if (s.days_present >= 2) { varianceSum += s.variance_minutes; varianceCount++ }
-      // Net: only employees who actually punched in
-      if (s.days_present > 0) {
+      // Net: exclude motivated absences (Sincron leave OR Connecteam permits) with no presence
+      // Unmotivated absences (no leave, no permits, days_present=0) stay in Net with 0h
+      const isMotivatedLeave = (s.leave_days > 0 || s.permit_count > 0) && s.days_present === 0
+      if (!isMotivatedLeave) {
+        netHours += s.total_hours
         netExpected += s.expected_hours
         netEmpCount++
         netScoreSum += s.productivity_score; netScoreCount++
       }
     })
-    // Gross averages (includes 0-hour absent employees)
+    // Gross averages (includes all: leave + unmotivated absences)
     const grossAvgScore = grossScoreCount > 0 ? Math.round(grossScoreSum / grossScoreCount) : 0
     const grossAvgProductivity = totalExpected > 0 ? Math.min(Math.round(totalHours / totalExpected * 100), 100) : 0
     const grossAvgHoursPerMan = empWithStats > 0 ? Math.round(totalHours / empWithStats * 10) / 10 : 0
-    // Net averages (only employees who actually worked)
+    // Net averages (excludes motivated leave, keeps unmotivated absences at 0h)
     const netAvgScore = netScoreCount > 0 ? Math.round(netScoreSum / netScoreCount) : 0
-    const netAvgProductivity = netExpected > 0 ? Math.min(Math.round(totalHours / netExpected * 100), 100) : 0
-    const netAvgHoursPerMan = netEmpCount > 0 ? Math.round(totalHours / netEmpCount * 10) / 10 : 0
+    const netAvgProductivity = netExpected > 0 ? Math.min(Math.round(netHours / netExpected * 100), 100) : 0
+    const netAvgHoursPerMan = netEmpCount > 0 ? Math.round(netHours / netEmpCount * 10) / 10 : 0
     const avgVariance = varianceCount > 0 ? Math.round(varianceSum / varianceCount) : 0
     return {
       total: employees.length,
