@@ -100,7 +100,7 @@ def load_dotenv(override: bool = False) -> None:
 load_dotenv()
 
 ROMANIA_TZ = ZoneInfo("Europe/Bucharest")
-_BASE_RECIPIENTS = "sebastian.sabo@gmail.com"
+_BASE_RECIPIENTS = "sebastian.sabo@gmail.com, sebastian.sabo@autoworld.ro"
 _EXTENDED_RECIPIENTS = "sebastian.sabo@gmail.com, sebastian.sabo@autoworld.ro, boardaw@autoworld.ro"
 MODEL = "claude-opus-4-6"
 
