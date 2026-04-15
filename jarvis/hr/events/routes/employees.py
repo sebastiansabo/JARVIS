@@ -82,6 +82,24 @@ def api_employee_work_stats():
     bio_repo = BioStarRepository()
     range_data = bio_repo.get_range_summary(start.isoformat(), end.isoformat())
 
+    # Bulk fetch per-company norms from Sincron
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    sincron_repo = SincronRepository()
+    company_norms_raw = sincron_repo.get_all_company_norms()
+    # Group by jarvis_user_id → list of {company, norma, start, end, lunch}
+    company_norms_map = {}
+    for cn in company_norms_raw:
+        uid = cn['mapped_jarvis_user_id']
+        if uid not in company_norms_map:
+            company_norms_map[uid] = []
+        company_norms_map[uid].append({
+            'company': cn['company_name'],
+            'norma': float(cn['norma_lucru']),
+            'start': str(cn['schedule_start'])[:5] if cn.get('schedule_start') else None,
+            'end': str(cn['schedule_end'])[:5] if cn.get('schedule_end') else None,
+            'lunch': int(cn['lunch_break_minutes'] or 0),
+        })
+
     # Bulk fetch motivated absences from all sources
     from core.base_repository import BaseRepository
     _base = BaseRepository()
@@ -178,6 +196,7 @@ def api_employee_work_stats():
             'leave_types': sincron_leave_types,
             'permit_count': permit_count,
             'permit_hours': permit_hours,
+            'schedule_companies': company_norms_map.get(uid, []),
         }
 
     # Backfill: active BioStar-mapped employees with NO punch data
@@ -222,6 +241,7 @@ def api_employee_work_stats():
             'leave_types': sincron_leave_types,
             'permit_count': permit_count,
             'permit_hours': permit_hours,
+            'schedule_companies': company_norms_map.get(uid, []),
         }
 
     return jsonify(result)

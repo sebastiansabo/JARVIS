@@ -99,19 +99,50 @@ class SincronRepository(BaseRepository):
     def get_combined_schedules_for_biostar(self):
         """Get combined schedule data per JARVIS user for BioStar backfill.
 
-        Aggregates across all companies: SUM hours, MIN start, MAX end, SUM breaks.
+        The norm is SPLIT across companies (total never exceeds 8h).
+        Uses primary company (highest norma_lucru) for schedule times/lunch.
         """
         return self.query_all('''
-            SELECT se.mapped_jarvis_user_id,
-                   SUM(se.norma_lucru)::NUMERIC(5,1) AS total_working_hours,
-                   MIN(se.schedule_start) AS combined_start,
-                   MAX(se.schedule_end) AS combined_end,
-                   SUM(se.lunch_break_minutes) AS total_lunch
-            FROM sincron_employees se
-            WHERE se.mapped_jarvis_user_id IS NOT NULL
-              AND se.is_active = TRUE
-              AND se.norma_lucru IS NOT NULL
-            GROUP BY se.mapped_jarvis_user_id
+            WITH ranked AS (
+                SELECT se.mapped_jarvis_user_id,
+                       se.norma_lucru,
+                       se.schedule_start,
+                       se.schedule_end,
+                       se.lunch_break_minutes,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY se.mapped_jarvis_user_id
+                           ORDER BY se.norma_lucru DESC
+                       ) AS rn
+                FROM sincron_employees se
+                WHERE se.mapped_jarvis_user_id IS NOT NULL
+                  AND se.is_active = TRUE
+                  AND se.norma_lucru IS NOT NULL
+            ),
+            totals AS (
+                SELECT mapped_jarvis_user_id,
+                       LEAST(SUM(norma_lucru), 8)::NUMERIC(5,1) AS total_working_hours
+                FROM ranked
+                GROUP BY mapped_jarvis_user_id
+            )
+            SELECT t.mapped_jarvis_user_id,
+                   t.total_working_hours,
+                   r.schedule_start AS combined_start,
+                   r.schedule_end AS combined_end,
+                   r.lunch_break_minutes AS total_lunch
+            FROM totals t
+            JOIN ranked r ON r.mapped_jarvis_user_id = t.mapped_jarvis_user_id AND r.rn = 1
+        ''')
+
+    def get_all_company_norms(self):
+        """Get per-company norm breakdown for all mapped active employees."""
+        return self.query_all('''
+            SELECT mapped_jarvis_user_id, company_name,
+                   norma_lucru, schedule_start, schedule_end, lunch_break_minutes
+            FROM sincron_employees
+            WHERE mapped_jarvis_user_id IS NOT NULL
+              AND is_active = TRUE
+              AND norma_lucru IS NOT NULL
+            ORDER BY mapped_jarvis_user_id, norma_lucru DESC
         ''')
 
     def get_unmapped_employees(self):

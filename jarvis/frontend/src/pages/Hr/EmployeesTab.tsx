@@ -273,7 +273,27 @@ export default function EmployeesTab({ search }: Props) {
         render: (e) => {
           const s = ws[e.id]
           if (!s) return <span className="text-muted-foreground">—</span>
-          return <>{s.hours_per_day}h/day</>
+          const companies = s.schedule_companies || []
+          if (companies.length <= 1) return <>{s.hours_per_day}h/day</>
+          // Multi-company: show total with tooltip breakdown
+          return (
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help underline decoration-dotted underline-offset-2">{s.hours_per_day}h/day</span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[280px] text-xs">
+                  <p className="font-semibold mb-1">Norm split across {companies.length} companies</p>
+                  {companies.map((c: { company: string; norma: number; start: string; end: string; lunch: number }, i: number) => (
+                    <div key={i} className="flex justify-between gap-3 py-0.5">
+                      <span className="text-muted-foreground truncate">{c.company.replace(' S.R.L.', '')}</span>
+                      <span className="font-medium shrink-0">{c.norma}h ({c.start}–{c.end})</span>
+                    </div>
+                  ))}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )
         },
       },
       {
@@ -722,7 +742,7 @@ export default function EmployeesTab({ search }: Props) {
                         {isExpanded && (
                           <TableRow>
                             <TableCell colSpan={activeVisibleColumns.length + 1} className="p-0">
-                              <ExpandedEmployeeRow employee={e} onNavigate={() => navigate(`/app/hr/employees/${e.id}`)} />
+                              <ExpandedEmployeeRow employee={e} workStats={workStats?.[e.id]} onNavigate={() => navigate(`/app/hr/employees/${e.id}`)} />
                             </TableCell>
                           </TableRow>
                         )}
@@ -759,7 +779,7 @@ function AbsenceBadge({ status }: { status?: { status: string; leave_code?: stri
   }
 }
 
-function ExpandedEmployeeRow({ employee: e, onNavigate }: { employee: HrEmployee; onNavigate: () => void }) {
+function ExpandedEmployeeRow({ employee: e, workStats, onNavigate }: { employee: HrEmployee; workStats?: EmployeeWorkStats; onNavigate: () => void }) {
   const { data: overviewRes, isLoading } = useQuery({
     queryKey: ['hr', 'employee-overview', e.id],
     queryFn: () => hrApi.getEmployeeOverview(e.id),
@@ -826,11 +846,26 @@ function ExpandedEmployeeRow({ employee: e, onNavigate }: { employee: HrEmployee
               <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Stats</div>
               <div className="text-xs">Bonuses: <span className="font-medium">{overview.bonuses.count}</span></div>
               <div className="text-xs">Forms: <span className="font-medium">{overview.forms_count}</span></div>
-              {overview.biostar && (
-                <div className="text-xs">Schedule: <span className="font-medium">{overview.biostar.working_hours}h/day</span></div>
-              )}
             </div>
           )}
+
+          {/* Per-company schedule */}
+          {(() => {
+            const companies = (workStats?.schedule_companies as Array<{ company: string; norma: number; start: string; end: string; lunch: number }>) || []
+            if (companies.length === 0) return null
+            return (
+              <div className="space-y-1 min-w-[160px]">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Schedule</div>
+                {companies.map((c, i) => (
+                  <div key={i} className="text-xs">
+                    <span className="text-muted-foreground">{c.company.replace(' S.R.L.', '')}:</span>{' '}
+                    <span className="font-medium">{c.norma}h</span>{' '}
+                    <span className="text-muted-foreground">({c.start}–{c.end})</span>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
 
           {/* Sincron contract */}
           {overview?.sincron && (

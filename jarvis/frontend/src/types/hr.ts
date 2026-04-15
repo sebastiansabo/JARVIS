@@ -68,6 +68,7 @@ export interface EmployeeWorkStats {
   leave_types: string
   permit_count: number
   permit_hours: number
+  schedule_companies: Array<{ company: string; norma: number; start: string; end: string; lunch: number }>
 }
 
 export interface BonusType {
