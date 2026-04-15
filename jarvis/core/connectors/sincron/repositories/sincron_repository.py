@@ -108,7 +108,7 @@ class SincronRepository(BaseRepository):
                        se.norma_lucru,
                        se.schedule_start,
                        se.schedule_end,
-                       se.lunch_break_minutes,
+                       COALESCE(se.lunch_break_minutes, 0) AS lunch_break_minutes,
                        ROW_NUMBER() OVER (
                            PARTITION BY se.mapped_jarvis_user_id
                            ORDER BY se.norma_lucru DESC
