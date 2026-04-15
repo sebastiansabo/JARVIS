@@ -153,13 +153,13 @@ def api_employee_work_stats():
         leave_hours = permit_hours
         effective_days = max(1, working_days - leave_days)
 
-        # Productivity score (100-point scale) — based on effective working days
+        # Efficiency score (100-point scale) — based on effective working days
         expected_hours = working_h * effective_days
         utilization = min((total_hours / expected_hours * 100), 100) if expected_hours > 0 else 0
         attendance = min((days_present / effective_days * 100), 100) if effective_days > 0 else 0
-        punctuality = max(0, 100 - (variance_minutes * 2))
+        punctuality = max(0, 100 - (variance_minutes * 1.5))
 
-        score = round(utilization * 0.4 + attendance * 0.3 + punctuality * 0.3, 1)
+        score = round(utilization * 0.5 + attendance * 0.3 + punctuality * 0.2, 1)
 
         result[uid] = {
             'total_hours': total_hours,
@@ -174,6 +174,50 @@ def api_employee_work_stats():
             'lunch_break_minutes': lunch_mins,
             'schedule_start': str(row['schedule_start'])[:5] if row.get('schedule_start') else None,
             'schedule_end': str(row['schedule_end'])[:5] if row.get('schedule_end') else None,
+            'leave_days': leave_days,
+            'leave_types': sincron_leave_types,
+            'permit_count': permit_count,
+            'permit_hours': permit_hours,
+        }
+
+    # Backfill: active BioStar-mapped employees with NO punch data
+    # so absent employees show 0h stats and are included in averages
+    all_bio = bio_repo.get_all_employees(active_only=True)
+    for emp in all_bio:
+        uid = emp.get('mapped_jarvis_user_id')
+        if not uid or uid in result:
+            continue
+        working_h = float(emp.get('working_hours') or 8)
+        lunch_mins = int(emp.get('lunch_break_minutes') or 0)
+        s_leave = sincron_map.get(uid, {})
+        c_leave = connecteam_map.get(uid, {})
+        sincron_leave_days = int(s_leave.get('leave_days', 0))
+        sincron_leave_types = s_leave.get('leave_types', '')
+        permit_count = int(c_leave.get('permit_count', 0))
+        permit_hours = round(float(c_leave.get('permit_hours', 0)), 1)
+        leave_days = sincron_leave_days
+        effective_days = max(1, working_days - leave_days)
+        expected_hours = working_h * effective_days
+
+        # If fully on leave, skip — they're accounted for
+        if leave_days >= working_days:
+            continue
+
+        score = round(0 * 0.5 + 0 * 0.3 + 100 * 0.2, 1)  # 0 util, 0 attend, 100 punct (unknown)
+
+        result[uid] = {
+            'total_hours': 0,
+            'avg_daily_hours': 0,
+            'variance_minutes': 0,
+            'productivity_score': score,
+            'days_present': 0,
+            'working_days': working_days,
+            'effective_days': effective_days,
+            'expected_hours': round(expected_hours, 1),
+            'hours_per_day': round(working_h, 1),
+            'lunch_break_minutes': lunch_mins,
+            'schedule_start': str(emp['schedule_start'])[:5] if emp.get('schedule_start') else None,
+            'schedule_end': str(emp['schedule_end'])[:5] if emp.get('schedule_end') else None,
             'leave_days': leave_days,
             'leave_types': sincron_leave_types,
             'permit_count': permit_count,

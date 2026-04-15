@@ -186,16 +186,18 @@ export default function EmployeesTab({ search }: Props) {
     })
     // Aggregate work stats for visible employees
     const ws = workStats ?? {} as Record<number, EmployeeWorkStats>
-    let totalHours = 0, scoreSum = 0, scoreCount = 0, totalExpected = 0
+    let totalHours = 0, scoreSum = 0, scoreCount = 0, totalExpected = 0, empWithStats = 0
     filtered.forEach((e) => {
       const s = ws[e.id]
       if (!s) return
       totalHours += s.total_hours
       totalExpected += s.expected_hours
+      empWithStats++
       if (s.productivity_score > 0) { scoreSum += s.productivity_score; scoreCount++ }
     })
     const avgScore = scoreCount > 0 ? Math.round(scoreSum / scoreCount) : 0
     const avgProductivity = totalExpected > 0 ? Math.min(Math.round(totalHours / totalExpected * 100), 100) : 0
+    const avgHoursPerMan = empWithStats > 0 ? Math.round(totalHours / empWithStats * 10) / 10 : 0
     return {
       total: employees.length,
       companies: byCompany.size,
@@ -203,6 +205,7 @@ export default function EmployeesTab({ search }: Props) {
       totalHours: Math.round(totalHours),
       avgScore,
       avgProductivity,
+      avgHoursPerMan,
     }
   }, [employees, filtered, workStats])
 
@@ -277,7 +280,7 @@ export default function EmployeesTab({ search }: Props) {
         },
       },
       {
-        key: 'total_hours', label: 'Hours', className: 'text-right text-xs tabular-nums',
+        key: 'total_hours', label: 'Worked Hours', className: 'text-right text-xs tabular-nums',
         render: (e) => {
           const s = ws[e.id]
           return s ? <>{s.total_hours}h</> : <span className="text-muted-foreground">—</span>
@@ -295,7 +298,43 @@ export default function EmployeesTab({ search }: Props) {
         render: (e) => {
           const s = ws[e.id]
           if (!s || s.days_present < 2) return <span className="text-muted-foreground">—</span>
-          return <span className="tabular-nums">{`\u00B1${s.variance_minutes}min`}</span>
+          const v = s.variance_minutes
+          // Bar width: clamp 0-60min range to 0-100%
+          const barPct = Math.min(v / 60 * 100, 100)
+          const barColor = v <= 10
+            ? 'bg-green-500 dark:bg-green-400'
+            : v <= 25
+              ? 'bg-yellow-500 dark:bg-yellow-400'
+              : 'bg-red-500 dark:bg-red-400'
+          const trackColor = v <= 10
+            ? 'bg-green-100 dark:bg-green-950/40'
+            : v <= 25
+              ? 'bg-yellow-100 dark:bg-yellow-950/40'
+              : 'bg-red-100 dark:bg-red-950/40'
+          const textColor = v <= 10
+            ? 'text-green-600 dark:text-green-400'
+            : v <= 25
+              ? 'text-yellow-600 dark:text-yellow-400'
+              : 'text-red-600 dark:text-red-400'
+          return (
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1.5 cursor-help min-w-[80px]">
+                    <div className={cn('h-1.5 rounded-full flex-1', trackColor)}>
+                      <div className={cn('h-full rounded-full transition-all', barColor)} style={{ width: `${barPct}%` }} />
+                    </div>
+                    <span className={cn('tabular-nums text-[10px] w-[38px] text-right shrink-0', textColor)}>{`\u00B1${v}min`}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[220px] text-xs">
+                  <p className="font-semibold mb-0.5">Schedule Variance</p>
+                  <p className="text-muted-foreground">Average deviation from usual check-in/out times. Lower = more consistent schedule.</p>
+                  <p className="mt-1">{v <= 10 ? 'Very consistent' : v <= 25 ? 'Moderate variation' : 'High variation'}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )
         },
       },
       {
@@ -317,7 +356,7 @@ export default function EmployeesTab({ search }: Props) {
         render: (e) => <AbsenceBadge status={absentData?.[e.id]} />,
       },
       {
-        key: 'productivity', label: 'Score', className: 'text-center',
+        key: 'productivity', label: 'Efficiency', className: 'text-center',
         render: (e) => {
           const s = ws[e.id]
           if (!s) return <span className="text-muted-foreground">—</span>
@@ -329,7 +368,7 @@ export default function EmployeesTab({ search }: Props) {
               : 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-400'
           const util = s.expected_hours > 0 ? Math.min(s.total_hours / s.expected_hours * 100, 100) : 0
           const attend = s.effective_days > 0 ? Math.min(s.days_present / s.effective_days * 100, 100) : 0
-          const punct = Math.max(0, 100 - s.variance_minutes * 2)
+          const punct = Math.max(0, 100 - s.variance_minutes * 1.5)
           return (
             <TooltipProvider delayDuration={200}>
               <Tooltip>
@@ -337,7 +376,7 @@ export default function EmployeesTab({ search }: Props) {
                   <Badge variant="outline" className={cn('text-[10px] tabular-nums cursor-help', color)}>{score}</Badge>
                 </TooltipTrigger>
                 <TooltipContent side="left" avoidCollisions className="max-w-[320px] text-xs leading-snug">
-                  <p className="font-semibold mb-1">Score: {score}/100</p>
+                  <p className="font-semibold mb-1">Efficiency: {score}/100</p>
                   {(s.leave_days > 0 || s.permit_count > 0) && (
                     <p className="mb-1 text-blue-500 dark:text-blue-400">
                       {s.leave_days > 0 && <>{s.leave_days}d leave ({s.leave_types})</>}
@@ -347,12 +386,12 @@ export default function EmployeesTab({ search }: Props) {
                     </p>
                   )}
                   <div className="space-y-0.5">
-                    <p>Utilization 40%: <span className="font-medium">{util.toFixed(0)}%</span> <span className="text-muted-foreground">({s.total_hours}h / {s.expected_hours}h) = {(util * 0.4).toFixed(1)}pts</span></p>
+                    <p>Utilization 50%: <span className="font-medium">{util.toFixed(0)}%</span> <span className="text-muted-foreground">({s.total_hours}h / {s.expected_hours}h) = {(util * 0.5).toFixed(1)}pts</span></p>
                     <p>Attendance 30%: <span className="font-medium">{attend.toFixed(0)}%</span> <span className="text-muted-foreground">({s.days_present}d / {s.effective_days}d) = {(attend * 0.3).toFixed(1)}pts</span></p>
-                    <p>Punctuality 30%: <span className="font-medium">{punct.toFixed(0)}%</span> <span className="text-muted-foreground">({`\u00B1${s.variance_minutes}min`}) = {(punct * 0.3).toFixed(1)}pts</span></p>
+                    <p>Punctuality 20%: <span className="font-medium">{punct.toFixed(0)}%</span> <span className="text-muted-foreground">({`\u00B1${s.variance_minutes}min`}) = {(punct * 0.2).toFixed(1)}pts</span></p>
                   </div>
                   <hr className="my-1 border-border/50" />
-                  <p className="text-muted-foreground">{(util * 0.4).toFixed(1)} + {(attend * 0.3).toFixed(1)} + {(punct * 0.3).toFixed(1)} = <span className="font-semibold text-foreground">{score}</span></p>
+                  <p className="text-muted-foreground">{(util * 0.5).toFixed(1)} + {(attend * 0.3).toFixed(1)} + {(punct * 0.2).toFixed(1)} = <span className="font-semibold text-foreground">{score}</span></p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -530,13 +569,14 @@ export default function EmployeesTab({ search }: Props) {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
         <StatCard title="Employees" value={`${filtered.length} / ${stats.total}`} icon={<Users className="h-4 w-4" />} />
         {statusTab === 'active' && (
           <StatCard
             title="Present Today"
             value={`${absenceCounts.present} / ${filtered.length}`}
             icon={<UserCheck className="h-4 w-4" />}
+            className={absenceCounts.present >= filtered.length * 0.9 ? '[&_p.text-base]:text-green-600' : absenceCounts.present >= filtered.length * 0.7 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
           />
         )}
         {statusTab === 'active' && (
@@ -544,10 +584,23 @@ export default function EmployeesTab({ search }: Props) {
             title="Absent / On Leave"
             value={`${absenceCounts.absent} / ${absenceCounts.onLeave}`}
             icon={<UserX className="h-4 w-4" />}
+            className={(absenceCounts.absent + absenceCounts.onLeave) === 0 ? '[&_p.text-base]:text-green-600' : (absenceCounts.absent + absenceCounts.onLeave) <= 10 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
           />
         )}
         <StatCard title="Total Hours" value={`${stats.totalHours}h`} icon={<Clock className="h-4 w-4" />} />
-        <StatCard title="Avg Score" value={stats.avgScore} icon={<TrendingUp className="h-4 w-4" />} />
+        <StatCard title="Avg Hours/Man" value={`${stats.avgHoursPerMan}h`} icon={<Clock className="h-4 w-4" />} />
+        <StatCard
+          title="Avg Productivity"
+          value={`${stats.avgProductivity}%`}
+          icon={<TrendingUp className="h-4 w-4" />}
+          className={stats.avgProductivity >= 90 ? '[&_p.text-base]:text-green-600' : stats.avgProductivity >= 70 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
+        />
+        <StatCard
+          title="Avg Efficiency"
+          value={stats.avgScore}
+          icon={<TrendingUp className="h-4 w-4" />}
+          className={stats.avgScore >= 80 ? '[&_p.text-base]:text-green-600' : stats.avgScore >= 60 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
+        />
       </div>
 
       {/* Data */}
