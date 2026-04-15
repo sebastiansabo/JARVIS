@@ -152,7 +152,8 @@ def api_get_employee_overview(user_id):
                 sincron['sincron_employee_id'], sincron['company_name'], _year, _month)
             code_map: dict = {}
             for row in code_rows:
-                day_num = int(row['day'])
+                day_val = row['day']
+                day_num = int(str(day_val).split('-')[2]) if isinstance(day_val, str) and '-' in day_val else int(day_val)
                 code_map.setdefault(day_num, {})[row['short_code']] = float(row['value'])
             for d in range(1, days_in_month + 1):
                 if d in code_map:
