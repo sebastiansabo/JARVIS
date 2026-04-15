@@ -19,6 +19,7 @@ from tasks.notifications import cleanup_old_notifications, run_smart_notificatio
 from tasks.marketing import sync_marketing_kpis
 from tasks.field_sales import field_sales_follow_up_reminders, field_sales_overdue_visit_alerts
 from tasks.biostar import sync_biostar_events, sync_biostar_users, auto_adjust_biostar_schedules
+from tasks.sincron import sync_sincron_timesheets
 from tasks.hr_attendance import check_missing_punches
 from tasks.carpark import cleanup_vin_cache
 from tasks.holidays import populate_holidays
@@ -222,6 +223,44 @@ def start_scheduler():
                 hour=settings.get('hour', defaults['hour']),
                 minute=settings.get('minute', defaults['minute']),
                 id=job_id,
+                replace_existing=True,
+                misfire_grace_time=300,
+                coalesce=True,
+            )
+
+    # Sincron — daily timesheet sync (04:00 UTC / 07:00 Romania)
+    _sincron_cron = {}
+    try:
+        import json as _json2
+        from core.connectors.repositories.connector_repository import ConnectorRepository as _CR2
+        _sc = _CR2().get_by_type('sincron')
+        if _sc:
+            _scfg = _sc.get('config') or {}
+            if isinstance(_scfg, str):
+                _scfg = _json2.loads(_scfg)
+            _sincron_cron = _scfg.get('cron_jobs', {})
+    except Exception:
+        pass
+
+    _sincron_settings = _sincron_cron.get('sincron_sync_timesheets', {})
+    if _sincron_settings.get('enabled', True):
+        if _sincron_settings.get('schedule_type') == 'interval':
+            scheduler.add_job(
+                sync_sincron_timesheets,
+                'interval',
+                minutes=_sincron_settings.get('interval_minutes', 60),
+                id='sincron_sync_timesheets',
+                replace_existing=True,
+                misfire_grace_time=300,
+                coalesce=True,
+            )
+        else:
+            scheduler.add_job(
+                sync_sincron_timesheets,
+                'cron',
+                hour=_sincron_settings.get('hour', 4),
+                minute=_sincron_settings.get('minute', 0),
+                id='sincron_sync_timesheets',
                 replace_existing=True,
                 misfire_grace_time=300,
                 coalesce=True,
