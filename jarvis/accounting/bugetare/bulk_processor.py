@@ -223,9 +223,13 @@ def parse_meta_invoice(text: str) -> dict:
                            'Dublin', 'Ireland', 'VAT Reg', 'S.C.', 'CALEA', 'România',
                            'Factura nr', 'Customer to account', 'Powered by',
                            'ID cont', 'Data facturii', 'Modalitate', 'Număr de referinţă',
-                           'ID tranzacţie', 'Tip de produs', 'Ţi s-a emis', 'Campanii']
+                           'ID tranzacţie', 'Tip de produs', 'Ţi s-a emis']
+            # Exact-match keywords: section headers that should be skipped
+            # but not when they appear as part of a campaign name
+            skip_exact = ['Campanii', 'Campaigns']
 
-            should_skip = any(kw in item_name for kw in skip_keywords)
+            should_skip = (any(kw in item_name for kw in skip_keywords)
+                          or item_name in skip_exact)
 
             # Also skip if item name is too short or empty
             if not should_skip and len(item_name) > 3:
