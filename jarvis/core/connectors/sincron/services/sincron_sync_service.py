@@ -198,6 +198,23 @@ class SincronSyncService:
             biostar_updated = self._sync_biostar_schedules()
         except Exception as e:
             logger.error(f'BioStar schedule backfill failed: {e}')
+            # Log failure to connector config
+            try:
+                connector = self.connector_repo.get_by_type('sincron')
+                if connector:
+                    config = connector.get('config') or {}
+                    if isinstance(config, str):
+                        config = json.loads(config)
+                    cron_jobs = config.get('cron_jobs', {})
+                    cron_jobs['biostar_schedule_backfill'] = {
+                        'last_run': datetime.now().isoformat(),
+                        'last_success': False,
+                        'last_message': str(e),
+                    }
+                    config['cron_jobs'] = cron_jobs
+                    self.connector_repo.update(connector['id'], config=config)
+            except Exception:
+                pass
 
         return {
             'success': True,
@@ -255,6 +272,25 @@ class SincronSyncService:
             updated += 1
 
         logger.info(f'BioStar schedule backfill: {updated} employees updated from Sincron norms')
+
+        # Persist result to connector config for UI visibility
+        try:
+            connector = self.connector_repo.get_by_type('sincron')
+            if connector:
+                config = connector.get('config') or {}
+                if isinstance(config, str):
+                    config = json.loads(config)
+                cron_jobs = config.get('cron_jobs', {})
+                cron_jobs['biostar_schedule_backfill'] = {
+                    'last_run': datetime.now().isoformat(),
+                    'last_success': True,
+                    'last_message': f'{updated} BioStar employees updated',
+                }
+                config['cron_jobs'] = cron_jobs
+                self.connector_repo.update(connector['id'], config=config)
+        except Exception as e:
+            logger.error(f'Failed to save biostar backfill log: {e}')
+
         return updated
 
     def _deactivate_missing_employees(self, company_name, synced_ids):
@@ -341,6 +377,19 @@ class SincronSyncService:
                 lunch_break_minutes=break_val,
             )
             employees_synced += 1
+
+            # Snapshot schedule for this month (historical record)
+            self.repo.upsert_schedule_snapshot(
+                sincron_employee_id=sincron_id,
+                company_name=company_name,
+                year=year,
+                month=month,
+                norma_lucru=norma_val,
+                norma_lucru_time=norma_lucru_time,
+                schedule_start=emp_schedule_in,
+                schedule_end=emp_schedule_out,
+                lunch_break_minutes=break_val,
+            )
 
             # Delete existing month data and re-insert (clean sync)
             self.repo.delete_month_timesheets(sincron_id, company_name, year, month)

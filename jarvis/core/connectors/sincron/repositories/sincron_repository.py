@@ -389,6 +389,46 @@ class SincronRepository(BaseRepository):
               AND year = %s AND month = %s
         ''', (sincron_employee_id, company_name, year, month))
 
+    # ── Schedule history ──
+
+    def upsert_schedule_snapshot(self, sincron_employee_id, company_name, year, month,
+                                 norma_lucru=None, norma_lucru_time=None,
+                                 schedule_start=None, schedule_end=None,
+                                 lunch_break_minutes=None):
+        """Capture a monthly schedule snapshot for an employee."""
+        return self.execute('''
+            INSERT INTO sincron_schedule_history
+                (sincron_employee_id, company_name, year, month,
+                 norma_lucru, norma_lucru_time, schedule_start, schedule_end,
+                 lunch_break_minutes, synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (sincron_employee_id, company_name, year, month) DO UPDATE SET
+                norma_lucru = EXCLUDED.norma_lucru,
+                norma_lucru_time = EXCLUDED.norma_lucru_time,
+                schedule_start = EXCLUDED.schedule_start,
+                schedule_end = EXCLUDED.schedule_end,
+                lunch_break_minutes = EXCLUDED.lunch_break_minutes,
+                synced_at = NOW()
+        ''', (sincron_employee_id, company_name, year, month,
+              norma_lucru, norma_lucru_time, schedule_start, schedule_end,
+              lunch_break_minutes))
+
+    def get_schedule_history_by_jarvis_id(self, jarvis_user_id, year, month):
+        """Get schedule snapshot for a JARVIS user for a specific month."""
+        return self.query_all('''
+            SELECT sh.sincron_employee_id, sh.company_name, sh.year, sh.month,
+                   sh.norma_lucru, sh.norma_lucru_time,
+                   sh.schedule_start, sh.schedule_end, sh.lunch_break_minutes,
+                   se.nr_contract, se.data_incepere_contract
+            FROM sincron_schedule_history sh
+            JOIN sincron_employees se
+              ON se.sincron_employee_id = sh.sincron_employee_id
+              AND se.company_name = sh.company_name
+            WHERE se.mapped_jarvis_user_id = %s
+              AND sh.year = %s AND sh.month = %s
+            ORDER BY sh.company_name
+        ''', (jarvis_user_id, year, month))
+
     # ── Activity codes ──
 
     def upsert_activity_code(self, short_code, short_code_en=None, description=None, category=None):

@@ -692,15 +692,52 @@ def api_profile_sincron_timesheet():
 
         data = service.get_employee_timesheet(current_user.id, year, month)
 
-        # Get all company entries for multi-company display
-        employees = service.repo.get_all_employees_by_jarvis_id(current_user.id)
+        # Get schedule for the requested month — historical snapshot or current
+        from datetime import datetime as _dt
+        now = _dt.now()
+        is_current = (year == now.year and month == now.month)
+
+        schedule_companies = []
+        total_hours = 0
+        if is_current:
+            entries = service.repo.get_all_employees_by_jarvis_id(current_user.id)
+            for se in entries:
+                norma = float(se['norma_lucru']) if se.get('norma_lucru') else None
+                if norma:
+                    total_hours += norma
+                schedule_companies.append({
+                    'company_name': se.get('company_name'),
+                    'nr_contract': se.get('nr_contract'),
+                    'norma_lucru': norma,
+                    'schedule_start': str(se['schedule_start'])[:5] if se.get('schedule_start') else None,
+                    'schedule_end': str(se['schedule_end'])[:5] if se.get('schedule_end') else None,
+                    'lunch_break_minutes': se.get('lunch_break_minutes'),
+                })
+        else:
+            snapshots = service.repo.get_schedule_history_by_jarvis_id(current_user.id, year, month)
+            for sh in snapshots:
+                norma = float(sh['norma_lucru']) if sh.get('norma_lucru') else None
+                if norma:
+                    total_hours += norma
+                schedule_companies.append({
+                    'company_name': sh.get('company_name'),
+                    'nr_contract': sh.get('nr_contract'),
+                    'norma_lucru': norma,
+                    'schedule_start': str(sh['schedule_start'])[:5] if sh.get('schedule_start') else None,
+                    'schedule_end': str(sh['schedule_end'])[:5] if sh.get('schedule_end') else None,
+                    'lunch_break_minutes': sh.get('lunch_break_minutes'),
+                })
 
         return jsonify({
             'success': True,
-            'mapped': len(employees) > 0,
+            'mapped': len(schedule_companies) > 0 or bool(data.get('days')),
             'year': year,
             'month': month,
             'timesheet': data,
+            'schedule': {
+                'companies': schedule_companies,
+                'total_working_hours': total_hours or None,
+            },
         })
     except Exception as e:
         return safe_error_response(e)

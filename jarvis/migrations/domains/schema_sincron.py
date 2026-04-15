@@ -152,5 +152,28 @@ def create_schema_sincron(conn, cursor):
     ]:
         cursor.execute(col_stmt)
 
+    # ── Schedule history — monthly snapshot per employee per company ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sincron_schedule_history (
+            id SERIAL PRIMARY KEY,
+            sincron_employee_id VARCHAR(50) NOT NULL,
+            company_name VARCHAR(255) NOT NULL,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            norma_lucru NUMERIC(4,1),
+            norma_lucru_time VARCHAR(100),
+            schedule_start TIME,
+            schedule_end TIME,
+            lunch_break_minutes INTEGER,
+            synced_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE(sincron_employee_id, company_name, year, month)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sincron_sched_hist_lookup
+        ON sincron_schedule_history(sincron_employee_id, company_name, year, month)
+    """)
+
     conn.commit()
     logger.info('Sincron schema created/verified')
