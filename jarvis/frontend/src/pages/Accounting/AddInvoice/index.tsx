@@ -178,7 +178,7 @@ export default function AddInvoice() {
       invoiceNumber: (val) => (!val.trim() ? 'Invoice number is required' : undefined),
       invoiceDate: (val) => (!val ? 'Invoice date is required' : undefined),
       invoiceValue: (val) =>
-        !val || parseFloat(val) <= 0 ? 'Value must be positive' : undefined,
+        !val || parseFloat(val) === 0 ? 'Value is required' : undefined,
       company: (val) => (!val ? 'Select a company' : undefined),
     },
   )
