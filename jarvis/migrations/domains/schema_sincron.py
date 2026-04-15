@@ -134,5 +134,23 @@ def create_schema_sincron(conn, cursor):
         END $$;
     """)
 
+    # ── Schedule fields on sincron_employees (from Sincron API norma_lucru + program) ──
+    for col_stmt in [
+        "ALTER TABLE sincron_employees ADD COLUMN IF NOT EXISTS norma_lucru NUMERIC(4,1)",
+        "ALTER TABLE sincron_employees ADD COLUMN IF NOT EXISTS norma_lucru_time VARCHAR(100)",
+        "ALTER TABLE sincron_employees ADD COLUMN IF NOT EXISTS schedule_start TIME",
+        "ALTER TABLE sincron_employees ADD COLUMN IF NOT EXISTS schedule_end TIME",
+        "ALTER TABLE sincron_employees ADD COLUMN IF NOT EXISTS lunch_break_minutes INTEGER",
+    ]:
+        cursor.execute(col_stmt)
+
+    # ── Per-activity schedule on sincron_timesheets (program.in / program.out / pauza_masa) ──
+    for col_stmt in [
+        "ALTER TABLE sincron_timesheets ADD COLUMN IF NOT EXISTS program_in TIME",
+        "ALTER TABLE sincron_timesheets ADD COLUMN IF NOT EXISTS program_out TIME",
+        "ALTER TABLE sincron_timesheets ADD COLUMN IF NOT EXISTS program_break INTEGER",
+    ]:
+        cursor.execute(col_stmt)
+
     conn.commit()
     logger.info('Sincron schema created/verified')

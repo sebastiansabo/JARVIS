@@ -10,13 +10,17 @@ class SincronRepository(BaseRepository):
 
     def upsert_employee(self, sincron_employee_id, company_name, nume, prenume,
                         cnp=None, id_contract=None, nr_contract=None,
-                        data_incepere_contract=None):
+                        data_incepere_contract=None, norma_lucru=None,
+                        norma_lucru_time=None, schedule_start=None,
+                        schedule_end=None, lunch_break_minutes=None):
         """Insert or update a Sincron employee record."""
         return self.execute('''
             INSERT INTO sincron_employees
                 (sincron_employee_id, company_name, nume, prenume, cnp,
-                 id_contract, nr_contract, data_incepere_contract, last_synced_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                 id_contract, nr_contract, data_incepere_contract,
+                 norma_lucru, norma_lucru_time, schedule_start, schedule_end,
+                 lunch_break_minutes, last_synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (sincron_employee_id, company_name) DO UPDATE SET
                 nume = EXCLUDED.nume,
                 prenume = EXCLUDED.prenume,
@@ -24,13 +28,20 @@ class SincronRepository(BaseRepository):
                 id_contract = EXCLUDED.id_contract,
                 nr_contract = EXCLUDED.nr_contract,
                 data_incepere_contract = EXCLUDED.data_incepere_contract,
+                norma_lucru = EXCLUDED.norma_lucru,
+                norma_lucru_time = EXCLUDED.norma_lucru_time,
+                schedule_start = EXCLUDED.schedule_start,
+                schedule_end = EXCLUDED.schedule_end,
+                lunch_break_minutes = EXCLUDED.lunch_break_minutes,
                 is_active = TRUE,
                 contract_status = NULL,
                 last_synced_at = NOW(),
                 updated_at = NOW()
             RETURNING id, sincron_employee_id, company_name, mapped_jarvis_user_id
         ''', (sincron_employee_id, company_name, nume, prenume, cnp,
-              id_contract, nr_contract, data_incepere_contract), returning=True)
+              id_contract, nr_contract, data_incepere_contract,
+              norma_lucru, norma_lucru_time, schedule_start, schedule_end,
+              lunch_break_minutes), returning=True)
 
     def get_all_employees(self, company_name=None, active_only=True):
         """Get all Sincron employees (CNP excluded from response)."""
@@ -69,6 +80,39 @@ class SincronRepository(BaseRepository):
             ORDER BY se.id ASC
             LIMIT 1
         ''', (jarvis_user_id,))
+
+    def get_all_employees_by_jarvis_id(self, jarvis_user_id):
+        """Get ALL Sincron employee entries mapped to a JARVIS user (multi-company)."""
+        return self.query_all('''
+            SELECT se.id, se.sincron_employee_id, se.company_name,
+                   se.nume, se.prenume, se.id_contract, se.nr_contract,
+                   se.data_incepere_contract, se.mapped_jarvis_user_id,
+                   se.mapping_method, se.mapping_confidence,
+                   se.norma_lucru, se.norma_lucru_time,
+                   se.schedule_start, se.schedule_end, se.lunch_break_minutes,
+                   se.last_synced_at
+            FROM sincron_employees se
+            WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
+            ORDER BY se.company_name
+        ''', (jarvis_user_id,))
+
+    def get_combined_schedules_for_biostar(self):
+        """Get combined schedule data per JARVIS user for BioStar backfill.
+
+        Aggregates across all companies: SUM hours, MIN start, MAX end, SUM breaks.
+        """
+        return self.query_all('''
+            SELECT se.mapped_jarvis_user_id,
+                   SUM(se.norma_lucru)::NUMERIC(5,1) AS total_working_hours,
+                   MIN(se.schedule_start) AS combined_start,
+                   MAX(se.schedule_end) AS combined_end,
+                   SUM(se.lunch_break_minutes) AS total_lunch
+            FROM sincron_employees se
+            WHERE se.mapped_jarvis_user_id IS NOT NULL
+              AND se.is_active = TRUE
+              AND se.norma_lucru IS NOT NULL
+            GROUP BY se.mapped_jarvis_user_id
+        ''')
 
     def get_unmapped_employees(self):
         """Get employees not yet mapped to JARVIS users (CNP excluded)."""
@@ -210,20 +254,26 @@ class SincronRepository(BaseRepository):
     # ── Timesheet operations ──
 
     def upsert_timesheet_day(self, sincron_employee_id, company_name, year, month,
-                             day, short_code, short_code_en, unit, value):
+                             day, short_code, short_code_en, unit, value,
+                             program_in=None, program_out=None, program_break=None):
         """Insert or update a single timesheet day activity."""
         return self.execute('''
             INSERT INTO sincron_timesheets
                 (sincron_employee_id, company_name, year, month, day,
-                 short_code, short_code_en, unit, value, synced_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                 short_code, short_code_en, unit, value,
+                 program_in, program_out, program_break, synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (sincron_employee_id, company_name, day, short_code) DO UPDATE SET
                 short_code_en = EXCLUDED.short_code_en,
                 unit = EXCLUDED.unit,
                 value = EXCLUDED.value,
+                program_in = EXCLUDED.program_in,
+                program_out = EXCLUDED.program_out,
+                program_break = EXCLUDED.program_break,
                 synced_at = NOW()
         ''', (sincron_employee_id, company_name, year, month, day,
-              short_code, short_code_en, unit, value))
+              short_code, short_code_en, unit, value,
+              program_in, program_out, program_break))
 
     def bulk_upsert_timesheet(self, records):
         """Bulk upsert timesheet records.

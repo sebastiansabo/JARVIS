@@ -65,17 +65,31 @@ def api_profile_summary():
         from core.organization.hr_utils import is_manager
         is_org_responsable = is_manager(current_user.id)
 
-        # Sincron timesheet mapping status
+        # Sincron timesheet mapping status (multi-company)
         sincron_info = {'mapped': False}
         try:
             from core.connectors.sincron.repositories.sincron_repository import SincronRepository
-            sincron_emp = SincronRepository().get_employee_by_jarvis_id(current_user.id)
-            if sincron_emp:
+            sincron_entries = SincronRepository().get_all_employees_by_jarvis_id(current_user.id)
+            if sincron_entries:
+                companies = []
+                total_hours = 0
+                for se in sincron_entries:
+                    norma = float(se['norma_lucru']) if se.get('norma_lucru') else None
+                    if norma:
+                        total_hours += norma
+                    companies.append({
+                        'company_name': se.get('company_name'),
+                        'nr_contract': se.get('nr_contract'),
+                        'data_incepere_contract': str(se['data_incepere_contract']) if se.get('data_incepere_contract') else None,
+                        'norma_lucru': norma,
+                        'schedule_start': str(se['schedule_start'])[:5] if se.get('schedule_start') else None,
+                        'schedule_end': str(se['schedule_end'])[:5] if se.get('schedule_end') else None,
+                        'lunch_break_minutes': se.get('lunch_break_minutes'),
+                    })
                 sincron_info = {
                     'mapped': True,
-                    'company_name': sincron_emp.get('company_name'),
-                    'nr_contract': sincron_emp.get('nr_contract'),
-                    'data_incepere_contract': str(sincron_emp['data_incepere_contract']) if sincron_emp.get('data_incepere_contract') else None,
+                    'companies': companies,
+                    'total_working_hours': total_hours or None,
                 }
         except Exception:
             pass
@@ -678,12 +692,12 @@ def api_profile_sincron_timesheet():
 
         data = service.get_employee_timesheet(current_user.id, year, month)
 
-        # Get employee mapping info
-        employee = service.repo.get_employee_by_jarvis_id(current_user.id)
+        # Get all company entries for multi-company display
+        employees = service.repo.get_all_employees_by_jarvis_id(current_user.id)
 
         return jsonify({
             'success': True,
-            'mapped': employee is not None,
+            'mapped': len(employees) > 0,
             'year': year,
             'month': month,
             'timesheet': data,
