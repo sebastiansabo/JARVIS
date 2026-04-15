@@ -144,6 +144,11 @@ export const identityApi = {
       `${BASE}/auto-map`, {},
     ),
 
+  createFromSincron: (body: { sincron_employee_id: string; company_name: string }) =>
+    api.post<{ success: boolean; data: { user_id: number; name: string; company: string }; message: string }>(
+      `${BASE}/create-from-sincron`, body,
+    ),
+
   setMapping: (
     userId: number,
     body: { source: IdentityMappingSource; external_id: string; company_name?: string },

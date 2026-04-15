@@ -79,6 +79,17 @@ class SincronRepository(BaseRepository):
             ORDER BY company_name, nume, prenume
         ''')
 
+    def get_employee(self, sincron_employee_id, company_name):
+        """Get a single Sincron employee by composite key."""
+        return self.query_one('''
+            SELECT id, sincron_employee_id, company_name, nume, prenume, cnp,
+                   id_contract, nr_contract, data_incepere_contract,
+                   mapped_jarvis_user_id, mapping_method, mapping_confidence,
+                   is_active, last_synced_at
+            FROM sincron_employees
+            WHERE sincron_employee_id = %s AND company_name = %s
+        ''', (sincron_employee_id, company_name))
+
     def update_mapping(self, sincron_employee_id, company_name, jarvis_user_id, method='manual'):
         """Map a Sincron employee to a JARVIS user."""
         confidence = 100 if method == 'manual' else 90

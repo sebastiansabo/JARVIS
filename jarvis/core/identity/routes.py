@@ -68,6 +68,28 @@ def auto_map_all():
 
 # ── Manual mapping ──
 
+@identity_bp.route('/api/create-from-sincron', methods=['POST'])
+@admin_required
+def create_user_from_sincron():
+    """Create a JARVIS user from an unmapped Sincron employee and auto-map."""
+    data = request.get_json(silent=True) or {}
+    sincron_employee_id = data.get('sincron_employee_id')
+    company_name = data.get('company_name')
+
+    if not sincron_employee_id or not company_name:
+        return jsonify({'success': False,
+                        'error': 'sincron_employee_id and company_name are required'}), 400
+
+    try:
+        result = service.create_user_from_sincron(sincron_employee_id, company_name)
+        return jsonify({'success': True, 'data': result,
+                        'message': f"User '{result['name']}' created and mapped"})
+    except ValueError as ve:
+        return jsonify({'success': False, 'error': str(ve)}), 400
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @identity_bp.route('/api/employees/<int:user_id>/mapping', methods=['PUT'])
 @admin_required
 def set_mapping(user_id):

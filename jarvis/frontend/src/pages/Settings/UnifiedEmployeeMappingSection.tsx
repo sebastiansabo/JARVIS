@@ -10,6 +10,7 @@ import {
   Search,
   Link as LinkIcon,
   Unlink,
+  UserPlus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -218,6 +219,21 @@ export function UnifiedEmployeeMappingSection() {
       toast.success('Mapping removed')
     },
     onError: () => toast.error('Failed to remove mapping'),
+  })
+
+  const createFromSincronMut = useMutation({
+    mutationFn: (vars: { sincron_employee_id: string; company_name: string }) =>
+      identityApi.createFromSincron(vars),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['identity'] })
+      qc.invalidateQueries({ queryKey: ['sincron'] })
+      const msg = (res.data as any)?.message ?? 'User created & mapped'
+      toast.success(msg)
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.error ?? 'Failed to create user'
+      toast.error(msg)
+    },
   })
 
   const filtered = useMemo(() => {
@@ -688,7 +704,7 @@ export function UnifiedEmployeeMappingSection() {
                       <TableHead>Name</TableHead>
                       <TableHead>Company</TableHead>
                       <TableHead>CNP</TableHead>
-                      <TableHead className="text-right w-24">Action</TableHead>
+                      <TableHead className="text-right w-36">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -700,14 +716,30 @@ export function UnifiedEmployeeMappingSection() {
                         <TableCell className="text-xs">{emp.company_name}</TableCell>
                         <TableCell className="text-[11px] font-mono">{emp.cnp ?? '—'}</TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 px-2 text-xs"
-                            onClick={() => openMapSincronDialog(emp)}
-                          >
-                            Map
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => openMapSincronDialog(emp)}
+                            >
+                              Map
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              disabled={createFromSincronMut.isPending}
+                              onClick={() =>
+                                createFromSincronMut.mutate({
+                                  sincron_employee_id: emp.sincron_employee_id,
+                                  company_name: emp.company_name,
+                                })
+                              }
+                            >
+                              <UserPlus className="h-3 w-3 mr-1" />
+                              Create
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
