@@ -237,7 +237,8 @@ export default function EmployeesTab({ search }: Props) {
     const avgCheckOutMins = checkOutCount > 0 ? Math.round(checkOutSum / checkOutCount) : 0
     const avgCheckIn = checkInCount > 0 ? `${String(Math.floor(avgCheckInMins / 60)).padStart(2, '0')}:${String(avgCheckInMins % 60).padStart(2, '0')}` : '—'
     const avgCheckOut = checkOutCount > 0 ? `${String(Math.floor(avgCheckOutMins / 60)).padStart(2, '0')}:${String(avgCheckOutMins % 60).padStart(2, '0')}` : '—'
-    const avgDailyHours = netEmpCount > 0 ? Math.round(netHours / workedDaysNet * 10) / 10 : 0
+    const avgDailyHours = workedDaysNet > 0 ? Math.round(netHours / workedDaysNet * 10) / 10 : 0
+    const grossAvgDailyHours = workedDaysGross > 0 ? Math.round(totalHours / workedDaysGross * 10) / 10 : 0
     return {
       total: employees.length,
       companies: byCompany.size,
@@ -251,7 +252,7 @@ export default function EmployeesTab({ search }: Props) {
       netAvgProductivity, grossAvgProductivity,
       netAvgHoursPerMan, grossAvgHoursPerMan,
       avgVariance, empWithStats, netEmpCount,
-      avgCheckIn, avgCheckOut, avgDailyHours,
+      avgCheckIn, avgCheckOut, avgDailyHours, grossAvgDailyHours,
     }
   }, [employees, filtered, workStats])
 
@@ -846,13 +847,22 @@ export default function EmployeesTab({ search }: Props) {
                     <p className="text-xs font-medium text-muted-foreground">Avg / Day</p>
                     <div className="text-muted-foreground"><Timer className="h-3 w-3" /></div>
                   </div>
-                  <p className="text-base font-semibold leading-snug">{stats.avgDailyHours}h</p>
+                  <p className="text-base font-semibold leading-snug">{stats.avgDailyHours}h net</p>
+                  <p className="text-[11px] text-muted-foreground">{stats.grossAvgDailyHours}h gross</p>
                 </CardContent>
               </Card>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-[240px] text-xs">
-              <p className="font-semibold mb-0.5">Average Hours per Day</p>
-              <p className="text-muted-foreground">Net total hours ÷ net worked days. Only includes days with proper check-in and check-out.</p>
+            <TooltipContent side="bottom" className="max-w-[280px] text-xs space-y-1.5">
+              <p className="font-semibold">Average Hours per Day</p>
+              <p className="text-muted-foreground">total_hours ÷ worked_days</p>
+              <div className="border-t pt-1.5 space-y-0.5">
+                <p className="font-medium">Net: {stats.avgDailyHours}h</p>
+                <p className="text-muted-foreground text-[10px]">{stats.totalHours}h ÷ {stats.workedDaysNet} days (2+ punches only)</p>
+              </div>
+              <div className="border-t pt-1.5 space-y-0.5">
+                <p className="font-medium">Gross: {stats.grossAvgDailyHours}h</p>
+                <p className="text-muted-foreground text-[10px]">{stats.totalHours}h ÷ {stats.workedDaysGross} days (incl. single-punch)</p>
+              </div>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
