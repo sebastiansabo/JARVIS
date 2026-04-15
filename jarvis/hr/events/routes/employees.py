@@ -173,6 +173,12 @@ def api_employee_work_stats():
         # Avg daily hours (only days with proper in/out)
         avg_daily = round(total_hours / days_present, 1) if days_present > 0 else 0
 
+        # Average check-in/out times (epoch seconds → "HH:MM")
+        avg_in_epoch = float(row.get('avg_check_in_epoch') or 0)
+        avg_out_epoch = float(row.get('avg_check_out_epoch') or 0)
+        avg_check_in = f"{int(avg_in_epoch // 3600):02d}:{int((avg_in_epoch % 3600) // 60):02d}" if avg_in_epoch > 0 else None
+        avg_check_out = f"{int(avg_out_epoch // 3600):02d}:{int((avg_out_epoch % 3600) // 60):02d}" if avg_out_epoch > 0 else None
+
         # Schedule variance (STDDEV of check-in/out times → average → minutes)
         stddev_in = float(row.get('stddev_check_in_epoch') or 0)
         stddev_out = float(row.get('stddev_check_out_epoch') or 0)
@@ -218,6 +224,8 @@ def api_employee_work_stats():
             'leave_types': sincron_leave_types,
             'permit_count': permit_count,
             'permit_hours': permit_hours,
+            'avg_check_in': avg_check_in,
+            'avg_check_out': avg_check_out,
             'schedule_companies': company_norms_map.get(uid, []),
         }
 
@@ -265,6 +273,8 @@ def api_employee_work_stats():
             'leave_types': sincron_leave_types,
             'permit_count': permit_count,
             'permit_hours': permit_hours,
+            'avg_check_in': None,
+            'avg_check_out': None,
             'schedule_companies': company_norms_map.get(uid, []),
         }
 

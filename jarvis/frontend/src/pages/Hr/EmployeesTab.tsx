@@ -21,7 +21,7 @@ import { Switch } from '@/components/ui/switch'
 import {
   Users, ArrowUpDown, ChevronDown, ChevronRight,
   Mail, Phone, Fingerprint, FileSpreadsheet, ExternalLink,
-  UserCheck, UserMinus, Archive, Bell, BellOff, UserX, Clock, TrendingUp,
+  UserCheck, UserMinus, Archive, Bell, BellOff, UserX, Clock, TrendingUp, LogIn, Timer,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -191,6 +191,7 @@ export default function EmployeesTab({ search }: Props) {
     let netHours = 0, netExpected = 0, netEmpCount = 0, netScoreSum = 0, netScoreCount = 0
     let grossScoreSum = 0, grossScoreCount = 0
     let varianceSum = 0, varianceCount = 0
+    let checkInSum = 0, checkOutSum = 0, checkInCount = 0, checkOutCount = 0
     let workedDaysNet = 0, workedDaysGross = 0, totalEffectiveDays = 0, totalWorkingDays = 0, grossExpectedHours = 0
     filtered.forEach((e) => {
       const s = ws[e.id]
@@ -205,6 +206,14 @@ export default function EmployeesTab({ search }: Props) {
       empWithStats++
       grossScoreSum += s.productivity_score; grossScoreCount++
       if (s.days_present >= 2) { varianceSum += s.variance_minutes; varianceCount++ }
+      if (s.avg_check_in) {
+        const [h, m] = s.avg_check_in.split(':').map(Number)
+        checkInSum += h * 60 + m; checkInCount++
+      }
+      if (s.avg_check_out) {
+        const [h, m] = s.avg_check_out.split(':').map(Number)
+        checkOutSum += h * 60 + m; checkOutCount++
+      }
       // Net: exclude motivated absences (Sincron leave OR Connecteam permits) with no presence
       // Unmotivated absences (no leave, no permits, days_present=0) stay in Net with 0h
       const isMotivatedLeave = (s.leave_days > 0 || s.permit_count > 0) && s.days_present === 0
@@ -224,6 +233,11 @@ export default function EmployeesTab({ search }: Props) {
     const netAvgProductivity = netExpected > 0 ? Math.min(Math.round(netHours / netExpected * 100), 100) : 0
     const netAvgHoursPerMan = netEmpCount > 0 ? Math.round(netHours / netEmpCount * 10) / 10 : 0
     const avgVariance = varianceCount > 0 ? Math.round(varianceSum / varianceCount) : 0
+    const avgCheckInMins = checkInCount > 0 ? Math.round(checkInSum / checkInCount) : 0
+    const avgCheckOutMins = checkOutCount > 0 ? Math.round(checkOutSum / checkOutCount) : 0
+    const avgCheckIn = checkInCount > 0 ? `${String(Math.floor(avgCheckInMins / 60)).padStart(2, '0')}:${String(avgCheckInMins % 60).padStart(2, '0')}` : '—'
+    const avgCheckOut = checkOutCount > 0 ? `${String(Math.floor(avgCheckOutMins / 60)).padStart(2, '0')}:${String(avgCheckOutMins % 60).padStart(2, '0')}` : '—'
+    const avgDailyHours = netEmpCount > 0 ? Math.round(netHours / workedDaysNet * 10) / 10 : 0
     return {
       total: employees.length,
       companies: byCompany.size,
@@ -237,6 +251,7 @@ export default function EmployeesTab({ search }: Props) {
       netAvgProductivity, grossAvgProductivity,
       netAvgHoursPerMan, grossAvgHoursPerMan,
       avgVariance, empWithStats, netEmpCount,
+      avgCheckIn, avgCheckOut, avgDailyHours,
     }
   }, [employees, filtered, workStats])
 
@@ -798,6 +813,46 @@ export default function EmployeesTab({ search }: Props) {
               <p className="font-semibold mb-0.5">Schedule Variance</p>
               <p className="text-muted-foreground">Average deviation from usual check-in/out times across all employees. Lower = more consistent schedules.</p>
               <p className="mt-1">{stats.avgVariance <= 10 ? 'Very consistent' : stats.avgVariance <= 25 ? 'Moderate variation' : 'High variation'}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        {/* Avg In / Out */}
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card className="gap-0 py-0 cursor-help">
+                <CardContent className="px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-muted-foreground">Avg In / Out</p>
+                    <div className="text-muted-foreground"><LogIn className="h-3 w-3" /></div>
+                  </div>
+                  <p className="text-base font-semibold leading-snug">{stats.avgCheckIn} / {stats.avgCheckOut}</p>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[240px] text-xs">
+              <p className="font-semibold mb-0.5">Average Check-In / Check-Out</p>
+              <p className="text-muted-foreground">Mean first-punch and last-punch times across employees with 2+ punch days. Single-punch days excluded.</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        {/* Avg / Day */}
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card className="gap-0 py-0 cursor-help">
+                <CardContent className="px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-muted-foreground">Avg / Day</p>
+                    <div className="text-muted-foreground"><Timer className="h-3 w-3" /></div>
+                  </div>
+                  <p className="text-base font-semibold leading-snug">{stats.avgDailyHours}h</p>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[240px] text-xs">
+              <p className="font-semibold mb-0.5">Average Hours per Day</p>
+              <p className="text-muted-foreground">Net total hours ÷ net worked days. Only includes days with proper check-in and check-out.</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

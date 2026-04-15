@@ -69,6 +69,8 @@ export interface EmployeeWorkStats {
   leave_types: string
   permit_count: number
   permit_hours: number
+  avg_check_in: string | null
+  avg_check_out: string | null
   schedule_companies: Array<{ company: string; norma: number; start: string; end: string; lunch: number }>
 }
 
