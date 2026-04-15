@@ -7,8 +7,9 @@ import { hrApi } from '@/api/hr'
 import { StatCard } from '@/components/shared/StatCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
+import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
+import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
 import { Card, CardContent } from '@/components/ui/card'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -22,7 +23,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import type { HrEmployee, ContractStatus, StructureCompany } from '@/types/hr'
+import type { HrEmployee, ContractStatus, StructureCompany, EmployeeWorkStats } from '@/types/hr'
 
 const LEAVE_LABELS: Record<string, string> = {
   CO: 'Annual Leave', CM: 'Medical', CES: 'Unpaid', CIC: 'Child Care',
@@ -36,6 +37,8 @@ interface Props {
 type SortField = 'name' | 'company' | 'department'
 type SortDir = 'asc' | 'desc'
 
+const SORTABLE_FIELDS = new Set<string>(['name', 'company', 'department'])
+
 export default function EmployeesTab({ search }: Props) {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
@@ -43,7 +46,9 @@ export default function EmployeesTab({ search }: Props) {
   const { user } = useAuth()
   const canEditEmployee = user?.permissions?.['hr.employees.edit'] ?? false
   const [statusTab, setStatusTab] = useState<ContractStatus>('active')
-  const [companyFilter, setCompanyFilter] = useState<string>('all')
+  const [filterValues, setFilterValues] = useState<Record<string, string>>({
+    company: '', department: '', brand: '',
+  })
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
@@ -63,6 +68,13 @@ export default function EmployeesTab({ search }: Props) {
     queryKey: ['hr', 'employees', 'absent-today'],
     queryFn: () => hrApi.getAbsentToday(),
     refetchInterval: 5 * 60 * 1000,
+  })
+
+  const now = useMemo(() => new Date(), [])
+  const { data: workStats } = useQuery({
+    queryKey: ['hr', 'employees', 'work-stats', now.getFullYear(), now.getMonth() + 1],
+    queryFn: () => hrApi.getEmployeeWorkStats(now.getFullYear(), now.getMonth() + 1),
+    staleTime: 5 * 60 * 1000,
   })
 
   const toggleMutation = useMutation({
@@ -98,12 +110,30 @@ export default function EmployeesTab({ search }: Props) {
     [allEmployees, statusTab],
   )
 
+  // FilterBar field definitions
+  const filterFields: FilterField[] = useMemo(() => [
+    {
+      key: 'company', label: 'Company', type: 'select' as const,
+      options: companies.map(c => ({ value: c.company, label: c.company })),
+    },
+    {
+      key: 'department', label: 'Department', type: 'select' as const,
+      options: [...new Set(allEmployees.map(e => e.departments).filter(Boolean))].sort()
+        .map(d => ({ value: d!, label: d! })),
+    },
+    {
+      key: 'brand', label: 'Brand', type: 'select' as const,
+      options: [...new Set(allEmployees.map(e => e.brand).filter(Boolean))].sort()
+        .map(b => ({ value: b!, label: b! })),
+    },
+  ], [companies, allEmployees])
+
   // Filter + search + sort
   const filtered = useMemo(() => {
     let rows = employees
-    if (companyFilter !== 'all') {
-      rows = rows.filter((e) => e.company === companyFilter)
-    }
+    if (filterValues.company) rows = rows.filter((e) => e.company === filterValues.company)
+    if (filterValues.department) rows = rows.filter((e) => e.departments === filterValues.department)
+    if (filterValues.brand) rows = rows.filter((e) => e.brand === filterValues.brand)
     if (search) {
       const q = search.toLowerCase()
       rows = rows.filter(
@@ -121,7 +151,7 @@ export default function EmployeesTab({ search }: Props) {
       return (a.departments ?? '').localeCompare(b.departments ?? '') * dir
     })
     return rows
-  }, [employees, companyFilter, search, sortField, sortDir])
+  }, [employees, filterValues, search, sortField, sortDir])
 
   // Stats
   const stats = useMemo(() => {
@@ -157,31 +187,142 @@ export default function EmployeesTab({ search }: Props) {
     }
   }
 
+  // Column definitions — all possible columns for the table
+  const columnDefs: ColumnDef<HrEmployee>[] = useMemo(() => {
+    const ws = workStats ?? ({} as Record<number, EmployeeWorkStats>)
+    const cols: ColumnDef<HrEmployee>[] = [
+      { key: 'name', label: 'Name', render: (e) => <span className="font-medium">{e.name}</span> },
+      { key: 'company', label: 'Company', className: 'text-xs text-muted-foreground', render: (e) => <>{e.company ?? '-'}</> },
+      { key: 'department', label: 'Department', className: 'text-xs', render: (e) => <>{e.departments ?? '-'}</> },
+      { key: 'brand', label: 'Brand', className: 'text-xs text-muted-foreground', render: (e) => <>{e.brand ?? '-'}</> },
+      {
+        key: 'status', label: 'Status', className: 'text-center', render: (e) => (
+          <Badge
+            variant={e.contract_status === 'active' ? 'default' : e.contract_status === 'suspended' ? 'outline' : 'secondary'}
+            className={cn('text-xs', e.contract_status === 'suspended' && 'border-amber-500 text-amber-600')}
+          >
+            {e.contract_status === 'active' ? 'Active' : e.contract_status === 'suspended' ? 'Suspended' : 'Closed'}
+          </Badge>
+        ),
+      },
+      {
+        key: 'today', label: 'Today', className: 'text-center',
+        render: (e) => <AbsenceBadge status={absentData?.[e.id]} />,
+      },
+      {
+        key: 'total_hours', label: 'Hours', className: 'text-right text-xs tabular-nums',
+        render: (e) => {
+          const s = ws[e.id]
+          return s ? <>{s.total_hours}h</> : <span className="text-muted-foreground">—</span>
+        },
+      },
+      {
+        key: 'avg_daily', label: 'Avg/Day', className: 'text-right text-xs tabular-nums',
+        render: (e) => {
+          const s = ws[e.id]
+          return s && s.avg_daily_hours > 0 ? <>{s.avg_daily_hours}h</> : <span className="text-muted-foreground">—</span>
+        },
+      },
+      {
+        key: 'variance', label: 'Variance', className: 'text-center text-xs',
+        render: (e) => {
+          const s = ws[e.id]
+          if (!s || s.days_present < 2) return <span className="text-muted-foreground">—</span>
+          return <span className="tabular-nums">{`\u00B1${s.variance_minutes}min`}</span>
+        },
+      },
+      {
+        key: 'productivity', label: 'Score', className: 'text-center',
+        render: (e) => {
+          const s = ws[e.id]
+          if (!s) return <span className="text-muted-foreground">—</span>
+          const score = s.productivity_score
+          const color = score >= 80
+            ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-400'
+            : score >= 60
+              ? 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-950/40 dark:text-yellow-400'
+              : 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-400'
+          return <Badge variant="outline" className={cn('text-[10px] tabular-nums', color)}>{score}</Badge>
+        },
+      },
+    ]
+    if (canEditEmployee) {
+      cols.push({
+        key: 'punch_alert', label: 'Punch Alert', className: 'text-center w-20',
+        render: (e) => (
+          <Switch
+            checked={e.notify_missing_punch ?? true}
+            disabled={toggleMutation.isPending}
+            aria-label={`Toggle missing punch alert for ${e.name}`}
+            onCheckedChange={(checked) => toggleMutation.mutate({ employeeId: e.id, enabled: checked })}
+            onClick={(ev) => ev.stopPropagation()}
+            className="scale-75"
+          />
+        ),
+      })
+    }
+    return cols
+  }, [workStats, absentData, canEditEmployee, toggleMutation])
+
+  // Column visibility
+  const defaultVisible = useMemo(
+    () => ['name', 'company', 'department', 'status', 'today', 'total_hours', 'productivity', ...(canEditEmployee ? ['punch_alert'] : [])],
+    [canEditEmployee],
+  )
+  const lockedColumns = useMemo(() => new Set(['name']), [])
+
+  const { visibleColumns, setVisibleColumns, defaultColumns } = useColumnState(
+    'hr-employees-columns',
+    defaultVisible,
+    columnDefs.map((c) => c.key),
+    'hr_employees',
+  )
+
+  // Filter out conditional columns (today only on active tab)
+  const activeVisibleColumns = useMemo(() => {
+    let cols = visibleColumns
+    if (statusTab !== 'active') cols = cols.filter((k) => k !== 'today')
+    return cols
+  }, [visibleColumns, statusTab])
+
   const mobileFields: MobileCardField<HrEmployee>[] = useMemo(
-    () => [
-      { key: 'name', label: 'Name', render: (r) => <span className="font-medium">{r.name}</span>, isPrimary: true },
-      {
-        key: 'company',
-        label: 'Company',
-        render: (r) => <span className="text-xs text-muted-foreground">{r.company ?? '-'}</span>,
-        isSecondary: true,
-      },
-      { key: 'departments', label: 'Department', render: (r) => <span className="text-xs">{r.departments ?? '-'}</span> },
-      { key: 'brand', label: 'Brand', render: (r) => <span className="text-xs">{r.brand ?? '-'}</span> },
-      {
-        key: 'email',
-        label: 'Email',
-        render: (r) => <span className="text-xs text-muted-foreground">{r.email ?? '-'}</span>,
-        expandOnly: true,
-      },
-      {
-        key: 'phone',
-        label: 'Phone',
-        render: (r) => <span className="text-xs text-muted-foreground">{r.phone ?? '-'}</span>,
-        expandOnly: true,
-      },
-    ],
-    [],
+    () => {
+      const ws = workStats ?? ({} as Record<number, EmployeeWorkStats>)
+      return [
+        { key: 'name', label: 'Name', render: (r) => <span className="font-medium">{r.name}</span>, isPrimary: true },
+        {
+          key: 'company',
+          label: 'Company',
+          render: (r) => <span className="text-xs text-muted-foreground">{r.company ?? '-'}</span>,
+          isSecondary: true,
+        },
+        { key: 'departments', label: 'Department', render: (r) => <span className="text-xs">{r.departments ?? '-'}</span> },
+        { key: 'brand', label: 'Brand', render: (r) => <span className="text-xs">{r.brand ?? '-'}</span> },
+        {
+          key: 'hours', label: 'Hours (Month)', expandOnly: true,
+          render: (r) => {
+            const s = ws[r.id]
+            return <span className="text-xs">{s ? `${s.total_hours}h (avg ${s.avg_daily_hours}h/day)` : '—'}</span>
+          },
+        },
+        {
+          key: 'score', label: 'Productivity', expandOnly: true,
+          render: (r) => {
+            const s = ws[r.id]
+            return <span className="text-xs">{s ? `${s.productivity_score}/100` : '—'}</span>
+          },
+        },
+        {
+          key: 'email', label: 'Email', expandOnly: true,
+          render: (r) => <span className="text-xs text-muted-foreground">{r.email ?? '-'}</span>,
+        },
+        {
+          key: 'phone', label: 'Phone', expandOnly: true,
+          render: (r) => <span className="text-xs text-muted-foreground">{r.phone ?? '-'}</span>,
+        },
+      ]
+    },
+    [workStats],
   )
 
   if (loadingEmployees) {
@@ -220,54 +361,51 @@ export default function EmployeesTab({ search }: Props) {
         </TabsList>
       </Tabs>
 
-      {/* Company filter */}
-      <div className="flex items-center gap-2">
-        <Select value={companyFilter} onValueChange={setCompanyFilter}>
-          <SelectTrigger className="h-8 w-56 text-xs">
-            <SelectValue placeholder="All Companies" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Companies</SelectItem>
-            {companies.map((c) => (
-              <SelectItem key={c.id} value={c.company}>
-                {c.company}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* Filters + Column toggle toolbar */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <FilterBar fields={filterFields} values={filterValues} onChange={setFilterValues} iconOnly />
         <span className="text-xs text-muted-foreground">
           {filtered.length} of {stats.total} employees
         </span>
-        {canEditEmployee && statusTab === 'active' && (
-          <div className="ml-auto flex items-center gap-1.5">
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-xs h-7 gap-1"
-              disabled={bulkToggleMutation.isPending}
-              onClick={() => {
-                if (window.confirm(`Turn ON missing punch alerts for ${filtered.length} employees?`))
-                  bulkToggleMutation.mutate({ userIds: filtered.map(e => e.id), enabled: true })
-              }}
-            >
-              <Bell className="h-3 w-3" />
-              All On
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-xs h-7 gap-1"
-              disabled={bulkToggleMutation.isPending}
-              onClick={() => {
-                if (window.confirm(`Turn OFF missing punch alerts for ${filtered.length} employees?`))
-                  bulkToggleMutation.mutate({ userIds: filtered.map(e => e.id), enabled: false })
-              }}
-            >
-              <BellOff className="h-3 w-3" />
-              All Off
-            </Button>
-          </div>
-        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          {canEditEmployee && statusTab === 'active' && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs h-7 gap-1"
+                disabled={bulkToggleMutation.isPending}
+                onClick={() => {
+                  if (window.confirm(`Turn ON missing punch alerts for ${filtered.length} employees?`))
+                    bulkToggleMutation.mutate({ userIds: filtered.map(e => e.id), enabled: true })
+                }}
+              >
+                <Bell className="h-3 w-3" />
+                All On
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs h-7 gap-1"
+                disabled={bulkToggleMutation.isPending}
+                onClick={() => {
+                  if (window.confirm(`Turn OFF missing punch alerts for ${filtered.length} employees?`))
+                    bulkToggleMutation.mutate({ userIds: filtered.map(e => e.id), enabled: false })
+                }}
+              >
+                <BellOff className="h-3 w-3" />
+                All Off
+              </Button>
+            </>
+          )}
+          <ColumnToggle
+            visibleColumns={visibleColumns}
+            defaultColumns={defaultColumns}
+            columnDefs={columnDefs as ColumnDef<never>[]}
+            lockedColumns={lockedColumns}
+            onChange={setVisibleColumns}
+          />
+        </div>
       </div>
 
       {/* Stats */}
@@ -275,7 +413,7 @@ export default function EmployeesTab({ search }: Props) {
         <StatCard title="Total Employees" value={stats.total} icon={<Users className="h-4 w-4" />} />
         <StatCard title="Companies" value={stats.companies} icon={<Building2 className="h-4 w-4" />} />
         <StatCard
-          title={companyFilter !== 'all' ? companyFilter : 'Showing'}
+          title={filterValues.company || 'Showing'}
           value={filtered.length}
           icon={<Briefcase className="h-4 w-4" />}
         />
@@ -306,25 +444,24 @@ export default function EmployeesTab({ search }: Props) {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-8" />
-                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('name')}>
-                      <span className="flex items-center gap-1">
-                        Name <ArrowUpDown className="h-3 w-3" />
-                      </span>
-                    </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('company')}>
-                      <span className="flex items-center gap-1">
-                        Company <ArrowUpDown className="h-3 w-3" />
-                      </span>
-                    </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('department')}>
-                      <span className="flex items-center gap-1">
-                        Department <ArrowUpDown className="h-3 w-3" />
-                      </span>
-                    </TableHead>
-                    <TableHead>Brand</TableHead>
-                    <TableHead className="text-center">Status</TableHead>
-                    {statusTab === 'active' && <TableHead className="text-center">Today</TableHead>}
-                    {canEditEmployee && <TableHead className="text-center w-20">Punch Alert</TableHead>}
+                    {activeVisibleColumns.map((key) => {
+                      const col = columnDefs.find((c) => c.key === key)
+                      if (!col) return null
+                      const sortable = SORTABLE_FIELDS.has(key)
+                      return (
+                        <TableHead
+                          key={key}
+                          className={cn(col.className, sortable && 'cursor-pointer select-none')}
+                          onClick={sortable ? () => toggleSort(key as SortField) : undefined}
+                        >
+                          {sortable ? (
+                            <span className="flex items-center gap-1">
+                              {col.label} <ArrowUpDown className="h-3 w-3" />
+                            </span>
+                          ) : col.label}
+                        </TableHead>
+                      )
+                    })}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -342,41 +479,15 @@ export default function EmployeesTab({ search }: Props) {
                               ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                               : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
                           </TableCell>
-                          <TableCell className="font-medium">{e.name}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{e.company ?? '-'}</TableCell>
-                          <TableCell className="text-xs">{e.departments ?? '-'}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{e.brand ?? '-'}</TableCell>
-                          <TableCell className="text-center">
-                            <Badge
-                              variant={e.contract_status === 'active' ? 'default' : e.contract_status === 'suspended' ? 'outline' : 'secondary'}
-                              className={cn('text-xs', e.contract_status === 'suspended' && 'border-amber-500 text-amber-600')}
-                            >
-                              {e.contract_status === 'active' ? 'Active' : e.contract_status === 'suspended' ? 'Suspended' : 'Closed'}
-                            </Badge>
-                          </TableCell>
-                          {statusTab === 'active' && (
-                            <TableCell className="text-center">
-                              <AbsenceBadge status={absentData?.[e.id]} />
-                            </TableCell>
-                          )}
-                          {canEditEmployee && (
-                            <TableCell className="text-center">
-                              <Switch
-                                checked={e.notify_missing_punch ?? true}
-                                disabled={toggleMutation.isPending}
-                                aria-label={`Toggle missing punch alert for ${e.name}`}
-                                onCheckedChange={(checked) => {
-                                  toggleMutation.mutate({ employeeId: e.id, enabled: checked })
-                                }}
-                                onClick={(ev) => ev.stopPropagation()}
-                                className="scale-75"
-                              />
-                            </TableCell>
-                          )}
+                          {activeVisibleColumns.map((key) => {
+                            const col = columnDefs.find((c) => c.key === key)
+                            if (!col) return null
+                            return <TableCell key={key} className={col.className}>{col.render(e)}</TableCell>
+                          })}
                         </TableRow>
                         {isExpanded && (
                           <TableRow>
-                            <TableCell colSpan={6 + (statusTab === 'active' ? 1 : 0) + (canEditEmployee ? 1 : 0)} className="p-0">
+                            <TableCell colSpan={activeVisibleColumns.length + 1} className="p-0">
                               <ExpandedEmployeeRow employee={e} onNavigate={() => navigate(`/app/hr/employees/${e.id}`)} />
                             </TableCell>
                           </TableRow>

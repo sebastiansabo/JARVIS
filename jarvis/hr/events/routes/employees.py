@@ -42,6 +42,86 @@ def api_absent_today():
     return jsonify(result)
 
 
+@events_bp.route('/api/employees/work-stats', methods=['GET'])
+@login_required
+@hr_required
+def api_employee_work_stats():
+    """API: Get monthly work stats for all employees (bulk, no N+1)."""
+    from datetime import date as dt_date, timedelta
+    from core.connectors.biostar.repositories.biostar_repository import BioStarRepository
+    from core.utils.work_calendar import get_working_days
+
+    today = dt_date.today()
+    year = request.args.get('year', today.year, type=int)
+    month = request.args.get('month', today.month, type=int)
+
+    # Date range for BioStar query
+    start = dt_date(year, month, 1)
+    if month == 12:
+        end = dt_date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end = dt_date(year, month + 1, 1) - timedelta(days=1)
+
+    # Clamp to today if current month (partial month)
+    is_current_month = (year == today.year and month == today.month)
+    if is_current_month and end > today:
+        end = today
+
+    # Working days elapsed (up to today for current month, full month for past)
+    up_to = today if is_current_month else None
+    working_days = get_working_days(year, month, up_to_date=up_to)
+    if working_days == 0:
+        return jsonify({})
+
+    bio_repo = BioStarRepository()
+    range_data = bio_repo.get_range_summary(start.isoformat(), end.isoformat())
+
+    result = {}
+    for row in range_data:
+        uid = row.get('mapped_jarvis_user_id')
+        if not uid:
+            continue
+
+        days_present = int(row.get('days_present') or 0)
+        adjusted_total = float(row.get('adjusted_total_duration_seconds') or 0)
+        lunch_mins = int(row.get('lunch_break_minutes') or 0)
+        working_h = float(row.get('working_hours') or 8)
+
+        # Total hours: adjusted duration minus lunch for each present day
+        total_hours = max(0, (adjusted_total - (lunch_mins * 60 * days_present)) / 3600)
+        total_hours = round(total_hours, 1)
+
+        # Avg daily hours (only days they punched in)
+        avg_daily = round(total_hours / days_present, 1) if days_present > 0 else 0
+
+        # Schedule variance (STDDEV of check-in/out times → average → minutes)
+        stddev_in = float(row.get('stddev_check_in_epoch') or 0)
+        stddev_out = float(row.get('stddev_check_out_epoch') or 0)
+        count = sum(1 for v in [stddev_in, stddev_out] if v > 0)
+        avg_stddev = ((stddev_in + stddev_out) / count) if count > 0 else 0
+        variance_minutes = round(avg_stddev / 60)
+
+        # Productivity score (100-point scale)
+        expected_hours = working_h * working_days
+        utilization = min((total_hours / expected_hours * 100), 100) if expected_hours > 0 else 0
+        attendance = min((days_present / working_days * 100), 100) if working_days > 0 else 0
+        punctuality = max(0, 100 - (variance_minutes * 2))
+
+        score = round(utilization * 0.4 + attendance * 0.3 + punctuality * 0.3, 1)
+
+        result[uid] = {
+            'total_hours': total_hours,
+            'avg_daily_hours': avg_daily,
+            'variance_minutes': int(variance_minutes),
+            'productivity_score': score,
+            'days_present': days_present,
+            'working_days': working_days,
+            'expected_hours': round(expected_hours, 1),
+        }
+
+    return jsonify(result)
+
+
 @events_bp.route('/api/employees/search', methods=['GET'])
 @login_required
 @hr_required

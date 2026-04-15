@@ -488,6 +488,8 @@ class BioStarRepository(BaseRepository):
                 MAX(d.last_punch) AS latest_punch,
                 AVG(EXTRACT(EPOCH FROM d.first_punch::time)) AS avg_check_in_epoch,
                 AVG(CASE WHEN d.punches > 1 THEN EXTRACT(EPOCH FROM d.last_punch::time) END) AS avg_check_out_epoch,
+                STDDEV(EXTRACT(EPOCH FROM d.first_punch::time)) AS stddev_check_in_epoch,
+                STDDEV(CASE WHEN d.punches > 1 THEN EXTRACT(EPOCH FROM d.last_punch::time) END) AS stddev_check_out_epoch,
                 SUM(COALESCE(adj.adjusted_duration_seconds, d.duration_seconds)) AS adjusted_total_duration_seconds,
                 COUNT(adj.id) AS adjustment_count
             FROM daily d

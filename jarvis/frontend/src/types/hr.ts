@@ -51,6 +51,16 @@ export interface HrEmployee {
   notify_missing_punch: boolean | null
 }
 
+export interface EmployeeWorkStats {
+  total_hours: number
+  avg_daily_hours: number
+  variance_minutes: number
+  productivity_score: number
+  days_present: number
+  working_days: number
+  expected_hours: number
+}
+
 export interface BonusType {
   id: number
   name: string
