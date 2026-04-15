@@ -186,17 +186,16 @@ export default function EmployeesTab({ search }: Props) {
     })
     // Aggregate work stats for visible employees
     const ws = workStats ?? {} as Record<number, EmployeeWorkStats>
-    let totalHours = 0, scoreSum = 0, scoreCount = 0, presentSum = 0, workingDaysSum = 0
+    let totalHours = 0, scoreSum = 0, scoreCount = 0, totalExpected = 0
     filtered.forEach((e) => {
       const s = ws[e.id]
       if (!s) return
       totalHours += s.total_hours
+      totalExpected += s.expected_hours
       if (s.productivity_score > 0) { scoreSum += s.productivity_score; scoreCount++ }
-      presentSum += s.days_present
-      workingDaysSum += s.working_days
     })
     const avgScore = scoreCount > 0 ? Math.round(scoreSum / scoreCount) : 0
-    const avgProductivity = workingDaysSum > 0 ? Math.round(presentSum / workingDaysSum * 100) : 0
+    const avgProductivity = totalExpected > 0 ? Math.min(Math.round(totalHours / totalExpected * 100), 100) : 0
     return {
       total: employees.length,
       companies: byCompany.size,
@@ -246,10 +245,6 @@ export default function EmployeesTab({ search }: Props) {
         ),
       },
       {
-        key: 'today', label: 'Today', className: 'text-center',
-        render: (e) => <AbsenceBadge status={absentData?.[e.id]} />,
-      },
-      {
         key: 'norm', label: 'Norm', className: 'text-center text-xs tabular-nums',
         render: (e) => {
           const s = ws[e.id]
@@ -274,6 +269,14 @@ export default function EmployeesTab({ search }: Props) {
         },
       },
       {
+        key: 'presence', label: 'Presence', className: 'text-center text-xs tabular-nums',
+        render: (e) => {
+          const s = ws[e.id]
+          if (!s) return <span className="text-muted-foreground">—</span>
+          return <>{s.days_present}/{s.working_days}</>
+        },
+      },
+      {
         key: 'total_hours', label: 'Hours', className: 'text-right text-xs tabular-nums',
         render: (e) => {
           const s = ws[e.id]
@@ -288,19 +291,19 @@ export default function EmployeesTab({ search }: Props) {
         },
       },
       {
-        key: 'presence', label: 'Presence', className: 'text-center text-xs tabular-nums',
+        key: 'variance', label: 'Variance', className: 'text-center text-xs',
         render: (e) => {
           const s = ws[e.id]
-          if (!s) return <span className="text-muted-foreground">—</span>
-          return <>{s.days_present}/{s.working_days}</>
+          if (!s || s.days_present < 2) return <span className="text-muted-foreground">—</span>
+          return <span className="tabular-nums">{`\u00B1${s.variance_minutes}min`}</span>
         },
       },
       {
         key: 'productivity_pct', label: 'Productivity', className: 'text-center text-xs',
         render: (e) => {
           const s = ws[e.id]
-          if (!s || s.working_days === 0) return <span className="text-muted-foreground">—</span>
-          const pct = Math.round(s.days_present / s.working_days * 100)
+          if (!s || s.expected_hours === 0) return <span className="text-muted-foreground">—</span>
+          const pct = Math.min(Math.round(s.total_hours / s.expected_hours * 100), 100)
           const color = pct >= 90
             ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-400'
             : pct >= 70
@@ -310,12 +313,8 @@ export default function EmployeesTab({ search }: Props) {
         },
       },
       {
-        key: 'variance', label: 'Variance', className: 'text-center text-xs',
-        render: (e) => {
-          const s = ws[e.id]
-          if (!s || s.days_present < 2) return <span className="text-muted-foreground">—</span>
-          return <span className="tabular-nums">{`\u00B1${s.variance_minutes}min`}</span>
-        },
+        key: 'today', label: 'Today', className: 'text-center',
+        render: (e) => <AbsenceBadge status={absentData?.[e.id]} />,
       },
       {
         key: 'productivity', label: 'Score', className: 'text-center',
@@ -381,7 +380,7 @@ export default function EmployeesTab({ search }: Props) {
 
   // Column visibility
   const defaultVisible = useMemo(
-    () => ['name', 'company', 'department', 'status', 'today', 'total_hours', 'productivity', 'avg_daily', 'variance', 'productivity_pct', 'lunch', 'norm', 'schedule', ...(canEditEmployee ? ['punch_alert'] : [])],
+    () => ['name', 'company', 'department', 'status', 'norm', 'lunch', 'schedule', 'presence', 'total_hours', 'avg_daily', 'productivity', 'variance', 'productivity_pct', 'today', ...(canEditEmployee ? ['punch_alert'] : [])],
     [canEditEmployee],
   )
   const lockedColumns = useMemo(() => new Set(['name']), [])
