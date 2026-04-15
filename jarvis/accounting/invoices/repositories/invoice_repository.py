@@ -745,11 +745,11 @@ class InvoiceRepository(BaseRepository):
             term = f'%{word}%'
             numeric_val = parse_numeric(word)
             if numeric_val is not None:
-                search_conditions.append('(i.supplier ILIKE %s OR i.invoice_number ILIKE %s OR i.comment ILIKE %s OR ABS(i.invoice_value - %s) < 0.01)')
-                params.extend([term, term, term, numeric_val])
+                search_conditions.append('(i.supplier ILIKE %s OR i.invoice_number ILIKE %s OR i.comment ILIKE %s OR ABS(i.invoice_value - %s) < 0.01 OR i.id::text ILIKE %s)')
+                params.extend([term, term, term, numeric_val, term])
             else:
-                search_conditions.append('(i.supplier ILIKE %s OR i.invoice_number ILIKE %s OR i.comment ILIKE %s)')
-                params.extend([term, term, term])
+                search_conditions.append('(i.supplier ILIKE %s OR i.invoice_number ILIKE %s OR i.comment ILIKE %s OR i.id::text ILIKE %s)')
+                params.extend([term, term, term, term])
 
         company = filters.get('company')
         department = filters.get('department')
