@@ -268,8 +268,21 @@ export default function EmployeesTab({ search }: Props) {
         render: (e) => {
           const s = ws[e.id]
           if (!s) return <span className="text-muted-foreground">—</span>
-          const pct = s.working_days > 0 ? Math.round(s.days_present / s.working_days * 100) : 0
-          return <>{s.days_present}/{s.working_days} <span className="text-muted-foreground">({pct}%)</span></>
+          return <>{s.days_present}/{s.working_days}</>
+        },
+      },
+      {
+        key: 'productivity_pct', label: 'Productivity', className: 'text-center text-xs',
+        render: (e) => {
+          const s = ws[e.id]
+          if (!s || s.working_days === 0) return <span className="text-muted-foreground">—</span>
+          const pct = Math.round(s.days_present / s.working_days * 100)
+          const color = pct >= 90
+            ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-400'
+            : pct >= 70
+              ? 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-950/40 dark:text-yellow-400'
+              : 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-400'
+          return <Badge variant="outline" className={cn('text-[10px] tabular-nums', color)}>{pct}%</Badge>
         },
       },
       {
@@ -294,38 +307,28 @@ export default function EmployeesTab({ search }: Props) {
           const util = s.expected_hours > 0 ? Math.min(s.total_hours / s.expected_hours * 100, 100) : 0
           const attend = s.effective_days > 0 ? Math.min(s.days_present / s.effective_days * 100, 100) : 0
           const punct = Math.max(0, 100 - s.variance_minutes * 2)
-          const presenceRate = s.working_days > 0 ? Math.round(s.days_present / s.working_days * 100) : 0
           return (
             <TooltipProvider delayDuration={200}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Badge variant="outline" className={cn('text-[10px] tabular-nums cursor-help', color)}>{score}</Badge>
                 </TooltipTrigger>
-                <TooltipContent side="left" className="max-w-[320px] text-xs leading-relaxed">
-                  <p className="font-semibold mb-1.5">Productivity Score: {score}/100</p>
-                  <p className="mb-1 text-muted-foreground">Presence: {s.days_present} / {s.working_days} days ({presenceRate}%)</p>
+                <TooltipContent side="left" avoidCollisions className="max-w-[320px] text-xs leading-snug">
+                  <p className="font-semibold mb-1">Score: {score}/100</p>
                   {(s.leave_days > 0 || s.permit_count > 0) && (
-                    <div className="mb-1.5 text-blue-500 dark:text-blue-400">
-                      {s.leave_days > 0 && <p>Timesheet leave: {s.leave_days} day{s.leave_days > 1 ? 's' : ''} ({s.leave_types})</p>}
-                      {s.permit_count > 0 && <p>Permits: {s.permit_count} ({s.permit_hours}h)</p>}
-                      <p className="text-muted-foreground">{s.working_days} work days - {s.leave_days} leave = {s.effective_days} effective days</p>
-                    </div>
+                    <p className="mb-1 text-blue-500 dark:text-blue-400">
+                      {s.leave_days > 0 && <>{s.leave_days}d leave ({s.leave_types})</>}
+                      {s.leave_days > 0 && s.permit_count > 0 && ' + '}
+                      {s.permit_count > 0 && <>{s.permit_count} permits ({s.permit_hours}h)</>}
+                      {' '}<span className="text-muted-foreground">= {s.effective_days} effective days</span>
+                    </p>
                   )}
-                  <div className="space-y-1.5">
-                    <div>
-                      <p>Utilization (40%): <span className="font-medium">{util.toFixed(0)}%</span> = <span className="text-muted-foreground">{(util * 0.4).toFixed(1)}pts</span></p>
-                      <p className="text-muted-foreground ml-2">{s.total_hours}h / {s.expected_hours}h ({s.effective_days}d x {s.hours_per_day}h)</p>
-                    </div>
-                    <div>
-                      <p>Attendance (30%): <span className="font-medium">{attend.toFixed(0)}%</span> = <span className="text-muted-foreground">{(attend * 0.3).toFixed(1)}pts</span></p>
-                      <p className="text-muted-foreground ml-2">{s.days_present} present / {s.effective_days} effective days</p>
-                    </div>
-                    <div>
-                      <p>Punctuality (30%): <span className="font-medium">{punct.toFixed(0)}%</span> = <span className="text-muted-foreground">{(punct * 0.3).toFixed(1)}pts</span></p>
-                      <p className="text-muted-foreground ml-2">100 - ({s.variance_minutes}min x 2) = {punct.toFixed(0)}</p>
-                    </div>
+                  <div className="space-y-0.5">
+                    <p>Utilization 40%: <span className="font-medium">{util.toFixed(0)}%</span> <span className="text-muted-foreground">({s.total_hours}h / {s.expected_hours}h) = {(util * 0.4).toFixed(1)}pts</span></p>
+                    <p>Attendance 30%: <span className="font-medium">{attend.toFixed(0)}%</span> <span className="text-muted-foreground">({s.days_present}d / {s.effective_days}d) = {(attend * 0.3).toFixed(1)}pts</span></p>
+                    <p>Punctuality 30%: <span className="font-medium">{punct.toFixed(0)}%</span> <span className="text-muted-foreground">({`\u00B1${s.variance_minutes}min`}) = {(punct * 0.3).toFixed(1)}pts</span></p>
                   </div>
-                  <hr className="my-1.5 border-border/50" />
+                  <hr className="my-1 border-border/50" />
                   <p className="text-muted-foreground">{(util * 0.4).toFixed(1)} + {(attend * 0.3).toFixed(1)} + {(punct * 0.3).toFixed(1)} = <span className="font-semibold text-foreground">{score}</span></p>
                 </TooltipContent>
               </Tooltip>
