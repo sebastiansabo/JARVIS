@@ -170,7 +170,7 @@ class SincronSyncService:
                 # Deactivate employees missing from current-month API response
                 if is_current_month and result.get('success'):
                     deactivated = self._deactivate_missing_employees(
-                        comp, result.get('synced_ids', set()))
+                        comp, result.pop('_synced_ids', set()))
                     result['deactivated'] = deactivated
                     total_deactivated += deactivated
 
@@ -309,7 +309,7 @@ class SincronSyncService:
             'employees': employees_synced,
             'records': records_created,
             'activity_codes': len(discovered_codes),
-            'synced_ids': synced_ids,
+            '_synced_ids': synced_ids,  # internal use only, stripped before jsonify
         }
 
     # ── Auto-mapping ──
