@@ -5,7 +5,7 @@ from database import get_db, get_cursor, release_db
 
 logger = logging.getLogger('jarvis.core.approvals.handlers')
 
-_APP_BASE_URL = os.environ.get('APP_BASE_URL', 'https://jarvis-mkt-t6fk7.ondigitalocean.app')
+_APP_BASE_URL = os.environ.get('APP_BASE_URL', 'https://jarvis.autoworld.ro')
 
 
 def _get_user_email(user_id) -> tuple:
@@ -95,6 +95,8 @@ def _entity_link(entity_type, entity_id):
     """Get the frontend link for an entity."""
     if entity_type == 'mkt_project' and entity_id:
         return f'/app/marketing/projects/{entity_id}'
+    if entity_type == 'invoice' and entity_id:
+        return f'/app/accounting/invoices/{entity_id}'
     if entity_type == 'invoice':
         return '/app/accounting'
     if entity_type == 'form_submission' and entity_id:

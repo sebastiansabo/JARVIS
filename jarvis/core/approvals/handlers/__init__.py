@@ -8,7 +8,7 @@ import os
 logger = logging.getLogger('jarvis.core.approvals.handlers')
 
 # Re-exported for backwards-compatible tests that do `import handlers as h; h._APP_BASE_URL`
-_APP_BASE_URL = os.environ.get('APP_BASE_URL', 'https://jarvis-mkt-t6fk7.ondigitalocean.app')
+_APP_BASE_URL = os.environ.get('APP_BASE_URL', 'https://jarvis.autoworld.ro')
 
 
 def register_approval_hooks():
