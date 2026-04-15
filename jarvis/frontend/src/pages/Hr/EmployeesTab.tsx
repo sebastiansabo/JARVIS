@@ -192,6 +192,7 @@ export default function EmployeesTab({ search }: Props) {
     let grossScoreSum = 0, grossScoreCount = 0
     let varianceSum = 0, varianceCount = 0
     let totalWorkedDays = 0, totalPotentialDays = 0
+    let netWorkedDays = 0, netPotentialDays = 0
     filtered.forEach((e) => {
       const s = ws[e.id]
       if (!s) return
@@ -210,6 +211,8 @@ export default function EmployeesTab({ search }: Props) {
         netExpected += s.expected_hours
         netEmpCount++
         netScoreSum += s.productivity_score; netScoreCount++
+        netWorkedDays += s.days_present
+        netPotentialDays += s.working_days
       }
     })
     // Gross averages (includes all: leave + unmotivated absences)
@@ -221,17 +224,19 @@ export default function EmployeesTab({ search }: Props) {
     const netAvgProductivity = netExpected > 0 ? Math.min(Math.round(netHours / netExpected * 100), 100) : 0
     const netAvgHoursPerMan = netEmpCount > 0 ? Math.round(netHours / netEmpCount * 10) / 10 : 0
     const avgVariance = varianceCount > 0 ? Math.round(varianceSum / varianceCount) : 0
-    const presenceRate = totalPotentialDays > 0 ? Math.round(totalWorkedDays / totalPotentialDays * 100) : 0
+    const grossPresence = totalPotentialDays > 0 ? Math.round(totalWorkedDays / totalPotentialDays * 100) : 0
+    const netPresence = netPotentialDays > 0 ? Math.round(netWorkedDays / netPotentialDays * 100) : 0
     return {
       total: employees.length,
       companies: byCompany.size,
       filtered: filtered.length,
       totalHours: Math.round(totalHours),
-      totalWorkedDays, totalPotentialDays, presenceRate,
+      totalWorkedDays, totalPotentialDays, grossPresence,
+      netWorkedDays, netPotentialDays, netPresence,
       netAvgScore, grossAvgScore,
       netAvgProductivity, grossAvgProductivity,
       netAvgHoursPerMan, grossAvgHoursPerMan,
-      avgVariance,
+      avgVariance, empWithStats, netEmpCount,
     }
   }, [employees, filtered, workStats])
 
@@ -633,33 +638,130 @@ export default function EmployeesTab({ search }: Props) {
             className={(absenceCounts.absent + absenceCounts.onLeave) === 0 ? '[&_p.text-base]:text-green-600' : (absenceCounts.absent + absenceCounts.onLeave) <= 10 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
           />
         )}
-        <StatCard
-          title="Worked / Potential"
-          value={`${stats.totalWorkedDays} / ${stats.totalPotentialDays}`}
-          description={`${stats.presenceRate}% presence`}
-          icon={<Clock className="h-4 w-4" />}
-          className={stats.presenceRate >= 90 ? '[&_p.text-base]:text-green-600' : stats.presenceRate >= 70 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
-        />
-        <StatCard
-          title="Avg Hours/Man"
-          value={`${stats.netAvgHoursPerMan}h`}
-          description={`Gross: ${stats.grossAvgHoursPerMan}h`}
-          icon={<Clock className="h-4 w-4" />}
-        />
-        <StatCard
-          title="Avg Productivity"
-          value={`${stats.netAvgProductivity}%`}
-          description={`Gross: ${stats.grossAvgProductivity}%`}
-          icon={<TrendingUp className="h-4 w-4" />}
-          className={stats.netAvgProductivity >= 90 ? '[&_p.text-base]:text-green-600' : stats.netAvgProductivity >= 70 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
-        />
-        <StatCard
-          title="Avg Efficiency"
-          value={`${stats.netAvgScore}%`}
-          description={`Gross: ${stats.grossAvgScore}%`}
-          icon={<TrendingUp className="h-4 w-4" />}
-          className={stats.netAvgScore >= 80 ? '[&_p.text-base]:text-green-600' : stats.netAvgScore >= 60 ? '[&_p.text-base]:text-yellow-600' : '[&_p.text-base]:text-red-600'}
-        />
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card className="gap-0 py-0 cursor-help">
+                <CardContent className="px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-muted-foreground">Avg Presence</p>
+                    <div className="text-muted-foreground"><Clock className="h-3 w-3" /></div>
+                  </div>
+                  <p className={cn('text-base font-semibold leading-snug', stats.netPresence >= 90 ? 'text-green-600' : stats.netPresence >= 70 ? 'text-yellow-600' : 'text-red-600')}>
+                    {stats.netPresence}%
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">Gross: {stats.grossPresence}%</p>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[280px] text-xs space-y-1.5">
+              <p className="font-semibold">Presence Rate</p>
+              <p className="text-muted-foreground">Total days punched in ÷ total potential working days, averaged across employees.</p>
+              <div className="border-t pt-1.5 space-y-0.5">
+                <p><span className="font-medium">Net:</span> {stats.netWorkedDays} / {stats.netPotentialDays} days = {stats.netPresence}%</p>
+                <p className="text-muted-foreground text-[10px]">Excludes employees on motivated leave (Sincron codes: CO, CM, CIC… or Connecteam permits)</p>
+              </div>
+              <div className="border-t pt-1.5 space-y-0.5">
+                <p><span className="font-medium">Gross:</span> {stats.totalWorkedDays} / {stats.totalPotentialDays} days = {stats.grossPresence}%</p>
+                <p className="text-muted-foreground text-[10px]">All {stats.empWithStats} employees — leave & unmotivated absences counted as 0 days</p>
+              </div>
+              <div className="border-t pt-1.5">
+                <p className="text-muted-foreground text-[10px]">Single-punch days (1 punch, no in/out pair) are excluded from worked days</p>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card className="gap-0 py-0 cursor-help">
+                <CardContent className="px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-muted-foreground">Avg Hours/Man</p>
+                    <div className="text-muted-foreground"><Clock className="h-3 w-3" /></div>
+                  </div>
+                  <p className="text-base font-semibold leading-snug">{stats.netAvgHoursPerMan}h</p>
+                  <p className="text-[11px] text-muted-foreground">Gross: {stats.grossAvgHoursPerMan}h</p>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[280px] text-xs space-y-1.5">
+              <p className="font-semibold">Average Hours per Employee</p>
+              <p className="text-muted-foreground">Total worked hours ÷ number of employees for the selected period.</p>
+              <div className="border-t pt-1.5 space-y-0.5">
+                <p><span className="font-medium">Net:</span> {Math.round(stats.totalHours)}h ÷ {stats.netEmpCount} employees = {stats.netAvgHoursPerMan}h</p>
+                <p className="text-muted-foreground text-[10px]">Excludes motivated leave (Sincron: CO, CM, CIC… / Connecteam permits)</p>
+              </div>
+              <div className="border-t pt-1.5 space-y-0.5">
+                <p><span className="font-medium">Gross:</span> {Math.round(stats.totalHours)}h ÷ {stats.empWithStats} employees = {stats.grossAvgHoursPerMan}h</p>
+                <p className="text-muted-foreground text-[10px]">All employees — leave counted as 0h</p>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card className="gap-0 py-0 cursor-help">
+                <CardContent className="px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-muted-foreground">Avg Productivity</p>
+                    <div className="text-muted-foreground"><TrendingUp className="h-3 w-3" /></div>
+                  </div>
+                  <p className={cn('text-base font-semibold leading-snug', stats.netAvgProductivity >= 90 ? 'text-green-600' : stats.netAvgProductivity >= 70 ? 'text-yellow-600' : 'text-red-600')}>
+                    {stats.netAvgProductivity}%
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">Gross: {stats.grossAvgProductivity}%</p>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[280px] text-xs space-y-1.5">
+              <p className="font-semibold">Average Productivity</p>
+              <p className="text-muted-foreground">Actual worked hours ÷ expected hours (schedule × working days) × 100.</p>
+              <div className="border-t pt-1.5 space-y-0.5">
+                <p><span className="font-medium">Net:</span> {stats.netAvgProductivity}% — excludes motivated leave</p>
+                <p><span className="font-medium">Gross:</span> {stats.grossAvgProductivity}% — all employees</p>
+              </div>
+              <div className="border-t pt-1.5">
+                <p className="text-muted-foreground text-[10px]">Hours include lunch deduction. Capped at 100% per employee.</p>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card className="gap-0 py-0 cursor-help">
+                <CardContent className="px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-muted-foreground">Avg Efficiency</p>
+                    <div className="text-muted-foreground"><TrendingUp className="h-3 w-3" /></div>
+                  </div>
+                  <p className={cn('text-base font-semibold leading-snug', stats.netAvgScore >= 80 ? 'text-green-600' : stats.netAvgScore >= 60 ? 'text-yellow-600' : 'text-red-600')}>
+                    {stats.netAvgScore}%
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">Gross: {stats.grossAvgScore}%</p>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[300px] text-xs space-y-1.5">
+              <p className="font-semibold">Average Efficiency Score</p>
+              <p className="text-muted-foreground">Composite score (0–100) combining three factors:</p>
+              <div className="border-t pt-1.5 space-y-0.5">
+                <p><span className="font-medium">Utilization 50%:</span> actual hours ÷ expected hours (capped at 100%)</p>
+                <p><span className="font-medium">Attendance 30%:</span> days present ÷ working days</p>
+                <p><span className="font-medium">Punctuality 20%:</span> 100 − (variance × 1.5), min 0</p>
+              </div>
+              <div className="border-t pt-1.5 space-y-0.5">
+                <p><span className="font-medium">Net:</span> {stats.netAvgScore}% ({stats.netEmpCount} employees)</p>
+                <p><span className="font-medium">Gross:</span> {stats.grossAvgScore}% ({stats.empWithStats} employees)</p>
+              </div>
+              <div className="border-t pt-1.5">
+                <p className="text-muted-foreground text-[10px]">Net excludes employees on motivated leave. Unmotivated no-shows score 0.</p>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         {/* Avg Variance — graphical card with bar + hover tooltip */}
         <TooltipProvider delayDuration={200}>
           <Tooltip>
