@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, memo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -72,6 +73,7 @@ const statusColors: Record<string, string> = {
 
 export default function TransactionsTab({ showFilters = false, search = '' }: { showFilters?: boolean; search?: string }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const isMobile = useIsMobile()
 
   // Filters
@@ -326,7 +328,7 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
       expandOnly: true,
       render: (t) =>
         t.invoice_id
-          ? <Badge variant="secondary" className="text-xs">{t.invoice_number || `#${t.invoice_id}`}</Badge>
+          ? <Badge variant="secondary" className="text-xs cursor-pointer hover:bg-primary/20" onClick={() => navigate(`/app/accounting?highlight=${t.invoice_id}`)}>{t.invoice_number || `#${t.invoice_id}`}</Badge>
           : t.suggested_invoice_id
             ? <Badge variant="outline" className="text-xs border-yellow-500/50 text-yellow-600">Suggested ({Math.round((t.suggested_confidence ?? 0) * 100)}%)</Badge>
             : <span className="text-muted-foreground">—</span>,
@@ -728,6 +730,7 @@ const TransactionRow = memo(function TransactionRow({
   isExpanded: boolean
   onToggleExpand: (id: number) => void
 }) {
+  const navigate = useNavigate()
   const isMerged = (txn.merged_count ?? 0) > 0
 
   // Merged sources query
@@ -785,7 +788,14 @@ const TransactionRow = memo(function TransactionRow({
         <TableCell className="text-xs">
           {txn.invoice_id ? (
             <div className="flex items-center gap-1">
-              <Badge variant="secondary" className="text-xs">{txn.invoice_number || `#${txn.invoice_id}`}</Badge>
+              <Badge
+                variant="secondary"
+                className="text-xs cursor-pointer hover:bg-primary/20"
+                onClick={(e) => { e.stopPropagation(); navigate(`/app/accounting?highlight=${txn.invoice_id}`) }}
+                title="View in Accounting"
+              >
+                {txn.invoice_number || `#${txn.invoice_id}`}
+              </Badge>
               <button onClick={() => onUnlink(txn.id)} className="text-muted-foreground hover:text-destructive" title="Unlink">
                 <Link2Off className="h-3 w-3" />
               </button>
