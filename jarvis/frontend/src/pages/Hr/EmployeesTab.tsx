@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { hrApi } from '@/api/hr'
@@ -9,6 +9,8 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
+import { DateField } from '@/components/ui/date-field'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -24,6 +26,15 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { HrEmployee, ContractStatus, StructureCompany, EmployeeWorkStats } from '@/types/hr'
+
+/** Default date range: 1st of current month → today */
+function defaultDateRange(): { start: string; end: string } {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return { start: `${y}-${m}-01`, end: `${y}-${m}-${d}` }
+}
 
 const LEAVE_LABELS: Record<string, string> = {
   CO: 'Annual Leave', CM: 'Medical', CES: 'Unpaid', CIC: 'Child Care',
@@ -41,6 +52,7 @@ const SORTABLE_FIELDS = new Set<string>(['name', 'company', 'department'])
 
 export default function EmployeesTab({ search }: Props) {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const isMobile = useIsMobile()
   const queryClient = useQueryClient()
   const { user } = useAuth()
@@ -52,6 +64,18 @@ export default function EmployeesTab({ search }: Props) {
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
+
+  // Date range — persisted in URL search params so it survives back navigation
+  const defaults = useMemo(() => defaultDateRange(), [])
+  const dateFrom = searchParams.get('from') || defaults.start
+  const dateTo = searchParams.get('to') || defaults.end
+
+  const handleDateChange = (start: string, end: string) => {
+    const next = new URLSearchParams(searchParams)
+    if (start) next.set('from', start); else next.delete('from')
+    if (end) next.set('to', end); else next.delete('to')
+    setSearchParams(next, { replace: true })
+  }
 
   // Fetch all employees (not just active) to populate all tabs
   const { data: employeesData, isLoading: loadingEmployees } = useQuery({
@@ -70,11 +94,11 @@ export default function EmployeesTab({ search }: Props) {
     refetchInterval: 5 * 60 * 1000,
   })
 
-  const now = useMemo(() => new Date(), [])
   const { data: workStats } = useQuery({
-    queryKey: ['hr', 'employees', 'work-stats', now.getFullYear(), now.getMonth() + 1],
-    queryFn: () => hrApi.getEmployeeWorkStats(now.getFullYear(), now.getMonth() + 1),
+    queryKey: ['hr', 'employees', 'work-stats', dateFrom, dateTo],
+    queryFn: () => hrApi.getEmployeeWorkStats(dateFrom, dateTo),
     staleTime: 5 * 60 * 1000,
+    enabled: !!dateFrom && !!dateTo,
   })
 
   const toggleMutation = useMutation({
@@ -242,7 +266,27 @@ export default function EmployeesTab({ search }: Props) {
             : score >= 60
               ? 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-950/40 dark:text-yellow-400'
               : 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-400'
-          return <Badge variant="outline" className={cn('text-[10px] tabular-nums', color)}>{score}</Badge>
+          const util = s.expected_hours > 0 ? Math.min(s.total_hours / s.expected_hours * 100, 100) : 0
+          const attend = s.working_days > 0 ? Math.min(s.days_present / s.working_days * 100, 100) : 0
+          const punct = Math.max(0, 100 - s.variance_minutes * 2)
+          return (
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className={cn('text-[10px] tabular-nums cursor-help', color)}>{score}</Badge>
+                </TooltipTrigger>
+                <TooltipContent side="left" className="max-w-[240px] text-xs leading-relaxed">
+                  <p className="font-semibold mb-1">Productivity Score: {score}/100</p>
+                  <p>Utilization (40%): {util.toFixed(0)}%</p>
+                  <p className="text-muted-foreground ml-2">{s.total_hours}h / {s.expected_hours}h expected</p>
+                  <p>Attendance (30%): {attend.toFixed(0)}%</p>
+                  <p className="text-muted-foreground ml-2">{s.days_present} / {s.working_days} working days</p>
+                  <p>Punctuality (30%): {punct.toFixed(0)}%</p>
+                  <p className="text-muted-foreground ml-2">{`\u00B1${s.variance_minutes}min`} avg variance</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )
         },
       },
     ]
@@ -361,9 +405,16 @@ export default function EmployeesTab({ search }: Props) {
         </TabsList>
       </Tabs>
 
-      {/* Filters + Column toggle toolbar */}
+      {/* Filters + Date range + Column toggle toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
         <FilterBar fields={filterFields} values={filterValues} onChange={setFilterValues} iconOnly />
+        <DateField
+          mode="range"
+          startDate={dateFrom}
+          endDate={dateTo}
+          onRangeChange={handleDateChange}
+          showPresets
+        />
         <span className="text-xs text-muted-foreground">
           {filtered.length} of {stats.total} employees
         </span>

@@ -70,8 +70,8 @@ export const hrApi = {
   deleteEmployee: (id: number) => api.delete<{ success: boolean }>(`${BASE}/employees/${id}`),
   bulkToggleMissingPunch: (userIds: number[] | undefined, enabled: boolean) =>
     api.post<{ success: boolean; updated: number }>(`${BASE}/employees/bulk-toggle-missing-punch`, { user_ids: userIds, enabled }),
-  getEmployeeWorkStats: (year?: number, month?: number) =>
-    api.get<Record<number, EmployeeWorkStats>>(`${BASE}/employees/work-stats${qs({ year, month })}`),
+  getEmployeeWorkStats: (startDate?: string, endDate?: string) =>
+    api.get<Record<number, EmployeeWorkStats>>(`${BASE}/employees/work-stats${qs({ start_date: startDate, end_date: endDate })}`),
 
   // Bonus Types
   getBonusTypes: (activeOnly = false) =>

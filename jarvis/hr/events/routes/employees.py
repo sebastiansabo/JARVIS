@@ -46,30 +46,36 @@ def api_absent_today():
 @login_required
 @hr_required
 def api_employee_work_stats():
-    """API: Get monthly work stats for all employees (bulk, no N+1)."""
+    """API: Get work stats for all employees over an arbitrary date range."""
     from datetime import date as dt_date, timedelta
     from core.connectors.biostar.repositories.biostar_repository import BioStarRepository
-    from core.utils.work_calendar import get_working_days
+    from core.utils.work_calendar import get_working_days_range
 
     today = dt_date.today()
-    year = request.args.get('year', today.year, type=int)
-    month = request.args.get('month', today.month, type=int)
 
-    # Date range for BioStar query
-    start = dt_date(year, month, 1)
-    if month == 12:
-        end = dt_date(year + 1, 1, 1) - timedelta(days=1)
+    # Accept start_date / end_date for arbitrary ranges
+    start_str = request.args.get('start_date')
+    end_str = request.args.get('end_date')
+
+    if start_str and end_str:
+        start = dt_date.fromisoformat(start_str)
+        end = dt_date.fromisoformat(end_str)
+        # Clamp end to today (can't have future punch data)
+        if end > today:
+            end = today
     else:
-        end = dt_date(year, month + 1, 1) - timedelta(days=1)
+        # Fallback: current month (backwards compatible)
+        year = request.args.get('year', today.year, type=int)
+        month = request.args.get('month', today.month, type=int)
+        start = dt_date(year, month, 1)
+        if month == 12:
+            end = dt_date(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            end = dt_date(year, month + 1, 1) - timedelta(days=1)
+        if end > today:
+            end = today
 
-    # Clamp to today if current month (partial month)
-    is_current_month = (year == today.year and month == today.month)
-    if is_current_month and end > today:
-        end = today
-
-    # Working days elapsed (up to today for current month, full month for past)
-    up_to = today if is_current_month else None
-    working_days = get_working_days(year, month, up_to_date=up_to)
+    working_days = get_working_days_range(start, end)
     if working_days == 0:
         return jsonify({})
 

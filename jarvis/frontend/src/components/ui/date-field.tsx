@@ -34,6 +34,8 @@ function parseDate(s: string) {
 type DateRange = { start: string; end: string }
 
 const PRESETS = [
+  { value: 'today', label: 'Today' },
+  { value: 'this_week', label: 'This Week' },
   { value: 'this_month', label: 'This Month' },
   { value: 'last_month', label: 'Last Month' },
   { value: 'this_quarter', label: 'This Quarter' },
@@ -46,6 +48,14 @@ function getPresetRange(key: string): DateRange {
   const y = now.getFullYear()
   const m = now.getMonth()
   switch (key) {
+    case 'today':
+      return { start: fmt(now), end: fmt(now) }
+    case 'this_week': {
+      const day = now.getDay()
+      const diff = day === 0 ? 6 : day - 1 // Monday = start of week
+      const monday = new Date(y, m, now.getDate() - diff)
+      return { start: fmt(monday), end: fmt(now) }
+    }
     case 'this_month':
       return { start: fmt(new Date(y, m, 1)), end: fmt(now) }
     case 'last_month':
