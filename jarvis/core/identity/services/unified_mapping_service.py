@@ -170,7 +170,12 @@ class UnifiedMappingService:
         if not name:
             raise ValueError('Sincron employee has no name')
 
-        user_id = self.user_repo.save(name=name, company=company_name)
+        # Generate placeholder email (users.email is NOT NULL)
+        import re
+        slug = re.sub(r'[^a-z0-9]+', '.', name.lower()).strip('.')
+        email = f'{slug}@placeholder.jarvis'
+
+        user_id = self.user_repo.save(name=name, email=email, company=company_name)
 
         # Set CNP and contract start date if available
         update_kwargs = {}
