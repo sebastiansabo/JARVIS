@@ -14,6 +14,7 @@ from ..client.exceptions import SincronError
 from ..repositories.sincron_repository import SincronRepository
 from ..repositories.sync_repo import SincronSyncRepository
 from core.connectors.repositories.connector_repository import ConnectorRepository
+from core.auth.repositories.user_repository import UserRepository
 
 logger = logging.getLogger('jarvis.sincron.service')
 
@@ -25,6 +26,7 @@ class SincronSyncService:
         self.repo = SincronRepository()
         self.sync_repo = SincronSyncRepository()
         self.connector_repo = ConnectorRepository()
+        self.user_repo = UserRepository()
 
     # ── Connection config ──
 
@@ -125,11 +127,19 @@ class SincronSyncService:
     # ── Sync timesheets ──
 
     def sync_timesheets(self, year=None, month=None, company_name=None):
-        """Sync timesheet data for given month across all (or one) companies."""
+        """Sync timesheet data for given month across all (or one) companies.
+
+        For current-month syncs, employees missing from the API response
+        are marked inactive (contract closed) in both sincron_employees
+        and the linked JARVIS user.
+        """
+        now = datetime.now()
         if not year or not month:
-            now = datetime.now()
             year = year or now.year
             month = month or now.month
+
+        # Only deactivate missing employees on current-month syncs
+        is_current_month = (year == now.year and month == now.month)
 
         tokens = self._get_company_tokens()
         if not tokens:
@@ -140,6 +150,7 @@ class SincronSyncService:
 
         total_employees = 0
         total_records = 0
+        total_deactivated = 0
         company_results = {}
 
         for comp, token in tokens.items():
@@ -155,6 +166,13 @@ class SincronSyncService:
                 company_results[comp] = result
                 total_employees += result.get('employees', 0)
                 total_records += result.get('records', 0)
+
+                # Deactivate employees missing from current-month API response
+                if is_current_month and result.get('success'):
+                    deactivated = self._deactivate_missing_employees(
+                        comp, result.get('synced_ids', set()))
+                    result['deactivated'] = deactivated
+                    total_deactivated += deactivated
 
                 if run_id:
                     self.sync_repo.complete_run(
@@ -180,8 +198,36 @@ class SincronSyncService:
             'month': month,
             'total_employees': total_employees,
             'total_records': total_records,
+            'total_deactivated': total_deactivated,
             'companies': company_results,
         }
+
+    def _deactivate_missing_employees(self, company_name, synced_ids):
+        """Mark employees not in the API response as inactive.
+
+        Also closes the JARVIS user contract for mapped employees.
+        Returns the number of employees deactivated.
+        """
+        db_active_ids = self.repo.get_active_employee_ids(company_name)
+        missing_ids = db_active_ids - synced_ids
+
+        if not missing_ids:
+            return 0
+
+        logger.info(f'{company_name}: deactivating {len(missing_ids)} employees '
+                     f'no longer in Sincron API: {missing_ids}')
+
+        jarvis_user_ids = self.repo.deactivate_employees(company_name, missing_ids)
+
+        # Close JARVIS user contracts (trigger auto-sets is_active=FALSE)
+        for uid in jarvis_user_ids:
+            try:
+                self.user_repo.update(uid, contract_status='closed')
+                logger.info(f'Closed JARVIS user #{uid} contract (Sincron employee left {company_name})')
+            except Exception as e:
+                logger.error(f'Failed to close contract for JARVIS user #{uid}: {e}')
+
+        return len(missing_ids)
 
     def _sync_company_timesheets(self, company_name, token, year, month):
         """Sync timesheets for a single company."""
@@ -194,11 +240,13 @@ class SincronSyncService:
         employees_synced = 0
         records_created = 0
         discovered_codes = set()
+        synced_ids = set()
 
         for emp in all_employees:
             sincron_id = str(emp.get('id_angajat', ''))
             if not sincron_id:
                 continue
+            synced_ids.add(sincron_id)
 
             # Handle invalid dates from API (e.g. "0000-00-00")
             contract_date = emp.get('data_incepere_contract')
@@ -261,6 +309,7 @@ class SincronSyncService:
             'employees': employees_synced,
             'records': records_created,
             'activity_codes': len(discovered_codes),
+            'synced_ids': synced_ids,
         }
 
     # ── Auto-mapping ──

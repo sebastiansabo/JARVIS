@@ -24,6 +24,8 @@ class SincronRepository(BaseRepository):
                 id_contract = EXCLUDED.id_contract,
                 nr_contract = EXCLUDED.nr_contract,
                 data_incepere_contract = EXCLUDED.data_incepere_contract,
+                is_active = TRUE,
+                contract_status = NULL,
                 last_synced_at = NOW(),
                 updated_at = NOW()
             RETURNING id, sincron_employee_id, company_name, mapped_jarvis_user_id
@@ -108,6 +110,37 @@ class SincronRepository(BaseRepository):
                 mapping_confidence = 0, updated_at = NOW()
             WHERE sincron_employee_id = %s AND company_name = %s
         ''', (sincron_employee_id, company_name))
+
+    def get_active_employee_ids(self, company_name):
+        """Get all active sincron_employee_ids for a company."""
+        rows = self.query_all('''
+            SELECT sincron_employee_id
+            FROM sincron_employees
+            WHERE company_name = %s AND is_active = TRUE
+        ''', (company_name,))
+        return {r['sincron_employee_id'] for r in rows}
+
+    def deactivate_employees(self, company_name, sincron_employee_ids):
+        """Mark employees as inactive (contract closed).
+
+        Returns list of mapped_jarvis_user_id values (non-null) for
+        cascading the deactivation to JARVIS users.
+        """
+        if not sincron_employee_ids:
+            return []
+        ids_list = list(sincron_employee_ids)
+        rows = self.query_all('''
+            UPDATE sincron_employees
+            SET is_active = FALSE,
+                contract_status = 'closed',
+                updated_at = NOW()
+            WHERE company_name = %s
+              AND sincron_employee_id = ANY(%s)
+              AND is_active = TRUE
+            RETURNING mapped_jarvis_user_id
+        ''', (company_name, ids_list))
+        return [r['mapped_jarvis_user_id'] for r in rows
+                if r.get('mapped_jarvis_user_id')]
 
     def auto_map_by_cnp(self):
         """Auto-map unmapped employees by CNP match against users table."""
