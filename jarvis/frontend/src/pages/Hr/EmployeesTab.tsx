@@ -21,7 +21,7 @@ import { Switch } from '@/components/ui/switch'
 import {
   Users, Building2, ArrowUpDown, Briefcase, ChevronDown, ChevronRight,
   Mail, Phone, Fingerprint, FileSpreadsheet, ExternalLink,
-  UserCheck, UserMinus, Archive, Bell, BellOff, UserX,
+  UserCheck, UserMinus, Archive, Bell, BellOff, UserX, Clock, TrendingUp,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -184,12 +184,28 @@ export default function EmployeesTab({ search }: Props) {
       const c = e.company || 'Unknown'
       byCompany.set(c, (byCompany.get(c) ?? 0) + 1)
     })
+    // Aggregate work stats for visible employees
+    const ws = workStats ?? {} as Record<number, EmployeeWorkStats>
+    let totalHours = 0, scoreSum = 0, scoreCount = 0, presentSum = 0, workingDaysSum = 0
+    filtered.forEach((e) => {
+      const s = ws[e.id]
+      if (!s) return
+      totalHours += s.total_hours
+      if (s.productivity_score > 0) { scoreSum += s.productivity_score; scoreCount++ }
+      presentSum += s.days_present
+      workingDaysSum += s.working_days
+    })
+    const avgScore = scoreCount > 0 ? Math.round(scoreSum / scoreCount) : 0
+    const avgProductivity = workingDaysSum > 0 ? Math.round(presentSum / workingDaysSum * 100) : 0
     return {
       total: employees.length,
       companies: byCompany.size,
       filtered: filtered.length,
+      totalHours: Math.round(totalHours),
+      avgScore,
+      avgProductivity,
     }
-  }, [employees, filtered])
+  }, [employees, filtered, workStats])
 
   // Absence stats (for active tab)
   const absenceCounts = useMemo(() => {
@@ -247,6 +263,14 @@ export default function EmployeesTab({ search }: Props) {
           const s = ws[e.id]
           if (!s) return <span className="text-muted-foreground">—</span>
           return <>{s.lunch_break_minutes}min</>
+        },
+      },
+      {
+        key: 'schedule', label: 'Schedule', className: 'text-center text-xs tabular-nums',
+        render: (e) => {
+          const s = ws[e.id]
+          if (!s || !s.schedule_start) return <span className="text-muted-foreground">—</span>
+          return <>{s.schedule_start}–{s.schedule_end}</>
         },
       },
       {
@@ -357,7 +381,7 @@ export default function EmployeesTab({ search }: Props) {
 
   // Column visibility
   const defaultVisible = useMemo(
-    () => ['name', 'company', 'department', 'status', 'today', 'total_hours', 'productivity', ...(canEditEmployee ? ['punch_alert'] : [])],
+    () => ['name', 'company', 'department', 'status', 'today', 'total_hours', 'productivity', 'avg_daily', 'variance', 'productivity_pct', 'lunch', 'norm', 'schedule', ...(canEditEmployee ? ['punch_alert'] : [])],
     [canEditEmployee],
   )
   const lockedColumns = useMemo(() => new Set(['name']), [])
@@ -419,8 +443,8 @@ export default function EmployeesTab({ search }: Props) {
   if (loadingEmployees) {
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {[1, 2, 3].map((i) => (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {[1, 2, 3, 4, 5].map((i) => (
             <Skeleton key={i} className="h-20 w-full" />
           ))}
         </div>
@@ -507,14 +531,15 @@ export default function EmployeesTab({ search }: Props) {
       </div>
 
       {/* Stats */}
-      <div className={cn('grid gap-3', statusTab === 'active' ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-2 md:grid-cols-3')}>
-        <StatCard title="Total Employees" value={stats.total} icon={<Users className="h-4 w-4" />} />
-        <StatCard title="Companies" value={stats.companies} icon={<Building2 className="h-4 w-4" />} />
-        <StatCard
-          title={filterValues.company || 'Showing'}
-          value={filtered.length}
-          icon={<Briefcase className="h-4 w-4" />}
-        />
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
+        <StatCard title="Employees" value={`${filtered.length} / ${stats.total}`} icon={<Users className="h-4 w-4" />} />
+        {statusTab === 'active' && (
+          <StatCard
+            title="Present Today"
+            value={`${absenceCounts.present} / ${filtered.length}`}
+            icon={<UserCheck className="h-4 w-4" />}
+          />
+        )}
         {statusTab === 'active' && (
           <StatCard
             title="Absent / On Leave"
@@ -522,6 +547,8 @@ export default function EmployeesTab({ search }: Props) {
             icon={<UserX className="h-4 w-4" />}
           />
         )}
+        <StatCard title="Total Hours" value={`${stats.totalHours}h`} icon={<Clock className="h-4 w-4" />} />
+        <StatCard title="Avg Score" value={stats.avgScore} icon={<TrendingUp className="h-4 w-4" />} />
       </div>
 
       {/* Data */}

@@ -172,6 +172,8 @@ def api_employee_work_stats():
             'expected_hours': round(expected_hours, 1),
             'hours_per_day': round(working_h, 1),
             'lunch_break_minutes': lunch_mins,
+            'schedule_start': str(row['schedule_start'])[:5] if row.get('schedule_start') else None,
+            'schedule_end': str(row['schedule_end'])[:5] if row.get('schedule_end') else None,
             'leave_days': leave_days,
             'leave_types': sincron_leave_types,
             'permit_count': permit_count,

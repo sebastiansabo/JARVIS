@@ -61,6 +61,8 @@ export interface EmployeeWorkStats {
   expected_hours: number
   hours_per_day: number
   lunch_break_minutes: number
+  schedule_start: string | null
+  schedule_end: string | null
   effective_days: number
   leave_days: number
   leave_types: string
