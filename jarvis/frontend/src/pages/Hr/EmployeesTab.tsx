@@ -19,7 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import {
-  Users, Building2, ArrowUpDown, Briefcase, ChevronDown, ChevronRight,
+  Users, ArrowUpDown, ChevronDown, ChevronRight,
   Mail, Phone, Fingerprint, FileSpreadsheet, ExternalLink,
   UserCheck, UserMinus, Archive, Bell, BellOff, UserX, Clock, TrendingUp,
 } from 'lucide-react'
