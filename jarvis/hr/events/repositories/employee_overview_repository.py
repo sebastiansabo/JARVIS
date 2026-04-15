@@ -277,6 +277,71 @@ class EmployeeOverviewRepository(BaseRepository):
             ORDER BY be.mapped_jarvis_user_id
         ''', (check_date, check_date, check_date, check_date, check_date, check_date, check_date))
 
+    def get_absence_status_for_date(self, check_date):
+        """Return absence status for all active employees on a given date.
+
+        Single query with CTEs — no N+1. Returns rows with:
+        user_id, status ('present','on_leave','absent','holiday','unknown'), leave_code
+        """
+        return self.query_all('''
+            WITH punched AS (
+                SELECT DISTINCT be.mapped_jarvis_user_id AS user_id
+                FROM biostar_employees be
+                JOIN biostar_punch_logs pl ON pl.biostar_user_id = be.biostar_user_id
+                WHERE pl.event_datetime::date = %s
+                  AND be.mapped_jarvis_user_id IS NOT NULL
+            ),
+            on_leave AS (
+                SELECT DISTINCT ON (user_id) user_id, short_code FROM (
+                    SELECT se.mapped_jarvis_user_id AS user_id, st.short_code
+                    FROM sincron_timesheets st
+                    JOIN sincron_employees se ON se.sincron_employee_id = st.sincron_employee_id
+                      AND se.company_name = st.company_name
+                    WHERE st.year = EXTRACT(YEAR FROM %s::date)
+                      AND st.month = EXTRACT(MONTH FROM %s::date)
+                      AND st.day = %s::date
+                      AND st.short_code IN ('CO','CM','CES','CIC','CMS','DLG')
+                      AND se.mapped_jarvis_user_id IS NOT NULL
+                    UNION ALL
+                    SELECT cfs.mapped_jarvis_user_id, 'PERMIT'
+                    FROM connecteam_form_submissions cfs
+                    WHERE cfs.leave_date::date = %s
+                      AND cfs.mapped_jarvis_user_id IS NOT NULL
+                      AND COALESCE(cfs.status, 'submitted') NOT IN ('rejected','cancelled')
+                    UNION ALL
+                    SELECT fs.respondent_user_id, 'PERMIT'
+                    FROM form_submissions fs
+                    JOIN forms f ON f.id = fs.form_id
+                    WHERE f.slug = 'bilet-de-invoire'
+                      AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
+                      AND (fs.answers->>'f_bi_leave_date') ~ '^\\d{4}-\\d{2}-\\d{2}$'
+                      AND (fs.answers->>'f_bi_leave_date')::date = %s
+                ) sub ORDER BY user_id, short_code
+            ),
+            biostar_mapped AS (
+                SELECT DISTINCT be.mapped_jarvis_user_id AS user_id
+                FROM biostar_employees be
+                WHERE be.status = 'active'
+                  AND be.mapped_jarvis_user_id IS NOT NULL
+                  AND be.working_hours > 0
+            )
+            SELECT u.id AS user_id,
+                   CASE
+                       WHEN EXISTS(SELECT 1 FROM public_holidays ph WHERE ph.date = %s) THEN 'holiday'
+                       WHEN ol.user_id IS NOT NULL THEN 'on_leave'
+                       WHEN p.user_id IS NOT NULL THEN 'present'
+                       WHEN bm.user_id IS NOT NULL THEN 'absent'
+                       ELSE 'unknown'
+                   END AS status,
+                   ol.short_code AS leave_code
+            FROM users u
+            LEFT JOIN punched p ON p.user_id = u.id
+            LEFT JOIN on_leave ol ON ol.user_id = u.id
+            LEFT JOIN biostar_mapped bm ON bm.user_id = u.id
+            WHERE u.is_active = TRUE
+              AND COALESCE(u.contract_status, 'active') = 'active'
+        ''', (check_date, check_date, check_date, check_date, check_date, check_date, check_date))
+
     def get_daily_sincron_codes(self, sincron_employee_id, company_name, year, month):
         """Return list of {day, short_code, unit, value} rows for timeline."""
         return self.query_all('''

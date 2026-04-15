@@ -25,6 +25,23 @@ def api_get_employees():
     return jsonify(employees)
 
 
+@events_bp.route('/api/employees/absent-today', methods=['GET'])
+@login_required
+@hr_required
+def api_absent_today():
+    """API: Get today's absence status for all active employees."""
+    from datetime import date
+    from ..repositories import EmployeeOverviewRepository
+    rows = EmployeeOverviewRepository().get_absence_status_for_date(date.today())
+    result = {}
+    for r in rows:
+        result[r['user_id']] = {
+            'status': r['status'],
+            'leave_code': r.get('leave_code'),
+        }
+    return jsonify(result)
+
+
 @events_bp.route('/api/employees/search', methods=['GET'])
 @login_required
 @hr_required

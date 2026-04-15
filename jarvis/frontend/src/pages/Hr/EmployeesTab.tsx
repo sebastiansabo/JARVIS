@@ -18,11 +18,16 @@ import { Switch } from '@/components/ui/switch'
 import {
   Users, Building2, ArrowUpDown, Briefcase, ChevronDown, ChevronRight,
   Mail, Phone, Fingerprint, FileSpreadsheet, ExternalLink,
-  UserCheck, UserMinus, Archive, Bell, BellOff,
+  UserCheck, UserMinus, Archive, Bell, BellOff, UserX,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { HrEmployee, ContractStatus, StructureCompany } from '@/types/hr'
+
+const LEAVE_LABELS: Record<string, string> = {
+  CO: 'Annual Leave', CM: 'Medical', CES: 'Unpaid', CIC: 'Child Care',
+  CMS: 'Sick Family', DLG: 'Delegation', PERMIT: 'Leave Permit',
+}
 
 interface Props {
   search: string
@@ -52,6 +57,12 @@ export default function EmployeesTab({ search }: Props) {
   const { data: companiesData } = useQuery({
     queryKey: ['hr', 'companies-full'],
     queryFn: () => hrApi.getCompaniesFull(),
+  })
+
+  const { data: absentData } = useQuery({
+    queryKey: ['hr', 'employees', 'absent-today'],
+    queryFn: () => hrApi.getAbsentToday(),
+    refetchInterval: 5 * 60 * 1000,
   })
 
   const toggleMutation = useMutation({
@@ -125,6 +136,18 @@ export default function EmployeesTab({ search }: Props) {
       filtered: filtered.length,
     }
   }, [employees, filtered])
+
+  // Absence stats (for active tab)
+  const absenceCounts = useMemo(() => {
+    if (!absentData) return { absent: 0, onLeave: 0, present: 0 }
+    let absent = 0, onLeave = 0, present = 0
+    for (const v of Object.values(absentData)) {
+      if (v.status === 'absent') absent++
+      else if (v.status === 'on_leave') onLeave++
+      else if (v.status === 'present') present++
+    }
+    return { absent, onLeave, present }
+  }, [absentData])
 
   function toggleSort(field: SortField) {
     if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -248,7 +271,7 @@ export default function EmployeesTab({ search }: Props) {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className={cn('grid gap-3', statusTab === 'active' ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-2 md:grid-cols-3')}>
         <StatCard title="Total Employees" value={stats.total} icon={<Users className="h-4 w-4" />} />
         <StatCard title="Companies" value={stats.companies} icon={<Building2 className="h-4 w-4" />} />
         <StatCard
@@ -256,6 +279,13 @@ export default function EmployeesTab({ search }: Props) {
           value={filtered.length}
           icon={<Briefcase className="h-4 w-4" />}
         />
+        {statusTab === 'active' && (
+          <StatCard
+            title="Absent / On Leave"
+            value={`${absenceCounts.absent} / ${absenceCounts.onLeave}`}
+            icon={<UserX className="h-4 w-4" />}
+          />
+        )}
       </div>
 
       {/* Data */}
@@ -293,6 +323,7 @@ export default function EmployeesTab({ search }: Props) {
                     </TableHead>
                     <TableHead>Brand</TableHead>
                     <TableHead className="text-center">Status</TableHead>
+                    {statusTab === 'active' && <TableHead className="text-center">Today</TableHead>}
                     {canEditEmployee && <TableHead className="text-center w-20">Punch Alert</TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -323,6 +354,11 @@ export default function EmployeesTab({ search }: Props) {
                               {e.contract_status === 'active' ? 'Active' : e.contract_status === 'suspended' ? 'Suspended' : 'Closed'}
                             </Badge>
                           </TableCell>
+                          {statusTab === 'active' && (
+                            <TableCell className="text-center">
+                              <AbsenceBadge status={absentData?.[e.id]} />
+                            </TableCell>
+                          )}
                           {canEditEmployee && (
                             <TableCell className="text-center">
                               <Switch
@@ -340,7 +376,7 @@ export default function EmployeesTab({ search }: Props) {
                         </TableRow>
                         {isExpanded && (
                           <TableRow>
-                            <TableCell colSpan={canEditEmployee ? 7 : 6} className="p-0">
+                            <TableCell colSpan={6 + (statusTab === 'active' ? 1 : 0) + (canEditEmployee ? 1 : 0)} className="p-0">
                               <ExpandedEmployeeRow employee={e} onNavigate={() => navigate(`/app/hr/employees/${e.id}`)} />
                             </TableCell>
                           </TableRow>
@@ -356,6 +392,26 @@ export default function EmployeesTab({ search }: Props) {
       )}
     </div>
   )
+}
+
+function AbsenceBadge({ status }: { status?: { status: string; leave_code?: string } }) {
+  if (!status) return <span className="text-xs text-muted-foreground">—</span>
+  switch (status.status) {
+    case 'present':
+      return <span className="inline-flex items-center gap-1 text-xs text-green-600"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />Present</span>
+    case 'on_leave':
+      return (
+        <Badge variant="outline" className="text-[10px] border-orange-300 text-orange-600 bg-orange-50 dark:bg-orange-950/30">
+          {LEAVE_LABELS[status.leave_code ?? ''] ?? status.leave_code ?? 'Leave'}
+        </Badge>
+      )
+    case 'absent':
+      return <span className="inline-flex items-center gap-1 text-xs text-red-600"><span className="w-1.5 h-1.5 rounded-full bg-red-500" />Absent</span>
+    case 'holiday':
+      return <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600 bg-blue-50 dark:bg-blue-950/30">Holiday</Badge>
+    default:
+      return <span className="text-xs text-muted-foreground">—</span>
+  }
 }
 
 function ExpandedEmployeeRow({ employee: e, onNavigate }: { employee: HrEmployee; onNavigate: () => void }) {
