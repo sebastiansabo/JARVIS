@@ -16,6 +16,8 @@ import type {
   DepartmentStructure,
   MasterItem,
   OrganigramData,
+  CoBalanceImportRun,
+  CoBalanceUnmatchedRow,
 } from '@/types/hr'
 
 const BASE = '/hr/events/api'
@@ -196,4 +198,39 @@ export const hrApi = {
 
   // Organigram
   getOrganigram: () => api.get<OrganigramData>(`${BASE}/organigram`),
+
+  // CO Balance (annual leave snapshots imported from HR xlsx)
+  importCoBalance: (file: File, year: number) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('year', String(year))
+    return api.post<{ success: boolean; run_id: string }>(`/hr/api/co-balance/import`, fd)
+  },
+  getCoBalanceImportStatus: (runId: string) =>
+    api.get<{ success: boolean; data: CoBalanceImportRun }>(`/hr/api/co-balance/import/status/${runId}`),
+  getCoBalance: (year: number) =>
+    api.get<{ success: boolean; year: number; data: Record<string, {
+      year: number
+      company_name: string
+      cnp: string | null
+      nume: string | null
+      prenume: string | null
+      departament: string | null
+      carry_prev_year: number
+      carry_two_years_ago: number
+      annual_cim: number
+      seniority_bonus: number
+      manual_adjustment: number
+      total_available: number
+      used_ytd: number
+      current_balance: number
+    }> }>(`/hr/api/co-balance${qs({ year })}`),
+  getCoBalanceUnmatched: (year: number) =>
+    api.get<{ success: boolean; year: number; data: CoBalanceUnmatchedRow[] }>(
+      `/hr/api/co-balance/unmatched${qs({ year })}`,
+    ),
+  assignCoBalanceUser: (rowId: number, userId: number) =>
+    api.post<{ success: boolean }>(`/hr/api/co-balance/unmatched/${rowId}/assign`, { user_id: userId }),
+  listCoBalanceImports: (limit = 20) =>
+    api.get<{ success: boolean; data: CoBalanceImportRun[] }>(`/hr/api/co-balance/imports${qs({ limit })}`),
 }

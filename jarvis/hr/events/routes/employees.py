@@ -152,6 +152,33 @@ def api_employee_work_stats():
     ''', (r'^\d{4}-\d{2}-\d{2}$', start.isoformat(), end.isoformat()))
     jarvis_form_map = {r['user_id']: r for r in jarvis_form_leave}
 
+    # 4. CO balance (imported from HR xlsx) — annual snapshot + used YTD
+    from hr.co_balance.repository import CoBalanceRepository
+    _co_repo = CoBalanceRepository()
+    _co_year = end.year
+    _co_map = _co_repo.get_for_year(_co_year)
+    _co_used_map = _co_repo.get_used_ytd_by_user(_co_year)
+
+    def _co_payload(uid):
+        co = _co_map.get(uid)
+        if not co:
+            return {
+                'co_total': None,
+                'co_carry_over': None,
+                'co_used_ytd': None,
+                'co_balance': None,
+                'co_year': None,
+            }
+        total = int(co.get('total_available') or 0)
+        used = int(round(_co_used_map.get(uid, 0)))
+        return {
+            'co_total': total,
+            'co_carry_over': int(co.get('carry_prev_year') or 0),
+            'co_used_ytd': used,
+            'co_balance': total - used,
+            'co_year': int(co.get('year') or _co_year),
+        }
+
     result = {}
     for row in range_data:
         uid = row.get('mapped_jarvis_user_id')
@@ -228,6 +255,7 @@ def api_employee_work_stats():
             'avg_check_in': avg_check_in,
             'avg_check_out': avg_check_out,
             'schedule_companies': company_norms_map.get(uid, []),
+            **_co_payload(uid),
         }
 
     # Backfill: active BioStar-mapped employees with NO punch data
@@ -278,6 +306,7 @@ def api_employee_work_stats():
             'avg_check_in': None,
             'avg_check_out': None,
             'schedule_companies': company_norms_map.get(uid, []),
+            **_co_payload(uid),
         }
 
     return jsonify(result)

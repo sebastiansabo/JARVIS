@@ -175,5 +175,79 @@ def create_schema_sincron(conn, cursor):
         ON sincron_schedule_history(sincron_employee_id, company_name, year, month)
     """)
 
+    # ── CO balance — yearly snapshot imported from HR's Raport_concedii_contracte_lunar xlsx ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sincron_co_balance (
+            id SERIAL PRIMARY KEY,
+            year INTEGER NOT NULL,
+            company_name VARCHAR(255) NOT NULL,
+            cnp VARCHAR(20),
+            nume VARCHAR(255),
+            prenume VARCHAR(255),
+            nr_contract VARCHAR(50),
+            data_incepere_contract DATE,
+            departament VARCHAR(255),
+            carry_prev_year       INTEGER NOT NULL DEFAULT 0,
+            carry_two_years_ago   INTEGER NOT NULL DEFAULT 0,
+            annual_cim            INTEGER NOT NULL DEFAULT 0,
+            seniority_bonus       INTEGER NOT NULL DEFAULT 0,
+            manual_adjustment     INTEGER NOT NULL DEFAULT 0,
+            total_available       INTEGER GENERATED ALWAYS AS (
+                carry_prev_year + carry_two_years_ago
+                + annual_cim + seniority_bonus + manual_adjustment
+            ) STORED,
+            mapped_jarvis_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            source_file           VARCHAR(255),
+            imported_by           INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            imported_at           TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE(year, company_name, cnp)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sincron_co_balance_user_year
+        ON sincron_co_balance(mapped_jarvis_user_id, year)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sincron_co_balance_year
+        ON sincron_co_balance(year)
+    """)
+
+    try:
+        cursor.execute("""
+            ALTER TABLE sincron_co_balance ADD CONSTRAINT chk_sincron_co_year
+            CHECK (year BETWEEN 2000 AND 2100)
+        """)
+    except Exception:
+        conn.rollback()
+
+    # ── CO balance import runs ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sincron_co_import_runs (
+            id SERIAL PRIMARY KEY,
+            run_id VARCHAR(36) NOT NULL UNIQUE,
+            year INTEGER NOT NULL,
+            source_file VARCHAR(255),
+            status VARCHAR(20) NOT NULL DEFAULT 'running',
+            rows_total INTEGER DEFAULT 0,
+            rows_matched INTEGER DEFAULT 0,
+            rows_unmatched INTEGER DEFAULT 0,
+            companies TEXT,
+            error_message TEXT,
+            imported_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            finished_at TIMESTAMP WITH TIME ZONE
+        )
+    """)
+
+    try:
+        cursor.execute("""
+            ALTER TABLE sincron_co_import_runs ADD CONSTRAINT chk_sincron_co_run_status
+            CHECK (status IN ('running', 'completed', 'failed'))
+        """)
+    except Exception:
+        conn.rollback()
+
     conn.commit()
     logger.info('Sincron schema created/verified')

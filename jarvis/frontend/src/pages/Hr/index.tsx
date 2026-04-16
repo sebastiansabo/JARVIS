@@ -23,6 +23,7 @@ const OrganigramTab = lazy(() => import('./OrganigramTab'))
 const EmployeesTab = lazy(() => import('./EmployeesTab'))
 const Employee360 = lazy(() => import('./Employee360'))
 const LeavePermitsTab = lazy(() => import('./LeavePermitsTab'))
+const CoBalanceImportDialog = lazy(() => import('./CoBalanceImportDialog'))
 
 function TabLoader() {
   return (
@@ -220,6 +221,11 @@ export default function Hr() {
               <Button size="icon" onClick={() => setBonusAddTrigger(n => n + 1)} title="Add Bonus">
                 <Plus className="h-4 w-4" />
               </Button>
+            )}
+            {isEmployeesPage && user?.can_access_hr && (
+              <Suspense fallback={null}>
+                <CoBalanceImportDialog />
+              </Suspense>
             )}
             {!isMobile && !isBonusesPage && tabs.length > 1 && (
               <Tabs value={isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isAdjustmentsPage ? 'adjustments' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>

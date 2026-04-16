@@ -73,6 +73,38 @@ export interface EmployeeWorkStats {
   avg_check_in: string | null
   avg_check_out: string | null
   schedule_companies: Array<{ company: string; norma: number; start: string; end: string; lunch: number }>
+  co_total?: number | null
+  co_carry_over?: number | null
+  co_used_ytd?: number | null
+  co_balance?: number | null
+  co_year?: number | null
+}
+
+export interface CoBalanceImportRun {
+  run_id: string
+  year: number
+  source_file: string | null
+  status: 'running' | 'completed' | 'failed'
+  rows_total: number
+  rows_matched: number
+  rows_unmatched: number
+  companies: string | null
+  error_message: string | null
+  started_at: string
+  finished_at: string | null
+}
+
+export interface CoBalanceUnmatchedRow {
+  id: number
+  year: number
+  company_name: string
+  cnp: string | null
+  nume: string | null
+  prenume: string | null
+  nr_contract: string | null
+  data_incepere_contract: string | null
+  departament: string | null
+  total_available: number
 }
 
 export interface BonusType {

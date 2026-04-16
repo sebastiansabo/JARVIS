@@ -345,6 +345,41 @@ export default function EmployeesTab({ search }: Props) {
         },
       },
       {
+        key: 'co_balance', label: 'CO Remaining', className: 'text-center text-xs tabular-nums',
+        render: (e) => {
+          const s = ws[e.id]
+          if (!s || s.co_balance == null) return <span className="text-muted-foreground">—</span>
+          const neg = (s.co_balance ?? 0) < 0
+          return (
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className={`cursor-help underline decoration-dotted underline-offset-2 ${neg ? 'text-red-600 dark:text-red-400 font-medium' : ''}`}>
+                    {s.co_balance}d
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[260px] text-xs">
+                  <p className="font-semibold mb-1">CO {s.co_year}</p>
+                  <p>Carry prev year: {s.co_carry_over}d</p>
+                  <p>Total available: {s.co_total}d</p>
+                  <p>Used YTD: {s.co_used_ytd}d</p>
+                  <p className="font-semibold mt-1">Remaining: {s.co_balance}d</p>
+                  <p className="text-muted-foreground text-[10px] mt-1">total_imported − sincron_used_ytd</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )
+        },
+      },
+      {
+        key: 'co_carry_over', label: 'CO Carry', className: 'text-center text-xs tabular-nums',
+        render: (e) => {
+          const s = ws[e.id]
+          if (!s || s.co_carry_over == null) return <span className="text-muted-foreground">—</span>
+          return <>{s.co_carry_over}d</>
+        },
+      },
+      {
         key: 'sincron_leave', label: 'Leave (d · h)', className: 'text-center text-xs tabular-nums',
         render: (e) => {
           const s = ws[e.id]
@@ -567,7 +602,7 @@ export default function EmployeesTab({ search }: Props) {
 
   // Column visibility
   const defaultVisible = useMemo(
-    () => ['name', 'company', 'department', 'status', 'norm', 'lunch', 'schedule', 'presence', 'sincron_leave', 'permit_hours', 'total_hours', 'avg_daily', 'productivity', 'variance', 'productivity_pct', 'today', ...(canEditEmployee ? ['punch_alert'] : [])],
+    () => ['name', 'company', 'department', 'status', 'norm', 'lunch', 'schedule', 'presence', 'co_balance', 'sincron_leave', 'permit_hours', 'total_hours', 'avg_daily', 'productivity', 'variance', 'productivity_pct', 'today', ...(canEditEmployee ? ['punch_alert'] : [])],
     [canEditEmployee],
   )
   const lockedColumns = useMemo(() => new Set(['name']), [])
