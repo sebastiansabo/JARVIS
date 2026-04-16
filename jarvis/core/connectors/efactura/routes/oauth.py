@@ -78,13 +78,13 @@ def oauth_callback():
         # Check for error from ANAF
         if error:
             logger.error(
-                "OAuth error from ANAF",
+                f"OAuth error from ANAF: error={error!r} description={error_description!r}",
                 extra={'error': error, 'description': error_description}
             )
             return render_template(
                 'core/connectors/efactura/oauth_result.html',
                 success=False,
-                error=error_description or error,
+                error=f"{error}: {error_description}" if error_description else error,
             )
 
         if not code or not state:
