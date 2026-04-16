@@ -596,29 +596,27 @@ export default function EmployeesTab({ search }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Contract status tabs */}
-      <Tabs value={statusTab} onValueChange={(v) => { setStatusTab(v as ContractStatus); setExpandedRow(null) }}>
-        <TabsList>
-          <TabsTrigger value="active" className="gap-1.5">
-            <UserCheck className="h-3.5 w-3.5" />
-            Active
-            <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-0.5">{statusCounts.active}</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="suspended" className="gap-1.5">
-            <UserMinus className="h-3.5 w-3.5" />
-            Suspended
-            <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-0.5">{statusCounts.suspended}</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="closed" className="gap-1.5">
-            <Archive className="h-3.5 w-3.5" />
-            Closed
-            <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-0.5">{statusCounts.closed}</Badge>
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      {/* Filters + Date range + Column toggle toolbar */}
+      {/* Tabs + Filters + Date range + Column toggle toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
+        <Tabs value={statusTab} onValueChange={(v) => { setStatusTab(v as ContractStatus); setExpandedRow(null) }}>
+          <TabsList>
+            <TabsTrigger value="active" className="gap-1.5">
+              <UserCheck className="h-3.5 w-3.5" />
+              Active
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-0.5">{statusCounts.active}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="suspended" className="gap-1.5">
+              <UserMinus className="h-3.5 w-3.5" />
+              Suspended
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-0.5">{statusCounts.suspended}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="closed" className="gap-1.5">
+              <Archive className="h-3.5 w-3.5" />
+              Closed
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-0.5">{statusCounts.closed}</Badge>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
         <FilterBar fields={filterFields} values={filterValues} onChange={setFilterValues} iconOnly />
         <DateField
           mode="range"
