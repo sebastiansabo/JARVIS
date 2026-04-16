@@ -123,39 +123,46 @@ def parse_co_balance_file(path_or_bytes, year):
 # ── Employee matching ──
 
 class _UserMatcher:
-    """Pre-loads JARVIS users once and answers CNP/name lookups in memory."""
+    """Match CO-balance rows against JARVIS users via Sincron's CNP mapping.
+
+    Sincron is the authoritative source: every employee with a payroll record
+    already has `sincron_employees.mapped_jarvis_user_id` resolved via their
+    CNP. So for CO-balance we mirror that exact map (keyed on CNP) and avoid
+    duplicating a name-fallback here — if an employee isn't in Sincron they
+    shouldn't auto-map to a JARVIS user from an HR xlsx alone.
+    """
 
     def __init__(self):
         repo = BaseRepository()
         rows = repo.query_all(
             """
-            SELECT id, name, cnp
-            FROM users
-            WHERE is_active = TRUE
-              AND COALESCE(contract_status, 'active') != 'closed'
+            SELECT DISTINCT ON (cnp_key) cnp_key, mapped_jarvis_user_id
+              FROM (
+                SELECT regexp_replace(COALESCE(cnp,''), '\\s', '', 'g') AS cnp_key,
+                       mapped_jarvis_user_id,
+                       last_synced_at
+                  FROM sincron_employees
+                 WHERE mapped_jarvis_user_id IS NOT NULL
+                   AND cnp IS NOT NULL
+                   AND cnp <> ''
+              ) s
+             ORDER BY cnp_key, last_synced_at DESC NULLS LAST
             """
         )
-        self._by_cnp = {}
-        self._by_name = {}
-        for r in rows:
-            if r.get('cnp'):
-                self._by_cnp[r['cnp'].strip().lower()] = r['id']
-            if r.get('name'):
-                self._by_name[r['name'].strip().lower()] = r['id']
+        self._by_cnp = {r['cnp_key']: r['mapped_jarvis_user_id'] for r in rows if r.get('cnp_key')}
 
-    def match(self, cnp, nume, prenume):
-        if cnp:
-            uid = self._by_cnp.get(str(cnp).strip().lower())
-            if uid:
-                return uid, 'cnp'
-        full1 = f"{(nume or '').strip()} {(prenume or '').strip()}".strip().lower()
-        full2 = f"{(prenume or '').strip()} {(nume or '').strip()}".strip().lower()
-        for key in (full1, full2):
-            if key:
-                uid = self._by_name.get(key)
-                if uid:
-                    return uid, 'name'
-        return None, None
+    @staticmethod
+    def _norm_cnp(cnp):
+        if cnp is None:
+            return ''
+        return ''.join(str(cnp).split())
+
+    def match(self, cnp, nume=None, prenume=None):  # noqa: ARG002 — kept for call-site compat
+        key = self._norm_cnp(cnp)
+        if not key:
+            return None, None
+        uid = self._by_cnp.get(key)
+        return (uid, 'cnp') if uid else (None, None)
 
 
 # ── Full pipeline ──
