@@ -66,6 +66,7 @@ export interface EmployeeWorkStats {
   schedule_end: string | null
   effective_days: number
   leave_days: number
+  leave_hours: number
   leave_types: string
   permit_count: number
   permit_hours: number
