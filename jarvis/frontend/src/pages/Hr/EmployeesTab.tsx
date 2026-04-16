@@ -345,6 +345,46 @@ export default function EmployeesTab({ search }: Props) {
         },
       },
       {
+        key: 'sincron_leave', label: 'Leave Days', className: 'text-center text-xs tabular-nums',
+        render: (e) => {
+          const s = ws[e.id]
+          if (!s || s.leave_days === 0) return <span className="text-muted-foreground">—</span>
+          return (
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help underline decoration-dotted underline-offset-2">{s.leave_days}d</span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[240px] text-xs">
+                  <p className="font-semibold mb-0.5">Sincron Leave</p>
+                  <p className="text-muted-foreground">{s.leave_types || '—'}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )
+        },
+      },
+      {
+        key: 'permit_hours', label: 'Permit Hours', className: 'text-center text-xs tabular-nums',
+        render: (e) => {
+          const s = ws[e.id]
+          if (!s || s.permit_hours === 0) return <span className="text-muted-foreground">—</span>
+          return (
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help underline decoration-dotted underline-offset-2">{s.permit_hours}h</span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[240px] text-xs">
+                  <p className="font-semibold mb-0.5">Permit Hours</p>
+                  <p className="text-muted-foreground">{s.permit_count} request{s.permit_count !== 1 ? 's' : ''} (Connecteam + JARVIS Bilet de Invoire)</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )
+        },
+      },
+      {
         key: 'total_hours', label: 'Worked Hours', className: 'text-right text-xs tabular-nums',
         render: (e) => {
           const s = ws[e.id]
@@ -522,7 +562,7 @@ export default function EmployeesTab({ search }: Props) {
 
   // Column visibility
   const defaultVisible = useMemo(
-    () => ['name', 'company', 'department', 'status', 'norm', 'lunch', 'schedule', 'presence', 'total_hours', 'avg_daily', 'productivity', 'variance', 'productivity_pct', 'today', ...(canEditEmployee ? ['punch_alert'] : [])],
+    () => ['name', 'company', 'department', 'status', 'norm', 'lunch', 'schedule', 'presence', 'sincron_leave', 'permit_hours', 'total_hours', 'avg_daily', 'productivity', 'variance', 'productivity_pct', 'today', ...(canEditEmployee ? ['punch_alert'] : [])],
     [canEditEmployee],
   )
   const lockedColumns = useMemo(() => new Set(['name']), [])
