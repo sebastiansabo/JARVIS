@@ -233,7 +233,7 @@ def should_run(period: str) -> bool:
       - monthly: 1st of the month only
     """
     now = datetime.now(ROMANIA_TZ)
-    if now.hour != 8:
+    if now.hour not in (8, 9, 10):
         return False
     if period == "daily":
         return True
