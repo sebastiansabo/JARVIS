@@ -23,15 +23,17 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
-const CODE_LABELS: Record<string, { label: string; color: string }> = {
-  OZ: { label: 'Work Hours', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
-  CO: { label: 'Annual Leave', color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
-  CM: { label: 'Medical Leave', color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' },
-  OS: { label: 'Overtime', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' },
-  CIC: { label: 'Child Care', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' },
-  CES: { label: 'Unpaid Leave', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200' },
-  DLG: { label: 'Delegation', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
-  CMS: { label: 'Sick Family', color: 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200' },
+const CODE_LABELS: Record<string, { label: string; description: string; color: string }> = {
+  OZ: { label: 'Work Hours', description: 'Ore Zilnice — Ore lucrate în ziua respectivă', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
+  CO: { label: 'Annual Leave', description: 'Concediu de Odihnă — Zile de vacanță', color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
+  CM: { label: 'Medical Leave', description: 'Concediu Medical — Zile de boală', color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' },
+  OS: { label: 'Overtime', description: 'Ore Suplimentare — Ore lucrate peste program', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' },
+  CIC: { label: 'Child Care', description: 'Concediu Îngrijire Copil — Concediu parental', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' },
+  CES: { label: 'Unpaid Leave', description: 'Concediu fără Salariu — Zile libere neplătite', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200' },
+  DLG: { label: 'Delegation', description: 'Delegație — Deplasare în interes de serviciu', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
+  CMS: { label: 'Sick Family', description: 'Concediu Medical Sarcină — Concediu medical maternitate', color: 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200' },
+  X: { label: 'Absent', description: 'Absent Nemotivat — Absență fără justificare', color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' },
+  ZLS: { label: 'Extra Days Off', description: 'Zile Libere Suplimentare — Zile libere acordate suplimentar', color: 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200' },
 }
 
 interface Props {
@@ -200,7 +202,7 @@ export default function TimesheetTab({ search }: Props) {
                     </TableHead>
                     {allCodes.map((code) => (
                       <TableHead key={code} className="text-center">
-                        <Badge variant="outline" className={`text-xs ${CODE_LABELS[code]?.color ?? ''}`}>
+                        <Badge variant="outline" className={`text-xs ${CODE_LABELS[code]?.color ?? ''}`} title={CODE_LABELS[code]?.description ?? code}>
                           {code}
                         </Badge>
                       </TableHead>
@@ -313,7 +315,7 @@ function EmployeeTimesheetDialog({
                 const primary = isHour ? `${s.total_value.toFixed(1)}h` : `${s.total_value.toFixed(0)}d`
                 const secondary = isHour ? `${(s.total_value / 8).toFixed(1)}d` : `${(s.total_value * 8).toFixed(0)}h`
                 return (
-                  <Badge key={s.short_code} variant="outline" className={`text-xs px-2.5 py-1 ${CODE_LABELS[s.short_code]?.color ?? ''}`}>
+                  <Badge key={s.short_code} variant="outline" className={`text-xs px-2.5 py-1 ${CODE_LABELS[s.short_code]?.color ?? ''}`} title={CODE_LABELS[s.short_code]?.description ?? s.short_code}>
                     {s.short_code}: {primary} ({secondary}) — {s.day_count}d active
                   </Badge>
                 )
@@ -329,7 +331,7 @@ function EmployeeTimesheetDialog({
                     <TableHead className="w-16">Day</TableHead>
                     {allCodes.map((c) => (
                       <TableHead key={c} className="text-center">
-                        <Badge variant="outline" className={`text-xs ${CODE_LABELS[c]?.color ?? ''}`}>{c}</Badge>
+                        <Badge variant="outline" className={`text-xs ${CODE_LABELS[c]?.color ?? ''}`} title={CODE_LABELS[c]?.description ?? c}>{c}</Badge>
                       </TableHead>
                     ))}
                   </TableRow>
