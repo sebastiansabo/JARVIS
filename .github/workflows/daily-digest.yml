@@ -2,13 +2,14 @@ name: Commits Digest
 
 on:
   schedule:
-    # Target: 08:00 Europe/Bucharest
-    #   - EEST (summer, UTC+3): 05:00 UTC
-    #   - EET  (winter, UTC+2): 06:00 UTC
-    # Script exits unless current Romania hour is 08 (plus period-specific
-    # day-of-week / day-of-month guards), so running twice is safe.
+    # Daily digest — target 08:00 Europe/Bucharest
+    #   EEST (summer, UTC+3): 05:00 UTC | EET (winter, UTC+2): 06:00 UTC
     - cron: '0 5 * * *'
     - cron: '0 6 * * *'
+    # Weekly digest — target Friday 17:00 Europe/Bucharest
+    #   EEST (summer, UTC+3): 14:00 UTC | EET (winter, UTC+2): 15:00 UTC
+    - cron: '0 14 * * 5'
+    - cron: '0 15 * * 5'
   workflow_dispatch:
     inputs:
       period:

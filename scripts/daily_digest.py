@@ -227,20 +227,17 @@ def get_period() -> tuple[str, dict]:
 def should_run(period: str) -> bool:
     """Return True if the script should execute right now for this period.
 
-    All periods fire at 08:xx Europe/Bucharest.
-      - daily  : every day
-      - weekly : Mondays only (weekday()==0)
-      - monthly: 1st of the month only
+      - daily  : every day at 08-10h
+      - weekly : Fridays at 17-19h (weekday()==4)
+      - monthly: 1st of the month at 08-10h
     """
     now = datetime.now(ROMANIA_TZ)
-    if now.hour not in (8, 9, 10):
-        return False
     if period == "daily":
-        return True
+        return now.hour in (8, 9, 10)
     if period == "weekly":
-        return now.weekday() == 0
+        return now.weekday() == 4 and now.hour in (17, 18, 19)
     if period == "monthly":
-        return now.day == 1
+        return now.day == 1 and now.hour in (8, 9, 10)
     return False
 
 
