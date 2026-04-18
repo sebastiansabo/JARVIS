@@ -820,13 +820,17 @@ SYSTEM_PROMPTS: dict[str, str] = {
 
 MAX_TOKENS_BY_DETAIL: dict[str, int] = {
     "brief": 8192,
-    "detailed": 12000,
-    "comprehensive": 16000,
+    "detailed": 16000,
+    "comprehensive": 24000,
 }
 
 
-def translate_with_claude(prompt: str, detail_level: str = "brief") -> str:
-    """Stream a response from Claude and return the text body.
+def translate_with_claude(prompt: str, detail_level: str = "brief") -> list[str]:
+    """Stream a response from Claude and return text body parts.
+
+    Returns a list of strings — usually one element, but if the response is
+    truncated (max_tokens hit) a continuation call is made and each part is
+    returned separately so the caller can send multi-part emails.
 
     The system prompt and output budget scale with `detail_level`:
       - "brief"        → daily  (concise, 1 bullet per commit)
@@ -836,19 +840,40 @@ def translate_with_claude(prompt: str, detail_level: str = "brief") -> str:
     client = anthropic.Anthropic()
     system = SYSTEM_PROMPTS.get(detail_level, SYSTEM_PROMPT_BRIEF)
     max_tokens = MAX_TOKENS_BY_DETAIL.get(detail_level, 8192)
-    with client.messages.stream(
-        model=MODEL,
-        max_tokens=max_tokens,
-        thinking={"type": "adaptive"},
-        system=system,
-        messages=[{"role": "user", "content": prompt}],
-    ) as stream:
-        final = stream.get_final_message()
 
-    for block in final.content:
-        if block.type == "text":
-            return block.text
-    return ""
+    messages: list[dict] = [{"role": "user", "content": prompt}]
+    parts: list[str] = []
+
+    for _attempt in range(3):  # max 3 parts
+        with client.messages.stream(
+            model=MODEL,
+            max_tokens=max_tokens,
+            thinking={"type": "adaptive"},
+            system=system,
+            messages=messages,
+        ) as stream:
+            final = stream.get_final_message()
+
+        text = ""
+        for block in final.content:
+            if block.type == "text":
+                text = block.text
+                break
+
+        if text:
+            parts.append(text)
+
+        if final.stop_reason != "max_tokens":
+            break
+
+        # Response was truncated — ask Claude to continue
+        messages = [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": final.content},
+            {"role": "user", "content": "Continuă exact de unde ai rămas. Nu repeta ce ai scris deja."},
+        ]
+
+    return parts if parts else [""]
 
 
 def markdown_to_html(md: str) -> str:
@@ -1060,41 +1085,54 @@ def main() -> int:
     else:
         prompt = build_prompt(commits_by_repo, period_config)
         try:
-            ai_body = translate_with_claude(
+            ai_parts = translate_with_claude(
                 prompt, detail_level=period_config.get("detail_level", "brief")
             )
         except anthropic.APIError as exc:
             print(f"Claude API error: {exc}", file=sys.stderr)
-            # Fall back to raw commits in case of API failure so the digest
-            # still goes out.
-            ai_body = f"_(Traducere AI indisponibilă: {exc}. Mai jos lista brută.)_\n\n{prompt}"
+            ai_parts = [f"_(Traducere AI indisponibilă: {exc}. Mai jos lista brută.)_\n\n{prompt}"]
 
         header = (
             f"# {title} — {date_str}\n\n"
             f"_{period_desc.capitalize()} • {total} commit-uri • ~{hours_worked}h lucrate_\n\n"
         )
 
-        sections: list[str] = [header]
-
+        stats_section = ""
         if period_config.get("include_stats"):
             stats_md = build_stats_section(commits_by_repo, stats_by_repo, period_config)
             if stats_md:
-                sections.append(stats_md)
-                sections.append("---\n")
+                stats_section = stats_md + "\n---\n"
 
+        timesheet_section = ""
         if period_config.get("include_timesheet"):
             timesheet_md = build_timesheet_section(commits_by_repo)
             if timesheet_md:
-                sections.append(timesheet_md)
-                sections.append("---\n")
+                timesheet_section = timesheet_md + "\n---\n"
 
-        sections.append(ai_body)
-        body = "\n".join(sections)
+        # Build email bodies — Part 1 gets header + stats + first AI part,
+        # subsequent parts get a continuation header.
+        bodies: list[str] = []
+        for i, part in enumerate(ai_parts):
+            if i == 0:
+                bodies.append("\n".join([header, stats_section, timesheet_section, part]))
+            else:
+                cont_header = f"# {title} — {date_str} (Partea {i + 1})\n\n"
+                bodies.append("\n".join([cont_header, part]))
 
-    subject = f"[JARVIS] {period_config['subject_prefix']} — {date_str} ({total})"
+    subject_base = f"[JARVIS] {period_config['subject_prefix']} — {date_str} ({total})"
     period_recipients = period_config.get("recipients", _BASE_RECIPIENTS)
-    send_email(subject, body, recipients=period_recipients)
     effective = os.getenv("DIGEST_RECIPIENTS") or period_recipients
+
+    if total == 0:
+        send_email(subject_base, body, recipients=period_recipients)
+    else:
+        for i, email_body in enumerate(bodies):
+            if len(bodies) > 1:
+                subject = f"{subject_base} — Partea {i + 1}/{len(bodies)}"
+            else:
+                subject = subject_base
+            send_email(subject, email_body, recipients=period_recipients)
+
     print(f"Sent {period} digest with {total} commits to {effective}")
     return 0
 
