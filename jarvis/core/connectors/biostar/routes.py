@@ -366,6 +366,32 @@ def get_employee_daily_history(biostar_user_id):
     return jsonify({'success': True, 'data': history, 'holidays': holidays})
 
 
+# ── Attendance Overview (stable employee list) ──
+
+@biostar_bp.route('/api/attendance/today', methods=['GET'])
+@api_login_required
+def get_attendance_today():
+    """Get attendance overview with ALL active employees for a date."""
+    date_str = request.args.get('date')
+    if not date_str:
+        return jsonify({'success': False, 'error': 'date parameter required'}), 400
+    jarvis_user_ids = _resolve_manager_filter()
+    data = service.get_attendance_overview(date_str, jarvis_user_ids=jarvis_user_ids)
+    return jsonify({'success': True, 'data': data})
+
+
+@biostar_bp.route('/api/attendance/week', methods=['GET'])
+@api_login_required
+def get_attendance_week():
+    """Get 7-day attendance summary with ALL active employees."""
+    date_str = request.args.get('date')
+    if not date_str:
+        return jsonify({'success': False, 'error': 'date parameter required'}), 400
+    jarvis_user_ids = _resolve_manager_filter()
+    data = service.get_attendance_week(date_str, jarvis_user_ids=jarvis_user_ids)
+    return jsonify({'success': True, 'data': data})
+
+
 @biostar_bp.route('/api/punch-logs/summary', methods=['GET'])
 @api_login_required
 def get_daily_summary():

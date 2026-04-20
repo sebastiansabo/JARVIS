@@ -13,6 +13,8 @@ import type {
   BioStarAdjustment,
   BioStarCronJob,
   JarvisUser,
+  AttendanceRow,
+  AttendanceWeekRow,
 } from '@/types/biostar'
 
 const BASE = '/biostar/api'
@@ -26,6 +28,24 @@ function qs(params: Record<string, unknown>): string {
 }
 
 export const biostarApi = {
+  // ── Attendance Overview (stable employee list) ──
+
+  getAttendanceToday: async (date: string, managerFilter = false) => {
+    const res = await api.get<{ success: boolean; data: AttendanceRow[] }>(
+      `${BASE}/attendance/today`,
+      { date, ...(managerFilter ? { manager_filter: 'true' } : {}) },
+    )
+    return res.data
+  },
+
+  getAttendanceWeek: async (date: string, managerFilter = false) => {
+    const res = await api.get<{ success: boolean; data: AttendanceWeekRow[] }>(
+      `${BASE}/attendance/week`,
+      { date, ...(managerFilter ? { manager_filter: 'true' } : {}) },
+    )
+    return res.data
+  },
+
   // ── Connection Config ──
 
   getConfig: async () => {

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { ClipboardCheck, Download, FileCheck, FileSpreadsheet, Fingerprint, LayoutDashboard, Plus, Users, CalendarClock } from 'lucide-react'
+import { Download, FileCheck, FileSpreadsheet, Fingerprint, LayoutDashboard, Plus, Users, CalendarClock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -15,7 +15,7 @@ import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 
 const BonusesTab = lazy(() => import('./BonusesTab'))
 const PontajeTab = lazy(() => import('./PontajeTab'))
-const AdjustmentsTab = lazy(() => import('./AdjustmentsTab'))
+
 const TimesheetTab = lazy(() => import('./TimesheetTab'))
 const EmployeeProfile = lazy(() => import('./EmployeeProfile'))
 const OrganigramTab = lazy(() => import('./OrganigramTab'))
@@ -41,7 +41,7 @@ export default function Hr() {
   const isSmall = isMobile || isTablet
   const isProfilePage = useMatch('/app/hr/pontaje/:biostarUserId')
   const isBonusesPage = useMatch('/app/hr/bonuses')
-  const isAdjustmentsPage = useMatch('/app/hr/adjustments')
+
   const isOrganigramPage = useMatch('/app/hr/organigram')
   const isTimesheetsPage = useMatch('/app/hr/timesheets')
   const isEmployeesPage = useMatch('/app/hr/employees')
@@ -61,7 +61,7 @@ export default function Hr() {
   const [search, setSearch] = useState('')
   const canExport = perms?.['hr.bonuses.export'] ?? false
   const canViewAmounts = perms?.['hr.bonuses.view_amounts'] ?? false
-  const canViewAdjustments = perms?.['hr.pontaje_adjustments.view'] ?? false
+
   const canViewTeamPontaje = perms?.['hr.team_pontaje.view'] ?? false
   const teamPontajeScope = scopes?.['hr.team_pontaje.view'] ?? 'deny'
   const canViewStructure = perms?.['hr.structure.view'] ?? false
@@ -86,9 +86,7 @@ export default function Hr() {
     if (canViewTimesheets) {
       t.push({ to: '/app/hr/timesheets', label: 'Timesheets', icon: FileSpreadsheet })
     }
-    if (canViewAdjustments) {
-      t.push({ to: '/app/hr/adjustments', label: 'Adjustments', icon: ClipboardCheck })
-    }
+
     if (canViewLeavePermits) {
       t.push({ to: '/app/hr/leave-permits', label: 'Bilete Invoire', icon: FileCheck })
     }
@@ -96,7 +94,7 @@ export default function Hr() {
       t.push({ to: '/app/hr/leaves', label: 'Leaves', icon: CalendarClock })
     }
     return t
-  }, [canViewTimesheets, canViewAdjustments, canViewEmployees, canViewLeavePermits, canViewLeaves])
+  }, [canViewTimesheets, canViewEmployees, canViewLeavePermits, canViewLeaves])
 
   // Standalone pages — no tabs/stats
   if (isEmployee360Page) {
@@ -151,17 +149,17 @@ export default function Hr() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title={
-          isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : isTimesheetsPage ? 'Timesheets' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete de Invoire' : isLeavesPage ? 'Leaves (CO Balance)' : 'Pontaje'
+          isBonusesPage ? 'Bonuses' : isTimesheetsPage ? 'Timesheets' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete de Invoire' : isLeavesPage ? 'Leaves (CO Balance)' : 'Pontaje'
         }
         breadcrumbs={[
           { label: 'HR', href: '/app/hr/employees' },
-          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete de Invoire' }] : isLeavesPage ? [{ label: 'Leaves' }] : [{ label: 'Pontaje' }]),
+          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete de Invoire' }] : isLeavesPage ? [{ label: 'Leaves' }] : [{ label: 'Pontaje' }]),
         ]}
         search={
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder={isBonusesPage ? 'Search employee, event...' : isAdjustmentsPage ? 'Search by name...' : 'Search by name, email, group...'}
+            placeholder={isBonusesPage ? 'Search employee, event...' : 'Search by name, email, group...'}
             className={isSmall ? undefined : 'w-48'}
             collapsible={isSmall}
           />
@@ -184,7 +182,7 @@ export default function Hr() {
               </Button>
             )}
             {!isMobile && !isBonusesPage && tabs.length > 1 && (
-              <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isAdjustmentsPage ? 'adjustments' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+              <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
                 <TabsList className="w-auto">
                   {tabs.map((t) => {
                     const val = t.to.split('/').pop()!
@@ -204,7 +202,7 @@ export default function Hr() {
 
       {/* Mobile tab nav */}
       {!isBonusesPage && isMobile && tabs.length > 1 && (
-        <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isAdjustmentsPage ? 'adjustments' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+        <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
               {tabs.map((t) => {
@@ -236,7 +234,7 @@ export default function Hr() {
               : <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">You don't have permission to view bonuses.</div>
           } />
           {canViewTimesheets && <Route path="timesheets" element={<TimesheetTab search={search} />} />}
-          {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab showStats={false} showFilters={showFilters} search={search} />} />}
+
           {canViewEmployees && <Route path="employees" element={<EmployeesTab search={search} />} />}
           {canViewLeavePermits && <Route path="leave-permits" element={<LeavePermitsTab search={search} />} />}
           {canViewLeaves && <Route path="leaves" element={<LeavesTab search={search} />} />}

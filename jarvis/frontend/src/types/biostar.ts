@@ -218,6 +218,50 @@ export interface BioStarRangeSummary {
   adjustment_count: number
 }
 
+export interface AttendanceRow {
+  jarvis_user_id: number
+  name: string
+  company: string | null
+  department: string | null
+  biostar_user_id: string
+  user_group_name: string | null
+  email: string | null
+  lunch_break_minutes: number
+  working_hours: number
+  schedule_start: string | null
+  schedule_end: string | null
+  first_punch: string | null
+  last_punch: string | null
+  total_punches: number | null
+  duration_seconds: number | null
+  adjusted_first_punch: string | null
+  adjusted_last_punch: string | null
+  adjustment_type: string | null
+  attendance_status: 'present' | 'absent'
+}
+
+export interface AttendanceWeekRow {
+  jarvis_user_id: number
+  name: string
+  company: string | null
+  department: string | null
+  biostar_user_id: string
+  user_group_name: string | null
+  email: string | null
+  lunch_break_minutes: number
+  working_hours: number
+  schedule_start: string | null
+  schedule_end: string | null
+  days_present: number
+  days_absent: number
+  total_duration_seconds: number
+  avg_duration_seconds: number
+  total_punches: number
+  avg_check_in_epoch: number | null
+  avg_check_out_epoch: number | null
+  adjustment_count: number
+}
+
 export interface BioStarCronJob {
   id: string
   label: string

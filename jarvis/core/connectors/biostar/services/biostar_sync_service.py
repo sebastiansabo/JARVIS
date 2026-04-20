@@ -548,6 +548,14 @@ class BioStarSyncService:
         """Get per-employee aggregated summary over a date range."""
         return self.repo.get_range_summary(start_date, end_date, jarvis_user_ids=jarvis_user_ids)
 
+    def get_attendance_overview(self, date_str, jarvis_user_ids=None):
+        """Get attendance overview with stable employee list for a given date."""
+        return self.repo.get_attendance_overview(date_str, jarvis_user_ids=jarvis_user_ids)
+
+    def get_attendance_week(self, end_date_str, jarvis_user_ids=None):
+        """Get 7-day attendance summary with stable employee list."""
+        return self.repo.get_attendance_week(end_date_str, jarvis_user_ids=jarvis_user_ids)
+
     def get_employee_punches(self, biostar_user_id, date_str):
         """Get all punch events for one employee on a specific date."""
         return self.repo.get_employee_punches(biostar_user_id, date_str)

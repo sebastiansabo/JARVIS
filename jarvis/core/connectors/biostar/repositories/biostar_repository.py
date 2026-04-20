@@ -568,6 +568,134 @@ class BioStarRepository(BaseRepository):
             WHERE be.biostar_user_id = %s
         ''', (biostar_user_id,))
 
+    # ── Attendance Overview (stable employee list) ──
+
+    def get_attendance_overview(self, date_str, jarvis_user_ids=None):
+        """Get attendance overview for ALL active mapped employees on a given date.
+
+        Unlike get_daily_summary which only shows employees with punches,
+        this returns every active employee with NULL punch fields for absentees.
+        """
+        params = [date_str]
+        user_filter = ''
+        if jarvis_user_ids:
+            user_filter = ' AND u.id = ANY(%s)'
+            params.append(jarvis_user_ids)
+        # date_str used again for punch_summary and adjustment JOINs
+        params.append(date_str)
+        return self.query_all(f'''
+            WITH active_employees AS (
+                SELECT u.id AS jarvis_user_id, u.name, u.company, u.department,
+                       be.biostar_user_id, be.user_group_name, be.email,
+                       be.lunch_break_minutes, be.working_hours,
+                       be.schedule_start, be.schedule_end
+                FROM users u
+                JOIN biostar_employees be ON be.mapped_jarvis_user_id = u.id
+                    AND be.status = 'active'
+                    AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
+                WHERE u.is_active = TRUE{user_filter}
+            ),
+            deduped AS (
+                SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
+                    pl.biostar_user_id, pl.event_datetime
+                FROM biostar_punch_logs pl
+                WHERE pl.event_datetime::date = %s::date
+                ORDER BY pl.biostar_user_id, date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+            ),
+            punch_summary AS (
+                SELECT d.biostar_user_id,
+                       MIN(d.event_datetime) AS first_punch,
+                       MAX(d.event_datetime) AS last_punch,
+                       COUNT(*) AS total_punches,
+                       EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds
+                FROM deduped d
+                GROUP BY d.biostar_user_id
+            )
+            SELECT ae.*,
+                   ps.first_punch, ps.last_punch, ps.total_punches, ps.duration_seconds,
+                   adj.adjusted_first_punch, adj.adjusted_last_punch, adj.adjustment_type,
+                   CASE WHEN ps.biostar_user_id IS NULL THEN 'absent' ELSE 'present' END AS attendance_status
+            FROM active_employees ae
+            LEFT JOIN punch_summary ps ON ps.biostar_user_id = ae.biostar_user_id
+            LEFT JOIN biostar_daily_adjustments adj
+                ON adj.biostar_user_id = ae.biostar_user_id AND adj.date = %s::date
+            ORDER BY ae.company NULLS LAST,
+                     CASE WHEN ps.biostar_user_id IS NULL THEN 1 ELSE 0 END,
+                     ae.name
+        ''', params)
+
+    def get_attendance_week(self, end_date_str, jarvis_user_ids=None):
+        """Get 7-day attendance summary for ALL active mapped employees.
+
+        Returns each employee with days_present, days_absent, total_hours, etc.
+        The 7-day window ends at end_date_str (inclusive) and goes back 6 days.
+        """
+        params = [end_date_str]
+        user_filter = ''
+        if jarvis_user_ids:
+            user_filter = ' AND u.id = ANY(%s)'
+            params.append(jarvis_user_ids)
+        # end_date_str used again for punch window
+        params.extend([end_date_str, end_date_str])
+        return self.query_all(f'''
+            WITH active_employees AS (
+                SELECT u.id AS jarvis_user_id, u.name, u.company, u.department,
+                       be.biostar_user_id, be.user_group_name, be.email,
+                       be.lunch_break_minutes, be.working_hours,
+                       be.schedule_start, be.schedule_end
+                FROM users u
+                JOIN biostar_employees be ON be.mapped_jarvis_user_id = u.id
+                    AND be.status = 'active'
+                    AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
+                WHERE u.is_active = TRUE{user_filter}
+            ),
+            deduped AS (
+                SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
+                    pl.biostar_user_id, pl.event_datetime
+                FROM biostar_punch_logs pl
+                WHERE pl.event_datetime::date BETWEEN (%s::date - INTERVAL '6 days')::date AND %s::date
+                ORDER BY pl.biostar_user_id, date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+            ),
+            daily AS (
+                SELECT
+                    d.biostar_user_id,
+                    d.event_datetime::date AS day,
+                    MIN(d.event_datetime) AS first_punch,
+                    MAX(d.event_datetime) AS last_punch,
+                    COUNT(*) AS punches,
+                    EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds
+                FROM deduped d
+                GROUP BY d.biostar_user_id, d.event_datetime::date
+            ),
+            agg AS (
+                SELECT
+                    d.biostar_user_id,
+                    COUNT(d.day) AS days_present,
+                    SUM(d.duration_seconds) AS total_duration_seconds,
+                    AVG(d.duration_seconds) AS avg_duration_seconds,
+                    SUM(d.punches) AS total_punches,
+                    AVG(CASE WHEN d.punches > 1 THEN EXTRACT(EPOCH FROM d.first_punch::time) END) AS avg_check_in_epoch,
+                    AVG(CASE WHEN d.punches > 1 THEN EXTRACT(EPOCH FROM d.last_punch::time) END) AS avg_check_out_epoch,
+                    COUNT(adj.id) AS adjustment_count
+                FROM daily d
+                LEFT JOIN biostar_daily_adjustments adj
+                    ON adj.biostar_user_id = d.biostar_user_id AND adj.date = d.day
+                GROUP BY d.biostar_user_id
+            )
+            SELECT ae.*,
+                   COALESCE(agg.days_present, 0) AS days_present,
+                   7 - COALESCE(agg.days_present, 0) AS days_absent,
+                   COALESCE(agg.total_duration_seconds, 0) AS total_duration_seconds,
+                   COALESCE(agg.avg_duration_seconds, 0) AS avg_duration_seconds,
+                   COALESCE(agg.total_punches, 0) AS total_punches,
+                   agg.avg_check_in_epoch,
+                   agg.avg_check_out_epoch,
+                   COALESCE(agg.adjustment_count, 0) AS adjustment_count
+            FROM active_employees ae
+            LEFT JOIN agg ON agg.biostar_user_id = ae.biostar_user_id
+            ORDER BY ae.company NULLS LAST, ae.name
+        ''', params)
+
     # ── Devices ──
 
     def get_devices(self):
