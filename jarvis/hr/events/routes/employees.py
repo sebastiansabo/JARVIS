@@ -108,8 +108,10 @@ def api_employee_work_stats():
     from core.base_repository import BaseRepository
     _base = BaseRepository()
 
-    # 1. Sincron timesheets — full-day leave codes
-    LEAVE_CODES = ('CO', 'CIC', 'CES', 'CM', 'CMS', 'DLG', 'ZLS')
+    # 1. Sincron timesheets — motivated absence codes (leave + absence categories, from DB)
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    _sincron_repo = SincronRepository()
+    LEAVE_CODES = _sincron_repo.get_absence_codes() or ('CO', 'CIC', 'CES', 'CM', 'CMS', 'DLG', 'ZLS')
     sincron_leave = _base.query_all('''
         SELECT se.mapped_jarvis_user_id,
                COUNT(DISTINCT st.day) AS leave_days,

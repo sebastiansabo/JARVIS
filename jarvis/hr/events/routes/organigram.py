@@ -163,6 +163,10 @@ def api_get_employee_overview(user_id):
                 if d in code_map:
                     daily_codes.append({'day': d, 'codes': code_map[d]})
 
+        # Resolve leave codes from DB for frontend
+        from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+        _leave_codes = list(SincronRepository().get_leave_codes() or ['CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG'])
+
         return jsonify({
             'success': True,
             'data': {
@@ -171,6 +175,7 @@ def api_get_employee_overview(user_id):
                 'sincron': sincron,
                 'connecteam': connecteam,
                 'org': org,
+                'leave_codes': _leave_codes,
                 'bonuses': {
                     'count': bonuses.get('bonus_count', 0),
                     'total_days': float(bonuses.get('total_bonus_days', 0)),

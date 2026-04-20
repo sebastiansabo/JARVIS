@@ -261,6 +261,7 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
 
   const md = monthRes?.data ?? overview
   const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses, month_stats: ms, leave_balance: lb } = md
+  const leaveCodes = (md as any).leave_codes as string[] | undefined
   const monthName = ms ? new Date(ms.year, ms.month - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : ''
 
   // Hours per day (norma) for day→hours conversion
@@ -276,8 +277,9 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
   const overtimeHours = ms?.timesheet?.OSW?.value ?? 0
   const annualLeaveH = dToH(ms?.timesheet?.CO?.value ?? 0)
   const sickLeaveH = dToH(ms?.timesheet?.CM?.value ?? 0)
+  const _leaveCodes: string[] = leaveCodes ?? ['CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG']
   const totalLeaveH = tsEntries
-    .filter(([code]) => ['CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG'].includes(code))
+    .filter(([code]) => _leaveCodes.includes(code))
     .reduce((s, [, v]) => s + (v.unit === 'hour' ? v.value : dToH(v.value)), 0)
 
   // Leave balance — in hours

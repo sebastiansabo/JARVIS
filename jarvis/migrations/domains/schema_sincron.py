@@ -97,6 +97,7 @@ def create_schema_sincron(conn, cursor):
             short_code_en VARCHAR(20),
             description TEXT,
             category VARCHAR(50),
+            is_leave BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
     """)

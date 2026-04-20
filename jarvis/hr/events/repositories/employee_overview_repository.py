@@ -1,6 +1,9 @@
 """Repository for Employee 360 overview — read-only aggregation queries."""
 from core.base_repository import BaseRepository
 
+# Subquery for leave codes — resolved from DB instead of hardcoded list
+_LEAVE_CODES_SUB = '(SELECT short_code FROM sincron_activity_codes WHERE is_leave = TRUE)'
+
 
 class EmployeeOverviewRepository(BaseRepository):
 
@@ -118,12 +121,12 @@ class EmployeeOverviewRepository(BaseRepository):
 
     def get_ytd_sincron_leave(self, sincron_employee_id, company_name, year):
         """Return dict of {short_code: {value, unit}} YTD leave codes from Sincron."""
-        rows = self.query_all('''
+        rows = self.query_all(f'''
             SELECT short_code, unit, SUM(value) AS total
             FROM sincron_timesheets
             WHERE sincron_employee_id = %s AND company_name = %s
               AND year = %s
-              AND short_code IN ('CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG')
+              AND short_code IN {_LEAVE_CODES_SUB}
             GROUP BY short_code, unit
             ORDER BY short_code
         ''', (sincron_employee_id, company_name, year))
@@ -131,7 +134,7 @@ class EmployeeOverviewRepository(BaseRepository):
 
     def get_ytd_sincron_leave_all_companies(self, user_id, year):
         """Return aggregated YTD leave codes across ALL companies for a user."""
-        rows = self.query_all('''
+        rows = self.query_all(f'''
             SELECT st.short_code, st.unit, SUM(st.value) AS total
             FROM sincron_timesheets st
             JOIN sincron_employees se
@@ -139,7 +142,7 @@ class EmployeeOverviewRepository(BaseRepository):
              AND st.company_name = se.company_name
             WHERE se.mapped_jarvis_user_id = %s
               AND st.year = %s
-              AND st.short_code IN ('CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG')
+              AND st.short_code IN {_LEAVE_CODES_SUB}
             GROUP BY st.short_code, st.unit
             ORDER BY st.short_code
         ''', (user_id, year))
@@ -190,7 +193,7 @@ class EmployeeOverviewRepository(BaseRepository):
     def get_missing_punch_days(self, user_id, biostar_user_id, sincron_employee_id,
                                sincron_company, year, month):
         """Return list of date strings for weekdays with no punch and no leave."""
-        rows = self.query_all('''
+        rows = self.query_all(f'''
             WITH month_days AS (
                 SELECT generate_series(
                     make_date(%(y)s, %(m)s, 1),
@@ -213,7 +216,7 @@ class EmployeeOverviewRepository(BaseRepository):
                 FROM sincron_timesheets
                 WHERE sincron_employee_id = %(sin_id)s AND company_name = %(sin_co)s
                   AND year = %(y)s AND month = %(m)s
-                  AND short_code IN ('CO','CM','CES','CIC','CMS','DLG')
+                  AND short_code IN {_LEAVE_CODES_SUB}
             ),
             connecteam_leave AS (
                 SELECT DISTINCT leave_date::date AS d
@@ -230,7 +233,7 @@ class EmployeeOverviewRepository(BaseRepository):
                 WHERE fs.respondent_user_id = %(uid)s
                   AND f.slug = 'bilet-de-invoire'
                   AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
-                  AND (fs.answers->>'f_bi_leave_date') ~ '^\d{4}-\d{2}-\d{2}$'
+                  AND (fs.answers->>'f_bi_leave_date') ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}$'
                   AND EXTRACT(YEAR FROM (fs.answers->>'f_bi_leave_date')::date) = %(y)s
                   AND EXTRACT(MONTH FROM (fs.answers->>'f_bi_leave_date')::date) = %(m)s
             ),
@@ -259,7 +262,7 @@ class EmployeeOverviewRepository(BaseRepository):
 
         Uses DISTINCT ON to avoid duplicate rows when an employee belongs to multiple structure nodes.
         """
-        return self.query_all('''
+        return self.query_all(f'''
             SELECT DISTINCT ON (be.mapped_jarvis_user_id)
                    be.mapped_jarvis_user_id AS user_id, u.name AS user_name,
                    u.company, be.biostar_user_id,
@@ -286,7 +289,7 @@ class EmployeeOverviewRepository(BaseRepository):
                     AND st.year = EXTRACT(YEAR FROM %s::date)
                     AND st.month = EXTRACT(MONTH FROM %s::date)
                     AND st.day = %s::date
-                    AND st.short_code IN ('CO','CM','CES','CIC','CMS','DLG')
+                    AND st.short_code IN {_LEAVE_CODES_SUB}
               )
               AND NOT EXISTS (
                   SELECT 1 FROM connecteam_form_submissions cfs
@@ -300,7 +303,7 @@ class EmployeeOverviewRepository(BaseRepository):
                   WHERE fs.respondent_user_id = u.id
                     AND f.slug = 'bilet-de-invoire'
                     AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
-                    AND (fs.answers->>'f_bi_leave_date') ~ '^\d{4}-\d{2}-\d{2}$'
+                    AND (fs.answers->>'f_bi_leave_date') ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}$'
                     AND (fs.answers->>'f_bi_leave_date')::date = %s
               )
               AND NOT EXISTS (
@@ -316,7 +319,7 @@ class EmployeeOverviewRepository(BaseRepository):
         user_id, status ('present','on_leave','absent','holiday','unknown'),
         leave_code, first_punch (time), last_punch (time)
         """
-        return self.query_all('''
+        return self.query_all(f'''
             WITH punched AS (
                 SELECT DISTINCT be.mapped_jarvis_user_id AS user_id
                 FROM biostar_employees be
@@ -343,7 +346,7 @@ class EmployeeOverviewRepository(BaseRepository):
                     WHERE st.year = EXTRACT(YEAR FROM %s::date)
                       AND st.month = EXTRACT(MONTH FROM %s::date)
                       AND st.day = %s::date
-                      AND st.short_code IN ('CO','CM','CES','CIC','CMS','DLG')
+                      AND st.short_code IN {_LEAVE_CODES_SUB}
                       AND se.mapped_jarvis_user_id IS NOT NULL
                     UNION ALL
                     SELECT cfs.mapped_jarvis_user_id, 'PERMIT'
@@ -357,7 +360,7 @@ class EmployeeOverviewRepository(BaseRepository):
                     JOIN forms f ON f.id = fs.form_id
                     WHERE f.slug = 'bilet-de-invoire'
                       AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
-                      AND (fs.answers->>'f_bi_leave_date') ~ '^\\d{4}-\\d{2}-\\d{2}$'
+                      AND (fs.answers->>'f_bi_leave_date') ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}$'
                       AND (fs.answers->>'f_bi_leave_date')::date = %s
                 ) sub ORDER BY user_id, short_code
             ),

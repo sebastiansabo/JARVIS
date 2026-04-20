@@ -475,9 +475,26 @@ class SincronRepository(BaseRepository):
     def get_activity_codes(self):
         """Get all known activity codes."""
         return self.query_all('''
-            SELECT short_code, short_code_en, description, category, created_at
+            SELECT short_code, short_code_en, description, category, is_leave, created_at
             FROM sincron_activity_codes ORDER BY short_code
         ''')
+
+    def get_leave_codes(self):
+        """Return tuple of short_codes marked as leave in sincron_activity_codes."""
+        rows = self.query_all('''
+            SELECT short_code FROM sincron_activity_codes
+            WHERE is_leave = TRUE ORDER BY short_code
+        ''')
+        return tuple(r['short_code'] for r in rows)
+
+    def get_absence_codes(self):
+        """Return tuple of all motivated-absence codes (leave + absence categories)."""
+        rows = self.query_all('''
+            SELECT short_code FROM sincron_activity_codes
+            WHERE is_leave = TRUE OR category = 'absence'
+            ORDER BY short_code
+        ''')
+        return tuple(r['short_code'] for r in rows)
 
     # ── JARVIS users for mapping dropdown (admin only — no CNP) ──
 
