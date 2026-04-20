@@ -585,7 +585,8 @@ class BioStarRepository(BaseRepository):
         params.append(date_str)
         return self.query_all(f'''
             WITH active_employees AS (
-                SELECT u.id AS jarvis_user_id, u.name, u.company, u.department,
+                SELECT DISTINCT ON (u.id)
+                       u.id AS jarvis_user_id, u.name, u.company, u.department,
                        be.biostar_user_id, be.user_group_name, be.email,
                        be.lunch_break_minutes, be.working_hours,
                        be.schedule_start, be.schedule_end
@@ -594,6 +595,7 @@ class BioStarRepository(BaseRepository):
                     AND be.status = 'active'
                     AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
                 WHERE u.is_active = TRUE{user_filter}
+                ORDER BY u.id, be.last_synced_at DESC NULLS LAST
             ),
             deduped AS (
                 SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
@@ -639,7 +641,8 @@ class BioStarRepository(BaseRepository):
         params.extend([end_date_str, end_date_str])
         return self.query_all(f'''
             WITH active_employees AS (
-                SELECT u.id AS jarvis_user_id, u.name, u.company, u.department,
+                SELECT DISTINCT ON (u.id)
+                       u.id AS jarvis_user_id, u.name, u.company, u.department,
                        be.biostar_user_id, be.user_group_name, be.email,
                        be.lunch_break_minutes, be.working_hours,
                        be.schedule_start, be.schedule_end
@@ -648,6 +651,7 @@ class BioStarRepository(BaseRepository):
                     AND be.status = 'active'
                     AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
                 WHERE u.is_active = TRUE{user_filter}
+                ORDER BY u.id, be.last_synced_at DESC NULLS LAST
             ),
             deduped AS (
                 SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
