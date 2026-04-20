@@ -89,8 +89,8 @@ export const connecteamApi = {
       `${BASE}/submissions/employee/${userId}${qs({ year, month })}`
     ),
 
-  getApprovers: () =>
-    api.get<{ success: boolean; data: { id: number; name: string }[] }>(`${BASE}/approvers`),
+  getApprovers: (scope?: 'all') =>
+    api.get<{ success: boolean; data: { id: number; name: string }[] }>(`${BASE}/approvers${scope ? '?scope=all' : ''}`),
 
   importExcel: (file: File) => {
     const form = new FormData()

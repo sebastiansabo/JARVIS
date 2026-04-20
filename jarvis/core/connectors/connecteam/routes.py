@@ -148,8 +148,18 @@ def get_approvers():
     Walks UP the company structure from the user's assigned node(s)
     to collect all responsables above them. Falls back to L0 company
     responsables if the user has no structure node assignment.
+
+    ?scope=all → returns all active users (for free-select mode).
     """
     try:
+        scope = request.args.get('scope', '')
+        if scope == 'all':
+            from core.base_repository import BaseRepository
+            rows = BaseRepository().query_all(
+                "SELECT id, name FROM users WHERE is_active = TRUE ORDER BY name"
+            )
+            all_users = [{'id': r['id'], 'name': r['name']} for r in rows]
+            return jsonify({'success': True, 'data': all_users})
         approvers = service.repo.get_approvers_for_user(current_user.id)
         return jsonify({'success': True, 'data': approvers})
     except Exception as e:

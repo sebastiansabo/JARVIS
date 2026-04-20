@@ -29,6 +29,7 @@ export default function LeavePermitsTab({ search }: { search: string }) {
   } | null>(null)
   const [coDays, setCoDays] = useState('1')
   const [approverId, setApproverId] = useState<string>('')
+  const [approverMode, setApproverMode] = useState<'hierarchy' | 'free'>('hierarchy')
 
   useQuery({
     queryKey: ['connecteam', 'status'],
@@ -49,13 +50,19 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     queryFn: () => connecteamApi.getConversions(year, month),
   })
 
-  // Fetch approvers (lazy — only when dialog opens)
+  // Fetch hierarchy approvers (lazy — only when dialog opens)
   const { data: approversRes } = useQuery({
     queryKey: ['connecteam', 'approvers'],
     queryFn: () => connecteamApi.getApprovers(),
     enabled: !!conversionTarget,
   })
-  const approvers = approversRes?.data ?? []
+  // Fetch all users for free-select mode
+  const { data: allUsersRes } = useQuery({
+    queryKey: ['connecteam', 'approvers', 'all'],
+    queryFn: () => connecteamApi.getApprovers('all'),
+    enabled: !!conversionTarget && approverMode === 'free',
+  })
+  const approvers = (approverMode === 'free' ? allUsersRes?.data : approversRes?.data) ?? []
 
   const importMut = useMutation({
     mutationFn: (file: File) => connecteamApi.importExcel(file),
@@ -366,7 +373,7 @@ export default function LeavePermitsTab({ search }: { search: string }) {
       )}
 
       {/* Conversion Dialog */}
-      <Dialog open={!!conversionTarget} onOpenChange={(open) => { if (!open) setConversionTarget(null) }}>
+      <Dialog open={!!conversionTarget} onOpenChange={(open) => { if (!open) { setConversionTarget(null); setApproverMode('hierarchy') } }}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
             <DialogTitle>Convert Leave Permits to CO</DialogTitle>
@@ -403,10 +410,19 @@ export default function LeavePermitsTab({ search }: { search: string }) {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Send for approval to</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Send for approval to</label>
+                  <button
+                    type="button"
+                    className="text-[11px] text-muted-foreground hover:text-foreground underline"
+                    onClick={() => { setApproverMode(m => m === 'hierarchy' ? 'free' : 'hierarchy'); setApproverId('') }}
+                  >
+                    {approverMode === 'hierarchy' ? 'Select any user' : 'Show managers only'}
+                  </button>
+                </div>
                 <Select value={approverId} onValueChange={setApproverId}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select approver..." />
+                    <SelectValue placeholder={approverMode === 'hierarchy' ? 'Select manager...' : 'Select any user...'} />
                   </SelectTrigger>
                   <SelectContent>
                     {approvers.map(a => (
@@ -414,6 +430,9 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  {approverMode === 'hierarchy' ? 'Showing organigram managers' : 'Showing all active users'}
+                </p>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">

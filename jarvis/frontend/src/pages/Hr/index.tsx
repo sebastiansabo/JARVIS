@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { ClipboardCheck, Download, FileCheck, FileSpreadsheet, Fingerprint, LayoutDashboard, BarChart3, SlidersHorizontal, Plus, Users, CalendarClock } from 'lucide-react'
+import { ClipboardCheck, Download, FileCheck, Fingerprint, LayoutDashboard, Plus, Users, CalendarClock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -12,7 +12,6 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
-import { cn } from '@/lib/utils'
 
 const BonusesTab = lazy(() => import('./BonusesTab'))
 const PontajeTab = lazy(() => import('./PontajeTab'))
@@ -44,7 +43,6 @@ export default function Hr() {
   const isBonusesPage = useMatch('/app/hr/bonuses')
   const isAdjustmentsPage = useMatch('/app/hr/adjustments')
   const isOrganigramPage = useMatch('/app/hr/organigram')
-  const isTimesheetsPage = useMatch('/app/hr/timesheets')
   const isEmployeesPage = useMatch('/app/hr/employees')
   const isLeavePermitsPage = useMatch('/app/hr/leave-permits')
   const isLeavesPage = useMatch('/app/hr/leaves')
@@ -57,8 +55,7 @@ export default function Hr() {
   const perms = user?.permissions
   const scopes = user?.permission_scopes
 
-  const [showStats, setShowStats] = useState(false)
-  const [showFilters, setShowFilters] = useState(false)
+  const showFilters = true
   const [bonusAddTrigger, setBonusAddTrigger] = useState(0)
   const [search, setSearch] = useState('')
   const canExport = perms?.['hr.bonuses.export'] ?? false
@@ -75,22 +72,14 @@ export default function Hr() {
   const canViewLeavePermits = authLoading || !user ? true : (perms?.['hr.leave_permissions.view'] ?? true)
   const canViewLeaves = authLoading || !user ? true : (user?.can_access_hr ?? false)
 
-  // Team filter — lifted here so it renders next to page title
-  // scope='all' → Admin: toggle visible, can switch between All/My Team
-  // scope='department'/'own' → Manager: always filtered by organigram, no toggle
-  const [teamFilter, setTeamFilter] = useState<'team' | 'all'>('all')
-  const showTeamToggle = canViewTeamPontaje && teamPontajeScope === 'all'
+  // Manager filter for pontaje route (still accessible via direct URL)
   const forceTeamFilter = canViewTeamPontaje && teamPontajeScope !== 'all' && teamPontajeScope !== 'deny'
-  const managerFilter = forceTeamFilter || (showTeamToggle && teamFilter === 'team')
+  const managerFilter = forceTeamFilter
 
   const tabs = useMemo(() => {
     const t: { to: string; label: string; icon: typeof Fingerprint }[] = []
     if (canViewEmployees) {
       t.push({ to: '/app/hr/employees', label: 'Employees', icon: Users })
-    }
-    t.push({ to: '/app/hr/pontaje', label: 'Pontaje', icon: Fingerprint })
-    if (canViewTimesheets) {
-      t.push({ to: '/app/hr/timesheets', label: 'Timesheets', icon: FileSpreadsheet })
     }
     if (canViewAdjustments) {
       t.push({ to: '/app/hr/adjustments', label: 'Adjustments', icon: ClipboardCheck })
@@ -102,7 +91,7 @@ export default function Hr() {
       t.push({ to: '/app/hr/leaves', label: 'Leaves', icon: CalendarClock })
     }
     return t
-  }, [canViewTimesheets, canViewAdjustments, canViewEmployees, canViewLeavePermits, canViewLeaves])
+  }, [canViewAdjustments, canViewEmployees, canViewLeavePermits, canViewLeaves])
 
   // Standalone pages — no tabs/stats
   if (isEmployee360Page) {
@@ -157,42 +146,11 @@ export default function Hr() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title={
-          isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : isTimesheetsPage ? 'Timesheets' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete de Invoire' : isLeavesPage ? 'Leaves (CO Balance)' : (
-            <span className="flex items-center gap-3">
-              Pontaje
-              {showTeamToggle && (
-                <span className="flex rounded-md border">
-                  <button
-                    onClick={() => setTeamFilter('team')}
-                    className={cn(
-                      'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors rounded-l-md',
-                      teamFilter === 'team'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    <Users className="h-3.5 w-3.5" />
-                    My Team
-                  </button>
-                  <button
-                    onClick={() => setTeamFilter('all')}
-                    className={cn(
-                      'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors rounded-r-md',
-                      teamFilter === 'all'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    All
-                  </button>
-                </span>
-              )}
-            </span>
-          )
+          isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete de Invoire' : isLeavesPage ? 'Leaves (CO Balance)' : 'HR'
         }
         breadcrumbs={[
-          { label: 'HR', href: '/app/hr/pontaje' },
-          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete de Invoire' }] : isLeavesPage ? [{ label: 'Leaves' }] : [{ label: 'Pontaje' }]),
+          { label: 'HR', href: '/app/hr/employees' },
+          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete de Invoire' }] : isLeavesPage ? [{ label: 'Leaves' }] : []),
         ]}
         search={
           <SearchInput
@@ -205,12 +163,6 @@ export default function Hr() {
         }
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
-              <BarChart3 className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className={showFilters ? 'bg-muted' : ''} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
-              <SlidersHorizontal className="h-4 w-4" />
-            </Button>
             <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
               <LayoutDashboard className="h-4 w-4" />
             </Button>
@@ -227,7 +179,7 @@ export default function Hr() {
               </Button>
             )}
             {!isMobile && !isBonusesPage && tabs.length > 1 && (
-              <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isAdjustmentsPage ? 'adjustments' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+              <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isAdjustmentsPage ? 'adjustments' : 'employees'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
                 <TabsList className="w-auto">
                   {tabs.map((t) => {
                     const val = t.to.split('/').pop()!
@@ -247,7 +199,7 @@ export default function Hr() {
 
       {/* Mobile tab nav */}
       {!isBonusesPage && isMobile && tabs.length > 1 && (
-        <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isAdjustmentsPage ? 'adjustments' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+        <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isAdjustmentsPage ? 'adjustments' : 'employees'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
               {tabs.map((t) => {
@@ -267,19 +219,19 @@ export default function Hr() {
       {/* Tab content */}
       <Suspense fallback={<TabLoader />}>
         <Routes>
-          <Route index element={<Navigate to="pontaje" replace />} />
+          <Route index element={<Navigate to="employees" replace />} />
           <Route path="pontaje" element={
             canViewPontaje
-              ? <PontajeTab showStats={showStats} showFilters={showFilters} managerFilter={managerFilter} search={search} />
+              ? <PontajeTab showStats={false} showFilters={showFilters} managerFilter={managerFilter} search={search} />
               : <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">You don't have permission to view pontaje.</div>
           } />
           <Route path="bonuses" element={
             canViewBonuses
-              ? <BonusesTab canViewAmounts={canViewAmounts} showStats={showStats} showFilters={showFilters} addTrigger={bonusAddTrigger} search={search} />
+              ? <BonusesTab canViewAmounts={canViewAmounts} showStats={false} showFilters={showFilters} addTrigger={bonusAddTrigger} search={search} />
               : <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">You don't have permission to view bonuses.</div>
           } />
           {canViewTimesheets && <Route path="timesheets" element={<TimesheetTab search={search} />} />}
-          {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab showStats={showStats} showFilters={showFilters} search={search} />} />}
+          {canViewAdjustments && <Route path="adjustments" element={<AdjustmentsTab showStats={false} showFilters={showFilters} search={search} />} />}
           {canViewEmployees && <Route path="employees" element={<EmployeesTab search={search} />} />}
           {canViewLeavePermits && <Route path="leave-permits" element={<LeavePermitsTab search={search} />} />}
           {canViewLeaves && <Route path="leaves" element={<LeavesTab search={search} />} />}
