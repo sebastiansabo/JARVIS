@@ -18,6 +18,7 @@ import {
   ExternalLink,
   UserCheck,
   UserX,
+  DatabaseZap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -36,21 +37,46 @@ import type { AttendanceRow, BioStarDayHistory } from '@/types/biostar'
 type SortField = 'name' | 'company' | 'group' | 'check_in' | 'check_out' | 'duration' | 'punches'
 type SortDir = 'asc' | 'desc'
 
-type ColKey = 'group' | 'check_in' | 'check_out' | 'duration' | 'punches' | 'schedule' | 'company' | 'adj_in' | 'adj_out'
+type ColKey = 'group' | 'official_in' | 'official_out' | 'actual_in' | 'actual_out' | 'duration' | 'punches' | 'schedule' | 'company'
 
 const COL_DEFS: { key: ColKey; label: string }[] = [
-  { key: 'check_in', label: 'Check In' },
-  { key: 'check_out', label: 'Check Out' },
+  { key: 'official_in', label: 'Official In' },
+  { key: 'official_out', label: 'Official Out' },
+  { key: 'actual_in', label: 'Actual In' },
+  { key: 'actual_out', label: 'Actual Out' },
   { key: 'duration', label: 'Duration' },
   { key: 'punches', label: 'Punches' },
   { key: 'schedule', label: 'Schedule' },
   { key: 'company', label: 'Company' },
   { key: 'group', label: 'Group' },
-  { key: 'adj_in', label: 'Adj. In' },
-  { key: 'adj_out', label: 'Adj. Out' },
 ]
 
-const DEFAULT_COLS: ColKey[] = ['check_in', 'check_out', 'duration', 'punches', 'schedule']
+const DEFAULT_COLS: ColKey[] = ['official_in', 'official_out', 'duration', 'punches', 'schedule']
+
+function fmtScheduleTime(t: string | null) {
+  if (!t) return '08:00'
+  return t.slice(0, 5)
+}
+
+function randomizeAdjustedTimes(
+  datePart: string, scheduleStart: string | null, lunchMin: number, workingHours: number,
+): { adjFirst: string; adjLast: string } {
+  const whMin = Math.round(workingHours * 60)
+  const targetWorked = whMin + Math.floor(Math.random() * 11) // e.g. 480–490
+  const targetSpan = targetWorked + lunchMin
+  const startOffset = Math.floor(Math.random() * 11) - 5 // -5..+5
+  const baseStart = fmtScheduleTime(scheduleStart)
+  const [sh, sm] = baseStart.split(':').map(Number)
+  const startMin = sh * 60 + sm + startOffset
+  const endMin = startMin + targetSpan
+  const fmtMins = (m: number) => {
+    const clamped = Math.max(0, m)
+    const hh = Math.floor(clamped / 60).toString().padStart(2, '0')
+    const mm = (clamped % 60).toString().padStart(2, '0')
+    return `${datePart}T${hh}:${mm}:00`
+  }
+  return { adjFirst: fmtMins(startMin), adjLast: fmtMins(endMin) }
+}
 
 function fmtTime(dt: string | null) {
   if (!dt) return '—'
@@ -122,6 +148,15 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
     onError: () => toast.error('Auto-adjust failed'),
   })
 
+  const backfillMut = useMutation({
+    mutationFn: () => biostarApi.backfillAdjustments(),
+    onSuccess: (res) => {
+      toast.success(`Backfill: ${res.data.total_adjusted} adjusted across ${res.data.dates_processed} dates`)
+      queryClient.invalidateQueries({ queryKey: ['biostar'] })
+    },
+    onError: () => toast.error('Backfill failed'),
+  })
+
   // ── Groups ──
 
   const groups = useMemo(() => {
@@ -150,8 +185,8 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         case 'name': cmp = (a.name || '').localeCompare(b.name || ''); break
         case 'company': cmp = (a.company || '').localeCompare(b.company || ''); break
         case 'group': cmp = (a.user_group_name || '').localeCompare(b.user_group_name || ''); break
-        case 'check_in': cmp = (a.first_punch || '').localeCompare(b.first_punch || ''); break
-        case 'check_out': cmp = (a.last_punch || '').localeCompare(b.last_punch || ''); break
+        case 'check_in': cmp = ((a.adjusted_first_punch ?? a.first_punch) || '').localeCompare((b.adjusted_first_punch ?? b.first_punch) || ''); break
+        case 'check_out': cmp = ((a.adjusted_last_punch ?? a.last_punch) || '').localeCompare((b.adjusted_last_punch ?? b.last_punch) || ''); break
         case 'duration': cmp = netSec(a.duration_seconds, a.lunch_break_minutes ?? 60) - netSec(b.duration_seconds, b.lunch_break_minutes ?? 60); break
         case 'punches': cmp = (a.total_punches ?? 0) - (b.total_punches ?? 0); break
         default: cmp = (a.name || '').localeCompare(b.name || '')
@@ -197,10 +232,9 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
     const cols = visibleCols
     if (cols.has('company')) headers.push('Company')
     if (cols.has('group')) headers.push('Group')
-    if (cols.has('check_in')) headers.push('Check In')
-    if (cols.has('check_out')) headers.push('Check Out')
-    if (cols.has('adj_in')) headers.push('Adj. In')
-    if (cols.has('adj_out')) headers.push('Adj. Out')
+    // Always export official columns (regardless of visibility toggle)
+    headers.push('Check In', 'Check Out')
+    // actual_in / actual_out are NEVER exported
     if (cols.has('duration')) headers.push('Duration (h)')
     if (cols.has('punches')) headers.push('Punches')
     if (cols.has('schedule')) headers.push('Schedule')
@@ -211,10 +245,11 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       const row = [e.name]
       if (cols.has('company')) row.push(e.company || '')
       if (cols.has('group')) row.push(e.user_group_name || '')
-      if (cols.has('check_in')) row.push(e.first_punch ? fmtTime(e.first_punch) : '')
-      if (cols.has('check_out')) row.push(e.last_punch ? fmtTime(e.last_punch) : '')
-      if (cols.has('adj_in')) row.push(e.adjusted_first_punch ? fmtTime(e.adjusted_first_punch) : '')
-      if (cols.has('adj_out')) row.push(e.adjusted_last_punch ? fmtTime(e.adjusted_last_punch) : '')
+      // Official times: adjusted if available, otherwise raw
+      const officialIn = e.adjusted_first_punch ?? e.first_punch
+      const officialOut = e.adjusted_last_punch ?? e.last_punch
+      row.push(officialIn ? fmtTime(officialIn) : '')
+      row.push(officialOut ? fmtTime(officialOut) : '')
       if (cols.has('duration')) {
         const net = netSec(e.duration_seconds, e.lunch_break_minutes ?? 60)
         row.push(net > 0 ? (net / 3600).toFixed(2) : '')
@@ -240,21 +275,28 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
   const mobileFields: MobileCardField<AttendanceRow>[] = useMemo(() => [
     { key: 'name', label: 'Employee', isPrimary: true, render: (e) => <span className="font-medium">{e.name}</span> },
     {
-      key: 'checkin', label: 'Check In',
-      render: (e) => e.first_punch ? (
-        <span className="inline-flex items-center gap-1 text-sm">
-          <LogIn className="h-3 w-3 text-green-600" />{fmtTime(e.first_punch)}
-        </span>
-      ) : <span className="text-muted-foreground">—</span>,
-    },
-    {
-      key: 'checkout', label: 'Check Out',
+      key: 'checkin', label: 'Official In',
       render: (e) => {
-        if (!e.first_punch) return <span className="text-muted-foreground">—</span>
-        if ((e.total_punches ?? 0) === 1) return <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
+        const t = e.adjusted_first_punch ?? e.first_punch
+        if (!t) return <span className="text-muted-foreground">—</span>
         return (
           <span className="inline-flex items-center gap-1 text-sm">
-            <LogOut className="h-3 w-3 text-red-500" />{fmtTime(e.last_punch)}
+            <LogIn className="h-3 w-3 text-green-600" />{fmtTime(t)}
+            {e.adjusted_first_punch && <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300">C</Badge>}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'checkout', label: 'Official Out',
+      render: (e) => {
+        if (!e.first_punch) return <span className="text-muted-foreground">—</span>
+        if ((e.total_punches ?? 0) === 1 && !e.adjusted_last_punch) return <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
+        const t = e.adjusted_last_punch ?? e.last_punch
+        return (
+          <span className="inline-flex items-center gap-1 text-sm">
+            <LogOut className="h-3 w-3 text-red-500" />{fmtTime(t)}
+            {e.adjusted_last_punch && <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300">C</Badge>}
           </span>
         )
       },
@@ -306,18 +348,30 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
           </Select>
 
           <div className="flex items-center gap-1 ml-auto">
-            {/* Auto-adjust button */}
+            {/* Adjustment buttons */}
             {canAdjust && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => autoAdjustMut.mutate()}
-                disabled={autoAdjustMut.isPending}
-              >
-                <Wand2 className="mr-1 h-3.5 w-3.5" />
-                Auto-adjust
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => autoAdjustMut.mutate()}
+                  disabled={autoAdjustMut.isPending}
+                >
+                  <Wand2 className="mr-1 h-3.5 w-3.5" />
+                  Auto-adjust
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => { if (confirm('Backfill will adjust all unadjusted past dates. Continue?')) backfillMut.mutate() }}
+                  disabled={backfillMut.isPending}
+                >
+                  <DatabaseZap className="mr-1 h-3.5 w-3.5" />
+                  Backfill
+                </Button>
+              </>
             )}
 
             {/* Download CSV */}
@@ -406,15 +460,21 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                           Group <SortIcon field="group" />
                         </TableHead>
                       )}
-                      {visibleCols.has('check_in') && (
+                      {visibleCols.has('official_in') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_in')}>
-                          Check In <SortIcon field="check_in" />
+                          Official In <SortIcon field="check_in" />
                         </TableHead>
                       )}
-                      {visibleCols.has('check_out') && (
+                      {visibleCols.has('official_out') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_out')}>
-                          Check Out <SortIcon field="check_out" />
+                          Official Out <SortIcon field="check_out" />
                         </TableHead>
+                      )}
+                      {visibleCols.has('actual_in') && (
+                        <TableHead className="text-center hidden lg:table-cell">Actual In</TableHead>
+                      )}
+                      {visibleCols.has('actual_out') && (
+                        <TableHead className="text-center hidden lg:table-cell">Actual Out</TableHead>
                       )}
                       {visibleCols.has('duration') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('duration')}>
@@ -434,12 +494,6 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                           Company <SortIcon field="company" />
                         </TableHead>
                       )}
-                      {visibleCols.has('adj_in') && (
-                        <TableHead className="text-center hidden lg:table-cell">Adj. In</TableHead>
-                      )}
-                      {visibleCols.has('adj_out') && (
-                        <TableHead className="text-center hidden lg:table-cell">Adj. Out</TableHead>
-                      )}
                       {canAdjust && <TableHead className="w-10" />}
                       <TableHead className="w-10" />
                     </TableRow>
@@ -455,6 +509,28 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                         onProfile={() => navigate(`/app/hr/pontaje/${emp.biostar_user_id}`)}
                         visibleCols={visibleCols}
                         canAdjust={canAdjust}
+                        onAdjust={() => {
+                          if (!emp.first_punch) return
+                          const { adjFirst, adjLast } = randomizeAdjustedTimes(
+                            date, emp.schedule_start, emp.lunch_break_minutes ?? 60, emp.working_hours ?? 8,
+                          )
+                          biostarApi.adjustEmployee({
+                            biostar_user_id: emp.biostar_user_id,
+                            date,
+                            adjusted_first_punch: adjFirst,
+                            adjusted_last_punch: adjLast,
+                            original_first_punch: emp.first_punch,
+                            original_last_punch: emp.last_punch ?? emp.first_punch,
+                            schedule_start: emp.schedule_start ?? undefined,
+                            schedule_end: emp.schedule_end ?? undefined,
+                            lunch_break_minutes: emp.lunch_break_minutes ?? 60,
+                            working_hours: emp.working_hours ?? 8,
+                            original_duration_seconds: emp.duration_seconds ?? undefined,
+                          }).then(() => {
+                            toast.success('Adjusted')
+                            queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today', date] })
+                          }).catch(() => toast.error('Adjust failed'))
+                        }}
                         onRevert={() => {
                           biostarApi.revertAdjustment(emp.biostar_user_id, date).then(() => {
                             toast.success('Adjustment reverted')
@@ -486,6 +562,7 @@ function EmployeeRow({
   onProfile,
   visibleCols,
   canAdjust,
+  onAdjust,
   onRevert,
 }: {
   employee: AttendanceRow
@@ -495,6 +572,7 @@ function EmployeeRow({
   onProfile: () => void
   visibleCols: Set<ColKey>
   canAdjust: boolean
+  onAdjust: () => void
   onRevert: () => void
 }) {
   const isAbsent = employee.attendance_status === 'absent'
@@ -507,14 +585,14 @@ function EmployeeRow({
 
   const colSpan = 2 /* chevron + name */
     + (visibleCols.has('group') ? 1 : 0)
-    + (visibleCols.has('check_in') ? 1 : 0)
-    + (visibleCols.has('check_out') ? 1 : 0)
+    + (visibleCols.has('official_in') ? 1 : 0)
+    + (visibleCols.has('official_out') ? 1 : 0)
+    + (visibleCols.has('actual_in') ? 1 : 0)
+    + (visibleCols.has('actual_out') ? 1 : 0)
     + (visibleCols.has('duration') ? 1 : 0)
     + (visibleCols.has('punches') ? 1 : 0)
     + (visibleCols.has('schedule') ? 1 : 0)
     + (visibleCols.has('company') ? 1 : 0)
-    + (visibleCols.has('adj_in') ? 1 : 0)
-    + (visibleCols.has('adj_out') ? 1 : 0)
     + (canAdjust ? 1 : 0)
     + 1 /* status dot / link */
 
@@ -536,31 +614,51 @@ function EmployeeRow({
             {employee.user_group_name || '—'}
           </TableCell>
         )}
-        {visibleCols.has('check_in') && (
+        {visibleCols.has('official_in') && (
           <TableCell className="text-center">
             {isAbsent ? (
               <span className="text-muted-foreground">—</span>
             ) : (
               <span className="inline-flex items-center gap-1 text-sm">
                 <LogIn className="h-3 w-3 text-green-600" />
-                {fmtTime(employee.first_punch)}
+                {fmtTime(employee.adjusted_first_punch ?? employee.first_punch)}
                 {hasAdj && <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300">C</Badge>}
               </span>
             )}
           </TableCell>
         )}
-        {visibleCols.has('check_out') && (
+        {visibleCols.has('official_out') && (
           <TableCell className="text-center">
             {isAbsent ? (
               <span className="text-muted-foreground">—</span>
-            ) : (employee.total_punches ?? 0) === 1 ? (
+            ) : (employee.total_punches ?? 0) === 1 && !hasAdj ? (
               <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
             ) : (
               <span className="inline-flex items-center gap-1 text-sm">
                 <LogOut className="h-3 w-3 text-red-500" />
-                {fmtTime(employee.last_punch)}
+                {fmtTime(employee.adjusted_last_punch ?? employee.last_punch)}
                 {hasAdj && <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300">C</Badge>}
               </span>
+            )}
+          </TableCell>
+        )}
+        {visibleCols.has('actual_in') && (
+          <TableCell className="text-center hidden lg:table-cell">
+            {isAbsent ? (
+              <span className="text-muted-foreground">—</span>
+            ) : (
+              <span className="text-sm text-muted-foreground">{fmtTime(employee.first_punch)}</span>
+            )}
+          </TableCell>
+        )}
+        {visibleCols.has('actual_out') && (
+          <TableCell className="text-center hidden lg:table-cell">
+            {isAbsent ? (
+              <span className="text-muted-foreground">—</span>
+            ) : (employee.total_punches ?? 0) === 1 ? (
+              <span className="text-muted-foreground">—</span>
+            ) : (
+              <span className="text-sm text-muted-foreground">{fmtTime(employee.last_punch)}</span>
             )}
           </TableCell>
         )}
@@ -594,23 +692,9 @@ function EmployeeRow({
             {employee.company || '—'}
           </TableCell>
         )}
-        {visibleCols.has('adj_in') && (
-          <TableCell className="text-center hidden lg:table-cell">
-            {employee.adjusted_first_punch
-              ? <span className="text-sm font-medium text-blue-600">{fmtTime(employee.adjusted_first_punch)}</span>
-              : <span className="text-muted-foreground">—</span>}
-          </TableCell>
-        )}
-        {visibleCols.has('adj_out') && (
-          <TableCell className="text-center hidden lg:table-cell">
-            {employee.adjusted_last_punch
-              ? <span className="text-sm font-medium text-blue-600">{fmtTime(employee.adjusted_last_punch)}</span>
-              : <span className="text-muted-foreground">—</span>}
-          </TableCell>
-        )}
         {canAdjust && (
           <TableCell className="text-center w-10">
-            {hasAdj && (
+            {!isAbsent && hasAdj && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -619,6 +703,17 @@ function EmployeeRow({
                 title="Revert adjustment"
               >
                 <RotateCcw className="h-3 w-3" />
+              </Button>
+            )}
+            {!isAbsent && !hasAdj && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={(e) => { e.stopPropagation(); onAdjust() }}
+                title="Auto-adjust"
+              >
+                <Wand2 className="h-3 w-3" />
               </Button>
             )}
           </TableCell>
@@ -644,7 +739,7 @@ function EmployeeRow({
       {isExpanded && (
         <TableRow>
           <TableCell colSpan={colSpan} className="bg-muted/30 p-0">
-            <WeekHistory biostarUserId={employee.biostar_user_id} date={date} lunchMin={lunch} workingHours={employee.working_hours ?? 8} />
+            <MonthHistory biostarUserId={employee.biostar_user_id} date={date} lunchMin={lunch} workingHours={employee.working_hours ?? 8} scheduleStart={employee.schedule_start} scheduleEnd={employee.schedule_end} canAdjust={canAdjust} />
           </TableCell>
         </TableRow>
       )}
@@ -652,128 +747,329 @@ function EmployeeRow({
   )
 }
 
-// ── 7-Day History (expansion) ──
+// ── Helpers ──
 
-function WeekHistory({ biostarUserId, date, lunchMin, workingHours }: { biostarUserId: string; date: string; lunchMin: number; workingHours: number }) {
-  // Calculate 7-day range ending at `date`
-  const endDate = date
-  const startDate = useMemo(() => {
-    const d = new Date(`${date}T12:00:00`)
-    d.setDate(d.getDate() - 6)
-    return d.toISOString().slice(0, 10)
-  }, [date])
+type DayEntry = { date: string; dayLabel: string; data: BioStarDayHistory | null; isHoliday: boolean; isWeekend: boolean }
+type WeekGroup = { weekNum: number; weekLabel: string; days: DayEntry[] }
+
+function getISOWeek(d: Date): number {
+  const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7))
+  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1))
+  return Math.ceil(((tmp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+}
+
+function lastDayOfMonth(dateStr: string): string {
+  const [y, m] = dateStr.split('-').map(Number)
+  const d = new Date(y, m, 0) // day 0 of next month = last day of this month
+  return d.toISOString().slice(0, 10)
+}
+
+function groupByWeek(days: DayEntry[]): WeekGroup[] {
+  const map = new Map<number, DayEntry[]>()
+  for (const day of days) {
+    const d = new Date(`${day.date}T12:00:00`)
+    const wk = getISOWeek(d)
+    if (!map.has(wk)) map.set(wk, [])
+    map.get(wk)!.push(day)
+  }
+  const result: WeekGroup[] = []
+  for (const [weekNum, wkDays] of map) {
+    const first = wkDays[0].date
+    const last = wkDays[wkDays.length - 1].date
+    const fmtD = (s: string) => new Date(`${s}T12:00:00`).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })
+    result.push({ weekNum, weekLabel: `${fmtD(first)} – ${fmtD(last)}`, days: wkDays })
+  }
+  return result.sort((a, b) => a.weekNum - b.weekNum)
+}
+
+async function adjustDays(
+  days: DayEntry[],
+  biostarUserId: string,
+  scheduleStart: string | null,
+  lunchMin: number,
+  workingHours: number,
+): Promise<number> {
+  const unadjusted = days.filter(d => d.data && !d.data.adjusted_first_punch && !d.isWeekend && !d.isHoliday)
+  let count = 0
+  for (const day of unadjusted) {
+    const d = day.data!
+    if (!d.first_punch) continue
+    const { adjFirst, adjLast } = randomizeAdjustedTimes(day.date, scheduleStart, lunchMin, workingHours)
+    await biostarApi.adjustEmployee({
+      biostar_user_id: biostarUserId,
+      date: day.date,
+      adjusted_first_punch: adjFirst,
+      adjusted_last_punch: adjLast,
+      original_first_punch: d.first_punch,
+      original_last_punch: d.last_punch ?? d.first_punch,
+      schedule_start: scheduleStart ?? undefined,
+      lunch_break_minutes: lunchMin,
+      working_hours: workingHours,
+      original_duration_seconds: d.duration_seconds ?? undefined,
+    })
+    count++
+  }
+  return count
+}
+
+// ── Month History (expansion) ──
+
+function MonthHistory({
+  biostarUserId, date, lunchMin, workingHours, scheduleStart, scheduleEnd: _scheduleEnd, canAdjust,
+}: {
+  biostarUserId: string; date: string; lunchMin: number; workingHours: number
+  scheduleStart: string | null; scheduleEnd: string | null; canAdjust: boolean
+}) {
+  const queryClient = useQueryClient()
+  const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(() => {
+    const now = new Date(`${date}T12:00:00`)
+    return new Set([getISOWeek(now)])
+  })
+  const [adjusting, setAdjusting] = useState(false)
+
+  // Month range
+  const monthStart = `${date.slice(0, 7)}-01`
+  const monthEnd = lastDayOfMonth(date)
+  const monthLabel = new Date(`${date}T12:00:00`).toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['biostar', 'employee-daily-history', biostarUserId, startDate, endDate],
-    queryFn: () => biostarApi.getEmployeeDailyHistory(biostarUserId, startDate, endDate),
+    queryKey: ['biostar', 'employee-daily-history', biostarUserId, monthStart, monthEnd],
+    queryFn: () => biostarApi.getEmployeeDailyHistory(biostarUserId, monthStart, monthEnd),
   })
 
   const history = data?.history ?? []
   const holidays = useMemo(() => new Set(data?.holidays ?? []), [data?.holidays])
 
-  // Generate all 7 days
-  const days = useMemo(() => {
-    const result: { date: string; dayLabel: string; data: BioStarDayHistory | null; isHoliday: boolean; isWeekend: boolean }[] = []
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(`${startDate}T12:00:00`)
-      d.setDate(d.getDate() + i)
+  // Generate all days of month
+  const allDays = useMemo(() => {
+    const result: DayEntry[] = []
+    const start = new Date(`${monthStart}T12:00:00`)
+    const end = new Date(`${monthEnd}T12:00:00`)
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const ds = d.toISOString().slice(0, 10)
-      const dayOfWeek = d.getDay()
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
-      const dayLabel = d.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' })
-      const dayData = history.find(h => h.date?.slice(0, 10) === ds) ?? null
-      result.push({ date: ds, dayLabel, data: dayData, isHoliday: holidays.has(ds), isWeekend })
+      const dow = d.getDay()
+      result.push({
+        date: ds,
+        dayLabel: d.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' }),
+        data: history.find(h => h.date?.slice(0, 10) === ds) ?? null,
+        isHoliday: holidays.has(ds),
+        isWeekend: dow === 0 || dow === 6,
+      })
     }
     return result
-  }, [startDate, history, holidays])
+  }, [monthStart, monthEnd, history, holidays])
+
+  const weeks = useMemo(() => groupByWeek(allDays), [allDays])
+
+  const toggleWeek = (wk: number) => setExpandedWeeks(prev => {
+    const n = new Set(prev); n.has(wk) ? n.delete(wk) : n.add(wk); return n
+  })
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['biostar', 'employee-daily-history', biostarUserId, monthStart, monthEnd] })
+
+  // Stats
+  const workingDays = allDays.filter(d => !d.isWeekend && !d.isHoliday).length
+  const presentDays = allDays.filter(d => d.data && !d.isWeekend && !d.isHoliday).length
+
+  const handleAdjustMonth = async () => {
+    if (!confirm(`Adjust all unadjusted days in ${monthLabel}?`)) return
+    setAdjusting(true)
+    try {
+      const count = await adjustDays(allDays, biostarUserId, scheduleStart, lunchMin, workingHours)
+      toast.success(`Adjusted ${count} days in ${monthLabel}`)
+      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today'] })
+    } catch { toast.error('Month adjust failed') }
+    finally { setAdjusting(false) }
+  }
 
   if (isLoading) {
     return (
       <div className="p-4 space-y-2">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-6 w-full" />
-        ))}
+        {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}
       </div>
     )
   }
 
-  const daysPresent = days.filter(d => d.data).length
-
   return (
     <div className="p-4">
-      <div className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        Last 7 days — {daysPresent} present
+      {/* Month header */}
+      <div className="mb-3 flex items-center gap-3">
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider capitalize">
+          {monthLabel} — {presentDays} / {workingDays} working days
+        </span>
+        {canAdjust && (
+          <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2" onClick={handleAdjustMonth} disabled={adjusting}>
+            <Wand2 className="mr-1 h-3 w-3" />Adjust Month
+          </Button>
+        )}
       </div>
+
+      {/* Weeks */}
       <div className="space-y-1">
-        {days.map((day) => {
-          const d = day.data
-          const isToday = day.date === todayStr()
-          const net = d ? netSec(d.duration_seconds, d.lunch_break_minutes ?? lunchMin) : 0
-          const netH = net / 3600
-          const isShort = netH > 0 && netH < workingHours
-          const hasAdj = !!d?.adjusted_first_punch
+        {weeks.map((week) => {
+          const isOpen = expandedWeeks.has(week.weekNum)
+          const wkWorking = week.days.filter(d => !d.isWeekend && !d.isHoliday)
+          const wkPresent = wkWorking.filter(d => d.data)
+          const wkTotalSec = wkPresent.reduce((sum, d) => sum + netSec(d.data!.duration_seconds, d.data!.lunch_break_minutes ?? lunchMin), 0)
+          const wkAvg = wkPresent.length > 0 ? fmtDuration(wkTotalSec / wkPresent.length) : '—'
+
+          const handleAdjustWeek = async (e: React.MouseEvent) => {
+            e.stopPropagation()
+            setAdjusting(true)
+            try {
+              const count = await adjustDays(week.days, biostarUserId, scheduleStart, lunchMin, workingHours)
+              toast.success(`Adjusted ${count} days in week ${week.weekNum}`)
+              invalidate()
+              queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today'] })
+            } catch { toast.error('Week adjust failed') }
+            finally { setAdjusting(false) }
+          }
 
           return (
-            <div
-              key={day.date}
-              className={cn(
-                'flex items-center gap-3 px-3 py-1.5 rounded-md text-sm',
-                isToday && 'bg-primary/5 font-medium',
-                !d && !day.isWeekend && !day.isHoliday && 'opacity-50',
-              )}
-            >
-              {/* Status dot */}
-              <span className={cn(
-                'inline-block h-2 w-2 rounded-full shrink-0',
-                d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : 'bg-red-400',
-              )} />
-
-              {/* Date */}
-              <span className="w-28 shrink-0 capitalize text-muted-foreground">
-                {day.dayLabel}
-              </span>
-
-              {d ? (
-                <>
-                  {/* Check In */}
-                  <span className="w-14 shrink-0 text-center">
-                    <span className="inline-flex items-center gap-1">
-                      <LogIn className="h-3 w-3 text-green-600" />
-                      {fmtTime(d.first_punch)}
-                    </span>
-                  </span>
-
-                  {/* Check Out */}
-                  <span className="w-14 shrink-0 text-center">
-                    {d.total_punches === 1 ? (
-                      <span className="text-xs text-orange-600">—</span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1">
-                        <LogOut className="h-3 w-3 text-red-500" />
-                        {fmtTime(d.last_punch)}
-                      </span>
-                    )}
-                  </span>
-
-                  {/* Duration */}
-                  <span className={cn('w-16 shrink-0 text-center font-medium', isShort ? 'text-orange-600' : '')}>
-                    {d.total_punches === 1 ? '—' : fmtDuration(net)}
-                  </span>
-
-                  {/* Adjustment badge */}
-                  {hasAdj && (
-                    <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300">C</Badge>
-                  )}
-                </>
-              ) : (
-                <span className="text-xs text-muted-foreground">
-                  {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : 'Absent'}
+            <div key={week.weekNum}>
+              {/* Week header */}
+              <div
+                className="flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer hover:bg-muted/50 select-none"
+                onClick={() => toggleWeek(week.weekNum)}
+              >
+                {isOpen
+                  ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                <span className="text-sm font-medium">
+                  W{week.weekNum}
                 </span>
+                <span className="text-xs text-muted-foreground">
+                  {week.weekLabel}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  — {wkPresent.length}/{wkWorking.length} days, avg {wkAvg}
+                </span>
+                {canAdjust && (
+                  <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5 ml-auto" onClick={handleAdjustWeek} disabled={adjusting}>
+                    <Wand2 className="mr-0.5 h-2.5 w-2.5" />Week
+                  </Button>
+                )}
+              </div>
+
+              {/* Day rows */}
+              {isOpen && (
+                <div className="ml-6 space-y-0.5 mb-2">
+                  {week.days.map((day) => (
+                    <DayRow
+                      key={day.date}
+                      day={day}
+                      lunchMin={lunchMin}
+                      workingHours={workingHours}
+                      biostarUserId={biostarUserId}
+                      scheduleStart={scheduleStart}
+                      canAdjust={canAdjust}
+                      adjusting={adjusting}
+                      onInvalidate={() => { invalidate(); queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today'] }) }}
+                    />
+                  ))}
+                </div>
               )}
             </div>
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ── Day Row (inside week) ──
+
+function DayRow({
+  day, lunchMin, workingHours, biostarUserId, scheduleStart, canAdjust, adjusting, onInvalidate,
+}: {
+  day: DayEntry; lunchMin: number; workingHours: number; biostarUserId: string
+  scheduleStart: string | null; canAdjust: boolean; adjusting: boolean; onInvalidate: () => void
+}) {
+  const d = day.data
+  const isToday = day.date === todayStr()
+  const net = d ? netSec(d.duration_seconds, d.lunch_break_minutes ?? lunchMin) : 0
+  const netH = net / 3600
+  const isShort = netH > 0 && netH < workingHours
+  const hasAdj = !!d?.adjusted_first_punch
+
+  const handleAdjustDay = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!d?.first_punch) return
+    const { adjFirst, adjLast } = randomizeAdjustedTimes(day.date, scheduleStart, lunchMin, workingHours)
+    try {
+      await biostarApi.adjustEmployee({
+        biostar_user_id: biostarUserId, date: day.date,
+        adjusted_first_punch: adjFirst, adjusted_last_punch: adjLast,
+        original_first_punch: d.first_punch, original_last_punch: d.last_punch ?? d.first_punch,
+        schedule_start: scheduleStart ?? undefined, lunch_break_minutes: lunchMin,
+        working_hours: workingHours, original_duration_seconds: d.duration_seconds ?? undefined,
+      })
+      toast.success('Adjusted')
+      onInvalidate()
+    } catch { toast.error('Adjust failed') }
+  }
+
+  const handleRevertDay = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await biostarApi.revertAdjustment(biostarUserId, day.date)
+      toast.success('Reverted')
+      onInvalidate()
+    } catch { toast.error('Revert failed') }
+  }
+
+  return (
+    <div className={cn(
+      'flex items-center gap-3 px-3 py-1.5 rounded-md text-sm',
+      isToday && 'bg-primary/5 font-medium',
+      !d && !day.isWeekend && !day.isHoliday && 'opacity-50',
+    )}>
+      <span className={cn(
+        'inline-block h-2 w-2 rounded-full shrink-0',
+        d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : 'bg-red-400',
+      )} />
+      <span className="w-28 shrink-0 capitalize text-muted-foreground">{day.dayLabel}</span>
+
+      {d ? (
+        <>
+          <span className="w-14 shrink-0 text-center">
+            <span className="inline-flex items-center gap-1">
+              <LogIn className="h-3 w-3 text-green-600" />
+              {fmtTime(d.adjusted_first_punch ?? d.first_punch)}
+            </span>
+          </span>
+          <span className="w-14 shrink-0 text-center">
+            {d.total_punches === 1 && !hasAdj ? (
+              <span className="text-xs text-orange-600">—</span>
+            ) : (
+              <span className="inline-flex items-center gap-1">
+                <LogOut className="h-3 w-3 text-red-500" />
+                {fmtTime(d.adjusted_last_punch ?? d.last_punch)}
+              </span>
+            )}
+          </span>
+          <span className={cn('w-16 shrink-0 text-center font-medium', isShort ? 'text-orange-600' : '')}>
+            {d.total_punches === 1 && !hasAdj ? '—' : fmtDuration(net)}
+          </span>
+          {hasAdj && <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300">C</Badge>}
+          {canAdjust && !hasAdj && d.first_punch && (
+            <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust day">
+              <Wand2 className="h-2.5 w-2.5" />
+            </Button>
+          )}
+          {canAdjust && hasAdj && (
+            <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleRevertDay} disabled={adjusting} title="Revert">
+              <RotateCcw className="h-2.5 w-2.5" />
+            </Button>
+          )}
+        </>
+      ) : (
+        <span className="text-xs text-muted-foreground">
+          {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : 'Absent'}
+        </span>
+      )}
     </div>
   )
 }
