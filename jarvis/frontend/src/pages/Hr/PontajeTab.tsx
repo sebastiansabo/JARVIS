@@ -200,7 +200,11 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         case 'group': cmp = (a.user_group_name || '').localeCompare(b.user_group_name || ''); break
         case 'check_in': cmp = ((a.adjusted_first_punch ?? a.first_punch) || '').localeCompare((b.adjusted_first_punch ?? b.first_punch) || ''); break
         case 'check_out': cmp = ((a.adjusted_last_punch ?? a.last_punch) || '').localeCompare((b.adjusted_last_punch ?? b.last_punch) || ''); break
-        case 'duration': cmp = netSec(a.duration_seconds, a.lunch_break_minutes ?? 60) - netSec(b.duration_seconds, b.lunch_break_minutes ?? 60); break
+        case 'duration': {
+          const aN = a.adjusted_first_punch && a.adjusted_last_punch ? netSec(timeDiffSec(a.adjusted_first_punch, a.adjusted_last_punch), a.lunch_break_minutes ?? 60) : netSec(a.duration_seconds, a.lunch_break_minutes ?? 60)
+          const bN = b.adjusted_first_punch && b.adjusted_last_punch ? netSec(timeDiffSec(b.adjusted_first_punch, b.adjusted_last_punch), b.lunch_break_minutes ?? 60) : netSec(b.duration_seconds, b.lunch_break_minutes ?? 60)
+          cmp = aN - bN; break
+        }
         case 'punches': cmp = (a.total_punches ?? 0) - (b.total_punches ?? 0); break
         default: cmp = (a.name || '').localeCompare(b.name || '')
       }
@@ -264,7 +268,9 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       row.push(officialIn ? fmtTime(officialIn) : '')
       row.push(officialOut ? fmtTime(officialOut) : '')
       if (cols.has('duration')) {
-        const net = netSec(e.duration_seconds, e.lunch_break_minutes ?? 60)
+        const net = e.adjusted_first_punch && e.adjusted_last_punch
+          ? netSec(timeDiffSec(e.adjusted_first_punch, e.adjusted_last_punch), e.lunch_break_minutes ?? 60)
+          : netSec(e.duration_seconds, e.lunch_break_minutes ?? 60)
         row.push(net > 0 ? (net / 3600).toFixed(2) : '')
       }
       if (cols.has('punches')) row.push(String(e.total_punches ?? 0))
@@ -318,8 +324,11 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       key: 'duration', label: 'Duration',
       render: (e) => {
         if (e.attendance_status === 'absent') return <span className="text-muted-foreground">—</span>
-        const net = netSec(e.duration_seconds, e.lunch_break_minutes ?? 60)
-        return <span className="text-sm font-medium">{(e.total_punches ?? 0) === 1 ? '—' : fmtDuration(net)}</span>
+        const hasAdj = !!e.adjusted_first_punch
+        const net = e.adjusted_first_punch && e.adjusted_last_punch
+          ? netSec(timeDiffSec(e.adjusted_first_punch, e.adjusted_last_punch), e.lunch_break_minutes ?? 60)
+          : netSec(e.duration_seconds, e.lunch_break_minutes ?? 60)
+        return <span className="text-sm font-medium">{(e.total_punches ?? 0) === 1 && !hasAdj ? '—' : fmtDuration(net)}</span>
       },
     },
   ], [])
@@ -590,7 +599,9 @@ function EmployeeRow({
 }) {
   const isAbsent = employee.attendance_status === 'absent'
   const lunch = employee.lunch_break_minutes ?? 60
-  const net = netSec(employee.duration_seconds, lunch)
+  const net = employee.adjusted_first_punch && employee.adjusted_last_punch
+    ? netSec(timeDiffSec(employee.adjusted_first_punch, employee.adjusted_last_punch), lunch)
+    : netSec(employee.duration_seconds, lunch)
   const expectedH = employee.working_hours ?? 8
   const netH = net / 3600
   const isShort = netH > 0 && netH < expectedH
