@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { Download, FileCheck, FileSpreadsheet, Fingerprint, LayoutDashboard, Plus, Users, CalendarClock } from 'lucide-react'
+import { Download, FileCheck, FileSpreadsheet, Fingerprint, GraduationCap, LayoutDashboard, Plus, Users, CalendarClock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -23,6 +23,8 @@ const EmployeesTab = lazy(() => import('./EmployeesTab'))
 const Employee360 = lazy(() => import('./Employee360'))
 const LeavePermitsTab = lazy(() => import('./LeavePermitsTab'))
 const LeavesTab = lazy(() => import('./LeavesTab'))
+const CoursesTab = lazy(() => import('./CoursesTab'))
+const AddCoursePage = lazy(() => import('./AddCoursePage'))
 
 function TabLoader() {
   return (
@@ -47,6 +49,9 @@ export default function Hr() {
   const isEmployeesPage = useMatch('/app/hr/employees')
   const isLeavePermitsPage = useMatch('/app/hr/leave-permits')
   const isLeavesPage = useMatch('/app/hr/leaves')
+  const isCoursesPage = useMatch('/app/hr/courses')
+  const isAddCoursePage = useMatch('/app/hr/courses/add')
+  const isEditCoursePage = useMatch('/app/hr/courses/:courseId/edit')
   const isEmployee360Page = useMatch('/app/hr/employees/:userId')
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('hr_summary')
   const filters = useHrStore((s) => s.filters)
@@ -72,6 +77,7 @@ export default function Hr() {
   const canViewBonuses = authLoading || !user ? true : (perms?.['hr.bonuses.view'] ?? true)
   const canViewLeavePermits = authLoading || !user ? true : (perms?.['hr.leave_permissions.view'] ?? true)
   const canViewLeaves = authLoading || !user ? true : (user?.can_access_hr ?? false)
+  const canViewCourses = authLoading || !user ? true : (perms?.['hr.courses.view'] ?? (user?.can_access_hr ?? false))
 
   // Manager filter for pontaje route (still accessible via direct URL)
   const forceTeamFilter = canViewTeamPontaje && teamPontajeScope !== 'all' && teamPontajeScope !== 'deny'
@@ -93,10 +99,24 @@ export default function Hr() {
     if (canViewLeaves) {
       t.push({ to: '/app/hr/leaves', label: 'Leaves', icon: CalendarClock })
     }
+    if (canViewCourses) {
+      t.push({ to: '/app/hr/courses', label: 'Cursuri', icon: GraduationCap })
+    }
     return t
-  }, [canViewTimesheets, canViewEmployees, canViewLeavePermits, canViewLeaves])
+  }, [canViewTimesheets, canViewEmployees, canViewLeavePermits, canViewLeaves, canViewCourses])
 
   // Standalone pages — no tabs/stats
+  if (isAddCoursePage || isEditCoursePage) {
+    return (
+      <Suspense fallback={<TabLoader />}>
+        <Routes>
+          <Route path="courses/add" element={<AddCoursePage />} />
+          <Route path="courses/:courseId/edit" element={<AddCoursePage />} />
+        </Routes>
+      </Suspense>
+    )
+  }
+
   if (isEmployee360Page) {
     return (
       <Suspense fallback={<TabLoader />}>
@@ -149,11 +169,11 @@ export default function Hr() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title={
-          isBonusesPage ? 'Bonuses' : isTimesheetsPage ? 'Timesheets' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete de Invoire' : isLeavesPage ? 'Leaves (CO Balance)' : 'Pontaje'
+          isBonusesPage ? 'Bonuses' : isTimesheetsPage ? 'Timesheets' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete de Invoire' : isLeavesPage ? 'Leaves (CO Balance)' : isCoursesPage ? 'Cursuri' : 'Pontaje'
         }
         breadcrumbs={[
           { label: 'HR', href: '/app/hr/employees' },
-          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete de Invoire' }] : isLeavesPage ? [{ label: 'Leaves' }] : [{ label: 'Pontaje' }]),
+          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete de Invoire' }] : isLeavesPage ? [{ label: 'Leaves' }] : isCoursesPage ? [{ label: 'Cursuri' }] : [{ label: 'Pontaje' }]),
         ]}
         search={
           <SearchInput
@@ -182,7 +202,7 @@ export default function Hr() {
               </Button>
             )}
             {!isMobile && !isBonusesPage && tabs.length > 1 && (
-              <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+              <Tabs value={isCoursesPage ? 'courses' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
                 <TabsList className="w-auto">
                   {tabs.map((t) => {
                     const val = t.to.split('/').pop()!
@@ -202,7 +222,7 @@ export default function Hr() {
 
       {/* Mobile tab nav */}
       {!isBonusesPage && isMobile && tabs.length > 1 && (
-        <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+        <Tabs value={isCoursesPage ? 'courses' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
               {tabs.map((t) => {
@@ -238,6 +258,7 @@ export default function Hr() {
           {canViewEmployees && <Route path="employees" element={<EmployeesTab search={search} />} />}
           {canViewLeavePermits && <Route path="leave-permits" element={<LeavePermitsTab search={search} />} />}
           {canViewLeaves && <Route path="leaves" element={<LeavesTab search={search} />} />}
+          {canViewCourses && <Route path="courses" element={<CoursesTab search={search} />} />}
         </Routes>
       </Suspense>
     </div>

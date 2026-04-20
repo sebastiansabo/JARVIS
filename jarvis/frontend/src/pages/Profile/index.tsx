@@ -35,6 +35,7 @@ import {
   SlidersHorizontal,
   ChevronUp,
   ClipboardList,
+  GraduationCap,
   Plus,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -78,7 +79,7 @@ import type { Invoice } from '@/types/invoices'
 import type { ProfileInvoice, ProfileActivity, ProfileBonus, OrgTreeNode } from '@/types/profile'
 import type { BioStarDayHistory, BioStarPunchLog, BioStarDailySummary, BioStarRangeSummary } from '@/types/biostar'
 
-type Tab = 'invoices' | 'hr-events' | 'pontaje' | 'team-pontaje' | 'sincron' | 'leave-permits' | 'activity'
+type Tab = 'invoices' | 'hr-events' | 'pontaje' | 'team-pontaje' | 'sincron' | 'leave-permits' | 'courses' | 'activity'
 
 const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'invoices', label: 'My Invoices', icon: FileText },
@@ -87,6 +88,7 @@ const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'team-pontaje', label: 'Team Pontaje', icon: Users },
   { key: 'sincron', label: 'Sincron', icon: FileSpreadsheet },
   { key: 'leave-permits', label: 'Leave Permits', icon: ClipboardList },
+  { key: 'courses', label: 'My Courses', icon: GraduationCap },
   { key: 'activity', label: 'Activity Log', icon: Activity },
 ]
 
@@ -235,6 +237,7 @@ export default function Profile() {
       {activeTab === 'team-pontaje' && <TeamPontajePanel />}
       {activeTab === 'sincron' && <SincronPanel />}
       {activeTab === 'leave-permits' && user && <LeavePermitsPanel userId={user.id} />}
+      {activeTab === 'courses' && <MyCoursesPanel />}
       {activeTab === 'activity' && <ActivityPanel />}
     </div>
   )
@@ -2782,6 +2785,99 @@ function ProfileLeaveRequestDialog({ onClose, onSubmitted }: {
 }
 
 // ─── Activity Panel ─────────────────────────────────────────────────
+
+function MyCoursesPanel() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['profile', 'courses'],
+    queryFn: async () => {
+      const { coursesApi } = await import('@/api/courses')
+      return coursesApi.getMyCourses()
+    },
+  })
+
+  if (isLoading) return <div className="space-y-2"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div>
+
+  const certs = data?.certifications ?? []
+  const enrollments = data?.enrollments ?? []
+
+  return (
+    <div className="space-y-4">
+      {/* Active Certifications */}
+      {certs.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Certifications</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {certs.map((c: any) => {
+                const isExpiring = c.days_until_expiry !== null && c.days_until_expiry <= 30
+                const isExpired = c.status === 'expired'
+                return (
+                  <div key={c.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                    <div>
+                      <div className="text-sm font-medium">{c.course_type_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Issued: {new Date(c.issued_date).toLocaleDateString('ro-RO')}
+                        {c.expiry_date && ` · Expires: ${new Date(c.expiry_date).toLocaleDateString('ro-RO')}`}
+                      </div>
+                    </div>
+                    <Badge className={cn(
+                      'border-0 text-xs',
+                      isExpired ? 'bg-red-100 text-red-700' :
+                      isExpiring ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-green-100 text-green-700'
+                    )}>
+                      {isExpired ? 'Expired' : isExpiring ? `${c.days_until_expiry}d left` : 'Active'}
+                    </Badge>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Course History */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Course History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {enrollments.length === 0 ? (
+            <EmptyState icon={<GraduationCap className="h-8 w-8" />} title="No courses" description="You haven't been enrolled in any courses yet." />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Course</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Dates</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {enrollments.map((e: any) => (
+                  <TableRow key={e.id}>
+                    <TableCell className="font-medium">{e.course_name}</TableCell>
+                    <TableCell className="text-muted-foreground">{e.course_type_name ?? '—'}</TableCell>
+                    <TableCell className="text-muted-foreground text-xs">
+                      {e.start_date ? new Date(e.start_date).toLocaleDateString('ro-RO') : '—'}
+                      {e.end_date ? ` – ${new Date(e.end_date).toLocaleDateString('ro-RO')}` : ''}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">{e.enrollment_status}</Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
 function ActivityPanel() {
   const [page, setPage] = useState(1)

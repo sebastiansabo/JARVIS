@@ -741,3 +741,23 @@ def api_profile_sincron_timesheet():
         })
     except Exception as e:
         return safe_error_response(e)
+
+
+@profile_bp.route('/api/courses')
+@login_required
+def api_profile_courses():
+    """Get HR courses for current user (enrolled + certifications)."""
+    try:
+        from hr.courses.repositories import EnrollmentRepository, CertificationRepository
+        _enroll_repo = EnrollmentRepository()
+        _cert_repo = CertificationRepository()
+
+        enrollments = _enroll_repo.get_by_employee(current_user.id)
+        certifications = _cert_repo.get_by_employee(current_user.id)
+
+        return jsonify({
+            'enrollments': enrollments,
+            'certifications': certifications,
+        })
+    except Exception as e:
+        return safe_error_response(e)
