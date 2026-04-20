@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { ClipboardCheck, Download, FileCheck, Fingerprint, LayoutDashboard, Plus, Users, CalendarClock } from 'lucide-react'
+import { ClipboardCheck, Download, FileCheck, FileSpreadsheet, Fingerprint, LayoutDashboard, Plus, Users, CalendarClock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -43,6 +43,7 @@ export default function Hr() {
   const isBonusesPage = useMatch('/app/hr/bonuses')
   const isAdjustmentsPage = useMatch('/app/hr/adjustments')
   const isOrganigramPage = useMatch('/app/hr/organigram')
+  const isTimesheetsPage = useMatch('/app/hr/timesheets')
   const isEmployeesPage = useMatch('/app/hr/employees')
   const isLeavePermitsPage = useMatch('/app/hr/leave-permits')
   const isLeavesPage = useMatch('/app/hr/leaves')
@@ -81,6 +82,10 @@ export default function Hr() {
     if (canViewEmployees) {
       t.push({ to: '/app/hr/employees', label: 'Employees', icon: Users })
     }
+    t.push({ to: '/app/hr/pontaje', label: 'Pontaje', icon: Fingerprint })
+    if (canViewTimesheets) {
+      t.push({ to: '/app/hr/timesheets', label: 'Timesheets', icon: FileSpreadsheet })
+    }
     if (canViewAdjustments) {
       t.push({ to: '/app/hr/adjustments', label: 'Adjustments', icon: ClipboardCheck })
     }
@@ -91,7 +96,7 @@ export default function Hr() {
       t.push({ to: '/app/hr/leaves', label: 'Leaves', icon: CalendarClock })
     }
     return t
-  }, [canViewAdjustments, canViewEmployees, canViewLeavePermits, canViewLeaves])
+  }, [canViewTimesheets, canViewAdjustments, canViewEmployees, canViewLeavePermits, canViewLeaves])
 
   // Standalone pages — no tabs/stats
   if (isEmployee360Page) {
@@ -146,11 +151,11 @@ export default function Hr() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title={
-          isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete de Invoire' : isLeavesPage ? 'Leaves (CO Balance)' : 'HR'
+          isBonusesPage ? 'Bonuses' : isAdjustmentsPage ? 'Adjustments' : isTimesheetsPage ? 'Timesheets' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete de Invoire' : isLeavesPage ? 'Leaves (CO Balance)' : 'Pontaje'
         }
         breadcrumbs={[
           { label: 'HR', href: '/app/hr/employees' },
-          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete de Invoire' }] : isLeavesPage ? [{ label: 'Leaves' }] : []),
+          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isAdjustmentsPage ? [{ label: 'Adjustments' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete de Invoire' }] : isLeavesPage ? [{ label: 'Leaves' }] : [{ label: 'Pontaje' }]),
         ]}
         search={
           <SearchInput
@@ -179,7 +184,7 @@ export default function Hr() {
               </Button>
             )}
             {!isMobile && !isBonusesPage && tabs.length > 1 && (
-              <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isAdjustmentsPage ? 'adjustments' : 'employees'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+              <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isAdjustmentsPage ? 'adjustments' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
                 <TabsList className="w-auto">
                   {tabs.map((t) => {
                     const val = t.to.split('/').pop()!
@@ -199,7 +204,7 @@ export default function Hr() {
 
       {/* Mobile tab nav */}
       {!isBonusesPage && isMobile && tabs.length > 1 && (
-        <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isAdjustmentsPage ? 'adjustments' : 'employees'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+        <Tabs value={isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isAdjustmentsPage ? 'adjustments' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
               {tabs.map((t) => {
