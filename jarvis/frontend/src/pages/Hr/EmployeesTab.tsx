@@ -1050,9 +1050,10 @@ function AbsenceBadge({ status }: { status?: { status: string; leave_code?: stri
   if (!status) return <span className="text-xs text-muted-foreground">—</span>
   switch (status.status) {
     case 'present': {
-      const punch = status.first_punch && status.last_punch
-        ? ` (${status.first_punch} - ${status.last_punch})`
-        : status.first_punch ? ` (${status.first_punch} - …)` : ''
+      const hasOut = status.last_punch && status.last_punch !== status.first_punch
+      const punch = status.first_punch
+        ? hasOut ? ` (${status.first_punch} - ${status.last_punch})` : ` (${status.first_punch} - …)`
+        : ''
       return <span className="inline-flex items-center gap-1 text-xs text-green-600"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />Present{punch}</span>
     }
     case 'on_leave':
