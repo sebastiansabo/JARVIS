@@ -151,15 +151,32 @@ def co_balance_get_year():
         return jsonify({'success': False, 'error': 'Missing/invalid year'}), 400
 
     repo = CoBalanceRepository()
-    by_user = repo.get_for_year(year)
-    used_map = repo.get_used_ytd_by_user(year)
+    all_rows = repo.get_all_for_year(year)
+    used_by_company = repo.get_used_ytd_by_user_company(year)
+    used_by_user = repo.get_used_ytd_by_user(year)
     out = {}
-    for uid, row in by_user.items():
-        used = int(round(used_map.get(uid, 0)))
+    for row in all_rows:
+        uid = row['user_id']
+        company = row['company_name']
+        # Per-company used from timesheets (normalized match)
+        user_used = used_by_company.get(uid, {})
+        # Try exact match first, then normalized
+        used = user_used.get(company, None)
+        if used is None:
+            norm = company.upper().replace(' S.R.L.', '').replace(' SRL', '').strip()
+            for k, v in user_used.items():
+                if k.upper().replace(' S.R.L.', '').replace(' SRL', '').strip() == norm:
+                    used = v
+                    break
+        if used is None:
+            used = 0
+        used = int(round(used))
         total = int(row.get('total_available') or 0)
-        out[str(uid)] = {
+        key = f"{uid}_{row['id']}"
+        out[key] = {
+            'user_id': uid,
             'year': row['year'],
-            'company_name': row['company_name'],
+            'company_name': company,
             'cnp': row['cnp'],
             'nume': row['nume'],
             'prenume': row['prenume'],

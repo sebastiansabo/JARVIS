@@ -61,7 +61,9 @@ class CoBalanceRepository(BaseRepository):
         )
 
     def get_for_year(self, year):
-        """All rows for a year keyed by mapped_jarvis_user_id (NULL ignored)."""
+        """All rows for a year keyed by mapped_jarvis_user_id (NULL ignored).
+        NOTE: multi-company employees keep only last row — use get_all_for_year() for full list.
+        """
         rows = self.query_all(
             """
             SELECT
@@ -76,6 +78,23 @@ class CoBalanceRepository(BaseRepository):
             (year,),
         )
         return {r['user_id']: r for r in rows}
+
+    def get_all_for_year(self, year):
+        """All CO balance rows for a year (one per user+company). Returns a list."""
+        return self.query_all(
+            """
+            SELECT
+                id, mapped_jarvis_user_id AS user_id,
+                year, company_name, cnp, nume, prenume, departament,
+                carry_prev_year, carry_two_years_ago,
+                annual_cim, seniority_bonus, manual_adjustment,
+                total_available
+            FROM sincron_co_balance
+            WHERE year = %s AND mapped_jarvis_user_id IS NOT NULL
+            ORDER BY nume, prenume, company_name
+            """,
+            (year,),
+        )
 
     def count_for_year(self, year):
         row = self.query_one(

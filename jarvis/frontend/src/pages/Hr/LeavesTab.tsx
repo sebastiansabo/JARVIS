@@ -78,8 +78,9 @@ export default function LeavesTab({ search = '' }: Props) {
   const matchedRows = useMemo<MatchedRow[]>(() => {
     const data = balanceQuery.data?.data ?? {}
     const rows: MatchedRow[] = []
-    for (const [uid, r] of Object.entries(data)) {
-      rows.push({ user_id: Number(uid), ...(r as Omit<MatchedRow, 'user_id'>) })
+    for (const [, r] of Object.entries(data)) {
+      const row = r as MatchedRow
+      rows.push(row)
     }
     // Sort by company, then name
     rows.sort((a, b) => {
@@ -301,7 +302,7 @@ export default function LeavesTab({ search = '' }: Props) {
                       </TableHeader>
                       <TableBody>
                         {filteredMatched.map((r) => (
-                          <TableRow key={`${r.user_id}-${r.year}`}>
+                          <TableRow key={`${r.user_id}-${r.company_name}-${r.year}`}>
                             <TableCell className="font-medium">
                               {[r.nume, r.prenume].filter(Boolean).join(' ') || `user #${r.user_id}`}
                             </TableCell>
