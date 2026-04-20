@@ -98,6 +98,18 @@ function netSec(durationSec: number | null | undefined, lunchMin: number) {
   return sec > lunchSec ? sec - lunchSec : sec
 }
 
+function timeDiffSec(a: string, b: string): number {
+  return Math.max(0, (new Date(b).getTime() - new Date(a).getTime()) / 1000)
+}
+
+/** Compute effective duration: use adjusted times if available, else raw duration_seconds */
+function effectiveSec(d: BioStarDayHistory, lunchMin: number): number {
+  if (d.adjusted_first_punch && d.adjusted_last_punch) {
+    return netSec(timeDiffSec(d.adjusted_first_punch, d.adjusted_last_punch), lunchMin)
+  }
+  return netSec(d.duration_seconds, lunchMin)
+}
+
 function todayStr() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -912,7 +924,7 @@ function MonthHistory({
           const isOpen = expandedWeeks.has(week.weekNum)
           const wkWorking = week.days.filter(d => !d.isWeekend && !d.isHoliday)
           const wkPresent = wkWorking.filter(d => d.data)
-          const wkTotalSec = wkPresent.reduce((sum, d) => sum + netSec(d.data!.duration_seconds, d.data!.lunch_break_minutes ?? lunchMin), 0)
+          const wkTotalSec = wkPresent.reduce((sum, d) => sum + effectiveSec(d.data!, d.data!.lunch_break_minutes ?? lunchMin), 0)
           const wkAvg = wkPresent.length > 0 ? fmtDuration(wkTotalSec / wkPresent.length) : '—'
 
           const handleAdjustWeek = async (e: React.MouseEvent) => {
@@ -989,7 +1001,8 @@ function DayRow({
 }) {
   const d = day.data
   const isToday = day.date === todayStr()
-  const net = d ? netSec(d.duration_seconds, d.lunch_break_minutes ?? lunchMin) : 0
+  const isFuture = day.date > todayStr()
+  const net = d ? effectiveSec(d, d.lunch_break_minutes ?? lunchMin) : 0
   const netH = net / 3600
   const isShort = netH > 0 && netH < workingHours
   const hasAdj = !!d?.adjusted_first_punch
@@ -1024,11 +1037,11 @@ function DayRow({
     <div className={cn(
       'flex items-center gap-3 px-3 py-1.5 rounded-md text-sm',
       isToday && 'bg-primary/5 font-medium',
-      !d && !day.isWeekend && !day.isHoliday && 'opacity-50',
+      !d && !day.isWeekend && !day.isHoliday && !isFuture && 'opacity-50',
     )}>
       <span className={cn(
         'inline-block h-2 w-2 rounded-full shrink-0',
-        d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : 'bg-red-400',
+        d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : isFuture ? 'bg-muted-foreground/30' : 'bg-red-400',
       )} />
       <span className="w-28 shrink-0 capitalize text-muted-foreground">{day.dayLabel}</span>
 
@@ -1067,7 +1080,7 @@ function DayRow({
         </>
       ) : (
         <span className="text-xs text-muted-foreground">
-          {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : 'Absent'}
+          {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : isFuture ? '—' : 'Absent'}
         </span>
       )}
     </div>
