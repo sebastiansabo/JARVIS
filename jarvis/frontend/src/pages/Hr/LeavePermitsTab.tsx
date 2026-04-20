@@ -1,12 +1,14 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Upload, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import { Loader2, Upload, ChevronLeft, ChevronRight, ChevronDown, ArrowRightLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Badge } from '@/components/ui/badge'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { connecteamApi } from '@/api/connecteam'
-import type { ConnecteamSubmission } from '@/api/connecteam'
+import type { ConnecteamSubmission, ConversionRequest } from '@/api/connecteam'
 import { toast } from 'sonner'
 
 const now = new Date()
@@ -18,12 +20,21 @@ export default function LeavePermitsTab({ search }: { search: string }) {
   const [companyFilter, setCompanyFilter] = useState<string>('all')
   const [collapsedEmployees, setCollapsedEmployees] = useState<Set<string>>(new Set())
 
+  // Conversion dialog state
+  const [conversionTarget, setConversionTarget] = useState<{
+    employeeName: string
+    employeeUserId: number
+    totalHours: number
+    submissions: ConnecteamSubmission[]
+  } | null>(null)
+  const [coDays, setCoDays] = useState('1')
+  const [approverId, setApproverId] = useState<string>('')
+
   useQuery({
     queryKey: ['connecteam', 'status'],
     queryFn: () => connecteamApi.getStatus().then(r => r.data),
   })
 
-  // Fetch submissions for the selected month (server-side filtered)
   const { data: recentData, isLoading } = useQuery({
     queryKey: ['connecteam', 'submissions', year, month],
     queryFn: () =>
@@ -31,6 +42,20 @@ export default function LeavePermitsTab({ search }: { search: string }) {
         .then(r => r.json())
         .then(r => r.data as ConnecteamSubmission[]),
   })
+
+  // Fetch existing conversions for this month
+  const { data: conversions } = useQuery({
+    queryKey: ['connecteam', 'conversions', year, month],
+    queryFn: () => connecteamApi.getConversions(year, month),
+  })
+
+  // Fetch approvers (lazy — only when dialog opens)
+  const { data: approversRes } = useQuery({
+    queryKey: ['connecteam', 'approvers'],
+    queryFn: () => connecteamApi.getApprovers(),
+    enabled: !!conversionTarget,
+  })
+  const approvers = approversRes?.data ?? []
 
   const importMut = useMutation({
     mutationFn: (file: File) => connecteamApi.importExcel(file),
@@ -49,6 +74,22 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     onError: () => toast.error('Import failed'),
   })
 
+  const conversionMut = useMutation({
+    mutationFn: (data: Parameters<typeof connecteamApi.createConversion>[0]) =>
+      connecteamApi.createConversion(data),
+    onSuccess: () => {
+      toast.success('Conversion request sent for approval')
+      qc.invalidateQueries({ queryKey: ['connecteam', 'conversions'] })
+      qc.invalidateQueries({ queryKey: ['connecteam', 'submissions'] })
+      setConversionTarget(null)
+      setCoDays('1')
+      setApproverId('')
+    },
+    onError: (err: { response?: { data?: { error?: string } } }) => {
+      toast.error(err.response?.data?.error || 'Failed to create conversion')
+    },
+  })
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
@@ -57,7 +98,6 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     }
   }
 
-  // Unique companies for the filter
   const companies = useMemo(() => {
     if (!recentData) return []
     const set = new Set<string>()
@@ -67,7 +107,6 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     return Array.from(set).sort()
   }, [recentData])
 
-  // Filter by search + company
   const filtered = useMemo(() => {
     if (!recentData) return []
     return recentData.filter((s) => {
@@ -80,21 +119,30 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     })
   }, [recentData, search, companyFilter])
 
-  // Group by employee name
   const grouped = useMemo(() => {
-    const map = new Map<string, { submissions: ConnecteamSubmission[]; totalHours: number; company: string | null }>()
+    const map = new Map<string, { submissions: ConnecteamSubmission[]; totalHours: number; company: string | null; userId: number | null }>()
     for (const s of filtered) {
       const key = s.connecteam_user_name || `User #${s.connecteam_user_id}`
       if (!map.has(key)) {
-        map.set(key, { submissions: [], totalHours: 0, company: s.jarvis_user_company ?? null })
+        map.set(key, { submissions: [], totalHours: 0, company: s.jarvis_user_company ?? null, userId: s.mapped_jarvis_user_id })
       }
       const group = map.get(key)!
       group.submissions.push(s)
       group.totalHours += s.leave_hours ?? 0
     }
-    // Sort by name
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]))
   }, [filtered])
+
+  // Index conversions by employee_user_id for quick lookup
+  const conversionsByUser = useMemo(() => {
+    const map = new Map<number, ConversionRequest>()
+    if (conversions) {
+      for (const c of conversions) {
+        map.set(c.employee_user_id, c)
+      }
+    }
+    return map
+  }, [conversions])
 
   const toggleEmployee = (name: string) => {
     setCollapsedEmployees(prev => {
@@ -119,6 +167,26 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     else setMonth(m => m + 1)
   }
 
+  const openConversion = (name: string, userId: number, totalHours: number, submissions: ConnecteamSubmission[]) => {
+    setConversionTarget({ employeeName: name, employeeUserId: userId, totalHours, submissions })
+    setCoDays('1')
+    setApproverId('')
+  }
+
+  const submitConversion = () => {
+    if (!conversionTarget || !approverId) return
+    conversionMut.mutate({
+      employee_user_id: conversionTarget.employeeUserId,
+      year,
+      month,
+      co_days_requested: parseInt(coDays),
+      approver_user_id: parseInt(approverId),
+      submission_ids: conversionTarget.submissions.map(s => s.submission_id),
+    })
+  }
+
+  const maxCoDays = conversionTarget ? Math.max(1, Math.floor(conversionTarget.totalHours / 8)) : 1
+
   return (
     <div className="space-y-4">
       {/* Header bar */}
@@ -132,7 +200,6 @@ export default function LeavePermitsTab({ search }: { search: string }) {
             <ChevronRight className="h-4 w-4" />
           </Button>
 
-          {/* Company filter */}
           {companies.length > 0 && (
             <Select value={companyFilter} onValueChange={setCompanyFilter}>
               <SelectTrigger className="w-[200px] h-8 text-xs">
@@ -206,8 +273,9 @@ export default function LeavePermitsTab({ search }: { search: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {grouped.map(([employeeName, { submissions, totalHours, company }]) => {
+              {grouped.map(([employeeName, { submissions, totalHours, company, userId }]) => {
                 const isCollapsed = collapsedEmployees.has(employeeName)
+                const existingConversion = userId ? conversionsByUser.get(userId) : undefined
                 return (
                   <Fragment key={employeeName}>
                     {/* Employee group header */}
@@ -226,7 +294,26 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                         {submissions.length} permit{submissions.length !== 1 ? 's' : ''}
                       </TableCell>
                       <TableCell className="text-xs font-medium tabular-nums">{totalHours}h</TableCell>
-                      <TableCell colSpan={4} />
+                      <TableCell colSpan={2} />
+                      <TableCell className="text-center">
+                        {existingConversion ? (
+                          <ConversionStatusBadge conversion={existingConversion} />
+                        ) : userId && totalHours >= 8 ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 text-[10px] gap-1"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openConversion(employeeName, userId, totalHours, submissions)
+                            }}
+                          >
+                            <ArrowRightLeft className="h-3 w-3" />
+                            Convert to CO
+                          </Button>
+                        ) : null}
+                      </TableCell>
+                      <TableCell />
                     </TableRow>
                     {/* Submission rows */}
                     {!isCollapsed && submissions.map((s) => (
@@ -251,7 +338,12 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                         <TableCell className="whitespace-nowrap text-xs">{s.approved_by || '-'}</TableCell>
                         <TableCell>
                           <StatusBadge
-                            status={s.status === 'approved' ? 'active' : s.status === 'rejected' ? 'error' : s.status}
+                            status={
+                              s.status === 'approved' ? 'active' :
+                              s.status === 'rejected' ? 'error' :
+                              s.status === 'converted' ? 'info' :
+                              s.status
+                            }
                           />
                         </TableCell>
                         <TableCell>
@@ -272,6 +364,97 @@ export default function LeavePermitsTab({ search }: { search: string }) {
           </Table>
         </div>
       )}
+
+      {/* Conversion Dialog */}
+      <Dialog open={!!conversionTarget} onOpenChange={(open) => { if (!open) setConversionTarget(null) }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Convert Leave Permits to CO</DialogTitle>
+          </DialogHeader>
+          {conversionTarget && (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">{conversionTarget.employeeName}</p>
+                <p className="text-xs text-muted-foreground">
+                  Total accumulated: <span className="font-medium text-foreground">{conversionTarget.totalHours}h</span> in {monthLabel}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {conversionTarget.submissions.length} permit{conversionTarget.submissions.length !== 1 ? 's' : ''} will be marked as converted
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">CO Days to convert</label>
+                <Select value={coDays} onValueChange={setCoDays}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: maxCoDays }, (_, i) => i + 1).map(n => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n} day{n > 1 ? 's' : ''} ({n * 8}h)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  1 CO day = 8 hours. Max {maxCoDays} day{maxCoDays > 1 ? 's' : ''} based on {conversionTarget.totalHours}h accumulated.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Send for approval to</label>
+                <Select value={approverId} onValueChange={setApproverId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select approver..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {approvers.map(a => (
+                      <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setConversionTarget(null)}>Cancel</Button>
+                <Button
+                  onClick={submitConversion}
+                  disabled={!approverId || conversionMut.isPending}
+                >
+                  {conversionMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+                  Send for Approval
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
+}
+
+function ConversionStatusBadge({ conversion }: { conversion: ConversionRequest }) {
+  switch (conversion.status) {
+    case 'pending':
+      return (
+        <Badge variant="outline" className="text-[10px] border-yellow-300 text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30">
+          CO pending ({conversion.co_days_requested}d)
+        </Badge>
+      )
+    case 'approved':
+      return (
+        <Badge variant="outline" className="text-[10px] border-green-300 text-green-600 bg-green-50 dark:bg-green-950/30">
+          {conversion.co_days_requested}d converted
+        </Badge>
+      )
+    case 'rejected':
+      return (
+        <Badge variant="outline" className="text-[10px] border-red-300 text-red-600 bg-red-50 dark:bg-red-950/30">
+          CO rejected
+        </Badge>
+      )
+    default:
+      return null
+  }
 }

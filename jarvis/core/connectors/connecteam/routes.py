@@ -198,3 +198,131 @@ def get_recent_submissions():
         return jsonify({'success': True, 'data': data})
     except Exception as e:
         return safe_error_response(e)
+
+
+# ── CO Conversions ──
+
+@connecteam_bp.route('/api/conversions', methods=['POST'])
+@admin_required
+def create_conversion():
+    """Initiate a CO conversion request for an employee's leave permits."""
+    from .repositories.conversion_repository import ConversionRepository
+    from hr.co_balance.repository import CoBalanceRepository
+    from core.approvals.engine import ApprovalEngine
+
+    data = request.get_json(force=True)
+    employee_user_id = data.get('employee_user_id')
+    year = data.get('year')
+    month = data.get('month')
+    co_days = data.get('co_days_requested')
+    approver_user_id = data.get('approver_user_id')
+    submission_ids = data.get('submission_ids', [])
+
+    if not all([employee_user_id, year, month, co_days, approver_user_id]):
+        return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+
+    conv_repo = ConversionRepository()
+    co_repo = CoBalanceRepository()
+
+    # Check no pending conversion for this employee/month
+    existing = conv_repo.get_for_employee_month(employee_user_id, year, month)
+    if existing:
+        return jsonify({'success': False, 'error': 'A pending conversion already exists for this employee/month'}), 409
+
+    # Get employee's accumulated hours for this month
+    subs = service.repo.get_recent_submissions(500, year=year, month=month)
+    user_subs = [s for s in subs if s.get('mapped_jarvis_user_id') == employee_user_id]
+    total_hours = sum(float(s.get('leave_hours') or 0) for s in user_subs)
+
+    if total_hours <= 0:
+        return jsonify({'success': False, 'error': 'No accumulated hours for this employee/month'}), 400
+
+    # Default to all submissions for this employee/month if none specified
+    if not submission_ids:
+        submission_ids = [s['submission_id'] for s in user_subs]
+
+    # Check CO balance
+    balance = co_repo.get_for_user(employee_user_id, year)
+    if not balance:
+        return jsonify({'success': False, 'error': 'No CO balance found for this employee'}), 400
+
+    # Get employee name for context
+    from core.base_repository import BaseRepository
+    user_row = BaseRepository().query_one("SELECT name FROM users WHERE id = %s", (employee_user_id,))
+    employee_name = user_row['name'] if user_row else f'User #{employee_user_id}'
+
+    month_label = datetime(year, month, 1).strftime('%B %Y')
+
+    try:
+        # Create conversion record (approval_request_id will be set after)
+        conversion_id = conv_repo.create(
+            employee_user_id=employee_user_id,
+            year=year, month=month,
+            total_accumulated_hours=total_hours,
+            co_days_requested=co_days,
+            approver_user_id=approver_user_id,
+            requested_by=current_user.id,
+            approval_request_id=None,
+            submission_ids=submission_ids,
+        )
+
+        # Submit to approval engine
+        engine = ApprovalEngine()
+        result = engine.submit(
+            entity_type='leave_permit_conversion',
+            entity_id=conversion_id,
+            context={
+                'approver_user_id': approver_user_id,
+                'title': f'CO Conversion: {employee_name} — {co_days} days ({month_label})',
+                'employee_name': employee_name,
+                'employee_user_id': employee_user_id,
+                'co_days_requested': co_days,
+                'total_hours': float(total_hours),
+                'year': year,
+                'month': month,
+            },
+            requested_by=current_user.id,
+        )
+
+        # Link approval request back to conversion
+        if result and result.get('request_id'):
+            conv_repo.set_approval_request_id(conversion_id, result['request_id'])
+
+        conversion = conv_repo.get_by_id(conversion_id)
+        return jsonify({'success': True, 'data': dict(conversion) if conversion else {'id': conversion_id}})
+
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@connecteam_bp.route('/api/conversions', methods=['GET'])
+@api_login_required
+def list_conversions():
+    """List conversion requests filtered by year/month."""
+    from .repositories.conversion_repository import ConversionRepository
+
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+    if not year or not month:
+        return jsonify({'success': False, 'error': 'year and month required'}), 400
+
+    try:
+        data = ConversionRepository().get_for_month(year, month)
+        return jsonify({'success': True, 'data': data})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@connecteam_bp.route('/api/conversions/<int:conversion_id>', methods=['GET'])
+@api_login_required
+def get_conversion(conversion_id):
+    """Get a single conversion detail."""
+    from .repositories.conversion_repository import ConversionRepository
+
+    try:
+        data = ConversionRepository().get_by_id(conversion_id)
+        if not data:
+            return jsonify({'success': False, 'error': 'Not found'}), 404
+        return jsonify({'success': True, 'data': dict(data)})
+    except Exception as e:
+        return safe_error_response(e)

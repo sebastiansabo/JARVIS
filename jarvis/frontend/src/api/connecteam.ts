@@ -65,6 +65,21 @@ export interface ConnecteamSubmission {
   jarvis_user_company?: string | null
 }
 
+export interface ConversionRequest {
+  id: number
+  employee_user_id: number
+  employee_name: string
+  year: number
+  month: number
+  total_accumulated_hours: number
+  co_days_requested: number
+  approver_user_id: number
+  approver_name: string
+  approval_request_id: number | null
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled'
+  created_at: string
+}
+
 export const connecteamApi = {
   getStatus: () =>
     api.get<{ success: boolean; data: ConnecteamStatus }>(`${BASE}/status`),
@@ -97,4 +112,23 @@ export const connecteamApi = {
 
   removeMapping: (connecteamUserId: number) =>
     api.delete<{ success: boolean }>(`${BASE}/users/mapping?connecteam_user_id=${connecteamUserId}`),
+
+  // ── CO Conversions ──
+
+  createConversion: (data: {
+    employee_user_id: number
+    year: number
+    month: number
+    co_days_requested: number
+    approver_user_id: number
+    submission_ids?: string[]
+  }) =>
+    api.post<{ success: boolean; data: ConversionRequest }>(`${BASE}/conversions`, data),
+
+  getConversions: async (year: number, month: number) => {
+    const res = await api.get<{ success: boolean; data: ConversionRequest[] }>(
+      `${BASE}/conversions${qs({ year, month })}`,
+    )
+    return res.data
+  },
 }

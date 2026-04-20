@@ -1733,4 +1733,19 @@ def create_schema_incremental(conn, cursor):
         END $$;
     ''')
 
+    # ── Leave permit CO conversion approval flow ──
+    cursor.execute('''
+        INSERT INTO approval_flows (name, slug, description, entity_type, is_active, priority, created_by)
+        SELECT 'Leave Permit CO Conversion', 'leave-permit-co-conversion',
+               'Convert accumulated leave permit hours into CO days',
+               'leave_permit_conversion', TRUE, 100, 1
+        WHERE NOT EXISTS (SELECT 1 FROM approval_flows WHERE slug = 'leave-permit-co-conversion')
+    ''')
+    cursor.execute('''
+        INSERT INTO approval_steps (flow_id, name, step_order, approver_type, notify_on_pending, notify_on_decision)
+        SELECT f.id, 'Selected Approver', 1, 'context_approver', TRUE, TRUE
+        FROM approval_flows f WHERE f.slug = 'leave-permit-co-conversion'
+        AND NOT EXISTS (SELECT 1 FROM approval_steps s WHERE s.flow_id = f.id)
+    ''')
+
     conn.commit()

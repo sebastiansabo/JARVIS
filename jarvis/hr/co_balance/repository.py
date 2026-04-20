@@ -109,6 +109,19 @@ class CoBalanceRepository(BaseRepository):
             returning=True,
         )
 
+    def adjust_manual(self, user_id, year, delta):
+        """Atomically adjust manual_adjustment by delta (negative to deduct)."""
+        return self.execute(
+            """
+            UPDATE sincron_co_balance
+            SET manual_adjustment = manual_adjustment + %s
+            WHERE mapped_jarvis_user_id = %s AND year = %s
+            RETURNING id, manual_adjustment
+            """,
+            (delta, user_id, year),
+            returning=True,
+        )
+
     def get_used_ytd_by_user(self, year):
         """Σ of Sincron CO days-unit entries per JARVIS user, for a given year."""
         rows = self.query_all(
