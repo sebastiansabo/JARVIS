@@ -291,6 +291,37 @@ def get_employee_timesheet(user_id):
         return safe_error_response(e)
 
 
+@sincron_bp.route('/api/timesheets/tree', methods=['GET'])
+@api_login_required
+@v2_permission_required('hr', 'timesheets', 'view')
+def get_timesheet_tree():
+    """Get visible organigram tree for timesheet node filtering."""
+    from core.organization.hr_utils import get_visible_tree, is_manager
+    scope = getattr(g, 'permission_scope', 'all')
+    if scope == 'own':
+        return jsonify({'success': True, 'companies': [], 'nodes': []})
+    if scope == 'all':
+        # Admin — return all structure nodes + companies
+        from core.organization.manager_utils import get_db, get_cursor, release_db
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute("SELECT id, company as name FROM companies ORDER BY company")
+            companies = [{'id': f'company-{r["id"]}', 'name': r['name'], 'level': 0,
+                          'parent_id': None, 'company_id': r['id']} for r in cursor.fetchall()]
+            cursor.execute("""
+                SELECT id, name, level, parent_id, company_id
+                FROM structure_nodes ORDER BY level, name
+            """)
+            nodes = [dict(r) for r in cursor.fetchall()]
+            return jsonify({'success': True, 'companies': companies, 'nodes': nodes})
+        finally:
+            release_db(conn)
+    # department scope — manager sees their own tree
+    tree = get_visible_tree(current_user.id)
+    return jsonify({'success': True, **tree})
+
+
 @sincron_bp.route('/api/timesheets/team', methods=['GET'])
 @api_login_required
 @v2_permission_required('hr', 'timesheets', 'view')
@@ -323,7 +354,11 @@ def get_team_timesheet():
             managed_ids = [current_user.id]
     else:
         # scope == 'all' — admin sees ALL mapped employees across all companies
-        managed_ids = None  # None = no filter
+        if node_id:
+            # Admin filtering by specific node — get that node's descendants
+            managed_ids = get_managed_employee_ids(current_user.id, node_id=node_id)
+        else:
+            managed_ids = None  # None = no filter
 
     if managed_ids is not None and not managed_ids:
         return jsonify({'success': True, 'data': [],

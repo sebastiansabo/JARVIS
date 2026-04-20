@@ -213,6 +213,17 @@ export const sincronApi = {
     return res
   },
 
+  // ── Timesheet Tree (for node filtering) ──
+
+  getTimesheetTree: async () => {
+    const res = await api.get<{
+      success: boolean
+      companies: Array<{ id: string; name: string; level: number; parent_id: null; company_id: number }>
+      nodes: Array<{ id: number; name: string; level: number; parent_id: number | null; company_id: number }>
+    }>(`${BASE}/timesheets/tree`)
+    return res
+  },
+
   // ── Activity Codes ──
 
   getActivityCodes: async () => {
