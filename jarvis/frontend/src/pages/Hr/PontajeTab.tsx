@@ -882,15 +882,15 @@ function MonthHistory({
   const leaveCodes = useMemo(() => {
     const map = new Map<string, string>()
     if (!sincronData?.data?.days) return map
-    for (const [dayNum, codes] of Object.entries(sincronData.data.days)) {
+    for (const [dayKey, codes] of Object.entries(sincronData.data.days)) {
+      // dayKey is a full date string like "2026-04-06"
       const leave = codes.find(c => ['CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV'].includes(c.short_code))
       if (leave) {
-        const ds = `${date.slice(0, 7)}-${dayNum.padStart(2, '0')}`
-        map.set(ds, leave.short_code)
+        map.set(dayKey, leave.short_code)
       }
     }
     return map
-  }, [sincronData, date])
+  }, [sincronData])
 
   // Generate all days — full weeks including boundary days from prev/next month
   const allDays = useMemo(() => {
