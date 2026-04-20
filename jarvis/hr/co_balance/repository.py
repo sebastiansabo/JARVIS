@@ -129,6 +129,46 @@ class CoBalanceRepository(BaseRepository):
         )
         return {r['user_id']: float(r['used_ytd'] or 0) for r in rows}
 
+    def get_for_year_by_company(self, year):
+        """All CO balance rows keyed by (user_id → {company_name → row})."""
+        rows = self.query_all(
+            """
+            SELECT mapped_jarvis_user_id AS user_id, company_name,
+                   carry_prev_year, total_available
+            FROM sincron_co_balance
+            WHERE year = %s AND mapped_jarvis_user_id IS NOT NULL
+            """,
+            (year,),
+        )
+        result = {}
+        for r in rows:
+            result.setdefault(r['user_id'], {})[r['company_name']] = r
+        return result
+
+    def get_used_ytd_by_user_company(self, year):
+        """CO used YTD grouped by (user_id → {company_name → used_ytd})."""
+        rows = self.query_all(
+            """
+            SELECT se.mapped_jarvis_user_id AS user_id,
+                   se.company_name,
+                   COALESCE(SUM(st.value), 0) AS used_ytd
+            FROM sincron_timesheets st
+            JOIN sincron_employees se
+              ON st.sincron_employee_id = se.sincron_employee_id
+             AND st.company_name        = se.company_name
+            WHERE st.year       = %s
+              AND st.short_code = 'CO'
+              AND st.unit       = 'day'
+              AND se.mapped_jarvis_user_id IS NOT NULL
+            GROUP BY se.mapped_jarvis_user_id, se.company_name
+            """,
+            (year,),
+        )
+        result = {}
+        for r in rows:
+            result.setdefault(r['user_id'], {})[r['company_name']] = float(r['used_ytd'] or 0)
+        return result
+
     # ── Import runs ──
 
     def create_import_run(self, run_id, year, source_file, imported_by):

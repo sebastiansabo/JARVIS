@@ -40,6 +40,8 @@ def api_absent_today():
         result[r['user_id']] = {
             'status': r['status'],
             'leave_code': r.get('leave_code'),
+            'first_punch': r.get('first_punch'),
+            'last_punch': r.get('last_punch'),
         }
     return jsonify(result)
 
@@ -123,6 +125,27 @@ def api_employee_work_stats():
     ''', (list(LEAVE_CODES), start.isoformat(), end.isoformat()))
     sincron_map = {r['mapped_jarvis_user_id']: r for r in sincron_leave}
 
+    # 1b. Per-company leave breakdown (for multi-company sub-rows)
+    sincron_leave_by_company = _base.query_all('''
+        SELECT se.mapped_jarvis_user_id, se.company_name,
+               COUNT(DISTINCT st.day) AS leave_days,
+               STRING_AGG(DISTINCT st.short_code, ', ' ORDER BY st.short_code) AS leave_types
+        FROM sincron_timesheets st
+        JOIN sincron_employees se
+          ON se.sincron_employee_id = st.sincron_employee_id
+          AND se.company_name = st.company_name
+        WHERE se.mapped_jarvis_user_id IS NOT NULL
+          AND st.short_code = ANY(%s)
+          AND st.day BETWEEN %s AND %s
+        GROUP BY se.mapped_jarvis_user_id, se.company_name
+    ''', (list(LEAVE_CODES), start.isoformat(), end.isoformat()))
+    # {user_id: {company_name: {leave_days, leave_types}}}
+    sincron_leave_company_map = {}
+    for r in sincron_leave_by_company:
+        sincron_leave_company_map.setdefault(
+            r['mapped_jarvis_user_id'], {}
+        )[r['company_name']] = r
+
     # 2. Connecteam — leave permits (partial-day, in hours)
     connecteam_leave = _base.query_all('''
         SELECT mapped_jarvis_user_id,
@@ -158,6 +181,9 @@ def api_employee_work_stats():
     _co_year = end.year
     _co_map = _co_repo.get_for_year(_co_year)
     _co_used_map = _co_repo.get_used_ytd_by_user(_co_year)
+    # 4b. Per-company CO data (for multi-company sub-rows)
+    _co_company_map = _co_repo.get_for_year_by_company(_co_year)
+    _co_used_company_map = _co_repo.get_used_ytd_by_user_company(_co_year)
 
     def _co_payload(uid):
         co = _co_map.get(uid)
@@ -178,6 +204,31 @@ def api_employee_work_stats():
             'co_balance': total - used,
             'co_year': int(co.get('year') or _co_year),
         }
+
+    def _enrich_companies(uid, companies):
+        """Enrich schedule_companies entries with per-company CO + leave data."""
+        if not companies:
+            return companies
+        user_co = _co_company_map.get(uid, {})
+        user_co_used = _co_used_company_map.get(uid, {})
+        user_leave = sincron_leave_company_map.get(uid, {})
+        enriched = []
+        for comp in companies:
+            cname = comp['company']
+            co = user_co.get(cname)
+            co_total = int(co.get('total_available') or 0) if co else None
+            co_used = int(round(user_co_used.get(cname, 0))) if cname in user_co_used else None
+            leave = user_leave.get(cname)
+            enriched.append({
+                **comp,
+                'co_total': co_total,
+                'co_carry_over': int(co.get('carry_prev_year') or 0) if co else None,
+                'co_used_ytd': co_used,
+                'co_remaining': (co_total - co_used) if co_total is not None and co_used is not None else None,
+                'leave_days': int(leave.get('leave_days', 0)) if leave else 0,
+                'leave_types': leave.get('leave_types', '') if leave else '',
+            })
+        return enriched
 
     result = {}
     for row in range_data:
@@ -254,7 +305,7 @@ def api_employee_work_stats():
             'permit_hours': permit_hours,
             'avg_check_in': avg_check_in,
             'avg_check_out': avg_check_out,
-            'schedule_companies': company_norms_map.get(uid, []),
+            'schedule_companies': _enrich_companies(uid, company_norms_map.get(uid, [])),
             **_co_payload(uid),
         }
 
@@ -305,7 +356,7 @@ def api_employee_work_stats():
             'permit_hours': permit_hours,
             'avg_check_in': None,
             'avg_check_out': None,
-            'schedule_companies': company_norms_map.get(uid, []),
+            'schedule_companies': _enrich_companies(uid, company_norms_map.get(uid, [])),
             **_co_payload(uid),
         }
 

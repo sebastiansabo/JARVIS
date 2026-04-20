@@ -981,7 +981,7 @@ export default function EmployeesTab({ search }: Props) {
                           })}
                         </TableRow>
                         {isExpanded && (() => {
-                          const companies = (workStats?.[e.id]?.schedule_companies || []) as Array<{ company: string; norma: number; start: string; end: string; lunch: number }>
+                          const companies = workStats?.[e.id]?.schedule_companies || []
                           return (
                             <>
                               {/* Company schedule sub-rows */}
@@ -1001,6 +1001,25 @@ export default function EmployeesTab({ search }: Props) {
                                     if (key === 'norm') return <TableCell key={key} className={cellCls}>{comp.norma}h/day</TableCell>
                                     if (key === 'lunch') return <TableCell key={key} className={cellCls}>{comp.lunch > 0 ? `${comp.lunch}min` : '—'}</TableCell>
                                     if (key === 'schedule') return <TableCell key={key} className={cellCls}>{comp.start && comp.end ? `${comp.start}–${comp.end}` : '—'}</TableCell>
+                                    if (key === 'co_balance') return (
+                                      <TableCell key={key} className={cellCls}>
+                                        {comp.co_remaining != null ? (
+                                          <span className={comp.co_remaining < 0 ? 'text-red-600 dark:text-red-400 font-medium' : ''}>{comp.co_remaining}d</span>
+                                        ) : <span className="text-muted-foreground">—</span>}
+                                      </TableCell>
+                                    )
+                                    if (key === 'co_carry_over') return (
+                                      <TableCell key={key} className={cellCls}>
+                                        {comp.co_carry_over != null ? <>{comp.co_carry_over}d</> : <span className="text-muted-foreground">—</span>}
+                                      </TableCell>
+                                    )
+                                    if (key === 'sincron_leave') return (
+                                      <TableCell key={key} className={cellCls}>
+                                        {(comp.leave_days ?? 0) > 0 ? (
+                                          <span>{comp.leave_days}d · {(comp.leave_days ?? 0) * comp.norma}h</span>
+                                        ) : <span className="text-muted-foreground">—</span>}
+                                      </TableCell>
+                                    )
                                     return <TableCell key={key} className={cellCls} />
                                   })}
                                 </TableRow>
@@ -1027,11 +1046,15 @@ export default function EmployeesTab({ search }: Props) {
   )
 }
 
-function AbsenceBadge({ status }: { status?: { status: string; leave_code?: string } }) {
+function AbsenceBadge({ status }: { status?: { status: string; leave_code?: string; first_punch?: string | null; last_punch?: string | null } }) {
   if (!status) return <span className="text-xs text-muted-foreground">—</span>
   switch (status.status) {
-    case 'present':
-      return <span className="inline-flex items-center gap-1 text-xs text-green-600"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />Present</span>
+    case 'present': {
+      const punch = status.first_punch && status.last_punch
+        ? ` (${status.first_punch} - ${status.last_punch})`
+        : status.first_punch ? ` (${status.first_punch} - …)` : ''
+      return <span className="inline-flex items-center gap-1 text-xs text-green-600"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />Present{punch}</span>
+    }
     case 'on_leave':
       return (
         <Badge variant="outline" className="text-[10px] border-orange-300 text-orange-600 bg-orange-50 dark:bg-orange-950/30">

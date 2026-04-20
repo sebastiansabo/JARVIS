@@ -72,7 +72,12 @@ export interface EmployeeWorkStats {
   permit_hours: number
   avg_check_in: string | null
   avg_check_out: string | null
-  schedule_companies: Array<{ company: string; norma: number; start: string; end: string; lunch: number }>
+  schedule_companies: Array<{
+    company: string; norma: number; start: string; end: string; lunch: number
+    co_total?: number | null; co_carry_over?: number | null
+    co_used_ytd?: number | null; co_remaining?: number | null
+    leave_days?: number; leave_types?: string
+  }>
   co_total?: number | null
   co_carry_over?: number | null
   co_used_ytd?: number | null

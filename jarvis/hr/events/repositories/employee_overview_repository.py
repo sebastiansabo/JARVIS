@@ -281,7 +281,8 @@ class EmployeeOverviewRepository(BaseRepository):
         """Return absence status for all active employees on a given date.
 
         Single query with CTEs — no N+1. Returns rows with:
-        user_id, status ('present','on_leave','absent','holiday','unknown'), leave_code
+        user_id, status ('present','on_leave','absent','holiday','unknown'),
+        leave_code, first_punch (time), last_punch (time)
         """
         return self.query_all('''
             WITH punched AS (
@@ -290,6 +291,16 @@ class EmployeeOverviewRepository(BaseRepository):
                 JOIN biostar_punch_logs pl ON pl.biostar_user_id = be.biostar_user_id
                 WHERE pl.event_datetime::date = %s
                   AND be.mapped_jarvis_user_id IS NOT NULL
+            ),
+            punch_times AS (
+                SELECT be.mapped_jarvis_user_id AS user_id,
+                       MIN(pl.event_datetime)::time AS first_punch,
+                       MAX(pl.event_datetime)::time AS last_punch
+                FROM biostar_employees be
+                JOIN biostar_punch_logs pl ON pl.biostar_user_id = be.biostar_user_id
+                WHERE pl.event_datetime::date = %s
+                  AND be.mapped_jarvis_user_id IS NOT NULL
+                GROUP BY be.mapped_jarvis_user_id
             ),
             on_leave AS (
                 SELECT DISTINCT ON (user_id) user_id, short_code FROM (
@@ -333,14 +344,18 @@ class EmployeeOverviewRepository(BaseRepository):
                        WHEN bm.user_id IS NOT NULL THEN 'absent'
                        ELSE 'unknown'
                    END AS status,
-                   ol.short_code AS leave_code
+                   ol.short_code AS leave_code,
+                   to_char(pt.first_punch, 'HH24:MI') AS first_punch,
+                   to_char(pt.last_punch, 'HH24:MI') AS last_punch
             FROM users u
             LEFT JOIN punched p ON p.user_id = u.id
+            LEFT JOIN punch_times pt ON pt.user_id = u.id
             LEFT JOIN on_leave ol ON ol.user_id = u.id
             LEFT JOIN biostar_mapped bm ON bm.user_id = u.id
             WHERE u.is_active = TRUE
               AND COALESCE(u.contract_status, 'active') = 'active'
-        ''', (check_date, check_date, check_date, check_date, check_date, check_date, check_date))
+        ''', (check_date, check_date, check_date, check_date, check_date,
+              check_date, check_date, check_date))
 
     def get_daily_sincron_codes(self, sincron_employee_id, company_name, year, month):
         """Return list of {day, short_code, unit, value} rows for timeline."""

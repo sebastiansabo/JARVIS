@@ -62,7 +62,7 @@ export const hrApi = {
   getEmployees: (activeOnly = true, contractStatus?: string) =>
     api.get<HrEmployee[]>(`${BASE}/employees${qs({ active_only: activeOnly, contract_status: contractStatus })}`),
   getAbsentToday: (date?: string) =>
-    api.get<Record<number, { status: string; leave_code?: string }>>(`${BASE}/employees/absent-today${date ? `?date=${date}` : ''}`),
+    api.get<Record<number, { status: string; leave_code?: string; first_punch?: string | null; last_punch?: string | null }>>(`${BASE}/employees/absent-today${date ? `?date=${date}` : ''}`),
   searchEmployees: (query: string) =>
     api.get<HrEmployee[]>(`${BASE}/employees/search?q=${encodeURIComponent(query)}`),
   createEmployee: (data: Partial<HrEmployee>) => api.post<{ success: boolean; id: number }>(`${BASE}/employees`, data),
