@@ -89,9 +89,13 @@ def api_get_employee_overview(user_id):
         lp_count, lp_hours = _overview_repo.get_monthly_leave_permits(user_id, _year, _month)
         leave_stats = {'count': lp_count, 'total_hours': lp_hours}
 
-        ytd_leave = _overview_repo.get_ytd_sincron_leave(
-            sincron['sincron_employee_id'], sincron['company_name'], _year
+        # Aggregate leave across ALL companies (not just one)
+        ytd_leave = _overview_repo.get_ytd_sincron_leave_all_companies(
+            user_id, _year
         ) if sincron else {}
+
+        # CO balance from imported xlsx (aggregated across all companies)
+        co_balance = _overview_repo.get_co_balance_for_user(user_id, _year)
 
         ytd_count, ytd_hours = _overview_repo.get_ytd_leave_permits(user_id, _year)
         ytd_permits = {'count': ytd_count, 'total_hours': ytd_hours}
@@ -186,9 +190,11 @@ def api_get_employee_overview(user_id):
                 },
                 'leave_balance': {
                     'year': _year,
-                    'annual_entitlement': 21,
+                    'annual_entitlement': co_balance['total_available'] if co_balance else 21,
                     'annual_used': ytd_leave.get('CO', {}).get('value', 0),
-                    'annual_remaining': max(0, 21 - ytd_leave.get('CO', {}).get('value', 0)),
+                    'annual_remaining': max(0,
+                        (co_balance['total_available'] if co_balance else 21)
+                        - ytd_leave.get('CO', {}).get('value', 0)),
                     'sick_leave': ytd_leave.get('CM', {}).get('value', 0),
                     'unpaid_leave': ytd_leave.get('CES', {}).get('value', 0),
                     'child_care': ytd_leave.get('CIC', {}).get('value', 0),

@@ -129,6 +129,38 @@ class EmployeeOverviewRepository(BaseRepository):
         ''', (sincron_employee_id, company_name, year))
         return {r['short_code']: {'value': float(r['total']), 'unit': r['unit']} for r in rows}
 
+    def get_ytd_sincron_leave_all_companies(self, user_id, year):
+        """Return aggregated YTD leave codes across ALL companies for a user."""
+        rows = self.query_all('''
+            SELECT st.short_code, st.unit, SUM(st.value) AS total
+            FROM sincron_timesheets st
+            JOIN sincron_employees se
+              ON st.sincron_employee_id = se.sincron_employee_id
+             AND st.company_name = se.company_name
+            WHERE se.mapped_jarvis_user_id = %s
+              AND st.year = %s
+              AND st.short_code IN ('CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG')
+            GROUP BY st.short_code, st.unit
+            ORDER BY st.short_code
+        ''', (user_id, year))
+        return {r['short_code']: {'value': float(r['total']), 'unit': r['unit']} for r in rows}
+
+    def get_co_balance_for_user(self, user_id, year):
+        """Return aggregated CO balance from sincron_co_balance across all companies."""
+        row = self.query_one('''
+            SELECT SUM(total_available) AS total_available,
+                   SUM(carry_prev_year) AS carry_prev_year,
+                   SUM(carry_two_years_ago) AS carry_two_years_ago,
+                   SUM(annual_cim) AS annual_cim,
+                   SUM(seniority_bonus) AS seniority_bonus,
+                   SUM(manual_adjustment) AS manual_adjustment
+            FROM sincron_co_balance
+            WHERE mapped_jarvis_user_id = %s AND year = %s
+        ''', (user_id, year))
+        if row and row.get('total_available') is not None:
+            return {k: int(v or 0) for k, v in row.items()}
+        return None
+
     def get_ytd_leave_permits(self, user_id, year):
         """Return (count, total_hours) of YTD leave permits for a user."""
         row = self.query_one('''
