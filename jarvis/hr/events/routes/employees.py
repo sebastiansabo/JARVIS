@@ -186,8 +186,9 @@ def api_employee_work_stats():
     _co_used_company_map = _co_repo.get_used_ytd_by_user_company(_co_year)
 
     def _co_payload(uid):
-        co = _co_map.get(uid)
-        if not co:
+        # Aggregate across all companies for the main row
+        user_companies = _co_company_map.get(uid, {})
+        if not user_companies:
             return {
                 'co_total': None,
                 'co_carry_over': None,
@@ -195,14 +196,16 @@ def api_employee_work_stats():
                 'co_balance': None,
                 'co_year': None,
             }
-        total = int(co.get('total_available') or 0)
-        used = int(round(_co_used_map.get(uid, 0)))
+        total = sum(int(c.get('total_available') or 0) for c in user_companies.values())
+        carry = sum(int(c.get('carry_prev_year') or 0) for c in user_companies.values())
+        user_used = _co_used_company_map.get(uid, {})
+        used = int(round(sum(user_used.values()))) if user_used else int(round(_co_used_map.get(uid, 0)))
         return {
             'co_total': total,
-            'co_carry_over': int(co.get('carry_prev_year') or 0),
+            'co_carry_over': carry,
             'co_used_ytd': used,
             'co_balance': total - used,
-            'co_year': int(co.get('year') or _co_year),
+            'co_year': _co_year,
         }
 
     def _enrich_companies(uid, companies):
@@ -268,13 +271,23 @@ def api_employee_work_stats():
         s_leave = sincron_map.get(uid, {})
         c_leave = connecteam_map.get(uid, {})
         j_leave = jarvis_form_map.get(uid, {})
-        sincron_leave_days = int(s_leave.get('leave_days', 0))
-        sincron_leave_types = s_leave.get('leave_types', '')
+        # Distinct calendar days for utilization calculation
+        distinct_leave_days = int(s_leave.get('leave_days', 0))
         permit_count = int(c_leave.get('permit_count', 0)) + int(j_leave.get('form_permit_count', 0))
         permit_hours = round(float(c_leave.get('permit_hours', 0)) + float(j_leave.get('form_permit_hours', 0)), 1)
         # Sincron = full days, Connecteam + JARVIS forms = partial hours
-        leave_days = sincron_leave_days
-        effective_days = max(1, working_days - leave_days)
+        effective_days = max(1, working_days - distinct_leave_days)
+        # Sum per-company leave data for display (matches sub-row totals)
+        user_leave_co = sincron_leave_company_map.get(uid, {})
+        if user_leave_co:
+            leave_days = sum(int(lc.get('leave_days', 0)) for lc in user_leave_co.values())
+            sincron_leave_types = ', '.join(sorted({
+                t.strip() for lc in user_leave_co.values()
+                for t in (lc.get('leave_types', '') or '').split(',') if t.strip()
+            }))
+        else:
+            leave_days = distinct_leave_days
+            sincron_leave_types = s_leave.get('leave_types', '')
 
         # Expected hours: schedule × effective days minus all permit hours (Connecteam + JARVIS forms)
         expected_hours = max(0, working_h * effective_days - permit_hours)
@@ -321,16 +334,25 @@ def api_employee_work_stats():
         s_leave = sincron_map.get(uid, {})
         c_leave = connecteam_map.get(uid, {})
         j_leave = jarvis_form_map.get(uid, {})
-        sincron_leave_days = int(s_leave.get('leave_days', 0))
-        sincron_leave_types = s_leave.get('leave_types', '')
+        distinct_leave_days = int(s_leave.get('leave_days', 0))
         permit_count = int(c_leave.get('permit_count', 0)) + int(j_leave.get('form_permit_count', 0))
         permit_hours = round(float(c_leave.get('permit_hours', 0)) + float(j_leave.get('form_permit_hours', 0)), 1)
-        leave_days = sincron_leave_days
-        effective_days = max(1, working_days - leave_days)
+        effective_days = max(1, working_days - distinct_leave_days)
         expected_hours = max(0, working_h * effective_days - permit_hours)
+        # Sum per-company leave for display
+        user_leave_co = sincron_leave_company_map.get(uid, {})
+        if user_leave_co:
+            leave_days = sum(int(lc.get('leave_days', 0)) for lc in user_leave_co.values())
+            sincron_leave_types = ', '.join(sorted({
+                t.strip() for lc in user_leave_co.values()
+                for t in (lc.get('leave_types', '') or '').split(',') if t.strip()
+            }))
+        else:
+            leave_days = distinct_leave_days
+            sincron_leave_types = s_leave.get('leave_types', '')
 
         # If fully on leave, skip — they're accounted for
-        if leave_days >= working_days:
+        if distinct_leave_days >= working_days:
             continue
 
         score = 0  # Absent without motive: 0 utilization, 0 attendance, 0 punctuality
