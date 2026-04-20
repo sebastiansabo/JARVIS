@@ -84,17 +84,16 @@ export default function Hr() {
   const managerFilter = forceTeamFilter || (showTeamToggle && teamFilter === 'team')
 
   const tabs = useMemo(() => {
-    const t: { to: string; label: string; icon: typeof Fingerprint }[] = [
-      { to: '/app/hr/pontaje', label: 'Pontaje', icon: Fingerprint },
-    ]
+    const t: { to: string; label: string; icon: typeof Fingerprint }[] = []
+    if (canViewEmployees) {
+      t.push({ to: '/app/hr/employees', label: 'Employees', icon: Users })
+    }
+    t.push({ to: '/app/hr/pontaje', label: 'Pontaje', icon: Fingerprint })
     if (canViewTimesheets) {
       t.push({ to: '/app/hr/timesheets', label: 'Timesheets', icon: FileSpreadsheet })
     }
     if (canViewAdjustments) {
       t.push({ to: '/app/hr/adjustments', label: 'Adjustments', icon: ClipboardCheck })
-    }
-    if (canViewEmployees) {
-      t.push({ to: '/app/hr/employees', label: 'Employees', icon: Users })
     }
     if (canViewLeavePermits) {
       t.push({ to: '/app/hr/leave-permits', label: 'Bilete Invoire', icon: FileCheck })
