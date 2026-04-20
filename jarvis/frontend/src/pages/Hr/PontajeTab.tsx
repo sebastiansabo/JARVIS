@@ -30,6 +30,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { DateField } from '@/components/ui/date-field'
 import { Skeleton } from '@/components/ui/skeleton'
 import { biostarApi } from '@/api/biostar'
+import { sincronApi } from '@/api/sincron'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { AttendanceRow, BioStarDayHistory } from '@/types/biostar'
@@ -751,7 +752,7 @@ function EmployeeRow({
       {isExpanded && (
         <TableRow>
           <TableCell colSpan={colSpan} className="bg-muted/30 p-0">
-            <MonthHistory biostarUserId={employee.biostar_user_id} date={date} lunchMin={lunch} workingHours={employee.working_hours ?? 8} scheduleStart={employee.schedule_start} scheduleEnd={employee.schedule_end} canAdjust={canAdjust} />
+            <MonthHistory biostarUserId={employee.biostar_user_id} jarvisUserId={employee.jarvis_user_id} date={date} lunchMin={lunch} workingHours={employee.working_hours ?? 8} scheduleStart={employee.schedule_start} scheduleEnd={employee.schedule_end} canAdjust={canAdjust} />
           </TableCell>
         </TableRow>
       )}
@@ -761,7 +762,7 @@ function EmployeeRow({
 
 // ── Helpers ──
 
-type DayEntry = { date: string; dayLabel: string; data: BioStarDayHistory | null; isHoliday: boolean; isWeekend: boolean }
+type DayEntry = { date: string; dayLabel: string; data: BioStarDayHistory | null; isHoliday: boolean; isWeekend: boolean; isOutsideMonth: boolean }
 type WeekGroup = { weekNum: number; weekLabel: string; days: DayEntry[] }
 
 function getISOWeek(d: Date): number {
@@ -773,7 +774,23 @@ function getISOWeek(d: Date): number {
 
 function lastDayOfMonth(dateStr: string): string {
   const [y, m] = dateStr.split('-').map(Number)
-  const d = new Date(y, m, 0) // day 0 of next month = last day of this month
+  const d = new Date(y, m, 0)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Monday of the week containing the given date */
+function weekMonday(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00`)
+  const dow = d.getDay() || 7 // Sun=7
+  d.setDate(d.getDate() - dow + 1)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Sunday of the week containing the given date */
+function weekSunday(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00`)
+  const dow = d.getDay() || 7
+  d.setDate(d.getDate() + (7 - dow))
   return d.toISOString().slice(0, 10)
 }
 
@@ -802,7 +819,7 @@ async function adjustDays(
   lunchMin: number,
   workingHours: number,
 ): Promise<number> {
-  const unadjusted = days.filter(d => d.data && !d.data.adjusted_first_punch && !d.isWeekend && !d.isHoliday)
+  const unadjusted = days.filter(d => d.data && !d.data.adjusted_first_punch && !d.isWeekend && !d.isHoliday && !d.isOutsideMonth)
   let count = 0
   for (const day of unadjusted) {
     const d = day.data!
@@ -828,9 +845,9 @@ async function adjustDays(
 // ── Month History (expansion) ──
 
 function MonthHistory({
-  biostarUserId, date, lunchMin, workingHours, scheduleStart, scheduleEnd: _scheduleEnd, canAdjust,
+  biostarUserId, jarvisUserId, date, lunchMin, workingHours, scheduleStart, scheduleEnd: _scheduleEnd, canAdjust,
 }: {
-  biostarUserId: string; date: string; lunchMin: number; workingHours: number
+  biostarUserId: string; jarvisUserId: number; date: string; lunchMin: number; workingHours: number
   scheduleStart: string | null; scheduleEnd: string | null; canAdjust: boolean
 }) {
   const queryClient = useQueryClient()
@@ -840,24 +857,46 @@ function MonthHistory({
   })
   const [adjusting, setAdjusting] = useState(false)
 
-  // Month range
-  const monthStart = `${date.slice(0, 7)}-01`
-  const monthEnd = lastDayOfMonth(date)
+  // Month range — extend to complete weeks at boundaries
+  const monthFirst = `${date.slice(0, 7)}-01`
+  const monthLast = lastDayOfMonth(date)
+  const rangeStart = weekMonday(monthFirst)  // Mon of first week
+  const rangeEnd = weekSunday(monthLast)     // Sun of last week
   const monthLabel = new Date(`${date}T12:00:00`).toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['biostar', 'employee-daily-history', biostarUserId, monthStart, monthEnd],
-    queryFn: () => biostarApi.getEmployeeDailyHistory(biostarUserId, monthStart, monthEnd),
+    queryKey: ['biostar', 'employee-daily-history', biostarUserId, rangeStart, rangeEnd],
+    queryFn: () => biostarApi.getEmployeeDailyHistory(biostarUserId, rangeStart, rangeEnd),
   })
 
   const history = data?.history ?? []
   const holidays = useMemo(() => new Set(data?.holidays ?? []), [data?.holidays])
 
-  // Generate all days of month
+  // Sincron leave codes for the month
+  const [y, mo] = date.split('-').map(Number)
+  const { data: sincronData } = useQuery({
+    queryKey: ['sincron', 'employee-timesheet', jarvisUserId, y, mo],
+    queryFn: () => sincronApi.getEmployeeTimesheet(jarvisUserId, y, mo),
+    enabled: !!jarvisUserId,
+  })
+  const leaveCodes = useMemo(() => {
+    const map = new Map<string, string>()
+    if (!sincronData?.data?.days) return map
+    for (const [dayNum, codes] of Object.entries(sincronData.data.days)) {
+      const leave = codes.find(c => ['CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV'].includes(c.short_code))
+      if (leave) {
+        const ds = `${date.slice(0, 7)}-${dayNum.padStart(2, '0')}`
+        map.set(ds, leave.short_code)
+      }
+    }
+    return map
+  }, [sincronData, date])
+
+  // Generate all days — full weeks including boundary days from prev/next month
   const allDays = useMemo(() => {
     const result: DayEntry[] = []
-    const start = new Date(`${monthStart}T12:00:00`)
-    const end = new Date(`${monthEnd}T12:00:00`)
+    const start = new Date(`${rangeStart}T12:00:00`)
+    const end = new Date(`${rangeEnd}T12:00:00`)
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const ds = d.toISOString().slice(0, 10)
       const dow = d.getDay()
@@ -867,10 +906,11 @@ function MonthHistory({
         data: history.find(h => h.date?.slice(0, 10) === ds) ?? null,
         isHoliday: holidays.has(ds),
         isWeekend: dow === 0 || dow === 6,
+        isOutsideMonth: ds < monthFirst || ds > monthLast,
       })
     }
     return result
-  }, [monthStart, monthEnd, history, holidays])
+  }, [rangeStart, rangeEnd, monthFirst, monthLast, history, holidays])
 
   const weeks = useMemo(() => groupByWeek(allDays), [allDays])
 
@@ -878,11 +918,12 @@ function MonthHistory({
     const n = new Set(prev); n.has(wk) ? n.delete(wk) : n.add(wk); return n
   })
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['biostar', 'employee-daily-history', biostarUserId, monthStart, monthEnd] })
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['biostar', 'employee-daily-history', biostarUserId, rangeStart, rangeEnd] })
 
-  // Stats
-  const workingDays = allDays.filter(d => !d.isWeekend && !d.isHoliday).length
-  const presentDays = allDays.filter(d => d.data && !d.isWeekend && !d.isHoliday).length
+  // Stats — only count days within the actual month
+  const monthDays = allDays.filter(d => !d.isOutsideMonth)
+  const workingDays = monthDays.filter(d => !d.isWeekend && !d.isHoliday).length
+  const presentDays = monthDays.filter(d => d.data && !d.isWeekend && !d.isHoliday).length
 
   const handleAdjustMonth = async () => {
     if (!confirm(`Adjust all unadjusted days in ${monthLabel}?`)) return
@@ -972,6 +1013,7 @@ function MonthHistory({
                     <DayRow
                       key={day.date}
                       day={day}
+                      leaveCode={leaveCodes.get(day.date)}
                       lunchMin={lunchMin}
                       workingHours={workingHours}
                       biostarUserId={biostarUserId}
@@ -994,14 +1036,15 @@ function MonthHistory({
 // ── Day Row (inside week) ──
 
 function DayRow({
-  day, lunchMin, workingHours, biostarUserId, scheduleStart, canAdjust, adjusting, onInvalidate,
+  day, leaveCode, lunchMin, workingHours, biostarUserId, scheduleStart, canAdjust, adjusting, onInvalidate,
 }: {
-  day: DayEntry; lunchMin: number; workingHours: number; biostarUserId: string
+  day: DayEntry; leaveCode?: string; lunchMin: number; workingHours: number; biostarUserId: string
   scheduleStart: string | null; canAdjust: boolean; adjusting: boolean; onInvalidate: () => void
 }) {
   const d = day.data
   const isToday = day.date === todayStr()
   const isFuture = day.date > todayStr()
+  const isOut = day.isOutsideMonth
   const net = d ? effectiveSec(d, d.lunch_break_minutes ?? lunchMin) : 0
   const netH = net / 3600
   const isShort = netH > 0 && netH < workingHours
@@ -1037,11 +1080,12 @@ function DayRow({
     <div className={cn(
       'flex items-center gap-3 px-3 py-1.5 rounded-md text-sm',
       isToday && 'bg-primary/5 font-medium',
-      !d && !day.isWeekend && !day.isHoliday && !isFuture && 'opacity-50',
+      isOut && 'opacity-40',
+      !isOut && !d && !day.isWeekend && !day.isHoliday && !isFuture && 'opacity-50',
     )}>
       <span className={cn(
         'inline-block h-2 w-2 rounded-full shrink-0',
-        d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : isFuture ? 'bg-muted-foreground/30' : 'bg-red-400',
+        d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : leaveCode ? 'bg-yellow-500' : isFuture ? 'bg-muted-foreground/30' : 'bg-red-400',
       )} />
       <span className="w-28 shrink-0 capitalize text-muted-foreground">{day.dayLabel}</span>
 
@@ -1079,8 +1123,8 @@ function DayRow({
           )}
         </>
       ) : (
-        <span className="text-xs text-muted-foreground">
-          {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : isFuture ? '—' : 'Absent'}
+        <span className={cn('text-xs', leaveCode ? 'text-yellow-600' : 'text-muted-foreground')}>
+          {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : leaveCode ?? (isFuture ? '—' : 'Absent')}
         </span>
       )}
     </div>
