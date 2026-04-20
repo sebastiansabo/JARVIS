@@ -185,10 +185,30 @@ def api_employee_work_stats():
     _co_company_map = _co_repo.get_for_year_by_company(_co_year)
     _co_used_company_map = _co_repo.get_used_ytd_by_user_company(_co_year)
 
-    def _co_payload(uid):
-        # Aggregate across all companies for the main row
-        user_companies = _co_company_map.get(uid, {})
-        if not user_companies:
+    def _norm_company(name):
+        """Normalize company name for matching (strip S.R.L. / SRL suffixes)."""
+        if not name:
+            return ''
+        return name.upper().replace(' S.R.L.', '').replace(' SRL', '').strip()
+
+    def _co_payload(uid, enriched_companies=None):
+        """Build main-row CO from enriched sub-rows so totals always match."""
+        if enriched_companies:
+            vals = [c for c in enriched_companies if c.get('co_total') is not None]
+            if vals:
+                total = sum(c['co_total'] for c in vals)
+                carry = sum(c.get('co_carry_over') or 0 for c in vals)
+                used = sum(c.get('co_used_ytd') or 0 for c in vals)
+                return {
+                    'co_total': total,
+                    'co_carry_over': carry,
+                    'co_used_ytd': used,
+                    'co_balance': total - used,
+                    'co_year': _co_year,
+                }
+        # Fallback for employees without sub-rows
+        co = _co_map.get(uid)
+        if not co:
             return {
                 'co_total': None,
                 'co_carry_over': None,
@@ -196,13 +216,11 @@ def api_employee_work_stats():
                 'co_balance': None,
                 'co_year': None,
             }
-        total = sum(int(c.get('total_available') or 0) for c in user_companies.values())
-        carry = sum(int(c.get('carry_prev_year') or 0) for c in user_companies.values())
-        user_used = _co_used_company_map.get(uid, {})
-        used = int(round(sum(user_used.values()))) if user_used else int(round(_co_used_map.get(uid, 0)))
+        total = int(co.get('total_available') or 0)
+        used = int(round(_co_used_map.get(uid, 0)))
         return {
             'co_total': total,
-            'co_carry_over': carry,
+            'co_carry_over': int(co.get('carry_prev_year') or 0),
             'co_used_ytd': used,
             'co_balance': total - used,
             'co_year': _co_year,
@@ -212,15 +230,17 @@ def api_employee_work_stats():
         """Enrich schedule_companies entries with per-company CO + leave data."""
         if not companies:
             return companies
-        user_co = _co_company_map.get(uid, {})
-        user_co_used = _co_used_company_map.get(uid, {})
+        user_co_raw = _co_company_map.get(uid, {})
+        # Build normalized lookup: norm_name → co_balance_row
+        co_norm = {_norm_company(k): v for k, v in user_co_raw.items()}
+        user_co_used_raw = _co_used_company_map.get(uid, {})
         user_leave = sincron_leave_company_map.get(uid, {})
         enriched = []
         for comp in companies:
             cname = comp['company']
-            co = user_co.get(cname)
+            co = co_norm.get(_norm_company(cname))
             co_total = int(co.get('total_available') or 0) if co else None
-            co_used = int(round(user_co_used.get(cname, 0))) if cname in user_co_used else None
+            co_used = int(round(user_co_used_raw.get(cname, 0))) if cname in user_co_used_raw else None
             leave = user_leave.get(cname)
             enriched.append({
                 **comp,
@@ -297,6 +317,8 @@ def api_employee_work_stats():
 
         score = round(utilization * 0.5 + attendance * 0.3 + punctuality * 0.2, 1)
 
+        enriched_cos = _enrich_companies(uid, company_norms_map.get(uid, []))
+
         result[uid] = {
             'total_hours': total_hours,
             'avg_daily_hours': avg_daily,
@@ -318,8 +340,8 @@ def api_employee_work_stats():
             'permit_hours': permit_hours,
             'avg_check_in': avg_check_in,
             'avg_check_out': avg_check_out,
-            'schedule_companies': _enrich_companies(uid, company_norms_map.get(uid, [])),
-            **_co_payload(uid),
+            'schedule_companies': enriched_cos,
+            **_co_payload(uid, enriched_cos),
         }
 
     # Backfill: active BioStar-mapped employees with NO punch data
@@ -357,6 +379,8 @@ def api_employee_work_stats():
 
         score = 0  # Absent without motive: 0 utilization, 0 attendance, 0 punctuality
 
+        enriched_cos = _enrich_companies(uid, company_norms_map.get(uid, []))
+
         result[uid] = {
             'total_hours': 0,
             'avg_daily_hours': 0,
@@ -378,8 +402,8 @@ def api_employee_work_stats():
             'permit_hours': permit_hours,
             'avg_check_in': None,
             'avg_check_out': None,
-            'schedule_companies': _enrich_companies(uid, company_norms_map.get(uid, [])),
-            **_co_payload(uid),
+            'schedule_companies': enriched_cos,
+            **_co_payload(uid, enriched_cos),
         }
 
     return jsonify(result)
