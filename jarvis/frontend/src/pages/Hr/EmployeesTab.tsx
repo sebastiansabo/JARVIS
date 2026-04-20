@@ -472,10 +472,13 @@ export default function EmployeesTab({ search }: Props) {
                     <span className={cn('tabular-nums text-[10px] w-[38px] text-right shrink-0', textColor)}>{`\u00B1${v}min`}</span>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-[220px] text-xs">
-                  <p className="font-semibold mb-0.5">Schedule Variance</p>
-                  <p className="text-muted-foreground">Average deviation from usual check-in/out times. Lower = more consistent schedule.</p>
-                  <p className="mt-1">{v <= 10 ? 'Very consistent' : v <= 25 ? 'Moderate variation' : 'High variation'}</p>
+                <TooltipContent side="top" className="max-w-[260px] text-xs space-y-0.5">
+                  <p className="font-semibold mb-1">Schedule Variance: ±{v}min</p>
+                  {s.avg_check_in && <p>Avg check-in: <span className="font-medium">{s.avg_check_in}</span></p>}
+                  {s.avg_check_out && <p>Avg check-out: <span className="font-medium">{s.avg_check_out}</span></p>}
+                  {s.schedule_start && s.schedule_end && <p>Schedule: {s.schedule_start}–{s.schedule_end}</p>}
+                  <p>Days present: {s.days_present}/{s.working_days}</p>
+                  <p className="text-muted-foreground text-[10px] mt-1">{v <= 10 ? 'Very consistent' : v <= 25 ? 'Moderate variation' : 'High variation'} — STDDEV of daily punch times</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
