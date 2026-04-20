@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { SearchSelect } from '@/components/shared/SearchSelect'
 import { connecteamApi } from '@/api/connecteam'
 import type { ConnecteamSubmission, ConversionRequest } from '@/api/connecteam'
 import { toast } from 'sonner'
@@ -420,16 +421,27 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                     {approverMode === 'hierarchy' ? 'Select any user' : 'Show managers only'}
                   </button>
                 </div>
-                <Select value={approverId} onValueChange={setApproverId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={approverMode === 'hierarchy' ? 'Select manager...' : 'Select any user...'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {approvers.map(a => (
-                      <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {approverMode === 'hierarchy' ? (
+                  <Select value={approverId} onValueChange={setApproverId}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select manager..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {approvers.map(a => (
+                        <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <SearchSelect
+                    value={approverId}
+                    onValueChange={setApproverId}
+                    options={approvers.map(a => ({ value: String(a.id), label: a.name }))}
+                    placeholder="Search user..."
+                    searchPlaceholder="Type to search..."
+                    emptyMessage="No users found."
+                  />
+                )}
                 <p className="text-[10px] text-muted-foreground">
                   {approverMode === 'hierarchy' ? 'Showing organigram managers' : 'Showing all active users'}
                 </p>
