@@ -4,6 +4,8 @@ import smtplib
 import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 from typing import Optional
 from core.utils.logging_config import get_logger
 
@@ -71,7 +73,8 @@ def send_email(
     html_body: str,
     text_body: Optional[str] = None,
     department_cc: Optional[str] = None,
-    skip_global_cc: bool = False
+    skip_global_cc: bool = False,
+    attachments: Optional[list[tuple[str, bytes]]] = None,
 ) -> tuple[bool, str]:
     """
     Send an email using configured SMTP settings.
@@ -83,6 +86,7 @@ def send_email(
         text_body: Optional plain text email content
         department_cc: Optional department-specific CC email address
         skip_global_cc: If True, skip the global CC (for private emails like password resets)
+        attachments: Optional list of (filename, content_bytes) tuples
 
     Returns:
         tuple: (success: bool, error_message: str)
@@ -96,7 +100,26 @@ def send_email(
         return False, "From email not configured"
 
     try:
-        msg = MIMEMultipart('alternative')
+        # Use 'mixed' when attachments are present, otherwise 'alternative'
+        if attachments:
+            msg = MIMEMultipart('mixed')
+            body_part = MIMEMultipart('alternative')
+            if text_body:
+                body_part.attach(MIMEText(text_body, 'plain'))
+            body_part.attach(MIMEText(html_body, 'html'))
+            msg.attach(body_part)
+            for filename, content in attachments:
+                part = MIMEBase('application', 'octet-stream')
+                part.set_payload(content)
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
+                msg.attach(part)
+        else:
+            msg = MIMEMultipart('alternative')
+            if text_body:
+                msg.attach(MIMEText(text_body, 'plain'))
+            msg.attach(MIMEText(html_body, 'html'))
+
         msg['Subject'] = subject
         msg['From'] = f"{config['from_name']} <{config['from_email']}>" if config['from_name'] else config['from_email']
         msg['To'] = to_email
@@ -114,10 +137,6 @@ def send_email(
 
         if cc_addresses:
             msg['Cc'] = ', '.join(cc_addresses)
-
-        if text_body:
-            msg.attach(MIMEText(text_body, 'plain'))
-        msg.attach(MIMEText(html_body, 'html'))
 
         # Build recipient list (To + all CCs)
         recipients = [to_email]
