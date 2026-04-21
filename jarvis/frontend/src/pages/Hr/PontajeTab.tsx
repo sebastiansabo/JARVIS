@@ -884,7 +884,7 @@ function getISOWeek(d: Date): number {
 
 function lastDayOfMonth(dateStr: string): string {
   const [y, m] = dateStr.split('-').map(Number)
-  const d = new Date(y, m, 0)
+  const d = new Date(Date.UTC(y, m, 0))
   return d.toISOString().slice(0, 10)
 }
 
