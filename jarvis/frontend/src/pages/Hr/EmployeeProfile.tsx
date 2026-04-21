@@ -1,9 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/useAuth'
 import {
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Fingerprint,
   LogIn,
@@ -21,6 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { StatCard } from '@/components/shared/StatCard'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { biostarApi } from '@/api/biostar'
 import { cn } from '@/lib/utils'
@@ -118,11 +121,28 @@ export default function EmployeeProfile() {
     onError: () => toast.error('Failed to adjust day'),
   })
 
-  // Sincron contracts query
+  // Sincron contracts query (still used for the contracts table)
   const { data: sincronContracts = [] } = useQuery({
     queryKey: ['biostar', 'sincron-schedule', biostarUserId],
     queryFn: () => biostarApi.getSincronSchedule(biostarUserId!),
     enabled: !!biostarUserId,
+  })
+
+  // Sincron schedule calendar — month navigation
+  const now = new Date()
+  const [calYear, setCalYear] = useState(now.getFullYear())
+  const [calMonth, setCalMonth] = useState(now.getMonth() + 1) // 1-based
+  const prevMonth = useCallback(() => {
+    setCalMonth((m) => { if (m === 1) { setCalYear((y) => y - 1); return 12 } return m - 1 })
+  }, [])
+  const nextMonth = useCallback(() => {
+    setCalMonth((m) => { if (m === 12) { setCalYear((y) => y + 1); return 1 } return m + 1 })
+  }, [])
+
+  const { data: calData } = useQuery({
+    queryKey: ['biostar', 'sincron-timesheet', biostarUserId, calYear, calMonth],
+    queryFn: () => biostarApi.getSincronTimesheet(biostarUserId!, calYear, calMonth),
+    enabled: !!biostarUserId && sincronContracts.length > 0,
   })
 
   const revertDayMut = useMutation({
@@ -371,47 +391,16 @@ export default function EmployeeProfile() {
         </div>
       </div>
 
-      {/* Sincron Contracts */}
+      {/* Sincron Schedule Calendar */}
       {sincronContracts.length > 0 && (
-        <div className="rounded-lg border p-4">
-          <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-            Sincron Contracts ({sincronContracts.length})
-          </h3>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Company</TableHead>
-                  <TableHead className="text-center">Contract #</TableHead>
-                  <TableHead className="text-center">Start Date</TableHead>
-                  <TableHead className="text-center">Hours</TableHead>
-                  <TableHead className="text-center">Schedule</TableHead>
-                  <TableHead className="text-center">Lunch</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sincronContracts.map((c: SincronContract) => (
-                  <TableRow key={`${c.company_name}-${c.nr_contract}`}>
-                    <TableCell className="text-sm font-medium">{c.company_name}</TableCell>
-                    <TableCell className="text-center text-sm">{c.nr_contract || '—'}</TableCell>
-                    <TableCell className="text-center text-sm">{c.data_incepere_contract || '—'}</TableCell>
-                    <TableCell className="text-center text-sm">
-                      {c.norma_lucru != null ? `${c.norma_lucru}h` : '—'}
-                    </TableCell>
-                    <TableCell className="text-center text-sm">
-                      {c.schedule_start && c.schedule_end
-                        ? `${c.schedule_start}–${c.schedule_end}`
-                        : '—'}
-                    </TableCell>
-                    <TableCell className="text-center text-sm">
-                      {c.lunch_break_minutes != null ? `${c.lunch_break_minutes}min` : '—'}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
+        <SincronCalendar
+          contracts={calData?.contracts ?? sincronContracts}
+          timesheet={calData?.timesheet ?? []}
+          year={calYear}
+          month={calMonth}
+          onPrev={prevMonth}
+          onNext={nextMonth}
+        />
       )}
 
       {/* Stats */}
@@ -758,6 +747,193 @@ function PunchLine({ punch, isFirst, isLast }: { punch: BioStarPunchLog; isFirst
         <span className="text-xs text-muted-foreground truncate max-w-[200px]" title={punch.device_name}>
           {punch.device_name}
         </span>
+      )}
+    </div>
+  )
+}
+
+// ── Sincron Schedule Calendar ──
+
+const CODE_COLORS: Record<string, { bg: string; text: string; label: string }> = {
+  OZ: { bg: 'bg-green-500/20', text: 'text-green-700 dark:text-green-400', label: 'Work' },
+  OS: { bg: 'bg-purple-500/20', text: 'text-purple-700 dark:text-purple-400', label: 'Overtime' },
+  CO: { bg: 'bg-blue-500/20', text: 'text-blue-700 dark:text-blue-400', label: 'Leave' },
+  CM: { bg: 'bg-orange-500/20', text: 'text-orange-700 dark:text-orange-400', label: 'Medical' },
+  CIC: { bg: 'bg-pink-500/20', text: 'text-pink-700 dark:text-pink-400', label: 'Child Care' },
+  CES: { bg: 'bg-amber-500/20', text: 'text-amber-700 dark:text-amber-400', label: 'Event Leave' },
+  CMS: { bg: 'bg-red-500/20', text: 'text-red-700 dark:text-red-400', label: 'Sick Leave' },
+  DLG: { bg: 'bg-teal-500/20', text: 'text-teal-700 dark:text-teal-400', label: 'Delegation' },
+  ZLS: { bg: 'bg-slate-500/20', text: 'text-slate-700 dark:text-slate-400', label: 'Free Day' },
+}
+const DEFAULT_CODE_COLOR = { bg: 'bg-muted', text: 'text-muted-foreground', label: '' }
+
+const RO_DAYS = ['D', 'L', 'Ma', 'Mi', 'J', 'V', 'S']
+const RO_MONTHS = ['Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie', 'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie']
+
+type TimesheetEntry = { day: string; short_code: string; company_name: string; program_in: string | null; program_out: string | null; program_break: number | null }
+
+function SincronCalendar({
+  contracts,
+  timesheet,
+  year,
+  month,
+  onPrev,
+  onNext,
+}: {
+  contracts: SincronContract[]
+  timesheet: TimesheetEntry[]
+  year: number
+  month: number
+  onPrev: () => void
+  onNext: () => void
+}) {
+  const daysInMonth = new Date(year, month, 0).getDate()
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+
+  // Build lookup: company → day → entry[]
+  const lookup = useMemo(() => {
+    const map: Record<string, Record<number, TimesheetEntry[]>> = {}
+    for (const entry of timesheet) {
+      const dayNum = new Date(entry.day).getDate()
+      const co = entry.company_name
+      if (!map[co]) map[co] = {}
+      if (!map[co][dayNum]) map[co][dayNum] = []
+      map[co][dayNum].push(entry)
+    }
+    return map
+  }, [timesheet])
+
+  // Unique codes used this month for legend
+  const usedCodes = useMemo(() => {
+    const codes = new Set<string>()
+    for (const entry of timesheet) codes.add(entry.short_code)
+    return Array.from(codes).sort()
+  }, [timesheet])
+
+  // Short company name (strip "AUTOWORLD " prefix)
+  const shortName = (name: string) => name.replace(/^AUTOWORLD\s*/i, '').replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || 'S.R.L.'
+
+  return (
+    <div className="rounded-lg border p-4">
+      {/* Header with month nav */}
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-medium text-muted-foreground">
+          Sincron Schedule ({contracts.length} contracts)
+        </h3>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onPrev}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm font-medium min-w-[120px] text-center">
+            {RO_MONTHS[month - 1]} {year}
+          </span>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onNext}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <TooltipProvider>
+          <table className="w-full border-collapse text-[10px]">
+            <thead>
+              {/* Day-of-week header */}
+              <tr>
+                <th className="sticky left-0 z-10 bg-background px-2 py-1 text-left text-xs font-medium text-muted-foreground min-w-[140px]">
+                  Company
+                </th>
+                {days.map((d) => {
+                  const dow = new Date(year, month - 1, d).getDay()
+                  const isWeekend = dow === 0 || dow === 6
+                  return (
+                    <th
+                      key={d}
+                      className={cn(
+                        'px-0.5 py-0.5 text-center font-normal min-w-[24px]',
+                        isWeekend ? 'text-muted-foreground/40' : 'text-muted-foreground',
+                      )}
+                    >
+                      <div>{RO_DAYS[dow]}</div>
+                      <div className="font-medium">{d}</div>
+                    </th>
+                  )
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {contracts.map((c) => {
+                const companyEntries = lookup[c.company_name] ?? {}
+                return (
+                  <tr key={c.company_name} className="border-t border-muted/50">
+                    <td className="sticky left-0 z-10 bg-background px-2 py-1.5 text-xs font-medium whitespace-nowrap">
+                      <div>{shortName(c.company_name)}</div>
+                      <div className="text-[10px] text-muted-foreground font-normal">
+                        {c.norma_lucru != null ? `${c.norma_lucru}h` : ''}
+                        {c.schedule_start && c.schedule_end ? ` · ${c.schedule_start}–${c.schedule_end}` : ''}
+                      </div>
+                    </td>
+                    {days.map((d) => {
+                      const dow = new Date(year, month - 1, d).getDay()
+                      const isWeekend = dow === 0 || dow === 6
+                      const entries = companyEntries[d]
+                      if (!entries || entries.length === 0) {
+                        return (
+                          <td key={d} className={cn('px-0.5 py-1.5 text-center', isWeekend ? 'bg-muted/30' : '')}>
+                            <span className="text-muted-foreground/30">·</span>
+                          </td>
+                        )
+                      }
+                      const primary = entries[0]
+                      const color = CODE_COLORS[primary.short_code] ?? DEFAULT_CODE_COLOR
+                      const tooltipText = entries
+                        .map((e) => {
+                          const time = e.program_in && e.program_out ? `${e.program_in}–${e.program_out}` : ''
+                          return `${e.short_code}${time ? ` ${time}` : ''}`
+                        })
+                        .join(', ')
+
+                      return (
+                        <td key={d} className="px-0.5 py-1.5 text-center">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className={cn(
+                                  'inline-flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold cursor-default',
+                                  color.bg,
+                                  color.text,
+                                )}
+                              >
+                                {primary.short_code.slice(0, 2)}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              <span>{tooltipText}</span>
+                            </TooltipContent>
+                          </Tooltip>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </TooltipProvider>
+      </div>
+
+      {/* Legend */}
+      {usedCodes.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {usedCodes.map((code) => {
+            const color = CODE_COLORS[code] ?? DEFAULT_CODE_COLOR
+            return (
+              <span key={code} className="inline-flex items-center gap-1 text-[10px]">
+                <span className={cn('inline-block h-3 w-3 rounded', color.bg)} />
+                <span className="text-muted-foreground">{code}{color.label ? ` — ${color.label}` : ''}</span>
+              </span>
+            )
+          })}
+        </div>
       )}
     </div>
   )
