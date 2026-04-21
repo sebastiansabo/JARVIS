@@ -520,6 +520,7 @@ class BioStarRepository(BaseRepository):
         """Get per-day punch summary for one employee over a date range.
 
         Also returns adjusted punch times from biostar_daily_adjustments if they exist.
+        Uses Sincron per-day schedule when available (COALESCE over BioStar static).
         """
         return self.query_all('''
             WITH deduped AS (
@@ -537,25 +538,47 @@ class BioStarRepository(BaseRepository):
                     MAX(d.event_datetime) AS last_punch,
                     COUNT(*) AS total_punches,
                     EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds,
-                    be.lunch_break_minutes,
+                    COALESCE(be.lunch_break_minutes) AS lunch_break_minutes,
                     be.working_hours,
-                    be.schedule_start,
-                    be.schedule_end
+                    be.schedule_start AS static_schedule_start,
+                    be.schedule_end AS static_schedule_end
                 FROM deduped d
                 CROSS JOIN biostar_employees be
                 WHERE be.biostar_user_id = %s
                 GROUP BY d.event_datetime::date, be.lunch_break_minutes, be.working_hours,
                          be.schedule_start, be.schedule_end
             )
-            SELECT d.*,
+            SELECT d.date, d.first_punch, d.last_punch, d.total_punches,
+                   d.duration_seconds, d.lunch_break_minutes, d.working_hours,
+                   COALESCE(sd.program_start, d.static_schedule_start) AS schedule_start,
+                   COALESCE(sd.program_end, d.static_schedule_end) AS schedule_end,
+                   sd.sincron_company,
                    adj.adjusted_first_punch,
                    adj.adjusted_last_punch,
                    adj.adjustment_type
             FROM daily d
+            LEFT JOIN biostar_employees be2 ON be2.biostar_user_id = %s
+            LEFT JOIN LATERAL (
+                SELECT st.program_in AS program_start,
+                       st.program_out AS program_end,
+                       se.company_name AS sincron_company
+                FROM sincron_employees se
+                JOIN sincron_timesheets st
+                  ON st.sincron_employee_id = se.sincron_employee_id
+                  AND st.company_name = se.company_name
+                  AND st.day = d.date
+                  AND st.short_code IN ('OZ', 'OS')
+                  AND st.program_in IS NOT NULL
+                  AND st.program_out IS NOT NULL
+                WHERE se.mapped_jarvis_user_id = be2.mapped_jarvis_user_id
+                  AND se.is_active = TRUE
+                ORDER BY se.norma_lucru DESC NULLS LAST
+                LIMIT 1
+            ) sd ON TRUE
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = %s AND adj.date = d.date
             ORDER BY d.date DESC
-        ''', (biostar_user_id, start_date, end_date, biostar_user_id, biostar_user_id))
+        ''', (biostar_user_id, start_date, end_date, biostar_user_id, biostar_user_id, biostar_user_id))
 
     def get_employee_with_mapping(self, biostar_user_id):
         """Get employee details with JARVIS mapping info."""

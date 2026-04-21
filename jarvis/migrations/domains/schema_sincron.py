@@ -250,5 +250,11 @@ def create_schema_sincron(conn, cursor):
     except Exception:
         conn.rollback()
 
+    # ── count_for_leave toggle — exclude micro-contracts from leave analytics ──
+    cursor.execute("""
+        ALTER TABLE sincron_employees
+        ADD COLUMN IF NOT EXISTS count_for_leave BOOLEAN DEFAULT TRUE
+    """)
+
     conn.commit()
     logger.info('Sincron schema created/verified')

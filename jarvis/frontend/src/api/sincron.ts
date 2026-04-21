@@ -91,6 +91,14 @@ export interface JarvisUser {
 }
 
 export const sincronApi = {
+  // ── Employee toggles ──
+
+  toggleCountForLeave: (sincronEmployeeDbId: number, countForLeave: boolean) =>
+    api.put<{ success: boolean; count_for_leave: boolean }>(
+      `${BASE}/employees/${sincronEmployeeDbId}/count-for-leave`,
+      { count_for_leave: countForLeave },
+    ),
+
   // ── Status ──
 
   getStatus: async () => {

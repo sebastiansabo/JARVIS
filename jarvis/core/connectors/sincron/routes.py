@@ -200,6 +200,21 @@ def remove_mapping():
     return jsonify({'success': True, 'message': 'Mapping removed'})
 
 
+@sincron_bp.route('/api/employees/<int:sincron_employee_id>/count-for-leave', methods=['PUT'])
+@api_login_required
+def toggle_count_for_leave(sincron_employee_id):
+    """Toggle count_for_leave flag on a Sincron employee contract."""
+    data = request.get_json()
+    if data is None or 'count_for_leave' not in data:
+        return jsonify({'success': False, 'error': 'count_for_leave required'}), 400
+    val = bool(data['count_for_leave'])
+    service.repo.execute('''
+        UPDATE sincron_employees SET count_for_leave = %s, updated_at = NOW()
+        WHERE id = %s
+    ''', (val, sincron_employee_id))
+    return jsonify({'success': True, 'count_for_leave': val})
+
+
 @sincron_bp.route('/api/employees/auto-map', methods=['POST'])
 @admin_required
 def auto_map():

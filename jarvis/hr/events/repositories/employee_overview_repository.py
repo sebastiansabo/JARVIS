@@ -141,6 +141,7 @@ class EmployeeOverviewRepository(BaseRepository):
               ON st.sincron_employee_id = se.sincron_employee_id
              AND st.company_name = se.company_name
             WHERE se.mapped_jarvis_user_id = %s
+              AND se.count_for_leave = TRUE
               AND st.year = %s
               AND st.short_code IN {_LEAVE_CODES_SUB}
             GROUP BY st.short_code, st.unit

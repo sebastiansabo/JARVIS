@@ -114,6 +114,7 @@ export interface BioStarDayHistory {
   working_hours?: number
   schedule_start?: string | null
   schedule_end?: string | null
+  sincron_company?: string | null
   // Adjustment data (null if not adjusted)
   adjusted_first_punch?: string | null
   adjusted_last_punch?: string | null
@@ -284,6 +285,8 @@ export interface SincronContract {
   schedule_start: string | null
   schedule_end: string | null
   lunch_break_minutes: number | null
+  count_for_leave?: boolean
+  sincron_employee_db_id?: number
 }
 
 export interface JarvisUser {

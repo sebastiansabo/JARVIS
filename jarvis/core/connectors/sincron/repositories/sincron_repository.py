@@ -90,7 +90,7 @@ class SincronRepository(BaseRepository):
                    se.mapping_method, se.mapping_confidence,
                    se.norma_lucru, se.norma_lucru_time,
                    se.schedule_start, se.schedule_end, se.lunch_break_minutes,
-                   se.last_synced_at
+                   se.count_for_leave, se.last_synced_at
             FROM sincron_employees se
             WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
             ORDER BY se.company_name

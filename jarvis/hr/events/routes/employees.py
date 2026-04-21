@@ -121,6 +121,7 @@ def api_employee_work_stats():
           ON se.sincron_employee_id = st.sincron_employee_id
           AND se.company_name = st.company_name
         WHERE se.mapped_jarvis_user_id IS NOT NULL
+          AND se.count_for_leave = TRUE
           AND st.short_code = ANY(%s)
           AND st.day BETWEEN %s AND %s
         GROUP BY se.mapped_jarvis_user_id
@@ -137,6 +138,7 @@ def api_employee_work_stats():
           ON se.sincron_employee_id = st.sincron_employee_id
           AND se.company_name = st.company_name
         WHERE se.mapped_jarvis_user_id IS NOT NULL
+          AND se.count_for_leave = TRUE
           AND st.short_code = ANY(%s)
           AND st.day BETWEEN %s AND %s
         GROUP BY se.mapped_jarvis_user_id, se.company_name
