@@ -9,11 +9,12 @@ class EnrollmentRepository(BaseRepository):
     def get_by_course(self, course_id: int) -> List[Dict[str, Any]]:
         """Get all enrollments for a course with inline costs."""
         return self.query_all('''
-            SELECT ce.*, u.name as employee_name, u.company, u.department, u.brand,
+            SELECT ce.*, u.name as employee_name, COALESCE(co.company, u.company) AS company, u.department, u.brand,
                    ec.training_fee, ec.per_diem, ec.accommodation, ec.transport,
                    ec.taxi, ec.total_cost, ec.currency as cost_currency, ec.notes as cost_notes
             FROM hr.course_enrollments ce
             JOIN public.users u ON ce.employee_id = u.id
+            LEFT JOIN public.companies co ON co.id = u.company_id
             LEFT JOIN hr.enrollment_costs ec ON ec.enrollment_id = ce.id
             WHERE ce.course_id = %s
             ORDER BY u.name
