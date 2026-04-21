@@ -35,8 +35,8 @@ export function CourseOverviewTab({ course }: { course: Course }) {
           <StatCard label="Participants" value={course.enrollment_count} />
           <StatCard label="Days" value={days} sub={course.duration_hours ? `${course.duration_hours}h total` : undefined} />
           <StatCard label="Budget" value={course.budget ? fmt(course.budget, course.currency) : '—'} />
-          <StatCard label="Actual Cost" value={summary?.total_cost ? fmt(summary.total_cost, course.currency) : '—'}
-            sub={summary?.enrollment_count ? `${summary.enrollment_count} cost entries` : undefined} />
+          <StatCard label="Actual Cost" value={summary?.total_cost != null ? fmt(summary.total_cost, course.currency) : '—'}
+            sub={summary?.enrollment_count ? `${summary.enrollment_count} enrollments` : undefined} />
         </div>
 
         {/* Cost breakdown */}
