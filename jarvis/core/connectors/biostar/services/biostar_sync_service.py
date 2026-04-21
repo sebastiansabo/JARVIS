@@ -686,6 +686,10 @@ class BioStarSyncService:
         start_offset = random.randint(-5, 5)
         if isinstance(first_punch, str):
             first_punch = datetime.fromisoformat(first_punch)
+        if isinstance(schedule_start, str):
+            from datetime import time as _time
+            parts = schedule_start.split(':')
+            schedule_start = _time(int(parts[0]), int(parts[1]))
         date_part = first_punch.date()
         adj_start = datetime.combine(date_part, schedule_start) + timedelta(minutes=start_offset)
         adj_end = adj_start + timedelta(minutes=target_span)
