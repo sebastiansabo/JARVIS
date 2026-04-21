@@ -235,7 +235,7 @@ export const biostarApi = {
   adjustEmployee: (data: {
     biostar_user_id: string; date: string;
     adjusted_first_punch: string; adjusted_last_punch: string;
-    original_first_punch: string; original_last_punch: string;
+    original_first_punch?: string; original_last_punch?: string;
     schedule_start?: string; schedule_end?: string;
     lunch_break_minutes?: number; working_hours?: number;
     original_duration_seconds?: number;

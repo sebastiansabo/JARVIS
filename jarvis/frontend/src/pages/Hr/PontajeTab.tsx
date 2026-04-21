@@ -632,7 +632,6 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                         visibleCols={visibleCols}
                         canAdjust={canAdjust}
                         onAdjust={() => {
-                          if (!emp.first_punch) return
                           const { adjFirst, adjLast } = randomizeAdjustedTimes(
                             date, emp.schedule_start, emp.lunch_break_minutes ?? 60, emp.working_hours ?? 8,
                           )
@@ -641,8 +640,8 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                             date,
                             adjusted_first_punch: adjFirst,
                             adjusted_last_punch: adjLast,
-                            original_first_punch: emp.first_punch,
-                            original_last_punch: emp.last_punch ?? emp.first_punch,
+                            original_first_punch: emp.first_punch ?? undefined,
+                            original_last_punch: emp.last_punch ?? emp.first_punch ?? undefined,
                             schedule_start: emp.schedule_start ?? undefined,
                             schedule_end: emp.schedule_end ?? undefined,
                             lunch_break_minutes: emp.lunch_break_minutes ?? 60,
@@ -818,7 +817,7 @@ function EmployeeRow({
         )}
         {canAdjust && (
           <TableCell className="text-center w-10">
-            {!isAbsent && hasAdj && (
+            {hasAdj && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -829,7 +828,7 @@ function EmployeeRow({
                 <RotateCcw className="h-3 w-3" />
               </Button>
             )}
-            {!isAbsent && !hasAdj && (
+            {!hasAdj && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -1164,7 +1163,6 @@ function DayRow({
 
   const handleAdjustDay = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!d?.first_punch) return
     try {
       await biostarApi.autoAdjustSingle(biostarUserId, day.date)
       toast.success('Adjusted')
@@ -1232,26 +1230,32 @@ function DayRow({
           </span>
           {/* Actual In/Out */}
           <span className="w-14 shrink-0 text-center">
-            <span className="inline-flex items-center gap-1">
-              <LogIn className="h-3 w-3 text-green-600" />
-              {fmtTime(d.adjusted_first_punch ?? d.first_punch)}
-            </span>
+            {(d.adjusted_first_punch || d.first_punch) ? (
+              <span className="inline-flex items-center gap-1">
+                <LogIn className="h-3 w-3 text-green-600" />
+                {fmtTime(d.adjusted_first_punch ?? d.first_punch)}
+              </span>
+            ) : (
+              <span className="text-xs text-red-400">—</span>
+            )}
           </span>
           <span className="w-14 shrink-0 text-center">
             {d.total_punches === 1 && !hasAdj ? (
               <span className="text-xs text-orange-600">—</span>
-            ) : (
+            ) : (d.adjusted_last_punch || d.last_punch) ? (
               <span className="inline-flex items-center gap-1">
                 <LogOut className="h-3 w-3 text-red-500" />
                 {fmtTime(d.adjusted_last_punch ?? d.last_punch)}
               </span>
+            ) : (
+              <span className="text-xs text-red-400">—</span>
             )}
           </span>
           <span className={cn('w-16 shrink-0 text-center font-medium', isShort ? 'text-orange-600' : '')}>
-            {d.total_punches === 1 && !hasAdj ? '—' : fmtDuration(net)}
+            {d.total_punches === 1 && !hasAdj && !d.adjusted_first_punch ? '—' : fmtDuration(net)}
           </span>
           {hasAdj && <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300">C</Badge>}
-          {canAdjust && !hasAdj && d.first_punch && (
+          {canAdjust && !hasAdj && (d.first_punch || !d.total_punches) && (
             <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust day">
               <Wand2 className="h-2.5 w-2.5" />
             </Button>
@@ -1271,7 +1275,12 @@ function DayRow({
           <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
             {fmtScheduleTime(scheduleEnd)}
           </span>
-          <span className="text-xs text-muted-foreground">Absent</span>
+          <span className="text-xs text-red-400">Absent</span>
+          {canAdjust && (
+            <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust absent day">
+              <Wand2 className="h-2.5 w-2.5" />
+            </Button>
+          )}
         </>
       )}
     </div>
