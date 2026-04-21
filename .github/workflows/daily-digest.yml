@@ -2,14 +2,15 @@ name: Commits Digest
 
 on:
   schedule:
-    # Daily digest — target 08:00 Europe/Bucharest
-    #   EEST (summer, UTC+3): 05:00 UTC | EET (winter, UTC+2): 06:00 UTC
+    # Single trigger per period — the wide time guard in should_run()
+    # absorbs GitHub Actions delays (typically 20-90 min).
+    #
+    # Daily digest — 05:00 UTC → 08:00 EEST / 07:00 EET
+    #   Guard accepts hours 7-10, so covers both summer & winter.
     - cron: '0 5 * * *'
-    - cron: '0 6 * * *'
-    # Weekly digest — target Friday 17:00 Europe/Bucharest
-    #   EEST (summer, UTC+3): 14:00 UTC | EET (winter, UTC+2): 15:00 UTC
+    # Weekly digest (Fri) — 14:00 UTC → 17:00 EEST / 16:00 EET
+    #   Guard accepts hours 16-19 on Fridays.
     - cron: '0 14 * * 5'
-    - cron: '0 15 * * 5'
   workflow_dispatch:
     inputs:
       period:
