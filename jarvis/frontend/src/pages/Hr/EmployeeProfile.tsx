@@ -26,6 +26,7 @@ import { StatCard } from '@/components/shared/StatCard'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { biostarApi } from '@/api/biostar'
+import { sincronApi } from '@/api/sincron'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { BioStarDayHistory, BioStarPunchLog, SincronContract } from '@/types/biostar'
@@ -400,6 +401,10 @@ export default function EmployeeProfile() {
           month={calMonth}
           onPrev={prevMonth}
           onNext={nextMonth}
+          onToggleLeave={async (dbId, val) => {
+            await sincronApi.toggleCountForLeave(dbId, val)
+            qc.invalidateQueries({ queryKey: ['biostar', 'sincron-timesheet', biostarUserId, calYear, calMonth] })
+          }}
         />
       )}
 
@@ -779,6 +784,7 @@ function SincronCalendar({
   month,
   onPrev,
   onNext,
+  onToggleLeave,
 }: {
   contracts: SincronContract[]
   timesheet: TimesheetEntry[]
@@ -786,6 +792,7 @@ function SincronCalendar({
   month: number
   onPrev: () => void
   onNext: () => void
+  onToggleLeave?: (sincronEmployeeDbId: number, countForLeave: boolean) => Promise<void>
 }) {
   const daysInMonth = new Date(year, month, 0).getDate()
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
@@ -863,10 +870,33 @@ function SincronCalendar({
             <tbody>
               {contracts.map((c) => {
                 const companyEntries = lookup[c.company_name] ?? {}
+                const leaveOn = c.count_for_leave !== false
                 return (
-                  <tr key={c.company_name} className="border-t border-muted/50">
+                  <tr key={c.company_name} className={cn('border-t border-muted/50', !leaveOn && 'opacity-50')}>
                     <td className="sticky left-0 z-10 bg-background px-2 py-1.5 text-xs font-medium whitespace-nowrap">
-                      <div>{shortName(c.company_name)}</div>
+                      <div className="flex items-center gap-1.5">
+                        {onToggleLeave && c.sincron_employee_db_id && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <input
+                                type="checkbox"
+                                checked={leaveOn}
+                                className="h-3 w-3 rounded border-muted-foreground/50 cursor-pointer accent-primary"
+                                onChange={async (e) => {
+                                  try {
+                                    await onToggleLeave(c.sincron_employee_db_id!, e.target.checked)
+                                    toast.success(`Leave ${e.target.checked ? 'counted' : 'ignored'} for ${shortName(c.company_name)}`)
+                                  } catch { toast.error('Toggle failed') }
+                                }}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent side="right">
+                              {leaveOn ? 'Leave days counted in analytics' : 'Leave days excluded from analytics'}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                        <span>{shortName(c.company_name)}</span>
+                      </div>
                       <div className="text-[10px] text-muted-foreground font-normal">
                         {c.norma_lucru != null ? `${c.norma_lucru}h` : ''}
                         {c.schedule_start && c.schedule_end ? ` · ${c.schedule_start}–${c.schedule_end}` : ''}

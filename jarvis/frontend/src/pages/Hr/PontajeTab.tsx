@@ -41,8 +41,8 @@ type SortDir = 'asc' | 'desc'
 type ColKey = 'group' | 'official_in' | 'official_out' | 'actual_in' | 'actual_out' | 'duration' | 'punches' | 'schedule' | 'company'
 
 const COL_DEFS: { key: ColKey; label: string }[] = [
-  { key: 'official_in', label: 'Official In' },
-  { key: 'official_out', label: 'Official Out' },
+  { key: 'official_in', label: 'Checked In' },
+  { key: 'official_out', label: 'Checked Out' },
   { key: 'actual_in', label: 'Actual In' },
   { key: 'actual_out', label: 'Actual Out' },
   { key: 'duration', label: 'Duration' },
@@ -242,59 +242,159 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
     setExpandedId(null)
   }
 
-  // ── CSV Download ──
+  // ── CSV Download (monthly, all employees, official columns only) ──
 
-  const downloadCsv = useCallback(() => {
-    const headers = ['Name']
-    const cols = visibleCols
-    if (cols.has('company')) headers.push('Company')
-    if (cols.has('group')) headers.push('Group')
-    // Always export official columns (regardless of visibility toggle)
-    headers.push('Check In', 'Check Out')
-    // actual_in / actual_out are NEVER exported
-    if (cols.has('duration')) headers.push('Duration (h)')
-    if (cols.has('punches')) headers.push('Punches')
-    if (cols.has('schedule')) headers.push('Schedule')
-    headers.push('Status')
+  const [exporting, setExporting] = useState(false)
 
-    const csvRows = [headers]
-    for (const e of processed) {
-      const row = [e.name]
-      if (cols.has('company')) row.push(e.company || '')
-      if (cols.has('group')) row.push(e.user_group_name || '')
-      // Official times: adjusted if available, otherwise raw
-      const officialIn = e.adjusted_first_punch ?? e.first_punch
-      const officialOut = e.adjusted_last_punch ?? e.last_punch
-      row.push(officialIn ? fmtTime(officialIn) : '')
-      row.push(officialOut ? fmtTime(officialOut) : '')
-      if (cols.has('duration')) {
-        const net = e.adjusted_first_punch && e.adjusted_last_punch
-          ? netSec(timeDiffSec(e.adjusted_first_punch, e.adjusted_last_punch), e.lunch_break_minutes ?? 60)
-          : netSec(e.duration_seconds, e.lunch_break_minutes ?? 60)
-        row.push(net > 0 ? (net / 3600).toFixed(2) : '')
+  const downloadCsv = useCallback(async () => {
+    setExporting(true)
+    const toastId = toast.loading('Exporting monthly pontaje…')
+    try {
+      // Determine month boundaries
+      const monthStr = date.slice(0, 7) // e.g. "2026-04"
+      const [y, m] = monthStr.split('-').map(Number)
+      const firstDay = `${monthStr}-01`
+      const lastDay = new Date(y, m, 0).toISOString().slice(0, 10)
+
+      // Build list of working days in the month
+      const workingDays: { date: string; dayLabel: string; weekNum: number }[] = []
+      for (let d = new Date(`${firstDay}T12:00:00`); d.toISOString().slice(0, 10) <= lastDay; d.setDate(d.getDate() + 1)) {
+        const dow = d.getDay()
+        if (dow === 0 || dow === 6) continue // skip weekends
+        const ds = d.toISOString().slice(0, 10)
+        workingDays.push({
+          date: ds,
+          dayLabel: d.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' }),
+          weekNum: getISOWeek(d),
+        })
       }
-      if (cols.has('punches')) row.push(String(e.total_punches ?? 0))
-      if (cols.has('schedule')) row.push(formatSchedule(e.schedule_start, e.schedule_end))
-      row.push(e.attendance_status)
-      csvRows.push(row)
-    }
 
-    const csvContent = csvRows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n')
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `pontaje_${date}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [processed, visibleCols, date])
+      // Fetch daily summary for each working day (all employees, no manager filter)
+      const dailyData = await Promise.all(
+        workingDays.map(async (wd) => {
+          const summaries = await biostarApi.getDailySummary(wd.date, false)
+          return { ...wd, summaries }
+        }),
+      )
+
+      // Collect all unique employees (biostar_user_id → info + jarvis_user_id)
+      const employeeMap = new Map<string, { name: string; company: string; group: string; schedule: string; jarvisUserId: number | null }>()
+      for (const dd of dailyData) {
+        for (const s of dd.summaries) {
+          if (!employeeMap.has(s.biostar_user_id)) {
+            employeeMap.set(s.biostar_user_id, {
+              name: s.mapped_jarvis_user_name || s.name,
+              company: s.jarvis_company || '',
+              group: s.user_group_name || '',
+              schedule: formatSchedule(s.schedule_start, s.schedule_end),
+              jarvisUserId: s.mapped_jarvis_user_id,
+            })
+          }
+        }
+      }
+
+      // Also add employees from current rows that might have 0 punches
+      for (const r of rows) {
+        if (!employeeMap.has(r.biostar_user_id)) {
+          employeeMap.set(r.biostar_user_id, {
+            name: r.name,
+            company: r.company || '',
+            group: r.user_group_name || '',
+            schedule: formatSchedule(r.schedule_start, r.schedule_end),
+            jarvisUserId: r.jarvis_user_id,
+          })
+        }
+      }
+
+      // Fetch Sincron day-level codes for all mapped employees
+      // Map: jarvisUserId → date → leave code (e.g. "CO", "CM")
+      const sincronDayCodes = new Map<number, Map<string, string>>()
+      const jarvisIds = [...new Set(
+        Array.from(employeeMap.values()).map(e => e.jarvisUserId).filter((id): id is number => id != null),
+      )]
+
+      // Batch fetch Sincron timesheets (5 concurrent)
+      const BATCH = 5
+      for (let i = 0; i < jarvisIds.length; i += BATCH) {
+        const batch = jarvisIds.slice(i, i + BATCH)
+        const results = await Promise.allSettled(
+          batch.map(uid => sincronApi.getEmployeeTimesheet(uid, y, m)),
+        )
+        for (let j = 0; j < batch.length; j++) {
+          const r = results[j]
+          if (r.status !== 'fulfilled' || !r.value?.data?.days) continue
+          const dayMap = new Map<string, string>()
+          for (const [dayKey, codes] of Object.entries(r.value.data.days)) {
+            const leave = codes.find(c => ['CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV', 'OZ', 'OS'].includes(c.short_code))
+            if (leave) dayMap.set(dayKey, leave.short_code)
+          }
+          sincronDayCodes.set(batch[j], dayMap)
+        }
+      }
+
+      // Build CSV: one row per employee per day, sorted by week → date → name
+      const headers = ['Week', 'Date', 'Day', 'Name', 'Company', 'Group', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status']
+      const csvRows: string[][] = [headers]
+
+      const sortedEmployees = Array.from(employeeMap.entries()).sort((a, b) => a[1].name.localeCompare(b[1].name))
+
+      for (const dd of dailyData) {
+        for (const [bioId, emp] of sortedEmployees) {
+          const s = dd.summaries.find(x => x.biostar_user_id === bioId)
+          const officialIn = s ? (s.adjusted_first_punch ?? s.first_punch) : null
+          const officialOut = s ? (s.adjusted_last_punch ?? s.last_punch) : null
+          const lunchMin = s?.lunch_break_minutes ?? 60
+          let duration = ''
+          if (officialIn && officialOut) {
+            const net = s?.adjusted_first_punch && s?.adjusted_last_punch
+              ? netSec(timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch), lunchMin)
+              : netSec(s?.duration_seconds ?? null, lunchMin)
+            if (net > 0) duration = (net / 3600).toFixed(2)
+          }
+
+          // Sincron leave code for this employee+date
+          const sincronCode = emp.jarvisUserId
+            ? (sincronDayCodes.get(emp.jarvisUserId)?.get(dd.date) ?? '')
+            : ''
+
+          csvRows.push([
+            `W${dd.weekNum}`,
+            dd.date,
+            dd.dayLabel,
+            emp.name,
+            emp.company,
+            emp.group,
+            officialIn ? fmtTime(officialIn) : '',
+            officialOut ? fmtTime(officialOut) : '',
+            duration,
+            emp.schedule,
+            sincronCode,
+          ])
+        }
+      }
+
+      const csvContent = csvRows.map(r => r.map(c => `"${(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+      const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `pontaje_${monthStr}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Export complete', { id: toastId })
+    } catch {
+      toast.error('Export failed', { id: toastId })
+    } finally {
+      setExporting(false)
+    }
+  }, [date, rows])
 
   // ── Mobile fields ──
 
   const mobileFields: MobileCardField<AttendanceRow>[] = useMemo(() => [
     { key: 'name', label: 'Employee', isPrimary: true, render: (e) => <span className="font-medium">{e.name}</span> },
     {
-      key: 'checkin', label: 'Official In',
+      key: 'checkin', label: 'Checked In',
       render: (e) => {
         const t = e.adjusted_first_punch ?? e.first_punch
         if (!t) return <span className="text-muted-foreground">—</span>
@@ -307,7 +407,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       },
     },
     {
-      key: 'checkout', label: 'Official Out',
+      key: 'checkout', label: 'Checked Out',
       render: (e) => {
         if (!e.first_punch) return <span className="text-muted-foreground">—</span>
         if ((e.total_punches ?? 0) === 1 && !e.adjusted_last_punch) return <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
@@ -396,9 +496,9 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               </>
             )}
 
-            {/* Download CSV */}
-            <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={downloadCsv} title="Download CSV">
-              <Download className="h-4 w-4" />
+            {/* Download monthly CSV */}
+            <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={downloadCsv} disabled={exporting} title="Export month (all employees, official times)">
+              <Download className={cn('h-4 w-4', exporting && 'animate-pulse')} />
             </Button>
 
             {/* Column toggle */}
@@ -484,12 +584,12 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                       )}
                       {visibleCols.has('official_in') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_in')}>
-                          Official In <SortIcon field="check_in" />
+                          Checked In <SortIcon field="check_in" />
                         </TableHead>
                       )}
                       {visibleCols.has('official_out') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_out')}>
-                          Official Out <SortIcon field="check_out" />
+                          Checked Out <SortIcon field="check_out" />
                         </TableHead>
                       )}
                       {visibleCols.has('actual_in') && (
@@ -1029,6 +1129,7 @@ function MonthHistory({
                       workingHours={workingHours}
                       biostarUserId={biostarUserId}
                       scheduleStart={scheduleStart}
+                      scheduleEnd={_scheduleEnd}
                       canAdjust={canAdjust}
                       adjusting={adjusting}
                       onInvalidate={() => { invalidate(); queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today'] }) }}
@@ -1047,10 +1148,10 @@ function MonthHistory({
 // ── Day Row (inside week) ──
 
 function DayRow({
-  day, leaveCode, lunchMin, workingHours, biostarUserId, scheduleStart, canAdjust, adjusting, onInvalidate,
+  day, leaveCode, lunchMin, workingHours, biostarUserId, scheduleStart, scheduleEnd, canAdjust, adjusting, onInvalidate,
 }: {
   day: DayEntry; leaveCode?: string; lunchMin: number; workingHours: number; biostarUserId: string
-  scheduleStart: string | null; canAdjust: boolean; adjusting: boolean; onInvalidate: () => void
+  scheduleStart: string | null; scheduleEnd: string | null; canAdjust: boolean; adjusting: boolean; onInvalidate: () => void
 }) {
   const d = day.data
   const isToday = day.date === todayStr()
@@ -1064,15 +1165,8 @@ function DayRow({
   const handleAdjustDay = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (!d?.first_punch) return
-    const { adjFirst, adjLast } = randomizeAdjustedTimes(day.date, scheduleStart, lunchMin, workingHours)
     try {
-      await biostarApi.adjustEmployee({
-        biostar_user_id: biostarUserId, date: day.date,
-        adjusted_first_punch: adjFirst, adjusted_last_punch: adjLast,
-        original_first_punch: d.first_punch, original_last_punch: d.last_punch ?? d.first_punch,
-        schedule_start: scheduleStart ?? undefined, lunch_break_minutes: lunchMin,
-        working_hours: workingHours, original_duration_seconds: d.duration_seconds ?? undefined,
-      })
+      await biostarApi.autoAdjustSingle(biostarUserId, day.date)
       toast.success('Adjusted')
       onInvalidate()
     } catch { toast.error('Adjust failed') }
@@ -1100,8 +1194,30 @@ function DayRow({
       )} />
       <span className="w-28 shrink-0 capitalize text-muted-foreground">{day.dayLabel}</span>
 
-      {d ? (
+      {day.isWeekend || day.isHoliday || isFuture || leaveCode ? (
         <>
+          {/* Official in/out — blank for non-working days */}
+          <span className="w-14 shrink-0" />
+          <span className="w-14 shrink-0" />
+          <span className={cn('text-xs', leaveCode ? 'text-yellow-600' : 'text-muted-foreground')}>
+            {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : leaveCode ?? '—'}
+          </span>
+        </>
+      ) : d ? (
+        <>
+          {/* Schedule In/Out + Company */}
+          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+            {fmtScheduleTime(d.schedule_start ?? scheduleStart)}
+          </span>
+          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+            {fmtScheduleTime(d.schedule_end ?? scheduleEnd)}
+          </span>
+          {d.sincron_company && (
+            <span className="text-[10px] text-muted-foreground/70 truncate max-w-[80px]" title={d.sincron_company}>
+              {d.sincron_company.replace(/^AUTOWORLD\s*/i, '').replace(/\s*S\.?R\.?L\.?\s*$/i, '').trim() || d.sincron_company}
+            </span>
+          )}
+          {/* Actual In/Out */}
           <span className="w-14 shrink-0 text-center">
             <span className="inline-flex items-center gap-1">
               <LogIn className="h-3 w-3 text-green-600" />
@@ -1134,9 +1250,16 @@ function DayRow({
           )}
         </>
       ) : (
-        <span className={cn('text-xs', leaveCode ? 'text-yellow-600' : 'text-muted-foreground')}>
-          {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : leaveCode ?? (isFuture ? '—' : 'Absent')}
-        </span>
+        <>
+          {/* Official in/out for absent day */}
+          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+            {fmtScheduleTime(scheduleStart)}
+          </span>
+          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+            {fmtScheduleTime(scheduleEnd)}
+          </span>
+          <span className="text-xs text-muted-foreground">Absent</span>
+        </>
       )}
     </div>
   )
