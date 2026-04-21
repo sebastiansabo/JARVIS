@@ -765,17 +765,25 @@ class BioStarSyncService:
 
         # Get punch data for that date (ordered DESC, so [-1]=earliest, [0]=latest)
         punches = self.repo.get_punch_logs(biostar_user_id, f'{date_str} 00:00:00', f'{date_str} 23:59:59')
-        if not punches:
-            return {'success': False, 'error': 'No punches for that date'}
 
-        first_punch = punches[-1]['event_datetime']
-        last_punch = punches[0]['event_datetime']
-        duration = (last_punch - first_punch).total_seconds() if len(punches) > 1 else 0
+        if punches:
+            first_punch = punches[-1]['event_datetime']
+            last_punch = punches[0]['event_datetime']
+            duration = (last_punch - first_punch).total_seconds() if len(punches) > 1 else 0
+            deviation_in = round((first_punch - datetime.combine(first_punch.date(), sched_start)).total_seconds() / 60)
+            deviation_out = round((last_punch - datetime.combine(last_punch.date(), sched_end)).total_seconds() / 60) if len(punches) > 1 else 0
+        else:
+            # Absent day — no punches, use schedule as reference
+            first_punch = None
+            last_punch = None
+            duration = 0
+            deviation_in = 0
+            deviation_out = 0
 
-        adj_first, adj_last = self._randomize_times(first_punch, sched_start, lunch, wh)
-
-        deviation_in = round((first_punch - datetime.combine(first_punch.date(), sched_start)).total_seconds() / 60)
-        deviation_out = round((last_punch - datetime.combine(last_punch.date(), sched_end)).total_seconds() / 60) if len(punches) > 1 else 0
+        # Generate randomized adjusted times based on schedule
+        ref_date = first_punch.date() if first_punch else datetime.strptime(date_str, '%Y-%m-%d').date()
+        synthetic_ref = datetime.combine(ref_date, sched_start)
+        adj_first, adj_last = self._randomize_times(synthetic_ref, sched_start, lunch, wh)
 
         self.adjust_employee(
             biostar_user_id=biostar_user_id,

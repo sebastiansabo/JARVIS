@@ -547,6 +547,29 @@ class BioStarRepository(BaseRepository):
                 WHERE be.biostar_user_id = %s
                 GROUP BY d.event_datetime::date, be.lunch_break_minutes, be.working_hours,
                          be.schedule_start, be.schedule_end
+            ),
+            adj_only AS (
+                -- Adjustments for days WITHOUT punches (absent-day adjustments)
+                SELECT adj.date,
+                       NULL::timestamp AS first_punch,
+                       NULL::timestamp AS last_punch,
+                       0::bigint AS total_punches,
+                       NULL::numeric AS duration_seconds,
+                       be.lunch_break_minutes,
+                       be.working_hours,
+                       be.schedule_start AS static_schedule_start,
+                       be.schedule_end AS static_schedule_end
+                FROM biostar_daily_adjustments adj
+                CROSS JOIN biostar_employees be
+                WHERE adj.biostar_user_id = %s
+                  AND be.biostar_user_id = %s
+                  AND adj.date BETWEEN %s::date AND %s::date
+                  AND adj.date NOT IN (SELECT date FROM daily)
+            ),
+            all_days AS (
+                SELECT * FROM daily
+                UNION ALL
+                SELECT * FROM adj_only
             )
             SELECT d.date, d.first_punch, d.last_punch, d.total_punches,
                    d.duration_seconds, d.lunch_break_minutes, d.working_hours,
@@ -557,7 +580,7 @@ class BioStarRepository(BaseRepository):
                    adj.adjusted_first_punch,
                    adj.adjusted_last_punch,
                    adj.adjustment_type
-            FROM daily d
+            FROM all_days d
             LEFT JOIN biostar_employees be2 ON be2.biostar_user_id = %s
             LEFT JOIN LATERAL (
                 SELECT st.program_in AS program_start,
@@ -599,7 +622,9 @@ class BioStarRepository(BaseRepository):
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = %s AND adj.date = d.date
             ORDER BY d.date DESC
-        ''', (biostar_user_id, start_date, end_date, biostar_user_id, biostar_user_id, biostar_user_id))
+        ''', (biostar_user_id, start_date, end_date, biostar_user_id,
+              biostar_user_id, biostar_user_id, start_date, end_date,
+              biostar_user_id, biostar_user_id))
 
     def get_employee_with_mapping(self, biostar_user_id):
         """Get employee details with JARVIS mapping info."""
