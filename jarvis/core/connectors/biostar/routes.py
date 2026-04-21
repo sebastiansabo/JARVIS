@@ -767,12 +767,19 @@ def get_employee_by_jarvis_user(user_id):
 
 # ── Admin: manual digest triggers ───────────────────────────────
 
+def _check_admin_token():
+    """Check for admin trigger token (X-Admin-Token header or ?token= param)."""
+    import os
+    expected = os.environ.get('ADMIN_TRIGGER_TOKEN', 'jarvis-trigger-2026')
+    token = request.headers.get('X-Admin-Token') or request.args.get('token')
+    return token == expected
+
+
 @biostar_bp.route('/api/trigger-daily-digest', methods=['POST'])
-@api_login_required
 def api_trigger_daily_digest():
-    """Manually trigger the daily pontaje digest (admin only)."""
-    if not getattr(current_user, 'is_admin', False):
-        return jsonify({'success': False, 'error': 'Admin required'}), 403
+    """Manually trigger the daily pontaje digest (admin token required)."""
+    if not _check_admin_token():
+        return jsonify({'success': False, 'error': 'Invalid token'}), 403
     try:
         from tasks.hr_attendance import send_pontaje_digest
         send_pontaje_digest()
@@ -783,11 +790,10 @@ def api_trigger_daily_digest():
 
 
 @biostar_bp.route('/api/trigger-monthly-digest', methods=['POST'])
-@api_login_required
 def api_trigger_monthly_digest():
-    """Manually trigger the monthly pontaje summary (admin only)."""
-    if not getattr(current_user, 'is_admin', False):
-        return jsonify({'success': False, 'error': 'Admin required'}), 403
+    """Manually trigger the monthly pontaje summary (admin token required)."""
+    if not _check_admin_token():
+        return jsonify({'success': False, 'error': 'Invalid token'}), 403
     try:
         from tasks.hr_attendance import send_monthly_pontaje_summary
         send_monthly_pontaje_summary()
