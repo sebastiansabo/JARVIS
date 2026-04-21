@@ -54,11 +54,11 @@ export function CostsTab({ course }: { course: Course }) {
           </div>
           <div>
             <div className="text-xs text-muted-foreground">Actual Cost</div>
-            <div className="text-lg font-bold tabular-nums">{summary?.total_cost ? fmt(summary.total_cost, course.currency) : '—'}</div>
+            <div className="text-lg font-bold tabular-nums">{summary?.total_cost != null ? fmt(summary.total_cost, course.currency) : '—'}</div>
           </div>
           <div>
             <div className="text-xs text-muted-foreground">Variance</div>
-            {course.budget && summary?.total_cost ? (() => {
+            {course.budget && summary?.total_cost != null ? (() => {
               const variance = Number(course.budget) - summary.total_cost
               return (
                 <div className={`text-lg font-bold tabular-nums ${variance < 0 ? 'text-red-600' : 'text-green-600'}`}>

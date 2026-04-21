@@ -58,9 +58,9 @@ class EnrollmentCostRepository(BaseRepository):
                    COALESCE(SUM(ec.transport), 0) as total_transport,
                    COALESCE(SUM(ec.taxi), 0) as total_taxi,
                    COALESCE(SUM(ec.total_cost), 0) as total_cost,
-                   COUNT(*) as enrollment_count
-            FROM hr.enrollment_costs ec
-            JOIN hr.course_enrollments ce ON ec.enrollment_id = ce.id
+                   COUNT(ce.id) as enrollment_count
+            FROM hr.course_enrollments ce
+            LEFT JOIN hr.enrollment_costs ec ON ec.enrollment_id = ce.id
             WHERE ce.course_id = %s
         ''', (course_id,)) or {}
 
