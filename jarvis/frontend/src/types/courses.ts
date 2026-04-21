@@ -184,6 +184,31 @@ export interface CourseDashboardStats {
   by_status: Array<{ status: CourseStatus; count: number }>
 }
 
+export interface CourseTransaction {
+  id: number
+  course_id: number
+  amount: number
+  direction: 'debit' | 'credit'
+  source: 'manual' | 'invoice'
+  invoice_id: number | null
+  invoice_number: string | null
+  invoice_supplier: string | null
+  invoice_value: number | null
+  invoice_currency: string | null
+  transaction_date: string
+  description: string | null
+  recorded_by: number | null
+  recorded_by_name: string | null
+  created_at: string
+}
+
+export interface TransactionTotals {
+  total_debit: number
+  total_credit: number
+  net_cost: number
+  transaction_count: number
+}
+
 export interface CourseActivity {
   id: number
   course_id: number

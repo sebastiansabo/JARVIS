@@ -119,6 +119,23 @@ def create_schema_courses(conn, cursor):
         )
     ''')
 
+    # Course Transactions - manual spending + invoice-linked spending (mirrors mkt_budget_transactions)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS hr.course_transactions (
+            id SERIAL PRIMARY KEY,
+            course_id INTEGER NOT NULL REFERENCES hr.courses(id) ON DELETE CASCADE,
+            amount NUMERIC(12,2) NOT NULL,
+            direction VARCHAR(10) DEFAULT 'debit',
+            source VARCHAR(20) DEFAULT 'manual',
+            invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+            transaction_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            description TEXT,
+            recorded_by INTEGER REFERENCES public.users(id),
+            recorded_by_name VARCHAR(200),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     # Add new columns to existing tables (idempotent)
     for stmt in [
         "ALTER TABLE hr.courses ADD COLUMN IF NOT EXISTS duration_hours NUMERIC(6,1)",
@@ -148,6 +165,8 @@ def create_schema_courses(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_certs_status ON hr.course_certifications(status)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_enrollment_costs_enrollment ON hr.enrollment_costs(enrollment_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_course_activity_course ON hr.course_activity(course_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_course_transactions_course ON hr.course_transactions(course_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_course_transactions_invoice ON hr.course_transactions(invoice_id) WHERE invoice_id IS NOT NULL')
     conn.commit()
 
     # ============== Seed Course Types ==============
