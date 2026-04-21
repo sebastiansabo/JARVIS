@@ -227,17 +227,18 @@ def get_period() -> tuple[str, dict]:
 def should_run(period: str) -> bool:
     """Return True if the script should execute right now for this period.
 
-      - daily  : every day at 08-10h
-      - weekly : Fridays at 17-19h (weekday()==4)
-      - monthly: 1st of the month at 08-10h
+    Wide windows absorb both DST offsets and GitHub Actions cron delays:
+      - daily  : every day at 07-10h (05:00 UTC → 07 EET or 08 EEST + delay)
+      - weekly : Fridays at 16-19h  (14:00 UTC → 16 EET or 17 EEST + delay)
+      - monthly: 1st of the month at 07-10h
     """
     now = datetime.now(ROMANIA_TZ)
     if period == "daily":
-        return now.hour in (8, 9, 10)
+        return now.hour in (7, 8, 9, 10)
     if period == "weekly":
-        return now.weekday() == 4 and now.hour in (17, 18, 19)
+        return now.weekday() == 4 and now.hour in (16, 17, 18, 19)
     if period == "monthly":
-        return now.day == 1 and now.hour in (8, 9, 10)
+        return now.day == 1 and now.hour in (7, 8, 9, 10)
     return False
 
 
@@ -771,17 +772,21 @@ def build_timesheet_section(commits_by_repo: dict[str, list[dict]]) -> str:
 
 
 SYSTEM_PROMPT_BRIEF = (
-    "Ești un asistent de business care redactează digest-uri ZILNICE ECHILIBRATE "
+    "Ești un asistent de business care redactează digest-uri ZILNICE SCURTE "
     "pentru directorul general Autoworld, pe baza muncii echipei de dezvoltare "
     "a platformei JARVIS. "
     "Publicul tău NU cunoaște termeni tehnici — traduci totul în limbaj de "
     "afaceri clar, orientat pe impact. "
-    "OBIECTIV: FIECARE commit primit devine un bullet separat, formulat scurt "
-    "și orientat pe valoare. NU uni commit-uri diferite într-un singur bullet, "
-    "dar grupează-le pe arii funcționale ale afacerii. Zero jargon tehnic, "
-    "zero umplutură, zero metacomentarii. "
-    "Răspunzi DOAR cu markdown pentru corpul emailului, fără introduceri sau "
-    "concluzii."
+    "STRUCTURĂ OBLIGATORIE: "
+    "1) **Rezumat:** — un paragraf de MAX 2-3 propoziții care sintetizează "
+    "focusul zilei și cele mai importante schimbări. "
+    "2) --- (linie orizontală) "
+    "3) Secțiuni pe arii funcționale (## Titlu Arie), cu câte un bullet scurt "
+    "per commit — MAX 10-12 cuvinte per bullet, fără explicații suplimentare. "
+    "Dacă o arie are un singur commit, pune-l tot ca bullet. "
+    "REGULI: Zero jargon tehnic, zero umplutură, zero metacomentarii. "
+    "Emailul trebuie să fie SCURT — citit în 30 secunde. "
+    "Răspunzi DOAR cu markdown, fără introduceri sau concluzii."
 )
 
 SYSTEM_PROMPT_DETAILED = (
@@ -819,7 +824,7 @@ SYSTEM_PROMPTS: dict[str, str] = {
 }
 
 MAX_TOKENS_BY_DETAIL: dict[str, int] = {
-    "brief": 8192,
+    "brief": 4096,
     "detailed": 16000,
     "comprehensive": 24000,
 }
