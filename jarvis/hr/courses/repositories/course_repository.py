@@ -122,24 +122,27 @@ class CourseRepository(BaseRepository):
     def create(self, name, course_type_id, company_id, start_date, end_date,
                supplier_id=None, trainer_name=None, location=None,
                description=None, budget=None, currency='RON',
+               course_code=None, duration_hours=None, travel_mode=None,
                created_by=None) -> int:
         """Create a new course. Returns the new course ID."""
         result = self.execute('''
             INSERT INTO hr.courses (name, course_type_id, company_id, supplier_id,
                                      trainer_name, start_date, end_date, location,
-                                     description, budget, currency, created_by)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                     description, budget, currency, course_code,
+                                     duration_hours, travel_mode, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (name, course_type_id, company_id, supplier_id, trainer_name,
               start_date, end_date, location, description, budget, currency,
-              created_by), returning=True)
+              course_code, duration_hours, travel_mode, created_by), returning=True)
         return result['id']
 
     def update(self, course_id, **kwargs) -> bool:
         """Update a course. Pass only fields to update."""
         allowed = {'name', 'course_type_id', 'company_id', 'supplier_id',
                    'trainer_name', 'start_date', 'end_date', 'location',
-                   'description', 'budget', 'currency', 'status', 'approval_request_id'}
+                   'description', 'budget', 'currency', 'status', 'approval_request_id',
+                   'course_code', 'duration_hours', 'travel_mode'}
         fields = {k: v for k, v in kwargs.items() if k in allowed}
         if not fields:
             return False
@@ -203,3 +206,34 @@ class CourseRepository(BaseRepository):
     def get_type_by_id(self, type_id: int) -> Optional[Dict[str, Any]]:
         """Get a single course type."""
         return self.query_one('SELECT * FROM hr.course_types WHERE id = %s', (type_id,))
+
+    def get_dashboard_stats(self, year: int, company_id: int = None) -> Dict[str, Any]:
+        """Dashboard summary stats for a year."""
+        where = 'c.deleted_at IS NULL AND EXTRACT(YEAR FROM c.start_date) = %s'
+        params = [year]
+        if company_id:
+            where += ' AND c.company_id = %s'
+            params.append(company_id)
+
+        totals = self.query_one(f'''
+            SELECT COUNT(*) as total_courses,
+                   COUNT(DISTINCT ce.employee_id) as total_participants,
+                   COALESCE(SUM(ec.total_cost), 0) as total_cost,
+                   COALESCE(SUM(c.end_date - c.start_date + 1), 0) as total_days
+            FROM hr.courses c
+            LEFT JOIN hr.course_enrollments ce ON ce.course_id = c.id
+            LEFT JOIN hr.enrollment_costs ec ON ec.enrollment_id = ce.id
+            WHERE {where}
+        ''', params)
+
+        by_status = self.query_all(f'''
+            SELECT c.status, COUNT(*) as count
+            FROM hr.courses c
+            WHERE {where}
+            GROUP BY c.status ORDER BY count DESC
+        ''', params)
+
+        return {
+            **(totals or {}),
+            'by_status': by_status,
+        }

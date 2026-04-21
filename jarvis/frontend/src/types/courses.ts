@@ -27,6 +27,9 @@ export interface Course {
   description: string | null
   budget: number | null
   currency: string
+  course_code: string | null
+  duration_hours: number | null
+  travel_mode: string | null
   status: CourseStatus
   approval_request_id: number | null
   enrollment_count: number
@@ -57,6 +60,20 @@ export interface Enrollment {
   enrolled_at: string
   completed_at: string | null
   notes: string | null
+  // Admin fields (from Excel)
+  order_number: string | null
+  travel_order: string | null
+  additional_act: string | null
+  travel_mode: string | null
+  // Inline cost data (joined from enrollment_costs)
+  training_fee: number | null
+  per_diem: number | null
+  accommodation: number | null
+  transport: number | null
+  taxi: number | null
+  total_cost: number | null
+  cost_currency: string | null
+  cost_notes: string | null
   // joined from course
   course_name?: string
   start_date?: string
@@ -86,5 +103,94 @@ export interface Certification {
   expiry_date: string | null
   status: 'active' | 'expired' | 'revoked'
   days_until_expiry: number | null
+  created_at: string
+}
+
+export interface EnrollmentCost {
+  id: number
+  enrollment_id: number
+  employee_id: number
+  employee_name: string
+  employee_company: string | null
+  user_department: string | null
+  enrollment_department: string | null
+  enrollment_status: EnrollmentStatus
+  enrollment_travel_mode: string | null
+  order_number: string | null
+  travel_order: string | null
+  additional_act: string | null
+  training_fee: number
+  per_diem: number
+  accommodation: number
+  transport: number
+  taxi: number
+  total_cost: number
+  currency: string
+  notes: string | null
+}
+
+export interface CostSummary {
+  total_training_fee: number
+  total_per_diem: number
+  total_accommodation: number
+  total_transport: number
+  total_taxi: number
+  total_cost: number
+  enrollment_count: number
+}
+
+export interface CompanyCostSummary {
+  company_id: number
+  company_name: string
+  training_fee: number
+  per_diem: number
+  accommodation: number
+  transport: number
+  taxi: number
+  total_cost: number
+  course_count: number
+  participant_count: number
+  total_days: number
+}
+
+export interface DepartmentCostSummary {
+  department: string
+  training_fee: number
+  per_diem: number
+  accommodation: number
+  transport: number
+  taxi: number
+  total_cost: number
+  course_count: number
+  participant_count: number
+}
+
+export interface MonthlyCost {
+  month: number
+  training_fee: number
+  per_diem: number
+  accommodation: number
+  transport: number
+  taxi: number
+  total_cost: number
+  course_count: number
+}
+
+export interface CourseDashboardStats {
+  total_courses: number
+  total_participants: number
+  total_cost: number
+  total_days: number
+  by_status: Array<{ status: CourseStatus; count: number }>
+}
+
+export interface CourseActivity {
+  id: number
+  course_id: number
+  action: string
+  actor_id: number | null
+  actor_name: string | null
+  actor_display_name: string | null
+  details: Record<string, unknown>
   created_at: string
 }
