@@ -1192,15 +1192,18 @@ function DayRow({
         'inline-block h-2 w-2 rounded-full shrink-0',
         d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : leaveCode ? 'bg-yellow-500' : isFuture ? 'bg-muted-foreground/30' : 'bg-red-400',
       )} />
-      <span className="w-28 shrink-0 capitalize text-muted-foreground">
+      <span className="w-44 shrink-0 capitalize text-muted-foreground">
         {day.dayLabel}
         {d?.sincron_day_schedule && d.sincron_day_schedule.length > 0 ? (
           <span className="block text-[10px] text-muted-foreground/60 normal-case leading-tight">
-            {d.sincron_day_schedule.map((s, i) => (
-              <span key={i} className="block truncate" title={`${s.company} ${s.start}–${s.end}`}>
-                {s.company} {s.start}–{s.end}
-              </span>
-            ))}
+            {d.sincron_day_schedule.map((s, i) => {
+              const short = s.company.replace(/^AUTOWORLD\s*/i, '').replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || 'S.R.L.';
+              return (
+                <span key={i} className="block whitespace-nowrap" title={`${s.company} ${s.start}–${s.end}`}>
+                  {short} {s.start}–{s.end}
+                </span>
+              );
+            })}
           </span>
         ) : d?.sincron_company ? (
           <span className="block text-[10px] text-muted-foreground/60 normal-case" title={d.sincron_company}>
