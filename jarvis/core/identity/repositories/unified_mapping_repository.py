@@ -94,13 +94,14 @@ class UnifiedMappingRepository(BaseRepository):
                 u.name        AS name,
                 u.email       AS email,
                 u.cnp         AS cnp,
-                u.company     AS company,
+                COALESCE(co.company, u.company) AS company,
                 u.department  AS department,
                 u.is_active   AS is_active,
                 COALESCE(sa.sincron_mappings, '[]'::json) AS sincron_mappings,
                 COALESCE(ba.biostar_mappings, '[]'::json) AS biostar_mappings,
                 COALESCE(ca.connecteam_mappings, '[]'::json) AS connecteam_mappings
             FROM users u
+            LEFT JOIN companies co ON co.id = u.company_id
             LEFT JOIN sincron_agg sa ON sa.user_id = u.id
             LEFT JOIN biostar_agg ba ON ba.user_id = u.id
             LEFT JOIN connecteam_agg ca ON ca.user_id = u.id

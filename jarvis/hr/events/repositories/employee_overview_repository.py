@@ -45,7 +45,7 @@ class EmployeeOverviewRepository(BaseRepository):
     def get_org_path(self, user_id):
         """Return {company, brand, department, subdepartment} for a user."""
         return self.query_one(
-            'SELECT u.company, u.brand, u.department, u.subdepartment FROM users u WHERE u.id = %s',
+            'SELECT COALESCE(co.company, u.company) AS company, u.brand, u.department, u.subdepartment FROM users u LEFT JOIN companies co ON co.id = u.company_id WHERE u.id = %s',
             (user_id,)
         )
 
@@ -266,10 +266,11 @@ class EmployeeOverviewRepository(BaseRepository):
         return self.query_all(f'''
             SELECT DISTINCT ON (be.mapped_jarvis_user_id)
                    be.mapped_jarvis_user_id AS user_id, u.name AS user_name,
-                   u.company, be.biostar_user_id,
+                   COALESCE(co.company, u.company) AS company, be.biostar_user_id,
                    snm.node_id
             FROM biostar_employees be
             JOIN users u ON u.id = be.mapped_jarvis_user_id
+            LEFT JOIN companies co ON co.id = u.company_id
             LEFT JOIN structure_node_members snm ON snm.user_id = u.id
             WHERE be.status = 'active'
               AND be.mapped_jarvis_user_id IS NOT NULL

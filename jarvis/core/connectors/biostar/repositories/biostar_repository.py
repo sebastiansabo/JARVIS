@@ -411,7 +411,7 @@ class BioStarRepository(BaseRepository):
                     be.user_group_name,
                     be.mapped_jarvis_user_id,
                     u.name AS mapped_jarvis_user_name,
-                    u.company AS jarvis_company,
+                    COALESCE(co.company, u.company) AS jarvis_company,
                     u.department AS jarvis_department,
                     be.lunch_break_minutes,
                     be.working_hours,
@@ -424,8 +424,9 @@ class BioStarRepository(BaseRepository):
                 FROM deduped d
                 LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
                 LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+                LEFT JOIN companies co ON co.id = u.company_id
                 GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
-                         be.mapped_jarvis_user_id, u.name, u.company, u.department,
+                         be.mapped_jarvis_user_id, u.name, co.company, u.company, u.department,
                          be.lunch_break_minutes, be.working_hours,
                          be.schedule_start, be.schedule_end
             )
@@ -474,7 +475,7 @@ class BioStarRepository(BaseRepository):
                 be.user_group_name,
                 be.mapped_jarvis_user_id,
                 u.name AS mapped_jarvis_user_name,
-                u.company AS jarvis_company,
+                COALESCE(co.company, u.company) AS jarvis_company,
                 u.department AS jarvis_department,
                 be.lunch_break_minutes,
                 be.working_hours,
@@ -496,14 +497,15 @@ class BioStarRepository(BaseRepository):
             FROM daily d
             LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+            LEFT JOIN companies co ON co.id = u.company_id
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = d.biostar_user_id AND adj.date = d.day
             WHERE 1=1{extra_where}
             GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
-                     be.mapped_jarvis_user_id, u.name, u.company, u.department,
+                     be.mapped_jarvis_user_id, u.name, co.company, u.company, u.department,
                      be.lunch_break_minutes, be.working_hours,
                      be.schedule_start, be.schedule_end
-            ORDER BY u.company NULLS LAST, be.name
+            ORDER BY COALESCE(co.company, u.company) NULLS LAST, be.name
         ''', params)
 
     def get_employee_punches(self, biostar_user_id, date_str):
@@ -655,7 +657,9 @@ class BioStarRepository(BaseRepository):
         return self.query_all(f'''
             WITH active_employees AS (
                 SELECT DISTINCT ON (u.id)
-                       u.id AS jarvis_user_id, u.name, u.company, u.department,
+                       u.id AS jarvis_user_id, u.name,
+                       COALESCE(co.company, u.company) AS company,
+                       u.department,
                        be.biostar_user_id, be.user_group_name, be.email,
                        be.lunch_break_minutes, be.working_hours,
                        be.schedule_start, be.schedule_end
@@ -663,6 +667,7 @@ class BioStarRepository(BaseRepository):
                 JOIN biostar_employees be ON be.mapped_jarvis_user_id = u.id
                     AND be.status = 'active'
                     AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
+                LEFT JOIN companies co ON co.id = u.company_id
                 WHERE u.is_active = TRUE{user_filter}
                 ORDER BY u.id, be.last_synced_at DESC NULLS LAST
             ),
@@ -733,7 +738,9 @@ class BioStarRepository(BaseRepository):
         return self.query_all(f'''
             WITH active_employees AS (
                 SELECT DISTINCT ON (u.id)
-                       u.id AS jarvis_user_id, u.name, u.company, u.department,
+                       u.id AS jarvis_user_id, u.name,
+                       COALESCE(co.company, u.company) AS company,
+                       u.department,
                        be.biostar_user_id, be.user_group_name, be.email,
                        be.lunch_break_minutes, be.working_hours,
                        be.schedule_start, be.schedule_end
@@ -741,6 +748,7 @@ class BioStarRepository(BaseRepository):
                 JOIN biostar_employees be ON be.mapped_jarvis_user_id = u.id
                     AND be.status = 'active'
                     AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
+                LEFT JOIN companies co ON co.id = u.company_id
                 WHERE u.is_active = TRUE{user_filter}
                 ORDER BY u.id, be.last_synced_at DESC NULLS LAST
             ),

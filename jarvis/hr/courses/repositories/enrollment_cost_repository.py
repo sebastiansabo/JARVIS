@@ -18,11 +18,12 @@ class EnrollmentCostRepository(BaseRepository):
             SELECT ec.*, ce.employee_id, ce.enrollment_status,
                    ce.order_number, ce.travel_order, ce.additional_act,
                    ce.department as enrollment_department, ce.travel_mode as enrollment_travel_mode,
-                   u.name as employee_name, u.company as employee_company,
+                   u.name as employee_name, COALESCE(co.company, u.company) as employee_company,
                    u.department as user_department
             FROM hr.enrollment_costs ec
             JOIN hr.course_enrollments ce ON ec.enrollment_id = ce.id
             JOIN public.users u ON ce.employee_id = u.id
+            LEFT JOIN public.companies co ON co.id = u.company_id
             WHERE ce.course_id = %s
             ORDER BY u.name
         ''', (course_id,))

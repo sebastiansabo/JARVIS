@@ -265,12 +265,14 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
 
         # user_id references users.id directly
         query = '''
-            SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
+            SELECT b.*, u.name as employee_name, u.department, u.brand,
+                   COALESCE(co.company, u.company) AS company,
                    ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
                    creator.name as created_by_name,
                    b.user_id as effective_employee_id
             FROM hr.event_bonuses b
             LEFT JOIN public.users u ON u.id = b.user_id
+            LEFT JOIN public.companies co ON co.id = u.company_id
             JOIN hr.events ev ON b.event_id = ev.id
             LEFT JOIN public.users creator ON b.created_by = creator.id
             WHERE 1=1
@@ -292,7 +294,7 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
 
         scope_sql, scope_params = apply_scope_filter(
             scope, user_context,
-            user_id_col='b.user_id', dept_col='u.department', company_col='u.company',
+            user_id_col='b.user_id', dept_col='u.department', company_col='COALESCE(co.company, u.company)',
         )
         query += scope_sql
         params.extend(scope_params)
@@ -312,11 +314,13 @@ def get_event_bonus(bonus_id):
     try:
         cursor = get_cursor(conn)
         cursor.execute('''
-            SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
+            SELECT b.*, u.name as employee_name, u.department, u.brand,
+                   COALESCE(co.company, u.company) AS company,
                    ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
                    b.user_id as effective_employee_id
             FROM hr.event_bonuses b
             LEFT JOIN public.users u ON u.id = b.user_id
+            LEFT JOIN public.companies co ON co.id = u.company_id
             JOIN hr.events ev ON b.event_id = ev.id
             WHERE b.id = %s
         ''', (bonus_id,))
@@ -600,13 +604,14 @@ def get_bonuses_by_employee(year=None, month=None):
         cursor = get_cursor(conn)
 
         query = '''
-            SELECT u.id, u.name, u.department, u.company, u.brand,
+            SELECT u.id, u.name, u.department, COALESCE(co.company, u.company) AS company, u.brand,
                    COUNT(*) as bonus_count,
                    COALESCE(SUM(b.bonus_days), 0) as total_days,
                    COALESCE(SUM(b.hours_free), 0) as total_hours,
                    COALESCE(SUM(b.bonus_net), 0) as total_bonus
             FROM hr.event_bonuses b
             LEFT JOIN public.users u ON u.id = b.user_id
+            LEFT JOIN public.companies co ON co.id = u.company_id
             WHERE 1=1
         '''
         params = []
@@ -617,7 +622,7 @@ def get_bonuses_by_employee(year=None, month=None):
             query += ' AND b.month = %s'
             params.append(month)
 
-        query += ' GROUP BY u.id, u.name, u.department, u.company, u.brand ORDER BY total_bonus DESC'
+        query += ' GROUP BY u.id, u.name, u.department, co.company, u.company, u.brand ORDER BY total_bonus DESC'
 
         cursor.execute(query, params)
         rows = cursor.fetchall()

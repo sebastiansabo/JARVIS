@@ -106,7 +106,8 @@ def _process_missing_for_date(check_date, repo, cursor, conn):
         company_l0[comp] = {r['user_id'] for r in cursor.fetchall()}
         cursor.execute('''
             SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id
-            WHERE r.name = 'HR' AND u.company = %s AND u.is_active = TRUE
+            JOIN companies c ON c.id = u.company_id
+            WHERE r.name = 'HR' AND c.company = %s AND u.is_active = TRUE
         ''', (comp,))
         company_hr[comp] = {r['id'] for r in cursor.fetchall()}
 

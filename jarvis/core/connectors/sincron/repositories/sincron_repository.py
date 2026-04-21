@@ -584,8 +584,9 @@ class SincronRepository(BaseRepository):
     def get_jarvis_users(self):
         """Get active JARVIS users for mapping (excludes sensitive PII)."""
         return self.query_all('''
-            SELECT u.id, u.name, u.email, u.company, u.department
+            SELECT u.id, u.name, u.email, COALESCE(co.company, u.company) AS company, u.department
             FROM users u
+            LEFT JOIN companies co ON co.id = u.company_id
             WHERE u.is_active = TRUE
             ORDER BY u.name
         ''')
