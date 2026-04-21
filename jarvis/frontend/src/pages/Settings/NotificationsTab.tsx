@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Send, Bell, Newspaper, Smartphone, Trash2, Plus } from 'lucide-react'
+import { Save, Send, Bell, Newspaper, Smartphone, Trash2, Plus, Clock, Calendar, Play } from 'lucide-react'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -43,6 +43,9 @@ export default function NotificationsTab() {
     // Daily digest
     daily_digest_enabled: false,
     daily_digest_recipients: 'admins',
+    // Pontaje digest
+    pontaje_digest_enabled: false,
+    pontaje_digest_recipients: '',
   })
 
   const [testEmail, setTestEmail] = useState('')
@@ -69,6 +72,8 @@ export default function NotificationsTab() {
         smart_invoice_anomaly_sigma: settings.smart_invoice_anomaly_sigma || '2',
         daily_digest_enabled: String(settings.daily_digest_enabled) === 'true',
         daily_digest_recipients: settings.daily_digest_recipients || 'admins',
+        pontaje_digest_enabled: String(settings.pontaje_digest_enabled) === 'true',
+        pontaje_digest_recipients: settings.pontaje_digest_recipients || '',
       })
     }
   }, [settings])
@@ -109,6 +114,8 @@ export default function NotificationsTab() {
       smart_invoice_anomaly_sigma: form.smart_invoice_anomaly_sigma,
       daily_digest_enabled: String(form.daily_digest_enabled),
       daily_digest_recipients: form.daily_digest_recipients,
+      pontaje_digest_enabled: String(form.pontaje_digest_enabled),
+      pontaje_digest_recipients: form.pontaje_digest_recipients,
     })
   }
 
@@ -351,6 +358,14 @@ export default function NotificationsTab() {
         </CardContent>
       </Card>
 
+      {/* Pontaje Digest */}
+      <PontajeDigestSection
+        enabled={form.pontaje_digest_enabled}
+        recipients={form.pontaje_digest_recipients}
+        onEnabledChange={(v) => setForm({ ...form, pontaje_digest_enabled: v })}
+        onRecipientsChange={(v) => setForm({ ...form, pontaje_digest_recipients: v })}
+      />
+
       {/* Push Notifications */}
       <PushNotificationsSection />
 
@@ -378,6 +393,101 @@ export default function NotificationsTab() {
         </div>
       </div>
     </div>
+  )
+}
+
+
+// ============== Pontaje Digest Section ==============
+
+function PontajeDigestSection({
+  enabled, recipients, onEnabledChange, onRecipientsChange,
+}: {
+  enabled: boolean
+  recipients: string
+  onEnabledChange: (v: boolean) => void
+  onRecipientsChange: (v: string) => void
+}) {
+  const [triggering, setTriggering] = useState<'daily' | 'monthly' | null>(null)
+
+  const trigger = async (type: 'daily' | 'monthly') => {
+    setTriggering(type)
+    try {
+      const endpoint = type === 'daily'
+        ? '/biostar/api/trigger-daily-digest'
+        : '/biostar/api/trigger-monthly-digest'
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'X-Admin-Token': 'jarvis-trigger-2026' },
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`${type === 'daily' ? 'Daily' : 'Monthly'} digest triggered`)
+      } else {
+        toast.error(data.error || 'Failed to trigger digest')
+      }
+    } catch {
+      toast.error('Failed to trigger digest')
+    } finally {
+      setTriggering(null)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Clock className="h-5 w-5" />
+          Pontaje Digest
+        </CardTitle>
+        <CardDescription>
+          Attendance email reports. Daily digest runs at 10:30 (Romania time), monthly summary on the 1st of each month.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Enable Pontaje Digest</p>
+            <p className="text-xs text-muted-foreground">Send attendance CSV reports via email</p>
+          </div>
+          <Switch checked={enabled} onCheckedChange={onEnabledChange} />
+        </div>
+
+        {enabled && (
+          <div className="space-y-4 border-l-2 border-muted pl-4">
+            <div className="grid gap-1.5">
+              <Label className="text-xs font-medium">Recipients (comma-separated emails)</Label>
+              <Input
+                value={recipients}
+                onChange={(e) => onRecipientsChange(e.target.value)}
+                placeholder="user1@company.com, user2@company.com"
+              />
+              <p className="text-xs text-muted-foreground">Who receives the daily and monthly pontaje reports</p>
+            </div>
+
+            <div className="flex gap-2 border-t pt-3">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={triggering !== null}
+                onClick={() => trigger('daily')}
+              >
+                <Play className="mr-1.5 h-3.5 w-3.5" />
+                {triggering === 'daily' ? 'Sending...' : 'Send Daily Now'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={triggering !== null}
+                onClick={() => trigger('monthly')}
+              >
+                <Calendar className="mr-1.5 h-3.5 w-3.5" />
+                {triggering === 'monthly' ? 'Sending...' : 'Send Monthly Now'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
