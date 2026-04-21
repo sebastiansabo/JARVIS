@@ -721,7 +721,7 @@ function EmployeeRow({
 
   return (
     <>
-      <TableRow className={cn('cursor-pointer hover:bg-muted/50', isAbsent && 'opacity-60')} onClick={onToggle}>
+      <TableRow className={cn('cursor-pointer hover:bg-muted/50', isAbsent && !hasAdj && 'opacity-60')} onClick={onToggle}>
         <TableCell className="w-8 px-2">
           {isExpanded ? (
             <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -739,7 +739,7 @@ function EmployeeRow({
         )}
         {visibleCols.has('official_in') && (
           <TableCell className="text-center">
-            {isAbsent ? (
+            {isAbsent && !hasAdj ? (
               <span className="text-muted-foreground">—</span>
             ) : (
               <span className="inline-flex items-center gap-1 text-sm">
@@ -752,7 +752,7 @@ function EmployeeRow({
         )}
         {visibleCols.has('official_out') && (
           <TableCell className="text-center">
-            {isAbsent ? (
+            {isAbsent && !hasAdj ? (
               <span className="text-muted-foreground">—</span>
             ) : (employee.total_punches ?? 0) === 1 && !hasAdj ? (
               <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
@@ -787,7 +787,7 @@ function EmployeeRow({
         )}
         {visibleCols.has('duration') && (
           <TableCell className="text-center">
-            {isAbsent || (employee.total_punches ?? 0) === 1 ? (
+            {(isAbsent && !hasAdj) || ((employee.total_punches ?? 0) === 1 && !hasAdj) ? (
               <span className="text-muted-foreground">—</span>
             ) : (
               <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
@@ -807,7 +807,12 @@ function EmployeeRow({
         )}
         {visibleCols.has('schedule') && (
           <TableCell className="text-center text-sm text-muted-foreground">
-            {formatSchedule(employee.schedule_start, employee.schedule_end)}
+            {employee.sincron_day_schedule?.length
+              ? formatSchedule(
+                  employee.sincron_day_schedule.reduce((e, s) => !e || s.start < e ? s.start : e, '' as string),
+                  employee.sincron_day_schedule.reduce((l, s) => !l || s.end > l ? s.end : l, '' as string)
+                )
+              : formatSchedule(employee.schedule_start, employee.schedule_end)}
           </TableCell>
         )}
         {visibleCols.has('company') && (
@@ -845,7 +850,7 @@ function EmployeeRow({
           <div className="flex items-center justify-end gap-2">
             <span className={cn(
               'inline-block h-2.5 w-2.5 rounded-full shrink-0',
-              isAbsent ? 'bg-red-400' : 'bg-green-500',
+              isAbsent && !hasAdj ? 'bg-red-400' : 'bg-green-500',
             )} />
             <Button
               variant="ghost"
