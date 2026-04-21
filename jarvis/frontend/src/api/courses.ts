@@ -3,6 +3,7 @@ import type {
   Course, CourseType, Enrollment, Certification,
   EnrollmentCost, CostSummary, CompanyCostSummary, DepartmentCostSummary,
   MonthlyCost, CourseDashboardStats, CourseActivity,
+  CourseTransaction, TransactionTotals,
 } from '@/types/courses'
 
 const BASE = '/hr/courses/api'
@@ -162,6 +163,38 @@ export const coursesApi = {
   unlinkInvoice: (courseId: number, invoiceId: number) =>
     api.delete<{ success: boolean }>(
       `${BASE}/courses/${courseId}/invoices/${invoiceId}`,
+    ),
+
+  // Transactions (spending)
+  getTransactions: (courseId: number) =>
+    api.get<{ transactions: CourseTransaction[]; totals: TransactionTotals }>(
+      `${BASE}/courses/${courseId}/transactions`,
+    ),
+
+  createTransaction: (courseId: number, data: {
+    amount: number
+    direction?: 'debit' | 'credit'
+    source?: 'manual' | 'invoice'
+    invoice_id?: number
+    transaction_date?: string
+    description?: string
+  }) =>
+    api.post<{ success: boolean; id: number }>(
+      `${BASE}/courses/${courseId}/transactions`, data,
+    ),
+
+  updateTransaction: (courseId: number, txId: number, data: {
+    amount?: number
+    transaction_date?: string
+    description?: string
+  }) =>
+    api.put<{ success: boolean }>(
+      `${BASE}/courses/${courseId}/transactions/${txId}`, data,
+    ),
+
+  deleteTransaction: (courseId: number, txId: number) =>
+    api.delete<{ success: boolean }>(
+      `${BASE}/courses/${courseId}/transactions/${txId}`,
     ),
 
   // Profile

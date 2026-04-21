@@ -22,6 +22,12 @@ export function CourseOverviewTab({ course }: { course: Course }) {
   })
   const summary = costData?.summary
 
+  const { data: txData } = useQuery({
+    queryKey: ['course-transactions', course.id],
+    queryFn: () => coursesApi.getTransactions(course.id),
+  })
+  const netCost = txData?.totals?.net_cost ?? 0
+
   const days = course.start_date && course.end_date
     ? Math.max(1, Math.round((new Date(course.end_date).getTime() - new Date(course.start_date).getTime()) / 86400000) + 1)
     : 0
@@ -35,8 +41,8 @@ export function CourseOverviewTab({ course }: { course: Course }) {
           <StatCard label="Participants" value={course.enrollment_count} />
           <StatCard label="Days" value={days} sub={course.duration_hours ? `${course.duration_hours}h total` : undefined} />
           <StatCard label="Budget" value={course.budget ? fmt(course.budget, course.currency) : '—'} />
-          <StatCard label="Actual Cost" value={summary?.total_cost != null ? fmt(summary.total_cost, course.currency) : '—'}
-            sub={summary?.enrollment_count ? `${summary.enrollment_count} enrollments` : undefined} />
+          <StatCard label="Actual Cost" value={fmt(netCost, course.currency)}
+            sub={txData?.totals?.transaction_count ? `${txData.totals.transaction_count} transactions` : undefined} />
         </div>
 
         {/* Cost breakdown */}
@@ -59,20 +65,24 @@ export function CourseOverviewTab({ course }: { course: Course }) {
             </div>
 
             {/* Budget vs actual bar */}
-            {course.budget && Number(course.budget) > 0 && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Budget Execution</span>
-                  <span>{Math.round((summary.total_cost / Number(course.budget)) * 100)}%</span>
+            {course.budget && Number(course.budget) > 0 && (() => {
+              const bgt = Number(course.budget)
+              const pct = Math.round((netCost / bgt) * 100)
+              return (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Budget Execution</span>
+                    <span>{pct}%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${netCost > bgt ? 'bg-red-500' : 'bg-primary'}`}
+                      style={{ width: `${Math.min(100, pct)}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="h-2 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${summary.total_cost > Number(course.budget) ? 'bg-red-500' : 'bg-primary'}`}
-                    style={{ width: `${Math.min(100, (summary.total_cost / Number(course.budget)) * 100)}%` }}
-                  />
-                </div>
-              </div>
-            )}
+              )
+            })()}
           </div>
         )}
 

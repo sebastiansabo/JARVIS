@@ -2,13 +2,14 @@
 from ._shared import *  # noqa: F401, F403
 from ..repositories import (
     EnrollmentCostRepository, CourseActivityRepository,
-    CourseRepository, EnrollmentRepository,
+    CourseRepository, EnrollmentRepository, CourseTransactionRepository,
 )
 
 _cost_repo = EnrollmentCostRepository()
 _activity_repo = CourseActivityRepository()
 _course_repo = CourseRepository()
 _enroll_repo = EnrollmentRepository()
+_tx_repo = CourseTransactionRepository()
 
 
 # ── Enrollment Costs ──────────────────────────────────────────────
@@ -150,6 +151,102 @@ def api_courses_cost_by_month():
 
 
 # ── Activity Log ─────────────────────────────────────────────────
+
+# ── Transactions (manual spend + invoice-linked) ────────────────
+
+@courses_bp.route('/api/courses/<int:course_id>/transactions', methods=['GET'])
+@login_required
+@courses_permission_required('view')
+def api_get_course_transactions(course_id):
+    """Get all transactions for a course."""
+    try:
+        transactions = _tx_repo.get_by_course(course_id)
+        totals = _tx_repo.get_totals(course_id)
+        return jsonify({'transactions': transactions, 'totals': totals})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@courses_bp.route('/api/courses/<int:course_id>/transactions', methods=['POST'])
+@login_required
+@courses_permission_required('edit')
+def api_create_course_transaction(course_id):
+    """Create a manual spending entry or invoice-linked transaction."""
+    try:
+        data = request.get_json()
+        invoice_id = data.get('invoice_id')
+
+        # Prevent duplicate invoice links
+        if invoice_id and _tx_repo.find_by_invoice(course_id, invoice_id):
+            return jsonify({'success': False, 'error': 'Invoice already linked'}), 409
+
+        tx = _tx_repo.create(
+            course_id=course_id,
+            amount=data['amount'],
+            direction=data.get('direction', 'debit'),
+            source=data.get('source', 'manual'),
+            invoice_id=invoice_id,
+            transaction_date=data.get('transaction_date'),
+            description=data.get('description'),
+            recorded_by=current_user.id,
+            recorded_by_name=current_user.name,
+        )
+
+        action = 'invoice_linked' if invoice_id else 'spend_recorded'
+        _activity_repo.log(
+            course_id=course_id,
+            action=action,
+            actor_id=current_user.id,
+            actor_name=current_user.name,
+            details={
+                'amount': float(data['amount']),
+                'direction': data.get('direction', 'debit'),
+                'description': data.get('description'),
+            },
+        )
+
+        return jsonify({'success': True, 'id': tx['id'] if tx else None})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@courses_bp.route('/api/courses/<int:course_id>/transactions/<int:tx_id>', methods=['PUT'])
+@login_required
+@courses_permission_required('edit')
+def api_update_course_transaction(course_id, tx_id):
+    """Update a manual transaction."""
+    try:
+        data = request.get_json()
+        tx = _tx_repo.update(
+            tx_id,
+            amount=data.get('amount'),
+            transaction_date=data.get('transaction_date'),
+            description=data.get('description'),
+        )
+        return jsonify({'success': True})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@courses_bp.route('/api/courses/<int:course_id>/transactions/<int:tx_id>', methods=['DELETE'])
+@login_required
+@courses_permission_required('edit')
+def api_delete_course_transaction(course_id, tx_id):
+    """Delete a transaction."""
+    try:
+        _tx_repo.delete(tx_id)
+
+        _activity_repo.log(
+            course_id=course_id,
+            action='transaction_deleted',
+            actor_id=current_user.id,
+            actor_name=current_user.name,
+        )
+
+        return jsonify({'success': True})
+    except Exception as e:
+        return safe_error_response(e)
+
 
 @courses_bp.route('/api/courses/<int:course_id>/activity', methods=['GET'])
 @login_required
