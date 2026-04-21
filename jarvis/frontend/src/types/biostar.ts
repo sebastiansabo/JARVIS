@@ -241,6 +241,7 @@ export interface AttendanceRow {
   adjustment_type: string | null
   attendance_status: 'present' | 'absent'
   sincron_day_schedule?: { company: string; start: string; end: string }[] | null
+  sincron_leave_code?: string | null
 }
 
 export interface AttendanceWeekRow {

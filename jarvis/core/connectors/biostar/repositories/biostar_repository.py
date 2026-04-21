@@ -652,8 +652,8 @@ class BioStarRepository(BaseRepository):
         if jarvis_user_ids:
             user_filter = ' AND u.id = ANY(%s)'
             params.append(jarvis_user_ids)
-        # date_str for deduped, adjustment JOIN, and sincron LATERAL
-        params.extend([date_str, date_str, date_str])
+        # date_str for deduped, adjustment JOIN, sincron schedule LATERAL, and leave-code LATERAL
+        params.extend([date_str, date_str, date_str, date_str])
         return self.query_all(f'''
             WITH active_employees AS (
                 SELECT DISTINCT ON (u.id)
@@ -691,7 +691,8 @@ class BioStarRepository(BaseRepository):
                    ps.first_punch, ps.last_punch, ps.total_punches, ps.duration_seconds,
                    adj.adjusted_first_punch, adj.adjusted_last_punch, adj.adjustment_type,
                    CASE WHEN ps.biostar_user_id IS NULL THEN 'absent' ELSE 'present' END AS attendance_status,
-                   sd.sincron_day_schedule
+                   sd.sincron_day_schedule,
+                   sl.sincron_leave_code
             FROM active_employees ae
             LEFT JOIN punch_summary ps ON ps.biostar_user_id = ae.biostar_user_id
             LEFT JOIN biostar_daily_adjustments adj
@@ -717,6 +718,18 @@ class BioStarRepository(BaseRepository):
                         ) sub
                        ) AS sincron_day_schedule
             ) sd ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT st3.short_code AS sincron_leave_code
+                FROM sincron_employees se3
+                JOIN sincron_timesheets st3
+                  ON st3.sincron_employee_id = se3.sincron_employee_id
+                  AND st3.company_name = se3.company_name
+                  AND st3.day = %s::date
+                  AND st3.short_code IN ('CO','CM','CIC','CES','CMS','DLG','ZLS','CFP','CFS','INV')
+                WHERE se3.mapped_jarvis_user_id = ae.jarvis_user_id
+                  AND se3.is_active = TRUE
+                LIMIT 1
+            ) sl ON TRUE
             ORDER BY ae.company NULLS LAST,
                      CASE WHEN ps.biostar_user_id IS NULL THEN 1 ELSE 0 END,
                      ae.name
