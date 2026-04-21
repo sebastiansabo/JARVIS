@@ -30,7 +30,7 @@ export interface Course {
   course_code: string | null
   duration_hours: number | null
   travel_mode: string | null
-  status: CourseStatus
+  status: CourseStatus | null
   approval_request_id: number | null
   enrollment_count: number
   created_by: number | null
