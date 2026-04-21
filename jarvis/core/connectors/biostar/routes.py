@@ -558,6 +558,51 @@ def get_employee_sincron_schedule(biostar_user_id):
     return jsonify({'success': True, 'contracts': contracts})
 
 
+@biostar_bp.route('/api/employees/<biostar_user_id>/sincron-timesheet', methods=['GET'])
+@api_login_required
+def get_employee_sincron_timesheet(biostar_user_id):
+    """Get Sincron monthly timesheet + contracts for a BioStar employee."""
+    employee = service.repo.get_employee(biostar_user_id)
+    if not employee or not employee.get('mapped_jarvis_user_id'):
+        return jsonify({'success': True, 'contracts': [], 'timesheet': []})
+
+    jarvis_id = employee['mapped_jarvis_user_id']
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+    if not year or not month or month < 1 or month > 12:
+        return jsonify({'success': False, 'error': 'year and month required'}), 400
+
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    sincron_repo = SincronRepository()
+
+    entries = sincron_repo.get_all_employees_by_jarvis_id(jarvis_id)
+    contracts = []
+    for se in entries:
+        norma = float(se['norma_lucru']) if se.get('norma_lucru') else None
+        contracts.append({
+            'company_name': se.get('company_name'),
+            'nr_contract': se.get('nr_contract'),
+            'norma_lucru': norma,
+            'schedule_start': str(se['schedule_start'])[:5] if se.get('schedule_start') else None,
+            'schedule_end': str(se['schedule_end'])[:5] if se.get('schedule_end') else None,
+            'lunch_break_minutes': se.get('lunch_break_minutes'),
+        })
+
+    rows = sincron_repo.get_timesheet_by_jarvis_user(jarvis_id, year, month)
+    timesheet = []
+    for r in rows:
+        timesheet.append({
+            'day': str(r['day']),
+            'short_code': r.get('short_code'),
+            'company_name': r.get('company_name'),
+            'program_in': str(r['program_in'])[:5] if r.get('program_in') else None,
+            'program_out': str(r['program_out'])[:5] if r.get('program_out') else None,
+            'program_break': r.get('program_break'),
+        })
+
+    return jsonify({'success': True, 'contracts': contracts, 'timesheet': timesheet})
+
+
 @biostar_bp.route('/api/adjustments/revert', methods=['POST'])
 @adjust_permission_required
 def revert_adjustment():

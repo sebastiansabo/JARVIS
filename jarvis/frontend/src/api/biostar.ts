@@ -263,6 +263,15 @@ export const biostarApi = {
     return res.contracts
   },
 
+  getSincronTimesheet: async (biostarUserId: string, year: number, month: number) => {
+    const res = await api.get<{
+      success: boolean
+      contracts: SincronContract[]
+      timesheet: { day: string; short_code: string; company_name: string; program_in: string | null; program_out: string | null; program_break: number | null }[]
+    }>(`${BASE}/employees/${biostarUserId}/sincron-timesheet?year=${year}&month=${month}`)
+    return res
+  },
+
   revertAdjustment: (biostarUserId: string, date: string) =>
     api.post<{ success: boolean; message: string }>(`${BASE}/adjustments/revert`, {
       biostar_user_id: biostarUserId, date,
