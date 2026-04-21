@@ -21,6 +21,7 @@ import {
   DatabaseZap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -246,27 +247,51 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const [exporting, setExporting] = useState(false)
 
-  const downloadCsv = useCallback(async () => {
+  const downloadCsv = useCallback(async (mode: 'day' | 'month') => {
     setExporting(true)
-    const toastId = toast.loading('Exporting monthly pontaje…')
+    const isDay = mode === 'day'
+    const toastId = toast.loading(isDay ? 'Exporting day pontaje…' : 'Exporting monthly pontaje…')
     try {
-      // Determine month boundaries
+      const today = todayStr()
       const monthStr = date.slice(0, 7) // e.g. "2026-04"
       const [y, m] = monthStr.split('-').map(Number)
       const firstDay = `${monthStr}-01`
       const lastDay = new Date(y, m, 0).toISOString().slice(0, 10)
 
-      // Build list of working days in the month
+      // Build list of working days — skip future dates
       const workingDays: { date: string; dayLabel: string; weekNum: number }[] = []
-      for (let d = new Date(`${firstDay}T12:00:00`); d.toISOString().slice(0, 10) <= lastDay; d.setDate(d.getDate() + 1)) {
-        const dow = d.getDay()
-        if (dow === 0 || dow === 6) continue // skip weekends
-        const ds = d.toISOString().slice(0, 10)
-        workingDays.push({
-          date: ds,
-          dayLabel: d.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' }),
-          weekNum: getISOWeek(d),
-        })
+      if (isDay) {
+        const dd = new Date(`${date}T12:00:00`)
+        const dow = dd.getDay()
+        if (dow !== 0 && dow !== 6 && date <= today) {
+          workingDays.push({
+            date,
+            dayLabel: dd.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' }),
+            weekNum: getISOWeek(dd),
+          })
+        }
+      } else {
+        for (let d = new Date(`${firstDay}T12:00:00`); d.toISOString().slice(0, 10) <= lastDay; d.setDate(d.getDate() + 1)) {
+          const dow = d.getDay()
+          if (dow === 0 || dow === 6) continue
+          const ds = d.toISOString().slice(0, 10)
+          if (ds > today) continue // skip future dates
+          workingDays.push({
+            date: ds,
+            dayLabel: d.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' }),
+            weekNum: getISOWeek(d),
+          })
+        }
+      }
+
+      if (!workingDays.length) {
+        toast.error('No working days to export', { id: toastId })
+        return
+      }
+
+      // Auto-adjust each day before fetching (sequentially to avoid race conditions)
+      for (const wd of workingDays) {
+        try { await biostarApi.autoAdjustAll(wd.date) } catch { /* ignore — some days may have no off-schedule */ }
       }
 
       // Fetch daily summary for each working day (all employees, no manager filter)
@@ -278,14 +303,13 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       )
 
       // Collect all unique employees (biostar_user_id → info + jarvis_user_id)
-      const employeeMap = new Map<string, { name: string; company: string; group: string; schedule: string; jarvisUserId: number | null }>()
+      const employeeMap = new Map<string, { name: string; company: string; schedule: string; jarvisUserId: number | null }>()
       for (const dd of dailyData) {
         for (const s of dd.summaries) {
           if (!employeeMap.has(s.biostar_user_id)) {
             employeeMap.set(s.biostar_user_id, {
               name: s.mapped_jarvis_user_name || s.name,
               company: s.jarvis_company || '',
-              group: s.user_group_name || '',
               schedule: formatSchedule(s.schedule_start, s.schedule_end),
               jarvisUserId: s.mapped_jarvis_user_id,
             })
@@ -299,7 +323,6 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
           employeeMap.set(r.biostar_user_id, {
             name: r.name,
             company: r.company || '',
-            group: r.user_group_name || '',
             schedule: formatSchedule(r.schedule_start, r.schedule_end),
             jarvisUserId: r.jarvis_user_id,
           })
@@ -307,7 +330,6 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       }
 
       // Fetch Sincron day-level codes for all mapped employees
-      // Map: jarvisUserId → date → leave code (e.g. "CO", "CM")
       const sincronDayCodes = new Map<number, Map<string, string>>()
       const jarvisIds = [...new Set(
         Array.from(employeeMap.values()).map(e => e.jarvisUserId).filter((id): id is number => id != null),
@@ -332,11 +354,13 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         }
       }
 
-      // Build CSV: one row per employee per day, sorted by week → date → name
-      const headers = ['Week', 'Date', 'Day', 'Name', 'Company', 'Group', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status']
+      // Build CSV: Company before Name, no Group
+      const headers = ['Week', 'Date', 'Day', 'Company', 'Name', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status']
       const csvRows: string[][] = [headers]
 
-      const sortedEmployees = Array.from(employeeMap.entries()).sort((a, b) => a[1].name.localeCompare(b[1].name))
+      const sortedEmployees = Array.from(employeeMap.entries()).sort((a, b) =>
+        (a[1].company || '').localeCompare(b[1].company || '') || a[1].name.localeCompare(b[1].name),
+      )
 
       for (const dd of dailyData) {
         for (const [bioId, emp] of sortedEmployees) {
@@ -352,7 +376,6 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             if (net > 0) duration = (net / 3600).toFixed(2)
           }
 
-          // Sincron leave code for this employee+date
           const sincronCode = emp.jarvisUserId
             ? (sincronDayCodes.get(emp.jarvisUserId)?.get(dd.date) ?? '')
             : ''
@@ -361,9 +384,8 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             `W${dd.weekNum}`,
             dd.date,
             dd.dayLabel,
-            emp.name,
             emp.company,
-            emp.group,
+            emp.name,
             officialIn ? fmtTime(officialIn) : '',
             officialOut ? fmtTime(officialOut) : '',
             duration,
@@ -378,10 +400,12 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `pontaje_${monthStr}.csv`
+      a.download = isDay ? `pontaje_${date}.csv` : `pontaje_${monthStr}.csv`
       a.click()
       URL.revokeObjectURL(url)
       toast.success('Export complete', { id: toastId })
+      // Refresh attendance data since auto-adjust may have changed it
+      queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today', date] })
     } catch {
       toast.error('Export failed', { id: toastId })
     } finally {
@@ -496,10 +520,18 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               </>
             )}
 
-            {/* Download monthly CSV */}
-            <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={downloadCsv} disabled={exporting} title="Export month (all employees, official times)">
-              <Download className={cn('h-4 w-4', exporting && 'animate-pulse')} />
-            </Button>
+            {/* Export CSV dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" disabled={exporting} title="Export CSV">
+                  <Download className={cn('h-4 w-4', exporting && 'animate-pulse')} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => downloadCsv('day')}>Export Day</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadCsv('month')}>Export Month</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {/* Column toggle */}
             {!isMobile && (
