@@ -21,6 +21,7 @@ from tasks.field_sales import field_sales_follow_up_reminders, field_sales_overd
 from tasks.biostar import sync_biostar_events, sync_biostar_users, auto_adjust_biostar_schedules
 from tasks.sincron import sync_sincron_timesheets
 from tasks.hr_attendance import check_missing_punches
+from tasks.hr_courses import check_course_cert_expiry
 from tasks.carpark import cleanup_vin_cache
 from tasks.holidays import populate_holidays
 from tasks.telemetry import close_stale_sessions, cleanup_old_telemetry
@@ -265,6 +266,18 @@ def start_scheduler():
                 misfire_grace_time=300,
                 coalesce=True,
             )
+
+    # HR Courses — certification expiry check (08:00 daily)
+    scheduler.add_job(
+        check_course_cert_expiry,
+        'cron',
+        hour=8,
+        minute=30,
+        id='hr_course_cert_expiry',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
 
     # HR — missing punch check (10:00 daily, after BioStar sync completes)
     scheduler.add_job(

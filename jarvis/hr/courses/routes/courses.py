@@ -17,6 +17,9 @@ def api_get_courses():
         course_type_id = request.args.get('course_type_id', type=int)
         status = request.args.get('status')
         search = request.args.get('search')
+        year = request.args.get('year', type=int)
+        month = request.args.get('month', type=int)
+        include_deleted = request.args.get('include_deleted', '').lower() == 'true'
         limit = request.args.get('limit', 200, type=int)
         offset = request.args.get('offset', 0, type=int)
 
@@ -25,6 +28,9 @@ def api_get_courses():
             course_type_id=course_type_id,
             status=status,
             search=search,
+            year=year,
+            month=month,
+            include_deleted=include_deleted,
             limit=limit,
             offset=offset,
         )
@@ -33,9 +39,24 @@ def api_get_courses():
             course_type_id=course_type_id,
             status=status,
             search=search,
+            year=year,
+            month=month,
+            include_deleted=include_deleted,
         )
 
         return jsonify({'courses': courses, 'total': total})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@courses_bp.route('/api/courses/years', methods=['GET'])
+@login_required
+@courses_permission_required('view')
+def api_get_course_years():
+    """API: Get available years for filtering."""
+    try:
+        years = _repo.get_available_years()
+        return jsonify(years)
     except Exception as e:
         return safe_error_response(e)
 
@@ -134,13 +155,56 @@ def api_update_course(course_id):
 @login_required
 @courses_permission_required('delete')
 def api_delete_course(course_id):
-    """API: Delete a course."""
+    """API: Soft delete a course."""
     try:
-        course = _repo.get_by_id(course_id)
-        if not course:
+        if not _repo.delete(course_id):
             return jsonify({'success': False, 'error': 'Course not found'}), 404
-        _repo.delete(course_id)
         return jsonify({'success': True})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@courses_bp.route('/api/courses/<int:course_id>/restore', methods=['POST'])
+@login_required
+@courses_permission_required('edit')
+def api_restore_course(course_id):
+    """API: Restore a soft-deleted course."""
+    try:
+        if not _repo.restore(course_id):
+            return jsonify({'success': False, 'error': 'Course not found in bin'}), 404
+        return jsonify({'success': True})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@courses_bp.route('/api/courses/bulk-delete', methods=['POST'])
+@login_required
+@courses_permission_required('delete')
+def api_bulk_delete_courses():
+    """API: Soft delete multiple courses."""
+    try:
+        data = request.get_json()
+        ids = data.get('ids', [])
+        if not ids:
+            return jsonify({'success': False, 'error': 'No course IDs provided'}), 400
+        count = _repo.bulk_soft_delete(ids)
+        return jsonify({'success': True, 'deleted': count})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@courses_bp.route('/api/courses/bulk-restore', methods=['POST'])
+@login_required
+@courses_permission_required('edit')
+def api_bulk_restore_courses():
+    """API: Restore multiple soft-deleted courses."""
+    try:
+        data = request.get_json()
+        ids = data.get('ids', [])
+        if not ids:
+            return jsonify({'success': False, 'error': 'No course IDs provided'}), 400
+        count = _repo.bulk_restore(ids)
+        return jsonify({'success': True, 'restored': count})
     except Exception as e:
         return safe_error_response(e)
 
@@ -175,11 +239,9 @@ def api_submit_course_approval(course_id):
             _repo.update(course_id, status=new_status, approval_request_id=approval.get('id'))
             return jsonify({'success': True, 'status': new_status, 'approval': approval})
         except (ImportError, NameError):
-            # No approval engine available — auto-approve
             _repo.update(course_id, status='approved')
             return jsonify({'success': True, 'status': 'approved', 'note': 'No approval flow configured'})
         except Exception:
-            # NoMatchingFlowError or similar — auto-approve
             _repo.update(course_id, status='approved')
             return jsonify({'success': True, 'status': 'approved', 'note': 'No approval flow configured'})
     except Exception as e:

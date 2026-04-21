@@ -19,6 +19,9 @@ export const coursesApi = {
     course_type_id?: number
     status?: string
     search?: string
+    year?: number
+    month?: number
+    include_deleted?: boolean
     limit?: number
     offset?: number
   }) => api.get<{ courses: Course[]; total: number }>(`${BASE}/courses${qs(params ?? {})}`),
@@ -34,8 +37,20 @@ export const coursesApi = {
   deleteCourse: (id: number) =>
     api.delete<{ success: boolean }>(`${BASE}/courses/${id}`),
 
+  restoreCourse: (id: number) =>
+    api.post<{ success: boolean }>(`${BASE}/courses/${id}/restore`),
+
+  bulkDeleteCourses: (ids: number[]) =>
+    api.post<{ success: boolean; deleted: number }>(`${BASE}/courses/bulk-delete`, { ids }),
+
+  bulkRestoreCourses: (ids: number[]) =>
+    api.post<{ success: boolean; restored: number }>(`${BASE}/courses/bulk-restore`, { ids }),
+
   submitApproval: (id: number) =>
     api.post<{ success: boolean; status: string }>(`${BASE}/courses/${id}/submit-approval`),
+
+  getAvailableYears: () =>
+    api.get<number[]>(`${BASE}/courses/years`),
 
   // Course Types
   getCourseTypes: (activeOnly = true) =>
