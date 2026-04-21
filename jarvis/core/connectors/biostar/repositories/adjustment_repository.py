@@ -22,8 +22,8 @@ class AdjustmentRepository(BaseRepository):
             WITH sincron_day AS (
                 SELECT DISTINCT ON (se.mapped_jarvis_user_id)
                        se.mapped_jarvis_user_id,
-                       st.program_in::time AS program_start,
-                       st.program_out::time AS program_end,
+                       st.program_in AS program_start,
+                       st.program_out AS program_end,
                        st.program_break AS program_lunch
                 FROM sincron_employees se
                 JOIN sincron_timesheets st
@@ -33,7 +33,6 @@ class AdjustmentRepository(BaseRepository):
                   AND st.short_code IN ('OZ', 'OS')
                   AND st.program_in IS NOT NULL
                   AND st.program_out IS NOT NULL
-                  AND st.program_in ~ '^[0-9]{2}:[0-9]{2}'
                 WHERE se.is_active = TRUE
                   AND se.mapped_jarvis_user_id IS NOT NULL
                 ORDER BY se.mapped_jarvis_user_id, se.norma_lucru DESC NULLS LAST

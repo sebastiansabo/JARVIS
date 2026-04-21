@@ -443,8 +443,8 @@ class SincronRepository(BaseRepository):
             )
             SELECT company_name,
                    norma_lucru,
-                   COALESCE(program_in::text, static_start::text) AS schedule_start,
-                   COALESCE(program_out::text, static_end::text) AS schedule_end,
+                   COALESCE(program_in, static_start) AS schedule_start,
+                   COALESCE(program_out, static_end) AS schedule_end,
                    COALESCE(program_break, static_lunch) AS lunch_break_minutes
             FROM day_schedules
             ORDER BY norma_lucru DESC
