@@ -365,7 +365,7 @@ class TestApprovalHandlerBaseUrl:
         monkeypatch.delenv('APP_BASE_URL', raising=False)
         import core.approvals.handlers as h
         importlib.reload(h)
-        assert h._APP_BASE_URL == 'https://jarvis-mkt-t6fk7.ondigitalocean.app'
+        assert h._APP_BASE_URL == 'https://jarvis.autoworld.ro'
 
     def test_env_var_overrides_default(self, monkeypatch):
         monkeypatch.setenv('APP_BASE_URL', 'https://staging.example.com')
