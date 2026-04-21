@@ -256,5 +256,23 @@ def create_schema_sincron(conn, cursor):
         ADD COLUMN IF NOT EXISTS count_for_leave BOOLEAN DEFAULT TRUE
     """)
 
+    # ── company_id FK — map Sincron company_name to JARVIS companies table ──
+    cursor.execute("""
+        ALTER TABLE sincron_employees
+        ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id)
+    """)
+    cursor.execute("""
+        UPDATE sincron_employees se
+        SET company_id = c.id
+        FROM companies c
+        WHERE se.company_id IS NULL
+          AND UPPER(se.company_name) = UPPER(c.company)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sincron_employees_company_id
+        ON sincron_employees(company_id)
+        WHERE company_id IS NOT NULL
+    """)
+
     conn.commit()
     logger.info('Sincron schema created/verified')

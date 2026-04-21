@@ -1192,7 +1192,14 @@ function DayRow({
         'inline-block h-2 w-2 rounded-full shrink-0',
         d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : leaveCode ? 'bg-yellow-500' : isFuture ? 'bg-muted-foreground/30' : 'bg-red-400',
       )} />
-      <span className="w-28 shrink-0 capitalize text-muted-foreground">{day.dayLabel}</span>
+      <span className="w-28 shrink-0 capitalize text-muted-foreground">
+        {day.dayLabel}
+        {d?.sincron_company && (
+          <span className="block text-[10px] text-muted-foreground/60 normal-case" title={d.sincron_company}>
+            {d.sincron_company}
+          </span>
+        )}
+      </span>
 
       {day.isWeekend || day.isHoliday || isFuture || leaveCode ? (
         <>
@@ -1212,11 +1219,6 @@ function DayRow({
           <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
             {fmtScheduleTime(d.schedule_end ?? scheduleEnd)}
           </span>
-          {d.sincron_company && (
-            <span className="text-[10px] text-muted-foreground/70 truncate max-w-[80px]" title={d.sincron_company}>
-              {d.sincron_company.replace(/^AUTOWORLD\s*/i, '').replace(/\s*S\.?R\.?L\.?\s*$/i, '').trim() || d.sincron_company}
-            </span>
-          )}
           {/* Actual In/Out */}
           <span className="w-14 shrink-0 text-center">
             <span className="inline-flex items-center gap-1">

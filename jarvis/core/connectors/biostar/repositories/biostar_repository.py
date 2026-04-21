@@ -561,7 +561,7 @@ class BioStarRepository(BaseRepository):
             LEFT JOIN LATERAL (
                 SELECT st.program_in AS program_start,
                        st.program_out AS program_end,
-                       se.company_name AS sincron_company
+                       COALESCE(co.company, se.company_name) AS sincron_company
                 FROM sincron_employees se
                 JOIN sincron_timesheets st
                   ON st.sincron_employee_id = se.sincron_employee_id
@@ -570,6 +570,7 @@ class BioStarRepository(BaseRepository):
                   AND st.short_code IN ('OZ', 'OS')
                   AND st.program_in IS NOT NULL
                   AND st.program_out IS NOT NULL
+                LEFT JOIN companies co ON co.id = se.company_id
                 WHERE se.mapped_jarvis_user_id = be2.mapped_jarvis_user_id
                   AND se.is_active = TRUE
                 ORDER BY se.norma_lucru DESC NULLS LAST
