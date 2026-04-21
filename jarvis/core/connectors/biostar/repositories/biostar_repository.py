@@ -553,6 +553,7 @@ class BioStarRepository(BaseRepository):
                    COALESCE(sd.program_start, d.static_schedule_start) AS schedule_start,
                    COALESCE(sd.program_end, d.static_schedule_end) AS schedule_end,
                    sd.sincron_company,
+                   sd.sincron_day_schedule,
                    adj.adjusted_first_punch,
                    adj.adjusted_last_punch,
                    adj.adjustment_type
@@ -561,7 +562,26 @@ class BioStarRepository(BaseRepository):
             LEFT JOIN LATERAL (
                 SELECT st.program_in AS program_start,
                        st.program_out AS program_end,
-                       COALESCE(co.company, se.company_name) AS sincron_company
+                       COALESCE(co.company, se.company_name) AS sincron_company,
+                       (SELECT json_agg(sub ORDER BY sub.norma DESC NULLS LAST)
+                        FROM (
+                            SELECT COALESCE(co2.company, se2.company_name) AS company,
+                                   to_char(st2.program_in, 'HH24:MI') AS start,
+                                   to_char(st2.program_out, 'HH24:MI') AS "end",
+                                   se2.norma_lucru AS norma
+                            FROM sincron_employees se2
+                            JOIN sincron_timesheets st2
+                              ON st2.sincron_employee_id = se2.sincron_employee_id
+                              AND st2.company_name = se2.company_name
+                              AND st2.day = d.date
+                              AND st2.short_code IN ('OZ', 'OS')
+                              AND st2.program_in IS NOT NULL
+                              AND st2.program_out IS NOT NULL
+                            LEFT JOIN companies co2 ON co2.id = se2.company_id
+                            WHERE se2.mapped_jarvis_user_id = be2.mapped_jarvis_user_id
+                              AND se2.is_active = TRUE
+                        ) sub
+                       ) AS sincron_day_schedule
                 FROM sincron_employees se
                 JOIN sincron_timesheets st
                   ON st.sincron_employee_id = se.sincron_employee_id
