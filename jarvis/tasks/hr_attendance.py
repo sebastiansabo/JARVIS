@@ -368,13 +368,12 @@ def send_pontaje_digest():
         present_yesterday = sum(1 for s in yesterday_data if s.get('first_punch'))
         present_today = sum(1 for s in today_data if s.get('first_punch'))
 
-        html_body = f"""
-        <h3>Pontaje Daily Digest — {date_label}</h3>
-        <p>Yesterday ({yesterday.strftime('%a %d %b')}): <strong>{present_yesterday}</strong> checked in</p>
-        <p>Today ({today.strftime('%a %d %b')}): <strong>{present_today}</strong> checked in so far</p>
-        <p>Total employees: {len(employee_map)}</p>
-        <p style="color: #888; font-size: 12px;">This is an automated email from JARVIS.</p>
-        """
+        html_body = (
+            f"Pontaje Daily Digest — {date_label}<br><br>"
+            f"Yesterday ({yesterday.strftime('%a %d %b')}): {present_yesterday} checked in<br>"
+            f"Today ({today.strftime('%a %d %b')}): {present_today} checked in so far<br>"
+            f"Total employees: {len(employee_map)}"
+        )
 
         sent_count = 0
         for email in recipients:
@@ -599,14 +598,12 @@ def send_monthly_pontaje_summary():
         total_employees = len(employee_map)
         total_working_days = len(working_days)
 
-        html_body = f"""
-        <h3>Pontaje Total — {month_name} {year}</h3>
-        <p>Monthly attendance report structured by Employee / Week / Day.</p>
-        <p>Total employees: <strong>{total_employees}</strong></p>
-        <p>Working days: <strong>{total_working_days}</strong></p>
-        <p>Total records: <strong>{total_rows}</strong></p>
-        <p style="color: #888; font-size: 12px;">This is an automated email from JARVIS.</p>
-        """
+        html_body = (
+            f"Pontaje Total — {month_name} {year}<br><br>"
+            f"Total employees: {total_employees}<br>"
+            f"Working days: {total_working_days}<br>"
+            f"Total records: {total_rows}"
+        )
 
         sent_count = 0
         for email in recipients:
