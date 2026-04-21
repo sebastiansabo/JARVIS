@@ -377,8 +377,11 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
           // Find best summary across all BioStar IDs for this employee (prefer one with punches/adjustments)
           const candidates = dd.summaries.filter(x => emp.biostarIds.has(x.biostar_user_id))
           const s = candidates.find(x => x.adjusted_first_punch || x.first_punch) ?? candidates[0] ?? null
-          const officialIn = s ? (s.adjusted_first_punch ?? s.first_punch) : null
-          const officialOut = s ? (s.adjusted_last_punch ?? s.last_punch) : null
+          const rawIn = s ? (s.adjusted_first_punch ?? s.first_punch) : null
+          const rawOut = s ? (s.adjusted_last_punch ?? s.last_punch) : null
+          const officialIn = rawIn
+          // Single punch: first == last — don't duplicate as check-out
+          const officialOut = rawOut === rawIn ? null : rawOut
           const lunchMin = s?.lunch_break_minutes ?? 60
           let duration = ''
           if (officialIn && officialOut) {
