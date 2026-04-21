@@ -1221,12 +1221,12 @@ function DayRow({
         </>
       ) : d ? (
         <>
-          {/* Schedule In/Out + Company */}
+          {/* Schedule In/Out — full span across all companies */}
           <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
-            {fmtScheduleTime(d.schedule_start ?? scheduleStart)}
+            {fmtScheduleTime(d.sincron_day_schedule?.length ? d.sincron_day_schedule.reduce((earliest, s) => !earliest || s.start < earliest ? s.start : earliest, '' as string) : d.schedule_start ?? scheduleStart)}
           </span>
           <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
-            {fmtScheduleTime(d.schedule_end ?? scheduleEnd)}
+            {fmtScheduleTime(d.sincron_day_schedule?.length ? d.sincron_day_schedule.reduce((latest, s) => !latest || s.end > latest ? s.end : latest, '' as string) : d.schedule_end ?? scheduleEnd)}
           </span>
           {/* Actual In/Out */}
           <span className="w-14 shrink-0 text-center">
