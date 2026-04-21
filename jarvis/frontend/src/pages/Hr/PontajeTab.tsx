@@ -697,6 +697,7 @@ function EmployeeRow({
   onRevert: () => void
 }) {
   const isAbsent = employee.attendance_status === 'absent'
+  const hasLeave = !!employee.sincron_leave_code
   const lunch = employee.lunch_break_minutes ?? 60
   const net = employee.adjusted_first_punch && employee.adjusted_last_punch
     ? netSec(timeDiffSec(employee.adjusted_first_punch, employee.adjusted_last_punch), lunch)
@@ -833,7 +834,7 @@ function EmployeeRow({
                 <RotateCcw className="h-3 w-3" />
               </Button>
             )}
-            {!hasAdj && (
+            {!hasAdj && !hasLeave && (
               <Button
                 variant="ghost"
                 size="icon"
