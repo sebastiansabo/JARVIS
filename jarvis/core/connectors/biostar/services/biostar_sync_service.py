@@ -773,17 +773,24 @@ class BioStarSyncService:
             deviation_in = round((first_punch - datetime.combine(first_punch.date(), sched_start)).total_seconds() / 60)
             deviation_out = round((last_punch - datetime.combine(last_punch.date(), sched_end)).total_seconds() / 60) if len(punches) > 1 else 0
         else:
-            # Absent day — no punches, use schedule as reference
+            # Absent day — no punches, generate times anchored to schedule
             first_punch = None
             last_punch = None
             duration = 0
             deviation_in = 0
             deviation_out = 0
 
-        # Generate randomized adjusted times based on schedule
         ref_date = first_punch.date() if first_punch else datetime.strptime(date_str, '%Y-%m-%d').date()
-        synthetic_ref = datetime.combine(ref_date, sched_start)
-        adj_first, adj_last = self._randomize_times(synthetic_ref, sched_start, lunch, wh)
+
+        if not punches:
+            # Absent: randomize independently around schedule_start and schedule_end
+            start_offset = random.randint(-3, 3)
+            end_offset = random.randint(-3, 5)
+            adj_first = datetime.combine(ref_date, sched_start) + timedelta(minutes=start_offset)
+            adj_last = datetime.combine(ref_date, sched_end) + timedelta(minutes=end_offset)
+        else:
+            synthetic_ref = datetime.combine(ref_date, sched_start)
+            adj_first, adj_last = self._randomize_times(synthetic_ref, sched_start, lunch, wh)
 
         self.adjust_employee(
             biostar_user_id=biostar_user_id,
