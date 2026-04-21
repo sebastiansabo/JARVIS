@@ -453,6 +453,32 @@ class SincronRepository(BaseRepository):
             LIMIT 1
         ''', (date_str, jarvis_user_id))
 
+    def get_full_day_schedule_by_jarvis_user(self, jarvis_user_id, date_str):
+        """Get combined schedule boundaries across ALL companies for a specific date.
+
+        Returns earliest program_in, latest program_out, and primary company's lunch.
+        """
+        return self.query_one('''
+            SELECT MIN(st.program_in) AS schedule_start,
+                   MAX(st.program_out) AS schedule_end,
+                   (SELECT se2.lunch_break_minutes
+                    FROM sincron_employees se2
+                    WHERE se2.mapped_jarvis_user_id = %s AND se2.is_active = TRUE
+                      AND se2.norma_lucru IS NOT NULL
+                    ORDER BY se2.norma_lucru DESC LIMIT 1
+                   ) AS lunch_break_minutes
+            FROM sincron_employees se
+            JOIN sincron_timesheets st
+              ON st.sincron_employee_id = se.sincron_employee_id
+              AND st.company_name = se.company_name
+              AND st.day = %s::date
+              AND st.short_code IN ('OZ', 'OS')
+              AND st.program_in IS NOT NULL
+              AND st.program_out IS NOT NULL
+            WHERE se.mapped_jarvis_user_id = %s
+              AND se.is_active = TRUE
+        ''', (jarvis_user_id, date_str, jarvis_user_id))
+
     def get_all_day_codes(self, year, month):
         """Get day-level activity codes for all mapped employees in a month.
 
