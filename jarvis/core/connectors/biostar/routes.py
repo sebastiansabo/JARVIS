@@ -901,3 +901,24 @@ def api_trigger_monthly_digest():
     except Exception as e:
         logger.error(f"Manual monthly digest trigger failed: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@biostar_bp.route('/api/test-smtp', methods=['POST'])
+def api_test_smtp():
+    """Quick SMTP connectivity test from the server (admin token required)."""
+    if not _check_admin_token():
+        return jsonify({'success': False, 'error': 'Invalid token'}), 403
+    try:
+        from core.services.notification_service import send_email, is_smtp_configured
+        if not is_smtp_configured():
+            return jsonify({'success': False, 'error': 'SMTP not configured'})
+        to = request.args.get('to', 'sebastian.sabo@gmail.com')
+        ok, err = send_email(
+            to_email=to,
+            subject='JARVIS SMTP Test',
+            html_body='If you see this, SMTP works from the staging server.',
+            skip_global_cc=True,
+        )
+        return jsonify({'success': ok, 'error': err or None})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
