@@ -695,10 +695,36 @@ class BioStarSyncService:
         adj_end = adj_start + timedelta(minutes=target_span)
         return adj_start, adj_end
 
+    def _get_sincron_leave_user_ids(self, date_str):
+        """Return set of mapped_jarvis_user_ids with Sincron leave codes for the date."""
+        try:
+            from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+            sincron_repo = SincronRepository()
+            LEAVE_CODES = ('CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV')
+            rows = sincron_repo.query_all('''
+                SELECT DISTINCT se.mapped_jarvis_user_id
+                FROM sincron_employees se
+                JOIN sincron_timesheets st
+                  ON st.sincron_employee_id = se.sincron_employee_id
+                  AND st.company_name = se.company_name
+                  AND st.day = %s::date
+                  AND st.short_code = ANY(%s)
+                WHERE se.is_active = TRUE
+                  AND se.mapped_jarvis_user_id IS NOT NULL
+            ''', (date_str, list(LEAVE_CODES)))
+            return {r['mapped_jarvis_user_id'] for r in rows}
+        except Exception as e:
+            logger.warning('Failed to load Sincron leave user IDs for %s: %s', date_str, e)
+            return set()
+
     def auto_adjust_all(self, date_str, threshold=15, user_id=None):
-        """Auto-adjust overtime employees with randomized natural-looking times."""
+        """Auto-adjust off-schedule, single-punch, and absent employees."""
         off = self.adj_repo.get_off_schedule(date_str, threshold)
+        absent = self.adj_repo.get_absent_employees(date_str)
+        leave_ids = self._get_sincron_leave_user_ids(date_str)
         adjusted_count = 0
+
+        # --- Off-schedule employees (have punches but deviate) ---
         for row in off:
             first = row['first_punch']
             last = row['last_punch']
@@ -707,10 +733,17 @@ class BioStarSyncService:
             lunch = row.get('lunch_break_minutes') or 60
             wh = row.get('working_hours') or 8
 
-            if not first or not last or not sched_start or not sched_end:
+            if not sched_start or not sched_end:
                 continue
 
-            # All cases (overtime or missing checkout on past day) get full randomization
+            # Skip employees with Sincron leave codes
+            jarvis_uid = row.get('mapped_jarvis_user_id')
+            if jarvis_uid and jarvis_uid in leave_ids:
+                continue
+
+            if not first or not last:
+                continue
+
             adj_first, adj_last = self._randomize_times(first, sched_start, lunch, wh)
 
             self.adjust_employee(
@@ -732,7 +765,42 @@ class BioStarSyncService:
             )
             adjusted_count += 1
 
-        return {'adjusted': adjusted_count, 'total_flagged': len(off)}
+        # --- Absent employees (no punches, past day, no Sincron leave) ---
+        for row in absent:
+            sched_start = row['schedule_start']
+            sched_end = row['schedule_end']
+            lunch = row.get('lunch_break_minutes') or 60
+
+            if not sched_start or not sched_end:
+                continue
+
+            ref_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            start_offset = random.randint(-3, 3)
+            end_offset = random.randint(-3, 5)
+            adj_first = datetime.combine(ref_date, sched_start) + timedelta(minutes=start_offset)
+            adj_last = datetime.combine(ref_date, sched_end) + timedelta(minutes=end_offset)
+
+            self.adjust_employee(
+                biostar_user_id=row['biostar_user_id'],
+                date_str=date_str,
+                adjusted_first=adj_first,
+                adjusted_last=adj_last,
+                original_first=None,
+                original_last=None,
+                schedule_start=sched_start,
+                schedule_end=sched_end,
+                lunch_break_minutes=lunch,
+                working_hours=row.get('working_hours') or 8,
+                original_duration=0,
+                deviation_in=0,
+                deviation_out=0,
+                adjustment_type='auto',
+                adjusted_by=user_id,
+            )
+            adjusted_count += 1
+
+        total_flagged = len(off) + len(absent)
+        return {'adjusted': adjusted_count, 'total_flagged': total_flagged}
 
     def auto_adjust_single(self, biostar_user_id, date_str, user_id=None):
         """Auto-adjust a single employee for a specific date using Sincron per-day schedule."""

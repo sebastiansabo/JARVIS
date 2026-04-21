@@ -209,6 +209,78 @@ class AdjustmentRepository(BaseRepository):
             ORDER BY adj.date DESC
         ''', params)
 
+    def get_absent_employees(self, date_str):
+        """Get active employees with schedules who have NO punches for the date.
+
+        Excludes:
+        - Employees already adjusted for that date
+        - Employees with Sincron leave codes
+        - Current day (absent might still arrive)
+        """
+        return self.query_all('''
+            WITH sincron_leave AS (
+                SELECT DISTINCT se.mapped_jarvis_user_id
+                FROM sincron_employees se
+                JOIN sincron_timesheets st
+                  ON st.sincron_employee_id = se.sincron_employee_id
+                  AND st.company_name = se.company_name
+                  AND st.day = %s::date
+                  AND st.short_code IN ('CO','CM','CIC','CES','CMS','DLG','ZLS','CFP','CFS','INV')
+                WHERE se.is_active = TRUE
+                  AND se.mapped_jarvis_user_id IS NOT NULL
+            ),
+            sincron_day AS (
+                SELECT DISTINCT ON (se.mapped_jarvis_user_id)
+                       se.mapped_jarvis_user_id,
+                       st.program_in  AS program_start,
+                       st.program_out AS program_end,
+                       st.program_break AS program_lunch
+                FROM sincron_employees se
+                JOIN sincron_timesheets st
+                  ON st.sincron_employee_id = se.sincron_employee_id
+                  AND st.company_name = se.company_name
+                  AND st.day = %s::date
+                  AND st.short_code IN ('OZ','OS')
+                  AND st.program_in IS NOT NULL
+                  AND st.program_out IS NOT NULL
+                WHERE se.is_active = TRUE
+                  AND se.mapped_jarvis_user_id IS NOT NULL
+                ORDER BY se.mapped_jarvis_user_id, se.norma_lucru DESC NULLS LAST
+            ),
+            has_punches AS (
+                SELECT DISTINCT pl.biostar_user_id
+                FROM biostar_punch_logs pl
+                WHERE pl.event_datetime::date = %s::date
+            )
+            SELECT
+                be.biostar_user_id,
+                be.name,
+                be.email,
+                be.user_group_name,
+                COALESCE(sd.program_start, be.schedule_start) AS schedule_start,
+                COALESCE(sd.program_end,   be.schedule_end)   AS schedule_end,
+                COALESCE(sd.program_lunch,  be.lunch_break_minutes) AS lunch_break_minutes,
+                be.working_hours,
+                be.mapped_jarvis_user_id
+            FROM biostar_employees be
+            LEFT JOIN sincron_day sd
+              ON sd.mapped_jarvis_user_id = be.mapped_jarvis_user_id
+            LEFT JOIN sincron_leave sl
+              ON sl.mapped_jarvis_user_id = be.mapped_jarvis_user_id
+            LEFT JOIN has_punches hp
+              ON hp.biostar_user_id = be.biostar_user_id
+            LEFT JOIN biostar_daily_adjustments adj
+              ON adj.biostar_user_id = be.biostar_user_id AND adj.date = %s::date
+            WHERE be.status = 'active'
+              AND COALESCE(sd.program_start, be.schedule_start) IS NOT NULL
+              AND COALESCE(sd.program_end,   be.schedule_end)   IS NOT NULL
+              AND hp.biostar_user_id IS NULL
+              AND adj.id IS NULL
+              AND sl.mapped_jarvis_user_id IS NULL
+              AND %s::date < CURRENT_DATE
+            ORDER BY be.name
+        ''', (date_str, date_str, date_str, date_str, date_str))
+
     def get_unadjusted_dates(self):
         """Get all distinct past dates with punch logs that have unadjusted employees."""
         return self.query_all('''
