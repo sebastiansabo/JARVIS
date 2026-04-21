@@ -302,29 +302,39 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         }),
       )
 
-      // Collect all unique employees (biostar_user_id → info + jarvis_user_id)
-      const employeeMap = new Map<string, { name: string; company: string; schedule: string; jarvisUserId: number | null }>()
+      // Collect unique employees keyed by jarvis_user_id (dedup multi-BioStar accounts)
+      const employeeMap = new Map<string, { name: string; company: string; schedule: string; jarvisUserId: number | null; biostarIds: Set<string> }>()
       for (const dd of dailyData) {
         for (const s of dd.summaries) {
-          if (!employeeMap.has(s.biostar_user_id)) {
-            employeeMap.set(s.biostar_user_id, {
+          const key = s.mapped_jarvis_user_id ? `j${s.mapped_jarvis_user_id}` : `b${s.biostar_user_id}`
+          const existing = employeeMap.get(key)
+          if (existing) {
+            existing.biostarIds.add(s.biostar_user_id)
+          } else {
+            employeeMap.set(key, {
               name: s.mapped_jarvis_user_name || s.name,
               company: s.jarvis_company || '',
               schedule: formatSchedule(s.schedule_start, s.schedule_end),
               jarvisUserId: s.mapped_jarvis_user_id,
+              biostarIds: new Set([s.biostar_user_id]),
             })
           }
         }
       }
 
-      // Also add employees from current rows that might have 0 punches
+      // Also add employees from current attendance rows that might have 0 punches
       for (const r of rows) {
-        if (!employeeMap.has(r.biostar_user_id)) {
-          employeeMap.set(r.biostar_user_id, {
+        const key = r.jarvis_user_id ? `j${r.jarvis_user_id}` : `b${r.biostar_user_id}`
+        const existing = employeeMap.get(key)
+        if (existing) {
+          existing.biostarIds.add(r.biostar_user_id)
+        } else {
+          employeeMap.set(key, {
             name: r.name,
             company: r.company || '',
             schedule: formatSchedule(r.schedule_start, r.schedule_end),
             jarvisUserId: r.jarvis_user_id,
+            biostarIds: new Set([r.biostar_user_id]),
           })
         }
       }
@@ -363,8 +373,10 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       )
 
       for (const dd of dailyData) {
-        for (const [bioId, emp] of sortedEmployees) {
-          const s = dd.summaries.find(x => x.biostar_user_id === bioId)
+        for (const [, emp] of sortedEmployees) {
+          // Find best summary across all BioStar IDs for this employee (prefer one with punches/adjustments)
+          const candidates = dd.summaries.filter(x => emp.biostarIds.has(x.biostar_user_id))
+          const s = candidates.find(x => x.adjusted_first_punch || x.first_punch) ?? candidates[0] ?? null
           const officialIn = s ? (s.adjusted_first_punch ?? s.first_punch) : null
           const officialOut = s ? (s.adjusted_last_punch ?? s.last_punch) : null
           const lunchMin = s?.lunch_break_minutes ?? 60
