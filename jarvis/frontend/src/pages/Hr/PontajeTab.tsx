@@ -1195,7 +1195,7 @@ function DayRow({
         {d?.sincron_day_schedule && d.sincron_day_schedule.length > 0 ? (
           <span className="block text-[10px] text-muted-foreground/60 normal-case leading-tight">
             {d.sincron_day_schedule.map((s, i) => {
-              const short = s.company.replace(/^AUTOWORLD\s*/i, '').replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || 'S.R.L.';
+              const short = s.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || s.company;
               return (
                 <span key={i} className="block whitespace-nowrap" title={`${s.company} ${s.start}–${s.end}`}>
                   {short} {s.start}–{s.end}
