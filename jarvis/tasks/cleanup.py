@@ -20,7 +20,7 @@ from tasks.marketing import sync_marketing_kpis
 from tasks.field_sales import field_sales_follow_up_reminders, field_sales_overdue_visit_alerts
 from tasks.biostar import sync_biostar_events, sync_biostar_users, auto_adjust_biostar_schedules
 from tasks.sincron import sync_sincron_timesheets
-from tasks.hr_attendance import check_missing_punches
+from tasks.hr_attendance import check_missing_punches, send_pontaje_digest, send_monthly_pontaje_summary
 from tasks.hr_courses import check_course_cert_expiry
 from tasks.carpark import cleanup_vin_cache
 from tasks.holidays import populate_holidays
@@ -187,7 +187,7 @@ def start_scheduler():
     _biostar_defaults = {
         'biostar_sync_events': {'func': sync_biostar_events, 'hour': 1, 'minute': 0},
         'biostar_sync_users': {'func': sync_biostar_users, 'hour': 2, 'minute': 0},
-        'biostar_auto_adjust': {'func': auto_adjust_biostar_schedules, 'hour': 3, 'minute': 0},
+        'biostar_auto_adjust': {'func': auto_adjust_biostar_schedules, 'hour': 7, 'minute': 15},
     }
     _biostar_cron = {}
     try:
@@ -286,6 +286,31 @@ def start_scheduler():
         hour=10,
         minute=0,
         id='hr_missing_punch_check',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # HR — pontaje daily digest (10:30 Romania time = 07:30 UTC summer)
+    scheduler.add_job(
+        send_pontaje_digest,
+        'cron',
+        hour=7,
+        minute=30,
+        id='hr_pontaje_digest',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # HR — monthly pontaje summary (1st of each month at 08:00 UTC = 11:00 Romania summer)
+    scheduler.add_job(
+        send_monthly_pontaje_summary,
+        'cron',
+        day=1,
+        hour=8,
+        minute=0,
+        id='hr_pontaje_monthly_summary',
         replace_existing=True,
         misfire_grace_time=3600,
         coalesce=True,
