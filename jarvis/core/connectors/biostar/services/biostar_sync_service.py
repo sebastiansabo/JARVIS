@@ -747,6 +747,24 @@ class BioStarSyncService:
             try:
                 from core.connectors.sincron.repositories.sincron_repository import SincronRepository
                 sincron_repo = SincronRepository()
+
+                # Block adjustment if the day has a Sincron leave code
+                LEAVE_CODES = ('CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV')
+                leave = sincron_repo.query_one('''
+                    SELECT st.short_code
+                    FROM sincron_employees se
+                    JOIN sincron_timesheets st
+                      ON st.sincron_employee_id = se.sincron_employee_id
+                      AND st.company_name = se.company_name
+                      AND st.day = %s::date
+                      AND st.short_code = ANY(%s)
+                    WHERE se.mapped_jarvis_user_id = %s
+                      AND se.is_active = TRUE
+                    LIMIT 1
+                ''', (date_str, list(LEAVE_CODES), jarvis_uid))
+                if leave:
+                    return {'success': False, 'error': f'Employee has Sincron leave code ({leave["short_code"]}) for this date'}
+
                 full_sched = sincron_repo.get_full_day_schedule_by_jarvis_user(jarvis_uid, date_str)
                 if full_sched:
                     if full_sched.get('schedule_start'):
