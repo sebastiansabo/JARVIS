@@ -1,12 +1,13 @@
 """HR Course Enrollment routes."""
 from datetime import date as date_cls
 from ._shared import *  # noqa: F401, F403
-from ..repositories import EnrollmentRepository, CertificationRepository
+from ..repositories import EnrollmentRepository, CertificationRepository, CourseActivityRepository
 
 VALID_ENROLLMENT_STATUSES = {'enrolled', 'attended', 'completed', 'failed', 'cancelled'}
 
 _enroll_repo = EnrollmentRepository()
 _cert_repo = CertificationRepository()
+_activity = CourseActivityRepository()
 
 
 def _verify_enrollment(enrollment_id, course_id):
@@ -42,6 +43,8 @@ def api_add_enrollments(course_id):
             return jsonify({'success': False, 'error': 'No employees provided'}), 400
 
         count = _enroll_repo.create_bulk(course_id, employee_ids)
+        _activity.log(course_id, 'enrollment_added', current_user.id, current_user.name,
+                       {'count': count, 'employee_ids': employee_ids})
         return jsonify({'success': True, 'enrolled': count})
     except Exception as e:
         return safe_error_response(e)
@@ -65,6 +68,9 @@ def api_update_enrollment(course_id, enrollment_id):
             return jsonify({'success': False, 'error': f'Invalid enrollment status: {status}'}), 400
 
         _enroll_repo.update_status(enrollment_id, status)
+        _activity.log(course_id, 'enrollment_status_changed', current_user.id, current_user.name,
+                       {'enrollment_id': enrollment_id, 'status': status,
+                        'employee_name': enrollment.get('employee_name')})
         return jsonify({'success': True})
     except Exception as e:
         return safe_error_response(e)
@@ -102,6 +108,9 @@ def api_complete_enrollment(course_id, enrollment_id):
                 expiry_date=expiry,
             )
 
+        _activity.log(course_id, 'enrollment_completed', current_user.id, current_user.name,
+                       {'enrollment_id': enrollment_id, 'employee_name': enrollment.get('employee_name'),
+                        'certification_id': cert_id})
         return jsonify({'success': True, 'certification_id': cert_id})
     except Exception as e:
         return safe_error_response(e)
@@ -118,6 +127,8 @@ def api_delete_enrollment(course_id, enrollment_id):
             return jsonify({'success': False, 'error': 'Enrollment not found for this course'}), 404
 
         _enroll_repo.delete(enrollment_id)
+        _activity.log(course_id, 'enrollment_removed', current_user.id, current_user.name,
+                       {'enrollment_id': enrollment_id, 'employee_name': enrollment.get('employee_name')})
         return jsonify({'success': True})
     except Exception as e:
         return safe_error_response(e)

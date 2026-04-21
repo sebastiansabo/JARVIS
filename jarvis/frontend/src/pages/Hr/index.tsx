@@ -24,7 +24,7 @@ const Employee360 = lazy(() => import('./Employee360'))
 const LeavePermitsTab = lazy(() => import('./LeavePermitsTab'))
 const LeavesTab = lazy(() => import('./LeavesTab'))
 const CoursesTab = lazy(() => import('./CoursesTab'))
-const AddCoursePage = lazy(() => import('./AddCoursePage'))
+const CourseDetail = lazy(() => import('./CourseDetail'))
 
 function TabLoader() {
   return (
@@ -50,8 +50,7 @@ export default function Hr() {
   const isLeavePermitsPage = useMatch('/app/hr/leave-permits')
   const isLeavesPage = useMatch('/app/hr/leaves')
   const isCoursesPage = useMatch('/app/hr/courses')
-  const isAddCoursePage = useMatch('/app/hr/courses/add')
-  const isEditCoursePage = useMatch('/app/hr/courses/:courseId/edit')
+  const isCourseDetailPage = useMatch('/app/hr/courses/:courseId')
   const isEmployee360Page = useMatch('/app/hr/employees/:userId')
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('hr_summary')
   const filters = useHrStore((s) => s.filters)
@@ -106,12 +105,11 @@ export default function Hr() {
   }, [canViewTimesheets, canViewEmployees, canViewLeavePermits, canViewLeaves, canViewCourses])
 
   // Standalone pages — no tabs/stats
-  if (isAddCoursePage || isEditCoursePage) {
+  if (isCourseDetailPage) {
     return (
       <Suspense fallback={<TabLoader />}>
         <Routes>
-          <Route path="courses/add" element={<AddCoursePage />} />
-          <Route path="courses/:courseId/edit" element={<AddCoursePage />} />
+          <Route path="courses/:courseId" element={<CourseDetail />} />
         </Routes>
       </Suspense>
     )

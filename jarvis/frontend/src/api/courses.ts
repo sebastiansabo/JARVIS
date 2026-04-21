@@ -1,5 +1,9 @@
 import { api } from './client'
-import type { Course, CourseType, Enrollment, Certification } from '@/types/courses'
+import type {
+  Course, CourseType, Enrollment, Certification,
+  EnrollmentCost, CostSummary, CompanyCostSummary, DepartmentCostSummary,
+  MonthlyCost, CourseDashboardStats, CourseActivity,
+} from '@/types/courses'
 
 const BASE = '/hr/courses/api'
 
@@ -81,6 +85,55 @@ export const coursesApi = {
     api.delete<{ success: boolean }>(
       `${BASE}/courses/${courseId}/enrollments/${enrollmentId}`,
     ),
+
+  // Enrollment Costs
+  getEnrollmentCosts: (courseId: number) =>
+    api.get<{ costs: EnrollmentCost[]; summary: CostSummary }>(
+      `${BASE}/courses/${courseId}/enrollment-costs`,
+    ),
+
+  upsertEnrollmentCost: (courseId: number, enrollmentId: number, data: {
+    training_fee?: number
+    per_diem?: number
+    accommodation?: number
+    transport?: number
+    taxi?: number
+    currency?: string
+    notes?: string
+  }) =>
+    api.put<{ success: boolean; id: number }>(
+      `${BASE}/courses/${courseId}/enrollments/${enrollmentId}/costs`,
+      data,
+    ),
+
+  updateEnrollmentFields: (courseId: number, enrollmentId: number, data: {
+    order_number?: string
+    travel_order?: string
+    additional_act?: string
+    department?: string
+    travel_mode?: string
+    notes?: string
+  }) =>
+    api.put<{ success: boolean }>(
+      `${BASE}/courses/${courseId}/enrollments/${enrollmentId}/fields`,
+      data,
+    ),
+
+  // Dashboard & Cost Summary
+  getDashboardStats: (params?: { year?: number; company_id?: number }) =>
+    api.get<CourseDashboardStats>(`${BASE}/courses/dashboard${qs(params ?? {})}`),
+
+  getCostSummary: (params?: { year?: number; month?: number; company_id?: number }) =>
+    api.get<(CompanyCostSummary | DepartmentCostSummary)[]>(
+      `${BASE}/courses/cost-summary${qs(params ?? {})}`,
+    ),
+
+  getCostByMonth: (params?: { year?: number; company_id?: number }) =>
+    api.get<MonthlyCost[]>(`${BASE}/courses/cost-by-month${qs(params ?? {})}`),
+
+  // Activity
+  getCourseActivity: (courseId: number, limit = 50) =>
+    api.get<CourseActivity[]>(`${BASE}/courses/${courseId}/activity${qs({ limit })}`),
 
   // Certifications
   getCertifications: (params?: { employee_id?: number; days_ahead?: number }) =>

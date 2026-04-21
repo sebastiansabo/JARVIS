@@ -5,3 +5,4 @@ from . import course_types  # noqa: F401
 from . import enrollments   # noqa: F401
 from . import certifications  # noqa: F401
 from . import invoices      # noqa: F401
+from . import enrollment_costs  # noqa: F401

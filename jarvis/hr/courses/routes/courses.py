@@ -1,8 +1,9 @@
 """HR Courses CRUD routes."""
 from ._shared import *  # noqa: F401, F403
-from ..repositories import CourseRepository
+from ..repositories import CourseRepository, CourseActivityRepository
 
 _repo = CourseRepository()
+_activity = CourseActivityRepository()
 
 VALID_COURSE_STATUSES = {'draft', 'pending_approval', 'approved', 'in_progress', 'completed', 'cancelled'}
 
@@ -90,8 +91,14 @@ def api_create_course():
             description=data.get('description'),
             budget=data.get('budget'),
             currency=data.get('currency', 'RON'),
+            course_code=data.get('course_code'),
+            duration_hours=data.get('duration_hours'),
+            travel_mode=data.get('travel_mode'),
             created_by=current_user.id,
         )
+
+        _activity.log(course_id, 'created', current_user.id, current_user.name,
+                       {'name': data['name']})
 
         return jsonify({'success': True, 'id': course_id})
     except Exception as e:
@@ -143,8 +150,14 @@ def api_update_course(course_id):
             description=data.get('description'),
             budget=data.get('budget'),
             currency=data.get('currency'),
+            course_code=data.get('course_code'),
+            duration_hours=data.get('duration_hours'),
+            travel_mode=data.get('travel_mode'),
             status=status,
         )
+
+        _activity.log(course_id, 'updated', current_user.id, current_user.name,
+                       {k: v for k, v in data.items() if v is not None})
 
         return jsonify({'success': True})
     except Exception as e:
@@ -159,6 +172,7 @@ def api_delete_course(course_id):
     try:
         if not _repo.delete(course_id):
             return jsonify({'success': False, 'error': 'Course not found'}), 404
+        _activity.log(course_id, 'deleted', current_user.id, current_user.name)
         return jsonify({'success': True})
     except Exception as e:
         return safe_error_response(e)
@@ -172,6 +186,7 @@ def api_restore_course(course_id):
     try:
         if not _repo.restore(course_id):
             return jsonify({'success': False, 'error': 'Course not found in bin'}), 404
+        _activity.log(course_id, 'restored', current_user.id, current_user.name)
         return jsonify({'success': True})
     except Exception as e:
         return safe_error_response(e)
@@ -188,6 +203,8 @@ def api_bulk_delete_courses():
         if not ids:
             return jsonify({'success': False, 'error': 'No course IDs provided'}), 400
         count = _repo.bulk_soft_delete(ids)
+        for cid in ids:
+            _activity.log(cid, 'deleted', current_user.id, current_user.name, {'bulk': True})
         return jsonify({'success': True, 'deleted': count})
     except Exception as e:
         return safe_error_response(e)
@@ -204,6 +221,8 @@ def api_bulk_restore_courses():
         if not ids:
             return jsonify({'success': False, 'error': 'No course IDs provided'}), 400
         count = _repo.bulk_restore(ids)
+        for cid in ids:
+            _activity.log(cid, 'restored', current_user.id, current_user.name, {'bulk': True})
         return jsonify({'success': True, 'restored': count})
     except Exception as e:
         return safe_error_response(e)
@@ -237,6 +256,8 @@ def api_submit_course_approval(course_id):
             )
             new_status = 'approved' if approval.get('status') == 'approved' else 'pending_approval'
             _repo.update(course_id, status=new_status, approval_request_id=approval.get('id'))
+            _activity.log(course_id, 'submitted_approval', current_user.id, current_user.name,
+                           {'status': new_status})
             return jsonify({'success': True, 'status': new_status, 'approval': approval})
         except (ImportError, NameError):
             _repo.update(course_id, status='approved')

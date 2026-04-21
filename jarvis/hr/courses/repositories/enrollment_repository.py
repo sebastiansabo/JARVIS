@@ -7,11 +7,14 @@ class EnrollmentRepository(BaseRepository):
     """Repository for course enrollment data access."""
 
     def get_by_course(self, course_id: int) -> List[Dict[str, Any]]:
-        """Get all enrollments for a course."""
+        """Get all enrollments for a course with inline costs."""
         return self.query_all('''
-            SELECT ce.*, u.name as employee_name, u.company, u.department, u.brand
+            SELECT ce.*, u.name as employee_name, u.company, u.department, u.brand,
+                   ec.training_fee, ec.per_diem, ec.accommodation, ec.transport,
+                   ec.taxi, ec.total_cost, ec.currency as cost_currency, ec.notes as cost_notes
             FROM hr.course_enrollments ce
             JOIN public.users u ON ce.employee_id = u.id
+            LEFT JOIN hr.enrollment_costs ec ON ec.enrollment_id = ce.id
             WHERE ce.course_id = %s
             ORDER BY u.name
         ''', (course_id,))
@@ -51,6 +54,18 @@ class EnrollmentRepository(BaseRepository):
             if result:
                 count += 1
         return count
+
+    def update_fields(self, enrollment_id: int, **kwargs) -> bool:
+        """Update enrollment fields (admin fields, notes, etc.)."""
+        allowed = {'order_number', 'travel_order', 'additional_act', 'department',
+                   'travel_mode', 'notes', 'enrollment_status'}
+        fields = {k: v for k, v in kwargs.items() if k in allowed}
+        if not fields:
+            return False
+        sets = ', '.join(f'{k} = %s' for k in fields)
+        params = list(fields.values()) + [enrollment_id]
+        self.execute(f'UPDATE hr.course_enrollments SET {sets} WHERE id = %s', params)
+        return True
 
     def update_status(self, enrollment_id: int, status: str, completed_at=None) -> bool:
         """Update enrollment status."""
