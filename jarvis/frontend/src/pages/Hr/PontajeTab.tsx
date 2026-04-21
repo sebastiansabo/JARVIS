@@ -933,8 +933,9 @@ async function adjustDays(
   scheduleStart: string | null,
   lunchMin: number,
   workingHours: number,
+  leaveCodes?: Map<string, string>,
 ): Promise<number> {
-  const unadjusted = days.filter(d => d.data && !d.data.adjusted_first_punch && !d.isWeekend && !d.isHoliday && !d.isOutsideMonth)
+  const unadjusted = days.filter(d => d.data && !d.data.adjusted_first_punch && !d.isWeekend && !d.isHoliday && !d.isOutsideMonth && !leaveCodes?.has(d.date))
   let count = 0
   for (const day of unadjusted) {
     const d = day.data!
@@ -1044,7 +1045,7 @@ function MonthHistory({
     if (!confirm(`Adjust all unadjusted days in ${monthLabel}?`)) return
     setAdjusting(true)
     try {
-      const count = await adjustDays(allDays, biostarUserId, scheduleStart, lunchMin, workingHours)
+      const count = await adjustDays(allDays, biostarUserId, scheduleStart, lunchMin, workingHours, leaveCodes)
       toast.success(`Adjusted ${count} days in ${monthLabel}`)
       invalidate()
       queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today'] })
@@ -1087,7 +1088,7 @@ function MonthHistory({
             e.stopPropagation()
             setAdjusting(true)
             try {
-              const count = await adjustDays(week.days, biostarUserId, scheduleStart, lunchMin, workingHours)
+              const count = await adjustDays(week.days, biostarUserId, scheduleStart, lunchMin, workingHours, leaveCodes)
               toast.success(`Adjusted ${count} days in week ${week.weekNum}`)
               invalidate()
               queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today'] })
