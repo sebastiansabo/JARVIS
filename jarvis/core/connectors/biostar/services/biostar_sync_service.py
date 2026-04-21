@@ -741,27 +741,33 @@ class BioStarSyncService:
         lunch = employee.get('lunch_break_minutes') or 60
         wh = employee.get('working_hours') or 8
 
-        # Override with Sincron per-day schedule if available
+        # Override with Sincron per-day schedule (full span across ALL companies)
         jarvis_uid = employee.get('mapped_jarvis_user_id')
         if jarvis_uid:
             try:
                 from core.connectors.sincron.repositories.sincron_repository import SincronRepository
-                day_sched = SincronRepository().get_day_schedule_by_jarvis_user(jarvis_uid, date_str)
-                if day_sched:
-                    if day_sched.get('schedule_start'):
-                        parts = str(day_sched['schedule_start']).split(':')
+                sincron_repo = SincronRepository()
+                full_sched = sincron_repo.get_full_day_schedule_by_jarvis_user(jarvis_uid, date_str)
+                if full_sched:
+                    if full_sched.get('schedule_start'):
+                        parts = str(full_sched['schedule_start']).split(':')
                         sched_start = _time(int(parts[0]), int(parts[1]))
-                    if day_sched.get('schedule_end'):
-                        parts = str(day_sched['schedule_end']).split(':')
+                    if full_sched.get('schedule_end'):
+                        parts = str(full_sched['schedule_end']).split(':')
                         sched_end = _time(int(parts[0]), int(parts[1]))
-                    if day_sched.get('lunch_break_minutes') is not None:
-                        lunch = day_sched['lunch_break_minutes']
+                    if full_sched.get('lunch_break_minutes') is not None:
+                        lunch = full_sched['lunch_break_minutes']
             except Exception as e:
                 logger.warning('Sincron schedule lookup failed for user %s on %s: %s',
                                jarvis_uid, date_str, e)
 
         if not sched_start or not sched_end:
             return {'success': False, 'error': 'No schedule found'}
+
+        # Compute actual working hours from full schedule span
+        full_span_min = (datetime.combine(datetime.today(), sched_end) -
+                         datetime.combine(datetime.today(), sched_start)).total_seconds() / 60
+        wh = (full_span_min - lunch) / 60  # net hours
 
         # Get punch data for that date (ordered DESC, so [-1]=earliest, [0]=latest)
         punches = self.repo.get_punch_logs(biostar_user_id, f'{date_str} 00:00:00', f'{date_str} 23:59:59')
