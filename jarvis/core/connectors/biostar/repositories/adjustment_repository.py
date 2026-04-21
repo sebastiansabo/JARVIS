@@ -19,7 +19,26 @@ class AdjustmentRepository(BaseRepository):
         - Excludes employees already adjusted for that date
         """
         return self.query_all('''
-            WITH deduped AS (
+            WITH sincron_day AS (
+                SELECT DISTINCT ON (se.mapped_jarvis_user_id)
+                       se.mapped_jarvis_user_id,
+                       st.program_in::time AS program_start,
+                       st.program_out::time AS program_end,
+                       st.program_break AS program_lunch
+                FROM sincron_employees se
+                JOIN sincron_timesheets st
+                  ON st.sincron_employee_id = se.sincron_employee_id
+                  AND st.company_name = se.company_name
+                  AND st.day = %s::date
+                  AND st.short_code IN ('OZ', 'OS')
+                  AND st.program_in IS NOT NULL
+                  AND st.program_out IS NOT NULL
+                  AND st.program_in ~ '^[0-9]{2}:[0-9]{2}'
+                WHERE se.is_active = TRUE
+                  AND se.mapped_jarvis_user_id IS NOT NULL
+                ORDER BY se.mapped_jarvis_user_id, se.norma_lucru DESC NULLS LAST
+            ),
+            deduped AS (
                 SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
                     pl.biostar_user_id, pl.event_datetime
                 FROM biostar_punch_logs pl
@@ -34,9 +53,9 @@ class AdjustmentRepository(BaseRepository):
                     be.name,
                     be.email,
                     be.user_group_name,
-                    be.schedule_start,
-                    be.schedule_end,
-                    be.lunch_break_minutes,
+                    COALESCE(sd.program_start, be.schedule_start) AS schedule_start,
+                    COALESCE(sd.program_end, be.schedule_end) AS schedule_end,
+                    COALESCE(sd.program_lunch, be.lunch_break_minutes) AS lunch_break_minutes,
                     be.working_hours,
                     be.mapped_jarvis_user_id,
                     u.name AS mapped_jarvis_user_name,
@@ -47,8 +66,11 @@ class AdjustmentRepository(BaseRepository):
                 FROM deduped d
                 LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
                 LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+                LEFT JOIN sincron_day sd ON sd.mapped_jarvis_user_id = be.mapped_jarvis_user_id
                 GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
-                         be.schedule_start, be.schedule_end, be.lunch_break_minutes,
+                         COALESCE(sd.program_start, be.schedule_start),
+                         COALESCE(sd.program_end, be.schedule_end),
+                         COALESCE(sd.program_lunch, be.lunch_break_minutes),
                          be.working_hours, be.mapped_jarvis_user_id, u.name
             ),
             flagged AS (
@@ -104,7 +126,7 @@ class AdjustmentRepository(BaseRepository):
                       AND (f.duration_seconds / 60.0 - f.lunch_break_minutes) < (f.working_hours * 60 - %s))
               )
             ORDER BY f.name
-        ''', (date_str, date_str,
+        ''', (date_str, date_str, date_str,
               threshold_minutes, threshold_minutes, threshold_minutes, threshold_minutes,
               date_str,
               threshold_minutes, threshold_minutes, threshold_minutes, threshold_minutes))

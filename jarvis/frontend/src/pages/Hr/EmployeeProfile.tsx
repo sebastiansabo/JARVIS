@@ -25,7 +25,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { biostarApi } from '@/api/biostar'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { BioStarDayHistory, BioStarPunchLog } from '@/types/biostar'
+import type { BioStarDayHistory, BioStarPunchLog, SincronContract } from '@/types/biostar'
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10)
@@ -107,45 +107,22 @@ export default function EmployeeProfile() {
     onError: () => toast.error('Failed to update schedule'),
   })
 
-  // Per-day adjustment mutation
+  // Per-day adjustment mutation — uses backend auto-adjust-single (Sincron per-day schedule)
   const adjustDayMut = useMutation({
-    mutationFn: (day: BioStarDayHistory) => {
-      if (!employee) throw new Error('No data')
-      const datePart = day.date
-      const wh = employee.working_hours ?? 8
-      const lunch = employee.lunch_break_minutes ?? 60
-      const schedStart = employee.schedule_start ? employee.schedule_start.slice(0, 5) : '08:00'
-      const whMin = Math.round(wh * 60)
-      const targetWorked = whMin + Math.floor(Math.random() * 11)
-      const targetSpan = targetWorked + lunch
-      const startOffset = Math.floor(Math.random() * 11) - 5
-      const [sh, sm] = schedStart.split(':').map(Number)
-      const startMin = sh * 60 + sm + startOffset
-      const endMin = startMin + targetSpan
-      const fmtMins = (m: number) => {
-        const hh = Math.floor(m / 60).toString().padStart(2, '0')
-        const mm = (m % 60).toString().padStart(2, '0')
-        return `${datePart}T${hh}:${mm}:00`
-      }
-      return biostarApi.adjustEmployee({
-        biostar_user_id: biostarUserId!,
-        date: datePart,
-        adjusted_first_punch: fmtMins(startMin),
-        adjusted_last_punch: fmtMins(endMin),
-        original_first_punch: day.first_punch || '',
-        original_last_punch: day.last_punch || day.first_punch || '',
-        schedule_start: schedStart,
-        schedule_end: employee.schedule_end?.slice(0, 5),
-        lunch_break_minutes: lunch,
-        working_hours: wh,
-        original_duration_seconds: day.duration_seconds ?? undefined,
-      })
-    },
+    mutationFn: (day: BioStarDayHistory) =>
+      biostarApi.autoAdjustSingle(biostarUserId!, day.date),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['biostar', 'employee-history'] })
       toast.success('Day adjusted')
     },
     onError: () => toast.error('Failed to adjust day'),
+  })
+
+  // Sincron contracts query
+  const { data: sincronContracts = [] } = useQuery({
+    queryKey: ['biostar', 'sincron-schedule', biostarUserId],
+    queryFn: () => biostarApi.getSincronSchedule(biostarUserId!),
+    enabled: !!biostarUserId,
   })
 
   const revertDayMut = useMutation({
@@ -393,6 +370,49 @@ export default function EmployeeProfile() {
           </div>
         </div>
       </div>
+
+      {/* Sincron Contracts */}
+      {sincronContracts.length > 0 && (
+        <div className="rounded-lg border p-4">
+          <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+            Sincron Contracts ({sincronContracts.length})
+          </h3>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Company</TableHead>
+                  <TableHead className="text-center">Contract #</TableHead>
+                  <TableHead className="text-center">Start Date</TableHead>
+                  <TableHead className="text-center">Hours</TableHead>
+                  <TableHead className="text-center">Schedule</TableHead>
+                  <TableHead className="text-center">Lunch</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sincronContracts.map((c: SincronContract) => (
+                  <TableRow key={`${c.company_name}-${c.nr_contract}`}>
+                    <TableCell className="text-sm font-medium">{c.company_name}</TableCell>
+                    <TableCell className="text-center text-sm">{c.nr_contract || '—'}</TableCell>
+                    <TableCell className="text-center text-sm">{c.data_incepere_contract || '—'}</TableCell>
+                    <TableCell className="text-center text-sm">
+                      {c.norma_lucru != null ? `${c.norma_lucru}h` : '—'}
+                    </TableCell>
+                    <TableCell className="text-center text-sm">
+                      {c.schedule_start && c.schedule_end
+                        ? `${c.schedule_start}–${c.schedule_end}`
+                        : '—'}
+                    </TableCell>
+                    <TableCell className="text-center text-sm">
+                      {c.lunch_break_minutes != null ? `${c.lunch_break_minutes}min` : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>

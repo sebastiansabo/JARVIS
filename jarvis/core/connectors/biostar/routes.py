@@ -518,6 +518,46 @@ def auto_adjust_all():
     return jsonify({'success': True, 'data': result})
 
 
+@biostar_bp.route('/api/adjustments/auto-adjust-single', methods=['POST'])
+@adjust_permission_required
+def auto_adjust_single():
+    """Auto-adjust a single employee for a specific date using Sincron per-day schedule."""
+    data = request.get_json() or {}
+    biostar_user_id = data.get('biostar_user_id')
+    date_str = data.get('date')
+    if not biostar_user_id or not date_str:
+        return jsonify({'success': False, 'error': 'biostar_user_id and date required'}), 400
+    result = service.auto_adjust_single(biostar_user_id, date_str, user_id=current_user.id)
+    if not result.get('success'):
+        return jsonify(result), 400
+    return jsonify({'success': True, 'data': result})
+
+
+@biostar_bp.route('/api/employees/<biostar_user_id>/sincron-schedule', methods=['GET'])
+@api_login_required
+def get_employee_sincron_schedule(biostar_user_id):
+    """Get Sincron contract schedule data for a BioStar employee."""
+    employee = service.repo.get_employee(biostar_user_id)
+    if not employee or not employee.get('mapped_jarvis_user_id'):
+        return jsonify({'success': True, 'contracts': []})
+
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    entries = SincronRepository().get_all_employees_by_jarvis_id(employee['mapped_jarvis_user_id'])
+    contracts = []
+    for se in entries:
+        norma = float(se['norma_lucru']) if se.get('norma_lucru') else None
+        contracts.append({
+            'company_name': se.get('company_name'),
+            'nr_contract': se.get('nr_contract'),
+            'data_incepere_contract': str(se['data_incepere_contract']) if se.get('data_incepere_contract') and str(se['data_incepere_contract']) > '0001' else None,
+            'norma_lucru': norma,
+            'schedule_start': str(se['schedule_start'])[:5] if se.get('schedule_start') else None,
+            'schedule_end': str(se['schedule_end'])[:5] if se.get('schedule_end') else None,
+            'lunch_break_minutes': se.get('lunch_break_minutes'),
+        })
+    return jsonify({'success': True, 'contracts': contracts})
+
+
 @biostar_bp.route('/api/adjustments/revert', methods=['POST'])
 @adjust_permission_required
 def revert_adjustment():

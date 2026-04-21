@@ -12,6 +12,7 @@ import type {
   BioStarOffScheduleRow,
   BioStarAdjustment,
   BioStarCronJob,
+  SincronContract,
   JarvisUser,
   AttendanceRow,
   AttendanceWeekRow,
@@ -248,6 +249,19 @@ export const biostarApi = {
       `${BASE}/adjustments/auto-adjust`,
       { date, threshold },
     ),
+
+  autoAdjustSingle: (biostarUserId: string, date: string) =>
+    api.post<{ success: boolean; data: { success: boolean; adjusted_first: string; adjusted_last: string } }>(
+      `${BASE}/adjustments/auto-adjust-single`,
+      { biostar_user_id: biostarUserId, date },
+    ),
+
+  getSincronSchedule: async (biostarUserId: string) => {
+    const res = await api.get<{ success: boolean; contracts: SincronContract[] }>(
+      `${BASE}/employees/${biostarUserId}/sincron-schedule`,
+    )
+    return res.contracts
+  },
 
   revertAdjustment: (biostarUserId: string, date: string) =>
     api.post<{ success: boolean; message: string }>(`${BASE}/adjustments/revert`, {
