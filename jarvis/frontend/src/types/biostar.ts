@@ -276,6 +276,16 @@ export interface BioStarCronJob {
   last_message: string | null
 }
 
+export interface SincronContract {
+  company_name: string
+  nr_contract: string | null
+  data_incepere_contract: string | null
+  norma_lucru: number | null
+  schedule_start: string | null
+  schedule_end: string | null
+  lunch_break_minutes: number | null
+}
+
 export interface JarvisUser {
   id: number
   name: string

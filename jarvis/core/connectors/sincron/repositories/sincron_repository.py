@@ -346,6 +346,7 @@ class SincronRepository(BaseRepository):
         """Get monthly timesheet for a JARVIS user (via mapping)."""
         return self.query_all('''
             SELECT st.day, st.short_code, st.short_code_en, st.unit, st.value,
+                   st.program_in, st.program_out, st.program_break,
                    se.company_name, se.nume, se.prenume
             FROM sincron_timesheets st
             JOIN sincron_employees se
@@ -411,6 +412,60 @@ class SincronRepository(BaseRepository):
                      st.short_code, st.unit
             ORDER BY u.name, st.short_code
         ''', (jarvis_user_ids, year, month))
+
+    def get_day_schedule_by_jarvis_user(self, jarvis_user_id, date_str):
+        """Get per-day work schedule from Sincron timesheets for a specific date.
+
+        Returns the primary company's (highest norma_lucru) OZ schedule for
+        that day, falling back to the static sincron_employees schedule.
+        """
+        return self.query_one('''
+            WITH day_schedules AS (
+                SELECT DISTINCT ON (se.company_name)
+                       se.company_name,
+                       se.norma_lucru,
+                       st.program_in,
+                       st.program_out,
+                       st.program_break,
+                       se.schedule_start AS static_start,
+                       se.schedule_end AS static_end,
+                       se.lunch_break_minutes AS static_lunch
+                FROM sincron_employees se
+                LEFT JOIN sincron_timesheets st
+                  ON st.sincron_employee_id = se.sincron_employee_id
+                  AND st.company_name = se.company_name
+                  AND st.day = %s::date
+                  AND st.short_code IN ('OZ', 'OS')
+                WHERE se.mapped_jarvis_user_id = %s
+                  AND se.is_active = TRUE
+                  AND se.norma_lucru IS NOT NULL
+                ORDER BY se.company_name, st.program_in NULLS LAST
+            )
+            SELECT company_name,
+                   norma_lucru,
+                   COALESCE(program_in::text, static_start::text) AS schedule_start,
+                   COALESCE(program_out::text, static_end::text) AS schedule_end,
+                   COALESCE(program_break, static_lunch) AS lunch_break_minutes
+            FROM day_schedules
+            ORDER BY norma_lucru DESC
+            LIMIT 1
+        ''', (date_str, jarvis_user_id))
+
+    def get_all_day_codes(self, year, month):
+        """Get day-level activity codes for all mapped employees in a month.
+
+        Returns list of dicts: {mapped_jarvis_user_id, day, short_code}
+        """
+        return self.query_all('''
+            SELECT se.mapped_jarvis_user_id, st.day, st.short_code
+            FROM sincron_timesheets st
+            JOIN sincron_employees se
+              ON se.sincron_employee_id = st.sincron_employee_id
+              AND se.company_name = st.company_name
+            WHERE se.mapped_jarvis_user_id IS NOT NULL
+              AND st.year = %s AND st.month = %s
+            ORDER BY se.mapped_jarvis_user_id, st.day
+        ''', (year, month))
 
     def delete_month_timesheets(self, sincron_employee_id, company_name, year, month):
         """Delete all timesheet records for an employee/month (before re-sync)."""

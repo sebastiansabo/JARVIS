@@ -728,6 +728,74 @@ class BioStarSyncService:
 
         return {'adjusted': adjusted_count, 'total_flagged': len(off)}
 
+    def auto_adjust_single(self, biostar_user_id, date_str, user_id=None):
+        """Auto-adjust a single employee for a specific date using Sincron per-day schedule."""
+        from datetime import time as _time
+
+        employee = self.repo.get_employee(biostar_user_id)
+        if not employee:
+            return {'success': False, 'error': 'Employee not found'}
+
+        sched_start = employee.get('schedule_start')
+        sched_end = employee.get('schedule_end')
+        lunch = employee.get('lunch_break_minutes') or 60
+        wh = employee.get('working_hours') or 8
+
+        # Override with Sincron per-day schedule if available
+        jarvis_uid = employee.get('mapped_jarvis_user_id')
+        if jarvis_uid:
+            try:
+                from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+                day_sched = SincronRepository().get_day_schedule_by_jarvis_user(jarvis_uid, date_str)
+                if day_sched:
+                    if day_sched.get('schedule_start'):
+                        parts = str(day_sched['schedule_start']).split(':')
+                        sched_start = _time(int(parts[0]), int(parts[1]))
+                    if day_sched.get('schedule_end'):
+                        parts = str(day_sched['schedule_end']).split(':')
+                        sched_end = _time(int(parts[0]), int(parts[1]))
+                    if day_sched.get('lunch_break_minutes') is not None:
+                        lunch = day_sched['lunch_break_minutes']
+            except Exception as e:
+                logger.warning('Sincron schedule lookup failed for user %s on %s: %s',
+                               jarvis_uid, date_str, e)
+
+        if not sched_start or not sched_end:
+            return {'success': False, 'error': 'No schedule found'}
+
+        # Get punch data for that date (ordered DESC, so [-1]=earliest, [0]=latest)
+        punches = self.repo.get_punch_logs(biostar_user_id, f'{date_str} 00:00:00', f'{date_str} 23:59:59')
+        if not punches:
+            return {'success': False, 'error': 'No punches for that date'}
+
+        first_punch = punches[-1]['event_datetime']
+        last_punch = punches[0]['event_datetime']
+        duration = (last_punch - first_punch).total_seconds() if len(punches) > 1 else 0
+
+        adj_first, adj_last = self._randomize_times(first_punch, sched_start, lunch, wh)
+
+        deviation_in = round((first_punch - datetime.combine(first_punch.date(), sched_start)).total_seconds() / 60)
+        deviation_out = round((last_punch - datetime.combine(last_punch.date(), sched_end)).total_seconds() / 60) if len(punches) > 1 else 0
+
+        self.adjust_employee(
+            biostar_user_id=biostar_user_id,
+            date_str=date_str,
+            adjusted_first=adj_first,
+            adjusted_last=adj_last,
+            original_first=first_punch,
+            original_last=last_punch,
+            schedule_start=sched_start,
+            schedule_end=sched_end,
+            lunch_break_minutes=lunch,
+            working_hours=wh,
+            original_duration=duration,
+            deviation_in=deviation_in,
+            deviation_out=deviation_out,
+            adjustment_type='auto',
+            adjusted_by=user_id,
+        )
+        return {'success': True, 'adjusted_first': str(adj_first), 'adjusted_last': str(adj_last)}
+
     def backfill_adjustments(self, threshold=15, user_id=None):
         """Auto-adjust all past dates with unadjusted off-schedule employees."""
         dates = self.adj_repo.get_unadjusted_dates()
