@@ -817,8 +817,7 @@ function SincronCalendar({
     return Array.from(codes).sort()
   }, [timesheet])
 
-  // Short company name (strip "AUTOWORLD " prefix)
-  const shortName = (name: string) => name.replace(/^AUTOWORLD\s*/i, '').replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || 'S.R.L.'
+  const shortName = (name: string) => name
 
   return (
     <div className="rounded-lg border p-4">

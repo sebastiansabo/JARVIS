@@ -148,6 +148,9 @@ class SincronSyncService:
         if company_name:
             tokens = {company_name: tokens.get(company_name)}
 
+        # Build company_name → company_id lookup from JARVIS companies table
+        company_id_map = self._get_company_id_map()
+
         total_employees = 0
         total_records = 0
         total_deactivated = 0
@@ -162,7 +165,8 @@ class SincronSyncService:
             run_id = run['run_id'] if run else None
 
             try:
-                result = self._sync_company_timesheets(comp, token, year, month)
+                result = self._sync_company_timesheets(comp, token, year, month,
+                                                       company_id=company_id_map.get(comp.upper()))
                 company_results[comp] = result
                 total_employees += result.get('employees', 0)
                 total_records += result.get('records', 0)
@@ -308,7 +312,14 @@ class SincronSyncService:
 
         return 0
 
-    def _sync_company_timesheets(self, company_name, token, year, month):
+    def _get_company_id_map(self):
+        """Build UPPER(company_name) → company_id lookup from companies table."""
+        rows = self.repo.query_all(
+            "SELECT id, UPPER(company) AS uname FROM companies"
+        )
+        return {r['uname']: r['id'] for r in rows}
+
+    def _sync_company_timesheets(self, company_name, token, year, month, company_id=None):
         """Sync timesheets for a single company."""
         client = SincronClient(token)
         try:
@@ -375,6 +386,7 @@ class SincronSyncService:
                 schedule_start=emp_schedule_in,
                 schedule_end=emp_schedule_out,
                 lunch_break_minutes=break_val,
+                company_id=company_id,
             )
             employees_synced += 1
 

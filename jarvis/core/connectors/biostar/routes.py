@@ -542,12 +542,17 @@ def get_employee_sincron_schedule(biostar_user_id):
         return jsonify({'success': True, 'contracts': []})
 
     from core.connectors.sincron.repositories.sincron_repository import SincronRepository
-    entries = SincronRepository().get_all_employees_by_jarvis_id(employee['mapped_jarvis_user_id'])
+    sincron_repo = SincronRepository()
+    entries = sincron_repo.get_all_employees_by_jarvis_id(employee['mapped_jarvis_user_id'])
+
+    # Canonical company names from companies table
+    co_map = {r['id']: r['company'] for r in sincron_repo.query_all("SELECT id, company FROM companies")}
+
     contracts = []
     for se in entries:
         norma = float(se['norma_lucru']) if se.get('norma_lucru') else None
         contracts.append({
-            'company_name': se.get('company_name'),
+            'company_name': co_map.get(se.get('company_id'), se.get('company_name')),
             'nr_contract': se.get('nr_contract'),
             'data_incepere_contract': str(se['data_incepere_contract']) if se.get('data_incepere_contract') and str(se['data_incepere_contract']) > '0001' else None,
             'norma_lucru': norma,
@@ -578,11 +583,15 @@ def get_employee_sincron_timesheet(biostar_user_id):
     sincron_repo = SincronRepository()
 
     entries = sincron_repo.get_all_employees_by_jarvis_id(jarvis_id)
+
+    # Canonical company names from companies table
+    co_map = {r['id']: r['company'] for r in sincron_repo.query_all("SELECT id, company FROM companies")}
+
     contracts = []
     for se in entries:
         norma = float(se['norma_lucru']) if se.get('norma_lucru') else None
         contracts.append({
-            'company_name': se.get('company_name'),
+            'company_name': co_map.get(se.get('company_id'), se.get('company_name')),
             'nr_contract': se.get('nr_contract'),
             'norma_lucru': norma,
             'schedule_start': str(se['schedule_start'])[:5] if se.get('schedule_start') else None,

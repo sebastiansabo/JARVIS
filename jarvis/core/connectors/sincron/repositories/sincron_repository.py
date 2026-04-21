@@ -12,15 +12,16 @@ class SincronRepository(BaseRepository):
                         cnp=None, id_contract=None, nr_contract=None,
                         data_incepere_contract=None, norma_lucru=None,
                         norma_lucru_time=None, schedule_start=None,
-                        schedule_end=None, lunch_break_minutes=None):
+                        schedule_end=None, lunch_break_minutes=None,
+                        company_id=None):
         """Insert or update a Sincron employee record."""
         return self.execute('''
             INSERT INTO sincron_employees
                 (sincron_employee_id, company_name, nume, prenume, cnp,
                  id_contract, nr_contract, data_incepere_contract,
                  norma_lucru, norma_lucru_time, schedule_start, schedule_end,
-                 lunch_break_minutes, last_synced_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                 lunch_break_minutes, company_id, last_synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (sincron_employee_id, company_name) DO UPDATE SET
                 nume = EXCLUDED.nume,
                 prenume = EXCLUDED.prenume,
@@ -33,6 +34,7 @@ class SincronRepository(BaseRepository):
                 schedule_start = EXCLUDED.schedule_start,
                 schedule_end = EXCLUDED.schedule_end,
                 lunch_break_minutes = EXCLUDED.lunch_break_minutes,
+                company_id = COALESCE(EXCLUDED.company_id, sincron_employees.company_id),
                 is_active = TRUE,
                 contract_status = NULL,
                 last_synced_at = NOW(),
@@ -41,7 +43,7 @@ class SincronRepository(BaseRepository):
         ''', (sincron_employee_id, company_name, nume, prenume, cnp,
               id_contract, nr_contract, data_incepere_contract,
               norma_lucru, norma_lucru_time, schedule_start, schedule_end,
-              lunch_break_minutes), returning=True)
+              lunch_break_minutes, company_id), returning=True)
 
     def get_all_employees(self, company_name=None, active_only=True):
         """Get all Sincron employees (CNP excluded from response)."""
@@ -90,7 +92,7 @@ class SincronRepository(BaseRepository):
                    se.mapping_method, se.mapping_confidence,
                    se.norma_lucru, se.norma_lucru_time,
                    se.schedule_start, se.schedule_end, se.lunch_break_minutes,
-                   se.count_for_leave, se.last_synced_at
+                   se.count_for_leave, se.company_id, se.last_synced_at
             FROM sincron_employees se
             WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
             ORDER BY se.company_name
