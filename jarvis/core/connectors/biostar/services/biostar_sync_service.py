@@ -684,6 +684,8 @@ class BioStarSyncService:
         target_span = target_worked + int(lunch_break_minutes)
 
         start_offset = random.randint(-5, 5)
+        if isinstance(first_punch, str):
+            first_punch = datetime.fromisoformat(first_punch)
         date_part = first_punch.date()
         adj_start = datetime.combine(date_part, schedule_start) + timedelta(minutes=start_offset)
         adj_end = adj_start + timedelta(minutes=target_span)
