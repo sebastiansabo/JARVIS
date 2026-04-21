@@ -93,8 +93,8 @@ export function CourseOverviewTab({ course }: { course: Course }) {
           <div className="space-y-2.5 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Status</span>
-              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${courseStatusColors[course.status] ?? ''}`}>
-                {course.status.replace('_', ' ')}
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${courseStatusColors[course.status ?? 'draft'] ?? ''}`}>
+                {(course.status ?? 'draft').replace('_', ' ')}
               </span>
             </div>
 

@@ -36,7 +36,8 @@ function formatDate(d: string | null) {
   return new Date(d).toLocaleDateString('ro-RO')
 }
 
-function statusBadge(status: CourseStatus) {
+function statusBadge(status: CourseStatus | null | undefined) {
+  if (!status) return <Badge className="bg-gray-100 text-gray-600 border-0">Draft</Badge>
   const map: Record<CourseStatus, string> = {
     draft: 'bg-gray-100 text-gray-600',
     pending_approval: 'bg-yellow-100 text-yellow-700',

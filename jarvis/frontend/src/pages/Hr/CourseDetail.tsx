@@ -120,8 +120,8 @@ export default function CourseDetail() {
         ]}
         description={
           <div className="flex flex-col gap-1 md:flex-row md:flex-wrap md:items-center md:gap-x-2 md:gap-y-0">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium w-fit ${courseStatusColors[course.status] ?? ''}`}>
-              {course.status.replace(/_/g, ' ')}
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium w-fit ${courseStatusColors[course.status ?? 'draft'] ?? ''}`}>
+              {(course.status ?? 'draft').replace(/_/g, ' ')}
             </span>
             <span className="text-sm text-muted-foreground">
               {course.course_type_name ?? ''}
