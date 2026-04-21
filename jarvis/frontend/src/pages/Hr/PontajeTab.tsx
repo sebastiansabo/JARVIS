@@ -1194,11 +1194,19 @@ function DayRow({
       )} />
       <span className="w-28 shrink-0 capitalize text-muted-foreground">
         {day.dayLabel}
-        {d?.sincron_company && (
+        {d?.sincron_day_schedule && d.sincron_day_schedule.length > 0 ? (
+          <span className="block text-[10px] text-muted-foreground/60 normal-case leading-tight">
+            {d.sincron_day_schedule.map((s, i) => (
+              <span key={i} className="block truncate" title={`${s.company} ${s.start}–${s.end}`}>
+                {s.company} {s.start}–{s.end}
+              </span>
+            ))}
+          </span>
+        ) : d?.sincron_company ? (
           <span className="block text-[10px] text-muted-foreground/60 normal-case" title={d.sincron_company}>
             {d.sincron_company}
           </span>
-        )}
+        ) : null}
       </span>
 
       {day.isWeekend || day.isHoliday || isFuture || leaveCode ? (

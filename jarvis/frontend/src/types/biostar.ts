@@ -115,6 +115,7 @@ export interface BioStarDayHistory {
   schedule_start?: string | null
   schedule_end?: string | null
   sincron_company?: string | null
+  sincron_day_schedule?: { company: string; start: string; end: string }[] | null
   // Adjustment data (null if not adjusted)
   adjusted_first_punch?: string | null
   adjusted_last_punch?: string | null
