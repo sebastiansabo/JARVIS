@@ -763,3 +763,35 @@ def get_employee_by_jarvis_user(user_id):
         employee['schedule_end'] = str(employee['schedule_end'])
 
     return jsonify({'success': True, 'data': employee})
+
+
+# ── Admin: manual digest triggers ───────────────────────────────
+
+@biostar_bp.route('/api/trigger-daily-digest', methods=['POST'])
+@api_login_required
+def api_trigger_daily_digest():
+    """Manually trigger the daily pontaje digest (admin only)."""
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'error': 'Admin required'}), 403
+    try:
+        from tasks.hr_attendance import send_pontaje_digest
+        send_pontaje_digest()
+        return jsonify({'success': True, 'message': 'Daily pontaje digest triggered'})
+    except Exception as e:
+        logger.error(f"Manual daily digest trigger failed: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@biostar_bp.route('/api/trigger-monthly-digest', methods=['POST'])
+@api_login_required
+def api_trigger_monthly_digest():
+    """Manually trigger the monthly pontaje summary (admin only)."""
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'error': 'Admin required'}), 403
+    try:
+        from tasks.hr_attendance import send_monthly_pontaje_summary
+        send_monthly_pontaje_summary()
+        return jsonify({'success': True, 'message': 'Monthly pontaje summary triggered'})
+    except Exception as e:
+        logger.error(f"Manual monthly digest trigger failed: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
