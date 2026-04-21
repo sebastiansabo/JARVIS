@@ -537,7 +537,7 @@ def auto_adjust_single():
 @api_login_required
 def get_employee_sincron_schedule(biostar_user_id):
     """Get Sincron contract schedule data for a BioStar employee."""
-    employee = service.repo.get_employee(biostar_user_id)
+    employee = service.repo.get_employee_by_biostar_id(biostar_user_id)
     if not employee or not employee.get('mapped_jarvis_user_id'):
         return jsonify({'success': True, 'contracts': []})
 
@@ -564,7 +564,7 @@ def get_employee_sincron_schedule(biostar_user_id):
 @api_login_required
 def get_employee_sincron_timesheet(biostar_user_id):
     """Get Sincron monthly timesheet + contracts for a BioStar employee."""
-    employee = service.repo.get_employee(biostar_user_id)
+    employee = service.repo.get_employee_by_biostar_id(biostar_user_id)
     if not employee or not employee.get('mapped_jarvis_user_id'):
         return jsonify({'success': True, 'contracts': [], 'timesheet': []})
 
