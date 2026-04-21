@@ -240,6 +240,7 @@ export interface AttendanceRow {
   adjusted_last_punch: string | null
   adjustment_type: string | null
   attendance_status: 'present' | 'absent'
+  sincron_day_schedule?: { company: string; start: string; end: string }[] | null
 }
 
 export interface AttendanceWeekRow {

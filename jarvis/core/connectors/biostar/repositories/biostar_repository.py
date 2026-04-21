@@ -645,13 +645,13 @@ class BioStarRepository(BaseRepository):
         Unlike get_daily_summary which only shows employees with punches,
         this returns every active employee with NULL punch fields for absentees.
         """
-        params = [date_str]
+        params = []
         user_filter = ''
         if jarvis_user_ids:
             user_filter = ' AND u.id = ANY(%s)'
             params.append(jarvis_user_ids)
-        # date_str used again for punch_summary and adjustment JOINs
-        params.append(date_str)
+        # date_str for deduped, adjustment JOIN, and sincron LATERAL
+        params.extend([date_str, date_str, date_str])
         return self.query_all(f'''
             WITH active_employees AS (
                 SELECT DISTINCT ON (u.id)
@@ -685,11 +685,33 @@ class BioStarRepository(BaseRepository):
             SELECT ae.*,
                    ps.first_punch, ps.last_punch, ps.total_punches, ps.duration_seconds,
                    adj.adjusted_first_punch, adj.adjusted_last_punch, adj.adjustment_type,
-                   CASE WHEN ps.biostar_user_id IS NULL THEN 'absent' ELSE 'present' END AS attendance_status
+                   CASE WHEN ps.biostar_user_id IS NULL THEN 'absent' ELSE 'present' END AS attendance_status,
+                   sd.sincron_day_schedule
             FROM active_employees ae
             LEFT JOIN punch_summary ps ON ps.biostar_user_id = ae.biostar_user_id
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = ae.biostar_user_id AND adj.date = %s::date
+            LEFT JOIN LATERAL (
+                SELECT (SELECT json_agg(sub ORDER BY sub.norma DESC NULLS LAST)
+                        FROM (
+                            SELECT COALESCE(co2.company, se2.company_name) AS company,
+                                   to_char(st2.program_in, 'HH24:MI') AS start,
+                                   to_char(st2.program_out, 'HH24:MI') AS "end",
+                                   se2.norma_lucru AS norma
+                            FROM sincron_employees se2
+                            JOIN sincron_timesheets st2
+                              ON st2.sincron_employee_id = se2.sincron_employee_id
+                              AND st2.company_name = se2.company_name
+                              AND st2.day = %s::date
+                              AND st2.short_code IN ('OZ', 'OS')
+                              AND st2.program_in IS NOT NULL
+                              AND st2.program_out IS NOT NULL
+                            LEFT JOIN companies co2 ON co2.id = se2.company_id
+                            WHERE se2.mapped_jarvis_user_id = ae.jarvis_user_id
+                              AND se2.is_active = TRUE
+                        ) sub
+                       ) AS sincron_day_schedule
+            ) sd ON TRUE
             ORDER BY ae.company NULLS LAST,
                      CASE WHEN ps.biostar_user_id IS NULL THEN 1 ELSE 0 END,
                      ae.name
