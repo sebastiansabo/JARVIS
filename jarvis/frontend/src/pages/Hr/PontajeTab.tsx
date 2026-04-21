@@ -154,6 +154,24 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
   // ── Adjustments ──
 
   const [adjusting, setAdjusting] = useState(false)
+  const [lastAdjustRange, setLastAdjustRange] = useState<{ start: string; end: string } | null>(null)
+  const [undoing, setUndoing] = useState(false)
+
+  const undoLastAdjust = useCallback(async () => {
+    if (!lastAdjustRange) return
+    setUndoing(true)
+    const toastId = toast.loading('Undoing auto-adjust…')
+    try {
+      await biostarApi.revertAdjustmentsRange(lastAdjustRange.start, lastAdjustRange.end)
+      toast.success('Auto-adjustments reverted', { id: toastId })
+      setLastAdjustRange(null)
+      queryClient.invalidateQueries({ queryKey: ['biostar'] })
+    } catch {
+      toast.error('Undo failed', { id: toastId })
+    } finally {
+      setUndoing(false)
+    }
+  }, [lastAdjustRange, queryClient])
 
   const autoAdjustRange = useCallback(async (mode: 'day' | 'week' | 'month' | 'quarter' | 'year') => {
     setAdjusting(true)
@@ -213,6 +231,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       }
 
       toast.success(`Auto-adjusted ${totalAdj} of ${totalFlagged} across ${days.length} days`, { id: toastId })
+      setLastAdjustRange({ start: days[0], end: days[days.length - 1] })
       queryClient.invalidateQueries({ queryKey: ['biostar'] })
     } catch {
       toast.error('Auto-adjust failed', { id: toastId })
@@ -586,6 +605,19 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                     <DropdownMenuItem onClick={() => autoAdjustRange('year')}>Current Year</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                {lastAdjustRange && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs text-orange-500 border-orange-500/40 hover:bg-orange-500/10"
+                    onClick={undoLastAdjust}
+                    disabled={undoing}
+                    title={`Undo: ${lastAdjustRange.start} → ${lastAdjustRange.end}`}
+                  >
+                    <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                    Undo
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"

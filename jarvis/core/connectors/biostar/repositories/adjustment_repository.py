@@ -186,6 +186,19 @@ class AdjustmentRepository(BaseRepository):
             WHERE biostar_user_id = %s AND date = %s::date
         ''', (biostar_user_id, date_str))
 
+    def delete_adjustments_range(self, start_date, end_date, adjustment_type=None):
+        """Delete all adjustments in a date range. Optionally filter by type."""
+        if adjustment_type:
+            return self.execute('''
+                DELETE FROM biostar_daily_adjustments
+                WHERE date BETWEEN %s::date AND %s::date
+                  AND adjustment_type = %s
+            ''', (start_date, end_date, adjustment_type))
+        return self.execute('''
+            DELETE FROM biostar_daily_adjustments
+            WHERE date BETWEEN %s::date AND %s::date
+        ''', (start_date, end_date))
+
     def get_employee_history(self, biostar_user_id, start_date=None, end_date=None):
         """Get adjustment history for one employee (audit trail)."""
         conditions = ['adj.biostar_user_id = %s']

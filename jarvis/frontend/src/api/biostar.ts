@@ -277,6 +277,11 @@ export const biostarApi = {
       biostar_user_id: biostarUserId, date,
     }),
 
+  revertAdjustmentsRange: (startDate: string, endDate: string) =>
+    api.post<{ success: boolean; message: string }>(`${BASE}/adjustments/revert-range`, {
+      start_date: startDate, end_date: endDate,
+    }),
+
   backfillAdjustments: (threshold = 15) =>
     api.post<{ success: boolean; data: { dates_processed: number; total_adjusted: number } }>(
       `${BASE}/adjustments/backfill`,

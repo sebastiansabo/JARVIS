@@ -629,6 +629,19 @@ def revert_adjustment():
     return jsonify({'success': True, 'message': 'Adjustment reverted'})
 
 
+@biostar_bp.route('/api/adjustments/revert-range', methods=['POST'])
+@adjust_permission_required
+def revert_adjustments_range():
+    """Revert all auto-adjustments in a date range."""
+    data = request.get_json() or {}
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    if not start_date or not end_date:
+        return jsonify({'success': False, 'error': 'start_date and end_date required'}), 400
+    service.revert_adjustments_range(start_date, end_date)
+    return jsonify({'success': True, 'message': f'Reverted auto-adjustments from {start_date} to {end_date}'})
+
+
 @biostar_bp.route('/api/adjustments/backfill', methods=['POST'])
 @adjust_permission_required
 def backfill_adjustments():

@@ -927,3 +927,7 @@ class BioStarSyncService:
     def revert_adjustment(self, biostar_user_id, date_str):
         """Revert an adjustment (delete it, back to original punches)."""
         return self.adj_repo.delete_adjustment(biostar_user_id, date_str)
+
+    def revert_adjustments_range(self, start_date, end_date):
+        """Revert all auto-adjustments in a date range."""
+        return self.adj_repo.delete_adjustments_range(start_date, end_date, adjustment_type='auto')
