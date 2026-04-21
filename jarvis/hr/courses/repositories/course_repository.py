@@ -7,7 +7,8 @@ class CourseRepository(BaseRepository):
     """Repository for HR course data access."""
 
     def get_all(self, company_id=None, course_type_id=None, status=None,
-                search=None, limit=200, offset=0) -> List[Dict[str, Any]]:
+                search=None, year=None, month=None, include_deleted=False,
+                limit=200, offset=0) -> List[Dict[str, Any]]:
         """Get courses with optional filters."""
         query = '''
             SELECT c.*, ct.code as course_type_code, ct.name as course_type_name,
@@ -25,6 +26,11 @@ class CourseRepository(BaseRepository):
         '''
         params = []
 
+        if include_deleted:
+            query += ' AND c.deleted_at IS NOT NULL'
+        else:
+            query += ' AND c.deleted_at IS NULL'
+
         if company_id:
             query += ' AND c.company_id = %s'
             params.append(company_id)
@@ -34,6 +40,12 @@ class CourseRepository(BaseRepository):
         if status:
             query += ' AND c.status = %s'
             params.append(status)
+        if year:
+            query += ' AND EXTRACT(YEAR FROM c.start_date) = %s'
+            params.append(year)
+        if month:
+            query += ' AND EXTRACT(MONTH FROM c.start_date) = %s'
+            params.append(month)
         if search:
             query += ' AND (c.name ILIKE %s OR ct.name ILIKE %s OR s.name ILIKE %s)'
             like = f'%{search}%'
@@ -44,7 +56,8 @@ class CourseRepository(BaseRepository):
 
         return self.query_all(query, params)
 
-    def get_count(self, company_id=None, course_type_id=None, status=None, search=None) -> int:
+    def get_count(self, company_id=None, course_type_id=None, status=None,
+                  search=None, year=None, month=None, include_deleted=False) -> int:
         """Get total count with same filters."""
         query = '''
             SELECT COUNT(*) as cnt
@@ -54,6 +67,10 @@ class CourseRepository(BaseRepository):
             WHERE 1=1
         '''
         params = []
+        if include_deleted:
+            query += ' AND c.deleted_at IS NOT NULL'
+        else:
+            query += ' AND c.deleted_at IS NULL'
         if company_id:
             query += ' AND c.company_id = %s'
             params.append(company_id)
@@ -63,12 +80,27 @@ class CourseRepository(BaseRepository):
         if status:
             query += ' AND c.status = %s'
             params.append(status)
+        if year:
+            query += ' AND EXTRACT(YEAR FROM c.start_date) = %s'
+            params.append(year)
+        if month:
+            query += ' AND EXTRACT(MONTH FROM c.start_date) = %s'
+            params.append(month)
         if search:
             query += ' AND (c.name ILIKE %s OR ct.name ILIKE %s OR s.name ILIKE %s)'
             like = f'%{search}%'
             params.extend([like, like, like])
         result = self.query_one(query, params)
         return result['cnt'] if result else 0
+
+    def get_available_years(self) -> List[int]:
+        """Get distinct years from course start dates."""
+        rows = self.query_all('''
+            SELECT DISTINCT EXTRACT(YEAR FROM start_date)::int as year
+            FROM hr.courses WHERE deleted_at IS NULL
+            ORDER BY year DESC
+        ''')
+        return [r['year'] for r in rows]
 
     def get_by_id(self, course_id: int) -> Optional[Dict[str, Any]]:
         """Get a single course by ID with all joins."""
@@ -127,9 +159,38 @@ class CourseRepository(BaseRepository):
         return True
 
     def delete(self, course_id: int) -> bool:
-        """Delete a course (cascades to enrollments)."""
-        self.execute('DELETE FROM hr.courses WHERE id = %s', (course_id,))
-        return True
+        """Soft delete a course (move to bin)."""
+        return self.execute(
+            'UPDATE hr.courses SET deleted_at = CURRENT_TIMESTAMP WHERE id = %s AND deleted_at IS NULL',
+            (course_id,)) > 0
+
+    def restore(self, course_id: int) -> bool:
+        """Restore a soft-deleted course from the bin."""
+        return self.execute(
+            'UPDATE hr.courses SET deleted_at = NULL WHERE id = %s AND deleted_at IS NOT NULL',
+            (course_id,)) > 0
+
+    def permanently_delete(self, course_id: int) -> bool:
+        """Permanently delete a course and its enrollments."""
+        return self.execute('DELETE FROM hr.courses WHERE id = %s', (course_id,)) > 0
+
+    def bulk_soft_delete(self, course_ids: List[int]) -> int:
+        """Soft delete multiple courses. Returns count deleted."""
+        if not course_ids:
+            return 0
+        placeholders = ','.join(['%s'] * len(course_ids))
+        return self.execute(
+            f'UPDATE hr.courses SET deleted_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders}) AND deleted_at IS NULL',
+            course_ids)
+
+    def bulk_restore(self, course_ids: List[int]) -> int:
+        """Restore multiple soft-deleted courses. Returns count restored."""
+        if not course_ids:
+            return 0
+        placeholders = ','.join(['%s'] * len(course_ids))
+        return self.execute(
+            f'UPDATE hr.courses SET deleted_at = NULL WHERE id IN ({placeholders}) AND deleted_at IS NOT NULL',
+            course_ids)
 
     def get_all_types(self, active_only=True) -> List[Dict[str, Any]]:
         """Get all course types."""

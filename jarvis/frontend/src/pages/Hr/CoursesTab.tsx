@@ -1,23 +1,30 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Pencil, GraduationCap } from 'lucide-react'
+import { Plus, Trash2, Pencil, GraduationCap, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { QueryError } from '@/components/QueryError'
 import { coursesApi } from '@/api/courses'
 import { toast } from 'sonner'
-import type { CourseStatus } from '@/types/courses'
+import type { Course, CourseStatus } from '@/types/courses'
 
 interface Props {
   search: string
 }
+
+const MONTHS = [
+  'Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie',
+  'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie',
+]
 
 function formatDate(d: string | null) {
   if (!d) return '—'
@@ -44,6 +51,28 @@ function statusBadge(status: CourseStatus) {
   return <Badge className={`${map[status]} border-0`}>{labels[status]}</Badge>
 }
 
+// Column definitions for ColumnToggle
+const columnDefs: ColumnDef<Course>[] = [
+  { key: 'name', label: 'Name', render: (c) => <span className="font-medium">{c.name}</span> },
+  { key: 'type', label: 'Type', render: (c) => <span className="text-muted-foreground">{c.course_type_name ?? '—'}</span> },
+  { key: 'company', label: 'Company', render: (c) => <span className="text-muted-foreground">{c.company_name ?? '—'}</span> },
+  { key: 'dates', label: 'Dates', className: 'whitespace-nowrap', render: (c) => <>{formatDate(c.start_date)} — {formatDate(c.end_date)}</> },
+  { key: 'trainer', label: 'Trainer / Supplier', render: (c) => <span className="text-muted-foreground">{c.trainer_name || c.supplier_name || '—'}</span> },
+  { key: 'participants', label: 'Participants', className: 'text-center', render: (c) => <Badge variant="secondary" className="text-xs">{c.enrollment_count}</Badge> },
+  { key: 'validity', label: 'Validity', className: 'text-center', render: (c) => {
+    if (!c.default_validity_months) return <span className="text-muted-foreground">—</span>
+    return <Badge variant="outline" className="text-xs">{c.default_validity_months} mo</Badge>
+  }},
+  { key: 'budget', label: 'Budget', className: 'text-right tabular-nums whitespace-nowrap', render: (c) =>
+    c.budget ? `${Number(c.budget).toLocaleString()} ${c.currency}` : '—'
+  },
+  { key: 'status', label: 'Status', render: (c) => statusBadge(c.status) },
+]
+
+const ALL_COLUMN_KEYS = columnDefs.map((c) => c.key)
+const DEFAULT_COLUMNS = ['name', 'type', 'company', 'dates', 'trainer', 'participants', 'budget', 'status']
+const LOCKED_COLUMNS = new Set(['name'])
+
 export default function CoursesTab({ search }: Props) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -51,9 +80,31 @@ export default function CoursesTab({ search }: Props) {
   // Filters
   const [typeFilter, setTypeFilter] = useState<number | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('')
+  const [yearFilter, setYearFilter] = useState<number | null>(null)
+  const [monthFilter, setMonthFilter] = useState<number | null>(null)
+  const [showDeleted, setShowDeleted] = useState(false)
+
+  // Selection
+  const [selected, setSelected] = useState<Set<number>>(new Set())
 
   // Delete state
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+
+  // Column management
+  const { visibleColumns, setVisibleColumns, defaultColumns } = useColumnState(
+    'hr-courses-columns',
+    DEFAULT_COLUMNS,
+    ALL_COLUMN_KEYS,
+    'hr_courses',
+  )
+
+  // Available years for filter
+  const { data: availableYears = [] } = useQuery({
+    queryKey: ['course-years'],
+    queryFn: () => coursesApi.getAvailableYears(),
+    staleTime: 5 * 60_000,
+  })
 
   // Course types for filter dropdown
   const { data: courseTypes = [] } = useQuery({
@@ -64,22 +115,54 @@ export default function CoursesTab({ search }: Props) {
 
   // Courses list
   const { data, isLoading, error } = useQuery({
-    queryKey: ['courses', typeFilter, statusFilter],
+    queryKey: ['courses', typeFilter, statusFilter, yearFilter, monthFilter, showDeleted],
     queryFn: () =>
       coursesApi.getCourses({
         course_type_id: typeFilter || undefined,
         status: statusFilter || undefined,
+        year: yearFilter || undefined,
+        month: monthFilter || undefined,
+        include_deleted: showDeleted || undefined,
       }),
   })
 
-  // Delete mutation
+  // Mutations
   const deleteMutation = useMutation({
     mutationFn: (id: number) => coursesApi.deleteCourse(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['courses'] })
-      toast.success('Course deleted')
+      toast.success('Course moved to bin')
     },
     onError: () => toast.error('Failed to delete course'),
+  })
+
+  const restoreMutation = useMutation({
+    mutationFn: (id: number) => coursesApi.restoreCourse(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['courses'] })
+      toast.success('Course restored')
+    },
+    onError: () => toast.error('Failed to restore course'),
+  })
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: number[]) => coursesApi.bulkDeleteCourses(ids),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['courses'] })
+      setSelected(new Set())
+      toast.success(`${res.deleted} course(s) moved to bin`)
+    },
+    onError: () => toast.error('Failed to delete courses'),
+  })
+
+  const bulkRestoreMutation = useMutation({
+    mutationFn: (ids: number[]) => coursesApi.bulkRestoreCourses(ids),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['courses'] })
+      setSelected(new Set())
+      toast.success(`${res.restored} course(s) restored`)
+    },
+    onError: () => toast.error('Failed to restore courses'),
   })
 
   // Filter with search prop
@@ -95,6 +178,28 @@ export default function CoursesTab({ search }: Props) {
         (c.trainer_name ?? '').toLowerCase().includes(q),
     )
   }, [data, search])
+
+  const allSelected = filtered.length > 0 && filtered.every((c) => selected.has(c.id))
+
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(filtered.map((c) => c.id)))
+    }
+  }
+
+  const toggleOne = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // Visible column defs for rendering
+  const activeColumns = columnDefs.filter((c) => visibleColumns.includes(c.key))
 
   if (error) return <QueryError message="Failed to load courses" />
 
@@ -139,10 +244,91 @@ export default function CoursesTab({ search }: Props) {
           </SelectContent>
         </Select>
 
-        <div className="ml-auto">
-          <Button size="sm" onClick={() => navigate('/app/hr/courses/add')}>
-            <Plus className="mr-1.5 h-4 w-4" /> Add Course
-          </Button>
+        {/* Year filter */}
+        <Select
+          value={yearFilter ? String(yearFilter) : 'all'}
+          onValueChange={(v) => { setYearFilter(v === 'all' ? null : Number(v)); if (v === 'all') setMonthFilter(null) }}
+        >
+          <SelectTrigger className="h-8 w-[110px] text-xs">
+            <SelectValue placeholder="All years" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All years</SelectItem>
+            {availableYears.map((y) => (
+              <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Month filter (only when year selected) */}
+        {yearFilter && (
+          <Select
+            value={monthFilter ? String(monthFilter) : 'all'}
+            onValueChange={(v) => setMonthFilter(v === 'all' ? null : Number(v))}
+          >
+            <SelectTrigger className="h-8 w-[130px] text-xs">
+              <SelectValue placeholder="All months" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All months</SelectItem>
+              {MONTHS.map((m, i) => (
+                <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {/* Deleted toggle */}
+        <Button
+          size="sm"
+          variant={showDeleted ? 'secondary' : 'ghost'}
+          className="h-8 text-xs"
+          onClick={() => { setShowDeleted(!showDeleted); setSelected(new Set()) }}
+        >
+          <Trash2 className="mr-1 h-3.5 w-3.5" />
+          {showDeleted ? 'Showing Bin' : 'Bin'}
+        </Button>
+
+        <div className="ml-auto flex items-center gap-2">
+          {/* Bulk actions */}
+          {selected.size > 0 && (
+            <>
+              {showDeleted ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs"
+                  onClick={() => bulkRestoreMutation.mutate(Array.from(selected))}
+                >
+                  <RotateCcw className="mr-1 h-3.5 w-3.5" /> Restore ({selected.size})
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="h-8 text-xs"
+                  onClick={() => setBulkDeleteOpen(true)}
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete ({selected.size})
+                </Button>
+              )}
+            </>
+          )}
+
+          {/* Column toggle */}
+          <ColumnToggle
+            visibleColumns={visibleColumns}
+            defaultColumns={defaultColumns}
+            columnDefs={columnDefs}
+            lockedColumns={LOCKED_COLUMNS}
+            onChange={setVisibleColumns}
+          />
+
+          {!showDeleted && (
+            <Button size="sm" onClick={() => navigate('/app/hr/courses/add')}>
+              <Plus className="mr-1.5 h-4 w-4" /> Add Course
+            </Button>
+          )}
         </div>
       </div>
 
@@ -157,22 +343,23 @@ export default function CoursesTab({ search }: Props) {
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<GraduationCap className="h-8 w-8" />}
-            title="No courses found"
-            description="Create your first course."
+            title={showDeleted ? 'Bin is empty' : 'No courses found'}
+            description={showDeleted ? 'No deleted courses.' : 'Create your first course.'}
           />
         ) : (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Dates</TableHead>
-                  <TableHead>Trainer / Supplier</TableHead>
-                  <TableHead className="text-center">Participants</TableHead>
-                  <TableHead className="text-right">Budget</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={allSelected}
+                      onCheckedChange={toggleAll}
+                    />
+                  </TableHead>
+                  {activeColumns.map((col) => (
+                    <TableHead key={col.key} className={col.className}>{col.label}</TableHead>
+                  ))}
                   <TableHead className="w-20">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -181,50 +368,51 @@ export default function CoursesTab({ search }: Props) {
                   <TableRow
                     key={c.id}
                     className="cursor-pointer"
-                    onClick={() => navigate(`/app/hr/courses/${c.id}/edit`)}
+                    onClick={() => !showDeleted && navigate(`/app/hr/courses/${c.id}/edit`)}
                   >
-                    <TableCell className="text-sm font-medium">{c.name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {c.course_type_name ?? '—'}
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selected.has(c.id)}
+                        onCheckedChange={() => toggleOne(c.id)}
+                      />
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {c.company_name ?? '—'}
-                    </TableCell>
-                    <TableCell className="text-sm whitespace-nowrap">
-                      {formatDate(c.start_date)} — {formatDate(c.end_date)}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {c.trainer_name || c.supplier_name || '—'}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="secondary" className="text-xs">
-                        {c.enrollment_count}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-right tabular-nums whitespace-nowrap">
-                      {c.budget
-                        ? `${Number(c.budget).toLocaleString()} ${c.currency}`
-                        : '—'}
-                    </TableCell>
-                    <TableCell>{statusBadge(c.status)}</TableCell>
+                    {activeColumns.map((col) => (
+                      <TableCell key={col.key} className={`text-sm ${col.className ?? ''}`}>
+                        {col.render(c)}
+                      </TableCell>
+                    ))}
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => navigate(`/app/hr/courses/${c.id}/edit`)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive"
-                          onClick={() => setDeleteId(c.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {showDeleted ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => restoreMutation.mutate(c.id)}
+                            title="Restore"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => navigate(`/app/hr/courses/${c.id}/edit`)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive"
+                              onClick={() => setDeleteId(c.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -235,17 +423,28 @@ export default function CoursesTab({ search }: Props) {
         )}
       </Card>
 
-      {/* Delete confirm dialog */}
+      {/* Delete confirm dialog (single) */}
       <ConfirmDialog
         open={deleteId !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeleteId(null)
-        }}
+        onOpenChange={(open) => { if (!open) setDeleteId(null) }}
         title="Delete Course"
-        description="This will permanently delete this course and all enrollments."
+        description="This course will be moved to the bin. You can restore it later."
         onConfirm={() => {
           if (deleteId) deleteMutation.mutate(deleteId)
           setDeleteId(null)
+        }}
+        destructive
+      />
+
+      {/* Bulk delete confirm dialog */}
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title={`Delete ${selected.size} Course(s)`}
+        description="These courses will be moved to the bin. You can restore them later."
+        onConfirm={() => {
+          bulkDeleteMutation.mutate(Array.from(selected))
+          setBulkDeleteOpen(false)
         }}
         destructive
       />

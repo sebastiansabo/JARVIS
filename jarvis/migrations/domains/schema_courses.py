@@ -42,7 +42,8 @@ def create_schema_courses(conn, cursor):
             approval_request_id INTEGER,
             created_by INTEGER REFERENCES public.users(id) ON DELETE SET NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TIMESTAMP
         )
     ''')
 
@@ -90,6 +91,8 @@ def create_schema_courses(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_courses_type ON hr.courses(course_type_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_courses_status ON hr.courses(status)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_courses_dates ON hr.courses(start_date, end_date)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_courses_deleted ON hr.courses(deleted_at) WHERE deleted_at IS NOT NULL')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_courses_year ON hr.courses(EXTRACT(YEAR FROM start_date))')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_enrollments_course ON hr.course_enrollments(course_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_enrollments_employee ON hr.course_enrollments(employee_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_certs_employee ON hr.course_certifications(employee_id)')
