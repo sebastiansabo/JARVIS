@@ -14,7 +14,7 @@ class CourseRepository(BaseRepository):
                    ct.requires_certification, ct.default_validity_months,
                    s.name as supplier_name,
                    u.name as created_by_name,
-                   comp.name as company_name,
+                   comp.company as company_name,
                    (SELECT COUNT(*) FROM hr.course_enrollments ce WHERE ce.course_id = c.id) as enrollment_count
             FROM hr.courses c
             LEFT JOIN hr.course_types ct ON c.course_type_id = ct.id
@@ -77,7 +77,7 @@ class CourseRepository(BaseRepository):
                    ct.requires_certification, ct.default_validity_months,
                    s.name as supplier_name,
                    u.name as created_by_name,
-                   comp.name as company_name,
+                   comp.company as company_name,
                    (SELECT COUNT(*) FROM hr.course_enrollments ce WHERE ce.course_id = c.id) as enrollment_count
             FROM hr.courses c
             LEFT JOIN hr.course_types ct ON c.course_type_id = ct.id
