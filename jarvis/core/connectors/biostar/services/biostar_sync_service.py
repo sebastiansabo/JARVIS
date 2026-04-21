@@ -773,8 +773,10 @@ class BioStarSyncService:
         punches = self.repo.get_punch_logs(biostar_user_id, f'{date_str} 00:00:00', f'{date_str} 23:59:59')
 
         if punches:
-            first_punch = punches[-1]['event_datetime']
-            last_punch = punches[0]['event_datetime']
+            fp = punches[-1]['event_datetime']
+            lp = punches[0]['event_datetime']
+            first_punch = fp if isinstance(fp, datetime) else datetime.fromisoformat(str(fp))
+            last_punch = lp if isinstance(lp, datetime) else datetime.fromisoformat(str(lp))
             duration = (last_punch - first_punch).total_seconds() if len(punches) > 1 else 0
             deviation_in = round((first_punch - datetime.combine(first_punch.date(), sched_start)).total_seconds() / 60)
             deviation_out = round((last_punch - datetime.combine(last_punch.date(), sched_end)).total_seconds() / 60) if len(punches) > 1 else 0
