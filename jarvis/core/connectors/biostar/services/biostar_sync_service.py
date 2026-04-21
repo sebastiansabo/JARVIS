@@ -732,7 +732,7 @@ class BioStarSyncService:
         """Auto-adjust a single employee for a specific date using Sincron per-day schedule."""
         from datetime import time as _time
 
-        employee = self.repo.get_employee(biostar_user_id)
+        employee = self.repo.get_employee_by_biostar_id(biostar_user_id)
         if not employee:
             return {'success': False, 'error': 'Employee not found'}
 
