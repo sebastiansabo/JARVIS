@@ -153,14 +153,73 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   // ── Adjustments ──
 
-  const autoAdjustMut = useMutation({
-    mutationFn: () => biostarApi.autoAdjustAll(date),
-    onSuccess: (res) => {
-      toast.success(`Auto-adjusted ${res.data.adjusted} of ${res.data.total_flagged} employees`)
-      queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today', date] })
-    },
-    onError: () => toast.error('Auto-adjust failed'),
-  })
+  const [adjusting, setAdjusting] = useState(false)
+
+  const autoAdjustRange = useCallback(async (mode: 'day' | 'week' | 'month' | 'quarter' | 'year') => {
+    setAdjusting(true)
+    const toastId = toast.loading(`Auto-adjusting ${mode}…`)
+    try {
+      const today = todayStr()
+      const ref = new Date(`${date}T12:00:00`)
+      let start: string
+      let end: string
+
+      if (mode === 'day') {
+        start = date
+        end = date
+      } else if (mode === 'week') {
+        const dow = ref.getDay() || 7 // Mon=1 … Sun=7
+        const mon = new Date(ref)
+        mon.setDate(ref.getDate() - dow + 1)
+        start = mon.toISOString().slice(0, 10)
+        const sun = new Date(mon)
+        sun.setDate(mon.getDate() + 6)
+        end = sun.toISOString().slice(0, 10)
+      } else if (mode === 'month') {
+        const y = ref.getFullYear(), m = ref.getMonth()
+        start = `${y}-${String(m + 1).padStart(2, '0')}-01`
+        end = new Date(y, m + 1, 0).toISOString().slice(0, 10)
+      } else if (mode === 'quarter') {
+        const y = ref.getFullYear(), q = Math.floor(ref.getMonth() / 3)
+        start = `${y}-${String(q * 3 + 1).padStart(2, '0')}-01`
+        end = new Date(y, q * 3 + 3, 0).toISOString().slice(0, 10)
+      } else {
+        start = `${ref.getFullYear()}-01-01`
+        end = `${ref.getFullYear()}-12-31`
+      }
+
+      // Collect working days in range up to today
+      const days: string[] = []
+      for (let d = new Date(`${start}T12:00:00`); d.toISOString().slice(0, 10) <= end; d.setDate(d.getDate() + 1)) {
+        const dow = d.getDay()
+        if (dow === 0 || dow === 6) continue
+        const ds = d.toISOString().slice(0, 10)
+        if (ds > today) continue
+        days.push(ds)
+      }
+
+      if (!days.length) {
+        toast.error('No working days in range', { id: toastId })
+        return
+      }
+
+      let totalAdj = 0, totalFlagged = 0
+      for (const ds of days) {
+        try {
+          const res = await biostarApi.autoAdjustAll(ds)
+          totalAdj += res.data.adjusted
+          totalFlagged += res.data.total_flagged
+        } catch { /* skip failed days */ }
+      }
+
+      toast.success(`Auto-adjusted ${totalAdj} of ${totalFlagged} across ${days.length} days`, { id: toastId })
+      queryClient.invalidateQueries({ queryKey: ['biostar'] })
+    } catch {
+      toast.error('Auto-adjust failed', { id: toastId })
+    } finally {
+      setAdjusting(false)
+    }
+  }, [date, queryClient])
 
   const backfillMut = useMutation({
     mutationFn: () => biostarApi.backfillAdjustments(),
@@ -512,16 +571,21 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             {/* Adjustment buttons */}
             {canAdjust && (
               <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => autoAdjustMut.mutate()}
-                  disabled={autoAdjustMut.isPending}
-                >
-                  <Wand2 className="mr-1 h-3.5 w-3.5" />
-                  Auto-adjust
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-8 text-xs" disabled={adjusting}>
+                      <Wand2 className="mr-1 h-3.5 w-3.5" />
+                      Auto-adjust
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => autoAdjustRange('day')}>Current Day</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => autoAdjustRange('week')}>Current Week</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => autoAdjustRange('month')}>Current Month</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => autoAdjustRange('quarter')}>Current Quarter</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => autoAdjustRange('year')}>Current Year</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button
                   variant="outline"
                   size="sm"
