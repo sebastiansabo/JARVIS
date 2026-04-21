@@ -781,8 +781,9 @@ def api_trigger_daily_digest():
     if not _check_admin_token():
         return jsonify({'success': False, 'error': 'Invalid token'}), 403
     try:
-        from tasks.hr_attendance import send_pontaje_digest
-        send_pontaje_digest()
+        import importlib
+        mod = importlib.import_module('tasks.hr_attendance')
+        mod.send_pontaje_digest()
         return jsonify({'success': True, 'message': 'Daily pontaje digest triggered'})
     except Exception as e:
         logger.error(f"Manual daily digest trigger failed: {e}", exc_info=True)
@@ -795,8 +796,9 @@ def api_trigger_monthly_digest():
     if not _check_admin_token():
         return jsonify({'success': False, 'error': 'Invalid token'}), 403
     try:
-        from tasks.hr_attendance import send_monthly_pontaje_summary
-        send_monthly_pontaje_summary()
+        import importlib
+        mod = importlib.import_module('tasks.hr_attendance')
+        mod.send_monthly_pontaje_summary()
         return jsonify({'success': True, 'message': 'Monthly pontaje summary triggered'})
     except Exception as e:
         logger.error(f"Manual monthly digest trigger failed: {e}", exc_info=True)
