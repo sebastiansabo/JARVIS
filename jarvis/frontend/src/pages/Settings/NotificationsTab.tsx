@@ -40,12 +40,21 @@ export default function NotificationsTab() {
     smart_efactura_backlog_threshold: '50',
     smart_alert_cooldown_hours: '24',
     smart_invoice_anomaly_sigma: '2',
-    // Daily digest
-    daily_digest_enabled: false,
-    daily_digest_recipients: 'admins',
+    // Commit digest
+    commit_digest_daily_enabled: true,
+    commit_digest_daily_recipients: '',
+    commit_digest_weekly_enabled: true,
+    commit_digest_weekly_recipients: '',
+    commit_digest_monthly_enabled: true,
+    commit_digest_monthly_recipients: '',
     // Pontaje digest
     pontaje_digest_enabled: false,
-    pontaje_digest_recipients: '',
+    pontaje_digest_daily_enabled: true,
+    pontaje_digest_daily_recipients: '',
+    pontaje_digest_daily_time: '10:30',
+    pontaje_digest_monthly_enabled: true,
+    pontaje_digest_monthly_recipients: '',
+    pontaje_digest_monthly_day: '1',
   })
 
   const [testEmail, setTestEmail] = useState('')
@@ -70,10 +79,19 @@ export default function NotificationsTab() {
         smart_efactura_backlog_threshold: settings.smart_efactura_backlog_threshold || '50',
         smart_alert_cooldown_hours: settings.smart_alert_cooldown_hours || '24',
         smart_invoice_anomaly_sigma: settings.smart_invoice_anomaly_sigma || '2',
-        daily_digest_enabled: String(settings.daily_digest_enabled) === 'true',
-        daily_digest_recipients: settings.daily_digest_recipients || 'admins',
+        commit_digest_daily_enabled: String(settings.commit_digest_daily_enabled ?? 'true') === 'true',
+        commit_digest_daily_recipients: settings.commit_digest_daily_recipients || '',
+        commit_digest_weekly_enabled: String(settings.commit_digest_weekly_enabled ?? 'true') === 'true',
+        commit_digest_weekly_recipients: settings.commit_digest_weekly_recipients || '',
+        commit_digest_monthly_enabled: String(settings.commit_digest_monthly_enabled ?? 'true') === 'true',
+        commit_digest_monthly_recipients: settings.commit_digest_monthly_recipients || '',
         pontaje_digest_enabled: String(settings.pontaje_digest_enabled) === 'true',
-        pontaje_digest_recipients: settings.pontaje_digest_recipients || '',
+        pontaje_digest_daily_enabled: String(settings.pontaje_digest_daily_enabled ?? 'true') === 'true',
+        pontaje_digest_daily_recipients: settings.pontaje_digest_daily_recipients || '',
+        pontaje_digest_daily_time: settings.pontaje_digest_daily_time || '10:30',
+        pontaje_digest_monthly_enabled: String(settings.pontaje_digest_monthly_enabled ?? 'true') === 'true',
+        pontaje_digest_monthly_recipients: settings.pontaje_digest_monthly_recipients || '',
+        pontaje_digest_monthly_day: settings.pontaje_digest_monthly_day || '1',
       })
     }
   }, [settings])
@@ -112,10 +130,19 @@ export default function NotificationsTab() {
       smart_efactura_backlog_threshold: form.smart_efactura_backlog_threshold,
       smart_alert_cooldown_hours: form.smart_alert_cooldown_hours,
       smart_invoice_anomaly_sigma: form.smart_invoice_anomaly_sigma,
-      daily_digest_enabled: String(form.daily_digest_enabled),
-      daily_digest_recipients: form.daily_digest_recipients,
+      commit_digest_daily_enabled: String(form.commit_digest_daily_enabled),
+      commit_digest_daily_recipients: form.commit_digest_daily_recipients,
+      commit_digest_weekly_enabled: String(form.commit_digest_weekly_enabled),
+      commit_digest_weekly_recipients: form.commit_digest_weekly_recipients,
+      commit_digest_monthly_enabled: String(form.commit_digest_monthly_enabled),
+      commit_digest_monthly_recipients: form.commit_digest_monthly_recipients,
       pontaje_digest_enabled: String(form.pontaje_digest_enabled),
-      pontaje_digest_recipients: form.pontaje_digest_recipients,
+      pontaje_digest_daily_enabled: String(form.pontaje_digest_daily_enabled),
+      pontaje_digest_daily_recipients: form.pontaje_digest_daily_recipients,
+      pontaje_digest_daily_time: form.pontaje_digest_daily_time,
+      pontaje_digest_monthly_enabled: String(form.pontaje_digest_monthly_enabled),
+      pontaje_digest_monthly_recipients: form.pontaje_digest_monthly_recipients,
+      pontaje_digest_monthly_day: form.pontaje_digest_monthly_day,
     })
   }
 
@@ -316,55 +343,11 @@ export default function NotificationsTab() {
         </CardContent>
       </Card>
 
-      {/* Daily Digest */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Newspaper className="h-5 w-5" />
-            Daily Digest
-          </CardTitle>
-          <CardDescription>AI-generated morning summary with key metrics, pending items, and anomalies. Runs daily at 8:00 AM UTC.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Enable Daily Digest</p>
-              <p className="text-xs text-muted-foreground">Send a morning summary notification to selected users</p>
-            </div>
-            <Switch
-              checked={form.daily_digest_enabled}
-              onCheckedChange={(v) => setForm({ ...form, daily_digest_enabled: v })}
-            />
-          </div>
-          {form.daily_digest_enabled && (
-            <div className="grid gap-1.5 border-l-2 border-muted pl-4">
-              <Label className="text-xs font-medium">Recipients</Label>
-              <Select
-                value={form.daily_digest_recipients}
-                onValueChange={(v) => setForm({ ...form, daily_digest_recipients: v })}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admins">Admins only</SelectItem>
-                  <SelectItem value="managers">Admins & Managers</SelectItem>
-                  <SelectItem value="all">All active users</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">Who receives the daily digest notification</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Commit Digest */}
+      <CommitDigestSection form={form} setForm={setForm} />
 
       {/* Pontaje Digest */}
-      <PontajeDigestSection
-        enabled={form.pontaje_digest_enabled}
-        recipients={form.pontaje_digest_recipients}
-        onEnabledChange={(v) => setForm({ ...form, pontaje_digest_enabled: v })}
-        onRecipientsChange={(v) => setForm({ ...form, pontaje_digest_recipients: v })}
-      />
+      <PontajeDigestSection form={form} setForm={setForm} />
 
       {/* Push Notifications */}
       <PushNotificationsSection />
@@ -397,15 +380,141 @@ export default function NotificationsTab() {
 }
 
 
+// ============== Commit Digest Section ==============
+
+type DigestPeriod = 'daily' | 'weekly' | 'monthly'
+
+const DIGEST_PERIODS: { key: DigestPeriod; label: string; schedule: string }[] = [
+  { key: 'daily', label: 'Zilnic', schedule: '~08:00' },
+  { key: 'weekly', label: 'Săptămânal', schedule: 'Vin ~17:00' },
+  { key: 'monthly', label: 'Lunar', schedule: '1-a zi' },
+]
+
+function CommitDigestSection({
+  form,
+  setForm,
+}: {
+  form: Record<string, any>
+  setForm: (f: any) => void
+}) {
+  const [triggering, setTriggering] = useState<DigestPeriod | null>(null)
+  const [status, setStatus] = useState<Record<string, { last_sent: string | null; commit_count: number }>>({})
+
+  useEffect(() => {
+    fetch('/api/commit-digest/status')
+      .then((r) => r.json())
+      .then((data) => setStatus(data))
+      .catch(() => {})
+  }, [])
+
+  const trigger = async (period: DigestPeriod) => {
+    setTriggering(period)
+    try {
+      const res = await fetch('/api/commit-digest/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`${period} digest triggered`)
+      } else {
+        toast.error(data.error || 'Failed to trigger digest')
+      }
+    } catch {
+      toast.error('Failed to trigger digest')
+    } finally {
+      setTriggering(null)
+    }
+  }
+
+  const formatLastSent = (iso: string | null, count: number) => {
+    if (!iso) return 'Niciodată'
+    try {
+      const d = new Date(iso)
+      const day = d.getDate()
+      const month = d.toLocaleString('ro-RO', { month: 'short' })
+      return `${day} ${month} — ${count} commit-uri`
+    } catch {
+      return iso
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Newspaper className="h-5 w-5" />
+          Commit Digest
+        </CardTitle>
+        <CardDescription>
+          Rezumate AI ale commit-urilor. Zilnic ~08:00, Săptămânal Vin ~17:00, Lunar 1-a zi.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {DIGEST_PERIODS.map(({ key, label, schedule }) => {
+          const enabledKey = `commit_digest_${key}_enabled` as string
+          const recipientsKey = `commit_digest_${key}_recipients` as string
+          const enabled = form[enabledKey]
+          const periodStatus = status[key]
+
+          return (
+            <div key={key} className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">{label} ({schedule})</p>
+                  {periodStatus && (
+                    <p className="text-xs text-muted-foreground">
+                      Ultima trimitere: {formatLastSent(periodStatus.last_sent, periodStatus.commit_count)}
+                    </p>
+                  )}
+                </div>
+                <Switch
+                  checked={enabled}
+                  onCheckedChange={(v) => setForm({ ...form, [enabledKey]: v })}
+                />
+              </div>
+
+              {enabled && (
+                <div className="space-y-3 border-l-2 border-muted pl-4">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-medium">Recipients (comma-separated)</Label>
+                    <Input
+                      value={form[recipientsKey]}
+                      onChange={(e) => setForm({ ...form, [recipientsKey]: e.target.value })}
+                      placeholder="email1@company.com, email2@company.com"
+                    />
+                    <p className="text-xs text-muted-foreground">Lasă gol pentru destinatarii impliciți din script</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={triggering !== null}
+                    onClick={() => trigger(key)}
+                  >
+                    <Play className="mr-1.5 h-3.5 w-3.5" />
+                    {triggering === key ? 'Se trimite...' : 'Trimite Acum'}
+                  </Button>
+                </div>
+              )}
+
+              {key !== 'monthly' && <div className="border-t" />}
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
+
 // ============== Pontaje Digest Section ==============
 
 function PontajeDigestSection({
-  enabled, recipients, onEnabledChange, onRecipientsChange,
+  form, setForm,
 }: {
-  enabled: boolean
-  recipients: string
-  onEnabledChange: (v: boolean) => void
-  onRecipientsChange: (v: string) => void
+  form: Record<string, any>
+  setForm: (f: any) => void
 }) {
   const [triggering, setTriggering] = useState<'daily' | 'monthly' | null>(null)
 
@@ -421,7 +530,7 @@ function PontajeDigestSection({
       })
       const data = await res.json()
       if (data.success) {
-        toast.success(`${type === 'daily' ? 'Daily' : 'Monthly'} digest triggered`)
+        toast.success(`${type === 'daily' ? 'Zilnic' : 'Lunar'} digest trimis`)
       } else {
         toast.error(data.error || 'Failed to trigger digest')
       }
@@ -432,6 +541,8 @@ function PontajeDigestSection({
     }
   }
 
+  const enabled = form.pontaje_digest_enabled
+
   return (
     <Card>
       <CardHeader>
@@ -440,51 +551,130 @@ function PontajeDigestSection({
           Pontaje Digest
         </CardTitle>
         <CardDescription>
-          Attendance email reports. Daily digest runs at 10:30 (Romania time), monthly summary on the 1st of each month.
+          Rapoarte pontaj trimise pe email. CSV cu prezența angajaților din BioStar.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium">Enable Pontaje Digest</p>
-            <p className="text-xs text-muted-foreground">Send attendance CSV reports via email</p>
+            <p className="text-sm font-medium">Activează Pontaje Digest</p>
+            <p className="text-xs text-muted-foreground">Trimite rapoarte CSV de prezență pe email</p>
           </div>
-          <Switch checked={enabled} onCheckedChange={onEnabledChange} />
+          <Switch
+            checked={enabled}
+            onCheckedChange={(v) => setForm({ ...form, pontaje_digest_enabled: v })}
+          />
         </div>
 
         {enabled && (
-          <div className="space-y-4 border-l-2 border-muted pl-4">
-            <div className="grid gap-1.5">
-              <Label className="text-xs font-medium">Recipients (comma-separated emails)</Label>
-              <Input
-                value={recipients}
-                onChange={(e) => onRecipientsChange(e.target.value)}
-                placeholder="user1@company.com, user2@company.com"
-              />
-              <p className="text-xs text-muted-foreground">Who receives the daily and monthly pontaje reports</p>
+          <>
+            {/* Daily Digest */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Zilnic</p>
+                  <p className="text-xs text-muted-foreground">Pontaj ziua anterioară + check-in azi</p>
+                </div>
+                <Switch
+                  checked={form.pontaje_digest_daily_enabled}
+                  onCheckedChange={(v) => setForm({ ...form, pontaje_digest_daily_enabled: v })}
+                />
+              </div>
+
+              {form.pontaje_digest_daily_enabled && (
+                <div className="space-y-3 border-l-2 border-muted pl-4">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-medium">Destinatari (comma-separated)</Label>
+                    <Input
+                      value={form.pontaje_digest_daily_recipients}
+                      onChange={(e) => setForm({ ...form, pontaje_digest_daily_recipients: e.target.value })}
+                      placeholder="hr@company.com, manager@company.com"
+                    />
+                    <p className="text-xs text-muted-foreground">Lasă gol pentru destinatarii globali</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Ora trimitere (Romania)</Label>
+                      <Input
+                        type="time"
+                        className="h-8 w-28 text-sm"
+                        value={form.pontaje_digest_daily_time}
+                        onChange={(e) => setForm({ ...form, pontaje_digest_daily_time: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={triggering !== null}
+                    onClick={() => trigger('daily')}
+                  >
+                    <Play className="mr-1.5 h-3.5 w-3.5" />
+                    {triggering === 'daily' ? 'Se trimite...' : 'Trimite Acum'}
+                  </Button>
+                </div>
+              )}
+
+              <div className="border-t" />
             </div>
 
-            <div className="flex gap-2 border-t pt-3">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={triggering !== null}
-                onClick={() => trigger('daily')}
-              >
-                <Play className="mr-1.5 h-3.5 w-3.5" />
-                {triggering === 'daily' ? 'Sending...' : 'Send Daily Now'}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={triggering !== null}
-                onClick={() => trigger('monthly')}
-              >
-                <Calendar className="mr-1.5 h-3.5 w-3.5" />
-                {triggering === 'monthly' ? 'Sending...' : 'Send Monthly Now'}
-              </Button>
+            {/* Monthly Digest */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Lunar</p>
+                  <p className="text-xs text-muted-foreground">Sumar complet luna anterioară, per angajat/zi</p>
+                </div>
+                <Switch
+                  checked={form.pontaje_digest_monthly_enabled}
+                  onCheckedChange={(v) => setForm({ ...form, pontaje_digest_monthly_enabled: v })}
+                />
+              </div>
+
+              {form.pontaje_digest_monthly_enabled && (
+                <div className="space-y-3 border-l-2 border-muted pl-4">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-medium">Destinatari (comma-separated)</Label>
+                    <Input
+                      value={form.pontaje_digest_monthly_recipients}
+                      onChange={(e) => setForm({ ...form, pontaje_digest_monthly_recipients: e.target.value })}
+                      placeholder="hr@company.com, director@company.com"
+                    />
+                    <p className="text-xs text-muted-foreground">Lasă gol pentru destinatarii globali</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Ziua din lună</Label>
+                      <Select
+                        value={form.pontaje_digest_monthly_day}
+                        onValueChange={(v) => setForm({ ...form, pontaje_digest_monthly_day: v })}
+                      >
+                        <SelectTrigger className="h-8 w-28 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 5, 10, 15].map((d) => (
+                            <SelectItem key={d} value={String(d)}>
+                              {d === 1 ? '1 (prima zi)' : `${d}`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={triggering !== null}
+                    onClick={() => trigger('monthly')}
+                  >
+                    <Calendar className="mr-1.5 h-3.5 w-3.5" />
+                    {triggering === 'monthly' ? 'Se trimite...' : 'Trimite Acum'}
+                  </Button>
+                </div>
+              )}
             </div>
-          </div>
+          </>
         )}
       </CardContent>
     </Card>
