@@ -10,13 +10,15 @@ class EmployeeOverviewRepository(BaseRepository):
     def get_biostar_mapping(self, user_id):
         """Return BioStar employee row for a JARVIS user, or None."""
         return self.query_one('''
-            SELECT biostar_user_id, name AS user_name, email, phone, cnp,
-                   user_group_name, (status = 'active') AS is_active,
-                   lunch_break_minutes, working_hours,
-                   schedule_start::text, schedule_end::text,
-                   mapping_method, mapping_confidence
-            FROM biostar_employees
-            WHERE mapped_jarvis_user_id = %s
+            SELECT be.biostar_user_id, be.name AS user_name, be.email, be.phone,
+                   u.cnp,
+                   be.user_group_name, (be.status = 'active') AS is_active,
+                   be.lunch_break_minutes, be.working_hours,
+                   be.schedule_start::text, be.schedule_end::text,
+                   be.mapping_method, be.mapping_confidence
+            FROM biostar_employees be
+            JOIN users u ON u.id = be.mapped_jarvis_user_id
+            WHERE be.mapped_jarvis_user_id = %s
             LIMIT 1
         ''', (user_id,))
 

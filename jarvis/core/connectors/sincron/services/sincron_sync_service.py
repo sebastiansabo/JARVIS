@@ -467,14 +467,22 @@ class SincronSyncService:
         """Auto-map unmapped Sincron employees to JARVIS users.
 
         Strategy: CNP match first (highest confidence), then name match.
+        After mapping, propagate CNP to users table (canonical source).
         """
         cnp_mapped = self.repo.auto_map_by_cnp()
         name_mapped = self.repo.auto_map_by_name()
+        # Propagate CNP from Sincron → users (canonical source of truth)
+        cnp_propagated = 0
+        try:
+            cnp_propagated = self.repo.propagate_cnp_to_users() or 0
+        except Exception:
+            logger.exception('CNP propagation failed after Sincron auto-map')
         return {
             'success': True,
             'cnp_mapped': cnp_mapped,
             'name_mapped': name_mapped,
             'total_mapped': cnp_mapped + name_mapped,
+            'cnp_propagated': cnp_propagated,
         }
 
     # ── Query methods ──
