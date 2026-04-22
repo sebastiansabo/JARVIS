@@ -124,6 +124,15 @@ class UnifiedMappingService:
             + results.get('biostar_cross', 0)
             + results.get('connecteam_name', 0)
         )
+
+        # Propagate CNP from Sincron → users (canonical source of truth)
+        try:
+            results['cnp_propagated'] = self.sincron_repo.propagate_cnp_to_users() or 0
+        except Exception as exc:
+            logger.exception('CNP propagation failed')
+            results['cnp_propagated_error'] = str(exc)
+            results['cnp_propagated'] = 0
+
         return results
 
     # ── Manual mapping ──
@@ -141,6 +150,11 @@ class UnifiedMappingService:
             if not company_name:
                 raise ValueError('company_name is required for Sincron mappings')
             self.sincron_repo.update_mapping(external_id, company_name, user_id, method='manual')
+            # Propagate CNP from Sincron → users (canonical source)
+            try:
+                self.sincron_repo.propagate_cnp_to_users()
+            except Exception:
+                logger.exception('CNP propagation failed after manual Sincron mapping')
             return {'source': 'sincron', 'external_id': external_id,
                     'company_name': company_name, 'user_id': user_id}
         if source == 'biostar':

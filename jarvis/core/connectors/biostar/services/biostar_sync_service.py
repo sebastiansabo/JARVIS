@@ -242,7 +242,7 @@ class BioStarSyncService:
 
         Delegates to BioStarRepository helpers so the logic stays identical with
         the unified /identity/api/auto-map endpoint:
-            1. CNP  (confidence 100, only when cnp column is populated)
+            1. CNP  (no-op — CNP is canonical in users table, matched via Sincron)
             2. email (confidence 100)
             3. name  (confidence 90)
         Cross-verification via Sincron runs as part of the unified pipeline and

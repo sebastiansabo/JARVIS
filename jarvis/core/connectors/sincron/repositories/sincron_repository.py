@@ -240,6 +240,41 @@ class SincronRepository(BaseRepository):
             return cursor.rowcount
         return self.execute_many(_work)
 
+    def propagate_cnp_to_users(self):
+        """Copy CNP from mapped Sincron employees to JARVIS users where missing.
+
+        Sincron is the authoritative source — users.cnp is the canonical store.
+        Only writes when the user has no CNP yet and the Sincron record has one.
+        Skips CNPs that already exist on another user (unique constraint safety).
+        """
+        def _work(cursor):
+            cursor.execute('''
+                UPDATE users u
+                SET cnp = sub.cnp,
+                    updated_at = NOW()
+                FROM (
+                    SELECT DISTINCT ON (se.mapped_jarvis_user_id)
+                           se.mapped_jarvis_user_id AS uid,
+                           TRIM(se.cnp) AS cnp
+                    FROM sincron_employees se
+                    WHERE se.mapped_jarvis_user_id IS NOT NULL
+                      AND se.is_active = TRUE
+                      AND se.cnp IS NOT NULL
+                      AND TRIM(se.cnp) != ''
+                      AND REPLACE(se.cnp, 'x', '') != ''
+                      AND NOT EXISTS (
+                          SELECT 1 FROM users u2
+                          WHERE TRIM(u2.cnp) = TRIM(se.cnp)
+                            AND u2.id != se.mapped_jarvis_user_id
+                      )
+                    ORDER BY se.mapped_jarvis_user_id, se.mapping_confidence DESC NULLS LAST
+                ) sub
+                WHERE u.id = sub.uid
+                  AND (u.cnp IS NULL OR TRIM(u.cnp) = '')
+            ''')
+            return cursor.rowcount
+        return self.execute_many(_work)
+
     def auto_map_by_name(self):
         """Auto-map unmapped employees by exact name match."""
         def _work(cursor):

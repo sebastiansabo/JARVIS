@@ -405,10 +405,9 @@ function UserFormDialog({
     const patches: Record<string, string> = {}
     const sources: Record<string, string> = {}
 
-    // CNP: prefer Sincron, fallback BioStar
+    // CNP: from Sincron (canonical source via users table)
     if (!form.cnp) {
       if (connectors.sincron?.cnp) { patches.cnp = connectors.sincron.cnp; sources.cnp = 'Sincron' }
-      else if (connectors.biostar?.cnp) { patches.cnp = connectors.biostar.cnp; sources.cnp = 'BioStar' }
     }
     // Contract Start from Sincron
     if (!form.contract_work_date && connectors.sincron?.data_incepere_contract) {

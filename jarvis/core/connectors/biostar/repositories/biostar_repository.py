@@ -30,32 +30,24 @@ class BioStarRepository(BaseRepository):
         )
 
     def upsert_employee(self, data):
-        """Insert a new BioStar employee, skip if exists. Returns the row.
-
-        `cnp` is optional — when supplied it is persisted, but existing CNPs are
-        preserved on re-sync via COALESCE(EXCLUDED.cnp, biostar_employees.cnp).
-        """
+        """Insert a new BioStar employee, skip if exists. Returns the row."""
         return self.execute('''
             INSERT INTO biostar_employees
                 (biostar_user_id, name, email, phone, user_group_id,
-                 user_group_name, card_ids, status, cnp, last_synced_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                 user_group_name, card_ids, status, last_synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (biostar_user_id) DO UPDATE SET
-                cnp = COALESCE(EXCLUDED.cnp, biostar_employees.cnp),
                 last_synced_at = NOW()
             RETURNING id, biostar_user_id
         ''', (
             data['biostar_user_id'], data['name'], data.get('email'),
             data.get('phone'), data.get('user_group_id'),
             data.get('user_group_name'), json.dumps(data.get('card_ids', [])),
-            data.get('status', 'active'), data.get('cnp')
+            data.get('status', 'active')
         ), returning=True)
 
     def bulk_upsert_employees(self, employees):
-        """Insert new employees, skip existing. Returns {created, updated, skipped}.
-
-        CNP is persisted when supplied; existing CNP is preserved via COALESCE.
-        """
+        """Insert new employees, skip existing. Returns {created, updated, skipped}."""
         def _work(cursor):
             created = 0
             skipped = 0
@@ -63,16 +55,15 @@ class BioStarRepository(BaseRepository):
                 cursor.execute('''
                     INSERT INTO biostar_employees
                         (biostar_user_id, name, email, phone, user_group_id,
-                         user_group_name, card_ids, status, cnp, last_synced_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                         user_group_name, card_ids, status, last_synced_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
                     ON CONFLICT (biostar_user_id) DO UPDATE SET
-                        cnp = COALESCE(EXCLUDED.cnp, biostar_employees.cnp),
                         last_synced_at = NOW()
                 ''', (
                     emp['biostar_user_id'], emp['name'], emp.get('email'),
                     emp.get('phone'), emp.get('user_group_id'),
                     emp.get('user_group_name'), json.dumps(emp.get('card_ids', [])),
-                    emp.get('status', 'active'), emp.get('cnp')
+                    emp.get('status', 'active')
                 ))
                 if cursor.rowcount > 0:
                     created += 1
@@ -200,25 +191,16 @@ class BioStarRepository(BaseRepository):
     # ── Auto-mapping (SQL-based, mirrors Sincron style) ──
 
     def auto_map_by_cnp(self):
-        """Link unmapped BioStar employees to JARVIS users by CNP (confidence 100).
+        """Link unmapped BioStar employees to JARVIS users via Sincron CNP.
 
-        Requires the biostar_employees.cnp column (migration 002). Safe when CNP
-        is NULL — the WHERE clause excludes those rows.
+        BioStar doesn't provide CNP directly. Instead, match BioStar employees
+        to users who have CNP (populated from Sincron) by cross-referencing
+        name or email.
+        CNP is canonical in users table only — no longer stored in biostar_employees.
         """
-        return self.execute('''
-            UPDATE biostar_employees be
-            SET mapped_jarvis_user_id = u.id,
-                mapping_method = 'cnp',
-                mapping_confidence = 100,
-                updated_at = NOW()
-            FROM users u
-            WHERE be.mapped_jarvis_user_id IS NULL
-              AND be.status = 'active'
-              AND be.cnp IS NOT NULL
-              AND u.cnp IS NOT NULL
-              AND COALESCE(u.contract_status, 'active') != 'closed'
-              AND LOWER(TRIM(be.cnp)) = LOWER(TRIM(u.cnp))
-        ''')
+        # BioStar has no CNP column; this is now a no-op placeholder.
+        # Real CNP matching flows through Sincron → users.cnp → auto_map_cross_verified.
+        return 0
 
     def auto_map_by_email(self):
         """Link unmapped BioStar employees to JARVIS users by email (confidence 100)."""
