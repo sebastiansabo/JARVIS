@@ -177,7 +177,18 @@ class ANAFOAuthClient:
         )
 
         try:
-            oauth_service = get_oauth_service()
+            # Use per-company credentials if configured
+            from ..repositories.company_repo import CompanyConnectionRepository
+            company = CompanyConnectionRepository().get_by_cif(self.company_cif)
+            if company and company.config and company.config.get('client_id'):
+                from ..services.oauth_service import ANAFOAuthService
+                oauth_service = ANAFOAuthService(
+                    client_id=company.config['client_id'],
+                    client_secret=company.config['client_secret'],
+                    redirect_uri=company.config.get('redirect_uri'),
+                )
+            else:
+                oauth_service = get_oauth_service()
             new_tokens = oauth_service.refresh_access_token(
                 self._refresh_token,
                 self.company_cif,

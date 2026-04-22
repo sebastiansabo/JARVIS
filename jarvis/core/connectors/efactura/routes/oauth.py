@@ -6,7 +6,24 @@ from flask_login import login_required
 
 from core.utils.api_helpers import safe_error_response, api_login_required
 from ._shared import efactura_bp, efactura_access_required, logger
-from ..services.oauth_service import get_oauth_service
+from ..services.oauth_service import get_oauth_service, ANAFOAuthService
+
+
+def _get_oauth_service_for_cif(cif: str):
+    """Get OAuth service with per-company credentials if configured."""
+    from ..repositories.company_repo import CompanyConnectionRepository
+    company = CompanyConnectionRepository().get_by_cif(cif)
+    if company and company.config:
+        client_id = company.config.get('client_id')
+        client_secret = company.config.get('client_secret')
+        redirect_uri = company.config.get('redirect_uri')
+        if client_id and client_secret:
+            return ANAFOAuthService(
+                client_id=client_id,
+                client_secret=client_secret,
+                redirect_uri=redirect_uri,
+            )
+    return get_oauth_service()
 
 
 # ============================================================
@@ -36,13 +53,23 @@ def oauth_authorize():
         # Clean CIF (remove RO prefix if present)
         clean_cif = cif.upper().replace('RO', '').strip()
 
-        # Get OAuth service and generate authorization URL
-        oauth_service = get_oauth_service()
+        # Get OAuth service (per-company credentials if configured)
+        oauth_service = _get_oauth_service_for_cif(clean_cif)
         auth_url, state = oauth_service.get_authorization_url(clean_cif)
 
         # Store state in session for callback validation
         session['oauth_state'] = state
         session['oauth_cif'] = clean_cif
+
+        # Store code_verifier and per-company credentials in session for callback
+        pending = oauth_service.get_pending_auth(state)
+        if pending:
+            session['oauth_code_verifier'] = pending['code_verifier']
+            session['oauth_created_at'] = pending['created_at']
+        # Store per-company client credentials so callback uses the same ones
+        session['oauth_client_id'] = oauth_service.client_id
+        session['oauth_client_secret'] = oauth_service.client_secret
+        session['oauth_redirect_uri'] = oauth_service.redirect_uri
 
         logger.info(
             "Initiating OAuth flow",
@@ -109,13 +136,24 @@ def oauth_callback():
                 error="Invalid state parameter. Please try again.",
             )
 
-        # Exchange code for tokens
-        oauth_service = get_oauth_service()
+        # Get OAuth service — use per-company credentials from session if stored
+        session_client_id = session.get('oauth_client_id')
+        session_client_secret = session.get('oauth_client_secret')
+        session_redirect_uri = session.get('oauth_redirect_uri')
+
+        if session_client_id and session_client_secret:
+            oauth_service = ANAFOAuthService(
+                client_id=session_client_id,
+                client_secret=session_client_secret,
+                redirect_uri=session_redirect_uri,
+            )
+        else:
+            oauth_service = get_oauth_service()
 
         # Restore pending auth data from session if needed
         pending = oauth_service.get_pending_auth(state)
         if not pending and session_cif:
-            # Restore from session (in case of server restart)
+            # Restore from session (in case of server restart or per-company service)
             oauth_service.store_pending_auth(state, {
                 'code_verifier': session.get('oauth_code_verifier', ''),
                 'cif': session_cif,
@@ -140,6 +178,9 @@ def oauth_callback():
         session.pop('oauth_cif', None)
         session.pop('oauth_code_verifier', None)
         session.pop('oauth_created_at', None)
+        session.pop('oauth_client_id', None)
+        session.pop('oauth_client_secret', None)
+        session.pop('oauth_redirect_uri', None)
 
         logger.info(
             "OAuth flow completed successfully",
@@ -301,8 +342,8 @@ def oauth_refresh():
                 'error': 'No active connection found. Please authenticate first.',
             }), 404
 
-        # Refresh the token
-        oauth_service = get_oauth_service()
+        # Refresh the token (use per-company credentials if configured)
+        oauth_service = _get_oauth_service_for_cif(clean_cif)
         new_tokens = oauth_service.refresh_access_token(
             tokens['refresh_token'],
             clean_cif
