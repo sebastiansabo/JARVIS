@@ -80,13 +80,11 @@ def api_companies():
 def api_brands(company):
     """Get brands (L1 nodes) for a company.
 
-    Only returns L1 as brands when L2 nodes exist (multi-level hierarchy).
-    If the company has only L1 nodes, returns [] so L1 is treated as departments.
+    Returns L1 node names for companies with structure_nodes.
+    Falls back to legacy department_structure brands otherwise.
     """
     if _node_repo.has_nodes_for_company(company):
-        if _node_repo.has_l2_nodes(company):
-            return jsonify(_node_repo.get_l1_names(company))
-        return jsonify([])
+        return jsonify(_node_repo.get_l1_names(company))
     from models import get_brands_for_company
     return jsonify(get_brands_for_company(company))
 
