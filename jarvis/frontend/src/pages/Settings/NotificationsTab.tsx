@@ -122,7 +122,7 @@ export default function NotificationsTab() {
   })
 
   const handleSave = () => {
-    saveMutation.mutate({
+    return saveMutation.mutateAsync({
       smtp_host: form.smtp_host,
       smtp_port: form.smtp_port,
       smtp_tls: String(form.smtp_tls),
@@ -413,7 +413,7 @@ function CommitDigestSection({
 }: {
   form: Record<string, any>
   setForm: (f: any) => void
-  onSave: () => void
+  onSave: () => Promise<any>
   saving: boolean
 }) {
   const [triggering, setTriggering] = useState<DigestPeriod | null>(null)
@@ -427,8 +427,7 @@ function CommitDigestSection({
   }, [])
 
   const saveAndTrigger = async (period: DigestPeriod) => {
-    onSave()
-    await new Promise((r) => setTimeout(r, 500))
+    await onSave()
     setTriggering(period)
     try {
       const res = await fetch('/api/commit-digest/trigger', {
@@ -605,16 +604,13 @@ function PontajeDigestSection({
 }: {
   form: Record<string, any>
   setForm: (f: any) => void
-  onSave: () => void
+  onSave: () => Promise<any>
   saving: boolean
 }) {
   const [triggering, setTriggering] = useState<'daily' | 'monthly' | null>(null)
 
   const saveAndTrigger = async (type: 'daily' | 'monthly') => {
-    // Save settings first, then trigger
-    onSave()
-    // Small delay to let save complete
-    await new Promise((r) => setTimeout(r, 500))
+    await onSave()
     setTriggering(type)
     try {
       const endpoint = type === 'daily'

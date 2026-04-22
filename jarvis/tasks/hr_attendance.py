@@ -253,34 +253,24 @@ def send_pontaje_digest():
         except Exception as e:
             logger.warning(f"Failed to get yesterday summary for {yesterday}: {e}")
 
-        # Fetch today's summary (check-in only, day not over)
-        today_data = []
-        try:
-            today_data = bio_repo.get_daily_summary(today.isoformat())
-        except Exception as e:
-            logger.warning(f"Failed to get today summary for {today}: {e}")
-
-        # Collect all employees from both days + active employees list
+        # Collect all employees — deduplicated by JARVIS user (one row per person)
         all_employees = bio_repo.get_all_employees(active_only=True)
-        employee_map = {}  # biostar_user_id -> {name, company, group, jarvis_user_id}
+        employee_map = {}  # jarvis_user_id -> {name, group, bio_ids, ...}
         for emp in all_employees:
             bio_id = emp.get('biostar_user_id')
-            if bio_id:
-                employee_map[bio_id] = {
-                    'name': emp.get('mapped_jarvis_user_name') or emp.get('name', ''),
-                    'company': emp.get('jarvis_company') or '',
-                    'group': emp.get('user_group_name') or '',
-                    'jarvis_user_id': emp.get('mapped_jarvis_user_id'),
-                }
-        for s in yesterday_data + today_data:
-            bio_id = s.get('biostar_user_id')
-            if bio_id and bio_id not in employee_map:
-                employee_map[bio_id] = {
-                    'name': s.get('mapped_jarvis_user_name') or s.get('name', ''),
-                    'company': s.get('jarvis_company') or '',
-                    'group': s.get('user_group_name') or '',
-                    'jarvis_user_id': s.get('mapped_jarvis_user_id'),
-                }
+            jid = emp.get('mapped_jarvis_user_id')
+            if not bio_id or not jid or not emp.get('jarvis_user_active'):
+                continue
+            if jid in employee_map:
+                # Just add this bio_id to existing entry
+                employee_map[jid]['bio_ids'].append(bio_id)
+                continue
+            employee_map[jid] = {
+                'name': emp.get('mapped_jarvis_user_name') or emp.get('name', ''),
+                'group': emp.get('user_group_name') or '',
+                'jarvis_user_id': jid,
+                'bio_ids': [bio_id],
+            }
 
         # Fetch Sincron day codes for yesterday + today
         sincron_repo = SincronRepository()
@@ -305,26 +295,30 @@ def send_pontaje_digest():
                 pass
 
         # Build CSV: one row per employee
-        # Columns: Name, Company, Group, Yesterday In, Yesterday Out, Yesterday Duration,
-        #          Yesterday Status, Today In, Today Status
         output = io.StringIO()
         writer = csv.writer(output, quoting=csv.QUOTE_ALL)
         yesterday_label = yesterday.strftime('%a %d %b')
-        today_label = today.strftime('%a %d %b')
         writer.writerow([
-            'Name', 'Company', 'Group',
+            'Name', 'Group',
             f'Checked In ({yesterday_label})', f'Checked Out ({yesterday_label})',
             f'Duration ({yesterday_label})', f'Status ({yesterday_label})',
-            f'Checked In ({today_label})', f'Status ({today_label})',
         ])
 
-        sorted_employees = sorted(employee_map.items(), key=lambda x: x[1]['name'])
+        sorted_employees = sorted(employee_map.values(), key=lambda x: x['name'])
 
-        for bio_id, emp in sorted_employees:
-            jid = emp.get('jarvis_user_id')
+        def _find_punch(data_list, bio_ids):
+            """Find first punch entry matching any of the employee's bio_ids."""
+            for entry in data_list:
+                if entry.get('biostar_user_id') in bio_ids:
+                    return entry
+            return None
+
+        for emp in sorted_employees:
+            jid = emp['jarvis_user_id']
+            bio_ids = set(emp['bio_ids'])
 
             # Yesterday
-            ys = next((x for x in yesterday_data if x.get('biostar_user_id') == bio_id), None)
+            ys = _find_punch(yesterday_data, bio_ids)
             y_in = ''
             y_out = ''
             y_dur = ''
@@ -346,23 +340,11 @@ def send_pontaje_digest():
                         y_dur = f"{int(net // 3600)}:{int((net % 3600) // 60):02d}"
 
             # Yesterday status: Sincron leave code if no punch, or 'Prezent' if punched
-            y_status = _resolve_status(y_in, jid, yesterday.day, sincron_codes)
-
-            # Today (check-in only — use adjusted time if available)
-            ts = next((x for x in today_data if x.get('biostar_user_id') == bio_id), None)
-            t_in = ''
-            if ts:
-                raw_in = ts.get('adjusted_first_punch') or ts.get('first_punch')
-                if raw_in:
-                    t_in = _fmt_time(raw_in)
-
-            # Today status
-            t_status = _resolve_status(t_in, jid, today.day, sincron_codes)
+            y_status = _resolve_status(y_in, jid, yesterday, sincron_codes)
 
             writer.writerow([
-                emp['name'], emp['company'], emp['group'],
+                emp['name'], emp['group'],
                 y_in, y_out, y_dur, y_status,
-                t_in, t_status,
             ])
 
         csv_bytes = ('\ufeff' + output.getvalue()).encode('utf-8')
@@ -371,12 +353,10 @@ def send_pontaje_digest():
 
         # Send to each recipient
         present_yesterday = sum(1 for s in yesterday_data if s.get('first_punch'))
-        present_today = sum(1 for s in today_data if s.get('first_punch'))
 
         html_body = (
             f"Pontaje Daily Digest — {date_label}<br><br>"
             f"Yesterday ({yesterday.strftime('%a %d %b')}): {present_yesterday} checked in<br>"
-            f"Today ({today.strftime('%a %d %b')}): {present_today} checked in so far<br>"
             f"Total employees: {len(employee_map)}"
         )
 
@@ -405,13 +385,16 @@ _LEAVE_CODES = {'CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CF', 'CFS',
                 'CNP', 'COP', 'CFP', 'ABS', 'AN', 'NS', 'SR', 'S'}
 
 
-def _resolve_status(checked_in, jarvis_user_id, day_num, sincron_codes):
-    """Determine status for a day: Prezent / Sincron leave code / Absent."""
+def _resolve_status(checked_in, jarvis_user_id, day_key, sincron_codes):
+    """Determine status for a day: Prezent / Sincron leave code / Absent.
+
+    day_key: date object matching the key used when building sincron_codes.
+    """
     if checked_in:
         return 'Prezent'
     # No punch — check Sincron code
     if jarvis_user_id:
-        code = sincron_codes.get((jarvis_user_id, day_num), '')
+        code = sincron_codes.get((jarvis_user_id, day_key), '')
         if code and code != 'OZ':
             return code  # CO, CM, CIC, etc.
     return 'Absent'
@@ -526,29 +509,24 @@ def send_monthly_pontaje_summary():
                 logger.warning(f"Failed to get summary for {wd}: {e}")
                 daily_data[wd] = []
 
-        # All active employees
+        # All employees — only those mapped to an active JARVIS user
         all_employees = bio_repo.get_all_employees(active_only=True)
-        employee_map = {}  # biostar_user_id -> {name, company, group, jarvis_user_id}
+        employee_map = {}  # jarvis_user_id -> {name, group, bio_ids, ...}
         for emp in all_employees:
             bio_id = emp.get('biostar_user_id')
-            if bio_id:
-                employee_map[bio_id] = {
-                    'name': emp.get('mapped_jarvis_user_name') or emp.get('name', ''),
-                    'company': emp.get('jarvis_company') or '',
-                    'group': emp.get('user_group_name') or '',
-                    'jarvis_user_id': emp.get('mapped_jarvis_user_id'),
-                }
-        # Also pick up any employees from daily data not in the map
-        for day_entries in daily_data.values():
-            for s in day_entries:
-                bio_id = s.get('biostar_user_id')
-                if bio_id and bio_id not in employee_map:
-                    employee_map[bio_id] = {
-                        'name': s.get('mapped_jarvis_user_name') or s.get('name', ''),
-                        'company': s.get('jarvis_company') or '',
-                        'group': s.get('user_group_name') or '',
-                        'jarvis_user_id': s.get('mapped_jarvis_user_id'),
-                    }
+            jid = emp.get('mapped_jarvis_user_id')
+            if not bio_id or not jid or not emp.get('jarvis_user_active'):
+                continue
+            if jid in employee_map:
+                employee_map[jid]['bio_ids'].append(bio_id)
+                continue
+            employee_map[jid] = {
+                'name': emp.get('mapped_jarvis_user_name') or emp.get('name', ''),
+                'company': emp.get('jarvis_company') or '',
+                'group': emp.get('user_group_name') or '',
+                'jarvis_user_id': jid,
+                'bio_ids': [bio_id],
+            }
 
         # Fetch Sincron day codes for the month
         sincron_repo = SincronRepository()
@@ -571,15 +549,24 @@ def send_monthly_pontaje_summary():
         output = io.StringIO()
         writer = csv.writer(output, quoting=csv.QUOTE_ALL)
         writer.writerow([
-            'Name', 'Company', 'Group', 'Week', 'Date', 'Day',
+            'Name', 'Group',
+            'Week', 'Date', 'Day',
             'Checked In', 'Checked Out', 'Duration (h)', 'Status',
         ])
 
-        sorted_employees = sorted(employee_map.items(), key=lambda x: x[1]['name'])
+        sorted_employees = sorted(employee_map.values(), key=lambda x: x['name'])
+
+        def _find_punch_monthly(data_list, bio_ids):
+            """Find first punch entry matching any of the employee's bio_ids."""
+            for entry in data_list:
+                if entry.get('biostar_user_id') in bio_ids:
+                    return entry
+            return None
 
         total_rows = 0
-        for bio_id, emp in sorted_employees:
-            jid = emp.get('jarvis_user_id')
+        for emp in sorted_employees:
+            jid = emp['jarvis_user_id']
+            bio_ids = set(emp['bio_ids'])
             for wd in working_days:
                 week = _week_label(wd)
                 day_name = wd.strftime('%a')
@@ -587,7 +574,7 @@ def send_monthly_pontaje_summary():
 
                 # Find punch data for this employee on this day
                 day_entries = daily_data.get(wd, [])
-                entry = next((x for x in day_entries if x.get('biostar_user_id') == bio_id), None)
+                entry = _find_punch_monthly(day_entries, bio_ids)
 
                 checked_in = ''
                 checked_out = ''
@@ -609,10 +596,10 @@ def send_monthly_pontaje_summary():
                         if net > 0:
                             duration = f"{int(net // 3600)}:{int((net % 3600) // 60):02d}"
 
-                status = _resolve_status(checked_in, jid, wd.day, sincron_codes)
+                status = _resolve_status(checked_in, jid, wd, sincron_codes)
 
                 writer.writerow([
-                    emp['name'], emp['company'], emp['group'],
+                    emp['name'], emp['group'],
                     week, date_str, day_name,
                     checked_in, checked_out, duration, status,
                 ])
