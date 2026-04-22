@@ -388,8 +388,8 @@ class EmployeeOverviewRepository(BaseRepository):
             SELECT u.id AS user_id,
                    CASE
                        WHEN EXISTS(SELECT 1 FROM public_holidays ph WHERE ph.date = %s) THEN 'holiday'
-                       WHEN ol.user_id IS NOT NULL THEN 'on_leave'
                        WHEN p.user_id IS NOT NULL THEN 'present'
+                       WHEN ol.user_id IS NOT NULL THEN 'on_leave'
                        WHEN bm.user_id IS NOT NULL THEN 'absent'
                        ELSE 'unknown'
                    END AS status,
