@@ -43,10 +43,15 @@ export default function NotificationsTab() {
     // Commit digest
     commit_digest_daily_enabled: true,
     commit_digest_daily_recipients: '',
+    commit_digest_daily_time: '08:00',
     commit_digest_weekly_enabled: true,
     commit_digest_weekly_recipients: '',
+    commit_digest_weekly_day: '5',
+    commit_digest_weekly_time: '17:00',
     commit_digest_monthly_enabled: true,
     commit_digest_monthly_recipients: '',
+    commit_digest_monthly_day: '1',
+    commit_digest_monthly_time: '08:00',
     // Pontaje digest
     pontaje_digest_enabled: false,
     pontaje_digest_daily_enabled: true,
@@ -81,10 +86,15 @@ export default function NotificationsTab() {
         smart_invoice_anomaly_sigma: settings.smart_invoice_anomaly_sigma || '2',
         commit_digest_daily_enabled: String(settings.commit_digest_daily_enabled ?? 'true') === 'true',
         commit_digest_daily_recipients: settings.commit_digest_daily_recipients || '',
+        commit_digest_daily_time: settings.commit_digest_daily_time || '08:00',
         commit_digest_weekly_enabled: String(settings.commit_digest_weekly_enabled ?? 'true') === 'true',
         commit_digest_weekly_recipients: settings.commit_digest_weekly_recipients || '',
+        commit_digest_weekly_day: settings.commit_digest_weekly_day || '5',
+        commit_digest_weekly_time: settings.commit_digest_weekly_time || '17:00',
         commit_digest_monthly_enabled: String(settings.commit_digest_monthly_enabled ?? 'true') === 'true',
         commit_digest_monthly_recipients: settings.commit_digest_monthly_recipients || '',
+        commit_digest_monthly_day: settings.commit_digest_monthly_day || '1',
+        commit_digest_monthly_time: settings.commit_digest_monthly_time || '08:00',
         pontaje_digest_enabled: String(settings.pontaje_digest_enabled) === 'true',
         pontaje_digest_daily_enabled: String(settings.pontaje_digest_daily_enabled ?? 'true') === 'true',
         pontaje_digest_daily_recipients: settings.pontaje_digest_daily_recipients || '',
@@ -132,10 +142,15 @@ export default function NotificationsTab() {
       smart_invoice_anomaly_sigma: form.smart_invoice_anomaly_sigma,
       commit_digest_daily_enabled: String(form.commit_digest_daily_enabled),
       commit_digest_daily_recipients: form.commit_digest_daily_recipients,
+      commit_digest_daily_time: form.commit_digest_daily_time,
       commit_digest_weekly_enabled: String(form.commit_digest_weekly_enabled),
       commit_digest_weekly_recipients: form.commit_digest_weekly_recipients,
+      commit_digest_weekly_day: form.commit_digest_weekly_day,
+      commit_digest_weekly_time: form.commit_digest_weekly_time,
       commit_digest_monthly_enabled: String(form.commit_digest_monthly_enabled),
       commit_digest_monthly_recipients: form.commit_digest_monthly_recipients,
+      commit_digest_monthly_day: form.commit_digest_monthly_day,
+      commit_digest_monthly_time: form.commit_digest_monthly_time,
       pontaje_digest_enabled: String(form.pontaje_digest_enabled),
       pontaje_digest_daily_enabled: String(form.pontaje_digest_daily_enabled),
       pontaje_digest_daily_recipients: form.pontaje_digest_daily_recipients,
@@ -344,10 +359,10 @@ export default function NotificationsTab() {
       </Card>
 
       {/* Commit Digest */}
-      <CommitDigestSection form={form} setForm={setForm} />
+      <CommitDigestSection form={form} setForm={setForm} onSave={handleSave} saving={saveMutation.isPending} />
 
       {/* Pontaje Digest */}
-      <PontajeDigestSection form={form} setForm={setForm} />
+      <PontajeDigestSection form={form} setForm={setForm} onSave={handleSave} saving={saveMutation.isPending} />
 
       {/* Push Notifications */}
       <PushNotificationsSection />
@@ -384,18 +399,22 @@ export default function NotificationsTab() {
 
 type DigestPeriod = 'daily' | 'weekly' | 'monthly'
 
-const DIGEST_PERIODS: { key: DigestPeriod; label: string; schedule: string }[] = [
-  { key: 'daily', label: 'Zilnic', schedule: '~08:00' },
-  { key: 'weekly', label: 'Săptămânal', schedule: 'Vin ~17:00' },
-  { key: 'monthly', label: 'Lunar', schedule: '1-a zi' },
+const DIGEST_PERIODS: { key: DigestPeriod; label: string }[] = [
+  { key: 'daily', label: 'Zilnic' },
+  { key: 'weekly', label: 'Săptămânal' },
+  { key: 'monthly', label: 'Lunar' },
 ]
 
 function CommitDigestSection({
   form,
   setForm,
+  onSave,
+  saving,
 }: {
   form: Record<string, any>
   setForm: (f: any) => void
+  onSave: () => void
+  saving: boolean
 }) {
   const [triggering, setTriggering] = useState<DigestPeriod | null>(null)
   const [status, setStatus] = useState<Record<string, { last_sent: string | null; commit_count: number }>>({})
@@ -407,7 +426,9 @@ function CommitDigestSection({
       .catch(() => {})
   }, [])
 
-  const trigger = async (period: DigestPeriod) => {
+  const saveAndTrigger = async (period: DigestPeriod) => {
+    onSave()
+    await new Promise((r) => setTimeout(r, 500))
     setTriggering(period)
     try {
       const res = await fetch('/api/commit-digest/trigger', {
@@ -417,7 +438,7 @@ function CommitDigestSection({
       })
       const data = await res.json()
       if (data.success) {
-        toast.success(`${period} digest triggered`)
+        toast.success(`${period} digest trimis`)
       } else {
         toast.error(data.error || 'Failed to trigger digest')
       }
@@ -440,6 +461,14 @@ function CommitDigestSection({
     }
   }
 
+  const WEEKDAYS = [
+    { value: '1', label: 'Luni' },
+    { value: '2', label: 'Marți' },
+    { value: '3', label: 'Miercuri' },
+    { value: '4', label: 'Joi' },
+    { value: '5', label: 'Vineri' },
+  ]
+
   return (
     <Card>
       <CardHeader>
@@ -448,13 +477,15 @@ function CommitDigestSection({
           Commit Digest
         </CardTitle>
         <CardDescription>
-          Rezumate AI ale commit-urilor. Zilnic ~08:00, Săptămânal Vin ~17:00, Lunar 1-a zi.
+          Rezumate AI ale commit-urilor.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        {DIGEST_PERIODS.map(({ key, label, schedule }) => {
+        {DIGEST_PERIODS.map(({ key, label }) => {
           const enabledKey = `commit_digest_${key}_enabled` as string
           const recipientsKey = `commit_digest_${key}_recipients` as string
+          const timeKey = `commit_digest_${key}_time` as string
+          const dayKey = key === 'weekly' ? 'commit_digest_weekly_day' : key === 'monthly' ? 'commit_digest_monthly_day' : ''
           const enabled = form[enabledKey]
           const periodStatus = status[key]
 
@@ -462,7 +493,7 @@ function CommitDigestSection({
             <div key={key} className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium">{label} ({schedule})</p>
+                  <p className="text-sm font-medium">{label}</p>
                   {periodStatus && (
                     <p className="text-xs text-muted-foreground">
                       Ultima trimitere: {formatLastSent(periodStatus.last_sent, periodStatus.commit_count)}
@@ -478,7 +509,7 @@ function CommitDigestSection({
               {enabled && (
                 <div className="space-y-3 border-l-2 border-muted pl-4">
                   <div className="grid gap-1.5">
-                    <Label className="text-xs font-medium">Recipients (comma-separated)</Label>
+                    <Label className="text-xs font-medium">Destinatari (comma-separated)</Label>
                     <Input
                       value={form[recipientsKey]}
                       onChange={(e) => setForm({ ...form, [recipientsKey]: e.target.value })}
@@ -486,11 +517,62 @@ function CommitDigestSection({
                     />
                     <p className="text-xs text-muted-foreground">Lasă gol pentru destinatarii impliciți din script</p>
                   </div>
+                  <div className="flex items-center gap-3">
+                    {key === 'weekly' && (
+                      <div className="grid gap-1">
+                        <Label className="text-xs">Ziua</Label>
+                        <Select
+                          value={form[dayKey]}
+                          onValueChange={(v) => setForm({ ...form, [dayKey]: v })}
+                        >
+                          <SelectTrigger className="h-8 w-28 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {WEEKDAYS.map((wd) => (
+                              <SelectItem key={wd.value} value={wd.value}>
+                                {wd.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {key === 'monthly' && (
+                      <div className="grid gap-1">
+                        <Label className="text-xs">Ziua din lună</Label>
+                        <Select
+                          value={form[dayKey]}
+                          onValueChange={(v) => setForm({ ...form, [dayKey]: v })}
+                        >
+                          <SelectTrigger className="h-8 w-28 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {[1, 2, 3, 5, 10, 15].map((d) => (
+                              <SelectItem key={d} value={String(d)}>
+                                {d === 1 ? '1 (prima zi)' : `${d}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Ora (Romania)</Label>
+                      <Input
+                        type="time"
+                        className="h-8 w-28 text-sm"
+                        value={form[timeKey]}
+                        onChange={(e) => setForm({ ...form, [timeKey]: e.target.value })}
+                      />
+                    </div>
+                  </div>
                   <Button
                     size="sm"
                     variant="outline"
                     disabled={triggering !== null}
-                    onClick={() => trigger(key)}
+                    onClick={() => saveAndTrigger(key)}
                   >
                     <Play className="mr-1.5 h-3.5 w-3.5" />
                     {triggering === key ? 'Se trimite...' : 'Trimite Acum'}
@@ -502,6 +584,14 @@ function CommitDigestSection({
             </div>
           )
         })}
+
+        {/* Save button inside card */}
+        <div className="border-t pt-3">
+          <Button size="sm" onClick={onSave} disabled={saving}>
+            <Save className="mr-1.5 h-3.5 w-3.5" />
+            {saving ? 'Se salvează...' : 'Salvează Setări Commit'}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )
@@ -511,14 +601,20 @@ function CommitDigestSection({
 // ============== Pontaje Digest Section ==============
 
 function PontajeDigestSection({
-  form, setForm,
+  form, setForm, onSave, saving,
 }: {
   form: Record<string, any>
   setForm: (f: any) => void
+  onSave: () => void
+  saving: boolean
 }) {
   const [triggering, setTriggering] = useState<'daily' | 'monthly' | null>(null)
 
-  const trigger = async (type: 'daily' | 'monthly') => {
+  const saveAndTrigger = async (type: 'daily' | 'monthly') => {
+    // Save settings first, then trigger
+    onSave()
+    // Small delay to let save complete
+    await new Promise((r) => setTimeout(r, 500))
     setTriggering(type)
     try {
       const endpoint = type === 'daily'
@@ -607,7 +703,7 @@ function PontajeDigestSection({
                     size="sm"
                     variant="outline"
                     disabled={triggering !== null}
-                    onClick={() => trigger('daily')}
+                    onClick={() => saveAndTrigger('daily')}
                   >
                     <Play className="mr-1.5 h-3.5 w-3.5" />
                     {triggering === 'daily' ? 'Se trimite...' : 'Trimite Acum'}
@@ -666,13 +762,21 @@ function PontajeDigestSection({
                     size="sm"
                     variant="outline"
                     disabled={triggering !== null}
-                    onClick={() => trigger('monthly')}
+                    onClick={() => saveAndTrigger('monthly')}
                   >
                     <Calendar className="mr-1.5 h-3.5 w-3.5" />
                     {triggering === 'monthly' ? 'Se trimite...' : 'Trimite Acum'}
                   </Button>
                 </div>
               )}
+            </div>
+
+            {/* Save button inside the card */}
+            <div className="border-t pt-3">
+              <Button size="sm" onClick={onSave} disabled={saving}>
+                <Save className="mr-1.5 h-3.5 w-3.5" />
+                {saving ? 'Se salvează...' : 'Salvează Setări Pontaje'}
+              </Button>
             </div>
           </>
         )}
