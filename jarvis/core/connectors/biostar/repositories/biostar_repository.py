@@ -13,9 +13,11 @@ class BioStarRepository(BaseRepository):
         """Get all BioStar employees with their JARVIS mapping."""
         sql = '''
             SELECT be.*,
-                   u.name AS mapped_jarvis_user_name
+                   u.name AS mapped_jarvis_user_name,
+                   COALESCE(co.company, u.company) AS jarvis_company
             FROM biostar_employees be
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+            LEFT JOIN companies co ON co.id = u.company_id
         '''
         if active_only:
             sql += " WHERE be.status = 'active'"

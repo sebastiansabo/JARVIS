@@ -348,11 +348,11 @@ def send_pontaje_digest():
             # Yesterday status: Sincron leave code if no punch, or 'Prezent' if punched
             y_status = _resolve_status(y_in, jid, yesterday.day, sincron_codes)
 
-            # Today (check-in only)
+            # Today (check-in only — use adjusted time if available)
             ts = next((x for x in today_data if x.get('biostar_user_id') == bio_id), None)
             t_in = ''
             if ts:
-                raw_in = ts.get('first_punch')  # No adjustment yet for today
+                raw_in = ts.get('adjusted_first_punch') or ts.get('first_punch')
                 if raw_in:
                     t_in = _fmt_time(raw_in)
 

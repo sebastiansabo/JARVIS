@@ -375,6 +375,16 @@ class EmployeeOverviewRepository(BaseRepository):
                   AND be.mapped_jarvis_user_id IS NOT NULL
                   AND be.working_hours > 0
             )
+            ,
+            adj_times AS (
+                SELECT be.mapped_jarvis_user_id AS user_id,
+                       to_char(adj.adjusted_first_punch::time, 'HH24:MI') AS adjusted_first_punch,
+                       to_char(adj.adjusted_last_punch::time, 'HH24:MI') AS adjusted_last_punch
+                FROM biostar_daily_adjustments adj
+                JOIN biostar_employees be ON be.biostar_user_id = adj.biostar_user_id
+                WHERE adj.date = %s
+                  AND be.mapped_jarvis_user_id IS NOT NULL
+            )
             SELECT u.id AS user_id,
                    CASE
                        WHEN EXISTS(SELECT 1 FROM public_holidays ph WHERE ph.date = %s) THEN 'holiday'
@@ -385,16 +395,19 @@ class EmployeeOverviewRepository(BaseRepository):
                    END AS status,
                    ol.short_code AS leave_code,
                    to_char(pt.first_punch, 'HH24:MI') AS first_punch,
-                   to_char(pt.last_punch, 'HH24:MI') AS last_punch
+                   to_char(pt.last_punch, 'HH24:MI') AS last_punch,
+                   at.adjusted_first_punch,
+                   at.adjusted_last_punch
             FROM users u
             LEFT JOIN punched p ON p.user_id = u.id
             LEFT JOIN punch_times pt ON pt.user_id = u.id
             LEFT JOIN on_leave ol ON ol.user_id = u.id
             LEFT JOIN biostar_mapped bm ON bm.user_id = u.id
+            LEFT JOIN adj_times at ON at.user_id = u.id
             WHERE u.is_active = TRUE
               AND COALESCE(u.contract_status, 'active') = 'active'
         ''', (check_date, check_date, check_date, check_date, check_date,
-              check_date, check_date, check_date))
+              check_date, check_date, check_date, check_date))
 
     def get_daily_sincron_codes(self, sincron_employee_id, company_name, year, month):
         """Return list of {day, short_code, unit, value} rows for timeline."""
