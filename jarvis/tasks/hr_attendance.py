@@ -209,10 +209,17 @@ def send_pontaje_digest():
         if settings.get('pontaje_digest_enabled') != 'true':
             logger.debug("Pontaje digest disabled, skipping")
             return
+        if settings.get('pontaje_digest_daily_enabled') == 'false':
+            logger.debug("Daily pontaje digest disabled, skipping")
+            return
 
-        recipients_str = settings.get('pontaje_digest_recipients', '').strip()
+        # Per-period recipients, fall back to global
+        recipients_str = (
+            settings.get('pontaje_digest_daily_recipients', '').strip()
+            or settings.get('pontaje_digest_recipients', '').strip()
+        )
         if not recipients_str:
-            logger.debug("No pontaje digest recipients configured, skipping")
+            logger.debug("No daily pontaje digest recipients configured, skipping")
             return
 
         if not is_smtp_configured():
@@ -453,14 +460,21 @@ def send_monthly_pontaje_summary():
         from core.connectors.biostar.repositories.biostar_repository import BioStarRepository
         from core.connectors.sincron.repositories.sincron_repository import SincronRepository
 
-        # Check settings (reuse same settings as daily digest)
+        # Check settings
         notif_repo = NotificationRepository()
         settings = notif_repo.get_settings()
         if settings.get('pontaje_digest_enabled') != 'true':
             logger.debug("Pontaje digest disabled, skipping monthly summary")
             return
+        if settings.get('pontaje_digest_monthly_enabled') == 'false':
+            logger.debug("Monthly pontaje digest disabled, skipping")
+            return
 
-        recipients_str = settings.get('pontaje_digest_recipients', '').strip()
+        # Per-period recipients, fall back to global
+        recipients_str = (
+            settings.get('pontaje_digest_monthly_recipients', '').strip()
+            or settings.get('pontaje_digest_recipients', '').strip()
+        )
         if not recipients_str:
             logger.debug("No pontaje digest recipients configured, skipping monthly summary")
             return
