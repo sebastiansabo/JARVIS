@@ -766,6 +766,7 @@ class BioStarSyncService:
             adjusted_count += 1
 
         # --- Absent employees (no punches, past day, no Sincron leave) ---
+        from datetime import time as _time
         for row in absent:
             sched_start = row['schedule_start']
             sched_end = row['schedule_end']
@@ -773,6 +774,14 @@ class BioStarSyncService:
 
             if not sched_start or not sched_end:
                 continue
+
+            # Parse time if returned as string from SQL
+            if isinstance(sched_start, str):
+                parts = sched_start.split(':')
+                sched_start = _time(int(parts[0]), int(parts[1]))
+            if isinstance(sched_end, str):
+                parts = sched_end.split(':')
+                sched_end = _time(int(parts[0]), int(parts[1]))
 
             ref_date = datetime.strptime(date_str, '%Y-%m-%d').date()
             start_offset = random.randint(-3, 3)
