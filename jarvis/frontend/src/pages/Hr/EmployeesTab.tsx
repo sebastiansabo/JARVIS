@@ -1049,13 +1049,15 @@ export default function EmployeesTab({ search }: Props) {
   )
 }
 
-function AbsenceBadge({ status }: { status?: { status: string; leave_code?: string; first_punch?: string | null; last_punch?: string | null } }) {
+function AbsenceBadge({ status }: { status?: { status: string; leave_code?: string; first_punch?: string | null; last_punch?: string | null; adjusted_first_punch?: string | null; adjusted_last_punch?: string | null } }) {
   if (!status) return <span className="text-xs text-muted-foreground">—</span>
   switch (status.status) {
     case 'present': {
-      const hasOut = status.last_punch && status.last_punch !== status.first_punch
-      const punch = status.first_punch
-        ? hasOut ? ` (${status.first_punch} - ${status.last_punch})` : ` (${status.first_punch} - …)`
+      const inTime = status.adjusted_first_punch ?? status.first_punch
+      const outTime = status.adjusted_last_punch ?? status.last_punch
+      const hasOut = outTime && outTime !== inTime
+      const punch = inTime
+        ? hasOut ? ` (${inTime} - ${outTime})` : ` (${inTime} - …)`
         : ''
       return <span className="inline-flex items-center gap-1 text-xs text-green-600"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />Present{punch}</span>
     }
