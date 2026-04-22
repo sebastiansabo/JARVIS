@@ -299,7 +299,7 @@ def send_pontaje_digest():
 
         # Build CSV: one row per employee
         # Columns: Name, Company, Group, Yesterday In, Yesterday Out, Yesterday Duration,
-        #          Yesterday Sincron, Today In, Today Sincron
+        #          Yesterday Status, Today In, Today Status
         output = io.StringIO()
         writer = csv.writer(output, quoting=csv.QUOTE_ALL)
         yesterday_label = yesterday.strftime('%a %d %b')
@@ -307,13 +307,15 @@ def send_pontaje_digest():
         writer.writerow([
             'Name', 'Company', 'Group',
             f'Checked In ({yesterday_label})', f'Checked Out ({yesterday_label})',
-            f'Duration ({yesterday_label})', f'Sincron ({yesterday_label})',
-            f'Checked In ({today_label})', f'Sincron ({today_label})',
+            f'Duration ({yesterday_label})', f'Status ({yesterday_label})',
+            f'Checked In ({today_label})', f'Status ({today_label})',
         ])
 
         sorted_employees = sorted(employee_map.items(), key=lambda x: x[1]['name'])
 
         for bio_id, emp in sorted_employees:
+            jid = emp.get('jarvis_user_id')
+
             # Yesterday
             ys = next((x for x in yesterday_data if x.get('biostar_user_id') == bio_id), None)
             y_in = ''
@@ -336,11 +338,8 @@ def send_pontaje_digest():
                     if net > 0:
                         y_dur = f"{net / 3600:.2f}"
 
-            # Yesterday Sincron code
-            y_sincron = ''
-            jid = emp.get('jarvis_user_id')
-            if jid:
-                y_sincron = sincron_codes.get((jid, yesterday.day), '')
+            # Yesterday status: Sincron leave code if no punch, or 'Prezent' if punched
+            y_status = _resolve_status(y_in, jid, yesterday.day, sincron_codes)
 
             # Today (check-in only)
             ts = next((x for x in today_data if x.get('biostar_user_id') == bio_id), None)
@@ -350,15 +349,13 @@ def send_pontaje_digest():
                 if raw_in:
                     t_in = _fmt_time(raw_in)
 
-            # Today Sincron code
-            t_sincron = ''
-            if jid:
-                t_sincron = sincron_codes.get((jid, today.day), '')
+            # Today status
+            t_status = _resolve_status(t_in, jid, today.day, sincron_codes)
 
             writer.writerow([
                 emp['name'], emp['company'], emp['group'],
-                y_in, y_out, y_dur, y_sincron,
-                t_in, t_sincron,
+                y_in, y_out, y_dur, y_status,
+                t_in, t_status,
             ])
 
         csv_bytes = ('\ufeff' + output.getvalue()).encode('utf-8')
@@ -394,6 +391,23 @@ def send_pontaje_digest():
 
     except Exception as e:
         logger.error(f"Pontaje digest failed: {e}", exc_info=True)
+
+
+# Sincron leave codes (non-working)
+_LEAVE_CODES = {'CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CF', 'CFS',
+                'CNP', 'COP', 'CFP', 'ABS', 'AN', 'NS', 'SR', 'S'}
+
+
+def _resolve_status(checked_in, jarvis_user_id, day_num, sincron_codes):
+    """Determine status for a day: Prezent / Sincron leave code / Absent."""
+    if checked_in:
+        return 'Prezent'
+    # No punch — check Sincron code
+    if jarvis_user_id:
+        code = sincron_codes.get((jarvis_user_id, day_num), '')
+        if code and code != 'OZ':
+            return code  # CO, CM, CIC, etc.
+    return 'Absent'
 
 
 def _fmt_time(dt_str):
@@ -544,7 +558,7 @@ def send_monthly_pontaje_summary():
         writer = csv.writer(output, quoting=csv.QUOTE_ALL)
         writer.writerow([
             'Name', 'Company', 'Group', 'Week', 'Date', 'Day',
-            'Checked In', 'Checked Out', 'Duration (h)', 'Sincron Status',
+            'Checked In', 'Checked Out', 'Duration (h)', 'Status',
         ])
 
         sorted_employees = sorted(employee_map.items(), key=lambda x: x[1]['name'])
@@ -581,14 +595,12 @@ def send_monthly_pontaje_summary():
                         if net > 0:
                             duration = f"{net / 3600:.2f}"
 
-                sincron = ''
-                if jid:
-                    sincron = sincron_codes.get((jid, wd.day), '')
+                status = _resolve_status(checked_in, jid, wd.day, sincron_codes)
 
                 writer.writerow([
                     emp['name'], emp['company'], emp['group'],
                     week, date_str, day_name,
-                    checked_in, checked_out, duration, sincron,
+                    checked_in, checked_out, duration, status,
                 ])
                 total_rows += 1
 
