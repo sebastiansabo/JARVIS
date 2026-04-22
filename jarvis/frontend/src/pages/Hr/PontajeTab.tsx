@@ -1074,30 +1074,24 @@ function groupByWeek(days: DayEntry[]): WeekGroup[] {
 async function adjustDays(
   days: DayEntry[],
   biostarUserId: string,
-  scheduleStart: string | null,
-  lunchMin: number,
-  workingHours: number,
+  _scheduleStart: string | null,
+  _lunchMin: number,
+  _workingHours: number,
   leaveCodes?: Map<string, string>,
 ): Promise<number> {
-  const unadjusted = days.filter(d => d.data && !d.data.adjusted_first_punch && !d.isWeekend && !d.isHoliday && !d.isOutsideMonth && !leaveCodes?.has(d.date))
+  const today = todayStr()
+  const eligible = days.filter(d =>
+    !d.isWeekend && !d.isHoliday && !d.isOutsideMonth
+    && d.date <= today
+    && !leaveCodes?.has(d.date)
+    && !(d.data?.adjusted_first_punch),
+  )
   let count = 0
-  for (const day of unadjusted) {
-    const d = day.data!
-    if (!d.first_punch) continue
-    const { adjFirst, adjLast } = randomizeAdjustedTimes(day.date, scheduleStart, lunchMin, workingHours)
-    await biostarApi.adjustEmployee({
-      biostar_user_id: biostarUserId,
-      date: day.date,
-      adjusted_first_punch: adjFirst,
-      adjusted_last_punch: adjLast,
-      original_first_punch: d.first_punch,
-      original_last_punch: d.last_punch ?? d.first_punch,
-      schedule_start: scheduleStart ?? undefined,
-      lunch_break_minutes: lunchMin,
-      working_hours: workingHours,
-      original_duration_seconds: d.duration_seconds ?? undefined,
-    })
-    count++
+  for (const day of eligible) {
+    try {
+      await biostarApi.autoAdjustSingle(biostarUserId, day.date)
+      count++
+    } catch { /* skip — Sincron leave or no schedule */ }
   }
   return count
 }
