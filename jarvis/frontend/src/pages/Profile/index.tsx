@@ -1757,7 +1757,12 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                 ] satisfies MobileCardField<ProfileInvoice>[]}
                 getRowId={(inv) => inv.id}
                 actions={(inv) => inv.drive_link ? (
-                  <a href={inv.drive_link} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
+                  <a
+                    href={inv.drive_link?.startsWith('/efactura/') ? `/profile/api/invoices/${inv.id}/pdf` : inv.drive_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                 ) : null}
@@ -1837,7 +1842,7 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                             <TableCell onClick={(e) => e.stopPropagation()}>
                               {inv.drive_link && (
                                 <a
-                                  href={inv.drive_link}
+                                  href={inv.drive_link?.startsWith('/efactura/') ? `/profile/api/invoices/${inv.id}/pdf` : inv.drive_link}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-muted-foreground hover:text-foreground"

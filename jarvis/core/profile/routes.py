@@ -3,7 +3,7 @@
 API endpoints and page routes for the user profile page.
 Uses user data directly (organizational fields stored in users table).
 """
-from flask import jsonify, request, redirect
+from flask import jsonify, request, redirect, Response
 from flask_login import login_required, current_user
 
 from . import profile_bp
@@ -191,6 +191,40 @@ def api_profile_invoice_detail(invoice_id):
             return jsonify({'error': 'Invoice not found'}), 404
 
         return jsonify(invoice)
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@profile_bp.route('/api/invoices/<int:invoice_id>/pdf')
+@login_required
+def api_profile_invoice_pdf(invoice_id):
+    """Download e-Factura PDF — profile-scoped access (ownership check, no efactura permission)."""
+    try:
+        if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
+            return jsonify({'error': 'Invoice not found'}), 404
+
+        from core.base_repository import BaseRepository
+        repo = BaseRepository()
+        row = repo.query_one(
+            'SELECT id FROM efactura_invoices WHERE jarvis_invoice_id = %s',
+            (invoice_id,)
+        )
+        if not row:
+            return jsonify({'error': 'No e-Factura PDF available for this invoice'}), 404
+
+        from core.connectors.efactura.services.pdf_service import PDFService
+        result = PDFService().get_invoice_pdf(row['id'])
+
+        if not result.success:
+            return jsonify({'error': result.error}), 404
+
+        return Response(
+            result.data['pdf_data'],
+            mimetype='application/pdf',
+            headers={
+                'Content-Disposition': f'attachment; filename={result.data["filename"]}',
+            }
+        )
     except Exception as e:
         return safe_error_response(e)
 
