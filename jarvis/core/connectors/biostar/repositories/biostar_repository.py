@@ -389,7 +389,8 @@ class BioStarRepository(BaseRepository):
         if jarvis_user_ids:
             extra_where = ' AND be2.mapped_jarvis_user_id = ANY(%s)'
             params.append(jarvis_user_ids)
-        # date_str used a second time for the adjustment JOIN
+        # date_str used for the adjustment JOIN and UNION
+        params.append(date_str)
         params.append(date_str)
         return self.query_all(f'''
             WITH deduped AS (
@@ -437,7 +438,41 @@ class BioStarRepository(BaseRepository):
             FROM punches p
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = p.biostar_user_id AND adj.date = %s::date
-            ORDER BY p.jarvis_company NULLS LAST, p.name
+
+            UNION ALL
+
+            -- Include absent employees who have adjustments but no punches
+            SELECT
+                adj2.biostar_user_id,
+                be3.name,
+                be3.email,
+                be3.user_group_name,
+                be3.mapped_jarvis_user_id,
+                u3.name AS mapped_jarvis_user_name,
+                COALESCE(co3.company, u3.company) AS jarvis_company,
+                u3.department AS jarvis_department,
+                be3.lunch_break_minutes,
+                be3.working_hours,
+                be3.schedule_start,
+                be3.schedule_end,
+                NULL::timestamptz AS first_punch,
+                NULL::timestamptz AS last_punch,
+                0 AS total_punches,
+                0 AS duration_seconds,
+                adj2.adjusted_first_punch,
+                adj2.adjusted_last_punch,
+                adj2.adjustment_type
+            FROM biostar_daily_adjustments adj2
+            JOIN biostar_employees be3 ON be3.biostar_user_id = adj2.biostar_user_id
+            LEFT JOIN users u3 ON u3.id = be3.mapped_jarvis_user_id
+            LEFT JOIN companies co3 ON co3.id = u3.company_id
+            WHERE adj2.date = %s::date
+              AND adj2.original_first_punch IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM punches p2 WHERE p2.biostar_user_id = adj2.biostar_user_id
+              )
+
+            ORDER BY jarvis_company NULLS LAST, name
         ''', params)
 
     def get_range_summary(self, start_date, end_date, jarvis_user_ids=None):
