@@ -336,7 +336,7 @@ def send_pontaje_digest():
                         dur_sec = ys.get('duration_seconds') or 0
                     net = max(0, dur_sec - lunch * 60) if dur_sec > lunch * 60 else dur_sec
                     if net > 0:
-                        y_dur = f"{net / 3600:.2f}"
+                        y_dur = f"{int(net // 3600)}:{int((net % 3600) // 60):02d}"
 
             # Yesterday status: Sincron leave code if no punch, or 'Prezent' if punched
             y_status = _resolve_status(y_in, jid, yesterday.day, sincron_codes)
@@ -593,7 +593,7 @@ def send_monthly_pontaje_summary():
                             dur_sec = entry.get('duration_seconds') or 0
                         net = max(0, dur_sec - lunch * 60) if dur_sec > lunch * 60 else dur_sec
                         if net > 0:
-                            duration = f"{net / 3600:.2f}"
+                            duration = f"{int(net // 3600)}:{int((net % 3600) // 60):02d}"
 
                 status = _resolve_status(checked_in, jid, wd.day, sincron_codes)
 
