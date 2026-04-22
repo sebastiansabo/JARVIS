@@ -14,7 +14,8 @@ class BioStarRepository(BaseRepository):
         sql = '''
             SELECT be.*,
                    u.name AS mapped_jarvis_user_name,
-                   COALESCE(co.company, u.company) AS jarvis_company
+                   COALESCE(co.company, u.company) AS jarvis_company,
+                   u.is_active AS jarvis_user_active
             FROM biostar_employees be
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
             LEFT JOIN companies co ON co.id = u.company_id
