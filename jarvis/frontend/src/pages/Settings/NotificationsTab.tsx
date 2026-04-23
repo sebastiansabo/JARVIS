@@ -60,6 +60,9 @@ export default function NotificationsTab() {
     pontaje_digest_monthly_enabled: true,
     pontaje_digest_monthly_recipients: '',
     pontaje_digest_monthly_day: '1',
+    // HR Weekly Digest
+    hr_weekly_digest_enabled: false,
+    hr_weekly_digest_recipients: '',
   })
 
   const [testEmail, setTestEmail] = useState('')
@@ -102,6 +105,8 @@ export default function NotificationsTab() {
         pontaje_digest_monthly_enabled: String(settings.pontaje_digest_monthly_enabled ?? 'true') === 'true',
         pontaje_digest_monthly_recipients: settings.pontaje_digest_monthly_recipients || '',
         pontaje_digest_monthly_day: settings.pontaje_digest_monthly_day || '1',
+        hr_weekly_digest_enabled: String(settings.hr_weekly_digest_enabled) === 'true',
+        hr_weekly_digest_recipients: settings.hr_weekly_digest_recipients || '',
       })
     }
   }, [settings])
@@ -158,6 +163,8 @@ export default function NotificationsTab() {
       pontaje_digest_monthly_enabled: String(form.pontaje_digest_monthly_enabled),
       pontaje_digest_monthly_recipients: form.pontaje_digest_monthly_recipients,
       pontaje_digest_monthly_day: form.pontaje_digest_monthly_day,
+      hr_weekly_digest_enabled: String(form.hr_weekly_digest_enabled),
+      hr_weekly_digest_recipients: form.hr_weekly_digest_recipients,
     })
   }
 
@@ -363,6 +370,9 @@ export default function NotificationsTab() {
 
       {/* Pontaje Digest */}
       <PontajeDigestSection form={form} setForm={setForm} onSave={handleSave} saving={saveMutation.isPending} />
+
+      {/* HR Weekly Digest */}
+      <HrWeeklyDigestSection form={form} setForm={setForm} onSave={handleSave} saving={saveMutation.isPending} />
 
       {/* Push Notifications */}
       <PushNotificationsSection />
@@ -772,6 +782,103 @@ function PontajeDigestSection({
               <Button size="sm" onClick={onSave} disabled={saving}>
                 <Save className="mr-1.5 h-3.5 w-3.5" />
                 {saving ? 'Se salvează...' : 'Salvează Setări Pontaje'}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+
+// ============== HR Weekly Digest Section ==============
+
+function HrWeeklyDigestSection({
+  form, setForm, onSave, saving,
+}: {
+  form: Record<string, any>
+  setForm: (f: any) => void
+  onSave: () => Promise<any>
+  saving: boolean
+}) {
+  const [triggering, setTriggering] = useState(false)
+
+  const saveAndTrigger = async () => {
+    await onSave()
+    setTriggering(true)
+    try {
+      const res = await fetch('/biostar/api/trigger-hr-weekly-digest', {
+        method: 'POST',
+        headers: { 'X-Admin-Token': 'jarvis-trigger-2026' },
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success('HR Weekly Digest trimis')
+      } else {
+        toast.error(data.error || 'Failed to trigger digest')
+      }
+    } catch {
+      toast.error('Failed to trigger digest')
+    } finally {
+      setTriggering(false)
+    }
+  }
+
+  const enabled = form.hr_weekly_digest_enabled
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Newspaper className="h-5 w-5" />
+          HR Weekly Digest
+        </CardTitle>
+        <CardDescription>
+          Raport săptămânal HR: concedii YTD, CO rămas, ore lucrate vs potențial — trimis luni dimineața.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Activează HR Weekly Digest</p>
+            <p className="text-xs text-muted-foreground">Trimite raport HTML săptămânal cu metrici HR pe companie</p>
+          </div>
+          <Switch
+            checked={enabled}
+            onCheckedChange={(v) => setForm({ ...form, hr_weekly_digest_enabled: v })}
+          />
+        </div>
+
+        {enabled && (
+          <>
+            <div className="space-y-3 border-l-2 border-muted pl-4">
+              <div className="grid gap-1.5">
+                <Label className="text-xs font-medium">Destinatari (comma-separated)</Label>
+                <Input
+                  value={form.hr_weekly_digest_recipients}
+                  onChange={(e) => setForm({ ...form, hr_weekly_digest_recipients: e.target.value })}
+                  placeholder="hr@company.com, director@company.com"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Se trimite automat luni la 10:00 (Romania). Conține: concedii YTD, CO rămas, check-in/out mediu, ore lucrate vs potențial.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={triggering}
+                onClick={saveAndTrigger}
+              >
+                <Play className="mr-1.5 h-3.5 w-3.5" />
+                {triggering ? 'Se trimite...' : 'Trimite Acum'}
+              </Button>
+            </div>
+
+            <div className="border-t pt-3">
+              <Button size="sm" onClick={onSave} disabled={saving}>
+                <Save className="mr-1.5 h-3.5 w-3.5" />
+                {saving ? 'Se salvează...' : 'Salvează Setări'}
               </Button>
             </div>
           </>

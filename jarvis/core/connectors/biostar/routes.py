@@ -916,6 +916,21 @@ def api_trigger_monthly_digest():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@biostar_bp.route('/api/trigger-hr-weekly-digest', methods=['POST'])
+def api_trigger_hr_weekly_digest():
+    """Manually trigger the HR weekly digest."""
+    if not _check_admin_token():
+        return jsonify({'success': False, 'error': 'Invalid token'}), 403
+    try:
+        import importlib
+        mod = importlib.import_module('tasks.hr_attendance')
+        mod.send_hr_weekly_digest()
+        return jsonify({'success': True, 'message': 'HR weekly digest triggered'})
+    except Exception as e:
+        logger.error(f"Manual HR weekly digest trigger failed: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @biostar_bp.route('/api/test-smtp', methods=['POST'])
 def api_test_smtp():
     """Quick SMTP connectivity test from the server (admin token required)."""

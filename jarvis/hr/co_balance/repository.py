@@ -201,6 +201,17 @@ class CoBalanceRepository(BaseRepository):
             result.setdefault(r['user_id'], {})[r['company_name']] = float(r['used_ytd'] or 0)
         return result
 
+    # ── Delete ──
+
+    def delete_rows(self, row_ids):
+        """Delete CO balance rows by their database IDs."""
+        if not row_ids:
+            return 0
+        return self.execute(
+            "DELETE FROM sincron_co_balance WHERE id IN %s",
+            (tuple(row_ids),),
+        )
+
     # ── Import runs ──
 
     def create_import_run(self, run_id, year, source_file, imported_by):

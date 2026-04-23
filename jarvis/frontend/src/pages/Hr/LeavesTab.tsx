@@ -1,7 +1,8 @@
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Upload, RefreshCw, CheckCircle2, AlertCircle, UserPlus, Clock } from 'lucide-react'
+import { Upload, RefreshCw, CheckCircle2, AlertCircle, UserPlus, Clock, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,6 +25,7 @@ interface Props {
 }
 
 interface MatchedRow {
+  id: number
   user_id: number
   year: number
   company_name: string
@@ -56,6 +58,24 @@ export default function LeavesTab({ search = '' }: Props) {
   const [year, setYear] = useState<number>(currentYear)
   const [tab, setTab] = useState<'matched' | 'unmatched'>('matched')
   const [assignRow, setAssignRow] = useState<CoBalanceUnmatchedRow | null>(null)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }, [])
+
+  const toggleAll = useCallback((rows: MatchedRow[]) => {
+    setSelected(prev => {
+      const allIds = rows.map(r => r.id)
+      const allSelected = allIds.every(id => prev.has(id))
+      return allSelected ? new Set<number>() : new Set(allIds)
+    })
+  }, [])
 
   // Queries
   const balanceQuery = useQuery({
@@ -78,8 +98,13 @@ export default function LeavesTab({ search = '' }: Props) {
   const matchedRows = useMemo<MatchedRow[]>(() => {
     const data = balanceQuery.data?.data ?? {}
     const rows: MatchedRow[] = []
-    for (const [, r] of Object.entries(data)) {
+    for (const [key, r] of Object.entries(data)) {
       const row = r as MatchedRow
+      // Ensure id exists — backend key is "userId_dbId"
+      if (!row.id) {
+        const parts = key.split('_')
+        row.id = parseInt(parts[parts.length - 1], 10) || 0
+      }
       rows.push(row)
     }
     // Sort by company, then name
@@ -152,6 +177,19 @@ export default function LeavesTab({ search = '' }: Props) {
     },
   })
 
+  const deleteMut = useMutation({
+    mutationFn: (ids: number[]) => hrApi.deleteCoBalanceRows(ids),
+    onSuccess: (_, ids) => {
+      toast.success(`${ids.length} row(s) deleted`)
+      setSelected(new Set())
+      setShowDeleteConfirm(false)
+      qc.invalidateQueries({ queryKey: ['hr', 'co-balance'] })
+    },
+    onError: (e: unknown) => {
+      toast.error(e instanceof Error ? e.message : 'Delete failed')
+    },
+  })
+
   function refetchAll() {
     balanceQuery.refetch()
     unmatchedQuery.refetch()
@@ -171,7 +209,7 @@ export default function LeavesTab({ search = '' }: Props) {
             id="leaves-year"
             type="number"
             value={year}
-            onChange={(e) => setYear(parseInt(e.target.value || String(currentYear), 10))}
+            onChange={(e) => { setYear(parseInt(e.target.value || String(currentYear), 10)); setSelected(new Set()) }}
             min={2000}
             max={2100}
             className="h-9 w-24"
@@ -184,6 +222,12 @@ export default function LeavesTab({ search = '' }: Props) {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {selected.size > 0 && (
+            <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
+              <Trash2 className="mr-1.5 h-4 w-4" />
+              Delete ({selected.size})
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={refetchAll} disabled={isLoading}>
             <RefreshCw className={cn('mr-1.5 h-4 w-4', isLoading && 'animate-spin')} />
             Refresh
@@ -287,6 +331,12 @@ export default function LeavesTab({ search = '' }: Props) {
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          <TableHead className="w-10 px-2">
+                            <Checkbox
+                              checked={filteredMatched.length > 0 && filteredMatched.every(r => selected.has(r.id))}
+                              onCheckedChange={() => toggleAll(filteredMatched)}
+                            />
+                          </TableHead>
                           <TableHead>Name</TableHead>
                           <TableHead>Company</TableHead>
                           <TableHead>Department</TableHead>
@@ -302,7 +352,13 @@ export default function LeavesTab({ search = '' }: Props) {
                       </TableHeader>
                       <TableBody>
                         {filteredMatched.map((r) => (
-                          <TableRow key={`${r.user_id}-${r.company_name}-${r.year}`}>
+                          <TableRow key={`${r.user_id}-${r.company_name}-${r.year}`} className={cn(selected.has(r.id) && 'bg-muted/50')}>
+                            <TableCell className="px-2">
+                              <Checkbox
+                                checked={selected.has(r.id)}
+                                onCheckedChange={() => toggleSelect(r.id)}
+                              />
+                            </TableCell>
                             <TableCell className="font-medium">
                               {[r.nume, r.prenume].filter(Boolean).join(' ') || `user #${r.user_id}`}
                             </TableCell>
@@ -398,6 +454,30 @@ export default function LeavesTab({ search = '' }: Props) {
         }}
         isPending={assignMut.isPending}
       />
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete {selected.size} row(s)?</DialogTitle>
+            <DialogDescription>
+              This will permanently remove the selected CO balance rows. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowDeleteConfirm(false)} disabled={deleteMut.isPending}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteMut.mutate(Array.from(selected))}
+              disabled={deleteMut.isPending}
+            >
+              {deleteMut.isPending ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

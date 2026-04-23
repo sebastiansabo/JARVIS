@@ -236,3 +236,40 @@ export interface OrganigramData {
   current_user_id: number
   is_manager: boolean
 }
+
+// Weekly Digest / Reports
+export interface CoRow {
+  name: string
+  company: string
+  department: string
+  total_available: number
+  used: number
+  remaining: number
+}
+
+export interface WeeklyDigestData {
+  year: number
+  period: string
+  period_label: string
+  week_label: string
+  period_start: string
+  period_end: string
+  punch_start: string
+  punch_end: string
+  working_days: number
+  working_days_week: number
+  leave_by_company: { company_name: string; total_leave_days: number; employees_with_leave: number; headcount: number; avg_per_employee: number; prev_year_days: number; co_remaining: number }[]
+  leave_by_department: { department: string; headcount: number; total_leave_days: number; co_remaining: number }[]
+  headcount_map: Record<string, number>
+  avg_leave_per_employee: { company_name: string; leave_days: number; headcount: number; avg: number }[]
+  top_10_co: CoRow[]
+  all_co_rows: CoRow[]
+  avg_checkin_checkout: { company_name: string; avg_in: string; avg_out: string; employee_count: number }[]
+  actual_vs_potential: { company_name: string; actual_hours: number; potential_hours: number; utilization_pct: number }[]
+  totals: {
+    total_leave_days: number
+    total_actual_hours: number
+    total_potential_hours: number
+    total_utilization_pct: number
+  }
+}

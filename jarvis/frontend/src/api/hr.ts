@@ -18,6 +18,7 @@ import type {
   OrganigramData,
   CoBalanceImportRun,
   CoBalanceUnmatchedRow,
+  WeeklyDigestData,
 } from '@/types/hr'
 
 const BASE = '/hr/events/api'
@@ -210,6 +211,8 @@ export const hrApi = {
     api.get<{ success: boolean; data: CoBalanceImportRun }>(`/hr/api/co-balance/import/status/${runId}`),
   getCoBalance: (year: number) =>
     api.get<{ success: boolean; year: number; data: Record<string, {
+      id: number
+      user_id: number
       year: number
       company_name: string
       cnp: string | null
@@ -229,8 +232,16 @@ export const hrApi = {
     api.get<{ success: boolean; year: number; data: CoBalanceUnmatchedRow[] }>(
       `/hr/api/co-balance/unmatched${qs({ year })}`,
     ),
+  deleteCoBalanceRows: (ids: number[]) =>
+    api.delete<{ success: boolean; deleted: number }>('/hr/api/co-balance', { ids }),
   assignCoBalanceUser: (rowId: number, userId: number) =>
     api.post<{ success: boolean }>(`/hr/api/co-balance/unmatched/${rowId}/assign`, { user_id: userId }),
   listCoBalanceImports: (limit = 20) =>
     api.get<{ success: boolean; data: CoBalanceImportRun[] }>(`/hr/api/co-balance/imports${qs({ limit })}`),
+
+  // Reports
+  getWeeklyDigest: (params?: { period?: string }) =>
+    api.get<{ success: boolean; data: WeeklyDigestData }>(
+      `${BASE}/reports/weekly-digest${qs({ period: params?.period })}`,
+    ),
 }

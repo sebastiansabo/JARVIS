@@ -550,29 +550,31 @@ class SincronSyncService:
         """Get team timesheet summary for multiple users."""
         rows = self.repo.get_team_timesheet_summary(jarvis_user_ids, year, month)
 
-        # Group by user
-        by_user = {}
+        # Group by user + company (sincron_employee_id is per-company, not global)
+        by_user_company = {}
         for row in rows:
             uid = row['mapped_jarvis_user_id']
-            if uid not in by_user:
-                by_user[uid] = {
+            company = row['company_name']
+            key = (uid, company)
+            if key not in by_user_company:
+                by_user_company[key] = {
                     'user_id': uid,
                     'name': row['employee_name'],
-                    'company': row['company_name'],
+                    'company': company,
                     'codes': {},
                     'total_hours': 0,
                 }
             code = row['short_code']
             val = float(row['total_value'])
-            by_user[uid]['codes'][code] = {
+            by_user_company[key]['codes'][code] = {
                 'value': val,
                 'unit': row['unit'],
                 'days': row['day_count'],
             }
             if row['unit'] == 'hour':
-                by_user[uid]['total_hours'] += val
+                by_user_company[key]['total_hours'] += val
 
-        return list(by_user.values())
+        return list(by_user_company.values())
 
     def get_status(self):
         """Get connector status summary."""
