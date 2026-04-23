@@ -191,7 +191,6 @@ def send_pontaje_digest():
 
     Runs at 10:30 Romania time (after auto-adjust at 10:15).
     Sends CSV with yesterday's Checked In/Out/Duration and today's Checked In.
-    Includes Sincron leave status codes.
     """
     import io
     import csv
@@ -246,6 +245,28 @@ def send_pontaje_digest():
 
         bio_repo = BioStarRepository()
 
+        # Fetch Sincron day codes for the month
+        sincron_repo = SincronRepository()
+        sincron_codes = {}  # (jarvis_user_id, date) -> short_code
+        try:
+            day_codes = sincron_repo.get_all_day_codes(year, month)
+            for row in day_codes:
+                key = (row['mapped_jarvis_user_id'], row['day'])
+                if key not in sincron_codes or row['short_code'] != 'OZ':
+                    sincron_codes[key] = row['short_code']
+        except Exception as e:
+            logger.warning(f"Failed to fetch Sincron day codes: {e}")
+        # Also fetch previous month if yesterday is in a different month
+        if yesterday.month != month:
+            try:
+                prev_codes = sincron_repo.get_all_day_codes(yesterday.year, yesterday.month)
+                for row in prev_codes:
+                    key = (row['mapped_jarvis_user_id'], row['day'])
+                    if key not in sincron_codes or row['short_code'] != 'OZ':
+                        sincron_codes[key] = row['short_code']
+            except Exception:
+                pass
+
         # Fetch yesterday's full summary (all employees, with adjustments)
         yesterday_data = []
         try:
@@ -271,28 +292,6 @@ def send_pontaje_digest():
                 'jarvis_user_id': jid,
                 'bio_ids': [bio_id],
             }
-
-        # Fetch Sincron day codes for yesterday + today
-        sincron_repo = SincronRepository()
-        sincron_codes = {}  # (jarvis_user_id, day_num) -> short_code
-        try:
-            day_codes = sincron_repo.get_all_day_codes(year, month)
-            for row in day_codes:
-                key = (row['mapped_jarvis_user_id'], row['day'])
-                if key not in sincron_codes or row['short_code'] != 'OZ':
-                    sincron_codes[key] = row['short_code']
-        except Exception as e:
-            logger.warning(f"Failed to fetch Sincron day codes: {e}")
-        # Also fetch previous month if yesterday is in a different month
-        if yesterday.month != month:
-            try:
-                prev_codes = sincron_repo.get_all_day_codes(yesterday.year, yesterday.month)
-                for row in prev_codes:
-                    key = (row['mapped_jarvis_user_id'], row['day'])
-                    if key not in sincron_codes or row['short_code'] != 'OZ':
-                        sincron_codes[key] = row['short_code']
-            except Exception:
-                pass
 
         # Build CSV: one row per employee
         output = io.StringIO()
@@ -339,7 +338,6 @@ def send_pontaje_digest():
                     if net > 0:
                         y_dur = f"{int(net // 3600)}:{int((net % 3600) // 60):02d}"
 
-            # Yesterday status: Sincron leave code if no punch, or 'Prezent' if punched
             y_status = _resolve_status(y_in, jid, yesterday, sincron_codes)
 
             writer.writerow([
@@ -380,11 +378,6 @@ def send_pontaje_digest():
         logger.error(f"Pontaje digest failed: {e}", exc_info=True)
 
 
-# Sincron leave codes (non-working)
-_LEAVE_CODES = {'CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CF', 'CFS',
-                'CNP', 'COP', 'CFP', 'ABS', 'AN', 'NS', 'SR', 'S'}
-
-
 def _resolve_status(checked_in, jarvis_user_id, day_key, sincron_codes):
     """Determine status for a day: Prezent / Sincron leave code / Absent.
 
@@ -392,11 +385,10 @@ def _resolve_status(checked_in, jarvis_user_id, day_key, sincron_codes):
     """
     if checked_in:
         return 'Prezent'
-    # No punch — check Sincron code
     if jarvis_user_id:
         code = sincron_codes.get((jarvis_user_id, day_key), '')
         if code and code != 'OZ':
-            return code  # CO, CM, CIC, etc.
+            return code
     return 'Absent'
 
 
@@ -530,7 +522,7 @@ def send_monthly_pontaje_summary():
 
         # Fetch Sincron day codes for the month
         sincron_repo = SincronRepository()
-        sincron_codes = {}  # (jarvis_user_id, day_num) -> short_code
+        sincron_codes = {}  # (jarvis_user_id, date) -> short_code
         try:
             day_codes = sincron_repo.get_all_day_codes(year, month)
             for row in day_codes:
