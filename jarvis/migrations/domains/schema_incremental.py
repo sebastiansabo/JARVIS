@@ -1572,6 +1572,16 @@ def create_schema_incremental(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_checkin_locations_active ON checkin_locations(is_active)')
 
     # CarPark: two-level cost hierarchy (cost lines → cost entries)
+    # Guard: only run if carpark_vehicles exists (requires schema_carpark to have run first)
+    cursor.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema='public' AND table_name='carpark_vehicles')")
+    if cursor.fetchone()['exists']:
+        _create_carpark_incremental(conn, cursor)
+
+    _create_schema_incremental_continued(conn, cursor)
+
+
+def _create_carpark_incremental(conn, cursor):
+    """Carpark incremental migrations — split out to guard on carpark_vehicles existence."""
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS carpark_vehicle_cost_lines (
             id SERIAL PRIMARY KEY,
@@ -1651,6 +1661,8 @@ def create_schema_incremental(conn, cursor):
     ''')
 
 
+def _create_schema_incremental_continued(conn, cursor):
+    """Continuation of create_schema_incremental — non-carpark migrations."""
     # Add company_id FK to users — used by AI agent for company-scoped DMS isolation
     cursor.execute('''
         DO $$ BEGIN
