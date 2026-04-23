@@ -267,6 +267,9 @@ def api_employee_work_stats():
         single_punch_days = int(row.get('single_punch_days') or 0)
         # Single-punch days don't count as present for stats (no measurable work time)
         days_present = raw_days_present - single_punch_days
+        # Skip employees with only single-punch days (no measurable hours)
+        if days_present <= 0 and single_punch_days > 0:
+            continue
         raw_duration = float(row.get('total_duration_seconds') or 0)
         lunch_mins = int(row.get('lunch_break_minutes') or 0)
         working_h = float(row.get('working_hours') or 8)
