@@ -248,10 +248,17 @@ def send_pontaje_digest():
         # Fetch Sincron day codes for the month
         sincron_repo = SincronRepository()
         sincron_codes = {}  # (jarvis_user_id, date) -> short_code
+
+        def _parse_day(d):
+            """Ensure day is a date object (DB may return str)."""
+            if isinstance(d, date):
+                return d
+            return date.fromisoformat(str(d)[:10])
+
         try:
             day_codes = sincron_repo.get_all_day_codes(year, month)
             for row in day_codes:
-                key = (row['mapped_jarvis_user_id'], row['day'])
+                key = (row['mapped_jarvis_user_id'], _parse_day(row['day']))
                 if key not in sincron_codes or row['short_code'] != 'OZ':
                     sincron_codes[key] = row['short_code']
         except Exception as e:
@@ -261,7 +268,7 @@ def send_pontaje_digest():
             try:
                 prev_codes = sincron_repo.get_all_day_codes(yesterday.year, yesterday.month)
                 for row in prev_codes:
-                    key = (row['mapped_jarvis_user_id'], row['day'])
+                    key = (row['mapped_jarvis_user_id'], _parse_day(row['day']))
                     if key not in sincron_codes or row['short_code'] != 'OZ':
                         sincron_codes[key] = row['short_code']
             except Exception:
@@ -523,10 +530,16 @@ def send_monthly_pontaje_summary():
         # Fetch Sincron day codes for the month
         sincron_repo = SincronRepository()
         sincron_codes = {}  # (jarvis_user_id, date) -> short_code
+
+        def _parse_day_m(d):
+            if isinstance(d, date):
+                return d
+            return date.fromisoformat(str(d)[:10])
+
         try:
             day_codes = sincron_repo.get_all_day_codes(year, month)
             for row in day_codes:
-                key = (row['mapped_jarvis_user_id'], row['day'])
+                key = (row['mapped_jarvis_user_id'], _parse_day_m(row['day']))
                 if key not in sincron_codes or row['short_code'] != 'OZ':
                     sincron_codes[key] = row['short_code']
         except Exception as e:

@@ -1398,7 +1398,6 @@ function DayRow({
           <span className={cn('w-16 shrink-0 text-center font-medium', isShort ? 'text-orange-600' : '')}>
             {d.total_punches === 1 && !hasAdj && !d.adjusted_first_punch ? '—' : fmtDuration(net)}
           </span>
-          {hasAdj && <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300">C</Badge>}
           {canAdjust && !hasAdj && (d.first_punch || !d.total_punches) && (
             <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust day">
               <Wand2 className="h-2.5 w-2.5" />

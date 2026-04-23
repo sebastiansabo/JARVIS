@@ -749,11 +749,16 @@ function BioStarCronJobs() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Array.from({ length: 24 }, (_, h) => (
-                  <SelectItem key={h} value={`${String(h).padStart(2, '0')}:00`}>
-                    {String(h).padStart(2, '0')}:00
-                  </SelectItem>
-                ))}
+                {Array.from({ length: 48 }, (_, i) => {
+                  const h = Math.floor(i / 2)
+                  const m = (i % 2) * 30
+                  const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+                  return (
+                    <SelectItem key={val} value={val}>
+                      {val}
+                    </SelectItem>
+                  )
+                })}
               </SelectContent>
             </Select>
           </div>
