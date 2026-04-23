@@ -174,6 +174,7 @@ def co_balance_get_year():
         total = int(row.get('total_available') or 0)
         key = f"{uid}_{row['id']}"
         out[key] = {
+            'id': row['id'],
             'user_id': uid,
             'year': row['year'],
             'company_name': company,
@@ -191,6 +192,21 @@ def co_balance_get_year():
             'current_balance': total - used,
         }
     return jsonify({'success': True, 'year': year, 'data': out})
+
+
+@co_balance_bp.route('/api/co-balance', methods=['DELETE'])
+@api_login_required
+def co_balance_delete():
+    """Delete CO balance rows by their database IDs."""
+    forbidden = _require_hr()
+    if forbidden:
+        return forbidden
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'error': 'No IDs provided'}), 400
+    repo = CoBalanceRepository()
+    deleted = repo.delete_rows(ids)
+    return jsonify({'success': True, 'deleted': deleted})
 
 
 @co_balance_bp.route('/api/co-balance/unmatched', methods=['GET'])

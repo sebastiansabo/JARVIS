@@ -20,7 +20,7 @@ from tasks.marketing import sync_marketing_kpis
 from tasks.field_sales import field_sales_follow_up_reminders, field_sales_overdue_visit_alerts
 from tasks.biostar import sync_biostar_events, sync_biostar_users, auto_adjust_biostar_schedules
 from tasks.sincron import sync_sincron_timesheets
-from tasks.hr_attendance import check_missing_punches, send_pontaje_digest, send_monthly_pontaje_summary
+from tasks.hr_attendance import check_missing_punches, send_pontaje_digest, send_monthly_pontaje_summary, send_hr_weekly_digest
 from tasks.hr_courses import check_course_cert_expiry
 from tasks.carpark import cleanup_vin_cache
 from tasks.holidays import populate_holidays
@@ -311,6 +311,19 @@ def start_scheduler():
         hour=8,
         minute=0,
         id='hr_pontaje_monthly_summary',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # HR — weekly HR digest (Monday 07:00 UTC = 10:00 Romania summer)
+    scheduler.add_job(
+        send_hr_weekly_digest,
+        'cron',
+        day_of_week='mon',
+        hour=7,
+        minute=0,
+        id='hr_weekly_digest',
         replace_existing=True,
         misfire_grace_time=3600,
         coalesce=True,

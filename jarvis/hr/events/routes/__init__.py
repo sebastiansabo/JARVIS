@@ -9,3 +9,4 @@ from . import master_data  # noqa: F401
 from . import bonus_types  # noqa: F401
 from . import export       # noqa: F401
 from . import organigram   # noqa: F401
+from . import reports      # noqa: F401

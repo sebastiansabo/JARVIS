@@ -643,3 +643,557 @@ def send_monthly_pontaje_summary():
 
     except Exception as e:
         logger.error(f"Monthly pontaje summary failed: {e}", exc_info=True)
+
+
+_PRIMARY_CONTRACTS_CTE = '''
+WITH primary_contracts AS (
+    SELECT sincron_employee_id, company_name, mapped_jarvis_user_id
+    FROM (
+        SELECT se2.sincron_employee_id, se2.company_name, se2.mapped_jarvis_user_id,
+               ROW_NUMBER() OVER (
+                   PARTITION BY se2.mapped_jarvis_user_id
+                   ORDER BY se2.norma_lucru DESC NULLS LAST, se2.company_name
+               ) AS rn
+        FROM sincron_employees se2
+        WHERE se2.mapped_jarvis_user_id IS NOT NULL
+          AND se2.is_active = TRUE
+          AND se2.count_for_leave = TRUE
+    ) ranked WHERE rn = 1
+)
+'''
+
+
+def compute_hr_weekly_report_data(reference_date=None, period=None):
+    """Compute all sections of the HR weekly digest.
+
+    Args:
+        reference_date: Override "today" for the computation.
+        period: One of 'today', 'week', 'month', 'quarter', 'ytd' (default).
+            Controls the date range for leave counting and punch data.
+
+    Returns a JSON-serializable dict used by both the email digest
+    and the Reports API endpoint.
+    """
+    from datetime import date, timedelta
+    from collections import defaultdict
+    from core.connectors.biostar.repositories.biostar_repository import BioStarRepository
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    from hr.co_balance.repository import CoBalanceRepository
+    from core.utils.work_calendar import get_working_days_range
+    from core.base_repository import BaseRepository
+
+    today = reference_date or date.today()
+    year = today.year
+    jan1 = date(year, 1, 1)
+    period = period or 'ytd'
+
+    # Compute date ranges based on period
+    if period == 'today':
+        period_start = today
+        period_end = today
+        punch_start = today
+        punch_end = today
+    elif period == 'week':
+        period_start = today - timedelta(days=today.weekday())  # Monday
+        period_end = today
+        punch_start = period_start
+        punch_end = today
+    elif period == 'month':
+        period_start = date(year, today.month, 1)
+        period_end = today
+        punch_start = period_start
+        punch_end = today
+    elif period == 'quarter':
+        q_month = ((today.month - 1) // 3) * 3 + 1
+        period_start = date(year, q_month, 1)
+        period_end = today
+        punch_start = period_start
+        punch_end = today
+    else:  # ytd (default, also used by email digest)
+        period_start = jan1
+        period_end = today
+        # For YTD, punch data uses last full week
+        punch_start = today - timedelta(days=today.weekday() + 7)
+        punch_end = punch_start + timedelta(days=4)
+
+    working_days = get_working_days_range(punch_start, punch_end)
+
+    # Build period label
+    _period_labels = {
+        'today': f"Azi ({today.strftime('%d %b %Y')})",
+        'week': f"Săptămâna curentă ({period_start.strftime('%d %b')} – {today.strftime('%d %b %Y')})",
+        'month': f"{today.strftime('%B %Y')}",
+        'quarter': f"T{((today.month - 1) // 3) + 1} {year} ({period_start.strftime('%d %b')} – {today.strftime('%d %b %Y')})",
+        'ytd': f"YTD {year}",
+    }
+    period_label = _period_labels.get(period, f"YTD {year}")
+    # Week label for backward compat with email digest
+    week_num = punch_start.isocalendar()[1]
+    week_label = f"W{week_num} ({punch_start.strftime('%d %b')} – {punch_end.strftime('%d %b %Y')})"
+
+    _base = BaseRepository()
+    sincron_repo = SincronRepository()
+    bio_repo = BioStarRepository()
+    co_repo = CoBalanceRepository()
+
+    # Build canonical company name map (any variant → canonical from companies table)
+    canonical_rows = _base.query_all('SELECT company FROM companies ORDER BY company')
+    _canonical_names = [r['company'] for r in canonical_rows]
+    _norm_cache = {}
+
+    def _normalize_company(raw_name):
+        """Map any company name variant to the canonical form."""
+        if not raw_name:
+            return raw_name
+        if raw_name in _norm_cache:
+            return _norm_cache[raw_name]
+        # Exact match first
+        for c in _canonical_names:
+            if c == raw_name:
+                _norm_cache[raw_name] = c
+                return c
+        # Case-insensitive match
+        upper = raw_name.upper().replace(' S.R.L.', '').replace(' SRL', '').strip()
+        for c in _canonical_names:
+            if c.upper().replace(' S.R.L.', '').replace(' SRL', '').strip() == upper:
+                _norm_cache[raw_name] = c
+                return c
+        # Prefix match (e.g. "AUTOWORLD INTERNATIONAL" → "Autoworld INTERNATIONAL S.R.L.")
+        for c in _canonical_names:
+            if c.upper().startswith(upper) or upper.startswith(c.upper().replace(' S.R.L.', '').replace(' SRL', '').strip()):
+                _norm_cache[raw_name] = c
+                return c
+        _norm_cache[raw_name] = raw_name
+        return raw_name
+
+    # Build primary company map (user_id → main company name)
+    primary_rows = _base.query_all(_PRIMARY_CONTRACTS_CTE + '''
+        SELECT mapped_jarvis_user_id, company_name FROM primary_contracts
+    ''')
+    primary_company_map = {r['mapped_jarvis_user_id']: r['company_name'] for r in primary_rows}
+
+    # ── Section 1: Leave days (CO only) by company (main contract) ──
+    leave_codes = ('CO',)
+    leave_by_company = _base.query_all(_PRIMARY_CONTRACTS_CTE + '''
+        SELECT pc.company_name,
+               COUNT(DISTINCT (pc.mapped_jarvis_user_id, st.day)) AS total_leave_days,
+               COUNT(DISTINCT pc.mapped_jarvis_user_id) AS employees_with_leave
+        FROM sincron_timesheets st
+        JOIN primary_contracts pc
+          ON pc.sincron_employee_id = st.sincron_employee_id
+          AND pc.company_name = st.company_name
+        WHERE st.short_code = ANY(%s)
+          AND st.day >= %s AND st.day <= %s
+        GROUP BY pc.company_name
+        ORDER BY pc.company_name
+    ''', (list(leave_codes), period_start.isoformat(), period_end.isoformat()))
+
+    prev_leave_map = {}  # kept for email digest backward compat
+
+    # Normalize leave_by_company company names
+    for r in leave_by_company:
+        r['company_name'] = _normalize_company(r['company_name'])
+
+    # ── Section 2: Headcount by company (main contract only) ──
+    headcount_rows = _base.query_all(_PRIMARY_CONTRACTS_CTE + '''
+        SELECT company_name, COUNT(*) AS headcount
+        FROM primary_contracts
+        GROUP BY company_name
+    ''')
+    headcount_map = {}
+    for r in headcount_rows:
+        key = _normalize_company(r['company_name'])
+        headcount_map[key] = headcount_map.get(key, 0) + int(r['headcount'])
+
+    # Compute avg leave per employee
+    leave_map = {}
+    for r in leave_by_company:
+        key = r['company_name']  # already normalized
+        leave_map[key] = leave_map.get(key, 0) + int(r['total_leave_days'])
+    avg_leave = []
+    for company in sorted(headcount_map.keys()):
+        hc = headcount_map[company]
+        days = leave_map.get(company, 0)
+        avg_leave.append({
+            'company_name': company,
+            'leave_days': days,
+            'headcount': hc,
+            'avg': round(days / hc, 1) if hc else 0,
+        })
+
+    # ── Section 3: Top 10 CO remaining (per company) ──
+    all_co = co_repo.get_all_for_year(year)
+    used_by_company = co_repo.get_used_ytd_by_user_company(year)
+
+    co_rows = []
+    for row in all_co:
+        uid = row['user_id']
+        raw_company = row.get('company_name', '')
+        company = _normalize_company(raw_company)
+        total = int(row['total_available'] or 0)
+        used = used_by_company.get(uid, {}).get(raw_company, 0)
+        co_rows.append({
+            'name': f"{row.get('prenume', '')} {row.get('nume', '')}".strip(),
+            'company': company,
+            'department': row.get('departament') or '',
+            'total_available': total,
+            'used': round(used, 1),
+            'remaining': round(total - used, 1),
+        })
+
+    all_co_sorted = sorted(co_rows, key=lambda x: x['remaining'], reverse=True)
+    # top_10_co kept for email digest backward compat
+    top_10_co = all_co_sorted[:10]
+
+    # CO remaining aggregated by company (for section 1 column)
+    co_remaining_by_company = defaultdict(float)
+    for cr in co_rows:
+        co_remaining_by_company[cr['company']] += cr['remaining']
+
+    # Aggregation by department from users table (organigram)
+    dept_rows = _base.query_all('''
+        SELECT u.id, u.department, u.company
+        FROM users u
+        WHERE u.is_active = TRUE AND u.department IS NOT NULL AND u.department != ''
+    ''')
+    # Build user_id -> department map
+    user_dept_map = {}
+    for dr in dept_rows:
+        user_dept_map[dr['id']] = dr['department']
+
+    # Build CO data keyed by user_id (from co_balance)
+    co_by_user = {}
+    for row in all_co:
+        uid = row['user_id']
+        if uid not in co_by_user:
+            raw_company = row.get('company_name', '')
+            total = int(row['total_available'] or 0)
+            used = used_by_company.get(uid, {}).get(raw_company, 0)
+            co_by_user[uid] = {'used': used, 'remaining': total - used}
+
+    # Aggregate per department
+    dept_stats = defaultdict(lambda: {'headcount': 0, 'used': 0.0, 'remaining': 0.0})
+    for uid, dep in user_dept_map.items():
+        ds = dept_stats[dep]
+        ds['headcount'] += 1
+        co = co_by_user.get(uid, {})
+        ds['used'] += co.get('used', 0)
+        ds['remaining'] += co.get('remaining', 0)
+
+    # ── Section 4 & 5: Punch data for selected period ──
+    range_data = bio_repo.get_range_summary(
+        punch_start.isoformat(), punch_end.isoformat(),
+    )
+
+    company_times_raw = defaultdict(lambda: {
+        'check_in_epochs': [], 'check_out_epochs': [],
+        'actual_hours': 0.0, 'employee_count': 0,
+    })
+
+    for row in range_data:
+        raw_company = row.get('jarvis_company')
+        if not raw_company:
+            continue
+        company = _normalize_company(raw_company)
+        stats = company_times_raw[company]
+        stats['employee_count'] += 1
+
+        avg_in = row.get('avg_check_in_epoch')
+        avg_out = row.get('avg_check_out_epoch')
+        if avg_in is not None:
+            stats['check_in_epochs'].append(float(avg_in))
+        if avg_out is not None:
+            stats['check_out_epochs'].append(float(avg_out))
+
+        total_dur = float(row.get('adjusted_total_duration_seconds') or row.get('total_duration_seconds') or 0)
+        lunch = float(row.get('lunch_break_minutes') or 60)
+        days_present = int(row.get('days_present') or 0)
+        net = max(0, total_dur - lunch * 60 * days_present) / 3600
+        stats['actual_hours'] += net
+
+    # Potential hours per company
+    all_employees = bio_repo.get_all_employees(active_only=True)
+    company_potential = defaultdict(float)
+    company_headcount_bio = defaultdict(int)
+    seen_users = set()
+    for emp in all_employees:
+        uid = emp.get('mapped_jarvis_user_id')
+        if uid and emp.get('jarvis_user_active') and uid not in seen_users:
+            raw_company = emp.get('jarvis_company')
+            if raw_company:
+                company = _normalize_company(raw_company)
+                wh = float(emp.get('working_hours') or 8)
+                company_potential[company] += wh * working_days
+                company_headcount_bio[company] += 1
+                seen_users.add(uid)
+
+    # Build serializable section 4
+    def _epoch_to_hm(epoch_secs):
+        h = int(epoch_secs // 3600)
+        m = int((epoch_secs % 3600) // 60)
+        return f"{h:02d}:{m:02d}"
+
+    avg_checkin_checkout = []
+    for company in sorted(company_times_raw.keys()):
+        s = company_times_raw[company]
+        ins = s['check_in_epochs']
+        outs = s['check_out_epochs']
+        avg_checkin_checkout.append({
+            'company_name': company,
+            'avg_in': _epoch_to_hm(sum(ins) / len(ins)) if ins else '-',
+            'avg_out': _epoch_to_hm(sum(outs) / len(outs)) if outs else '-',
+            'employee_count': s['employee_count'],
+        })
+
+    # Build serializable section 5
+    all_companies = sorted(set(list(company_times_raw.keys()) + list(company_potential.keys())))
+    actual_vs_potential = []
+    total_actual = 0.0
+    total_potential = 0.0
+    for company in all_companies:
+        actual = company_times_raw[company]['actual_hours'] if company in company_times_raw else 0
+        potential = company_potential.get(company, 0)
+        total_actual += actual
+        total_potential += potential
+        pct = round(actual / potential * 100) if potential > 0 else 0
+        actual_vs_potential.append({
+            'company_name': company,
+            'actual_hours': round(actual, 1),
+            'potential_hours': round(potential, 1),
+            'utilization_pct': pct,
+        })
+
+    total_leave_days = sum(int(r['total_leave_days']) for r in leave_by_company)
+    total_pct = round(total_actual / total_potential * 100) if total_potential > 0 else 0
+
+    return {
+        'year': year,
+        'period': period,
+        'period_label': period_label,
+        'week_label': week_label,
+        'period_start': period_start.isoformat(),
+        'period_end': period_end.isoformat(),
+        'punch_start': punch_start.isoformat(),
+        'punch_end': punch_end.isoformat(),
+        'working_days': working_days,
+        # backward compat
+        'last_monday': punch_start.isoformat(),
+        'last_friday': punch_end.isoformat(),
+        'working_days_week': working_days,
+        'leave_by_company': [
+            {
+                'company_name': r['company_name'],
+                'total_leave_days': int(r['total_leave_days']),
+                'employees_with_leave': int(r['employees_with_leave']),
+                'headcount': headcount_map.get(r['company_name'], 0),
+                'avg_per_employee': round(
+                    int(r['total_leave_days']) / headcount_map[r['company_name']], 1
+                ) if headcount_map.get(r['company_name']) else 0,
+                'prev_year_days': prev_leave_map.get(r['company_name'], 0),
+                'co_remaining': round(co_remaining_by_company.get(r['company_name'], 0), 1),
+            }
+            for r in leave_by_company
+        ],
+        'leave_by_department': sorted([
+            {
+                'department': dep,
+                'headcount': ds['headcount'],
+                'total_leave_days': round(ds['used'], 1),
+                'co_remaining': round(ds['remaining'], 1),
+            }
+            for dep, ds in dept_stats.items()
+        ], key=lambda x: x['department']),
+        'headcount_map': headcount_map,
+        'avg_leave_per_employee': avg_leave,
+        'top_10_co': top_10_co,
+        'all_co_rows': all_co_sorted,
+        'avg_checkin_checkout': avg_checkin_checkout,
+        'actual_vs_potential': actual_vs_potential,
+        'totals': {
+            'total_leave_days': total_leave_days,
+            'total_actual_hours': round(total_actual, 1),
+            'total_potential_hours': round(total_potential, 1),
+            'total_utilization_pct': total_pct,
+        },
+    }
+
+
+def send_hr_weekly_digest():
+    """Weekly HR summary — leave YTD, CO remaining, hours by company.
+
+    Runs every Monday at 07:00 UTC (10:00 Romania).
+    Sends an HTML email with 5 summary sections grouped by company.
+    """
+    try:
+        from core.notifications.repositories import NotificationRepository
+        from core.services.notification_service import send_email, is_smtp_configured
+
+        notif_repo = NotificationRepository()
+        settings = notif_repo.get_settings()
+        if settings.get('hr_weekly_digest_enabled') != 'true':
+            logger.debug("HR weekly digest disabled, skipping")
+            return
+
+        recipients_str = settings.get('hr_weekly_digest_recipients', '').strip()
+        if not recipients_str:
+            logger.debug("No HR weekly digest recipients, skipping")
+            return
+        if not is_smtp_configured():
+            logger.warning("SMTP not configured, cannot send HR weekly digest")
+            return
+
+        recipients = [e.strip() for e in recipients_str.split(',') if e.strip()]
+        if not recipients:
+            return
+
+        data = compute_hr_weekly_report_data()
+        subject = f"HR Weekly Digest — {data['week_label']}"
+        html = _build_hr_weekly_html(data)
+
+        sent_count = 0
+        for email_addr in recipients:
+            ok, err = send_email(
+                to_email=email_addr,
+                subject=subject,
+                html_body=html,
+                skip_global_cc=True,
+            )
+            if ok:
+                sent_count += 1
+            else:
+                logger.error(f"Failed to send HR weekly digest to {email_addr}: {err}")
+
+        logger.info(f"HR weekly digest sent to {sent_count}/{len(recipients)} recipients")
+
+    except Exception as e:
+        logger.error(f"HR weekly digest failed: {e}", exc_info=True)
+
+
+def _build_hr_weekly_html(data):
+    """Build the HTML body for the HR weekly digest email."""
+    week_label = data['week_label']
+    year = data['year']
+    leave_by_company = data['leave_by_company']
+    headcount_map = data['headcount_map']
+    top_10_co = data['top_10_co']
+    avg_checkin_checkout = data['avg_checkin_checkout']
+    actual_vs_potential = data['actual_vs_potential']
+    totals = data['totals']
+
+    hdr = (
+        'style="background:#2563eb;color:#fff;padding:6px 10px;'
+        'font-size:13px;text-align:left;border:1px solid #ddd"'
+    )
+    td = 'style="padding:6px 10px;font-size:13px;border:1px solid #eee"'
+    td_r = 'style="padding:6px 10px;font-size:13px;border:1px solid #eee;text-align:right"'
+    row_alt = 'style="background:#f8fafc"'
+
+    parts = []
+    parts.append(
+        f'<div style="font-family:Arial,sans-serif;max-width:700px;margin:0 auto">'
+        f'<div style="background:#2563eb;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">'
+        f'<h2 style="margin:0;font-size:18px">JARVIS — HR Weekly Digest</h2>'
+        f'<p style="margin:4px 0 0;font-size:13px;opacity:0.9">{week_label}</p>'
+        f'</div>'
+        f'<div style="padding:20px;background:#fff;border:1px solid #e2e8f0;border-top:none">'
+    )
+
+    # ── Section 1: Leave Days YTD ──
+    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">1. Zile Concediu YTD ({year})</h3>')
+    parts.append(f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px">')
+    parts.append(f'<tr><th {hdr}>Companie</th><th {hdr}>Zile Concediu</th><th {hdr}>{year - 1}</th><th {hdr}>Angajați</th><th {hdr}>Medie/Ang.</th></tr>')
+    for i, row in enumerate(leave_by_company):
+        r = row_alt if i % 2 else ''
+        prev = row.get('prev_year_days', 0)
+        parts.append(
+            f'<tr {r}><td {td}>{row["company_name"]}</td>'
+            f'<td {td_r}>{row["total_leave_days"]}</td>'
+            f'<td {td_r} style="padding:6px 10px;font-size:13px;border:1px solid #eee;text-align:right;color:#6b7280">{prev if prev else "-"}</td>'
+            f'<td {td_r}>{row["employees_with_leave"]}</td>'
+            f'<td {td_r}>{row.get("avg_per_employee", 0)}</td></tr>'
+        )
+    prev_total = sum(row.get('prev_year_days', 0) for row in leave_by_company)
+    parts.append(
+        f'<tr style="font-weight:bold;background:#e2e8f0">'
+        f'<td {td}>TOTAL</td><td {td_r}>{totals["total_leave_days"]}</td>'
+        f'<td {td_r} style="padding:6px 10px;font-size:13px;border:1px solid #eee;text-align:right;color:#6b7280">{prev_total if prev_total else "-"}</td>'
+        f'<td {td_r}></td><td {td_r}></td></tr>'
+    )
+    parts.append('</table>')
+
+    # ── Section 2: Avg Leave per Employee ──
+    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">2. Media Zile Concediu / Angajat ({year})</h3>')
+    parts.append(f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px">')
+    parts.append(f'<tr><th {hdr}>Companie</th><th {hdr}>Zile Concediu</th><th {hdr}>Angajați</th><th {hdr}>Medie</th></tr>')
+    for i, row in enumerate(data['avg_leave_per_employee']):
+        r = row_alt if i % 2 else ''
+        parts.append(
+            f'<tr {r}><td {td}>{row["company_name"]}</td>'
+            f'<td {td_r}>{row["leave_days"]}</td><td {td_r}>{row["headcount"]}</td>'
+            f'<td {td_r}>{row["avg"]}</td></tr>'
+        )
+    parts.append('</table>')
+
+    # ── Section 3: Top 10 CO Remaining ──
+    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">3. Top 10 — CO Ramas ({year})</h3>')
+    parts.append(f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px">')
+    parts.append(
+        f'<tr><th {hdr}>#</th><th {hdr}>Nume</th><th {hdr}>Companie</th>'
+        f'<th {hdr}>Total CO</th><th {hdr}>Folosit</th><th {hdr}>Ramas</th></tr>'
+    )
+    for i, co in enumerate(top_10_co):
+        r = row_alt if i % 2 else ''
+        parts.append(
+            f'<tr {r}><td {td_r}>{i + 1}</td><td {td}>{co["name"]}</td>'
+            f'<td {td}>{co["company"]}</td>'
+            f'<td {td_r}>{co["total_available"]}</td>'
+            f'<td {td_r}>{co["used"]}</td>'
+            f'<td {td_r}><b>{co["remaining"]}</b></td></tr>'
+        )
+    parts.append('</table>')
+
+    # ── Section 4: Avg Check-in/out ──
+    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">4. Media Check-in / Check-out ({week_label})</h3>')
+    parts.append(f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px">')
+    parts.append(f'<tr><th {hdr}>Companie</th><th {hdr}>Avg In</th><th {hdr}>Avg Out</th><th {hdr}>Angajați</th></tr>')
+    for i, row in enumerate(avg_checkin_checkout):
+        r = row_alt if i % 2 else ''
+        parts.append(
+            f'<tr {r}><td {td}>{row["company_name"]}</td>'
+            f'<td {td_r}>{row["avg_in"]}</td><td {td_r}>{row["avg_out"]}</td>'
+            f'<td {td_r}>{row["employee_count"]}</td></tr>'
+        )
+    parts.append('</table>')
+
+    # ── Section 5: Actual vs Potential Hours ──
+    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">5. Ore Lucrate vs Potențial ({week_label})</h3>')
+    parts.append(f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px">')
+    parts.append(
+        f'<tr><th {hdr}>Companie</th><th {hdr}>Ore Lucrate</th>'
+        f'<th {hdr}>Ore Potențial</th><th {hdr}>Utilizare %</th></tr>'
+    )
+    for i, row in enumerate(actual_vs_potential):
+        r = row_alt if i % 2 else ''
+        pct = row['utilization_pct']
+        color = '#16a34a' if pct >= 85 else '#ca8a04' if pct >= 70 else '#dc2626'
+        parts.append(
+            f'<tr {r}><td {td}>{row["company_name"]}</td>'
+            f'<td {td_r}>{row["actual_hours"]}h</td><td {td_r}>{row["potential_hours"]}h</td>'
+            f'<td {td_r}><span style="color:{color};font-weight:bold">{pct}%</span></td></tr>'
+        )
+    parts.append(
+        f'<tr style="font-weight:bold;background:#e2e8f0">'
+        f'<td {td}>TOTAL</td><td {td_r}>{totals["total_actual_hours"]}h</td>'
+        f'<td {td_r}>{totals["total_potential_hours"]}h</td><td {td_r}>{totals["total_utilization_pct"]}%</td></tr>'
+    )
+    parts.append('</table>')
+
+    # Footer
+    parts.append(
+        '<hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0">'
+        '<p style="font-size:11px;color:#94a3b8;margin:0">'
+        'JARVIS · Automated HR Weekly Digest</p>'
+    )
+    parts.append('</div></div>')
+
+    return '\n'.join(parts)
