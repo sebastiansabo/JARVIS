@@ -1098,62 +1098,58 @@ def _build_hr_weekly_html(data):
         f'<div style="padding:20px;background:#fff;border:1px solid #e2e8f0;border-top:none">'
     )
 
-    # ── Section 1: Leave Days YTD ──
-    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">1. Zile Concediu YTD ({year})</h3>')
+    # ── Section 1: Concedii (zile) ──
+    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">1. Concedii (zile)</h3>')
     parts.append(f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px">')
-    parts.append(f'<tr><th {hdr}>Companie</th><th {hdr}>Zile Concediu</th><th {hdr}>{year - 1}</th><th {hdr}>Angajați</th><th {hdr}>Medie/Ang.</th></tr>')
+    parts.append(f'<tr><th {hdr}>Companie</th><th {hdr}>Angajați</th><th {hdr}>Concedii</th><th {hdr}>Sold CO</th><th {hdr}>Acoperire</th></tr>')
+    total_headcount = 0
+    total_co_remaining = 0
     for i, row in enumerate(leave_by_company):
         r = row_alt if i % 2 else ''
-        prev = row.get('prev_year_days', 0)
+        hc = row.get('headcount', 0)
+        co_rem = row.get('co_remaining', 0)
+        total_headcount += hc
+        total_co_remaining += co_rem
+        used = row['total_leave_days']
+        coverage_total = used + co_rem
+        pct = round(used / coverage_total * 100) if coverage_total > 0 else 0
+        pct_color = '#16a34a' if pct >= 50 else '#ca8a04' if pct >= 25 else '#dc2626'
         parts.append(
             f'<tr {r}><td {td}>{row["company_name"]}</td>'
-            f'<td {td_r}>{row["total_leave_days"]}</td>'
-            f'<td {td_r} style="padding:6px 10px;font-size:13px;border:1px solid #eee;text-align:right;color:#6b7280">{prev if prev else "-"}</td>'
-            f'<td {td_r}>{row["employees_with_leave"]}</td>'
-            f'<td {td_r}>{row.get("avg_per_employee", 0)}</td></tr>'
+            f'<td {td_r}>{hc}</td>'
+            f'<td {td_r}>{used}</td>'
+            f'<td {td_r}>{co_rem}</td>'
+            f'<td {td_r}><span style="color:{pct_color};font-weight:bold">{pct}%</span></td></tr>'
         )
-    prev_total = sum(row.get('prev_year_days', 0) for row in leave_by_company)
+    overall_coverage = round(totals['total_leave_days'] / (totals['total_leave_days'] + total_co_remaining) * 100) if (totals['total_leave_days'] + total_co_remaining) > 0 else 0
     parts.append(
         f'<tr style="font-weight:bold;background:#e2e8f0">'
-        f'<td {td}>TOTAL</td><td {td_r}>{totals["total_leave_days"]}</td>'
-        f'<td {td_r} style="padding:6px 10px;font-size:13px;border:1px solid #eee;text-align:right;color:#6b7280">{prev_total if prev_total else "-"}</td>'
-        f'<td {td_r}></td><td {td_r}></td></tr>'
+        f'<td {td}>TOTAL</td><td {td_r}>{total_headcount}</td>'
+        f'<td {td_r}>{totals["total_leave_days"]}</td>'
+        f'<td {td_r}>{total_co_remaining}</td>'
+        f'<td {td_r}>{overall_coverage}%</td></tr>'
     )
     parts.append('</table>')
 
-    # ── Section 2: Avg Leave per Employee ──
-    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">2. Media Zile Concediu / Angajat ({year})</h3>')
-    parts.append(f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px">')
-    parts.append(f'<tr><th {hdr}>Companie</th><th {hdr}>Zile Concediu</th><th {hdr}>Angajați</th><th {hdr}>Medie</th></tr>')
-    for i, row in enumerate(data['avg_leave_per_employee']):
-        r = row_alt if i % 2 else ''
-        parts.append(
-            f'<tr {r}><td {td}>{row["company_name"]}</td>'
-            f'<td {td_r}>{row["leave_days"]}</td><td {td_r}>{row["headcount"]}</td>'
-            f'<td {td_r}>{row["avg"]}</td></tr>'
-        )
-    parts.append('</table>')
-
-    # ── Section 3: Top 10 CO Remaining ──
-    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">3. Top 10 — CO Ramas ({year})</h3>')
+    # ── Section 2: Top 10 — Sold CO ──
+    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">2. Top 10 — Sold CO ({year})</h3>')
     parts.append(f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px">')
     parts.append(
-        f'<tr><th {hdr}>#</th><th {hdr}>Nume</th><th {hdr}>Companie</th>'
-        f'<th {hdr}>Total CO</th><th {hdr}>Folosit</th><th {hdr}>Ramas</th></tr>'
+        f'<tr><th {hdr}>#</th><th {hdr}>Nume</th>'
+        f'<th {hdr}>Total</th><th {hdr}>Folosit</th><th {hdr}>Rămas</th></tr>'
     )
     for i, co in enumerate(top_10_co):
         r = row_alt if i % 2 else ''
         parts.append(
             f'<tr {r}><td {td_r}>{i + 1}</td><td {td}>{co["name"]}</td>'
-            f'<td {td}>{co["company"]}</td>'
             f'<td {td_r}>{co["total_available"]}</td>'
             f'<td {td_r}>{co["used"]}</td>'
             f'<td {td_r}><b>{co["remaining"]}</b></td></tr>'
         )
     parts.append('</table>')
 
-    # ── Section 4: Avg Check-in/out ──
-    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">4. Media Check-in / Check-out ({week_label})</h3>')
+    # ── Section 3: Media Check-in / Check-out ──
+    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">3. Media Check-in / Check-out ({week_label})</h3>')
     parts.append(f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px">')
     parts.append(f'<tr><th {hdr}>Companie</th><th {hdr}>Avg In</th><th {hdr}>Avg Out</th><th {hdr}>Angajați</th></tr>')
     for i, row in enumerate(avg_checkin_checkout):
@@ -1165,8 +1161,8 @@ def _build_hr_weekly_html(data):
         )
     parts.append('</table>')
 
-    # ── Section 5: Actual vs Potential Hours ──
-    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">5. Ore Lucrate vs Potențial ({week_label})</h3>')
+    # ── Section 4: Ore Lucrate vs Potențial ──
+    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">4. Ore Lucrate vs Potențial ({week_label})</h3>')
     parts.append(f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px">')
     parts.append(
         f'<tr><th {hdr}>Companie</th><th {hdr}>Ore Lucrate</th>'
