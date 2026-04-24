@@ -141,10 +141,16 @@ class CoBalanceRepository(BaseRepository):
             returning=True,
         )
 
-    def get_used_ytd_by_user(self, year):
-        """Σ of Sincron CO days-unit entries per JARVIS user, for a given year."""
+    def get_used_ytd_by_user(self, year, only_counted=True):
+        """Σ of Sincron CO days-unit entries per JARVIS user, for a given year.
+
+        Args:
+            only_counted: If True (default), only counts contracts with
+                          count_for_leave = TRUE.
+        """
+        cfl = "AND se.count_for_leave = TRUE" if only_counted else ""
         rows = self.query_all(
-            """
+            f"""
             SELECT se.mapped_jarvis_user_id AS user_id,
                    COALESCE(SUM(st.value), 0) AS used_ytd
             FROM sincron_timesheets st
@@ -155,6 +161,7 @@ class CoBalanceRepository(BaseRepository):
               AND st.short_code = 'CO'
               AND st.unit       = 'day'
               AND se.mapped_jarvis_user_id IS NOT NULL
+              {cfl}
             GROUP BY se.mapped_jarvis_user_id
             """,
             (year,),
@@ -177,10 +184,16 @@ class CoBalanceRepository(BaseRepository):
             result.setdefault(r['user_id'], {})[r['company_name']] = r
         return result
 
-    def get_used_ytd_by_user_company(self, year):
-        """CO used YTD grouped by (user_id → {company_name → used_ytd})."""
+    def get_used_ytd_by_user_company(self, year, only_counted=True):
+        """CO used YTD grouped by (user_id → {company_name → used_ytd}).
+
+        Args:
+            only_counted: If True (default), only counts contracts with
+                          count_for_leave = TRUE.
+        """
+        cfl = "AND se.count_for_leave = TRUE" if only_counted else ""
         rows = self.query_all(
-            """
+            f"""
             SELECT se.mapped_jarvis_user_id AS user_id,
                    se.company_name,
                    COALESCE(SUM(st.value), 0) AS used_ytd
@@ -192,6 +205,7 @@ class CoBalanceRepository(BaseRepository):
               AND st.short_code = 'CO'
               AND st.unit       = 'day'
               AND se.mapped_jarvis_user_id IS NOT NULL
+              {cfl}
             GROUP BY se.mapped_jarvis_user_id, se.company_name
             """,
             (year,),
