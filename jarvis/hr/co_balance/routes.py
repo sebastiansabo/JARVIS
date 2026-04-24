@@ -152,8 +152,9 @@ def co_balance_get_year():
 
     repo = CoBalanceRepository()
     all_rows = repo.get_all_for_year(year)
-    used_by_company = repo.get_used_ytd_by_user_company(year)
-    used_by_user = repo.get_used_ytd_by_user(year)
+    # Admin page shows ALL contracts (including excluded from leave analytics)
+    used_by_company = repo.get_used_ytd_by_user_company(year, only_counted=False)
+    used_by_user = repo.get_used_ytd_by_user(year, only_counted=False)
     out = {}
     for row in all_rows:
         uid = row['user_id']

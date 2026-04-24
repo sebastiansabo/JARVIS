@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { CalendarClock, Clock, TrendingUp, Users } from 'lucide-react'
 
 interface Props {
@@ -59,6 +60,7 @@ export default function ReportsTab({ search }: Props) {
   const [company, setCompany] = useState<string>('__all__')
   const [department, setDepartment] = useState<string>('__all__')
   const [period, setPeriod] = useState('ytd')
+  const [unit, setUnit] = useState<'hours' | 'days'>('hours')
 
   const { data, isLoading } = useQuery({
     queryKey: ['hr', 'reports', 'weekly-digest', period],
@@ -310,95 +312,99 @@ export default function ReportsTab({ search }: Props) {
           </CardContent>
         </Card>
 
-        {/* Section 3: Avg Check-in / Check-out */}
+        {/* Section 3: Actual vs Potential */}
         <Card>
           <CardContent className="p-4">
-            <h3 className="text-sm font-semibold mb-2">3. Media Check-in / Check-out</h3>
-            {isLoading ? <TableSkeleton cols={4} /> : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Companie</TableHead>
-                      <TableHead className="text-right">Avg In</TableHead>
-                      <TableHead className="text-right">Avg Out</TableHead>
-                      <TableHead className="text-right">Angajați</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filterRows(d?.avg_checkin_checkout ?? []).map((r) => (
-                      <TableRow key={r.company_name}>
-                        <TableCell className="text-xs">{r.company_name}</TableCell>
-                        <TableCell className="text-right font-medium">{r.avg_in}</TableCell>
-                        <TableCell className="text-right font-medium">{r.avg_out}</TableCell>
-                        <TableCell className="text-right">{r.employee_count}</TableCell>
-                      </TableRow>
-                    ))}
-                    <TableRow className="font-bold bg-muted/50">
-                      <TableCell>TOTAL</TableCell>
-                      <TableCell />
-                      <TableCell />
-                      <TableCell className="text-right">
-                        {filterRows(d?.avg_checkin_checkout ?? []).reduce((s, r) => s + r.employee_count, 0)}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold">3. {unit === 'hours' ? 'Ore' : 'Zile'} Lucrate vs Potențial</h3>
+              <div className="flex gap-0.5 rounded-md border p-0.5">
+                <Button size="sm" variant={unit === 'hours' ? 'secondary' : 'ghost'} className="h-5 px-2 text-[10px]" onClick={() => setUnit('hours')}>Ore</Button>
+                <Button size="sm" variant={unit === 'days' ? 'secondary' : 'ghost'} className="h-5 px-2 text-[10px]" onClick={() => setUnit('days')}>Zile</Button>
               </div>
-            )}
-            <p className="text-[10px] text-muted-foreground mt-2 leading-tight">
-              Date din BioStar. Media orelor de check-in și check-out per companie pe perioada selectată.
-              Angajați = nr. persoane cu pontaje în perioada respectivă.
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Section 4: Actual vs Potential Hours */}
-        <Card>
-          <CardContent className="p-4">
-            <h3 className="text-sm font-semibold mb-2">4. Ore Lucrate vs Potențial</h3>
-            {isLoading ? <TableSkeleton cols={4} /> : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Companie</TableHead>
-                      <TableHead className="text-right">Lucrate</TableHead>
-                      <TableHead className="text-right">Potențial</TableHead>
-                      <TableHead className="text-right">Utilizare</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredHours.map((r) => (
-                      <TableRow key={r.company_name}>
-                        <TableCell className="text-xs">{r.company_name}</TableCell>
-                        <TableCell className="text-right">{r.actual_hours}h</TableCell>
-                        <TableCell className="text-right">{r.potential_hours}h</TableCell>
-                        <TableCell className="text-right">
-                          <span className={
-                            r.utilization_pct >= 85 ? 'text-green-600 font-bold' :
-                            r.utilization_pct >= 70 ? 'text-yellow-600 font-bold' :
-                            'text-red-600 font-bold'
-                          }>
-                            {r.utilization_pct}%
-                          </span>
+            </div>
+            {isLoading ? <TableSkeleton cols={5} /> : (() => {
+              const wd = d?.working_days ?? 0
+              const suffix = unit === 'hours' ? 'h' : 'z'
+              const fmt = (hours: number) => {
+                const v = unit === 'hours' ? hours : hours / 8
+                return `${Math.round(v * 10) / 10}${suffix}`
+              }
+              const cal = (headcount: number) => {
+                const v = unit === 'hours' ? headcount * wd * 8 : headcount * wd
+                return `${Math.round(v * 10) / 10}${suffix}`
+              }
+              const totalCal = filteredHours.reduce((s, r) => s + (r.headcount ?? 0), 0)
+              const calHours = (hc: number) => hc * wd * 8
+              const covPct = (actual: number, calH: number) => calH > 0 ? Math.round(actual / calH * 100) : 0
+              const totalCalH = calHours(totalCal)
+              const totalCovPct = covPct(totalActual, totalCalH)
+              return (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Companie</TableHead>
+                        <TableHead className="text-right">Lucrate</TableHead>
+                        <TableHead className="text-right">Potențial</TableHead>
+                        <TableHead className="text-right">Utilizare</TableHead>
+                        <TableHead className="text-right">Calendar</TableHead>
+                        <TableHead className="text-right">Acoperire</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredHours.map((r) => {
+                        const hc = r.headcount ?? 0
+                        const rCalH = calHours(hc)
+                        const rCov = covPct(r.actual_hours, rCalH)
+                        return (
+                          <TableRow key={r.company_name}>
+                            <TableCell className="text-xs">{r.company_name}</TableCell>
+                            <TableCell className="text-right">{fmt(r.actual_hours)}</TableCell>
+                            <TableCell className="text-right">{fmt(r.potential_hours)}</TableCell>
+                            <TableCell className="text-right">
+                              <span className={
+                                r.utilization_pct >= 85 ? 'text-green-600 font-bold' :
+                                r.utilization_pct >= 70 ? 'text-yellow-600 font-bold' :
+                                'text-red-600 font-bold'
+                              }>
+                                {r.utilization_pct}%
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right text-muted-foreground" title={`${hc} ang. × ${wd} zile × 8h`}>
+                              {cal(hc)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <span className={
+                                rCov >= 85 ? 'text-green-600 font-bold' :
+                                rCov >= 70 ? 'text-yellow-600 font-bold' :
+                                'text-red-600 font-bold'
+                              }>
+                                {rCov}%
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                      <TableRow className="font-bold bg-muted/50">
+                        <TableCell>TOTAL</TableCell>
+                        <TableCell className="text-right">{fmt(totalActual)}</TableCell>
+                        <TableCell className="text-right">{fmt(totalPotential)}</TableCell>
+                        <TableCell className="text-right">{totalPct}%</TableCell>
+                        <TableCell className="text-right text-muted-foreground" title={`${totalCal} ang. × ${wd} zile × 8h`}>
+                          {cal(totalCal)}
                         </TableCell>
+                        <TableCell className="text-right">{totalCovPct}%</TableCell>
                       </TableRow>
-                    ))}
-                    <TableRow className="font-bold bg-muted/50">
-                      <TableCell>TOTAL</TableCell>
-                      <TableCell className="text-right">{Math.round(totalActual * 10) / 10}h</TableCell>
-                      <TableCell className="text-right">{Math.round(totalPotential * 10) / 10}h</TableCell>
-                      <TableCell className="text-right">{totalPct}%</TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )
+            })()}
             <p className="text-[10px] text-muted-foreground mt-2 leading-tight">
-              Date din BioStar. Lucrate = ore efective din pontaje (punch in/out), minus pauza de masă.
-              Potențial = ore program × zile lucrătoare per angajat activ.
-              Utilizare = Lucrate / Potențial. Se iau doar angajații cu pontaje.
+              Date din BioStar. Calendar = angajați × {d?.working_days ?? 0} zile lucrătoare × 8h (program standard).
+              Lucrate = ore efective din pontaje, minus pauza de masă.
+              Potențial = ore program per angajat × zile lucrătoare.
+              Acoperire = Lucrate / Calendar. Utilizare = Lucrate / Potențial.
             </p>
           </CardContent>
         </Card>

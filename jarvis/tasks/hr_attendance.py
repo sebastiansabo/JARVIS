@@ -825,13 +825,39 @@ def compute_hr_weekly_report_data(reference_date=None, period=None):
     all_co = co_repo.get_all_for_year(year)
     used_by_company = co_repo.get_used_ytd_by_user_company(year)
 
+    # Build set of (user_id, norm_company) where count_for_leave = TRUE
+    _leave_rows = sincron_repo.query_all('''
+        SELECT mapped_jarvis_user_id, company_name, count_for_leave
+        FROM sincron_employees
+        WHERE is_active = TRUE AND mapped_jarvis_user_id IS NOT NULL
+    ''')
+    def _norm_co(name):
+        return (name or '').upper().replace(' S.R.L.', '').replace(' SRL', '').strip()
+    _leave_allowed = set()
+    for lr in _leave_rows:
+        if lr['count_for_leave']:
+            _leave_allowed.add((lr['mapped_jarvis_user_id'], _norm_co(lr['company_name'])))
+
     co_rows = []
     for row in all_co:
         uid = row['user_id']
         raw_company = row.get('company_name', '')
+        # Skip contracts excluded from leave analytics
+        if (uid, _norm_co(raw_company)) not in _leave_allowed:
+            continue
         company = _normalize_company(raw_company)
         total = int(row['total_available'] or 0)
-        used = used_by_company.get(uid, {}).get(raw_company, 0)
+        # Look up CO used from sincron_timesheets — try exact match, then normalized
+        user_used = used_by_company.get(uid, {})
+        used = user_used.get(raw_company, None)
+        if used is None:
+            norm = _norm_co(raw_company)
+            for k, v in user_used.items():
+                if _norm_co(k) == norm:
+                    used = v
+                    break
+        if used is None:
+            used = 0
         co_rows.append({
             'name': f"{row.get('prenume', '')} {row.get('nume', '')}".strip(),
             'company': company,
@@ -861,15 +887,28 @@ def compute_hr_weekly_report_data(reference_date=None, period=None):
     for dr in dept_rows:
         user_dept_map[dr['id']] = dr['department']
 
-    # Build CO data keyed by user_id (from co_balance)
+    # Build CO data keyed by user_id — aggregate from co_rows (already filtered)
     co_by_user = {}
     for row in all_co:
         uid = row['user_id']
-        if uid not in co_by_user:
-            raw_company = row.get('company_name', '')
-            total = int(row['total_available'] or 0)
-            used = used_by_company.get(uid, {}).get(raw_company, 0)
-            co_by_user[uid] = {'used': used, 'remaining': total - used}
+        raw_company = row.get('company_name', '')
+        if (uid, _norm_co(raw_company)) not in _leave_allowed:
+            continue
+        total = int(row['total_available'] or 0)
+        user_used = used_by_company.get(uid, {})
+        used = user_used.get(raw_company, None)
+        if used is None:
+            norm = _norm_co(raw_company)
+            for k, v in user_used.items():
+                if _norm_co(k) == norm:
+                    used = v
+                    break
+        if used is None:
+            used = 0
+        entry = co_by_user.get(uid, {'used': 0.0, 'remaining': 0.0})
+        entry['used'] += used
+        entry['remaining'] += total - used
+        co_by_user[uid] = entry
 
     # Aggregate per department
     dept_stats = defaultdict(lambda: {'headcount': 0, 'used': 0.0, 'remaining': 0.0})
@@ -961,6 +1000,7 @@ def compute_hr_weekly_report_data(reference_date=None, period=None):
             'actual_hours': round(actual, 1),
             'potential_hours': round(potential, 1),
             'utilization_pct': pct,
+            'headcount': company_headcount_bio.get(company, 0),
         })
 
     total_leave_days = sum(int(r['total_leave_days']) for r in leave_by_company)
@@ -1148,39 +1188,38 @@ def _build_hr_weekly_html(data):
         )
     parts.append('</table>')
 
-    # ── Section 3: Media Check-in / Check-out ──
-    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">3. Media Check-in / Check-out ({week_label})</h3>')
-    parts.append(f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px">')
-    parts.append(f'<tr><th {hdr}>Companie</th><th {hdr}>Avg In</th><th {hdr}>Avg Out</th><th {hdr}>Angajați</th></tr>')
-    for i, row in enumerate(avg_checkin_checkout):
-        r = row_alt if i % 2 else ''
-        parts.append(
-            f'<tr {r}><td {td}>{row["company_name"]}</td>'
-            f'<td {td_r}>{row["avg_in"]}</td><td {td_r}>{row["avg_out"]}</td>'
-            f'<td {td_r}>{row["employee_count"]}</td></tr>'
-        )
-    parts.append('</table>')
-
-    # ── Section 4: Ore Lucrate vs Potențial ──
-    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">4. Ore Lucrate vs Potențial ({week_label})</h3>')
+    # ── Section 3: Ore Lucrate vs Potențial ──
+    working_days = data.get('working_days', 0)
+    parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">3. Ore Lucrate vs Potențial ({week_label})</h3>')
     parts.append(f'<table style="width:100%;border-collapse:collapse;margin-bottom:20px">')
     parts.append(
-        f'<tr><th {hdr}>Companie</th><th {hdr}>Ore Lucrate</th>'
-        f'<th {hdr}>Ore Potențial</th><th {hdr}>Utilizare %</th></tr>'
+        f'<tr><th {hdr}>Companie</th><th {hdr}>Lucrate</th>'
+        f'<th {hdr}>Potențial</th><th {hdr}>Utilizare</th>'
+        f'<th {hdr}>Calendar</th><th {hdr}>Acoperire</th></tr>'
     )
+    total_calendar = 0
     for i, row in enumerate(actual_vs_potential):
         r = row_alt if i % 2 else ''
         pct = row['utilization_pct']
         color = '#16a34a' if pct >= 85 else '#ca8a04' if pct >= 70 else '#dc2626'
+        hc = row.get('headcount', 0)
+        cal_h = round(hc * working_days * 8, 1)
+        total_calendar += cal_h
+        cov_pct = round(row['actual_hours'] / cal_h * 100) if cal_h > 0 else 0
+        cov_color = '#16a34a' if cov_pct >= 85 else '#ca8a04' if cov_pct >= 70 else '#dc2626'
         parts.append(
             f'<tr {r}><td {td}>{row["company_name"]}</td>'
             f'<td {td_r}>{row["actual_hours"]}h</td><td {td_r}>{row["potential_hours"]}h</td>'
-            f'<td {td_r}><span style="color:{color};font-weight:bold">{pct}%</span></td></tr>'
+            f'<td {td_r}><span style="color:{color};font-weight:bold">{pct}%</span></td>'
+            f'<td {td_r}>{cal_h}h</td>'
+            f'<td {td_r}><span style="color:{cov_color};font-weight:bold">{cov_pct}%</span></td></tr>'
         )
+    total_cov_pct = round(totals['total_actual_hours'] / total_calendar * 100) if total_calendar > 0 else 0
     parts.append(
         f'<tr style="font-weight:bold;background:#e2e8f0">'
         f'<td {td}>TOTAL</td><td {td_r}>{totals["total_actual_hours"]}h</td>'
-        f'<td {td_r}>{totals["total_potential_hours"]}h</td><td {td_r}>{totals["total_utilization_pct"]}%</td></tr>'
+        f'<td {td_r}>{totals["total_potential_hours"]}h</td><td {td_r}>{totals["total_utilization_pct"]}%</td>'
+        f'<td {td_r}>{round(total_calendar, 1)}h</td><td {td_r}>{total_cov_pct}%</td></tr>'
     )
     parts.append('</table>')
 

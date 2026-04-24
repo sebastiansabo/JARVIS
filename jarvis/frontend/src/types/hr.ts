@@ -265,7 +265,7 @@ export interface WeeklyDigestData {
   top_10_co: CoRow[]
   all_co_rows: CoRow[]
   avg_checkin_checkout: { company_name: string; avg_in: string; avg_out: string; employee_count: number }[]
-  actual_vs_potential: { company_name: string; actual_hours: number; potential_hours: number; utilization_pct: number }[]
+  actual_vs_potential: { company_name: string; actual_hours: number; potential_hours: number; utilization_pct: number; headcount: number }[]
   totals: {
     total_leave_days: number
     total_actual_hours: number

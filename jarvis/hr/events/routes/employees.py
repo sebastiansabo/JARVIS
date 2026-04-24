@@ -150,6 +150,18 @@ def api_employee_work_stats():
             r['mapped_jarvis_user_id'], {}
         )[r['company_name']] = r
 
+    # 1c. Build set of (user_id, norm_company) where count_for_leave = TRUE
+    _cfl_rows = _base.query_all('''
+        SELECT mapped_jarvis_user_id, company_name
+        FROM sincron_employees
+        WHERE is_active = TRUE AND mapped_jarvis_user_id IS NOT NULL
+          AND count_for_leave = TRUE
+    ''')
+    _cfl_allowed = set()
+    for lr in _cfl_rows:
+        _cfl_allowed.add((lr['mapped_jarvis_user_id'],
+                          (lr['company_name'] or '').upper().replace(' S.R.L.', '').replace(' SRL', '').strip()))
+
     # 2. Connecteam — leave permits (partial-day, in hours)
     connecteam_leave = _base.query_all('''
         SELECT mapped_jarvis_user_id,
@@ -242,9 +254,12 @@ def api_employee_work_stats():
         enriched = []
         for comp in companies:
             cname = comp['company']
-            co = co_norm.get(_norm_company(cname))
+            cnorm = _norm_company(cname)
+            # Only include CO data for contracts with count_for_leave = TRUE
+            cfl = (uid, cnorm) in _cfl_allowed
+            co = co_norm.get(cnorm) if cfl else None
             co_total = int(co.get('total_available') or 0) if co else None
-            co_used = int(round(user_co_used_raw.get(cname, 0))) if cname in user_co_used_raw else None
+            co_used = int(round(user_co_used_raw.get(cname, 0))) if cfl and cname in user_co_used_raw else None
             leave = user_leave.get(cname)
             enriched.append({
                 **comp,
