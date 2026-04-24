@@ -215,6 +215,21 @@ def toggle_count_for_leave(sincron_employee_id):
     return jsonify({'success': True, 'count_for_leave': val})
 
 
+@sincron_bp.route('/api/employees/<int:sincron_employee_id>/exclude-from-pontaje', methods=['PUT'])
+@api_login_required
+def toggle_exclude_from_pontaje(sincron_employee_id):
+    """Toggle exclude_from_pontaje flag on a Sincron employee contract."""
+    data = request.get_json()
+    if data is None or 'exclude_from_pontaje' not in data:
+        return jsonify({'success': False, 'error': 'exclude_from_pontaje required'}), 400
+    val = bool(data['exclude_from_pontaje'])
+    service.repo.execute('''
+        UPDATE sincron_employees SET exclude_from_pontaje = %s, updated_at = NOW()
+        WHERE id = %s
+    ''', (val, sincron_employee_id))
+    return jsonify({'success': True, 'exclude_from_pontaje': val})
+
+
 @sincron_bp.route('/api/employees/auto-map', methods=['POST'])
 @admin_required
 def auto_map():

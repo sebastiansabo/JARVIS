@@ -99,6 +99,12 @@ export const sincronApi = {
       { count_for_leave: countForLeave },
     ),
 
+  toggleExcludeFromPontaje: (sincronEmployeeDbId: number, excludeFromPontaje: boolean) =>
+    api.put<{ success: boolean; exclude_from_pontaje: boolean }>(
+      `${BASE}/employees/${sincronEmployeeDbId}/exclude-from-pontaje`,
+      { exclude_from_pontaje: excludeFromPontaje },
+    ),
+
   // ── Status ──
 
   getStatus: async () => {

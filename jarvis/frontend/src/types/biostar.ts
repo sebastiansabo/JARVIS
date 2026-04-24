@@ -289,6 +289,8 @@ export interface SincronContract {
   schedule_end: string | null
   lunch_break_minutes: number | null
   count_for_leave?: boolean
+  exclude_from_pontaje?: boolean
+  is_base_contract?: boolean
   sincron_employee_db_id?: number
 }
 

@@ -718,11 +718,52 @@ class BioStarSyncService:
             return set()
 
     def auto_adjust_all(self, date_str, threshold=15, user_id=None):
-        """Auto-adjust off-schedule, single-punch, and absent employees."""
+        """Auto-adjust off-schedule, single-punch, and absent employees.
+
+        Uses combined schedule from ALL Sincron contracts (including secondary
+        contracts with exclude_from_pontaje=TRUE) so the adjustment reflects
+        the employee's full daily program.
+        """
         off = self.adj_repo.get_off_schedule(date_str, threshold)
         absent = self.adj_repo.get_absent_employees(date_str)
         leave_ids = self._get_sincron_leave_user_ids(date_str)
         adjusted_count = 0
+
+        # Batch-fetch full combined schedules (including secondary contracts)
+        # so we don't do N+1 queries per employee.
+        full_schedules = {}
+        try:
+            from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+            sincron_repo = SincronRepository()
+            rows = sincron_repo.get_all_full_day_schedules_for_date(date_str)
+            for r in rows:
+                if r.get('schedule_start') and r.get('schedule_end'):
+                    full_schedules[r['mapped_jarvis_user_id']] = r
+        except Exception as e:
+            logger.warning('Failed to load full Sincron schedules for %s: %s', date_str, e)
+
+        from datetime import time as _time
+
+        def _parse_time(val):
+            if isinstance(val, str):
+                parts = val.split(':')
+                return _time(int(parts[0]), int(parts[1]))
+            return val
+
+        def _override_schedule(row, sched_start, sched_end, lunch, wh):
+            """Override schedule with full combined schedule if available."""
+            jarvis_uid = row.get('mapped_jarvis_user_id')
+            if jarvis_uid and jarvis_uid in full_schedules:
+                fs = full_schedules[jarvis_uid]
+                fs_start = _parse_time(str(fs['schedule_start'])[:5])
+                fs_end = _parse_time(str(fs['schedule_end'])[:5])
+                fs_lunch = fs.get('lunch_break_minutes') or lunch
+                # Compute working hours from full span
+                full_span_min = (datetime.combine(datetime.today(), fs_end) -
+                                 datetime.combine(datetime.today(), fs_start)).total_seconds() / 60
+                fs_wh = (full_span_min - fs_lunch) / 60
+                return fs_start, fs_end, fs_lunch, fs_wh
+            return sched_start, sched_end, lunch, wh
 
         # --- Off-schedule employees (have punches but deviate) ---
         for row in off:
@@ -743,6 +784,10 @@ class BioStarSyncService:
 
             if not first or not last:
                 continue
+
+            # Override with full combined schedule (base + secondary contracts)
+            sched_start, sched_end, lunch, wh = _override_schedule(
+                row, sched_start, sched_end, lunch, wh)
 
             adj_first, adj_last = self._randomize_times(first, sched_start, lunch, wh)
 
@@ -766,7 +811,6 @@ class BioStarSyncService:
             adjusted_count += 1
 
         # --- Absent employees (no punches, past day, no Sincron leave) ---
-        from datetime import time as _time
         for row in absent:
             sched_start = row['schedule_start']
             sched_end = row['schedule_end']
@@ -775,13 +819,13 @@ class BioStarSyncService:
             if not sched_start or not sched_end:
                 continue
 
-            # Parse time if returned as string from SQL
-            if isinstance(sched_start, str):
-                parts = sched_start.split(':')
-                sched_start = _time(int(parts[0]), int(parts[1]))
-            if isinstance(sched_end, str):
-                parts = sched_end.split(':')
-                sched_end = _time(int(parts[0]), int(parts[1]))
+            sched_start = _parse_time(sched_start)
+            sched_end = _parse_time(sched_end)
+            wh = row.get('working_hours') or 8
+
+            # Override with full combined schedule (base + secondary contracts)
+            sched_start, sched_end, lunch, wh = _override_schedule(
+                row, sched_start, sched_end, lunch, wh)
 
             ref_date = datetime.strptime(date_str, '%Y-%m-%d').date()
             start_offset = random.randint(-3, 3)
@@ -799,7 +843,7 @@ class BioStarSyncService:
                 schedule_start=sched_start,
                 schedule_end=sched_end,
                 lunch_break_minutes=lunch,
-                working_hours=row.get('working_hours') or 8,
+                working_hours=wh,
                 original_duration=0,
                 deviation_in=0,
                 deviation_out=0,
@@ -848,7 +892,8 @@ class BioStarSyncService:
                 if leave:
                     return {'success': False, 'error': f'Employee has Sincron leave code ({leave["short_code"]}) for this date'}
 
-                full_sched = sincron_repo.get_full_day_schedule_by_jarvis_user(jarvis_uid, date_str)
+                full_sched = sincron_repo.get_full_day_schedule_by_jarvis_user(
+                    jarvis_uid, date_str, include_excluded=True)
                 if full_sched:
                     if full_sched.get('schedule_start'):
                         parts = str(full_sched['schedule_start']).split(':')

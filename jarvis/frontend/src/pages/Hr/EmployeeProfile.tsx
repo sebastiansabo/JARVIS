@@ -405,6 +405,10 @@ export default function EmployeeProfile() {
             await sincronApi.toggleCountForLeave(dbId, val)
             qc.invalidateQueries({ queryKey: ['biostar', 'sincron-timesheet', biostarUserId, calYear, calMonth] })
           }}
+          onTogglePontaje={async (dbId, val) => {
+            await sincronApi.toggleExcludeFromPontaje(dbId, val)
+            qc.invalidateQueries({ queryKey: ['biostar', 'sincron-timesheet', biostarUserId, calYear, calMonth] })
+          }}
         />
       )}
 
@@ -785,6 +789,7 @@ function SincronCalendar({
   onPrev,
   onNext,
   onToggleLeave,
+  onTogglePontaje,
 }: {
   contracts: SincronContract[]
   timesheet: TimesheetEntry[]
@@ -793,6 +798,7 @@ function SincronCalendar({
   onPrev: () => void
   onNext: () => void
   onToggleLeave?: (sincronEmployeeDbId: number, countForLeave: boolean) => Promise<void>
+  onTogglePontaje?: (sincronEmployeeDbId: number, excludeFromPontaje: boolean) => Promise<void>
 }) {
   const daysInMonth = new Date(year, month, 0).getDate()
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
@@ -870,31 +876,58 @@ function SincronCalendar({
               {contracts.map((c) => {
                 const companyEntries = lookup[c.company_name] ?? {}
                 const leaveOn = c.count_for_leave !== false
+                const pontajeExcluded = c.exclude_from_pontaje === true
+                const dimmed = !leaveOn || pontajeExcluded
                 return (
-                  <tr key={c.company_name} className={cn('border-t border-muted/50', !leaveOn && 'opacity-50')}>
+                  <tr key={c.company_name} className={cn('border-t border-muted/50', dimmed && 'opacity-50')}>
                     <td className="sticky left-0 z-10 bg-background px-2 py-1.5 text-xs font-medium whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
-                        {onToggleLeave && c.sincron_employee_db_id && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <input
-                                type="checkbox"
-                                checked={leaveOn}
-                                className="h-3 w-3 rounded border-muted-foreground/50 cursor-pointer accent-primary"
-                                onChange={async (e) => {
-                                  try {
-                                    await onToggleLeave(c.sincron_employee_db_id!, e.target.checked)
-                                    toast.success(`Leave ${e.target.checked ? 'counted' : 'ignored'} for ${shortName(c.company_name)}`)
-                                  } catch { toast.error('Toggle failed') }
-                                }}
-                              />
-                            </TooltipTrigger>
-                            <TooltipContent side="right">
-                              {leaveOn ? 'Leave days counted in analytics' : 'Leave days excluded from analytics'}
-                            </TooltipContent>
-                          </Tooltip>
+                        {c.sincron_employee_db_id && (
+                          <div className="flex items-center gap-0.5">
+                            {onToggleLeave && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <input
+                                    type="checkbox"
+                                    checked={leaveOn}
+                                    className="h-3 w-3 rounded border-muted-foreground/50 cursor-pointer accent-primary"
+                                    onChange={async (e) => {
+                                      try {
+                                        await onToggleLeave(c.sincron_employee_db_id!, e.target.checked)
+                                        toast.success(`Leave ${e.target.checked ? 'counted' : 'ignored'} for ${shortName(c.company_name)}`)
+                                      } catch { toast.error('Toggle failed') }
+                                    }}
+                                  />
+                                </TooltipTrigger>
+                                <TooltipContent side="right">
+                                  {leaveOn ? 'CO/Leave counted in analytics' : 'CO/Leave excluded from analytics'}
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {onTogglePontaje && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <input
+                                    type="checkbox"
+                                    checked={!pontajeExcluded}
+                                    className="h-3 w-3 rounded border-muted-foreground/50 cursor-pointer accent-orange-500"
+                                    onChange={async (e) => {
+                                      try {
+                                        await onTogglePontaje(c.sincron_employee_db_id!, !e.target.checked)
+                                        toast.success(`Pontaje ${e.target.checked ? 'included' : 'excluded'} for ${shortName(c.company_name)}`)
+                                      } catch { toast.error('Toggle failed') }
+                                    }}
+                                  />
+                                </TooltipTrigger>
+                                <TooltipContent side="right">
+                                  {pontajeExcluded ? 'Excluded from Pontaje / Scheduler / Adjustments' : 'Included in Pontaje / Scheduler / Adjustments'}
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
                         )}
                         <span>{shortName(c.company_name)}</span>
+                        {c.is_base_contract && <span className="text-[9px] text-primary font-semibold ml-0.5">B</span>}
                       </div>
                       <div className="text-[10px] text-muted-foreground font-normal">
                         {c.norma_lucru != null ? `${c.norma_lucru}h` : ''}

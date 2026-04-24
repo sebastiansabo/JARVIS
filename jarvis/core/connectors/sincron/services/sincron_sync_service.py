@@ -196,6 +196,14 @@ class SincronSyncService:
         if connector:
             self.connector_repo.update(connector['id'], last_sync=datetime.now())
 
+        # Recalculate base contracts (primary norm per CNP)
+        base_marked = 0
+        try:
+            base_marked = self.repo.recalculate_base_contracts()
+            logger.info(f'Base contracts recalculated: {base_marked} employees marked')
+        except Exception as e:
+            logger.error(f'Base contract recalculation failed: {e}')
+
         # Backfill BioStar employee schedules from Sincron combined norms
         biostar_updated = 0
         try:
@@ -227,6 +235,7 @@ class SincronSyncService:
             'total_employees': total_employees,
             'total_records': total_records,
             'total_deactivated': total_deactivated,
+            'base_contracts_marked': base_marked,
             'biostar_schedules_updated': biostar_updated,
             'companies': company_results,
         }
