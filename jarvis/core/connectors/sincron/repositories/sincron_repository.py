@@ -92,10 +92,11 @@ class SincronRepository(BaseRepository):
                    se.mapping_method, se.mapping_confidence,
                    se.norma_lucru, se.norma_lucru_time,
                    se.schedule_start, se.schedule_end, se.lunch_break_minutes,
-                   se.count_for_leave, se.company_id, se.last_synced_at
+                   se.count_for_leave, se.exclude_from_pontaje, se.is_base_contract,
+                   se.company_id, se.last_synced_at
             FROM sincron_employees se
             WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
-            ORDER BY se.company_name
+            ORDER BY se.is_base_contract DESC, se.norma_lucru DESC NULLS LAST, se.company_name
         ''', (jarvis_user_id,))
 
     def get_combined_schedules_for_biostar(self):
@@ -119,6 +120,7 @@ class SincronRepository(BaseRepository):
                 WHERE se.mapped_jarvis_user_id IS NOT NULL
                   AND se.is_active = TRUE
                   AND se.norma_lucru IS NOT NULL
+                  AND se.exclude_from_pontaje = FALSE
             ),
             totals AS (
                 SELECT mapped_jarvis_user_id,
@@ -144,6 +146,7 @@ class SincronRepository(BaseRepository):
             WHERE mapped_jarvis_user_id IS NOT NULL
               AND is_active = TRUE
               AND norma_lucru IS NOT NULL
+              AND exclude_from_pontaje = FALSE
             ORDER BY mapped_jarvis_user_id, norma_lucru DESC
         ''')
 
@@ -476,6 +479,7 @@ class SincronRepository(BaseRepository):
                 WHERE se.mapped_jarvis_user_id = %s
                   AND se.is_active = TRUE
                   AND se.norma_lucru IS NOT NULL
+                  AND se.exclude_from_pontaje = FALSE
                 ORDER BY se.company_name, st.program_in NULLS LAST
             )
             SELECT company_name,
@@ -488,18 +492,24 @@ class SincronRepository(BaseRepository):
             LIMIT 1
         ''', (date_str, jarvis_user_id))
 
-    def get_full_day_schedule_by_jarvis_user(self, jarvis_user_id, date_str):
+    def get_full_day_schedule_by_jarvis_user(self, jarvis_user_id, date_str,
+                                               include_excluded=False):
         """Get combined schedule boundaries across ALL companies for a specific date.
 
         Returns earliest program_in, latest program_out, and primary company's lunch.
+        When include_excluded=True, includes contracts with exclude_from_pontaje=TRUE
+        (used by adjustment logic to account for secondary contract schedules).
         """
-        return self.query_one('''
+        excl = "" if include_excluded else "AND se.exclude_from_pontaje = FALSE"
+        excl2 = "" if include_excluded else "AND se2.exclude_from_pontaje = FALSE"
+        return self.query_one(f'''
             SELECT MIN(st.program_in) AS schedule_start,
                    MAX(st.program_out) AS schedule_end,
                    (SELECT se2.lunch_break_minutes
                     FROM sincron_employees se2
                     WHERE se2.mapped_jarvis_user_id = %s AND se2.is_active = TRUE
                       AND se2.norma_lucru IS NOT NULL
+                      {excl2}
                     ORDER BY se2.norma_lucru DESC LIMIT 1
                    ) AS lunch_break_minutes
             FROM sincron_employees se
@@ -512,7 +522,42 @@ class SincronRepository(BaseRepository):
               AND st.program_out IS NOT NULL
             WHERE se.mapped_jarvis_user_id = %s
               AND se.is_active = TRUE
+              {excl}
         ''', (jarvis_user_id, date_str, jarvis_user_id))
+
+    def get_all_full_day_schedules_for_date(self, date_str):
+        """Get combined schedule boundaries for ALL mapped employees for a date.
+
+        Includes ALL contracts (even those with exclude_from_pontaje=TRUE)
+        so the adjustment logic can use the full combined schedule including
+        secondary contracts.
+
+        Returns list of dicts with mapped_jarvis_user_id, schedule_start,
+        schedule_end, lunch_break_minutes.
+        """
+        return self.query_all('''
+            SELECT se.mapped_jarvis_user_id,
+                   MIN(st.program_in) AS schedule_start,
+                   MAX(st.program_out) AS schedule_end,
+                   (SELECT se2.lunch_break_minutes
+                    FROM sincron_employees se2
+                    WHERE se2.mapped_jarvis_user_id = se.mapped_jarvis_user_id
+                      AND se2.is_active = TRUE
+                      AND se2.norma_lucru IS NOT NULL
+                    ORDER BY se2.norma_lucru DESC LIMIT 1
+                   ) AS lunch_break_minutes
+            FROM sincron_employees se
+            JOIN sincron_timesheets st
+              ON st.sincron_employee_id = se.sincron_employee_id
+              AND st.company_name = se.company_name
+              AND st.day = %s::date
+              AND st.short_code IN ('OZ', 'OS')
+              AND st.program_in IS NOT NULL
+              AND st.program_out IS NOT NULL
+            WHERE se.mapped_jarvis_user_id IS NOT NULL
+              AND se.is_active = TRUE
+            GROUP BY se.mapped_jarvis_user_id
+        ''', (date_str,))
 
     def get_all_day_codes(self, year, month):
         """Get day-level activity codes for all mapped employees in a month.
@@ -615,6 +660,37 @@ class SincronRepository(BaseRepository):
         return tuple(r['short_code'] for r in rows)
 
     # ── JARVIS users for mapping dropdown (admin only — no CNP) ──
+
+    def recalculate_base_contracts(self):
+        """Mark the base (primary) contract per employee CNP.
+
+        Logic: highest norma_lucru with 'Numar ore pe zi' wins.
+        Tiebreaker: earliest data_incepere_contract.
+        Returns the number of employees marked as base.
+        """
+        def _work(cursor):
+            cursor.execute("UPDATE sincron_employees SET is_base_contract = FALSE WHERE is_active = TRUE")
+            cursor.execute('''
+                WITH ranked AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY cnp
+                               ORDER BY
+                                   CASE WHEN norma_lucru_time = 'Numar ore pe zi' THEN 0 ELSE 1 END,
+                                   norma_lucru DESC NULLS LAST,
+                                   data_incepere_contract ASC NULLS LAST
+                           ) AS rn
+                    FROM sincron_employees
+                    WHERE is_active = TRUE
+                      AND cnp IS NOT NULL AND cnp != ''
+                )
+                UPDATE sincron_employees se
+                SET is_base_contract = TRUE
+                FROM ranked r
+                WHERE se.id = r.id AND r.rn = 1
+            ''')
+            return cursor.rowcount
+        return self.transaction(_work)
 
     def get_jarvis_users(self):
         """Get active JARVIS users for mapping (excludes sensitive PII)."""

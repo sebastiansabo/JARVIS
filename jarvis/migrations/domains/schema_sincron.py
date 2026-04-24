@@ -253,7 +253,7 @@ def create_schema_sincron(conn, cursor):
     # ── count_for_leave toggle — exclude micro-contracts from leave analytics ──
     cursor.execute("""
         ALTER TABLE sincron_employees
-        ADD COLUMN IF NOT EXISTS count_for_leave BOOLEAN DEFAULT TRUE
+        ADD COLUMN IF NOT EXISTS count_for_leave BOOLEAN DEFAULT FALSE
     """)
 
     # ── company_id FK — map Sincron company_name to JARVIS companies table ──
@@ -272,6 +272,18 @@ def create_schema_sincron(conn, cursor):
         CREATE INDEX IF NOT EXISTS idx_sincron_employees_company_id
         ON sincron_employees(company_id)
         WHERE company_id IS NOT NULL
+    """)
+
+    # ── exclude_from_pontaje toggle — exclude contracts from BioStar/Pontaje/Scheduler ──
+    cursor.execute("""
+        ALTER TABLE sincron_employees
+        ADD COLUMN IF NOT EXISTS exclude_from_pontaje BOOLEAN DEFAULT FALSE
+    """)
+
+    # ── is_base_contract flag — marks the primary contract per employee CNP ──
+    cursor.execute("""
+        ALTER TABLE sincron_employees
+        ADD COLUMN IF NOT EXISTS is_base_contract BOOLEAN DEFAULT FALSE
     """)
 
     conn.commit()

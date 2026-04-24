@@ -560,6 +560,8 @@ def get_employee_sincron_schedule(biostar_user_id):
             'schedule_end': str(se['schedule_end'])[:5] if se.get('schedule_end') else None,
             'lunch_break_minutes': se.get('lunch_break_minutes'),
             'count_for_leave': se.get('count_for_leave', True),
+            'exclude_from_pontaje': se.get('exclude_from_pontaje', False),
+            'is_base_contract': se.get('is_base_contract', False),
             'sincron_employee_db_id': se.get('id'),
         })
     return jsonify({'success': True, 'contracts': contracts})
@@ -598,6 +600,8 @@ def get_employee_sincron_timesheet(biostar_user_id):
             'schedule_end': str(se['schedule_end'])[:5] if se.get('schedule_end') else None,
             'lunch_break_minutes': se.get('lunch_break_minutes'),
             'count_for_leave': se.get('count_for_leave', True),
+            'exclude_from_pontaje': se.get('exclude_from_pontaje', False),
+            'is_base_contract': se.get('is_base_contract', False),
             'sincron_employee_db_id': se.get('id'),
         })
 
