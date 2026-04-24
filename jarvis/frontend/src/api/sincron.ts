@@ -169,6 +169,19 @@ export const sincronApi = {
     return res.data
   },
 
+  getContractStats: async () => {
+    const res = await api.get<{ success: boolean; data: {
+      base_count: number; secondary_count: number
+      secondary_leave_on: number; secondary_pontaje_on: number
+    } }>(`${BASE}/employees/contract-stats`)
+    return res.data
+  },
+
+  bulkToggleSecondary: (field: 'count_for_leave' | 'exclude_from_pontaje', value: boolean) =>
+    api.post<{ success: boolean; field: string; value: boolean; updated: number }>(
+      `${BASE}/employees/bulk-toggle`, { field, value },
+    ),
+
   getUnmapped: async () => {
     const res = await api.get<{ success: boolean; data: SincronEmployee[] }>(
       `${BASE}/employees/unmapped`,
