@@ -1109,6 +1109,91 @@ def send_hr_weekly_digest():
         logger.error(f"HR weekly digest failed: {e}", exc_info=True)
 
 
+def _build_section_comment(lines):
+    """Wrap analyst commentary lines in a styled block."""
+    comment_style = (
+        'style="margin:4px 0 18px;padding:10px 14px;'
+        'background:#f0f4ff;border-left:3px solid #2563eb;'
+        'font-size:12px;color:#334155;line-height:1.5"'
+    )
+    bullets = ''.join(f'<div style="margin-bottom:3px">{l}</div>' for l in lines)
+    return f'<div {comment_style}>{bullets}</div>'
+
+
+def _leave_commentary(leave_by_company, totals, total_headcount, total_co_remaining):
+    """Section 1: Concedii — analyst insights."""
+    lines = []
+    total_days = totals['total_leave_days']
+    avg = round(total_days / total_headcount, 1) if total_headcount else 0
+    lines.append(f'Media concediu/angajat: <b>{avg} zile</b> (din sold mediu de '
+                 f'<b>{round(total_co_remaining / total_headcount, 1) if total_headcount else 0} zile</b> ramas).')
+
+    # Highest and lowest coverage
+    if leave_by_company:
+        sorted_by_cov = sorted(leave_by_company,
+                               key=lambda r: r['total_leave_days'] / (r['total_leave_days'] + r.get('co_remaining', 0))
+                               if (r['total_leave_days'] + r.get('co_remaining', 0)) > 0 else 0,
+                               reverse=True)
+        best = sorted_by_cov[0]
+        best_pct = round(best['total_leave_days'] / (best['total_leave_days'] + best.get('co_remaining', 0)) * 100) if (best['total_leave_days'] + best.get('co_remaining', 0)) > 0 else 0
+        worst = sorted_by_cov[-1]
+        worst_pct = round(worst['total_leave_days'] / (worst['total_leave_days'] + worst.get('co_remaining', 0)) * 100) if (worst['total_leave_days'] + worst.get('co_remaining', 0)) > 0 else 0
+        lines.append(f'Acoperire maxima: <b>{best["company_name"]}</b> ({best_pct}%) — '
+                     f'minima: <b>{worst["company_name"]}</b> ({worst_pct}%).')
+
+    overall_cov = round(total_days / (total_days + total_co_remaining) * 100) if (total_days + total_co_remaining) > 0 else 0
+    if overall_cov < 25:
+        lines.append('Acoperirea sub 25% — soldurile CO sunt inca ridicate. '
+                     'Se recomanda planificarea concediilor in avans.')
+    elif overall_cov >= 50:
+        lines.append('Peste jumatate din concediile disponibile au fost utilizate — ritm bun de consum.')
+    return lines
+
+
+def _top_co_commentary(top_10_co):
+    """Section 2: Top 10 Sold CO — analyst insights."""
+    lines = []
+    if not top_10_co:
+        return lines
+    top = top_10_co[0]
+    lines.append(f'Cel mai mare sold: <b>{top["name"]}</b> cu <b>{top["remaining"]}</b> zile ramase '
+                 f'din {top["total_available"]} disponibile.')
+    avg_remaining = round(sum(c['remaining'] for c in top_10_co) / len(top_10_co), 1)
+    lines.append(f'Media top 10: <b>{avg_remaining} zile</b> neutilizate. '
+                 f'Se recomanda discutii individuale pentru planificarea concediilor restante.')
+    low_usage = [c for c in top_10_co if c['used'] == 0]
+    if low_usage:
+        names = ', '.join(c['name'] for c in low_usage[:3])
+        lines.append(f'Angajati fara niciun CO utilizat: <b>{names}</b>.')
+    return lines
+
+
+def _hours_commentary(actual_vs_potential, totals, working_days, total_calendar):
+    """Section 3: Ore Lucrate — analyst insights."""
+    lines = []
+    util_pct = totals['total_utilization_pct']
+    cov_pct = round(totals['total_actual_hours'] / total_calendar * 100) if total_calendar > 0 else 0
+    lines.append(f'Utilizare generala: <b>{util_pct}%</b> din potential '
+                 f'(acoperire calendar: <b>{cov_pct}%</b>, {working_days} zile lucratoare).')
+
+    if actual_vs_potential:
+        best = max(actual_vs_potential, key=lambda r: r['utilization_pct'])
+        worst = min(actual_vs_potential, key=lambda r: r['utilization_pct'])
+        if best['company_name'] != worst['company_name']:
+            lines.append(f'Performanta maxima: <b>{best["company_name"]}</b> ({best["utilization_pct"]}%) — '
+                         f'minima: <b>{worst["company_name"]}</b> ({worst["utilization_pct"]}%).')
+
+    gap = round(totals['total_potential_hours'] - totals['total_actual_hours'], 1)
+    if gap > 0:
+        lines.append(f'Deficit de <b>{gap}h</b> fata de potential. '
+                     f'Principalele cauze: concedii, absente, program redus.')
+    if util_pct < 70:
+        lines.append('Utilizarea sub 70% semnaleaza un deficit semnificativ de prezenta.')
+    elif util_pct >= 90:
+        lines.append('Utilizare excelenta — echipele functioneaza aproape de capacitate maxima.')
+    return lines
+
+
 def _build_hr_weekly_html(data):
     """Build the HTML body for the HR weekly digest email."""
     week_label = data['week_label']
@@ -1170,6 +1255,9 @@ def _build_hr_weekly_html(data):
         f'<td {td_r}>{overall_coverage}%</td></tr>'
     )
     parts.append('</table>')
+    parts.append(_build_section_comment(
+        _leave_commentary(leave_by_company, totals, total_headcount, total_co_remaining)
+    ))
 
     # ── Section 2: Top 10 — Sold CO ──
     parts.append(f'<h3 style="color:#1e40af;font-size:15px;margin:0 0 8px">2. Top 10 — Sold CO ({year})</h3>')
@@ -1187,6 +1275,7 @@ def _build_hr_weekly_html(data):
             f'<td {td_r}><b>{co["remaining"]}</b></td></tr>'
         )
     parts.append('</table>')
+    parts.append(_build_section_comment(_top_co_commentary(top_10_co)))
 
     # ── Section 3: Ore Lucrate vs Potențial ──
     working_days = data.get('working_days', 0)
@@ -1222,6 +1311,9 @@ def _build_hr_weekly_html(data):
         f'<td {td_r}>{round(total_calendar, 1)}h</td><td {td_r}>{total_cov_pct}%</td></tr>'
     )
     parts.append('</table>')
+    parts.append(_build_section_comment(
+        _hours_commentary(actual_vs_potential, totals, working_days, total_calendar)
+    ))
 
     # Footer
     parts.append(
