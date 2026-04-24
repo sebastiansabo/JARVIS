@@ -230,6 +230,43 @@ def toggle_exclude_from_pontaje(sincron_employee_id):
     return jsonify({'success': True, 'exclude_from_pontaje': val})
 
 
+@sincron_bp.route('/api/employees/contract-stats', methods=['GET'])
+@admin_required
+def get_contract_stats():
+    """Get aggregate stats for base vs secondary contract toggles."""
+    row = service.repo.query_one('''
+        SELECT
+            COUNT(*) FILTER (WHERE is_base_contract = TRUE) AS base_count,
+            COUNT(*) FILTER (WHERE is_base_contract = FALSE) AS secondary_count,
+            COUNT(*) FILTER (WHERE is_base_contract = FALSE AND count_for_leave = TRUE) AS secondary_leave_on,
+            COUNT(*) FILTER (WHERE is_base_contract = FALSE AND exclude_from_pontaje = FALSE) AS secondary_pontaje_on
+        FROM sincron_employees
+        WHERE is_active = TRUE
+    ''')
+    return jsonify({'success': True, 'data': dict(row) if row else {}})
+
+
+@sincron_bp.route('/api/employees/bulk-toggle', methods=['POST'])
+@admin_required
+def bulk_toggle_secondary():
+    """Bulk toggle count_for_leave or exclude_from_pontaje on all secondary contracts."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'Request body required'}), 400
+
+    field = data.get('field')
+    value = data.get('value')
+    if field not in ('count_for_leave', 'exclude_from_pontaje') or value is None:
+        return jsonify({'success': False, 'error': 'field (count_for_leave|exclude_from_pontaje) and value required'}), 400
+
+    val = bool(value)
+    count = service.repo.execute(f'''
+        UPDATE sincron_employees SET {field} = %s, updated_at = NOW()
+        WHERE is_active = TRUE AND is_base_contract = FALSE
+    ''', (val,))
+    return jsonify({'success': True, 'field': field, 'value': val, 'updated': count or 0})
+
+
 @sincron_bp.route('/api/employees/auto-map', methods=['POST'])
 @admin_required
 def auto_map():
