@@ -6,6 +6,10 @@ on:
     - cron: '0 2 * * 0'
   workflow_dispatch:
 
+env:
+  PROD_DB_ID: 66db0f3c-8060-4222-ae66-539716e8a39a
+  STAGING_DB_ID: 9c60f8cb-076b-4096-9db3-220890d90edc
+
 jobs:
   backup:
     runs-on: ubuntu-latest
@@ -15,6 +19,42 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client
+
+      - name: Get runner IP
+        id: ip
+        run: echo "runner_ip=$(curl -s https://api.ipify.org)" >> "$GITHUB_OUTPUT"
+
+      - name: Whitelist runner IP on both databases
+        env:
+          DO_TOKEN: ${{ secrets.DO_API_TOKEN }}
+        run: |
+          RUNNER_IP="${{ steps.ip.outputs.runner_ip }}"
+          echo "Runner IP: $RUNNER_IP"
+
+          for DB_ID in "$PROD_DB_ID" "$STAGING_DB_ID"; do
+            # Get existing rules
+            EXISTING=$(curl -s -H "Authorization: Bearer $DO_TOKEN" \
+              "https://api.digitalocean.com/v2/databases/${DB_ID}/firewall" \
+              | python3 -c "
+          import json, sys
+          rules = json.load(sys.stdin).get('rules', [])
+          out = [{'type': r['type'], 'value': r['value']} for r in rules]
+          out.append({'type': 'ip_addr', 'value': '${RUNNER_IP}'})
+          print(json.dumps({'rules': out}))
+          ")
+
+            # Update firewall with existing + runner IP
+            curl -s -X PUT \
+              -H "Authorization: Bearer $DO_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$EXISTING" \
+              "https://api.digitalocean.com/v2/databases/${DB_ID}/firewall" > /dev/null
+
+            echo "Whitelisted $RUNNER_IP on database $DB_ID"
+          done
+
+          # Wait for firewall propagation
+          sleep 15
 
       - name: Dump production database
         env:
@@ -43,3 +83,29 @@ jobs:
           path: /tmp/jarvis_*.dump
           retention-days: 90
           if-no-files-found: error
+
+      - name: Remove runner IP from firewall
+        if: always()
+        env:
+          DO_TOKEN: ${{ secrets.DO_API_TOKEN }}
+        run: |
+          RUNNER_IP="${{ steps.ip.outputs.runner_ip }}"
+
+          for DB_ID in "$PROD_DB_ID" "$STAGING_DB_ID"; do
+            EXISTING=$(curl -s -H "Authorization: Bearer $DO_TOKEN" \
+              "https://api.digitalocean.com/v2/databases/${DB_ID}/firewall" \
+              | python3 -c "
+          import json, sys
+          rules = json.load(sys.stdin).get('rules', [])
+          out = [{'type': r['type'], 'value': r['value']} for r in rules if r['value'] != '${RUNNER_IP}']
+          print(json.dumps({'rules': out}))
+          ")
+
+            curl -s -X PUT \
+              -H "Authorization: Bearer $DO_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$EXISTING" \
+              "https://api.digitalocean.com/v2/databases/${DB_ID}/firewall" > /dev/null
+
+            echo "Removed $RUNNER_IP from database $DB_ID"
+          done
