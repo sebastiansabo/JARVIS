@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTabParam } from '@/hooks/useTabParam'
 import {
@@ -35,7 +34,6 @@ import {
   SlidersHorizontal,
   ChevronUp,
   ClipboardList,
-  GraduationCap,
   Plus,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -67,7 +65,6 @@ import { usersApi } from '@/api/users'
 import { useAuth } from '@/hooks/useAuth'
 import { connecteamApi, type ConnecteamSubmission } from '@/api/connecteam'
 import { formsApi } from '@/api/forms'
-import { api } from '@/api/client'
 import { AllocationEditor, allocationsToRows, rowsToApiPayload } from '@/pages/Accounting/AllocationEditor'
 import { EditInvoiceDialog } from '@/pages/Accounting/EditInvoiceDialog'
 import { dedupeMergedAllocations } from '@/pages/Accounting/allocationUtils'
@@ -79,7 +76,7 @@ import type { Invoice } from '@/types/invoices'
 import type { ProfileInvoice, ProfileActivity, ProfileBonus, OrgTreeNode } from '@/types/profile'
 import type { BioStarDayHistory, BioStarPunchLog, BioStarDailySummary, BioStarRangeSummary } from '@/types/biostar'
 
-type Tab = 'invoices' | 'hr-events' | 'pontaje' | 'team-pontaje' | 'sincron' | 'leave-permits' | 'courses' | 'activity'
+type Tab = 'invoices' | 'hr-events' | 'pontaje' | 'team-pontaje' | 'sincron' | 'leave-permits' | 'activity'
 
 const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'invoices', label: 'My Invoices', icon: FileText },
@@ -88,7 +85,6 @@ const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'team-pontaje', label: 'Team Pontaje', icon: Users },
   { key: 'sincron', label: 'Sincron', icon: FileSpreadsheet },
   { key: 'leave-permits', label: 'Leave Permits', icon: ClipboardList },
-  { key: 'courses', label: 'My Courses', icon: GraduationCap },
   { key: 'activity', label: 'Activity Log', icon: Activity },
 ]
 
@@ -237,7 +233,6 @@ export default function Profile() {
       {activeTab === 'team-pontaje' && <TeamPontajePanel />}
       {activeTab === 'sincron' && <SincronPanel />}
       {activeTab === 'leave-permits' && user && <LeavePermitsPanel userId={user.id} />}
-      {activeTab === 'courses' && <MyCoursesPanel />}
       {activeTab === 'activity' && <ActivityPanel />}
     </div>
   )
@@ -689,7 +684,6 @@ function QuickCheckinCard() {
 function PontajePanel() {
   const today = todayStr()
   const [chartView, setChartView] = useState<'week' | 'month' | '3m'>('month')
-  const [tableDays, setTableDays] = useState<7 | 14 | 30>(14)
 
   const { data, isLoading } = useQuery({
     queryKey: ['profile', 'pontaje'],
@@ -700,7 +694,6 @@ function PontajePanel() {
   const employee = data?.employee
   const history: BioStarDayHistory[] = data?.history ?? []
   const todayPunches: BioStarPunchLog[] = data?.today_punches ?? []
-  const holidays: Set<string> = useMemo(() => new Set(data?.holidays ?? []), [data?.holidays])
 
   const stats = useMemo(() => {
     if (!history.length) return { daysPresent: 0, avgHours: 0, totalHours: 0, maxHours: 0 }
@@ -723,7 +716,6 @@ function PontajePanel() {
       const d = new Date(dateStr + 'T00:00:00')
       const dow = d.getDay()
       if (dow === 0 || dow === 6) continue
-      if (holidays.has(dateStr)) continue
       const found = history.find((h) => h.date === dateStr)
       const net = found ? netSec(found.duration_seconds, found.lunch_break_minutes ?? 60) : 0
       const expected = found?.working_hours ?? employee?.working_hours ?? 8
@@ -737,32 +729,21 @@ function PontajePanel() {
       })
     }
     return result
-  }, [history, chartDays, chartView, employee?.working_hours, holidays])
+  }, [history, chartDays, chartView, employee?.working_hours])
 
-  const recentDays = useMemo(() => {
-    const days: (BioStarDayHistory & { isWeekend?: boolean; isMissing?: boolean; isHoliday?: boolean })[] = []
-    for (let i = 0; i < tableDays; i++) {
+  const last7 = useMemo(() => {
+    const days: BioStarDayHistory[] = []
+    for (let i = 0; i < 7; i++) {
       const dateStr = daysAgo(i)
-      const d = new Date(dateStr + 'T00:00:00')
-      const dow = d.getDay()
-      const isWeekend = dow === 0 || dow === 6
-      const isHoliday = holidays.has(dateStr)
       const found = history.find((h) => h.date === dateStr)
       if (found) {
-        days.push({ ...found, isWeekend, isMissing: false, isHoliday })
+        days.push(found)
       } else {
-        days.push({
-          date: dateStr, first_punch: '', last_punch: '', total_punches: 0, duration_seconds: null,
-          isWeekend,
-          isMissing: !isWeekend && !isHoliday && dateStr < today,
-          isHoliday,
-        })
+        days.push({ date: dateStr, first_punch: '', last_punch: '', total_punches: 0, duration_seconds: null })
       }
     }
     return days
-  }, [history, tableDays, today, holidays])
-
-  const missingCount = useMemo(() => recentDays.filter(d => d.isMissing).length, [recentDays])
+  }, [history])
 
   if (isLoading) {
     return (
@@ -801,7 +782,7 @@ function PontajePanel() {
         <StatCard title="Days Present (90d)" value={stats.daysPresent} icon={<Fingerprint className="h-4 w-4" />} />
         <StatCard title="Avg Hours/Day" value={stats.avgHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
         <StatCard title="Total Hours (90d)" value={stats.totalHours.toFixed(0)} icon={<Clock className="h-4 w-4" />} />
-        <StatCard title={`Missing (${tableDays}d)`} value={missingCount} icon={<Clock className="h-4 w-4" />} className={missingCount > 0 ? 'border-amber-300 dark:border-amber-700' : ''} />
+        <StatCard title="Max Hours" value={stats.maxHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
       </div>
 
       {/* Daily chart */}
@@ -833,19 +814,10 @@ function PontajePanel() {
         </CardContent>
       </Card>
 
-      {/* Recent days with missing punch detection */}
+      {/* Last 7 days */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Attendance History</CardTitle>
-            <div className="flex gap-1">
-              {([7, 14, 30] as const).map((d) => (
-                <Button key={d} variant={tableDays === d ? 'default' : 'outline'} size="sm" className="h-7 text-xs" onClick={() => setTableDays(d)}>
-                  {d}d
-                </Button>
-              ))}
-            </div>
-          </div>
+          <CardTitle className="text-base">Last 7 Days</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="rounded-md border">
@@ -856,11 +828,11 @@ function PontajePanel() {
                   <TableHead className="text-center">Check In</TableHead>
                   <TableHead className="text-center">Check Out</TableHead>
                   <TableHead className="text-center">Duration</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
+                  <TableHead className="text-center">Punches</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {recentDays.map((day) => {
+                {last7.map((day) => {
                   const isToday = day.date === today
                   const lunch = day.lunch_break_minutes ?? 60
                   const net = netSec(day.duration_seconds, lunch)
@@ -869,12 +841,7 @@ function PontajePanel() {
                   const isShort = netH > 0 && netH < expectedH
                   const isAbsent = day.total_punches === 0
                   return (
-                    <TableRow key={day.date} className={cn(
-                      isToday && 'bg-muted/30',
-                      day.isWeekend && 'bg-muted/20',
-                      day.isHoliday && 'bg-blue-50 dark:bg-blue-950/20',
-                      day.isMissing && 'bg-amber-50 dark:bg-amber-950/20',
-                    )}>
+                    <TableRow key={day.date} className={cn(isToday && 'bg-muted/30')}>
                       <TableCell className="font-medium">
                         {fmtDate(day.date)}
                         {isToday && <Badge variant="secondary" className="ml-2 text-[10px]">Today</Badge>}
@@ -903,7 +870,7 @@ function PontajePanel() {
                       </TableCell>
                       <TableCell className="text-center">
                         {isAbsent ? (
-                          <span className="text-sm text-muted-foreground">—</span>
+                          <Badge variant="outline" className="text-xs text-muted-foreground">Absent</Badge>
                         ) : day.total_punches === 1 ? (
                           <span className="text-sm text-muted-foreground">—</span>
                         ) : (
@@ -913,18 +880,10 @@ function PontajePanel() {
                         )}
                       </TableCell>
                       <TableCell className="text-center">
-                        {day.isHoliday && isAbsent ? (
-                          <span className="text-xs text-blue-600 dark:text-blue-400">Holiday</span>
-                        ) : day.isMissing ? (
-                          <Badge variant="outline" className="text-xs text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30">Missing punch</Badge>
-                        ) : day.isWeekend && isAbsent ? (
-                          <span className="text-xs text-muted-foreground">Weekend</span>
-                        ) : isAbsent ? (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        ) : day.total_punches === 1 ? (
-                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
+                        {isAbsent ? (
+                          <span className="text-sm text-muted-foreground">—</span>
                         ) : (
-                          <Badge variant="secondary" className="text-xs">{day.total_punches} punches</Badge>
+                          <Badge variant="secondary" className="text-xs">{day.total_punches}</Badge>
                         )}
                       </TableCell>
                     </TableRow>
@@ -1170,7 +1129,6 @@ function groupByCompany<T extends { jarvis_company?: string | null }>(data: T[])
 
 function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[]; isMobile: boolean; date: string }) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const navigate = useNavigate()
   const groups = useMemo(() => groupByCompany(data), [data])
   const hasMultipleCompanies = groups.length > 1
 
@@ -1203,7 +1161,7 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
     const netH = net / 3600
     const expectedH = Number(r.working_hours ?? 8)
     const isShort = netH > 0 && netH < expectedH
-    const isAbsent = !r.total_punches
+    const isAbsent = r.total_punches === 0
     const isExpanded = expandedId === r.biostar_user_id
     const hasAdjustment = !!r.adjustment_type
 
@@ -1211,7 +1169,7 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
       <>
         <TableRow
           key={r.biostar_user_id}
-          className={cn(!isAbsent && 'cursor-pointer hover:bg-muted/50', isExpanded && 'bg-muted/30')}
+          className={cn('cursor-pointer hover:bg-muted/50', isExpanded && 'bg-muted/30')}
           onClick={() => !isAbsent && toggle(r.biostar_user_id)}
         >
           <TableCell className="px-2">
@@ -1270,21 +1228,10 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
           <TableCell className="text-center text-sm text-muted-foreground">
             {r.schedule_start || '08:00'} - {r.schedule_end || '17:00'}
           </TableCell>
-          <TableCell className="text-center">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 w-6 p-0"
-              onClick={(e) => { e.stopPropagation(); navigate(`/app/hr/pontaje/${r.biostar_user_id}`) }}
-              title="View full pontaje"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-            </Button>
-          </TableCell>
         </TableRow>
         {isExpanded && (
           <TableRow key={`${r.biostar_user_id}-detail`}>
-            <TableCell colSpan={9} className="p-0">
+            <TableCell colSpan={8} className="p-0">
               <PunchDetailRow biostarUserId={r.biostar_user_id} date={date} row={r} />
             </TableCell>
           </TableRow>
@@ -1306,7 +1253,6 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
             <TableHead className="text-center">Duration</TableHead>
             <TableHead className="text-center">Punches</TableHead>
             <TableHead className="text-center">Schedule</TableHead>
-            <TableHead className="w-10"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1314,7 +1260,7 @@ function TeamDailyTable({ data, isMobile, date }: { data: BioStarDailySummary[];
             ? groups.map((g) => (
                 <>
                   <TableRow key={`company-${g.company}`} className="bg-muted/40 hover:bg-muted/40">
-                    <TableCell colSpan={9} className="py-1.5 px-4">
+                    <TableCell colSpan={8} className="py-1.5 px-4">
                       <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         <Building2 className="h-3 w-3" />
                         {g.company} <span className="font-normal">({g.rows.length})</span>
@@ -1667,6 +1613,35 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
 
   const canEdit = user?.can_edit_invoices || (user?.permissions?.['invoices.records.edit'] ?? false) || isOrgResponsable
 
+  const handleDownloadPdf = async (inv: ProfileInvoice) => {
+    const url = inv.drive_link?.startsWith('/efactura/')
+      ? `/profile/api/invoices/${inv.id}/pdf`
+      : inv.drive_link
+    if (!url) return
+    // For non-efactura links, open normally
+    if (!inv.drive_link?.startsWith('/efactura/')) {
+      window.open(url, '_blank', 'noopener')
+      return
+    }
+    // Fetch as blob for reliable Edge/browser download
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Download failed')
+      const blob = await res.blob()
+      const filename = res.headers.get('Content-Disposition')?.match(/filename="?([^";\n]+)"?/)?.[1] || `invoice-${inv.id}.pdf`
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      URL.revokeObjectURL(a.href)
+      a.remove()
+    } catch {
+      // Fallback: direct navigation
+      window.location.href = url
+    }
+  }
+
   const { data: dropdownOptions = [] } = useQuery({
     queryKey: ['settings', 'dropdowns'],
     queryFn: () => settingsApi.getDropdownOptions(),
@@ -1811,14 +1786,12 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                 ] satisfies MobileCardField<ProfileInvoice>[]}
                 getRowId={(inv) => inv.id}
                 actions={(inv) => inv.drive_link ? (
-                  <a
-                    href={inv.drive_link?.startsWith('/efactura/') ? `/profile/api/invoices/${inv.id}/pdf` : inv.drive_link}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => handleDownloadPdf(inv)}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
+                  </button>
                 ) : null}
               />
             ) : (
@@ -1895,14 +1868,12 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                             </TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()}>
                               {inv.drive_link && (
-                                <a
-                                  href={inv.drive_link?.startsWith('/efactura/') ? `/profile/api/invoices/${inv.id}/pdf` : inv.drive_link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                <button
+                                  onClick={() => handleDownloadPdf(inv)}
                                   className="text-muted-foreground hover:text-foreground"
                                 >
                                   <ExternalLink className="h-3.5 w-3.5" />
-                                </a>
+                                </button>
                               )}
                             </TableCell>
                           </TableRow>
@@ -2309,25 +2280,6 @@ function SincronPanel() {
     queryFn: () => sincronApi.getMyTimesheet(year, month),
   })
 
-  // Holidays for this month
-  const { data: _holData } = useQuery({
-    queryKey: ['holidays', 'year', year],
-    queryFn: () => api.get<{ success: boolean; holidays: { date: string; name: string; type: string }[] }>(`/api/holidays/year/${year}`),
-  })
-  const _holSet: Set<string> = useMemo(() => {
-    const s = new Set<string>()
-    const prefix = `${year}-${String(month).padStart(2, '0')}`
-    for (const h of _holData?.holidays ?? []) {
-      if (h.date.startsWith(prefix)) s.add(h.date)
-    }
-    return s
-  }, [_holData, year, month])
-  const _holNames: Record<string, string> = useMemo(() => {
-    const m: Record<string, string> = {}
-    for (const h of _holData?.holidays ?? []) m[h.date] = h.name
-    return m
-  }, [_holData])
-
   const ts: SincronTimesheetData | null = data?.data ?? null
   const days = ts?.days ?? {}
   const summary = ts?.summary ?? []
@@ -2463,19 +2415,13 @@ function SincronPanel() {
                     const d = new Date(day + 'T00:00:00')
                     const dow = d.getDay()
                     const isWeekend = dow === 0 || dow === 6
-                    const _isHol = _holSet.has(day)
                     const entries = days[day]
                     const byCode: Record<string, number> = {}
                     entries.forEach((e) => { byCode[e.short_code] = e.value })
 
                     return (
-                      <TableRow key={day} className={cn(isWeekend && 'bg-muted/40', _isHol && 'bg-blue-50 dark:bg-blue-950/20')}>
-                        <TableCell className="tabular-nums text-xs">
-                          {day}
-                          {_isHol && (
-                            <Badge variant="outline" className="ml-1.5 text-[9px] text-blue-600 border-blue-300 py-0">{_holNames[day] ?? 'Holiday'}</Badge>
-                          )}
-                        </TableCell>
+                      <TableRow key={day} className={isWeekend ? 'bg-muted/40' : ''}>
+                        <TableCell className="tabular-nums text-xs">{day}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {d.toLocaleDateString('ro-RO', { weekday: 'short' })}
                         </TableCell>
@@ -2790,99 +2736,6 @@ function ProfileLeaveRequestDialog({ onClose, onSubmitted }: {
 }
 
 // ─── Activity Panel ─────────────────────────────────────────────────
-
-function MyCoursesPanel() {
-  const { data, isLoading } = useQuery({
-    queryKey: ['profile', 'courses'],
-    queryFn: async () => {
-      const { coursesApi } = await import('@/api/courses')
-      return coursesApi.getMyCourses()
-    },
-  })
-
-  if (isLoading) return <div className="space-y-2"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div>
-
-  const certs = data?.certifications ?? []
-  const enrollments = data?.enrollments ?? []
-
-  return (
-    <div className="space-y-4">
-      {/* Active Certifications */}
-      {certs.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Certifications</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {certs.map((c: any) => {
-                const isExpiring = c.days_until_expiry !== null && c.days_until_expiry <= 30
-                const isExpired = c.status === 'expired'
-                return (
-                  <div key={c.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
-                    <div>
-                      <div className="text-sm font-medium">{c.course_type_name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        Issued: {new Date(c.issued_date).toLocaleDateString('ro-RO')}
-                        {c.expiry_date && ` · Expires: ${new Date(c.expiry_date).toLocaleDateString('ro-RO')}`}
-                      </div>
-                    </div>
-                    <Badge className={cn(
-                      'border-0 text-xs',
-                      isExpired ? 'bg-red-100 text-red-700' :
-                      isExpiring ? 'bg-yellow-100 text-yellow-700' :
-                      'bg-green-100 text-green-700'
-                    )}>
-                      {isExpired ? 'Expired' : isExpiring ? `${c.days_until_expiry}d left` : 'Active'}
-                    </Badge>
-                  </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Course History */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Course History</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {enrollments.length === 0 ? (
-            <EmptyState icon={<GraduationCap className="h-8 w-8" />} title="No courses" description="You haven't been enrolled in any courses yet." />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Course</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Dates</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {enrollments.map((e: any) => (
-                  <TableRow key={e.id}>
-                    <TableCell className="font-medium">{e.course_name}</TableCell>
-                    <TableCell className="text-muted-foreground">{e.course_type_name ?? '—'}</TableCell>
-                    <TableCell className="text-muted-foreground text-xs">
-                      {e.start_date ? new Date(e.start_date).toLocaleDateString('ro-RO') : '—'}
-                      {e.end_date ? ` – ${new Date(e.end_date).toLocaleDateString('ro-RO')}` : ''}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">{e.enrollment_status}</Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
 
 function ActivityPanel() {
   const [page, setPage] = useState(1)
