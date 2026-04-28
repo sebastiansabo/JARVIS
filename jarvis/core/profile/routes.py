@@ -218,11 +218,15 @@ def api_profile_invoice_pdf(invoice_id):
         if not result.success:
             return jsonify({'error': result.error}), 404
 
+        filename = result.data['filename']
+        # RFC 6266: quote filename and add UTF-8 fallback for non-ASCII chars (Edge compat)
+        safe_name = filename.encode('ascii', 'ignore').decode()
         return Response(
             result.data['pdf_data'],
             mimetype='application/pdf',
             headers={
-                'Content-Disposition': f'attachment; filename={result.data["filename"]}',
+                'Content-Disposition': f'attachment; filename="{safe_name}"; filename*=UTF-8\'\'{filename}',
+                'Content-Length': str(len(result.data['pdf_data'])),
             }
         )
     except Exception as e:

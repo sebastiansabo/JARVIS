@@ -1613,6 +1613,35 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
 
   const canEdit = user?.can_edit_invoices || (user?.permissions?.['invoices.records.edit'] ?? false) || isOrgResponsable
 
+  const handleDownloadPdf = async (inv: ProfileInvoice) => {
+    const url = inv.drive_link?.startsWith('/efactura/')
+      ? `/profile/api/invoices/${inv.id}/pdf`
+      : inv.drive_link
+    if (!url) return
+    // For non-efactura links, open normally
+    if (!inv.drive_link?.startsWith('/efactura/')) {
+      window.open(url, '_blank', 'noopener')
+      return
+    }
+    // Fetch as blob for reliable Edge/browser download
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Download failed')
+      const blob = await res.blob()
+      const filename = res.headers.get('Content-Disposition')?.match(/filename="?([^";\n]+)"?/)?.[1] || `invoice-${inv.id}.pdf`
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      URL.revokeObjectURL(a.href)
+      a.remove()
+    } catch {
+      // Fallback: direct navigation
+      window.location.href = url
+    }
+  }
+
   const { data: dropdownOptions = [] } = useQuery({
     queryKey: ['settings', 'dropdowns'],
     queryFn: () => settingsApi.getDropdownOptions(),
@@ -1757,14 +1786,12 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                 ] satisfies MobileCardField<ProfileInvoice>[]}
                 getRowId={(inv) => inv.id}
                 actions={(inv) => inv.drive_link ? (
-                  <a
-                    href={inv.drive_link?.startsWith('/efactura/') ? `/profile/api/invoices/${inv.id}/pdf` : inv.drive_link}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => handleDownloadPdf(inv)}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
+                  </button>
                 ) : null}
               />
             ) : (
@@ -1841,14 +1868,12 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                             </TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()}>
                               {inv.drive_link && (
-                                <a
-                                  href={inv.drive_link?.startsWith('/efactura/') ? `/profile/api/invoices/${inv.id}/pdf` : inv.drive_link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                <button
+                                  onClick={() => handleDownloadPdf(inv)}
                                   className="text-muted-foreground hover:text-foreground"
                                 >
                                   <ExternalLink className="h-3.5 w-3.5" />
-                                </a>
+                                </button>
                               )}
                             </TableCell>
                           </TableRow>
