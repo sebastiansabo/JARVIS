@@ -20,79 +20,12 @@ class ProfileRepository(BaseRepository):
     def _build_org_filter(cursor, user_id: int) -> tuple[str, list]:
         """Build SQL clause for invoices visible via L0-L5 organigram.
 
-        Returns (sql_fragment, params) — an OR clause for department scope.
-        L0 (company_responsables): all invoices for that company.
-        L1+ (structure_node responsable): invoices matching the node name
-             or any descendant node name (department/subdepartment).
-        If user has NO organigram assignments, returns empty (no filter).
+        Delegates to the shared org_scope utility so the same logic can be
+        reused by the Accounting routes for department-scoped filtering.
         """
-        # L0: company responsable assignments
-        cursor.execute('''
-            SELECT c.id as company_id, c.company
-            FROM company_responsables cr
-            JOIN companies c ON cr.company_id = c.id
-            WHERE cr.user_id = %s
-        ''', (user_id,))
-        l0_rows = cursor.fetchall()
-        l0_company_ids = {r['company_id'] for r in l0_rows}
-
-        # L1-L5: nodes where user is responsable + all descendants (recursive)
-        cursor.execute('''
-            WITH RECURSIVE resp_nodes AS (
-                SELECT sn.id, sn.name, sn.level, sn.company_id
-                FROM structure_node_members snm
-                JOIN structure_nodes sn ON snm.node_id = sn.id
-                WHERE snm.user_id = %s AND snm.role = 'responsable'
-            ),
-            descendants AS (
-                SELECT id, name, level, company_id FROM resp_nodes
-                UNION ALL
-                SELECT sn.id, sn.name, sn.level, sn.company_id
-                FROM structure_nodes sn
-                JOIN descendants d ON sn.parent_id = d.id
-            )
-            SELECT DISTINCT d.name, d.level, d.company_id, c.company
-            FROM descendants d
-            JOIN companies c ON d.company_id = c.id
-        ''', (user_id,))
-        node_rows = cursor.fetchall()
-
-        if not node_rows and not l0_rows:
-            return '', []
-
-        conditions = []
-        params = []
-
-        # L0: all invoices for the company
-        l0_companies = {r['company'] for r in l0_rows}
-        for comp in l0_companies:
-            conditions.append('a.company = %s')
-            params.append(comp)
-
-        # Group descendant node names by company (skip L0-covered companies)
-        from collections import defaultdict
-        company_names = defaultdict(set)
-        for nr in node_rows:
-            if nr['company_id'] in l0_company_ids:
-                continue
-            company_names[nr['company']].add(nr['name'].lower())
-
-        for comp, names in company_names.items():
-            name_list = list(names)
-            placeholders = ','.join(['%s'] * len(name_list))
-            # Match department OR subdepartment against any node in the tree
-            conditions.append(
-                f'(a.company = %s AND (LOWER(a.department) IN ({placeholders})'
-                f' OR LOWER(COALESCE(a.subdepartment, \'\')) IN ({placeholders})))'
-            )
-            params.append(comp)
-            params.extend(name_list)
-            params.extend(name_list)
-
-        if not conditions:
-            return '', []
-
-        return '(' + ' OR '.join(conditions) + ')', params
+        from core.utils.org_scope import get_org_scope, build_allocation_org_filter
+        org = get_org_scope(cursor, user_id)
+        return build_allocation_org_filter(org)
 
     @staticmethod
     def _build_visibility_scope(cursor, user_id: int) -> tuple[str, list]:

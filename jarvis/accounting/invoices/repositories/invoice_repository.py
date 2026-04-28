@@ -167,9 +167,15 @@ class InvoiceRepository(BaseRepository):
     def get_all(self, limit=100, offset=0, company=None, start_date=None,
                 end_date=None, department=None, subdepartment=None,
                 brand=None, status=None, payment_status=None,
-                include_deleted=False, responsible_user_id=None):
-        """Get all invoices with pagination and optional filtering."""
-        needs_alloc_join = bool(company or department or subdepartment or brand or responsible_user_id)
+                include_deleted=False, responsible_user_id=None,
+                org_filter=None):
+        """Get all invoices with pagination and optional filtering.
+
+        org_filter: optional (sql_fragment, params) tuple from build_allocation_org_filter
+                    for department-scoped visibility.
+        """
+        org_sql, org_params = org_filter if org_filter else ('', [])
+        needs_alloc_join = bool(company or department or subdepartment or brand or responsible_user_id or org_sql)
         query = 'SELECT DISTINCT i.* FROM invoices i'
         params = []
         conditions = []
@@ -191,6 +197,9 @@ class InvoiceRepository(BaseRepository):
             if responsible_user_id:
                 conditions.append('a.responsible_user_id = %s')
                 params.append(responsible_user_id)
+            if org_sql:
+                conditions.append(org_sql)
+                params.extend(org_params)
 
         if include_deleted:
             conditions.append('i.deleted_at IS NOT NULL')
@@ -274,11 +283,15 @@ class InvoiceRepository(BaseRepository):
                                   department=None, subdepartment=None,
                                   brand=None, status=None,
                                   payment_status=None, include_deleted=False,
-                                  responsible_user_id=None):
-        """Get all invoices with their allocations in a single optimized query."""
+                                  responsible_user_id=None, org_filter=None):
+        """Get all invoices with their allocations in a single optimized query.
+
+        org_filter: optional (sql_fragment, params) tuple from build_allocation_org_filter.
+        """
         global _invoices_cache
 
-        cache_key = f"{limit}:{offset}:{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{status}:{payment_status}:{include_deleted}:{responsible_user_id}"
+        org_sql, org_params = org_filter if org_filter else ('', [])
+        cache_key = f"{limit}:{offset}:{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{status}:{payment_status}:{include_deleted}:{responsible_user_id}:{hash(org_sql)}"
 
         if _is_cache_valid(_invoices_cache) and _invoices_cache.get('key') == cache_key:
             return _invoices_cache['data']
@@ -320,6 +333,9 @@ class InvoiceRepository(BaseRepository):
         if responsible_user_id:
             allocation_filters.append('a.responsible_user_id = %s')
             params.append(responsible_user_id)
+        if org_sql:
+            allocation_filters.append(org_sql)
+            params.extend(org_params)
 
         where_clause = ' AND '.join(conditions) if conditions else '1=1'
 
@@ -724,9 +740,13 @@ class InvoiceRepository(BaseRepository):
             return {'exists': True, 'invoice': row}
         return {'exists': False, 'invoice': None}
 
-    def search(self, query, filters=None, responsible_user_id=None):
-        """Search invoices by supplier, invoice number, or value."""
+    def search(self, query, filters=None, responsible_user_id=None, org_filter=None):
+        """Search invoices by supplier, invoice number, or value.
+
+        org_filter: optional (sql_fragment, params) tuple from build_allocation_org_filter.
+        """
         filters = filters or {}
+        org_sql, org_params = org_filter if org_filter else ('', [])
 
         words = [w.strip() for w in query.split() if w.strip()]
         if not words:
@@ -756,7 +776,7 @@ class InvoiceRepository(BaseRepository):
         subdepartment = filters.get('subdepartment')
         brand = filters.get('brand')
 
-        needs_alloc_join = bool(company or department or subdepartment or brand or responsible_user_id)
+        needs_alloc_join = bool(company or department or subdepartment or brand or responsible_user_id or org_sql)
         if needs_alloc_join:
             base_query = 'SELECT DISTINCT i.* FROM invoices i JOIN allocations a ON a.invoice_id = i.id'
         else:
@@ -779,6 +799,9 @@ class InvoiceRepository(BaseRepository):
         if responsible_user_id:
             filter_conditions.append('a.responsible_user_id = %s')
             params.append(responsible_user_id)
+        if org_sql:
+            filter_conditions.append(org_sql)
+            params.extend(org_params)
 
         start_date = filters.get('start_date')
         end_date = filters.get('end_date')

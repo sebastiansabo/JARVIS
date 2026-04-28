@@ -255,3 +255,17 @@ class AllocationRepository(BaseRepository):
             (invoice_id, user_id)
         )
         return row is not None
+
+    def invoice_matches_org_filter(self, invoice_id, org_filter):
+        """Return True if invoice has any allocation matching the org filter.
+
+        org_filter: (sql_fragment, params) tuple from build_allocation_org_filter.
+        """
+        org_sql, org_params = org_filter if org_filter else ('', [])
+        if not org_sql:
+            return True  # No filter means sees everything
+        row = self.query_one(
+            f'SELECT 1 FROM allocations a WHERE a.invoice_id = %s AND {org_sql} LIMIT 1',
+            [invoice_id] + list(org_params)
+        )
+        return row is not None

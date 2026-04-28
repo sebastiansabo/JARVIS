@@ -31,6 +31,7 @@ __all__ = [
     # private singletons & helpers (exported explicitly so import * works)
     '_invoice_repo', '_allocation_repo', '_summary_repo', '_service', '_perm_repo',
     '_LEGACY_FLAG', '_check_invoice_perm', '_get_invoice_scope', '_get_user_context',
+    '_get_org_filter_for_scope',
 ]
 
 logger = logging.getLogger('jarvis.invoices.routes')
@@ -89,3 +90,29 @@ def _get_user_context() -> UserContext:
         ip_address=request.remote_addr,
         user_agent=request.headers.get('User-Agent', '')[:500],
     )
+
+
+def _get_org_filter_for_scope(scope: str):
+    """Return org_filter tuple for department scope, None otherwise.
+
+    For 'department' scope, queries the org hierarchy to build a SQL filter
+    on allocations matching the user's L0-L5 organigram position.
+    Returns (sql_fragment, params) or None.
+    """
+    if scope != 'department':
+        return None
+
+    from core.utils.org_scope import get_org_scope, build_allocation_org_filter
+    from database import get_db, get_cursor, release_db
+
+    conn = get_db()
+    try:
+        cursor = get_cursor(conn)
+        org = get_org_scope(cursor, current_user.id)
+        org_sql, org_params = build_allocation_org_filter(org)
+        if org_sql:
+            return (org_sql, org_params)
+    finally:
+        release_db(conn)
+
+    return None

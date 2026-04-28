@@ -27,7 +27,8 @@ def api_db_search():
 
     scope = _get_invoice_scope('view')
     responsible_user_id = current_user.id if scope == 'own' else None
-    results = _invoice_repo.search(query, filters, responsible_user_id=responsible_user_id)
+    org_filter = _get_org_filter_for_scope(scope)
+    results = _invoice_repo.search(query, filters, responsible_user_id=responsible_user_id, org_filter=org_filter)
     return jsonify(results)
 
 
@@ -80,8 +81,9 @@ def api_db_summary_company():
     brand = request.args.get('brand')
     scope = _get_invoice_scope('view')
     responsible_user_id = current_user.id if scope == 'own' else None
+    org_filter = _get_org_filter_for_scope(scope)
     summary = _summary_repo.by_company(start_date, end_date, department, subdepartment, brand,
-                                       responsible_user_id=responsible_user_id)
+                                       responsible_user_id=responsible_user_id, org_filter=org_filter)
     return jsonify(summary)
 
 
@@ -99,8 +101,9 @@ def api_db_summary_department():
     brand = request.args.get('brand')
     scope = _get_invoice_scope('view')
     responsible_user_id = current_user.id if scope == 'own' else None
+    org_filter = _get_org_filter_for_scope(scope)
     summary = _summary_repo.by_department(company, start_date, end_date, department, subdepartment, brand,
-                                          responsible_user_id=responsible_user_id)
+                                          responsible_user_id=responsible_user_id, org_filter=org_filter)
     return jsonify(summary)
 
 
@@ -118,8 +121,9 @@ def api_db_summary_brand():
     brand = request.args.get('brand')
     scope = _get_invoice_scope('view')
     responsible_user_id = current_user.id if scope == 'own' else None
+    org_filter = _get_org_filter_for_scope(scope)
     summary = _summary_repo.by_brand(company, start_date, end_date, department, subdepartment, brand,
-                                     responsible_user_id=responsible_user_id)
+                                     responsible_user_id=responsible_user_id, org_filter=org_filter)
     return jsonify(summary)
 
 
@@ -137,6 +141,7 @@ def api_db_summary_supplier():
     brand = request.args.get('brand')
     scope = _get_invoice_scope('view')
     responsible_user_id = current_user.id if scope == 'own' else None
+    org_filter = _get_org_filter_for_scope(scope)
     summary = _summary_repo.by_supplier(company, start_date, end_date, department, subdepartment, brand,
-                                        responsible_user_id=responsible_user_id)
+                                        responsible_user_id=responsible_user_id, org_filter=org_filter)
     return jsonify(summary)
