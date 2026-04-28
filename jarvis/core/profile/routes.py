@@ -65,31 +65,17 @@ def api_profile_summary():
         from core.organization.hr_utils import is_manager
         is_org_responsable = is_manager(current_user.id)
 
-        # Sincron timesheet mapping status (multi-company)
+        # Sincron timesheet mapping status
         sincron_info = {'mapped': False}
         try:
             from core.connectors.sincron.repositories.sincron_repository import SincronRepository
-            sincron_entries = SincronRepository().get_all_employees_by_jarvis_id(current_user.id)
-            if sincron_entries:
-                companies = []
-                total_hours = 0
-                for se in sincron_entries:
-                    norma = float(se['norma_lucru']) if se.get('norma_lucru') else None
-                    if norma:
-                        total_hours += norma
-                    companies.append({
-                        'company_name': se.get('company_name'),
-                        'nr_contract': se.get('nr_contract'),
-                        'data_incepere_contract': str(se['data_incepere_contract']) if se.get('data_incepere_contract') else None,
-                        'norma_lucru': norma,
-                        'schedule_start': str(se['schedule_start'])[:5] if se.get('schedule_start') else None,
-                        'schedule_end': str(se['schedule_end'])[:5] if se.get('schedule_end') else None,
-                        'lunch_break_minutes': se.get('lunch_break_minutes'),
-                    })
+            sincron_emp = SincronRepository().get_employee_by_jarvis_id(current_user.id)
+            if sincron_emp:
                 sincron_info = {
                     'mapped': True,
-                    'companies': companies,
-                    'total_working_hours': total_hours or None,
+                    'company_name': sincron_emp.get('company_name'),
+                    'nr_contract': sincron_emp.get('nr_contract'),
+                    'data_incepere_contract': str(sincron_emp['data_incepere_contract']) if sincron_emp.get('data_incepere_contract') else None,
                 }
         except Exception:
             pass
@@ -232,11 +218,15 @@ def api_profile_invoice_pdf(invoice_id):
         if not result.success:
             return jsonify({'error': result.error}), 404
 
+        filename = result.data['filename']
+        # RFC 6266: quote filename and add UTF-8 fallback for non-ASCII chars (Edge compat)
+        safe_name = filename.encode('ascii', 'ignore').decode()
         return Response(
             result.data['pdf_data'],
             mimetype='application/pdf',
             headers={
-                'Content-Disposition': f'attachment; filename={result.data["filename"]}',
+                'Content-Disposition': f'attachment; filename="{safe_name}"; filename*=UTF-8\'\'{filename}',
+                'Content-Length': str(len(result.data['pdf_data'])),
             }
         )
     except Exception as e:
@@ -485,21 +475,12 @@ def api_profile_pontaje():
         history = service.get_employee_daily_history(biostar_id, start, end)
         today_punches = service.get_employee_punches(biostar_id, today)
 
-        # Load public holidays for the date range
-        from core.utils.holidays_repository import HolidayRepository
-        _hol_repo = HolidayRepository()
-        _holiday_dates = set()
-        for _yr in range(int(start[:4]), int(end[:4]) + 1):
-            for h in _hol_repo.get_holidays_for_year(_yr):
-                d = h['date']
-                _holiday_dates.add(d.isoformat() if hasattr(d, 'isoformat') else str(d))
-
         return jsonify({
             'success': True,
             'mapped': True,
             'employee': {
                 'biostar_user_id': employee['biostar_user_id'],
-                'name': employee['user_name'],
+                'name': employee['name'],
                 'lunch_break_minutes': employee.get('lunch_break_minutes', 60),
                 'working_hours': employee.get('working_hours', 8),
                 'schedule_start': employee.get('schedule_start'),
@@ -508,7 +489,6 @@ def api_profile_pontaje():
             },
             'history': history,
             'today_punches': today_punches,
-            'holidays': sorted(_holiday_dates),
         })
     except Exception as e:
         return safe_error_response(e)
@@ -726,72 +706,15 @@ def api_profile_sincron_timesheet():
 
         data = service.get_employee_timesheet(current_user.id, year, month)
 
-        # Get schedule for the requested month — historical snapshot or current
-        from datetime import datetime as _dt
-        now = _dt.now()
-        is_current = (year == now.year and month == now.month)
-
-        schedule_companies = []
-        total_hours = 0
-        if is_current:
-            entries = service.repo.get_all_employees_by_jarvis_id(current_user.id)
-            for se in entries:
-                norma = float(se['norma_lucru']) if se.get('norma_lucru') else None
-                if norma:
-                    total_hours += norma
-                schedule_companies.append({
-                    'company_name': se.get('company_name'),
-                    'nr_contract': se.get('nr_contract'),
-                    'norma_lucru': norma,
-                    'schedule_start': str(se['schedule_start'])[:5] if se.get('schedule_start') else None,
-                    'schedule_end': str(se['schedule_end'])[:5] if se.get('schedule_end') else None,
-                    'lunch_break_minutes': se.get('lunch_break_minutes'),
-                })
-        else:
-            snapshots = service.repo.get_schedule_history_by_jarvis_id(current_user.id, year, month)
-            for sh in snapshots:
-                norma = float(sh['norma_lucru']) if sh.get('norma_lucru') else None
-                if norma:
-                    total_hours += norma
-                schedule_companies.append({
-                    'company_name': sh.get('company_name'),
-                    'nr_contract': sh.get('nr_contract'),
-                    'norma_lucru': norma,
-                    'schedule_start': str(sh['schedule_start'])[:5] if sh.get('schedule_start') else None,
-                    'schedule_end': str(sh['schedule_end'])[:5] if sh.get('schedule_end') else None,
-                    'lunch_break_minutes': sh.get('lunch_break_minutes'),
-                })
+        # Get employee mapping info
+        employee = service.repo.get_employee_by_jarvis_id(current_user.id)
 
         return jsonify({
             'success': True,
-            'mapped': len(schedule_companies) > 0 or bool(data.get('days')),
+            'mapped': employee is not None,
             'year': year,
             'month': month,
             'timesheet': data,
-            'schedule': {
-                'companies': schedule_companies,
-                'total_working_hours': total_hours or None,
-            },
-        })
-    except Exception as e:
-        return safe_error_response(e)
-
-
-@profile_bp.route('/api/courses')
-@login_required
-def api_profile_courses():
-    """Get HR courses for current user (enrolled + certifications)."""
-    try:
-        from hr.courses.repositories import EnrollmentRepository, CertificationRepository
-        _enroll_repo = EnrollmentRepository()
-        _cert_repo = CertificationRepository()
-
-        enrollments = _enroll_repo.get_by_employee(current_user.id)
-        certifications = _cert_repo.get_by_employee(current_user.id)
-
-        return jsonify({
-            'enrollments': enrollments,
-            'certifications': certifications,
         })
     except Exception as e:
         return safe_error_response(e)
