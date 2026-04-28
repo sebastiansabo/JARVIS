@@ -40,9 +40,11 @@ def cleanup_expired_caches():
 class SummaryRepository(BaseRepository):
 
     def by_company(self, start_date=None, end_date=None, department=None,
-                   subdepartment=None, brand=None, responsible_user_id=None):
+                   subdepartment=None, brand=None, responsible_user_id=None,
+                   org_filter=None):
         """Get total allocation values grouped by company."""
-        cache_key = f"{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{responsible_user_id}"
+        org_sql, org_params = org_filter if org_filter else ('', [])
+        cache_key = f"{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{responsible_user_id}:{hash(org_sql)}"
         cache_entry = _summary_cache['company'].get(cache_key)
 
         if cache_entry and (time.time() - cache_entry['timestamp']) < _summary_cache['ttl']:
@@ -83,6 +85,9 @@ class SummaryRepository(BaseRepository):
         if responsible_user_id:
             query += ' AND a.responsible_user_id = %s'
             params.append(responsible_user_id)
+        if org_sql:
+            query += ' AND ' + org_sql
+            params.extend(org_params)
 
         query += ' GROUP BY a.company ORDER BY total_value_ron DESC'
 
@@ -95,9 +100,10 @@ class SummaryRepository(BaseRepository):
 
     def by_department(self, company=None, start_date=None, end_date=None,
                       department=None, subdepartment=None, brand=None,
-                      responsible_user_id=None):
+                      responsible_user_id=None, org_filter=None):
         """Get total allocation values grouped by department."""
-        cache_key = f"{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{responsible_user_id}"
+        org_sql, org_params = org_filter if org_filter else ('', [])
+        cache_key = f"{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{responsible_user_id}:{hash(org_sql)}"
         cache_entry = _summary_cache['department'].get(cache_key)
 
         if cache_entry and (time.time() - cache_entry['timestamp']) < _summary_cache['ttl']:
@@ -143,6 +149,9 @@ class SummaryRepository(BaseRepository):
         if responsible_user_id:
             query += ' AND a.responsible_user_id = %s'
             params.append(responsible_user_id)
+        if org_sql:
+            query += ' AND ' + org_sql
+            params.extend(org_params)
 
         query += ' GROUP BY a.company, a.department, a.subdepartment ORDER BY total_value_ron DESC'
 
@@ -155,9 +164,10 @@ class SummaryRepository(BaseRepository):
 
     def by_brand(self, company=None, start_date=None, end_date=None,
                  department=None, subdepartment=None, brand=None,
-                 responsible_user_id=None):
+                 responsible_user_id=None, org_filter=None):
         """Get total allocation values grouped by brand with invoice details."""
-        cache_key = f"{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{responsible_user_id}"
+        org_sql, org_params = org_filter if org_filter else ('', [])
+        cache_key = f"{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{responsible_user_id}:{hash(org_sql)}"
         cache_entry = _summary_cache['brand'].get(cache_key)
 
         if cache_entry and (time.time() - cache_entry['timestamp']) < _summary_cache['ttl']:
@@ -219,6 +229,9 @@ class SummaryRepository(BaseRepository):
         if responsible_user_id:
             query += ' AND a.responsible_user_id = %s'
             params.append(responsible_user_id)
+        if org_sql:
+            query += ' AND ' + org_sql
+            params.extend(org_params)
 
         query += ' GROUP BY a.brand ORDER BY total_value_ron DESC'
 
@@ -231,9 +244,10 @@ class SummaryRepository(BaseRepository):
 
     def by_supplier(self, company=None, start_date=None, end_date=None,
                     department=None, subdepartment=None, brand=None,
-                    responsible_user_id=None):
+                    responsible_user_id=None, org_filter=None):
         """Get allocation values grouped by supplier."""
-        cache_key = f"{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{responsible_user_id}"
+        org_sql, org_params = org_filter if org_filter else ('', [])
+        cache_key = f"{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{responsible_user_id}:{hash(org_sql)}"
         cache_entry = _summary_cache['supplier'].get(cache_key)
 
         if cache_entry and (time.time() - cache_entry['timestamp']) < _summary_cache['ttl']:
@@ -277,6 +291,9 @@ class SummaryRepository(BaseRepository):
         if responsible_user_id:
             query += ' AND a.responsible_user_id = %s'
             params.append(responsible_user_id)
+        if org_sql:
+            query += ' AND ' + org_sql
+            params.extend(org_params)
 
         query += ' GROUP BY i.supplier ORDER BY total_value_ron DESC'
 

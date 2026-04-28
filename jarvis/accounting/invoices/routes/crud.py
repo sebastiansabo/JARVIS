@@ -21,9 +21,10 @@ def api_db_invoices():
     end_date = request.args.get('end_date')
     include_allocations = request.args.get('include_allocations', 'false').lower() == 'true'
 
-    # Scope-based filtering: 'own' = only invoices where user is responsible
+    # Scope-based filtering
     scope = _get_invoice_scope('view')
     responsible_user_id = current_user.id if scope == 'own' else None
+    org_filter = _get_org_filter_for_scope(scope)
 
     if include_allocations:
         invoices = _invoice_repo.get_all_with_allocations(
@@ -31,7 +32,8 @@ def api_db_invoices():
             start_date=start_date, end_date=end_date,
             department=department, subdepartment=subdepartment, brand=brand,
             status=status, payment_status=payment_status,
-            responsible_user_id=responsible_user_id
+            responsible_user_id=responsible_user_id,
+            org_filter=org_filter
         )
     else:
         invoices = _invoice_repo.get_all(
@@ -39,7 +41,8 @@ def api_db_invoices():
             start_date=start_date, end_date=end_date,
             department=department, subdepartment=subdepartment, brand=brand,
             status=status, payment_status=payment_status,
-            responsible_user_id=responsible_user_id
+            responsible_user_id=responsible_user_id,
+            org_filter=org_filter
         )
     return jsonify(invoices)
 
@@ -55,12 +58,16 @@ def api_db_invoice_detail(invoice_id):
     if not invoice:
         return error_response('Invoice not found', 404)
 
-    # Scope check: 'own' users can only view invoices they're responsible for
+    # Scope check: restrict visibility based on permission scope
     scope = _get_invoice_scope('view')
     if scope == 'own':
         allocations = invoice.get('allocations', [])
         user_ids = {a.get('responsible_user_id') for a in allocations if a}
         if current_user.id not in user_ids:
+            return error_response('Invoice not found', 404)
+    elif scope == 'department':
+        org_filter = _get_org_filter_for_scope(scope)
+        if org_filter and not _allocation_repo.invoice_matches_org_filter(invoice_id, org_filter):
             return error_response('Invoice not found', 404)
 
     return jsonify(invoice)
@@ -168,10 +175,14 @@ def api_db_update_invoice(invoice_id):
     if not _check_invoice_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
-    # Scope check: 'own' users can only edit their own invoices
+    # Scope check: restrict editing based on permission scope
     scope = _get_invoice_scope('edit')
     if scope == 'own':
         if not _allocation_repo.user_has_allocation(invoice_id, current_user.id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    elif scope == 'department':
+        org_filter = _get_org_filter_for_scope(scope)
+        if org_filter and not _allocation_repo.invoice_matches_org_filter(invoice_id, org_filter):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json()
@@ -188,10 +199,14 @@ def api_db_update_allocations(invoice_id):
     if not _check_invoice_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
-    # Scope check: 'own' users can only edit allocations on their own invoices
+    # Scope check: restrict allocation editing based on permission scope
     scope = _get_invoice_scope('edit')
     if scope == 'own':
         if not _allocation_repo.user_has_allocation(invoice_id, current_user.id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    elif scope == 'department':
+        org_filter = _get_org_filter_for_scope(scope)
+        if org_filter and not _allocation_repo.invoice_matches_org_filter(invoice_id, org_filter):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json()
