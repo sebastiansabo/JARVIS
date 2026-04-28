@@ -25,15 +25,16 @@ const statusColors: Record<string, string> = {
 
 interface StatusBadgeProps {
   status: string | undefined | null
+  label?: string
   className?: string
 }
 
-export function StatusBadge({ status, className }: StatusBadgeProps) {
+export function StatusBadge({ status, label, className }: StatusBadgeProps) {
   if (!status) return null
   const colorClass = statusColors[status.toLowerCase()] ?? statusColors.pending
   return (
     <Badge variant="secondary" className={cn('font-normal', colorClass, className)}>
-      {status}
+      {label || status}
     </Badge>
   )
 }
