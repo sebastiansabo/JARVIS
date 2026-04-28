@@ -1651,6 +1651,10 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
     () => dropdownOptions.filter((d) => d.dropdown_type === 'invoice_status' && d.value).map((d) => ({ value: d.value, label: d.label, color: d.color })),
     [dropdownOptions],
   )
+  const statusLabelMap = useMemo(
+    () => Object.fromEntries(statusOptions.map((o) => [o.value, o.label])),
+    [statusOptions],
+  )
   const paymentOptions = useMemo(
     () => dropdownOptions.filter((d) => d.dropdown_type === 'payment_status' && d.value).map((d) => ({ value: d.value, label: d.label })),
     [dropdownOptions],
@@ -1774,7 +1778,7 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                   { key: 'invoice_number', label: 'Invoice #', isSecondary: true, render: (inv) => <span className="font-mono">{inv.invoice_number}</span> },
                   { key: 'date', label: 'Date', isSecondary: true, render: (inv) => new Date(inv.invoice_date).toLocaleDateString('ro-RO') },
                   { key: 'value', label: 'Value', render: (inv) => <CurrencyDisplay value={inv.invoice_value} currency={inv.currency} className="text-xs" /> },
-                  { key: 'status', label: 'Status', render: (inv) => <StatusBadge status={inv.status} /> },
+                  { key: 'status', label: 'Status', render: (inv) => <StatusBadge status={inv.status} label={statusLabelMap[inv.status] || inv.status} /> },
                   { key: 'company', label: 'Company', expandOnly: true, render: (inv) => inv.company },
                   { key: 'department', label: 'Department', expandOnly: true, render: (inv) => inv.department || '-' },
                   { key: 'percent', label: 'Allocation', expandOnly: true, render: (inv) => {
@@ -1864,7 +1868,7 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                               {allocCount > 1 ? 'split' : `${inv.allocation_percent}%`}
                             </TableCell>
                             <TableCell>
-                              <StatusBadge status={inv.status} />
+                              <StatusBadge status={inv.status} label={statusLabelMap[inv.status] || inv.status} />
                             </TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()}>
                               {inv.drive_link && (
