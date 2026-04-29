@@ -23,11 +23,11 @@ interface Company {
 
 interface CrmClient {
   id: number
-  name: string
-  address?: string
+  display_name: string
+  street?: string
   city?: string
   country?: string
-  vat_code?: string
+  nr_reg?: string
 }
 
 // ── Supplier presets ──────────────────────────────────────────
@@ -184,16 +184,16 @@ function CustomerCard({ customerName, setCustomerName, customerAddress, setCusto
             {searchResults.map(client => (
               <button key={client.id} className="w-full text-left px-3 py-2 hover:bg-muted transition-colors"
                 onClick={() => {
-                  setCustomerName(client.name)
-                  const addrParts = [client.address, client.city, client.country].filter(Boolean)
+                  setCustomerName(client.display_name)
+                  const addrParts = [client.street, client.city, client.country].filter(Boolean)
                   setCustomerAddress(addrParts.join('\n'))
-                  setCustomerVat(client.vat_code || '')
+                  setCustomerVat(client.nr_reg || '')
                   setSearchResults([])
                   setSearchQuery('')
-                  toast.success(`Loaded: ${client.name}`)
+                  toast.success(`Loaded: ${client.display_name}`)
                 }}>
-                <span className="font-medium">{client.name}</span>
-                {client.vat_code && <span className="text-muted-foreground ml-2">{client.vat_code}</span>}
+                <span className="font-medium">{client.display_name}</span>
+                {client.nr_reg && <span className="text-muted-foreground ml-2">{client.nr_reg}</span>}
                 {client.city && <span className="text-muted-foreground ml-2">— {client.city}</span>}
               </button>
             ))}
