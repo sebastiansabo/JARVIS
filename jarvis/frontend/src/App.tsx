@@ -28,6 +28,7 @@ const AiAgent = lazy(() => import('./pages/AiAgent/AiAgent'))
 const Crm = lazy(() => import('./pages/Crm'))
 const CrmClientProfile = lazy(() => import('./pages/Crm/ClientProfile'))
 const FieldSales = lazy(() => import('./pages/FieldSales'))
+const RoutePlanner = lazy(() => import('./pages/FieldSales/RoutePlanner'))
 const Forms = lazy(() => import('./pages/Forms'))
 const FormDetail = lazy(() => import('./pages/Forms/FormDetail'))
 const FormBuilder = lazy(() => import('./pages/Forms/FormBuilder'))
@@ -163,6 +164,7 @@ export default function App() {
         <Route path="sales/crm" element={<Guard flag="can_access_crm"><SuspensePage><Crm /></SuspensePage></Guard>} />
         <Route path="sales/crm/clients/:clientId" element={<Guard flag="can_access_crm"><SuspensePage><CrmClientProfile /></SuspensePage></Guard>} />
         <Route path="sales/field-sales" element={<Guard flag="can_access_field_sales"><SuspensePage><FieldSales /></SuspensePage></Guard>} />
+        <Route path="sales/field-sales/route-planner" element={<Guard flag="can_access_field_sales"><SuspensePage><RoutePlanner /></SuspensePage></Guard>} />
 
         {/* Approvals — requires can_access_approvals */}
         <Route path="approvals" element={<Guard flag="can_access_approvals"><SuspensePage><Approvals /></SuspensePage></Guard>} />
