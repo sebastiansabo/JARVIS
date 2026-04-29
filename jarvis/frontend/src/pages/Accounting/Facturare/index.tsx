@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { FileSpreadsheet, Download, CheckCircle2, AlertCircle, Upload, FileText, Loader2, Building2, Search } from 'lucide-react'
+import { FileSpreadsheet, Download, CheckCircle2, AlertCircle, Upload, FileText, Loader2, Building2, Search, Trash2, History } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -645,6 +645,145 @@ function ProformaTab({ companies }: { companies: Company[] }) {
   )
 }
 
+// ── Istoric Tab ──────────────────────────────────────────────
+
+interface Generation {
+  id: number
+  gen_type: string
+  job_id: string | null
+  start_no: number
+  end_no: number
+  line_count: number
+  total_amount: number
+  currency: string
+  invoice_date: string | null
+  supplier_name: string | null
+  customer_name: string | null
+  customer_vat: string | null
+  intocmit_de: string | null
+  has_pdf: boolean
+  has_xlsx: boolean
+  created_at: string
+}
+
+function IstoricTab() {
+  const [generations, setGenerations] = useState<Generation[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [typeFilter, setTypeFilter] = useState<string>('all')
+
+  const loadData = useCallback(() => {
+    setLoading(true)
+    const params = new URLSearchParams({ limit: '50' })
+    if (typeFilter !== 'all') params.set('type', typeFilter)
+    fetch(`/facturare/api/generations?${params}`)
+      .then(r => r.ok ? r.json() : { generations: [], total: 0 })
+      .then(data => { setGenerations(data.generations || []); setTotal(data.total || 0) })
+      .catch(() => { setGenerations([]); setTotal(0) })
+      .finally(() => setLoading(false))
+  }, [typeFilter])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  const handleDelete = (id: number) => {
+    if (!confirm('Delete this generation record?')) return
+    fetch(`/facturare/api/generations/${id}`, { method: 'DELETE' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.success) { toast.success('Deleted'); loadData() }
+        else toast.error('Delete failed')
+      })
+      .catch(() => toast.error('Delete failed'))
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              <SelectItem value="invoice">Factura</SelectItem>
+              <SelectItem value="proforma">Proforma</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="text-sm text-muted-foreground">{total} records</span>
+        </div>
+        <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
+          <span className="ml-1">Refresh</span>
+        </Button>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="text-left px-4 py-3 font-medium">Type</th>
+                  <th className="text-left px-4 py-3 font-medium">Job ID</th>
+                  <th className="text-left px-4 py-3 font-medium">Range</th>
+                  <th className="text-left px-4 py-3 font-medium">Lines</th>
+                  <th className="text-left px-4 py-3 font-medium">Customer</th>
+                  <th className="text-right px-4 py-3 font-medium">Total</th>
+                  <th className="text-left px-4 py-3 font-medium">Date</th>
+                  <th className="text-left px-4 py-3 font-medium">Generated</th>
+                  <th className="text-right px-4 py-3 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {generations.length === 0 && !loading && (
+                  <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">No generations found</td></tr>
+                )}
+                {generations.map(g => (
+                  <tr key={g.id} className="border-b hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3">
+                      <Badge variant={g.gen_type === 'invoice' ? 'default' : 'secondary'}>
+                        {g.gen_type === 'invoice' ? 'Factura' : 'Proforma'}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs">{g.job_id || '—'}</td>
+                    <td className="px-4 py-3">{g.start_no}–{g.end_no}</td>
+                    <td className="px-4 py-3">{g.line_count}</td>
+                    <td className="px-4 py-3 max-w-[200px] truncate">{g.customer_name || '—'}</td>
+                    <td className="px-4 py-3 text-right font-mono">{fmtNum(g.total_amount)} {g.currency}</td>
+                    <td className="px-4 py-3">{g.invoice_date || '—'}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {g.created_at ? new Date(g.created_at).toLocaleString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {g.has_pdf && (
+                          <Button variant="ghost" size="icon" className="h-8 w-8"
+                            onClick={() => handleDownload(`/facturare/api/generations/${g.id}/pdf`, `${g.job_id || g.gen_type}.pdf`)}>
+                            <FileText className="h-4 w-4 text-red-500" />
+                          </Button>
+                        )}
+                        {g.has_xlsx && (
+                          <Button variant="ghost" size="icon" className="h-8 w-8"
+                            onClick={() => handleDownload(`/facturare/api/generations/${g.id}/xlsx`, `${g.job_id || 'eurofib'}.xlsx`)}>
+                            <FileSpreadsheet className="h-4 w-4 text-emerald-500" />
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-500"
+                          onClick={() => handleDelete(g.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 // ── Main Page ────────────────────────────────────────────────
 
 export default function Facturare() {
@@ -668,12 +807,16 @@ export default function Facturare() {
         <TabsList>
           <TabsTrigger value="invoice">Factura</TabsTrigger>
           <TabsTrigger value="proforma">Proforma</TabsTrigger>
+          <TabsTrigger value="istoric">Istoric</TabsTrigger>
         </TabsList>
         <TabsContent value="invoice" className="mt-4">
           <InvoiceTab companies={companies} />
         </TabsContent>
         <TabsContent value="proforma" className="mt-4">
           <ProformaTab companies={companies} />
+        </TabsContent>
+        <TabsContent value="istoric" className="mt-4">
+          <IstoricTab />
         </TabsContent>
       </Tabs>
     </div>
