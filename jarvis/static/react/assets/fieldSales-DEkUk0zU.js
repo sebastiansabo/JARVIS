@@ -1,0 +1,6 @@
+import{H as l,f as e}from"./index-DZAibThb.js";/**
+ * @license lucide-react v0.563.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const p=[["circle",{cx:"6",cy:"19",r:"3",key:"1kj8tv"}],["path",{d:"M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15",key:"1d8sl"}],["circle",{cx:"18",cy:"5",r:"3",key:"gq8acd"}]],d=l("route",p),r={getManagerOverview:(s,a,i)=>{const t={date_from:s,date_to:a};return i&&(t.kam_id=String(i)),e.get("/api/field-sales/manager/overview",t)},searchClients:s=>e.get("/api/field-sales/clients/search",{q:s}),createVisit:s=>e.post("/api/field-sales/visits",s),getVisit:s=>e.get(`/api/field-sales/visits/${s}`),updateVisit:(s,a)=>e.put(`/api/field-sales/visits/${s}`,a),createRoute:s=>e.post("/api/field-sales/routes",s),getVisitTasks:s=>e.get(`/api/field-sales/visits/${s}/tasks`),createTask:(s,a)=>e.post(`/api/field-sales/visits/${s}/tasks`,a),updateTask:(s,a)=>e.put(`/api/field-sales/tasks/${s}`,a),getTaskFollowUps:s=>e.get(`/api/field-sales/tasks/${s}/follow-ups`),addTaskFollowUp:(s,a)=>e.post(`/api/field-sales/tasks/${s}/follow-ups`,{note:a}),getPendingTasks:()=>e.get("/api/field-sales/tasks/pending")};export{d as R,r as f};
