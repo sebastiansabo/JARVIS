@@ -24,6 +24,7 @@ const ProjectDetail = lazy(() => import('./pages/Marketing/ProjectDetail'))
 const Bilant = lazy(() => import('./pages/Accounting/Bilant'))
 const BilantDetail = lazy(() => import('./pages/Accounting/Bilant/BilantDetail'))
 const TemplateEditor = lazy(() => import('./pages/Accounting/Bilant/TemplateEditor'))
+const Facturare = lazy(() => import('./pages/Accounting/Facturare'))
 const AiAgent = lazy(() => import('./pages/AiAgent/AiAgent'))
 const Crm = lazy(() => import('./pages/Crm'))
 const CrmClientProfile = lazy(() => import('./pages/Crm/ClientProfile'))
@@ -147,6 +148,7 @@ export default function App() {
         <Route path="accounting/bilant" element={<Guard flag="can_access_accounting"><SuspensePage><Bilant /></SuspensePage></Guard>} />
         <Route path="accounting/bilant/:generationId" element={<Guard flag="can_access_accounting"><SuspensePage><BilantDetail /></SuspensePage></Guard>} />
         <Route path="accounting/bilant/templates/:templateId" element={<Guard flag="can_access_accounting"><SuspensePage><TemplateEditor /></SuspensePage></Guard>} />
+        <Route path="accounting/facturare" element={<Guard flag="can_access_accounting"><SuspensePage><Facturare /></SuspensePage></Guard>} />
 
         {/* HR — requires can_access_hr */}
         <Route path="hr/*" element={<Guard flag="can_access_hr"><SuspensePage><Hr /></SuspensePage></Guard>} />
