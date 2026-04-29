@@ -11,12 +11,14 @@ from .config import JobConfig
 from .loaders.anexa import parse_anexa_metadata
 from .services.facturare_service import FacturareService
 from .services.proforma_service import ProformaService
+from .repositories.facturare_repository import FacturareRepository
 from core.utils.api_helpers import error_response, handle_api_errors
 from core.roles.repositories.permission_repository import PermissionRepository
 
 logger = logging.getLogger("jarvis.facturare.routes")
 _service = FacturareService()
 _proforma_service = ProformaService()
+_gen_repo = FacturareRepository()
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 _perm_repo = PermissionRepository()
 
@@ -142,6 +144,22 @@ def api_generate():
         "xlsx": result.eurofib_xlsx,
         "job_id": cfg.job_id,
     }
+
+    # Persist generation record
+    last_no = cfg.invoice.start_no + result.lines_count - 1
+    try:
+        _gen_repo.save_generation(
+            gen_type="invoice", job_id=cfg.job_id,
+            start_no=cfg.invoice.start_no, end_no=last_no,
+            line_count=result.lines_count, total_amount=float(result.total_advance),
+            currency=cfg.fx.currency, invoice_date=cfg.invoice.date,
+            supplier_name=cfg.supplier.name, customer_name=cfg.customer.name,
+            customer_vat=cfg.customer.vat, intocmit_de=cfg.invoice.intocmit_de,
+            pdf_data=result.invoices_pdf, xlsx_data=result.eurofib_xlsx,
+            generated_by=getattr(current_user, "id", None),
+        )
+    except Exception:
+        logger.warning("Failed to save invoice generation record", exc_info=True)
 
     response = {
         "success": True,
@@ -284,6 +302,25 @@ def api_proforma_generate():
         "job_id": job_id,
     }
 
+    # Persist generation record
+    start_no = int(cfg.get("start_no", 0))
+    last_no = start_no + result.lines_count - 1
+    try:
+        _gen_repo.save_generation(
+            gen_type="proforma", job_id=job_id,
+            start_no=start_no, end_no=last_no,
+            line_count=result.lines_count, total_amount=float(result.total_amount),
+            currency="EUR", invoice_date=cfg.get("invoice_date"),
+            supplier_name=cfg.get("supplier", {}).get("name", ""),
+            customer_name=cfg.get("customer", {}).get("name", ""),
+            customer_vat=cfg.get("customer", {}).get("vat", ""),
+            intocmit_de=cfg.get("intocmit_de", "Gabriela Oltean"),
+            pdf_data=result.proforma_pdf,
+            generated_by=getattr(current_user, "id", None),
+        )
+    except Exception:
+        logger.warning("Failed to save proforma generation record", exc_info=True)
+
     return jsonify({
         "success": True,
         "lines_count": result.lines_count,
@@ -292,6 +329,76 @@ def api_proforma_generate():
         "download_id": download_id,
         "pdf_url": f"/facturare/api/download/{download_id}/pdf",
     })
+
+
+@facturare_bp.route("/facturare/api/generations")
+@login_required
+@handle_api_errors
+def api_list_generations():
+    """List all generation records (without binary data)."""
+    gen_type = request.args.get("type")
+    limit = request.args.get("limit", 50, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    rows = _gen_repo.list_generations(gen_type=gen_type, limit=limit, offset=offset)
+    total = _gen_repo.count_generations(gen_type=gen_type)
+    # Serialize datetime/Decimal for JSON
+    result = []
+    for r in rows:
+        row = dict(r)
+        if row.get("created_at"):
+            row["created_at"] = row["created_at"].isoformat()
+        if row.get("invoice_date"):
+            row["invoice_date"] = str(row["invoice_date"])
+        if row.get("total_amount") is not None:
+            row["total_amount"] = float(row["total_amount"])
+        result.append(row)
+    return jsonify({"generations": result, "total": total})
+
+
+@facturare_bp.route("/facturare/api/generations/<int:gen_id>/<file_type>")
+@login_required
+def api_download_generation(gen_id: int, file_type: str):
+    """Download PDF or xlsx from a stored generation."""
+    if file_type not in ("pdf", "xlsx"):
+        return error_response("file_type must be 'pdf' or 'xlsx'", 400)
+
+    row = _gen_repo.get_generation(gen_id)
+    if not row:
+        return error_response("Generation not found", 404)
+
+    col = "pdf_data" if file_type == "pdf" else "xlsx_data"
+    data = row.get(col)
+    if not data:
+        return error_response(f"No {file_type} stored for this generation", 404)
+
+    # Handle memoryview from psycopg2
+    if isinstance(data, memoryview):
+        data = bytes(data)
+
+    job_id = row.get("job_id") or row.get("gen_type", "facturare")
+    if file_type == "pdf":
+        filename = f"{job_id}_{row['gen_type']}.pdf"
+        mimetype = "application/pdf"
+    else:
+        filename = f"{job_id}_eurofib.xlsx"
+        mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    return send_file(BytesIO(data), mimetype=mimetype,
+                     as_attachment=True, download_name=filename)
+
+
+@facturare_bp.route("/facturare/api/generations/<int:gen_id>", methods=["DELETE"])
+@login_required
+@handle_api_errors
+def api_delete_generation(gen_id: int):
+    """Delete a generation record."""
+    if not _check_facturare_perm("add"):
+        return error_response("Permission denied", 403)
+    row = _gen_repo.get_generation(gen_id)
+    if not row:
+        return error_response("Generation not found", 404)
+    _gen_repo.delete_generation(gen_id)
+    return jsonify({"success": True})
 
 
 @facturare_bp.route("/facturare/api/template/<kind>")
