@@ -194,6 +194,9 @@ def _register_blueprints(flask_app: Flask):
     from accounting.bilant import bilant_bp
     flask_app.register_blueprint(bilant_bp, url_prefix='/bilant')
 
+    from accounting.facturare import facturare_bp
+    flask_app.register_blueprint(facturare_bp)
+
     from core.drive import drive_bp
     flask_app.register_blueprint(drive_bp)
 
