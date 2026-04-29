@@ -97,6 +97,43 @@ class VisitRepository(BaseRepository):
             data.get('goals'),
         ), returning=True)
 
+    def update_visit(self, visit_id, data):
+        """Update editable visit fields.
+
+        Args:
+            visit_id: kam_visit_plans.id
+            data: dict with optional keys: planned_date, planned_time, visit_type, goals,
+                  status, outcome, pre_visit_data, post_visit_data, contact_person, companions
+
+        Returns:
+            dict: updated visit or None
+        """
+        import json as _json
+        sets = []
+        params = []
+        for field in ('planned_date', 'planned_time', 'visit_type', 'goals', 'status', 'outcome', 'contact_person'):
+            if field in data:
+                sets.append(f'{field} = %s')
+                params.append(data[field])
+        for field in ('pre_visit_data', 'post_visit_data'):
+            if field in data:
+                sets.append(f'{field} = %s::jsonb')
+                val = data[field]
+                params.append(_json.dumps(val) if isinstance(val, dict) else val)
+        if 'companions' in data:
+            sets.append('companions = %s')
+            params.append(data['companions'])
+        if not sets:
+            return self.query_one('SELECT * FROM kam_visit_plans WHERE id = %s', (visit_id,))
+        sets.append('updated_at = NOW()')
+        params.append(visit_id)
+        return self.execute(f'''
+            UPDATE kam_visit_plans
+            SET {', '.join(sets)}
+            WHERE id = %s
+            RETURNING *
+        ''', tuple(params), returning=True)
+
     def update_status(self, visit_id, status):
         """Update visit status.
 
@@ -226,6 +263,77 @@ class VisitRepository(BaseRepository):
             RETURNING *
         ''', (structured_json, note_id), returning=True)
 
+    def create_route(self, data):
+        """Create a visit route with multiple stops.
+
+        Args:
+            data: dict with kam_id, planned_date, name, created_by, stops[]
+
+        Returns:
+            dict: created route with visit list
+        """
+        route = self.execute('''
+            INSERT INTO kam_visit_routes (kam_id, planned_date, name, created_by)
+            VALUES (%s, %s, %s, %s)
+            RETURNING *
+        ''', (
+            data['kam_id'],
+            data['planned_date'],
+            data.get('name'),
+            data.get('created_by'),
+        ), returning=True)
+
+        route_id = route['id']
+        visits = []
+        for i, stop in enumerate(data.get('stops', [])):
+            visit = self.execute('''
+                INSERT INTO kam_visit_plans
+                    (kam_id, client_id, planned_date, planned_time, visit_type, goals, route_id, sequence)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+            ''', (
+                data['kam_id'],
+                stop['client_id'],
+                data['planned_date'],
+                stop.get('planned_time'),
+                stop.get('visit_type', 'general'),
+                stop.get('goals'),
+                route_id,
+                i + 1,
+            ), returning=True)
+            visits.append(visit)
+
+        route['visits'] = visits
+        return route
+
+    def get_routes(self, date_from, date_to, kam_id=None):
+        """Get routes in a date range, optionally filtered by KAM.
+
+        Args:
+            date_from: start date YYYY-MM-DD
+            date_to: end date YYYY-MM-DD
+            kam_id: optional filter
+
+        Returns:
+            list of route dicts with stop count and KAM name
+        """
+        params = [date_from, date_to]
+        kam_filter = ''
+        if kam_id:
+            kam_filter = 'AND r.kam_id = %s'
+            params.append(kam_id)
+
+        return self.query_all(f'''
+            SELECT r.*,
+                   u.name AS kam_name,
+                   (SELECT COUNT(*) FROM kam_visit_plans v WHERE v.route_id = r.id) AS stop_count
+            FROM kam_visit_routes r
+            JOIN users u ON u.id = r.kam_id
+            WHERE r.planned_date >= %s AND r.planned_date <= %s
+            {kam_filter}
+            ORDER BY r.planned_date DESC, r.created_at DESC
+        ''', tuple(params))
+
     def get_team_visits(self, date_from, date_to, kam_id=None):
         """Get all visits in a date range, optionally filtered by KAM.
 
@@ -250,14 +358,19 @@ class VisitRepository(BaseRepository):
                    u.name AS kam_name,
                    cp.renewal_score,
                    cp.priority AS client_priority,
-                   (SELECT COUNT(*) FROM kam_visit_notes n WHERE n.visit_id = v.id) AS note_count
+                   (SELECT COUNT(*) FROM kam_visit_notes n WHERE n.visit_id = v.id) AS note_count,
+                   r.name AS route_name
             FROM kam_visit_plans v
             JOIN crm_clients c ON c.id = v.client_id
             JOIN users u ON u.id = v.kam_id
             LEFT JOIN client_profiles cp ON cp.client_id = v.client_id
+            LEFT JOIN kam_visit_routes r ON r.id = v.route_id
             WHERE v.planned_date >= %s AND v.planned_date <= %s
             {kam_filter}
-            ORDER BY v.planned_date ASC, v.planned_time ASC NULLS LAST
+            ORDER BY v.planned_date ASC,
+                     v.route_id ASC NULLS LAST,
+                     v.sequence ASC,
+                     v.planned_time ASC NULLS LAST
         ''', tuple(params))
 
     def get_client_context(self, visit_id):
@@ -377,3 +490,99 @@ class VisitRepository(BaseRepository):
             'recent_notes': recent_notes,
             'fiscal': fiscal,
         }
+
+    # ═══════════════════════════════════════════════════════════
+    # Task methods
+    # ═══════════════════════════════════════════════════════════
+
+    def get_tasks_for_visit(self, visit_id):
+        """Get all tasks for a visit with follow-up counts."""
+        return self.query_all('''
+            SELECT t.*,
+                   u.name AS assigned_to_name,
+                   cu.name AS created_by_name,
+                   (SELECT COUNT(*) FROM kam_task_follow_ups f WHERE f.task_id = t.id) AS follow_up_count
+            FROM kam_visit_tasks t
+            LEFT JOIN users u ON u.id = t.assigned_to
+            LEFT JOIN users cu ON cu.id = t.created_by
+            WHERE t.visit_id = %s
+            ORDER BY t.due_date ASC NULLS LAST, t.created_at ASC
+        ''', (visit_id,))
+
+    def create_task(self, data):
+        """Create a visit task."""
+        return self.execute('''
+            INSERT INTO kam_visit_tasks (visit_id, description, assigned_to, due_date, created_by)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING *
+        ''', (
+            data['visit_id'],
+            data['description'],
+            data.get('assigned_to'),
+            data.get('due_date'),
+            data.get('created_by'),
+        ), returning=True)
+
+    def update_task(self, task_id, data):
+        """Update a task (status, description, due_date)."""
+        sets = []
+        params = []
+        for field in ('description', 'due_date', 'assigned_to'):
+            if field in data:
+                sets.append(f'{field} = %s')
+                params.append(data[field])
+        if 'status' in data:
+            sets.append('status = %s')
+            params.append(data['status'])
+            if data['status'] == 'completed':
+                sets.append('completed_at = NOW()')
+            else:
+                sets.append('completed_at = NULL')
+        if not sets:
+            return self.query_one('SELECT * FROM kam_visit_tasks WHERE id = %s', (task_id,))
+        sets.append('updated_at = NOW()')
+        params.append(task_id)
+        return self.execute(f'''
+            UPDATE kam_visit_tasks
+            SET {', '.join(sets)}
+            WHERE id = %s
+            RETURNING *
+        ''', tuple(params), returning=True)
+
+    def get_task_by_id(self, task_id):
+        """Get a single task."""
+        return self.query_one('SELECT * FROM kam_visit_tasks WHERE id = %s', (task_id,))
+
+    def get_follow_ups(self, task_id):
+        """Get follow-up entries for a task."""
+        return self.query_all('''
+            SELECT f.*, u.name AS created_by_name
+            FROM kam_task_follow_ups f
+            LEFT JOIN users u ON u.id = f.created_by
+            WHERE f.task_id = %s
+            ORDER BY f.created_at ASC
+        ''', (task_id,))
+
+    def add_follow_up(self, task_id, note, created_by):
+        """Add a follow-up note to a task."""
+        return self.execute('''
+            INSERT INTO kam_task_follow_ups (task_id, note, created_by)
+            VALUES (%s, %s, %s)
+            RETURNING *
+        ''', (task_id, note, created_by), returning=True)
+
+    def get_pending_tasks(self, user_id):
+        """Get all pending tasks assigned to a user, across all visits."""
+        return self.query_all('''
+            SELECT t.*,
+                   v.planned_date, v.visit_type,
+                   c.display_name AS client_name,
+                   cu.name AS created_by_name,
+                   (SELECT COUNT(*) FROM kam_task_follow_ups f WHERE f.task_id = t.id) AS follow_up_count
+            FROM kam_visit_tasks t
+            JOIN kam_visit_plans v ON v.id = t.visit_id
+            JOIN crm_clients c ON c.id = v.client_id
+            LEFT JOIN users cu ON cu.id = t.created_by
+            WHERE t.assigned_to = %s AND t.status IN ('pending', 'in_progress')
+            ORDER BY t.due_date ASC NULLS LAST, t.created_at ASC
+        ''', (user_id,))
