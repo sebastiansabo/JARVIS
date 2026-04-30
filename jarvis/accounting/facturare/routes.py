@@ -310,7 +310,7 @@ def api_proforma_generate():
             gen_type="proforma", job_id=job_id,
             start_no=start_no, end_no=last_no,
             line_count=result.lines_count, total_amount=float(result.total_amount),
-            currency="EUR", invoice_date=cfg.get("invoice_date"),
+            currency="EUR", invoice_date=cfg.get("invoice_date") or None,
             supplier_name=cfg.get("supplier", {}).get("name", ""),
             customer_name=cfg.get("customer", {}).get("name", ""),
             customer_vat=cfg.get("customer", {}).get("vat", ""),
