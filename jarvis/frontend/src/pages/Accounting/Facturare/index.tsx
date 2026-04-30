@@ -19,6 +19,14 @@ interface Company {
   id: number
   company: string
   vat: string | null
+  reg_no?: string | null
+  iban?: string | null
+  bank?: string | null
+  swift?: string | null
+  street?: string | null
+  city?: string | null
+  county?: string | null
+  postal_code?: string | null
 }
 
 interface CrmClient {
@@ -32,6 +40,11 @@ interface CrmClient {
 
 // ── Supplier presets ──────────────────────────────────────────
 
+/** Normalize company name for preset lookup: uppercase, strip dots/periods, collapse spaces */
+function normalizeName(name: string): string {
+  return name.toUpperCase().replace(/\./g, '').replace(/\s+/g, ' ').trim()
+}
+
 const SUPPLIER_PRESETS: Record<string, { address_lines: string[]; reg_no: string; vat: string; iban: string; bank: string; swift: string }> = {
   'AUTOWORLD INTERNATIONAL SRL': {
     address_lines: ['Calea Floresti nr. 145', 'Cluj-Napoca, jud. Cluj', 'Romania'],
@@ -43,6 +56,11 @@ const SUPPLIER_PRESETS: Record<string, { address_lines: string[]; reg_no: string
     reg_no: 'J2024002670120', vat: 'RO 50188939',
     iban: 'RO94BACX0000002700266001', bank: 'Unicredit Tiriac Bank Cluj-Napoca', swift: 'BACXROBU',
   },
+}
+
+/** Look up supplier preset by normalized company name */
+function findPreset(name: string) {
+  return SUPPLIER_PRESETS[normalizeName(name)]
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -103,13 +121,14 @@ function SupplierCard({ companies, supplierName, setSupplierName, supplierVat, s
             onValueChange={v => {
               setSupplierName(v)
               const company = companies.find(c => c.company === v)
-              setSupplierVat(company?.vat || SUPPLIER_PRESETS[v]?.vat || '')
-              const preset = SUPPLIER_PRESETS[v]
-              setSupplierAddress(preset?.address_lines.join('\n') || '')
-              setSupplierRegNo(preset?.reg_no || '')
-              setSupplierIban(preset?.iban || '')
-              setSupplierBank(preset?.bank || '')
-              setSupplierSwift(preset?.swift || '')
+              const preset = findPreset(v)
+              setSupplierVat(company?.vat || preset?.vat || '')
+              const companyAddr = [company?.street, company?.city && company?.county ? `${company.city}, jud. ${company.county}` : (company?.city || company?.county), company?.postal_code].filter(Boolean).join('\n')
+              setSupplierAddress(companyAddr || preset?.address_lines.join('\n') || '')
+              setSupplierRegNo(company?.reg_no || preset?.reg_no || '')
+              setSupplierIban(company?.iban || preset?.iban || '')
+              setSupplierBank(company?.bank || preset?.bank || '')
+              setSupplierSwift(company?.swift || preset?.swift || '')
             }}
           >
             <SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger>
