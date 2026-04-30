@@ -169,17 +169,14 @@ def create_schema_core(conn, cursor):
     cursor.execute('''
         DO $$
         BEGIN
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name = 'companies' AND column_name = 'reg_no') THEN
-                ALTER TABLE companies ADD COLUMN reg_no TEXT;
-                ALTER TABLE companies ADD COLUMN iban TEXT;
-                ALTER TABLE companies ADD COLUMN bank TEXT;
-                ALTER TABLE companies ADD COLUMN swift TEXT;
-                ALTER TABLE companies ADD COLUMN street TEXT;
-                ALTER TABLE companies ADD COLUMN city TEXT;
-                ALTER TABLE companies ADD COLUMN county TEXT;
-                ALTER TABLE companies ADD COLUMN postal_code TEXT;
-            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'reg_no') THEN ALTER TABLE companies ADD COLUMN reg_no TEXT; END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'iban') THEN ALTER TABLE companies ADD COLUMN iban TEXT; END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'bank') THEN ALTER TABLE companies ADD COLUMN bank TEXT; END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'swift') THEN ALTER TABLE companies ADD COLUMN swift TEXT; END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'street') THEN ALTER TABLE companies ADD COLUMN street TEXT; END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'city') THEN ALTER TABLE companies ADD COLUMN city TEXT; END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'county') THEN ALTER TABLE companies ADD COLUMN county TEXT; END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'postal_code') THEN ALTER TABLE companies ADD COLUMN postal_code TEXT; END IF;
         END $$;
     ''')
 
