@@ -165,6 +165,24 @@ def create_schema_core(conn, cursor):
         END $$;
     ''')
 
+    # Add supplier detail columns to companies for facturare auto-fill
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'companies' AND column_name = 'reg_no') THEN
+                ALTER TABLE companies ADD COLUMN reg_no TEXT;
+                ALTER TABLE companies ADD COLUMN iban TEXT;
+                ALTER TABLE companies ADD COLUMN bank TEXT;
+                ALTER TABLE companies ADD COLUMN swift TEXT;
+                ALTER TABLE companies ADD COLUMN street TEXT;
+                ALTER TABLE companies ADD COLUMN city TEXT;
+                ALTER TABLE companies ADD COLUMN county TEXT;
+                ALTER TABLE companies ADD COLUMN postal_code TEXT;
+            END IF;
+        END $$;
+    ''')
+
     # Structure nodes (generic 5-level organigram tree under each company)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS structure_nodes (
