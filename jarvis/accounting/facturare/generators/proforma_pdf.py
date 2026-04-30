@@ -5,7 +5,6 @@ Differences from invoice_pdf.py:
 - US number format: 27,560.00 (comma thousands, dot decimals)
 - Model name splitting: Audi-specific multi-line display
 - VIN shown as "Chassis number:" + value on next line
-- Engine number: line (blank)
 - Default signatory: Gabriela Oltean
 """
 import io
@@ -209,8 +208,6 @@ class ProformaPdfRenderer:
         desc_lines.extend(split_model_lines(line.model))
         desc_lines.append("Chassis number:")
         desc_lines.append(line.vin or "")
-        desc_lines.append("Engine number:")
-        desc_lines.append("")  # blank — no engine number in proforma
         desc_lines.append(f"Culoare: {line.culoare}")
 
         # Build comanda line with anexa ref
