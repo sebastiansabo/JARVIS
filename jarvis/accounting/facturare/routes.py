@@ -131,11 +131,27 @@ def api_generate():
     if not result.success:
         return error_response(result.error, 400)
 
-    # Store bytes in session-scoped temp storage for subsequent download
+    # Persist generation record first — use DB-based URLs to survive multi-worker deployments
+    last_no = cfg.invoice.start_no + result.lines_count - 1
+    gen_id = None
+    try:
+        record = _gen_repo.save_generation(
+            gen_type="invoice", job_id=cfg.job_id,
+            start_no=cfg.invoice.start_no, end_no=last_no,
+            line_count=result.lines_count, total_amount=float(result.total_advance),
+            currency=cfg.fx.currency, invoice_date=cfg.invoice.date or None,
+            supplier_name=cfg.supplier.name, customer_name=cfg.customer.name,
+            customer_vat=cfg.customer.vat, intocmit_de=cfg.invoice.intocmit_de,
+            pdf_data=result.invoices_pdf, xlsx_data=result.eurofib_xlsx,
+            generated_by=getattr(current_user, "id", None),
+        )
+        gen_id = record['id'] if record else None
+    except Exception:
+        logger.warning("Failed to save invoice generation record", exc_info=True)
+
+    # Fall back to in-memory temp download if DB save failed
     import uuid
     download_id = str(uuid.uuid4())
-
-    # Use Flask app-level cache for simplicity (in-memory, single-worker safe)
     from flask import current_app
     if not hasattr(current_app, "_facturare_downloads"):
         current_app._facturare_downloads = {}
@@ -145,22 +161,6 @@ def api_generate():
         "job_id": cfg.job_id,
     }
 
-    # Persist generation record
-    last_no = cfg.invoice.start_no + result.lines_count - 1
-    try:
-        _gen_repo.save_generation(
-            gen_type="invoice", job_id=cfg.job_id,
-            start_no=cfg.invoice.start_no, end_no=last_no,
-            line_count=result.lines_count, total_amount=float(result.total_advance),
-            currency=cfg.fx.currency, invoice_date=cfg.invoice.date,
-            supplier_name=cfg.supplier.name, customer_name=cfg.customer.name,
-            customer_vat=cfg.customer.vat, intocmit_de=cfg.invoice.intocmit_de,
-            pdf_data=result.invoices_pdf, xlsx_data=result.eurofib_xlsx,
-            generated_by=getattr(current_user, "id", None),
-        )
-    except Exception:
-        logger.warning("Failed to save invoice generation record", exc_info=True)
-
     response = {
         "success": True,
         "lines_count": result.lines_count,
@@ -169,9 +169,9 @@ def api_generate():
         "download_id": download_id,
     }
     if gen_pdf:
-        response["pdf_url"] = f"/facturare/api/download/{download_id}/pdf"
+        response["pdf_url"] = f"/facturare/api/generations/{gen_id}/pdf" if gen_id else f"/facturare/api/download/{download_id}/pdf"
     if gen_xlsx:
-        response["xlsx_url"] = f"/facturare/api/download/{download_id}/xlsx"
+        response["xlsx_url"] = f"/facturare/api/generations/{gen_id}/xlsx" if gen_id else f"/facturare/api/download/{download_id}/xlsx"
 
     return jsonify(response)
 
@@ -289,24 +289,14 @@ def api_proforma_generate():
     if not result.success:
         return error_response(result.error, 400)
 
-    import uuid
-    download_id = str(uuid.uuid4())
     job_id = cfg.get("job_id", "proforma")
 
-    from flask import current_app
-    if not hasattr(current_app, "_facturare_downloads"):
-        current_app._facturare_downloads = {}
-    current_app._facturare_downloads[download_id] = {
-        "pdf": result.proforma_pdf,
-        "xlsx": None,
-        "job_id": job_id,
-    }
-
-    # Persist generation record
+    # Persist generation record first — use DB-based URL to survive multi-worker deployments
     start_no = int(cfg.get("start_no", 0))
     last_no = start_no + result.lines_count - 1
+    gen_id = None
     try:
-        _gen_repo.save_generation(
+        record = _gen_repo.save_generation(
             gen_type="proforma", job_id=job_id,
             start_no=start_no, end_no=last_no,
             line_count=result.lines_count, total_amount=float(result.total_amount),
@@ -318,8 +308,21 @@ def api_proforma_generate():
             pdf_data=result.proforma_pdf,
             generated_by=getattr(current_user, "id", None),
         )
+        gen_id = record['id'] if record else None
     except Exception:
         logger.warning("Failed to save proforma generation record", exc_info=True)
+
+    # Fall back to in-memory temp download if DB save failed
+    import uuid
+    download_id = str(uuid.uuid4())
+    from flask import current_app
+    if not hasattr(current_app, "_facturare_downloads"):
+        current_app._facturare_downloads = {}
+    current_app._facturare_downloads[download_id] = {
+        "pdf": result.proforma_pdf,
+        "xlsx": None,
+        "job_id": job_id,
+    }
 
     return jsonify({
         "success": True,
@@ -327,7 +330,7 @@ def api_proforma_generate():
         "total_amount": result.total_amount,
         "proforma_range": result.proforma_range,
         "download_id": download_id,
-        "pdf_url": f"/facturare/api/download/{download_id}/pdf",
+        "pdf_url": f"/facturare/api/generations/{gen_id}/pdf" if gen_id else f"/facturare/api/download/{download_id}/pdf",
     })
 
 
