@@ -128,7 +128,7 @@ def _parse_proforma(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
     """Parse proforma Anexa format.
 
     A=comanda B=model C=culoare D=VIN E=rest_de_plata
-    F=contract_ref G=anexa_ref H=start_no I=invoice_date (optional per-row overrides)
+    F=contract_ref G=anexa_ref H=invoice_date (optional per-row overrides)
     """
     lines: list[OrderLine] = []
     errors: list[str] = []
@@ -157,11 +157,10 @@ def _parse_proforma(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
             errors.append(f"Row {row_idx}: missing {', '.join(missing)}")
             continue
 
-        # Optional per-row metadata (F-I)
+        # Optional per-row metadata (F-H)
         contract_ref = str(row[5]).strip() if len(row) > 5 and row[5] is not None else None
         anexa_ref = str(row[6]).strip() if len(row) > 6 and row[6] is not None else None
-        start_no_val = row[7] if len(row) > 7 and row[7] is not None else None
-        invoice_date_val = row[8] if len(row) > 8 and row[8] is not None else None
+        invoice_date_val = row[7] if len(row) > 7 and row[7] is not None else None
 
         # Handle date objects
         inv_date_str = None
@@ -182,7 +181,6 @@ def _parse_proforma(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
             vin=str(vin).strip() if vin is not None else None,
             contract_ref=contract_ref,
             anexa_ref=anexa_ref,
-            start_no=int(start_no_val) if start_no_val is not None else None,
             invoice_date=inv_date_str,
         ))
 
@@ -221,9 +219,7 @@ def parse_anexa_metadata(source, sheet_name: str = "Sheet1") -> dict[str, str]:
             if len(row) > 6 and row[6] is not None:
                 meta.setdefault("anexa_ref", str(row[6]).strip())
             if len(row) > 7 and row[7] is not None:
-                meta.setdefault("start_no", str(int(row[7])))
-            if len(row) > 8 and row[8] is not None:
-                val = row[8]
+                val = row[7]
                 if isinstance(val, (date, datetime)):
                     meta.setdefault("invoice_date", val.strftime("%Y-%m-%d"))
                 else:
