@@ -344,18 +344,7 @@ def api_list_generations():
     offset = request.args.get("offset", 0, type=int)
     rows = _gen_repo.list_generations(gen_type=gen_type, limit=limit, offset=offset)
     total = _gen_repo.count_generations(gen_type=gen_type)
-    # Serialize datetime/Decimal for JSON
-    result = []
-    for r in rows:
-        row = dict(r)
-        if row.get("created_at"):
-            row["created_at"] = row["created_at"].isoformat()
-        if row.get("invoice_date"):
-            row["invoice_date"] = str(row["invoice_date"])
-        if row.get("total_amount") is not None:
-            row["total_amount"] = float(row["total_amount"])
-        result.append(row)
-    return jsonify({"generations": result, "total": total})
+    return jsonify({"generations": rows, "total": total})
 
 
 @facturare_bp.route("/facturare/api/generations/<int:gen_id>/<file_type>")
