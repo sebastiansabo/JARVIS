@@ -90,6 +90,7 @@ export interface BioStarDailySummary {
   mapped_jarvis_user_name: string | null
   jarvis_company: string | null
   jarvis_department: string | null
+  jarvis_user_active: boolean | null
   lunch_break_minutes: number
   working_hours: number
   schedule_start: string | null
