@@ -21,7 +21,7 @@ import {
   DatabaseZap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -325,7 +325,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const [exporting, setExporting] = useState(false)
 
-  const downloadCsv = useCallback(async (mode: 'day' | 'month') => {
+  const downloadCsv = useCallback(async (mode: 'day' | 'month', raw = false) => {
     setExporting(true)
     const isDay = mode === 'day'
     const toastId = toast.loading(isDay ? 'Exporting day pontaje…' : 'Exporting monthly pontaje…')
@@ -367,9 +367,11 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         return
       }
 
-      // Auto-adjust each day before fetching (sequentially to avoid race conditions)
-      for (const wd of workingDays) {
-        try { await biostarApi.autoAdjustAll(wd.date) } catch { /* ignore — some days may have no off-schedule */ }
+      // Auto-adjust each day before fetching (skip for raw export)
+      if (!raw) {
+        for (const wd of workingDays) {
+          try { await biostarApi.autoAdjustAll(wd.date) } catch { /* ignore — some days may have no off-schedule */ }
+        }
       }
 
       // Fetch daily summary for each working day (all employees, no manager filter)
@@ -455,18 +457,20 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
           // Find best summary across all BioStar IDs for this employee (prefer one with punches/adjustments)
           const candidates = dd.summaries.filter(x => emp.biostarIds.has(x.biostar_user_id))
           const s = candidates.find(x => x.adjusted_first_punch || x.first_punch) ?? candidates[0] ?? null
-          const rawIn = s ? (s.adjusted_first_punch ?? s.first_punch) : null
-          const rawOut = s ? (s.adjusted_last_punch ?? s.last_punch) : null
-          const officialIn = rawIn
+          const punchIn = s ? (raw ? s.first_punch : (s.adjusted_first_punch ?? s.first_punch)) : null
+          const punchOut = s ? (raw ? s.last_punch : (s.adjusted_last_punch ?? s.last_punch)) : null
+          const officialIn = punchIn
           // Single punch: first == last — don't duplicate as check-out
-          const officialOut = rawOut === rawIn ? null : rawOut
+          const officialOut = punchOut === punchIn ? null : punchOut
           const lunchMin = s?.lunch_break_minutes ?? 60
           let duration = ''
           if (officialIn && officialOut) {
-            const net = s?.adjusted_first_punch && s?.adjusted_last_punch
-              ? netSec(timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch), lunchMin)
-              : netSec(s?.duration_seconds ?? null, lunchMin)
-            if (net > 0) duration = (net / 3600).toFixed(2)
+            const secs = raw
+              ? (s?.duration_seconds ?? timeDiffSec(officialIn, officialOut))
+              : (s?.adjusted_first_punch && s?.adjusted_last_punch
+                  ? netSec(timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch), lunchMin)
+                  : netSec(s?.duration_seconds ?? null, lunchMin))
+            if (secs > 0) duration = (secs / 3600).toFixed(2)
           }
 
           const sincronCode = emp.jarvisUserId
@@ -493,7 +497,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = isDay ? `pontaje_${date}.csv` : `pontaje_${monthStr}.csv`
+      a.download = isDay ? `pontaje_${date}${raw ? '_raw' : ''}.csv` : `pontaje_${monthStr}${raw ? '_raw' : ''}.csv`
       a.click()
       URL.revokeObjectURL(url)
       toast.success('Export complete', { id: toastId })
@@ -641,6 +645,9 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => downloadCsv('day')}>Export Day</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => downloadCsv('month')}>Export Month</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => downloadCsv('day', true)}>Export Day (raw)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadCsv('month', true)}>Export Month (raw)</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
