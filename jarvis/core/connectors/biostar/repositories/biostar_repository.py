@@ -526,7 +526,7 @@ class BioStarRepository(BaseRepository):
             LEFT JOIN companies co ON co.id = u.company_id
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = d.biostar_user_id AND adj.date = d.day
-            WHERE 1=1{extra_where}
+            WHERE (be.mapped_jarvis_user_id IS NULL OR u.is_active = TRUE){extra_where}
             GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
                      be.mapped_jarvis_user_id, u.name, co.company, u.company, u.department,
                      be.lunch_break_minutes, be.working_hours,
