@@ -403,6 +403,7 @@ class BioStarRepository(BaseRepository):
                     be.working_hours,
                     be.schedule_start,
                     be.schedule_end,
+                    u.is_active AS jarvis_user_active,
                     MIN(d.event_datetime) AS first_punch,
                     MAX(d.event_datetime) AS last_punch,
                     COUNT(*) AS total_punches,
@@ -414,7 +415,7 @@ class BioStarRepository(BaseRepository):
                 GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
                          be.mapped_jarvis_user_id, u.name, co.company, u.company, u.department,
                          be.lunch_break_minutes, be.working_hours,
-                         be.schedule_start, be.schedule_end
+                         be.schedule_start, be.schedule_end, u.is_active
             )
             SELECT p.*,
                    adj.adjusted_first_punch,
@@ -423,6 +424,8 @@ class BioStarRepository(BaseRepository):
             FROM punches p
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = p.biostar_user_id AND adj.date = %s::date
+            -- Exclude dismissed JARVIS users (source of truth: users.is_active)
+            WHERE (p.mapped_jarvis_user_id IS NULL OR p.jarvis_user_active = TRUE)
 
             UNION ALL
 
@@ -440,6 +443,7 @@ class BioStarRepository(BaseRepository):
                 be3.working_hours,
                 be3.schedule_start,
                 be3.schedule_end,
+                u3.is_active AS jarvis_user_active,
                 NULL::timestamptz AS first_punch,
                 NULL::timestamptz AS last_punch,
                 0 AS total_punches,
@@ -456,6 +460,8 @@ class BioStarRepository(BaseRepository):
               AND NOT EXISTS (
                   SELECT 1 FROM punches p2 WHERE p2.biostar_user_id = adj2.biostar_user_id
               )
+              -- Exclude dismissed JARVIS users
+              AND (be3.mapped_jarvis_user_id IS NULL OR u3.is_active = TRUE)
 
             ORDER BY jarvis_company NULLS LAST, name
         ''', params)
