@@ -13,4 +13,5 @@ from flask import Blueprint
 
 settings_bp = Blueprint('settings', __name__, template_folder='../../templates/core')
 
-from . import routes  # noqa: E402, F401
+# Routes are imported explicitly in app.py after blueprint creation to avoid
+# circular imports via schema_misc → core.settings → routes → base_repository → database
