@@ -17,6 +17,12 @@ hr_bp = Blueprint('hr', __name__)
 from .events import events_bp  # noqa: E402
 hr_bp.register_blueprint(events_bp, url_prefix='/events')
 
+from .courses import courses_bp  # noqa: E402
+hr_bp.register_blueprint(courses_bp, url_prefix='/courses')
+
+from .co_balance import co_balance_bp  # noqa: E402
+hr_bp.register_blueprint(co_balance_bp)
+
 
 @hr_bp.route('/')
 def index():

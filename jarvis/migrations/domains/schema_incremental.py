@@ -1572,6 +1572,16 @@ def create_schema_incremental(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_checkin_locations_active ON checkin_locations(is_active)')
 
     # CarPark: two-level cost hierarchy (cost lines → cost entries)
+    # Guard: only run if carpark_vehicles exists (requires schema_carpark to have run first)
+    cursor.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema='public' AND table_name='carpark_vehicles')")
+    if cursor.fetchone()['exists']:
+        _create_carpark_incremental(conn, cursor)
+
+    _create_schema_incremental_continued(conn, cursor)
+
+
+def _create_carpark_incremental(conn, cursor):
+    """Carpark incremental migrations — split out to guard on carpark_vehicles existence."""
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS carpark_vehicle_cost_lines (
             id SERIAL PRIMARY KEY,
@@ -1651,6 +1661,8 @@ def create_schema_incremental(conn, cursor):
     ''')
 
 
+def _create_schema_incremental_continued(conn, cursor):
+    """Continuation of create_schema_incremental — non-carpark migrations."""
     # Add company_id FK to users — used by AI agent for company-scoped DMS isolation
     cursor.execute('''
         DO $$ BEGIN
@@ -1674,5 +1686,78 @@ def create_schema_incremental(conn, cursor):
         END $$;
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_company_id ON users (company_id) WHERE is_active = TRUE')
+
+    # ── contract_status on users (active / suspended / closed) ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'contract_status') THEN
+                ALTER TABLE users ADD COLUMN contract_status VARCHAR(20) DEFAULT 'active';
+                UPDATE users SET contract_status = CASE WHEN is_active = TRUE THEN 'active' ELSE 'closed' END;
+            END IF;
+        END $$;
+    ''')
+    try:
+        cursor.execute('''
+            ALTER TABLE users ADD CONSTRAINT chk_users_contract_status
+            CHECK (contract_status IN ('active', 'suspended', 'closed'))
+        ''')
+    except Exception:
+        conn.rollback()
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_contract_status ON users(contract_status)')
+    cursor.execute('''
+        CREATE OR REPLACE FUNCTION sync_is_active_from_contract_status()
+        RETURNS TRIGGER AS $tr$
+        BEGIN
+            NEW.is_active = (NEW.contract_status = 'active');
+            RETURN NEW;
+        END;
+        $tr$ LANGUAGE plpgsql;
+    ''')
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_sync_is_active') THEN
+                CREATE TRIGGER trg_sync_is_active
+                    BEFORE INSERT OR UPDATE OF contract_status ON users
+                    FOR EACH ROW
+                    EXECUTE FUNCTION sync_is_active_from_contract_status();
+            END IF;
+        END $$;
+    ''')
+
+    # ── contract_status prep on sincron_employees ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'sincron_employees' AND column_name = 'contract_status') THEN
+                ALTER TABLE sincron_employees ADD COLUMN contract_status VARCHAR(20);
+            END IF;
+        END $$;
+    ''')
+
+    # ── notify_missing_punch toggle on users ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'notify_missing_punch') THEN
+                ALTER TABLE users ADD COLUMN notify_missing_punch BOOLEAN DEFAULT TRUE;
+            END IF;
+        END $$;
+    ''')
+
+    # ── Leave permit CO conversion approval flow ──
+    cursor.execute('''
+        INSERT INTO approval_flows (name, slug, description, entity_type, is_active, priority, created_by)
+        SELECT 'Leave Permit CO Conversion', 'leave-permit-co-conversion',
+               'Convert accumulated leave permit hours into CO days',
+               'leave_permit_conversion', TRUE, 100, 1
+        WHERE NOT EXISTS (SELECT 1 FROM approval_flows WHERE slug = 'leave-permit-co-conversion')
+    ''')
+    cursor.execute('''
+        INSERT INTO approval_steps (flow_id, name, step_order, approver_type, notify_on_pending, notify_on_decision)
+        SELECT f.id, 'Selected Approver', 1, 'context_approver', TRUE, TRUE
+        FROM approval_flows f WHERE f.slug = 'leave-permit-co-conversion'
+        AND NOT EXISTS (SELECT 1 FROM approval_steps s WHERE s.flow_id = f.id)
+    ''')
 
     conn.commit()

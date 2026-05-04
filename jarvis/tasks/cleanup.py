@@ -19,7 +19,12 @@ from tasks.notifications import cleanup_old_notifications, run_smart_notificatio
 from tasks.marketing import sync_marketing_kpis
 from tasks.field_sales import field_sales_follow_up_reminders, field_sales_overdue_visit_alerts
 from tasks.biostar import sync_biostar_events, sync_biostar_users, auto_adjust_biostar_schedules
+from tasks.sincron import sync_sincron_timesheets
+from tasks.hr_attendance import check_missing_punches, send_pontaje_digest, send_monthly_pontaje_summary, send_hr_weekly_digest
+from tasks.hr_courses import check_course_cert_expiry
 from tasks.carpark import cleanup_vin_cache
+from tasks.holidays import populate_holidays
+from tasks.telemetry import close_stale_sessions, cleanup_old_telemetry
 
 logger = get_logger('jarvis.tasks')
 
@@ -182,7 +187,7 @@ def start_scheduler():
     _biostar_defaults = {
         'biostar_sync_events': {'func': sync_biostar_events, 'hour': 1, 'minute': 0},
         'biostar_sync_users': {'func': sync_biostar_users, 'hour': 2, 'minute': 0},
-        'biostar_auto_adjust': {'func': auto_adjust_biostar_schedules, 'hour': 3, 'minute': 0},
+        'biostar_auto_adjust': {'func': auto_adjust_biostar_schedules, 'hour': 7, 'minute': 15},
     }
     _biostar_cron = {}
     try:
@@ -224,6 +229,118 @@ def start_scheduler():
                 coalesce=True,
             )
 
+    # Sincron — daily timesheet sync (04:00 UTC / 07:00 Romania)
+    _sincron_cron = {}
+    try:
+        import json as _json2
+        from core.connectors.repositories.connector_repository import ConnectorRepository as _CR2
+        _sc = _CR2().get_by_type('sincron')
+        if _sc:
+            _scfg = _sc.get('config') or {}
+            if isinstance(_scfg, str):
+                _scfg = _json2.loads(_scfg)
+            _sincron_cron = _scfg.get('cron_jobs', {})
+    except Exception:
+        pass
+
+    _sincron_settings = _sincron_cron.get('sincron_sync_timesheets', {})
+    if _sincron_settings.get('enabled', True):
+        if _sincron_settings.get('schedule_type') == 'interval':
+            scheduler.add_job(
+                sync_sincron_timesheets,
+                'interval',
+                minutes=_sincron_settings.get('interval_minutes', 60),
+                id='sincron_sync_timesheets',
+                replace_existing=True,
+                misfire_grace_time=300,
+                coalesce=True,
+            )
+        else:
+            scheduler.add_job(
+                sync_sincron_timesheets,
+                'cron',
+                hour=_sincron_settings.get('hour', 4),
+                minute=_sincron_settings.get('minute', 0),
+                id='sincron_sync_timesheets',
+                replace_existing=True,
+                misfire_grace_time=300,
+                coalesce=True,
+            )
+
+    # HR Courses — certification expiry check (08:00 daily)
+    scheduler.add_job(
+        check_course_cert_expiry,
+        'cron',
+        hour=8,
+        minute=30,
+        id='hr_course_cert_expiry',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # HR — missing punch check (10:00 daily, after BioStar sync completes)
+    scheduler.add_job(
+        check_missing_punches,
+        'cron',
+        hour=10,
+        minute=0,
+        id='hr_missing_punch_check',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # HR — pontaje daily digest (10:30 Romania time = 07:30 UTC summer)
+    scheduler.add_job(
+        send_pontaje_digest,
+        'cron',
+        hour=7,
+        minute=30,
+        id='hr_pontaje_digest',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # HR — monthly pontaje summary (1st of each month at 08:00 UTC = 11:00 Romania summer)
+    scheduler.add_job(
+        send_monthly_pontaje_summary,
+        'cron',
+        day=1,
+        hour=8,
+        minute=0,
+        id='hr_pontaje_monthly_summary',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # HR — weekly HR digest (Monday 07:00 UTC = 10:00 Romania summer)
+    scheduler.add_job(
+        send_hr_weekly_digest,
+        'cron',
+        day_of_week='mon',
+        hour=7,
+        minute=0,
+        id='hr_weekly_digest',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # Holidays — auto-populate next year holidays (00:30 daily, idempotent)
+    scheduler.add_job(
+        populate_holidays,
+        'cron',
+        hour=0,
+        minute=30,
+        id='populate_holidays',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
     # CarPark — VIN cache cleanup (03:30 daily)
     scheduler.add_job(
         cleanup_vin_cache,
@@ -231,6 +348,29 @@ def start_scheduler():
         hour=3,
         minute=30,
         id='carpark_vin_cache_cleanup',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    # Telemetry — close stale sessions (every 2 minutes)
+    scheduler.add_job(
+        close_stale_sessions,
+        'interval',
+        minutes=2,
+        id='telemetry_close_stale_sessions',
+        replace_existing=True,
+        misfire_grace_time=60,
+        coalesce=True,
+    )
+
+    # Telemetry — cleanup old data (03:00 daily)
+    scheduler.add_job(
+        cleanup_old_telemetry,
+        'cron',
+        hour=3,
+        minute=0,
+        id='telemetry_cleanup_old_data',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,

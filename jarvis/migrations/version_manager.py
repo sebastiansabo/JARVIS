@@ -31,7 +31,7 @@ def get_schema_version(cursor) -> int:
     """Return current schema version, or 0 if not set."""
     cursor.execute("SELECT version FROM schema_version WHERE id = 1")
     row = cursor.fetchone()
-    return row[0] if row else 0
+    return row['version'] if row else 0
 
 
 def set_schema_version(cursor, version: int):

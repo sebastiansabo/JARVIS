@@ -102,6 +102,62 @@ def create_schema_roles(conn, cursor):
         END $$;
     ''')
 
+    # ── Add contract_status column to users table ──
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'users' AND column_name = 'contract_status') THEN
+                ALTER TABLE users ADD COLUMN contract_status VARCHAR(20) DEFAULT 'active';
+
+                -- Migrate existing data from is_active boolean
+                UPDATE users SET contract_status = CASE
+                    WHEN is_active = TRUE THEN 'active'
+                    ELSE 'closed'
+                END;
+            END IF;
+        END $$;
+    ''')
+
+    # Add CHECK constraint for contract_status (safe to re-run)
+    try:
+        cursor.execute('''
+            ALTER TABLE users ADD CONSTRAINT chk_users_contract_status
+            CHECK (contract_status IN ('active', 'suspended', 'closed'))
+        ''')
+    except (psycopg2.errors.DuplicateObject, Exception):
+        conn.rollback()
+
+    # Index on contract_status for efficient filtering
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_users_contract_status ON users(contract_status)
+    ''')
+
+    # Trigger: keep is_active in sync when contract_status changes
+    cursor.execute('''
+        CREATE OR REPLACE FUNCTION sync_is_active_from_contract_status()
+        RETURNS TRIGGER AS $tr$
+        BEGIN
+            NEW.is_active = (NEW.contract_status = 'active');
+            RETURN NEW;
+        END;
+        $tr$ LANGUAGE plpgsql;
+    ''')
+
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_sync_is_active') THEN
+                CREATE TRIGGER trg_sync_is_active
+                    BEFORE INSERT OR UPDATE OF contract_status ON users
+                    FOR EACH ROW
+                    EXECUTE FUNCTION sync_is_active_from_contract_status();
+            END IF;
+        END $$;
+    ''')
+
+    conn.commit()
+
     # Add can_edit_invoices column to roles table if it doesn't exist (migration)
     cursor.execute('''
         DO $$

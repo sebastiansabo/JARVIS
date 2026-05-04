@@ -102,7 +102,9 @@ class CompanyRepository(BaseRepository):
             current = row['parent_company_id'] if row else None
         return False
 
-    def update(self, company_id: int, company: str = None, vat: str = None, parent_company_id: object = 'UNSET', logo_url: object = 'UNSET') -> bool:
+    def update(self, company_id: int, company: str = None, vat: str = None, parent_company_id: object = 'UNSET', logo_url: object = 'UNSET',
+               reg_no: object = 'UNSET', iban: object = 'UNSET', bank: object = 'UNSET', swift: object = 'UNSET',
+               street: object = 'UNSET', city: object = 'UNSET', county: object = 'UNSET', postal_code: object = 'UNSET') -> bool:
         """Update a company. Returns True if updated."""
         def _work(cursor):
             # Check for circular references if parent is being changed
@@ -124,6 +126,10 @@ class CompanyRepository(BaseRepository):
             if logo_url != 'UNSET':
                 updates.append('logo_url = %s')
                 params.append(logo_url)
+            for col, val in [('reg_no', reg_no), ('iban', iban), ('bank', bank), ('swift', swift), ('street', street), ('city', city), ('county', county), ('postal_code', postal_code)]:
+                if val != 'UNSET':
+                    updates.append(f'{col} = %s')
+                    params.append(val)
             if not updates:
                 return False
 
@@ -180,7 +186,7 @@ class CompanyRepository(BaseRepository):
     def get_all_with_vat_and_brands(self) -> list[dict]:
         """Get all companies with VAT numbers, brand associations, and hierarchy."""
         def _work(cursor):
-            cursor.execute('SELECT id, company, vat, parent_company_id, display_order, logo_url FROM companies ORDER BY display_order, company')
+            cursor.execute('SELECT id, company, vat, parent_company_id, display_order, logo_url, reg_no, iban, bank, swift, street, city, county, postal_code FROM companies ORDER BY display_order, company')
             companies = [dict(row) for row in cursor.fetchall()]
 
             cursor.execute('''

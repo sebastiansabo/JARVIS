@@ -1,0 +1,58 @@
+job_id: ctr677-2026-04
+contract:
+  ref: "ctr 677/03.04.2026"
+  anexa_ref: "Anexa 1 la CTR.677 din 03.04.2026"
+
+input:
+  anexa: inputs/Anexa1.xlsx
+  sheet: Sheet1
+
+invoice:
+  kind: invoice
+  start_no: 9102842
+  date: 2026-04-24
+  intocmit_de: "Ilona Foszto"
+  description_prefix: "1. ADVANCE PAYMENT"
+
+fx:
+  currency: EUR
+  kurs: 5.0924
+  kurs_date: 2026-04-24
+
+supplier:
+  name: "AUTOWORLD INTERNATIONAL SRL"
+  address_lines:
+    - "Calea Floresti nr. 145"
+    - "Cluj-Napoca, jud. Cluj"
+    - "Romania"
+  reg_no: "J2024002657125"
+  vat: "RO 50186890"
+  iban: "RO88BACX0000002700968001"
+  bank: "Unicredit Tiriac Bank Cluj-Napoca"
+  swift: "BACXROBU"
+
+customer:
+  name: "GENERAL LEASE NV"
+  address_lines:
+    - "Overhaamlaan 71"
+    - "3700 Tongeren"
+    - "BELGIA"
+  vat: "BE0431586751"
+
+eurofib:
+  klient: 139
+  konto_debit: 41214286
+  konto_credit: 419968
+  belegart: JVV
+  steuercode: L00
+  fw_steuercode: L00
+  text_template: "avans {brand_short} {comanda}"
+  brand_map:
+    Golf: "vw golf"
+    T-Cross: "vw t cross"
+    Taigo: "vw taigo"
+
+output:
+  invoices_pdf: out/{job_id}_invoices.pdf
+  eurofib_xlsx: out/{job_id}_eurofib.xlsx
+  per_invoice_pdfs: false

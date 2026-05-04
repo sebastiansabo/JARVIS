@@ -100,7 +100,36 @@ def create_schema_field_sales(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_kam_visits_status ON kam_visit_plans(status)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_kam_visits_date ON kam_visit_plans(planned_date)')
 
-    # 4. Visit notes
+    # 4. Visit routes (grouping multiple visits into a day-route for a KAM)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS kam_visit_routes (
+            id SERIAL PRIMARY KEY,
+            kam_id INTEGER NOT NULL REFERENCES users(id),
+            planned_date DATE NOT NULL,
+            name VARCHAR(255),
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_kam_routes_kam_date ON kam_visit_routes(kam_id, planned_date)')
+
+    # Add route_id and sequence to visit plans
+    cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS route_id INTEGER REFERENCES kam_visit_routes(id) ON DELETE SET NULL")
+    cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS sequence INTEGER DEFAULT 0")
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_kam_visits_route ON kam_visit_plans(route_id)')
+
+    # Pre-visit / Post-visit structured data + contact/companions
+    cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS pre_visit_data JSONB DEFAULT '{}'")
+    cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS post_visit_data JSONB DEFAULT '{}'")
+    cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS contact_person VARCHAR(255)")
+    cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS companions TEXT[] DEFAULT '{}'")
+
+    # Client profile enrichment: shareholders, work points, HQ address
+    cursor.execute("ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS shareholders TEXT")
+    cursor.execute("ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS work_points JSONB DEFAULT '[]'")
+    cursor.execute("ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS headquarters_address TEXT")
+
+    # 5. Visit notes
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS kam_visit_notes (
             id SERIAL PRIMARY KEY,
@@ -113,7 +142,38 @@ def create_schema_field_sales(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_kam_notes_visit ON kam_visit_notes(visit_id)')
 
-    # 5. Permissions V2 seed — full matrix
+    # 6. Visit tasks (follow-up tracking)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS kam_visit_tasks (
+            id SERIAL PRIMARY KEY,
+            visit_id INTEGER NOT NULL REFERENCES kam_visit_plans(id) ON DELETE CASCADE,
+            description TEXT NOT NULL,
+            assigned_to INTEGER REFERENCES users(id),
+            due_date DATE,
+            status VARCHAR(20) DEFAULT 'pending',
+            completed_at TIMESTAMP,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_kam_tasks_visit ON kam_visit_tasks(visit_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_kam_tasks_assigned ON kam_visit_tasks(assigned_to)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_kam_tasks_status ON kam_visit_tasks(status)')
+
+    # 7. Task follow-up log
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS kam_task_follow_ups (
+            id SERIAL PRIMARY KEY,
+            task_id INTEGER NOT NULL REFERENCES kam_visit_tasks(id) ON DELETE CASCADE,
+            note TEXT NOT NULL,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_kam_followups_task ON kam_task_follow_ups(task_id)')
+
+    # 8. Permissions V2 seed — full matrix
     _field_sales_perms = [
         # Module-level access (used by get_module_access_map)
         ('field_sales', 'Field Sales', 'bi-geo-alt-fill', 'module', 'Module', 'access', 'Access', 'Access the field sales module', False, 1),
@@ -124,6 +184,7 @@ def create_schema_field_sales(conn, cursor):
         ('field_sales', 'Field Sales', 'bi-geo-alt-fill', 'team', 'Team', 'view', 'View', 'Manager: view all KAM visits and pipeline', False, 4),
         ('field_sales', 'Field Sales', 'bi-geo-alt-fill', 'fiscal', 'Fiscal Data', 'view', 'View', 'See ANAF fiscal data on client card', False, 5),
         ('field_sales', 'Field Sales', 'bi-geo-alt-fill', 'fleet', 'Fleet', 'manage', 'Manage', 'Add/edit vehicles in client fleet registry', False, 6),
+        ('field_sales', 'Field Sales', 'bi-geo-alt-fill', 'tasks', 'Tasks', 'manage', 'Manage', 'Create and manage visit tasks and follow-ups', False, 7),
     ]
     for p in _field_sales_perms:
         cursor.execute('''
@@ -154,12 +215,12 @@ def create_schema_field_sales(conn, cursor):
         WHERE r.name = 'Manager' AND p.module_key = 'field_sales'
           AND (p.entity_key || '.' || p.action_key) IN (
               'module.access', 'mobile.access', 'visits.manage_own',
-              'team.view', 'fiscal.view', 'fleet.manage'
+              'team.view', 'fiscal.view', 'fleet.manage', 'tasks.manage'
           )
         ON CONFLICT (role_id, permission_id) DO NOTHING
     ''')
 
-    # User (KAM): module access, mobile access, manage own visits, view fiscal
+    # User (KAM): module access, mobile access, manage own visits, view fiscal, manage tasks
     cursor.execute('''
         INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
         SELECT r.id, p.id, 'all', TRUE
@@ -167,7 +228,7 @@ def create_schema_field_sales(conn, cursor):
         CROSS JOIN permissions_v2 p
         WHERE r.name = 'User' AND p.module_key = 'field_sales'
           AND (p.entity_key || '.' || p.action_key) IN (
-              'module.access', 'mobile.access', 'visits.manage_own', 'fiscal.view'
+              'module.access', 'mobile.access', 'visits.manage_own', 'fiscal.view', 'tasks.manage'
           )
         ON CONFLICT (role_id, permission_id) DO NOTHING
     ''')

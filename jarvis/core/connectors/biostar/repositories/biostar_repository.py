@@ -13,9 +13,12 @@ class BioStarRepository(BaseRepository):
         """Get all BioStar employees with their JARVIS mapping."""
         sql = '''
             SELECT be.*,
-                   u.name AS mapped_jarvis_user_name
+                   u.name AS mapped_jarvis_user_name,
+                   COALESCE(co.company, u.company) AS jarvis_company,
+                   u.is_active AS jarvis_user_active
             FROM biostar_employees be
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+            LEFT JOIN companies co ON co.id = u.company_id
         '''
         if active_only:
             sql += " WHERE be.status = 'active'"
@@ -30,32 +33,24 @@ class BioStarRepository(BaseRepository):
         )
 
     def upsert_employee(self, data):
-        """Insert a new BioStar employee, skip if exists. Returns the row.
-
-        `cnp` is optional — when supplied it is persisted, but existing CNPs are
-        preserved on re-sync via COALESCE(EXCLUDED.cnp, biostar_employees.cnp).
-        """
+        """Insert a new BioStar employee, skip if exists. Returns the row."""
         return self.execute('''
             INSERT INTO biostar_employees
                 (biostar_user_id, name, email, phone, user_group_id,
-                 user_group_name, card_ids, status, cnp, last_synced_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                 user_group_name, card_ids, status, last_synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (biostar_user_id) DO UPDATE SET
-                cnp = COALESCE(EXCLUDED.cnp, biostar_employees.cnp),
                 last_synced_at = NOW()
             RETURNING id, biostar_user_id
         ''', (
             data['biostar_user_id'], data['name'], data.get('email'),
             data.get('phone'), data.get('user_group_id'),
             data.get('user_group_name'), json.dumps(data.get('card_ids', [])),
-            data.get('status', 'active'), data.get('cnp')
+            data.get('status', 'active')
         ), returning=True)
 
     def bulk_upsert_employees(self, employees):
-        """Insert new employees, skip existing. Returns {created, updated, skipped}.
-
-        CNP is persisted when supplied; existing CNP is preserved via COALESCE.
-        """
+        """Insert new employees, skip existing. Returns {created, updated, skipped}."""
         def _work(cursor):
             created = 0
             skipped = 0
@@ -63,16 +58,15 @@ class BioStarRepository(BaseRepository):
                 cursor.execute('''
                     INSERT INTO biostar_employees
                         (biostar_user_id, name, email, phone, user_group_id,
-                         user_group_name, card_ids, status, cnp, last_synced_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                         user_group_name, card_ids, status, last_synced_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
                     ON CONFLICT (biostar_user_id) DO UPDATE SET
-                        cnp = COALESCE(EXCLUDED.cnp, biostar_employees.cnp),
                         last_synced_at = NOW()
                 ''', (
                     emp['biostar_user_id'], emp['name'], emp.get('email'),
                     emp.get('phone'), emp.get('user_group_id'),
                     emp.get('user_group_name'), json.dumps(emp.get('card_ids', [])),
-                    emp.get('status', 'active'), emp.get('cnp')
+                    emp.get('status', 'active')
                 ))
                 if cursor.rowcount > 0:
                     created += 1
@@ -200,25 +194,16 @@ class BioStarRepository(BaseRepository):
     # ── Auto-mapping (SQL-based, mirrors Sincron style) ──
 
     def auto_map_by_cnp(self):
-        """Link unmapped BioStar employees to JARVIS users by CNP (confidence 100).
+        """Link unmapped BioStar employees to JARVIS users via Sincron CNP.
 
-        Requires the biostar_employees.cnp column (migration 002). Safe when CNP
-        is NULL — the WHERE clause excludes those rows.
+        BioStar doesn't provide CNP directly. Instead, match BioStar employees
+        to users who have CNP (populated from Sincron) by cross-referencing
+        name or email.
+        CNP is canonical in users table only — no longer stored in biostar_employees.
         """
-        return self.execute('''
-            UPDATE biostar_employees be
-            SET mapped_jarvis_user_id = u.id,
-                mapping_method = 'cnp',
-                mapping_confidence = 100,
-                updated_at = NOW()
-            FROM users u
-            WHERE be.mapped_jarvis_user_id IS NULL
-              AND be.status = 'active'
-              AND be.cnp IS NOT NULL
-              AND u.cnp IS NOT NULL
-              AND u.is_active = TRUE
-              AND LOWER(TRIM(be.cnp)) = LOWER(TRIM(u.cnp))
-        ''')
+        # BioStar has no CNP column; this is now a no-op placeholder.
+        # Real CNP matching flows through Sincron → users.cnp → auto_map_cross_verified.
+        return 0
 
     def auto_map_by_email(self):
         """Link unmapped BioStar employees to JARVIS users by email (confidence 100)."""
@@ -235,7 +220,7 @@ class BioStarRepository(BaseRepository):
               AND be.email <> ''
               AND u.email IS NOT NULL
               AND u.email <> ''
-              AND u.is_active = TRUE
+              AND COALESCE(u.contract_status, 'active') != 'closed'
               AND LOWER(TRIM(be.email)) = LOWER(TRIM(u.email))
         ''')
 
@@ -254,7 +239,7 @@ class BioStarRepository(BaseRepository):
               AND be.name <> ''
               AND u.name IS NOT NULL
               AND u.name <> ''
-              AND u.is_active = TRUE
+              AND COALESCE(u.contract_status, 'active') != 'closed'
               AND LOWER(TRIM(be.name)) = LOWER(TRIM(u.name))
         ''')
 
@@ -278,7 +263,7 @@ class BioStarRepository(BaseRepository):
               AND be.status = 'active'
               AND se.mapped_jarvis_user_id IS NOT NULL
               AND se.is_active = TRUE
-              AND u.is_active = TRUE
+              AND COALESCE(u.contract_status, 'active') != 'closed'
               AND (
                     (be.email IS NOT NULL AND be.email <> ''
                      AND u.email IS NOT NULL AND u.email <> ''
@@ -387,36 +372,47 @@ class BioStarRepository(BaseRepository):
         params = [date_str]
         extra_where = ''
         if jarvis_user_ids:
-            extra_where = ' AND be.mapped_jarvis_user_id = ANY(%s)'
+            extra_where = ' AND be2.mapped_jarvis_user_id = ANY(%s)'
             params.append(jarvis_user_ids)
-        # date_str used a second time for the adjustment JOIN
+        # date_str used for the adjustment JOIN and UNION
+        params.append(date_str)
         params.append(date_str)
         return self.query_all(f'''
-            WITH punches AS (
+            WITH deduped AS (
+                -- Collapse same-minute punches from the same user (BioStar zone
+                -- terminals register one badge across multiple devices simultaneously)
+                SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
+                    pl.biostar_user_id, pl.event_datetime
+                FROM biostar_punch_logs pl
+                LEFT JOIN biostar_employees be2 ON be2.biostar_user_id = pl.biostar_user_id
+                WHERE pl.event_datetime::date = %s::date
+                  AND (be2.is_blacklisted IS NULL OR be2.is_blacklisted = FALSE){extra_where}
+                ORDER BY pl.biostar_user_id, date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+            ),
+            punches AS (
                 SELECT
-                    pl.biostar_user_id,
+                    d.biostar_user_id,
                     be.name,
                     be.email,
                     be.user_group_name,
                     be.mapped_jarvis_user_id,
                     u.name AS mapped_jarvis_user_name,
-                    u.company AS jarvis_company,
+                    COALESCE(co.company, u.company) AS jarvis_company,
                     u.department AS jarvis_department,
                     be.lunch_break_minutes,
                     be.working_hours,
                     be.schedule_start,
                     be.schedule_end,
-                    MIN(pl.event_datetime) AS first_punch,
-                    MAX(pl.event_datetime) AS last_punch,
+                    MIN(d.event_datetime) AS first_punch,
+                    MAX(d.event_datetime) AS last_punch,
                     COUNT(*) AS total_punches,
-                    EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds
-                FROM biostar_punch_logs pl
-                LEFT JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
+                    EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds
+                FROM deduped d
+                LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
                 LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
-                WHERE pl.event_datetime::date = %s::date
-                  AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE){extra_where}
-                GROUP BY pl.biostar_user_id, be.name, be.email, be.user_group_name,
-                         be.mapped_jarvis_user_id, u.name, u.company, u.department,
+                LEFT JOIN companies co ON co.id = u.company_id
+                GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
+                         be.mapped_jarvis_user_id, u.name, co.company, u.company, u.department,
                          be.lunch_break_minutes, be.working_hours,
                          be.schedule_start, be.schedule_end
             )
@@ -427,7 +423,41 @@ class BioStarRepository(BaseRepository):
             FROM punches p
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = p.biostar_user_id AND adj.date = %s::date
-            ORDER BY p.jarvis_company NULLS LAST, p.name
+
+            UNION ALL
+
+            -- Include absent employees who have adjustments but no punches
+            SELECT
+                adj2.biostar_user_id,
+                be3.name,
+                be3.email,
+                be3.user_group_name,
+                be3.mapped_jarvis_user_id,
+                u3.name AS mapped_jarvis_user_name,
+                COALESCE(co3.company, u3.company) AS jarvis_company,
+                u3.department AS jarvis_department,
+                be3.lunch_break_minutes,
+                be3.working_hours,
+                be3.schedule_start,
+                be3.schedule_end,
+                NULL::timestamptz AS first_punch,
+                NULL::timestamptz AS last_punch,
+                0 AS total_punches,
+                0 AS duration_seconds,
+                adj2.adjusted_first_punch,
+                adj2.adjusted_last_punch,
+                adj2.adjustment_type
+            FROM biostar_daily_adjustments adj2
+            JOIN biostar_employees be3 ON be3.biostar_user_id = adj2.biostar_user_id
+            LEFT JOIN users u3 ON u3.id = be3.mapped_jarvis_user_id
+            LEFT JOIN companies co3 ON co3.id = u3.company_id
+            WHERE adj2.date = %s::date
+              AND adj2.original_first_punch IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM punches p2 WHERE p2.biostar_user_id = adj2.biostar_user_id
+              )
+
+            ORDER BY jarvis_company NULLS LAST, name
         ''', params)
 
     def get_range_summary(self, start_date, end_date, jarvis_user_ids=None):
@@ -438,19 +468,25 @@ class BioStarRepository(BaseRepository):
             extra_where = ' AND be.mapped_jarvis_user_id = ANY(%s)'
             params.append(jarvis_user_ids)
         return self.query_all(f'''
-            WITH daily AS (
-                SELECT
-                    pl.biostar_user_id,
-                    pl.event_datetime::date AS day,
-                    MIN(pl.event_datetime) AS first_punch,
-                    MAX(pl.event_datetime) AS last_punch,
-                    COUNT(*) AS punches,
-                    EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds
+            WITH deduped AS (
+                SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
+                    pl.biostar_user_id, pl.event_datetime
                 FROM biostar_punch_logs pl
                 LEFT JOIN biostar_employees be2 ON be2.biostar_user_id = pl.biostar_user_id
                 WHERE pl.event_datetime::date BETWEEN %s::date AND %s::date
                   AND (be2.is_blacklisted IS NULL OR be2.is_blacklisted = FALSE)
-                GROUP BY pl.biostar_user_id, pl.event_datetime::date
+                ORDER BY pl.biostar_user_id, date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+            ),
+            daily AS (
+                SELECT
+                    d.biostar_user_id,
+                    d.event_datetime::date AS day,
+                    MIN(d.event_datetime) AS first_punch,
+                    MAX(d.event_datetime) AS last_punch,
+                    COUNT(*) AS punches,
+                    EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds
+                FROM deduped d
+                GROUP BY d.biostar_user_id, d.event_datetime::date
             )
             SELECT
                 d.biostar_user_id,
@@ -459,33 +495,37 @@ class BioStarRepository(BaseRepository):
                 be.user_group_name,
                 be.mapped_jarvis_user_id,
                 u.name AS mapped_jarvis_user_name,
-                u.company AS jarvis_company,
+                COALESCE(co.company, u.company) AS jarvis_company,
                 u.department AS jarvis_department,
                 be.lunch_break_minutes,
                 be.working_hours,
                 be.schedule_start,
                 be.schedule_end,
                 COUNT(d.day) AS days_present,
+                COUNT(CASE WHEN d.punches = 1 THEN 1 END) AS single_punch_days,
                 SUM(d.duration_seconds) AS total_duration_seconds,
                 AVG(d.duration_seconds) AS avg_duration_seconds,
                 SUM(d.punches) AS total_punches,
                 MIN(d.first_punch) AS earliest_punch,
                 MAX(d.last_punch) AS latest_punch,
-                AVG(EXTRACT(EPOCH FROM d.first_punch::time)) AS avg_check_in_epoch,
+                AVG(CASE WHEN d.punches > 1 THEN EXTRACT(EPOCH FROM d.first_punch::time) END) AS avg_check_in_epoch,
                 AVG(CASE WHEN d.punches > 1 THEN EXTRACT(EPOCH FROM d.last_punch::time) END) AS avg_check_out_epoch,
+                STDDEV(CASE WHEN d.punches > 1 THEN EXTRACT(EPOCH FROM d.first_punch::time) END) AS stddev_check_in_epoch,
+                STDDEV(CASE WHEN d.punches > 1 THEN EXTRACT(EPOCH FROM d.last_punch::time) END) AS stddev_check_out_epoch,
                 SUM(COALESCE(adj.adjusted_duration_seconds, d.duration_seconds)) AS adjusted_total_duration_seconds,
                 COUNT(adj.id) AS adjustment_count
             FROM daily d
             LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+            LEFT JOIN companies co ON co.id = u.company_id
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = d.biostar_user_id AND adj.date = d.day
             WHERE 1=1{extra_where}
             GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
-                     be.mapped_jarvis_user_id, u.name, u.company, u.department,
+                     be.mapped_jarvis_user_id, u.name, co.company, u.company, u.department,
                      be.lunch_break_minutes, be.working_hours,
                      be.schedule_start, be.schedule_end
-            ORDER BY u.company NULLS LAST, be.name
+            ORDER BY COALESCE(co.company, u.company) NULLS LAST, be.name
         ''', params)
 
     def get_employee_punches(self, biostar_user_id, date_str):
@@ -502,35 +542,111 @@ class BioStarRepository(BaseRepository):
         """Get per-day punch summary for one employee over a date range.
 
         Also returns adjusted punch times from biostar_daily_adjustments if they exist.
+        Uses Sincron per-day schedule when available (COALESCE over BioStar static).
         """
         return self.query_all('''
-            WITH daily AS (
-                SELECT
-                    pl.event_datetime::date AS date,
-                    MIN(pl.event_datetime) AS first_punch,
-                    MAX(pl.event_datetime) AS last_punch,
-                    COUNT(*) AS total_punches,
-                    EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds,
-                    be.lunch_break_minutes,
-                    be.working_hours,
-                    be.schedule_start,
-                    be.schedule_end
+            WITH deduped AS (
+                SELECT DISTINCT ON (date_trunc('minute', pl.event_datetime))
+                    pl.event_datetime
                 FROM biostar_punch_logs pl
-                LEFT JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
                 WHERE pl.biostar_user_id = %s
                   AND pl.event_datetime::date BETWEEN %s::date AND %s::date
-                GROUP BY pl.event_datetime::date, be.lunch_break_minutes, be.working_hours,
+                ORDER BY date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+            ),
+            daily AS (
+                SELECT
+                    d.event_datetime::date AS date,
+                    MIN(d.event_datetime) AS first_punch,
+                    MAX(d.event_datetime) AS last_punch,
+                    COUNT(*) AS total_punches,
+                    EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds,
+                    COALESCE(be.lunch_break_minutes) AS lunch_break_minutes,
+                    be.working_hours,
+                    be.schedule_start AS static_schedule_start,
+                    be.schedule_end AS static_schedule_end
+                FROM deduped d
+                CROSS JOIN biostar_employees be
+                WHERE be.biostar_user_id = %s
+                GROUP BY d.event_datetime::date, be.lunch_break_minutes, be.working_hours,
                          be.schedule_start, be.schedule_end
+            ),
+            adj_only AS (
+                -- Adjustments for days WITHOUT punches (absent-day adjustments)
+                SELECT adj.date,
+                       NULL::timestamp AS first_punch,
+                       NULL::timestamp AS last_punch,
+                       0::bigint AS total_punches,
+                       NULL::numeric AS duration_seconds,
+                       be.lunch_break_minutes,
+                       be.working_hours,
+                       be.schedule_start AS static_schedule_start,
+                       be.schedule_end AS static_schedule_end
+                FROM biostar_daily_adjustments adj
+                CROSS JOIN biostar_employees be
+                WHERE adj.biostar_user_id = %s
+                  AND be.biostar_user_id = %s
+                  AND adj.date BETWEEN %s::date AND %s::date
+                  AND adj.date NOT IN (SELECT date FROM daily)
+            ),
+            all_days AS (
+                SELECT * FROM daily
+                UNION ALL
+                SELECT * FROM adj_only
             )
-            SELECT d.*,
+            SELECT d.date, d.first_punch, d.last_punch, d.total_punches,
+                   d.duration_seconds, d.lunch_break_minutes, d.working_hours,
+                   COALESCE(sd.program_start, d.static_schedule_start) AS schedule_start,
+                   COALESCE(sd.program_end, d.static_schedule_end) AS schedule_end,
+                   sd.sincron_company,
+                   sd.sincron_day_schedule,
                    adj.adjusted_first_punch,
                    adj.adjusted_last_punch,
                    adj.adjustment_type
-            FROM daily d
+            FROM all_days d
+            LEFT JOIN biostar_employees be2 ON be2.biostar_user_id = %s
+            LEFT JOIN LATERAL (
+                SELECT st.program_in AS program_start,
+                       st.program_out AS program_end,
+                       COALESCE(co.company, se.company_name) AS sincron_company,
+                       (SELECT json_agg(sub ORDER BY sub.norma DESC NULLS LAST)
+                        FROM (
+                            SELECT COALESCE(co2.company, se2.company_name) AS company,
+                                   to_char(st2.program_in, 'HH24:MI') AS start,
+                                   to_char(st2.program_out, 'HH24:MI') AS "end",
+                                   se2.norma_lucru AS norma
+                            FROM sincron_employees se2
+                            JOIN sincron_timesheets st2
+                              ON st2.sincron_employee_id = se2.sincron_employee_id
+                              AND st2.company_name = se2.company_name
+                              AND st2.day = d.date
+                              AND st2.short_code IN ('OZ', 'OS')
+                              AND st2.program_in IS NOT NULL
+                              AND st2.program_out IS NOT NULL
+                            LEFT JOIN companies co2 ON co2.id = se2.company_id
+                            WHERE se2.mapped_jarvis_user_id = be2.mapped_jarvis_user_id
+                              AND se2.is_active = TRUE
+                        ) sub
+                       ) AS sincron_day_schedule
+                FROM sincron_employees se
+                JOIN sincron_timesheets st
+                  ON st.sincron_employee_id = se.sincron_employee_id
+                  AND st.company_name = se.company_name
+                  AND st.day = d.date
+                  AND st.short_code IN ('OZ', 'OS')
+                  AND st.program_in IS NOT NULL
+                  AND st.program_out IS NOT NULL
+                LEFT JOIN companies co ON co.id = se.company_id
+                WHERE se.mapped_jarvis_user_id = be2.mapped_jarvis_user_id
+                  AND se.is_active = TRUE
+                ORDER BY se.norma_lucru DESC NULLS LAST
+                LIMIT 1
+            ) sd ON TRUE
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = %s AND adj.date = d.date
             ORDER BY d.date DESC
-        ''', (biostar_user_id, start_date, end_date, biostar_user_id))
+        ''', (biostar_user_id, start_date, end_date, biostar_user_id,
+              biostar_user_id, biostar_user_id, start_date, end_date,
+              biostar_user_id, biostar_user_id))
 
     def get_employee_with_mapping(self, biostar_user_id):
         """Get employee details with JARVIS mapping info."""
@@ -542,6 +658,179 @@ class BioStarRepository(BaseRepository):
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
             WHERE be.biostar_user_id = %s
         ''', (biostar_user_id,))
+
+    # ── Attendance Overview (stable employee list) ──
+
+    def get_attendance_overview(self, date_str, jarvis_user_ids=None):
+        """Get attendance overview for ALL active mapped employees on a given date.
+
+        Unlike get_daily_summary which only shows employees with punches,
+        this returns every active employee with NULL punch fields for absentees.
+        """
+        params = []
+        user_filter = ''
+        if jarvis_user_ids:
+            user_filter = ' AND u.id = ANY(%s)'
+            params.append(jarvis_user_ids)
+        # date_str for deduped, adjustment JOIN, sincron schedule LATERAL, and leave-code LATERAL
+        params.extend([date_str, date_str, date_str, date_str])
+        return self.query_all(f'''
+            WITH active_employees AS (
+                SELECT DISTINCT ON (u.id)
+                       u.id AS jarvis_user_id, u.name,
+                       COALESCE(co.company, u.company) AS company,
+                       u.department,
+                       be.biostar_user_id, be.user_group_name, be.email,
+                       be.lunch_break_minutes, be.working_hours,
+                       be.schedule_start, be.schedule_end
+                FROM users u
+                JOIN biostar_employees be ON be.mapped_jarvis_user_id = u.id
+                    AND be.status = 'active'
+                    AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
+                LEFT JOIN companies co ON co.id = u.company_id
+                WHERE u.is_active = TRUE{user_filter}
+                ORDER BY u.id, be.last_synced_at DESC NULLS LAST
+            ),
+            deduped AS (
+                SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
+                    pl.biostar_user_id, pl.event_datetime
+                FROM biostar_punch_logs pl
+                WHERE pl.event_datetime::date = %s::date
+                ORDER BY pl.biostar_user_id, date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+            ),
+            punch_summary AS (
+                SELECT d.biostar_user_id,
+                       MIN(d.event_datetime) AS first_punch,
+                       MAX(d.event_datetime) AS last_punch,
+                       COUNT(*) AS total_punches,
+                       EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds
+                FROM deduped d
+                GROUP BY d.biostar_user_id
+            )
+            SELECT ae.*,
+                   ps.first_punch, ps.last_punch, ps.total_punches, ps.duration_seconds,
+                   adj.adjusted_first_punch, adj.adjusted_last_punch, adj.adjustment_type,
+                   CASE WHEN ps.biostar_user_id IS NULL THEN 'absent' ELSE 'present' END AS attendance_status,
+                   sd.sincron_day_schedule,
+                   sl.sincron_leave_code
+            FROM active_employees ae
+            LEFT JOIN punch_summary ps ON ps.biostar_user_id = ae.biostar_user_id
+            LEFT JOIN biostar_daily_adjustments adj
+                ON adj.biostar_user_id = ae.biostar_user_id AND adj.date = %s::date
+            LEFT JOIN LATERAL (
+                SELECT (SELECT json_agg(sub ORDER BY sub.norma DESC NULLS LAST)
+                        FROM (
+                            SELECT COALESCE(co2.company, se2.company_name) AS company,
+                                   to_char(st2.program_in, 'HH24:MI') AS start,
+                                   to_char(st2.program_out, 'HH24:MI') AS "end",
+                                   se2.norma_lucru AS norma
+                            FROM sincron_employees se2
+                            JOIN sincron_timesheets st2
+                              ON st2.sincron_employee_id = se2.sincron_employee_id
+                              AND st2.company_name = se2.company_name
+                              AND st2.day = %s::date
+                              AND st2.short_code IN ('OZ', 'OS')
+                              AND st2.program_in IS NOT NULL
+                              AND st2.program_out IS NOT NULL
+                            LEFT JOIN companies co2 ON co2.id = se2.company_id
+                            WHERE se2.mapped_jarvis_user_id = ae.jarvis_user_id
+                              AND se2.is_active = TRUE
+                        ) sub
+                       ) AS sincron_day_schedule
+            ) sd ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT st3.short_code AS sincron_leave_code
+                FROM sincron_employees se3
+                JOIN sincron_timesheets st3
+                  ON st3.sincron_employee_id = se3.sincron_employee_id
+                  AND st3.company_name = se3.company_name
+                  AND st3.day = %s::date
+                  AND st3.short_code IN ('CO','CM','CIC','CES','CMS','DLG','ZLS','CFP','CFS','INV')
+                WHERE se3.mapped_jarvis_user_id = ae.jarvis_user_id
+                  AND se3.is_active = TRUE
+                LIMIT 1
+            ) sl ON TRUE
+            ORDER BY ae.company NULLS LAST,
+                     CASE WHEN ps.biostar_user_id IS NULL THEN 1 ELSE 0 END,
+                     ae.name
+        ''', params)
+
+    def get_attendance_week(self, end_date_str, jarvis_user_ids=None):
+        """Get 7-day attendance summary for ALL active mapped employees.
+
+        Returns each employee with days_present, days_absent, total_hours, etc.
+        The 7-day window ends at end_date_str (inclusive) and goes back 6 days.
+        """
+        params = [end_date_str]
+        user_filter = ''
+        if jarvis_user_ids:
+            user_filter = ' AND u.id = ANY(%s)'
+            params.append(jarvis_user_ids)
+        # end_date_str used again for punch window
+        params.extend([end_date_str, end_date_str])
+        return self.query_all(f'''
+            WITH active_employees AS (
+                SELECT DISTINCT ON (u.id)
+                       u.id AS jarvis_user_id, u.name,
+                       COALESCE(co.company, u.company) AS company,
+                       u.department,
+                       be.biostar_user_id, be.user_group_name, be.email,
+                       be.lunch_break_minutes, be.working_hours,
+                       be.schedule_start, be.schedule_end
+                FROM users u
+                JOIN biostar_employees be ON be.mapped_jarvis_user_id = u.id
+                    AND be.status = 'active'
+                    AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
+                LEFT JOIN companies co ON co.id = u.company_id
+                WHERE u.is_active = TRUE{user_filter}
+                ORDER BY u.id, be.last_synced_at DESC NULLS LAST
+            ),
+            deduped AS (
+                SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
+                    pl.biostar_user_id, pl.event_datetime
+                FROM biostar_punch_logs pl
+                WHERE pl.event_datetime::date BETWEEN (%s::date - INTERVAL '6 days')::date AND %s::date
+                ORDER BY pl.biostar_user_id, date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+            ),
+            daily AS (
+                SELECT
+                    d.biostar_user_id,
+                    d.event_datetime::date AS day,
+                    MIN(d.event_datetime) AS first_punch,
+                    MAX(d.event_datetime) AS last_punch,
+                    COUNT(*) AS punches,
+                    EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds
+                FROM deduped d
+                GROUP BY d.biostar_user_id, d.event_datetime::date
+            ),
+            agg AS (
+                SELECT
+                    d.biostar_user_id,
+                    COUNT(d.day) AS days_present,
+                    SUM(d.duration_seconds) AS total_duration_seconds,
+                    AVG(d.duration_seconds) AS avg_duration_seconds,
+                    SUM(d.punches) AS total_punches,
+                    AVG(CASE WHEN d.punches > 1 THEN EXTRACT(EPOCH FROM d.first_punch::time) END) AS avg_check_in_epoch,
+                    AVG(CASE WHEN d.punches > 1 THEN EXTRACT(EPOCH FROM d.last_punch::time) END) AS avg_check_out_epoch,
+                    COUNT(adj.id) AS adjustment_count
+                FROM daily d
+                LEFT JOIN biostar_daily_adjustments adj
+                    ON adj.biostar_user_id = d.biostar_user_id AND adj.date = d.day
+                GROUP BY d.biostar_user_id
+            )
+            SELECT ae.*,
+                   COALESCE(agg.days_present, 0) AS days_present,
+                   7 - COALESCE(agg.days_present, 0) AS days_absent,
+                   COALESCE(agg.total_duration_seconds, 0) AS total_duration_seconds,
+                   COALESCE(agg.avg_duration_seconds, 0) AS avg_duration_seconds,
+                   COALESCE(agg.total_punches, 0) AS total_punches,
+                   agg.avg_check_in_epoch,
+                   agg.avg_check_out_epoch,
+                   COALESCE(agg.adjustment_count, 0) AS adjustment_count
+            FROM active_employees ae
+            LEFT JOIN agg ON agg.biostar_user_id = ae.biostar_user_id
+            ORDER BY ae.company NULLS LAST, ae.name
+        ''', params)
 
     # ── Devices ──
 

@@ -142,7 +142,7 @@ export default function UsersTab() {
     { key: 'name', label: 'Name', isPrimary: true, render: (u) => u.name },
     { key: 'email', label: 'Email', isSecondary: true, render: (u) => u.email },
     { key: 'role', label: 'Role', isSecondary: true, render: (u) => u.role_name },
-    { key: 'status', label: 'Status', render: (u) => <StatusBadge status={u.is_active ? 'active' : 'archived'} /> },
+    { key: 'status', label: 'Status', render: (u) => <StatusBadge status={u.contract_status === 'active' ? 'active' : u.contract_status === 'suspended' ? 'pending' : 'archived'} /> },
     { key: 'phone', label: 'Phone', expandOnly: true, render: (u) => u.phone || '-' },
   ]
 
@@ -268,7 +268,7 @@ export default function UsersTab() {
                       </Select>
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={user.is_active ? 'active' : 'archived'} />
+                      <StatusBadge status={user.contract_status === 'active' ? 'active' : user.contract_status === 'suspended' ? 'pending' : 'archived'} />
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
@@ -350,6 +350,7 @@ function UserFormDialog({
     phone: '',
     role_id: '',
     is_active: true,
+    contract_status: 'active' as string,
     notify_on_allocation: false,
     password: '',
     cnp: '',
@@ -367,6 +368,7 @@ function UserFormDialog({
             phone: user.phone || '',
             role_id: String(user.role_id),
             is_active: user.is_active,
+            contract_status: user.contract_status || 'active',
             notify_on_allocation: user.notify_on_allocation ?? false,
             password: '',
             cnp: user.cnp || '',
@@ -374,7 +376,7 @@ function UserFormDialog({
             position: user.position || '',
             contract_work_date: user.contract_work_date || '',
           }
-        : { name: '', email: '', phone: '', role_id: '', is_active: true, notify_on_allocation: false, password: '', cnp: '', birthdate: '', position: '', contract_work_date: '' },
+        : { name: '', email: '', phone: '', role_id: '', is_active: true, contract_status: 'active', notify_on_allocation: false, password: '', cnp: '', birthdate: '', position: '', contract_work_date: '' },
     )
 
   // Fetch org path from organigram assignments (read-only)
@@ -403,10 +405,9 @@ function UserFormDialog({
     const patches: Record<string, string> = {}
     const sources: Record<string, string> = {}
 
-    // CNP: prefer Sincron, fallback BioStar
+    // CNP: from Sincron (canonical source via users table)
     if (!form.cnp) {
       if (connectors.sincron?.cnp) { patches.cnp = connectors.sincron.cnp; sources.cnp = 'Sincron' }
-      else if (connectors.biostar?.cnp) { patches.cnp = connectors.biostar.cnp; sources.cnp = 'BioStar' }
     }
     // Contract Start from Sincron
     if (!form.contract_work_date && connectors.sincron?.data_incepere_contract) {
@@ -630,9 +631,18 @@ function UserFormDialog({
               <p className="text-xs text-destructive">Must be at least 10 characters</p>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <Switch checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
-            <Label>Active</Label>
+          <div className="space-y-1.5">
+            <Label>Contract Status</Label>
+            <Select value={form.contract_status} onValueChange={(v) => setForm({ ...form, contract_status: v })}>
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="suspended">Suspended</SelectItem>
+                <SelectItem value="closed">Closed</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex items-center gap-2">
             <Switch checked={form.notify_on_allocation} onCheckedChange={(v) => setForm({ ...form, notify_on_allocation: v })} />

@@ -1,19 +1,24 @@
 """Repository for Employee 360 overview — read-only aggregation queries."""
 from core.base_repository import BaseRepository
 
+# Subquery for leave codes — resolved from DB instead of hardcoded list
+_LEAVE_CODES_SUB = '(SELECT short_code FROM sincron_activity_codes WHERE is_leave = TRUE)'
+
 
 class EmployeeOverviewRepository(BaseRepository):
 
     def get_biostar_mapping(self, user_id):
         """Return BioStar employee row for a JARVIS user, or None."""
         return self.query_one('''
-            SELECT biostar_user_id, name AS user_name, email, phone, cnp,
-                   user_group_name, (status = 'active') AS is_active,
-                   lunch_break_minutes, working_hours,
-                   schedule_start::text, schedule_end::text,
-                   mapping_method, mapping_confidence
-            FROM biostar_employees
-            WHERE mapped_jarvis_user_id = %s
+            SELECT be.biostar_user_id, be.name AS user_name, be.email, be.phone,
+                   u.cnp,
+                   be.user_group_name, (be.status = 'active') AS is_active,
+                   be.lunch_break_minutes, be.working_hours,
+                   be.schedule_start::text, be.schedule_end::text,
+                   be.mapping_method, be.mapping_confidence
+            FROM biostar_employees be
+            JOIN users u ON u.id = be.mapped_jarvis_user_id
+            WHERE be.mapped_jarvis_user_id = %s
             LIMIT 1
         ''', (user_id,))
 
@@ -42,7 +47,7 @@ class EmployeeOverviewRepository(BaseRepository):
     def get_org_path(self, user_id):
         """Return {company, brand, department, subdepartment} for a user."""
         return self.query_one(
-            'SELECT u.company, u.brand, u.department, u.subdepartment FROM users u WHERE u.id = %s',
+            'SELECT COALESCE(co.company, u.company) AS company, u.brand, u.department, u.subdepartment FROM users u LEFT JOIN companies co ON co.id = u.company_id WHERE u.id = %s',
             (user_id,)
         )
 
@@ -118,16 +123,49 @@ class EmployeeOverviewRepository(BaseRepository):
 
     def get_ytd_sincron_leave(self, sincron_employee_id, company_name, year):
         """Return dict of {short_code: {value, unit}} YTD leave codes from Sincron."""
-        rows = self.query_all('''
+        rows = self.query_all(f'''
             SELECT short_code, unit, SUM(value) AS total
             FROM sincron_timesheets
             WHERE sincron_employee_id = %s AND company_name = %s
               AND year = %s
-              AND short_code IN ('CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG')
+              AND short_code IN {_LEAVE_CODES_SUB}
             GROUP BY short_code, unit
             ORDER BY short_code
         ''', (sincron_employee_id, company_name, year))
         return {r['short_code']: {'value': float(r['total']), 'unit': r['unit']} for r in rows}
+
+    def get_ytd_sincron_leave_all_companies(self, user_id, year):
+        """Return aggregated YTD leave codes across ALL companies for a user."""
+        rows = self.query_all(f'''
+            SELECT st.short_code, st.unit, SUM(st.value) AS total
+            FROM sincron_timesheets st
+            JOIN sincron_employees se
+              ON st.sincron_employee_id = se.sincron_employee_id
+             AND st.company_name = se.company_name
+            WHERE se.mapped_jarvis_user_id = %s
+              AND se.count_for_leave = TRUE
+              AND st.year = %s
+              AND st.short_code IN {_LEAVE_CODES_SUB}
+            GROUP BY st.short_code, st.unit
+            ORDER BY st.short_code
+        ''', (user_id, year))
+        return {r['short_code']: {'value': float(r['total']), 'unit': r['unit']} for r in rows}
+
+    def get_co_balance_for_user(self, user_id, year):
+        """Return aggregated CO balance from sincron_co_balance across all companies."""
+        row = self.query_one('''
+            SELECT SUM(total_available) AS total_available,
+                   SUM(carry_prev_year) AS carry_prev_year,
+                   SUM(carry_two_years_ago) AS carry_two_years_ago,
+                   SUM(annual_cim) AS annual_cim,
+                   SUM(seniority_bonus) AS seniority_bonus,
+                   SUM(manual_adjustment) AS manual_adjustment
+            FROM sincron_co_balance
+            WHERE mapped_jarvis_user_id = %s AND year = %s
+        ''', (user_id, year))
+        if row and row.get('total_available') is not None:
+            return {k: int(v or 0) for k, v in row.items()}
+        return None
 
     def get_ytd_leave_permits(self, user_id, year):
         """Return (count, total_hours) of YTD leave permits for a user."""
@@ -154,6 +192,222 @@ class EmployeeOverviewRepository(BaseRepository):
             HAVING COUNT(*) >= 2
             ORDER BY day
         ''', (biostar_user_id, year, month))
+
+    def get_missing_punch_days(self, user_id, biostar_user_id, sincron_employee_id,
+                               sincron_company, year, month):
+        """Return list of date strings for weekdays with no punch and no leave."""
+        rows = self.query_all(f'''
+            WITH month_days AS (
+                SELECT generate_series(
+                    make_date(%(y)s, %(m)s, 1),
+                    (make_date(%(y)s, %(m)s, 1) + interval '1 month' - interval '1 day')::date,
+                    '1 day'
+                )::date AS d
+            ),
+            weekdays AS (
+                SELECT d FROM month_days WHERE EXTRACT(DOW FROM d) BETWEEN 1 AND 5
+            ),
+            punch_days AS (
+                SELECT DISTINCT event_datetime::date AS d
+                FROM biostar_punch_logs
+                WHERE biostar_user_id = %(bio_id)s
+                  AND event_datetime >= make_date(%(y)s, %(m)s, 1)::timestamp
+                  AND event_datetime < (make_date(%(y)s, %(m)s, 1) + interval '1 month')::timestamp
+            ),
+            sincron_leave AS (
+                SELECT DISTINCT day AS d
+                FROM sincron_timesheets
+                WHERE sincron_employee_id = %(sin_id)s AND company_name = %(sin_co)s
+                  AND year = %(y)s AND month = %(m)s
+                  AND short_code IN {_LEAVE_CODES_SUB}
+            ),
+            connecteam_leave AS (
+                SELECT DISTINCT leave_date::date AS d
+                FROM connecteam_form_submissions
+                WHERE mapped_jarvis_user_id = %(uid)s
+                  AND EXTRACT(YEAR FROM leave_date) = %(y)s
+                  AND EXTRACT(MONTH FROM leave_date) = %(m)s
+                  AND COALESCE(status, 'submitted') NOT IN ('rejected', 'cancelled')
+            ),
+            form_leave AS (
+                SELECT DISTINCT (fs.answers->>'f_bi_leave_date')::date AS d
+                FROM form_submissions fs
+                JOIN forms f ON f.id = fs.form_id
+                WHERE fs.respondent_user_id = %(uid)s
+                  AND f.slug = 'bilet-de-invoire'
+                  AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
+                  AND (fs.answers->>'f_bi_leave_date') ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}$'
+                  AND EXTRACT(YEAR FROM (fs.answers->>'f_bi_leave_date')::date) = %(y)s
+                  AND EXTRACT(MONTH FROM (fs.answers->>'f_bi_leave_date')::date) = %(m)s
+            ),
+            holidays AS (
+                SELECT date AS d FROM public_holidays
+                WHERE year = %(y)s AND EXTRACT(MONTH FROM date) = %(m)s
+            )
+            SELECT wd.d::text AS missing_date
+            FROM weekdays wd
+            WHERE wd.d NOT IN (SELECT d FROM punch_days)
+              AND wd.d NOT IN (SELECT d FROM sincron_leave)
+              AND wd.d NOT IN (SELECT d FROM connecteam_leave)
+              AND wd.d NOT IN (SELECT d FROM form_leave)
+              AND wd.d NOT IN (SELECT d FROM holidays)
+              AND wd.d <= CURRENT_DATE
+            ORDER BY wd.d
+        ''', {
+            'uid': user_id, 'bio_id': biostar_user_id,
+            'sin_id': sincron_employee_id, 'sin_co': sincron_company,
+            'y': year, 'm': month,
+        })
+        return [r['missing_date'] for r in rows]
+
+    def get_all_missing_punches_for_date(self, check_date):
+        """Return all active BioStar-mapped employees with no punch and no leave on a date.
+
+        Uses DISTINCT ON to avoid duplicate rows when an employee belongs to multiple structure nodes.
+        """
+        return self.query_all(f'''
+            SELECT DISTINCT ON (be.mapped_jarvis_user_id)
+                   be.mapped_jarvis_user_id AS user_id, u.name AS user_name,
+                   COALESCE(co.company, u.company) AS company, be.biostar_user_id,
+                   snm.node_id
+            FROM biostar_employees be
+            JOIN users u ON u.id = be.mapped_jarvis_user_id
+            LEFT JOIN companies co ON co.id = u.company_id
+            LEFT JOIN structure_node_members snm ON snm.user_id = u.id
+            WHERE be.status = 'active'
+              AND be.mapped_jarvis_user_id IS NOT NULL
+              AND be.working_hours > 0
+              AND be.schedule_start IS NOT NULL
+              AND COALESCE(u.contract_status, 'active') = 'active'
+              AND COALESCE(u.notify_missing_punch, TRUE) = TRUE
+              AND NOT EXISTS (
+                  SELECT 1 FROM biostar_punch_logs pl
+                  WHERE pl.biostar_user_id = be.biostar_user_id
+                    AND pl.event_datetime::date = %s
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM sincron_timesheets st
+                  JOIN sincron_employees se ON se.sincron_employee_id = st.sincron_employee_id
+                    AND se.company_name = st.company_name
+                  WHERE se.mapped_jarvis_user_id = u.id
+                    AND st.year = EXTRACT(YEAR FROM %s::date)
+                    AND st.month = EXTRACT(MONTH FROM %s::date)
+                    AND st.day = %s::date
+                    AND st.short_code IN {_LEAVE_CODES_SUB}
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM connecteam_form_submissions cfs
+                  WHERE cfs.mapped_jarvis_user_id = u.id
+                    AND cfs.leave_date::date = %s
+                    AND COALESCE(cfs.status, 'submitted') NOT IN ('rejected', 'cancelled')
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM form_submissions fs
+                  JOIN forms f ON f.id = fs.form_id
+                  WHERE fs.respondent_user_id = u.id
+                    AND f.slug = 'bilet-de-invoire'
+                    AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
+                    AND (fs.answers->>'f_bi_leave_date') ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}$'
+                    AND (fs.answers->>'f_bi_leave_date')::date = %s
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM public_holidays ph WHERE ph.date = %s
+              )
+            ORDER BY be.mapped_jarvis_user_id
+        ''', (check_date, check_date, check_date, check_date, check_date, check_date, check_date))
+
+    def get_absence_status_for_date(self, check_date):
+        """Return absence status for all active employees on a given date.
+
+        Single query with CTEs — no N+1. Returns rows with:
+        user_id, status ('present','on_leave','absent','holiday','unknown'),
+        leave_code, first_punch (time), last_punch (time)
+        """
+        return self.query_all(f'''
+            WITH punched AS (
+                SELECT DISTINCT be.mapped_jarvis_user_id AS user_id
+                FROM biostar_employees be
+                JOIN biostar_punch_logs pl ON pl.biostar_user_id = be.biostar_user_id
+                WHERE pl.event_datetime::date = %s
+                  AND be.mapped_jarvis_user_id IS NOT NULL
+            ),
+            punch_times AS (
+                SELECT be.mapped_jarvis_user_id AS user_id,
+                       MIN(pl.event_datetime)::time AS first_punch,
+                       MAX(pl.event_datetime)::time AS last_punch
+                FROM biostar_employees be
+                JOIN biostar_punch_logs pl ON pl.biostar_user_id = be.biostar_user_id
+                WHERE pl.event_datetime::date = %s
+                  AND be.mapped_jarvis_user_id IS NOT NULL
+                GROUP BY be.mapped_jarvis_user_id
+            ),
+            on_leave AS (
+                SELECT DISTINCT ON (user_id) user_id, short_code FROM (
+                    SELECT se.mapped_jarvis_user_id AS user_id, st.short_code
+                    FROM sincron_timesheets st
+                    JOIN sincron_employees se ON se.sincron_employee_id = st.sincron_employee_id
+                      AND se.company_name = st.company_name
+                    WHERE st.year = EXTRACT(YEAR FROM %s::date)
+                      AND st.month = EXTRACT(MONTH FROM %s::date)
+                      AND st.day = %s::date
+                      AND st.short_code IN {_LEAVE_CODES_SUB}
+                      AND se.mapped_jarvis_user_id IS NOT NULL
+                    UNION ALL
+                    SELECT cfs.mapped_jarvis_user_id, 'PERMIT'
+                    FROM connecteam_form_submissions cfs
+                    WHERE cfs.leave_date::date = %s
+                      AND cfs.mapped_jarvis_user_id IS NOT NULL
+                      AND COALESCE(cfs.status, 'submitted') NOT IN ('rejected','cancelled')
+                    UNION ALL
+                    SELECT fs.respondent_user_id, 'PERMIT'
+                    FROM form_submissions fs
+                    JOIN forms f ON f.id = fs.form_id
+                    WHERE f.slug = 'bilet-de-invoire'
+                      AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
+                      AND (fs.answers->>'f_bi_leave_date') ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}$'
+                      AND (fs.answers->>'f_bi_leave_date')::date = %s
+                ) sub ORDER BY user_id, short_code
+            ),
+            biostar_mapped AS (
+                SELECT DISTINCT be.mapped_jarvis_user_id AS user_id
+                FROM biostar_employees be
+                WHERE be.status = 'active'
+                  AND be.mapped_jarvis_user_id IS NOT NULL
+                  AND be.working_hours > 0
+            )
+            ,
+            adj_times AS (
+                SELECT be.mapped_jarvis_user_id AS user_id,
+                       to_char(adj.adjusted_first_punch::time, 'HH24:MI') AS adjusted_first_punch,
+                       to_char(adj.adjusted_last_punch::time, 'HH24:MI') AS adjusted_last_punch
+                FROM biostar_daily_adjustments adj
+                JOIN biostar_employees be ON be.biostar_user_id = adj.biostar_user_id
+                WHERE adj.date = %s
+                  AND be.mapped_jarvis_user_id IS NOT NULL
+            )
+            SELECT u.id AS user_id,
+                   CASE
+                       WHEN EXISTS(SELECT 1 FROM public_holidays ph WHERE ph.date = %s) THEN 'holiday'
+                       WHEN p.user_id IS NOT NULL THEN 'present'
+                       WHEN ol.user_id IS NOT NULL THEN 'on_leave'
+                       WHEN bm.user_id IS NOT NULL THEN 'absent'
+                       ELSE 'unknown'
+                   END AS status,
+                   ol.short_code AS leave_code,
+                   to_char(pt.first_punch, 'HH24:MI') AS first_punch,
+                   to_char(pt.last_punch, 'HH24:MI') AS last_punch,
+                   at.adjusted_first_punch,
+                   at.adjusted_last_punch
+            FROM users u
+            LEFT JOIN punched p ON p.user_id = u.id
+            LEFT JOIN punch_times pt ON pt.user_id = u.id
+            LEFT JOIN on_leave ol ON ol.user_id = u.id
+            LEFT JOIN biostar_mapped bm ON bm.user_id = u.id
+            LEFT JOIN adj_times at ON at.user_id = u.id
+            WHERE u.is_active = TRUE
+              AND COALESCE(u.contract_status, 'active') = 'active'
+        ''', (check_date, check_date, check_date, check_date, check_date,
+              check_date, check_date, check_date, check_date))
 
     def get_daily_sincron_codes(self, sincron_employee_id, company_name, year, month):
         """Return list of {day, short_code, unit, value} rows for timeline."""

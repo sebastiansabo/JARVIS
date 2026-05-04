@@ -12,7 +12,10 @@ import type {
   BioStarOffScheduleRow,
   BioStarAdjustment,
   BioStarCronJob,
+  SincronContract,
   JarvisUser,
+  AttendanceRow,
+  AttendanceWeekRow,
 } from '@/types/biostar'
 
 const BASE = '/biostar/api'
@@ -26,6 +29,24 @@ function qs(params: Record<string, unknown>): string {
 }
 
 export const biostarApi = {
+  // ── Attendance Overview (stable employee list) ──
+
+  getAttendanceToday: async (date: string, managerFilter = false) => {
+    const res = await api.get<{ success: boolean; data: AttendanceRow[] }>(
+      `${BASE}/attendance/today`,
+      { date, ...(managerFilter ? { manager_filter: 'true' } : {}) },
+    )
+    return res.data
+  },
+
+  getAttendanceWeek: async (date: string, managerFilter = false) => {
+    const res = await api.get<{ success: boolean; data: AttendanceWeekRow[] }>(
+      `${BASE}/attendance/week`,
+      { date, ...(managerFilter ? { manager_filter: 'true' } : {}) },
+    )
+    return res.data
+  },
+
   // ── Connection Config ──
 
   getConfig: async () => {
@@ -177,11 +198,11 @@ export const biostarApi = {
   },
 
   getEmployeeDailyHistory: async (biostarUserId: string, start: string, end: string) => {
-    const res = await api.get<{ success: boolean; data: BioStarDayHistory[] }>(
+    const res = await api.get<{ success: boolean; data: BioStarDayHistory[]; holidays?: string[] }>(
       `${BASE}/employees/${biostarUserId}/daily-history`,
       { start, end },
     )
-    return res.data
+    return { history: res.data, holidays: res.holidays ?? [] }
   },
 
   // ── Sync History ──
@@ -214,7 +235,7 @@ export const biostarApi = {
   adjustEmployee: (data: {
     biostar_user_id: string; date: string;
     adjusted_first_punch: string; adjusted_last_punch: string;
-    original_first_punch: string; original_last_punch: string;
+    original_first_punch?: string; original_last_punch?: string;
     schedule_start?: string; schedule_end?: string;
     lunch_break_minutes?: number; working_hours?: number;
     original_duration_seconds?: number;
@@ -229,9 +250,36 @@ export const biostarApi = {
       { date, threshold },
     ),
 
+  autoAdjustSingle: (biostarUserId: string, date: string) =>
+    api.post<{ success: boolean; data: { success: boolean; adjusted_first: string; adjusted_last: string } }>(
+      `${BASE}/adjustments/auto-adjust-single`,
+      { biostar_user_id: biostarUserId, date },
+    ),
+
+  getSincronSchedule: async (biostarUserId: string) => {
+    const res = await api.get<{ success: boolean; contracts: SincronContract[] }>(
+      `${BASE}/employees/${biostarUserId}/sincron-schedule`,
+    )
+    return res.contracts
+  },
+
+  getSincronTimesheet: async (biostarUserId: string, year: number, month: number) => {
+    const res = await api.get<{
+      success: boolean
+      contracts: SincronContract[]
+      timesheet: { day: string; short_code: string; company_name: string; program_in: string | null; program_out: string | null; program_break: number | null }[]
+    }>(`${BASE}/employees/${biostarUserId}/sincron-timesheet?year=${year}&month=${month}`)
+    return res
+  },
+
   revertAdjustment: (biostarUserId: string, date: string) =>
     api.post<{ success: boolean; message: string }>(`${BASE}/adjustments/revert`, {
       biostar_user_id: biostarUserId, date,
+    }),
+
+  revertAdjustmentsRange: (startDate: string, endDate: string) =>
+    api.post<{ success: boolean; message: string }>(`${BASE}/adjustments/revert-range`, {
+      start_date: startDate, end_date: endDate,
     }),
 
   backfillAdjustments: (threshold = 15) =>

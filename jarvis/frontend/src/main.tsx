@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { isChunkLoadError, tryChunkReload, resetChunkReloadAttempts } from '@/lib/chunkReload'
+import { TelemetryProvider } from './components/TelemetryProvider'
 import './index.css'
 
 function extractErrorMessage(error: unknown): string {
@@ -128,7 +129,9 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <App />
+          <TelemetryProvider>
+            <App />
+          </TelemetryProvider>
         </BrowserRouter>
       </QueryClientProvider>
     </ErrorBoundary>

@@ -6,6 +6,7 @@ export interface UserDetail {
   role_id: number
   role_name: string
   is_active: boolean
+  contract_status: 'active' | 'suspended' | 'closed'
   company: string | null
   brand: string | null
   department: string | null
@@ -34,6 +35,7 @@ export interface UpdateUserInput {
   phone?: string
   role_id?: number
   is_active?: boolean
+  contract_status?: 'active' | 'suspended' | 'closed'
   notify_on_allocation?: boolean
   company?: string
   brand?: string

@@ -1,1 +1,1 @@
-from . import _shared, visits, clients, fleet, manager  # noqa: F401
+from . import _shared, visits, clients, fleet, manager, tasks  # noqa: F401

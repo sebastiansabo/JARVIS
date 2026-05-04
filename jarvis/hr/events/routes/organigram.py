@@ -89,12 +89,26 @@ def api_get_employee_overview(user_id):
         lp_count, lp_hours = _overview_repo.get_monthly_leave_permits(user_id, _year, _month)
         leave_stats = {'count': lp_count, 'total_hours': lp_hours}
 
-        ytd_leave = _overview_repo.get_ytd_sincron_leave(
-            sincron['sincron_employee_id'], sincron['company_name'], _year
+        # Aggregate leave across ALL companies (not just one)
+        ytd_leave = _overview_repo.get_ytd_sincron_leave_all_companies(
+            user_id, _year
         ) if sincron else {}
+
+        # CO balance from imported xlsx (aggregated across all companies)
+        co_balance = _overview_repo.get_co_balance_for_user(user_id, _year)
 
         ytd_count, ytd_hours = _overview_repo.get_ytd_leave_permits(user_id, _year)
         ytd_permits = {'count': ytd_count, 'total_hours': ytd_hours}
+
+        # ── Public holidays for this month ──
+        from core.utils.holidays_repository import HolidayRepository
+        _holiday_repo = HolidayRepository()
+        _month_holidays = {}
+        for _h in _holiday_repo.get_holidays_for_month(_year, _month):
+            _hd = _h['date']
+            if isinstance(_hd, str):
+                _hd = _date.fromisoformat(_hd)
+            _month_holidays[_hd] = _h['name']
 
         # ── Daily attendance for bar chart ──
         import calendar
@@ -113,13 +127,27 @@ def api_get_employee_overview(user_id):
             for d in range(1, days_in_month + 1):
                 dt = _date(_year, _month, d)
                 wd = dt.weekday()
+                is_holiday = dt in _month_holidays
                 daily_hours.append({
                     'day': d,
                     'date': dt.isoformat(),
                     'hours': day_map.get(d, 0),
-                    'expected': working_h if wd < 5 else 0,
+                    'expected': working_h if wd < 5 and not is_holiday else 0,
                     'weekend': wd >= 5,
+                    'holiday': is_holiday,
+                    'holiday_name': _month_holidays.get(dt),
                 })
+
+        # Missing punch detection
+        missing_punch_days = []
+        if biostar:
+            missing_punch_days = _overview_repo.get_missing_punch_days(
+                user_id=user_id,
+                biostar_user_id=biostar['biostar_user_id'],
+                sincron_employee_id=sincron['sincron_employee_id'] if sincron else None,
+                sincron_company=sincron['company_name'] if sincron else None,
+                year=_year, month=_month,
+            )
 
         # Daily Sincron activity codes for timeline
         daily_codes = []
@@ -128,11 +156,16 @@ def api_get_employee_overview(user_id):
                 sincron['sincron_employee_id'], sincron['company_name'], _year, _month)
             code_map: dict = {}
             for row in code_rows:
-                day_num = int(row['day'])
+                day_val = row['day']
+                day_num = int(str(day_val).split('-')[2]) if isinstance(day_val, str) and '-' in day_val else int(day_val)
                 code_map.setdefault(day_num, {})[row['short_code']] = float(row['value'])
             for d in range(1, days_in_month + 1):
                 if d in code_map:
                     daily_codes.append({'day': d, 'codes': code_map[d]})
+
+        # Resolve leave codes from DB for frontend
+        from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+        _leave_codes = list(SincronRepository().get_leave_codes() or ['CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG'])
 
         return jsonify({
             'success': True,
@@ -142,6 +175,7 @@ def api_get_employee_overview(user_id):
                 'sincron': sincron,
                 'connecteam': connecteam,
                 'org': org,
+                'leave_codes': _leave_codes,
                 'bonuses': {
                     'count': bonuses.get('bonus_count', 0),
                     'total_days': float(bonuses.get('total_bonus_days', 0)),
@@ -156,12 +190,16 @@ def api_get_employee_overview(user_id):
                     'leave_permits': leave_stats,
                     'daily_hours': daily_hours,
                     'daily_codes': daily_codes,
+                    'missing_punch_days': missing_punch_days,
+                    'holidays': [{'date': d.isoformat(), 'name': n} for d, n in sorted(_month_holidays.items())],
                 },
                 'leave_balance': {
                     'year': _year,
-                    'annual_entitlement': 21,
+                    'annual_entitlement': co_balance['total_available'] if co_balance else 21,
                     'annual_used': ytd_leave.get('CO', {}).get('value', 0),
-                    'annual_remaining': max(0, 21 - ytd_leave.get('CO', {}).get('value', 0)),
+                    'annual_remaining': max(0,
+                        (co_balance['total_available'] if co_balance else 21)
+                        - ytd_leave.get('CO', {}).get('value', 0)),
                     'sick_leave': ytd_leave.get('CM', {}).get('value', 0),
                     'unpaid_leave': ytd_leave.get('CES', {}).get('value', 0),
                     'child_care': ytd_leave.get('CIC', {}).get('value', 0),
@@ -173,7 +211,7 @@ def api_get_employee_overview(user_id):
         })
     except Exception as exc:
         current_app.logger.error('Employee overview error for user %s: %s\n%s', user_id, exc, _tb.format_exc())
-        return jsonify({'success': False, 'error': str(exc)}), 500
+        return jsonify({'success': False, 'error': 'Failed to load employee overview'}), 500
 
 
 @events_bp.route('/bonuses/new')

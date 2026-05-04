@@ -91,6 +91,20 @@ export interface JarvisUser {
 }
 
 export const sincronApi = {
+  // ── Employee toggles ──
+
+  toggleCountForLeave: (sincronEmployeeDbId: number, countForLeave: boolean) =>
+    api.put<{ success: boolean; count_for_leave: boolean }>(
+      `${BASE}/employees/${sincronEmployeeDbId}/count-for-leave`,
+      { count_for_leave: countForLeave },
+    ),
+
+  toggleExcludeFromPontaje: (sincronEmployeeDbId: number, excludeFromPontaje: boolean) =>
+    api.put<{ success: boolean; exclude_from_pontaje: boolean }>(
+      `${BASE}/employees/${sincronEmployeeDbId}/exclude-from-pontaje`,
+      { exclude_from_pontaje: excludeFromPontaje },
+    ),
+
   // ── Status ──
 
   getStatus: async () => {
@@ -155,6 +169,19 @@ export const sincronApi = {
     return res.data
   },
 
+  getContractStats: async () => {
+    const res = await api.get<{ success: boolean; data: {
+      base_count: number; secondary_count: number
+      secondary_leave_on: number; secondary_pontaje_on: number
+    } }>(`${BASE}/employees/contract-stats`)
+    return res.data
+  },
+
+  bulkToggleSecondary: (field: 'count_for_leave' | 'exclude_from_pontaje', value: boolean) =>
+    api.post<{ success: boolean; field: string; value: boolean; updated: number }>(
+      `${BASE}/employees/bulk-toggle`, { field, value },
+    ),
+
   getUnmapped: async () => {
     const res = await api.get<{ success: boolean; data: SincronEmployee[] }>(
       `${BASE}/employees/unmapped`,
@@ -210,6 +237,17 @@ export const sincronApi = {
       success: boolean; is_manager: boolean; data: SincronTeamMember[]
       year: number; month: number
     }>(`${BASE}/timesheets/team${qs({ year, month, node_id: nodeId })}`)
+    return res
+  },
+
+  // ── Timesheet Tree (for node filtering) ──
+
+  getTimesheetTree: async () => {
+    const res = await api.get<{
+      success: boolean
+      companies: Array<{ id: string; name: string; level: number; parent_id: null; company_id: number }>
+      nodes: Array<{ id: number; name: string; level: number; parent_id: number | null; company_id: number }>
+    }>(`${BASE}/timesheets/tree`)
     return res
   },
 

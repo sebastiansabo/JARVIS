@@ -54,6 +54,10 @@ import anthropic
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 
+# Optional DB connection for reading settings from the JARVIS notification_settings table.
+# When running from GitHub Actions (no DB), falls back to hardcoded defaults.
+_DB_URL: str | None = None
+
 
 def load_dotenv(override: bool = False) -> None:
     """Minimal .env loader — no external dependency.
@@ -98,6 +102,75 @@ def load_dotenv(override: bool = False) -> None:
 
 
 load_dotenv()
+
+
+def _get_db_url() -> str | None:
+    """Return the DATABASE_URL if available, else None."""
+    return os.environ.get("DATABASE_URL")
+
+
+def _db_read(key: str) -> str | None:
+    """Read a single setting_value from notification_settings. Returns None on any failure."""
+    url = _get_db_url()
+    if not url:
+        return None
+    try:
+        import psycopg2  # noqa: F811
+        conn = psycopg2.connect(url)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT setting_value FROM notification_settings WHERE setting_key = %s",
+                    (key,),
+                )
+                row = cur.fetchone()
+                return row[0] if row else None
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
+def _db_write(key: str, value: str) -> None:
+    """Upsert a single setting into notification_settings. Silently ignores failures."""
+    url = _get_db_url()
+    if not url:
+        return
+    try:
+        import psycopg2  # noqa: F811
+        conn = psycopg2.connect(url)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO notification_settings (setting_key, setting_value)
+                       VALUES (%s, %s)
+                       ON CONFLICT (setting_key)
+                       DO UPDATE SET setting_value = %s, updated_at = CURRENT_TIMESTAMP""",
+                    (key, value, value),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def get_db_overrides(period: str) -> dict:
+    """Read commit digest settings from DB for a given period.
+
+    Returns a dict with optional keys:
+      - 'enabled': bool (True if missing or 'true')
+      - 'recipients': str or None (comma-separated emails)
+
+    When no DB is available (e.g. GitHub Actions), returns defaults.
+    """
+    enabled_raw = _db_read(f"commit_digest_{period}_enabled")
+    recipients_raw = _db_read(f"commit_digest_{period}_recipients")
+    return {
+        "enabled": enabled_raw is None or enabled_raw.lower() == "true",
+        "recipients": recipients_raw.strip() if recipients_raw and recipients_raw.strip() else None,
+    }
+
 
 ROMANIA_TZ = ZoneInfo("Europe/Bucharest")
 _BASE_RECIPIENTS = "sebastian.sabo@gmail.com, sebastian.sabo@autoworld.ro"
@@ -1046,6 +1119,12 @@ def main() -> int:
         )
         return 0
 
+    # Check DB overrides — if disabled in settings, skip.
+    db_overrides = get_db_overrides(period)
+    if not db_overrides["enabled"]:
+        print(f"{period} digest is disabled in settings. Skipping.")
+        return 0
+
     commits_by_repo: dict[str, list[dict]] = {}
     stats_by_repo: dict[str, dict[str, dict]] = {}
     for repo in REPOS:
@@ -1125,7 +1204,10 @@ def main() -> int:
                 bodies.append("\n".join([cont_header, part]))
 
     subject_base = f"[JARVIS] {period_config['subject_prefix']} — {date_str} ({total})"
+    # Recipients: DB override > env var > hardcoded per-period config
     period_recipients = period_config.get("recipients", _BASE_RECIPIENTS)
+    if db_overrides["recipients"]:
+        period_recipients = db_overrides["recipients"]
     effective = os.getenv("DIGEST_RECIPIENTS") or period_recipients
 
     if total == 0:
@@ -1137,6 +1219,10 @@ def main() -> int:
             else:
                 subject = subject_base
             send_email(subject, email_body, recipients=period_recipients)
+
+    # Write last_sent timestamp and commit count to DB for the settings UI.
+    _db_write(f"commit_digest_{period}_last_sent", now_ro.isoformat())
+    _db_write(f"commit_digest_{period}_last_count", str(total))
 
     print(f"Sent {period} digest with {total} commits to {effective}")
     return 0

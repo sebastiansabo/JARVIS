@@ -34,6 +34,8 @@ export interface HrEvent {
   created_at: string
 }
 
+export type ContractStatus = 'active' | 'suspended' | 'closed'
+
 export interface HrEmployee {
   id: number
   name: string
@@ -44,7 +46,70 @@ export interface HrEmployee {
   company: string | null
   brand: string | null
   is_active: boolean
+  contract_status: ContractStatus
   notify_on_allocation: boolean
+  notify_missing_punch: boolean | null
+}
+
+export interface EmployeeWorkStats {
+  total_hours: number
+  avg_daily_hours: number
+  variance_minutes: number
+  productivity_score: number
+  days_present: number
+  single_punch_days: number
+  working_days: number
+  expected_hours: number
+  hours_per_day: number
+  lunch_break_minutes: number
+  schedule_start: string | null
+  schedule_end: string | null
+  effective_days: number
+  leave_days: number
+  leave_hours: number
+  leave_types: string
+  permit_count: number
+  permit_hours: number
+  avg_check_in: string | null
+  avg_check_out: string | null
+  schedule_companies: Array<{
+    company: string; norma: number; start: string; end: string; lunch: number
+    co_total?: number | null; co_carry_over?: number | null
+    co_used_ytd?: number | null; co_remaining?: number | null
+    leave_days?: number; leave_types?: string
+  }>
+  co_total?: number | null
+  co_carry_over?: number | null
+  co_used_ytd?: number | null
+  co_balance?: number | null
+  co_year?: number | null
+}
+
+export interface CoBalanceImportRun {
+  run_id: string
+  year: number
+  source_file: string | null
+  status: 'running' | 'completed' | 'failed'
+  rows_total: number
+  rows_matched: number
+  rows_unmatched: number
+  companies: string | null
+  error_message: string | null
+  started_at: string
+  finished_at: string | null
+}
+
+export interface CoBalanceUnmatchedRow {
+  id: number
+  year: number
+  company_name: string
+  cnp: string | null
+  nume: string | null
+  prenume: string | null
+  nr_contract: string | null
+  data_incepere_contract: string | null
+  departament: string | null
+  total_available: number
 }
 
 export interface BonusType {
@@ -170,4 +235,41 @@ export interface OrganigramData {
   companies: StructureCompany[]
   current_user_id: number
   is_manager: boolean
+}
+
+// Weekly Digest / Reports
+export interface CoRow {
+  name: string
+  company: string
+  department: string
+  total_available: number
+  used: number
+  remaining: number
+}
+
+export interface WeeklyDigestData {
+  year: number
+  period: string
+  period_label: string
+  week_label: string
+  period_start: string
+  period_end: string
+  punch_start: string
+  punch_end: string
+  working_days: number
+  working_days_week: number
+  leave_by_company: { company_name: string; total_leave_days: number; employees_with_leave: number; headcount: number; avg_per_employee: number; prev_year_days: number; co_remaining: number }[]
+  leave_by_department: { department: string; headcount: number; total_leave_days: number; co_remaining: number }[]
+  headcount_map: Record<string, number>
+  avg_leave_per_employee: { company_name: string; leave_days: number; headcount: number; avg: number }[]
+  top_10_co: CoRow[]
+  all_co_rows: CoRow[]
+  avg_checkin_checkout: { company_name: string; avg_in: string; avg_out: string; employee_count: number }[]
+  actual_vs_potential: { company_name: string; actual_hours: number; potential_hours: number; utilization_pct: number; headcount: number }[]
+  totals: {
+    total_leave_days: number
+    total_actual_hours: number
+    total_potential_hours: number
+    total_utilization_pct: number
+  }
 }

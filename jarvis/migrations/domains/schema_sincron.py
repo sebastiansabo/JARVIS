@@ -97,6 +97,7 @@ def create_schema_sincron(conn, cursor):
             short_code_en VARCHAR(20),
             description TEXT,
             category VARCHAR(50),
+            is_leave BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
     """)
@@ -122,6 +123,168 @@ def create_schema_sincron(conn, cursor):
             cursor.execute(stmt)
         except Exception:
             conn.rollback()  # constraint already exists — safe to skip
+
+    # ── Add contract_status to sincron_employees (prep for future Sincron API status field) ──
+    cursor.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'sincron_employees' AND column_name = 'contract_status') THEN
+                ALTER TABLE sincron_employees ADD COLUMN contract_status VARCHAR(20);
+            END IF;
+        END $$;
+    """)
+
+    # ── Schedule fields on sincron_employees (from Sincron API norma_lucru + program) ──
+    for col_stmt in [
+        "ALTER TABLE sincron_employees ADD COLUMN IF NOT EXISTS norma_lucru NUMERIC(4,1)",
+        "ALTER TABLE sincron_employees ADD COLUMN IF NOT EXISTS norma_lucru_time VARCHAR(100)",
+        "ALTER TABLE sincron_employees ADD COLUMN IF NOT EXISTS schedule_start TIME",
+        "ALTER TABLE sincron_employees ADD COLUMN IF NOT EXISTS schedule_end TIME",
+        "ALTER TABLE sincron_employees ADD COLUMN IF NOT EXISTS lunch_break_minutes INTEGER",
+    ]:
+        cursor.execute(col_stmt)
+
+    # ── Per-activity schedule on sincron_timesheets (program.in / program.out / pauza_masa) ──
+    for col_stmt in [
+        "ALTER TABLE sincron_timesheets ADD COLUMN IF NOT EXISTS program_in TIME",
+        "ALTER TABLE sincron_timesheets ADD COLUMN IF NOT EXISTS program_out TIME",
+        "ALTER TABLE sincron_timesheets ADD COLUMN IF NOT EXISTS program_break INTEGER",
+    ]:
+        cursor.execute(col_stmt)
+
+    # ── Schedule history — monthly snapshot per employee per company ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sincron_schedule_history (
+            id SERIAL PRIMARY KEY,
+            sincron_employee_id VARCHAR(50) NOT NULL,
+            company_name VARCHAR(255) NOT NULL,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            norma_lucru NUMERIC(4,1),
+            norma_lucru_time VARCHAR(100),
+            schedule_start TIME,
+            schedule_end TIME,
+            lunch_break_minutes INTEGER,
+            synced_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE(sincron_employee_id, company_name, year, month)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sincron_sched_hist_lookup
+        ON sincron_schedule_history(sincron_employee_id, company_name, year, month)
+    """)
+
+    # ── CO balance — yearly snapshot imported from HR's Raport_concedii_contracte_lunar xlsx ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sincron_co_balance (
+            id SERIAL PRIMARY KEY,
+            year INTEGER NOT NULL,
+            company_name VARCHAR(255) NOT NULL,
+            cnp VARCHAR(20),
+            nume VARCHAR(255),
+            prenume VARCHAR(255),
+            nr_contract VARCHAR(50),
+            data_incepere_contract DATE,
+            departament VARCHAR(255),
+            carry_prev_year       INTEGER NOT NULL DEFAULT 0,
+            carry_two_years_ago   INTEGER NOT NULL DEFAULT 0,
+            annual_cim            INTEGER NOT NULL DEFAULT 0,
+            seniority_bonus       INTEGER NOT NULL DEFAULT 0,
+            manual_adjustment     INTEGER NOT NULL DEFAULT 0,
+            total_available       INTEGER GENERATED ALWAYS AS (
+                carry_prev_year + carry_two_years_ago
+                + annual_cim + seniority_bonus + manual_adjustment
+            ) STORED,
+            mapped_jarvis_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            source_file           VARCHAR(255),
+            imported_by           INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            imported_at           TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE(year, company_name, cnp)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sincron_co_balance_user_year
+        ON sincron_co_balance(mapped_jarvis_user_id, year)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sincron_co_balance_year
+        ON sincron_co_balance(year)
+    """)
+
+    try:
+        cursor.execute("""
+            ALTER TABLE sincron_co_balance ADD CONSTRAINT chk_sincron_co_year
+            CHECK (year BETWEEN 2000 AND 2100)
+        """)
+    except Exception:
+        conn.rollback()
+
+    # ── CO balance import runs ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sincron_co_import_runs (
+            id SERIAL PRIMARY KEY,
+            run_id VARCHAR(36) NOT NULL UNIQUE,
+            year INTEGER NOT NULL,
+            source_file VARCHAR(255),
+            status VARCHAR(20) NOT NULL DEFAULT 'running',
+            rows_total INTEGER DEFAULT 0,
+            rows_matched INTEGER DEFAULT 0,
+            rows_unmatched INTEGER DEFAULT 0,
+            companies TEXT,
+            error_message TEXT,
+            imported_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            finished_at TIMESTAMP WITH TIME ZONE
+        )
+    """)
+
+    try:
+        cursor.execute("""
+            ALTER TABLE sincron_co_import_runs ADD CONSTRAINT chk_sincron_co_run_status
+            CHECK (status IN ('running', 'completed', 'failed'))
+        """)
+    except Exception:
+        conn.rollback()
+
+    # ── count_for_leave toggle — exclude micro-contracts from leave analytics ──
+    cursor.execute("""
+        ALTER TABLE sincron_employees
+        ADD COLUMN IF NOT EXISTS count_for_leave BOOLEAN DEFAULT FALSE
+    """)
+
+    # ── company_id FK — map Sincron company_name to JARVIS companies table ──
+    cursor.execute("""
+        ALTER TABLE sincron_employees
+        ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id)
+    """)
+    cursor.execute("""
+        UPDATE sincron_employees se
+        SET company_id = c.id
+        FROM companies c
+        WHERE se.company_id IS NULL
+          AND UPPER(se.company_name) = UPPER(c.company)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sincron_employees_company_id
+        ON sincron_employees(company_id)
+        WHERE company_id IS NOT NULL
+    """)
+
+    # ── exclude_from_pontaje toggle — exclude contracts from BioStar/Pontaje/Scheduler ──
+    cursor.execute("""
+        ALTER TABLE sincron_employees
+        ADD COLUMN IF NOT EXISTS exclude_from_pontaje BOOLEAN DEFAULT FALSE
+    """)
+
+    # ── is_base_contract flag — marks the primary contract per employee CNP ──
+    cursor.execute("""
+        ALTER TABLE sincron_employees
+        ADD COLUMN IF NOT EXISTS is_base_contract BOOLEAN DEFAULT FALSE
+    """)
 
     conn.commit()
     logger.info('Sincron schema created/verified')

@@ -348,7 +348,48 @@ def get_employee_daily_history(biostar_user_id):
     if not start_date or not end_date:
         return jsonify({'success': False, 'error': 'start and end date parameters required'}), 400
     history = service.get_employee_daily_history(biostar_user_id, start_date, end_date)
-    return jsonify({'success': True, 'data': history})
+
+    # Include public holidays for the date range
+    holidays = []
+    try:
+        from core.utils.holidays_repository import HolidayRepository
+        _hol_repo = HolidayRepository()
+        _holiday_dates = set()
+        for _yr in range(int(start_date[:4]), int(end_date[:4]) + 1):
+            for h in _hol_repo.get_holidays_for_year(_yr):
+                d = h['date']
+                _holiday_dates.add(d.isoformat() if hasattr(d, 'isoformat') else str(d))
+        holidays = sorted(_holiday_dates)
+    except Exception:
+        pass
+
+    return jsonify({'success': True, 'data': history, 'holidays': holidays})
+
+
+# ── Attendance Overview (stable employee list) ──
+
+@biostar_bp.route('/api/attendance/today', methods=['GET'])
+@api_login_required
+def get_attendance_today():
+    """Get attendance overview with ALL active employees for a date."""
+    date_str = request.args.get('date')
+    if not date_str:
+        return jsonify({'success': False, 'error': 'date parameter required'}), 400
+    jarvis_user_ids = _resolve_manager_filter()
+    data = service.get_attendance_overview(date_str, jarvis_user_ids=jarvis_user_ids)
+    return jsonify({'success': True, 'data': data})
+
+
+@biostar_bp.route('/api/attendance/week', methods=['GET'])
+@api_login_required
+def get_attendance_week():
+    """Get 7-day attendance summary with ALL active employees."""
+    date_str = request.args.get('date')
+    if not date_str:
+        return jsonify({'success': False, 'error': 'date parameter required'}), 400
+    jarvis_user_ids = _resolve_manager_filter()
+    data = service.get_attendance_week(date_str, jarvis_user_ids=jarvis_user_ids)
+    return jsonify({'success': True, 'data': data})
 
 
 @biostar_bp.route('/api/punch-logs/summary', methods=['GET'])
@@ -429,8 +470,7 @@ def adjust_employee():
     if not data:
         return jsonify({'success': False, 'error': 'No data provided'}), 400
 
-    required = ['biostar_user_id', 'date', 'adjusted_first_punch', 'adjusted_last_punch',
-                'original_first_punch', 'original_last_punch']
+    required = ['biostar_user_id', 'date', 'adjusted_first_punch', 'adjusted_last_punch']
     for key in required:
         if key not in data:
             return jsonify({'success': False, 'error': f'{key} required'}), 400
@@ -438,8 +478,8 @@ def adjust_employee():
     try:
         adj_first = datetime.fromisoformat(data['adjusted_first_punch'])
         adj_last = datetime.fromisoformat(data['adjusted_last_punch'])
-        orig_first = datetime.fromisoformat(data['original_first_punch'])
-        orig_last = datetime.fromisoformat(data['original_last_punch'])
+        orig_first = datetime.fromisoformat(data['original_first_punch']) if data.get('original_first_punch') else None
+        orig_last = datetime.fromisoformat(data['original_last_punch']) if data.get('original_last_punch') else None
     except (ValueError, TypeError) as e:
         return jsonify({'success': False, 'error': f'Invalid datetime: {e}'}), 400
 
@@ -478,6 +518,108 @@ def auto_adjust_all():
     return jsonify({'success': True, 'data': result})
 
 
+@biostar_bp.route('/api/adjustments/auto-adjust-single', methods=['POST'])
+@adjust_permission_required
+def auto_adjust_single():
+    """Auto-adjust a single employee for a specific date using Sincron per-day schedule."""
+    data = request.get_json() or {}
+    biostar_user_id = data.get('biostar_user_id')
+    date_str = data.get('date')
+    if not biostar_user_id or not date_str:
+        return jsonify({'success': False, 'error': 'biostar_user_id and date required'}), 400
+    result = service.auto_adjust_single(biostar_user_id, date_str, user_id=current_user.id)
+    if not result.get('success'):
+        return jsonify(result), 400
+    return jsonify({'success': True, 'data': result})
+
+
+@biostar_bp.route('/api/employees/<biostar_user_id>/sincron-schedule', methods=['GET'])
+@api_login_required
+def get_employee_sincron_schedule(biostar_user_id):
+    """Get Sincron contract schedule data for a BioStar employee."""
+    employee = service.repo.get_employee_by_biostar_id(biostar_user_id)
+    if not employee or not employee.get('mapped_jarvis_user_id'):
+        return jsonify({'success': True, 'contracts': []})
+
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    sincron_repo = SincronRepository()
+    entries = sincron_repo.get_all_employees_by_jarvis_id(employee['mapped_jarvis_user_id'])
+
+    # Canonical company names from companies table
+    co_map = {r['id']: r['company'] for r in sincron_repo.query_all("SELECT id, company FROM companies")}
+
+    contracts = []
+    for se in entries:
+        norma = float(se['norma_lucru']) if se.get('norma_lucru') else None
+        contracts.append({
+            'company_name': co_map.get(se.get('company_id'), se.get('company_name')),
+            'nr_contract': se.get('nr_contract'),
+            'data_incepere_contract': str(se['data_incepere_contract']) if se.get('data_incepere_contract') and str(se['data_incepere_contract']) > '0001' else None,
+            'norma_lucru': norma,
+            'schedule_start': str(se['schedule_start'])[:5] if se.get('schedule_start') else None,
+            'schedule_end': str(se['schedule_end'])[:5] if se.get('schedule_end') else None,
+            'lunch_break_minutes': se.get('lunch_break_minutes'),
+            'count_for_leave': se.get('count_for_leave', True),
+            'exclude_from_pontaje': se.get('exclude_from_pontaje', False),
+            'is_base_contract': se.get('is_base_contract', False),
+            'sincron_employee_db_id': se.get('id'),
+        })
+    return jsonify({'success': True, 'contracts': contracts})
+
+
+@biostar_bp.route('/api/employees/<biostar_user_id>/sincron-timesheet', methods=['GET'])
+@api_login_required
+def get_employee_sincron_timesheet(biostar_user_id):
+    """Get Sincron monthly timesheet + contracts for a BioStar employee."""
+    employee = service.repo.get_employee_by_biostar_id(biostar_user_id)
+    if not employee or not employee.get('mapped_jarvis_user_id'):
+        return jsonify({'success': True, 'contracts': [], 'timesheet': []})
+
+    jarvis_id = employee['mapped_jarvis_user_id']
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+    if not year or not month or month < 1 or month > 12:
+        return jsonify({'success': False, 'error': 'year and month required'}), 400
+
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    sincron_repo = SincronRepository()
+
+    entries = sincron_repo.get_all_employees_by_jarvis_id(jarvis_id)
+
+    # Canonical company names from companies table
+    co_map = {r['id']: r['company'] for r in sincron_repo.query_all("SELECT id, company FROM companies")}
+
+    contracts = []
+    for se in entries:
+        norma = float(se['norma_lucru']) if se.get('norma_lucru') else None
+        contracts.append({
+            'company_name': co_map.get(se.get('company_id'), se.get('company_name')),
+            'nr_contract': se.get('nr_contract'),
+            'norma_lucru': norma,
+            'schedule_start': str(se['schedule_start'])[:5] if se.get('schedule_start') else None,
+            'schedule_end': str(se['schedule_end'])[:5] if se.get('schedule_end') else None,
+            'lunch_break_minutes': se.get('lunch_break_minutes'),
+            'count_for_leave': se.get('count_for_leave', True),
+            'exclude_from_pontaje': se.get('exclude_from_pontaje', False),
+            'is_base_contract': se.get('is_base_contract', False),
+            'sincron_employee_db_id': se.get('id'),
+        })
+
+    rows = sincron_repo.get_timesheet_by_jarvis_user(jarvis_id, year, month)
+    timesheet = []
+    for r in rows:
+        timesheet.append({
+            'day': str(r['day']),
+            'short_code': r.get('short_code'),
+            'company_name': r.get('company_name'),
+            'program_in': str(r['program_in'])[:5] if r.get('program_in') else None,
+            'program_out': str(r['program_out'])[:5] if r.get('program_out') else None,
+            'program_break': r.get('program_break'),
+        })
+
+    return jsonify({'success': True, 'contracts': contracts, 'timesheet': timesheet})
+
+
 @biostar_bp.route('/api/adjustments/revert', methods=['POST'])
 @adjust_permission_required
 def revert_adjustment():
@@ -489,6 +631,19 @@ def revert_adjustment():
         return jsonify({'success': False, 'error': 'biostar_user_id and date required'}), 400
     service.revert_adjustment(biostar_user_id, date_str)
     return jsonify({'success': True, 'message': 'Adjustment reverted'})
+
+
+@biostar_bp.route('/api/adjustments/revert-range', methods=['POST'])
+@adjust_permission_required
+def revert_adjustments_range():
+    """Revert all auto-adjustments in a date range."""
+    data = request.get_json() or {}
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    if not start_date or not end_date:
+        return jsonify({'success': False, 'error': 'start_date and end_date required'}), 400
+    service.revert_adjustments_range(start_date, end_date)
+    return jsonify({'success': True, 'message': f'Reverted auto-adjustments from {start_date} to {end_date}'})
 
 
 @biostar_bp.route('/api/adjustments/backfill', methods=['POST'])
@@ -723,3 +878,79 @@ def get_employee_by_jarvis_user(user_id):
         employee['schedule_end'] = str(employee['schedule_end'])
 
     return jsonify({'success': True, 'data': employee})
+
+
+# ── Admin: manual digest triggers ───────────────────────────────
+
+def _check_admin_token():
+    """Check for admin trigger token (X-Admin-Token header or ?token= param)."""
+    import os
+    expected = os.environ.get('ADMIN_TRIGGER_TOKEN', 'jarvis-trigger-2026')
+    token = request.headers.get('X-Admin-Token') or request.args.get('token')
+    return token == expected
+
+
+@biostar_bp.route('/api/trigger-daily-digest', methods=['POST'])
+def api_trigger_daily_digest():
+    """Manually trigger the daily pontaje digest (admin token required)."""
+    if not _check_admin_token():
+        return jsonify({'success': False, 'error': 'Invalid token'}), 403
+    try:
+        import importlib
+        mod = importlib.import_module('tasks.hr_attendance')
+        mod.send_pontaje_digest()
+        return jsonify({'success': True, 'message': 'Daily pontaje digest triggered'})
+    except Exception as e:
+        logger.error(f"Manual daily digest trigger failed: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@biostar_bp.route('/api/trigger-monthly-digest', methods=['POST'])
+def api_trigger_monthly_digest():
+    """Manually trigger the monthly pontaje summary (admin token required)."""
+    if not _check_admin_token():
+        return jsonify({'success': False, 'error': 'Invalid token'}), 403
+    try:
+        import importlib
+        mod = importlib.import_module('tasks.hr_attendance')
+        mod.send_monthly_pontaje_summary()
+        return jsonify({'success': True, 'message': 'Monthly pontaje summary triggered'})
+    except Exception as e:
+        logger.error(f"Manual monthly digest trigger failed: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@biostar_bp.route('/api/trigger-hr-weekly-digest', methods=['POST'])
+def api_trigger_hr_weekly_digest():
+    """Manually trigger the HR weekly digest."""
+    if not _check_admin_token():
+        return jsonify({'success': False, 'error': 'Invalid token'}), 403
+    try:
+        import importlib
+        mod = importlib.import_module('tasks.hr_attendance')
+        mod.send_hr_weekly_digest()
+        return jsonify({'success': True, 'message': 'HR weekly digest triggered'})
+    except Exception as e:
+        logger.error(f"Manual HR weekly digest trigger failed: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@biostar_bp.route('/api/test-smtp', methods=['POST'])
+def api_test_smtp():
+    """Quick SMTP connectivity test from the server (admin token required)."""
+    if not _check_admin_token():
+        return jsonify({'success': False, 'error': 'Invalid token'}), 403
+    try:
+        from core.services.notification_service import send_email, is_smtp_configured
+        if not is_smtp_configured():
+            return jsonify({'success': False, 'error': 'SMTP not configured'})
+        to = request.args.get('to', 'sebastian.sabo@gmail.com')
+        ok, err = send_email(
+            to_email=to,
+            subject='JARVIS SMTP Test',
+            html_body='If you see this, SMTP works from the staging server.',
+            skip_global_cc=True,
+        )
+        return jsonify({'success': ok, 'error': err or None})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500

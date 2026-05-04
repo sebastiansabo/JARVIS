@@ -114,6 +114,8 @@ export interface BioStarDayHistory {
   working_hours?: number
   schedule_start?: string | null
   schedule_end?: string | null
+  sincron_company?: string | null
+  sincron_day_schedule?: { company: string; start: string; end: string }[] | null
   // Adjustment data (null if not adjusted)
   adjusted_first_punch?: string | null
   adjusted_last_punch?: string | null
@@ -218,6 +220,52 @@ export interface BioStarRangeSummary {
   adjustment_count: number
 }
 
+export interface AttendanceRow {
+  jarvis_user_id: number
+  name: string
+  company: string | null
+  department: string | null
+  biostar_user_id: string
+  user_group_name: string | null
+  email: string | null
+  lunch_break_minutes: number
+  working_hours: number
+  schedule_start: string | null
+  schedule_end: string | null
+  first_punch: string | null
+  last_punch: string | null
+  total_punches: number | null
+  duration_seconds: number | null
+  adjusted_first_punch: string | null
+  adjusted_last_punch: string | null
+  adjustment_type: string | null
+  attendance_status: 'present' | 'absent'
+  sincron_day_schedule?: { company: string; start: string; end: string }[] | null
+  sincron_leave_code?: string | null
+}
+
+export interface AttendanceWeekRow {
+  jarvis_user_id: number
+  name: string
+  company: string | null
+  department: string | null
+  biostar_user_id: string
+  user_group_name: string | null
+  email: string | null
+  lunch_break_minutes: number
+  working_hours: number
+  schedule_start: string | null
+  schedule_end: string | null
+  days_present: number
+  days_absent: number
+  total_duration_seconds: number
+  avg_duration_seconds: number
+  total_punches: number
+  avg_check_in_epoch: number | null
+  avg_check_out_epoch: number | null
+  adjustment_count: number
+}
+
 export interface BioStarCronJob {
   id: string
   label: string
@@ -230,6 +278,20 @@ export interface BioStarCronJob {
   last_run: string | null
   last_success: boolean | null
   last_message: string | null
+}
+
+export interface SincronContract {
+  company_name: string
+  nr_contract: string | null
+  data_incepere_contract: string | null
+  norma_lucru: number | null
+  schedule_start: string | null
+  schedule_end: string | null
+  lunch_break_minutes: number | null
+  count_for_leave?: boolean
+  exclude_from_pontaje?: boolean
+  is_base_contract?: boolean
+  sincron_employee_db_id?: number
 }
 
 export interface JarvisUser {
