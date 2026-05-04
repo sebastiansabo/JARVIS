@@ -31,7 +31,12 @@ def get_schema_version(cursor) -> int:
     """Return current schema version, or 0 if not set."""
     cursor.execute("SELECT version FROM schema_version WHERE id = 1")
     row = cursor.fetchone()
-    return row['version'] if row else 0
+    if not row:
+        return 0
+    # Support RealDictCursor (dict) and plain tuple (tests / non-RealDict cursors)
+    if isinstance(row, dict):
+        return int(row['version'])
+    return int(row[0])
 
 
 def set_schema_version(cursor, version: int):

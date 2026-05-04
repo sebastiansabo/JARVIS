@@ -162,6 +162,7 @@ def _register_blueprints(flask_app: Flask):
     flask_app.register_blueprint(checkin_bp)
 
     from core.settings import settings_bp
+    from core.settings import routes as _settings_routes  # noqa: F401
     flask_app.register_blueprint(settings_bp)
 
     from core.tags import tags_bp
