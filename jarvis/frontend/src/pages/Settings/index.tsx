@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import { NavLink, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
 import {
   Users,
@@ -18,10 +18,12 @@ import {
   FileText,
   Fingerprint,
   Table2,
+  BarChart3,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/authStore'
 
 const UsersTab = lazy(() => import('./UsersTab'))
 const RolesTab = lazy(() => import('./RolesTab'))
@@ -41,8 +43,9 @@ const DocumentsTab = lazy(() => import('./DocumentsTab'))
 const PontajeTab = lazy(() => import('./PontajeTab'))
 const TablesTab = lazy(() => import('./TablesTab'))
 const AutovitDetail = lazy(() => import('./AutovitDetail'))
+const TelemetryTab = lazy(() => import('./TelemetryTab'))
 
-const tabs = [
+const baseTabs = [
   // Access
   { path: 'users', label: 'Users', icon: Users },
   { path: 'roles', label: 'Roles', icon: Shield },
@@ -68,7 +71,7 @@ const tabs = [
   { path: 'connectors', label: 'Connectors', icon: Plug },
   // AI
   { path: 'ai', label: 'AI Agent', icon: Bot },
-]
+] satisfies Array<{ path: string; label: string; icon: typeof Users }>
 
 function TabSkeleton() {
   return (
@@ -83,6 +86,17 @@ export default function Settings() {
   const { '*': splat } = useParams()
   const { pathname } = useLocation()
   const basePath = splat ? pathname.replace(new RegExp(`/${splat}$`), '') : pathname
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = user?.role_name === 'Admin'
+
+  const tabs = useMemo(() => {
+    const t = [...baseTabs]
+    if (isAdmin) {
+      t.push({ path: 'telemetry', label: 'Telemetry', icon: BarChart3 })
+    }
+    return t
+  }, [isAdmin])
+
   return (
     <div className="space-y-4 md:space-y-6">
       <PageHeader
@@ -141,6 +155,7 @@ export default function Settings() {
               <Route path="connectors" element={<ConnectorsTab />} />
               <Route path="connectors/autovit/:accountId" element={<AutovitDetail />} />
               <Route path="ai" element={<AiTab />} />
+              {isAdmin && <Route path="telemetry" element={<TelemetryTab />} />}
               <Route path="*" element={<Navigate to="users" replace />} />
             </Routes>
           </Suspense>

@@ -18,6 +18,8 @@ export const PAGE_STORAGE_KEYS: Record<string, string> = {
   dms: 'dms-document-columns',
   marketing: 'marketing-project-columns',
   efactura: 'efactura-unallocated-columns',
+  hr_employees: 'hr-employees-columns',
+  hr_courses: 'hr-courses-columns',
 }
 
 /**

@@ -161,7 +161,7 @@ def api_list_user_submissions(user_id):
     cursor.execute('''
         SELECT COUNT(*) FROM form_submissions WHERE respondent_user_id = %s
     ''', (user_id,))
-    total = cursor.fetchone()[0]
+    total = cursor.fetchone()['count']
 
     release_db(conn)
 

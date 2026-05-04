@@ -103,6 +103,8 @@ def _entity_link(entity_type, entity_id):
         return '/app/forms'
     if entity_type == 'carpark_price_change':
         return '/app/carpark/pricing-rules'
+    if entity_type == 'leave_permit_conversion':
+        return '/app/hr?tab=leave-permits'
     return '/app/approvals'
 
 

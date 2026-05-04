@@ -15,7 +15,7 @@ _audit_repo = AuditRepository()
 
 ALLOWED_MODULES = (
     'invoice', 'marketing', 'crm_deal', 'crm_client',
-    'hr_event', 'approval', 'statement', 'efactura'
+    'hr_event', 'hr_course', 'approval', 'statement', 'efactura'
 )
 
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Send, Bell, Newspaper, Smartphone, Trash2, Plus } from 'lucide-react'
+import { Save, Send, Bell, Newspaper, Smartphone, Trash2, Plus, Clock, Calendar, Play } from 'lucide-react'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -40,9 +40,29 @@ export default function NotificationsTab() {
     smart_efactura_backlog_threshold: '50',
     smart_alert_cooldown_hours: '24',
     smart_invoice_anomaly_sigma: '2',
-    // Daily digest
-    daily_digest_enabled: false,
-    daily_digest_recipients: 'admins',
+    // Commit digest
+    commit_digest_daily_enabled: true,
+    commit_digest_daily_recipients: '',
+    commit_digest_daily_time: '08:00',
+    commit_digest_weekly_enabled: true,
+    commit_digest_weekly_recipients: '',
+    commit_digest_weekly_day: '5',
+    commit_digest_weekly_time: '17:00',
+    commit_digest_monthly_enabled: true,
+    commit_digest_monthly_recipients: '',
+    commit_digest_monthly_day: '1',
+    commit_digest_monthly_time: '08:00',
+    // Pontaje digest
+    pontaje_digest_enabled: false,
+    pontaje_digest_daily_enabled: true,
+    pontaje_digest_daily_recipients: '',
+    pontaje_digest_daily_time: '10:30',
+    pontaje_digest_monthly_enabled: true,
+    pontaje_digest_monthly_recipients: '',
+    pontaje_digest_monthly_day: '1',
+    // HR Weekly Digest
+    hr_weekly_digest_enabled: false,
+    hr_weekly_digest_recipients: '',
   })
 
   const [testEmail, setTestEmail] = useState('')
@@ -67,8 +87,26 @@ export default function NotificationsTab() {
         smart_efactura_backlog_threshold: settings.smart_efactura_backlog_threshold || '50',
         smart_alert_cooldown_hours: settings.smart_alert_cooldown_hours || '24',
         smart_invoice_anomaly_sigma: settings.smart_invoice_anomaly_sigma || '2',
-        daily_digest_enabled: String(settings.daily_digest_enabled) === 'true',
-        daily_digest_recipients: settings.daily_digest_recipients || 'admins',
+        commit_digest_daily_enabled: String(settings.commit_digest_daily_enabled ?? 'true') === 'true',
+        commit_digest_daily_recipients: settings.commit_digest_daily_recipients || '',
+        commit_digest_daily_time: settings.commit_digest_daily_time || '08:00',
+        commit_digest_weekly_enabled: String(settings.commit_digest_weekly_enabled ?? 'true') === 'true',
+        commit_digest_weekly_recipients: settings.commit_digest_weekly_recipients || '',
+        commit_digest_weekly_day: settings.commit_digest_weekly_day || '5',
+        commit_digest_weekly_time: settings.commit_digest_weekly_time || '17:00',
+        commit_digest_monthly_enabled: String(settings.commit_digest_monthly_enabled ?? 'true') === 'true',
+        commit_digest_monthly_recipients: settings.commit_digest_monthly_recipients || '',
+        commit_digest_monthly_day: settings.commit_digest_monthly_day || '1',
+        commit_digest_monthly_time: settings.commit_digest_monthly_time || '08:00',
+        pontaje_digest_enabled: String(settings.pontaje_digest_enabled) === 'true',
+        pontaje_digest_daily_enabled: String(settings.pontaje_digest_daily_enabled ?? 'true') === 'true',
+        pontaje_digest_daily_recipients: settings.pontaje_digest_daily_recipients || '',
+        pontaje_digest_daily_time: settings.pontaje_digest_daily_time || '10:30',
+        pontaje_digest_monthly_enabled: String(settings.pontaje_digest_monthly_enabled ?? 'true') === 'true',
+        pontaje_digest_monthly_recipients: settings.pontaje_digest_monthly_recipients || '',
+        pontaje_digest_monthly_day: settings.pontaje_digest_monthly_day || '1',
+        hr_weekly_digest_enabled: String(settings.hr_weekly_digest_enabled) === 'true',
+        hr_weekly_digest_recipients: settings.hr_weekly_digest_recipients || '',
       })
     }
   }, [settings])
@@ -89,7 +127,7 @@ export default function NotificationsTab() {
   })
 
   const handleSave = () => {
-    saveMutation.mutate({
+    return saveMutation.mutateAsync({
       smtp_host: form.smtp_host,
       smtp_port: form.smtp_port,
       smtp_tls: String(form.smtp_tls),
@@ -107,8 +145,26 @@ export default function NotificationsTab() {
       smart_efactura_backlog_threshold: form.smart_efactura_backlog_threshold,
       smart_alert_cooldown_hours: form.smart_alert_cooldown_hours,
       smart_invoice_anomaly_sigma: form.smart_invoice_anomaly_sigma,
-      daily_digest_enabled: String(form.daily_digest_enabled),
-      daily_digest_recipients: form.daily_digest_recipients,
+      commit_digest_daily_enabled: String(form.commit_digest_daily_enabled),
+      commit_digest_daily_recipients: form.commit_digest_daily_recipients,
+      commit_digest_daily_time: form.commit_digest_daily_time,
+      commit_digest_weekly_enabled: String(form.commit_digest_weekly_enabled),
+      commit_digest_weekly_recipients: form.commit_digest_weekly_recipients,
+      commit_digest_weekly_day: form.commit_digest_weekly_day,
+      commit_digest_weekly_time: form.commit_digest_weekly_time,
+      commit_digest_monthly_enabled: String(form.commit_digest_monthly_enabled),
+      commit_digest_monthly_recipients: form.commit_digest_monthly_recipients,
+      commit_digest_monthly_day: form.commit_digest_monthly_day,
+      commit_digest_monthly_time: form.commit_digest_monthly_time,
+      pontaje_digest_enabled: String(form.pontaje_digest_enabled),
+      pontaje_digest_daily_enabled: String(form.pontaje_digest_daily_enabled),
+      pontaje_digest_daily_recipients: form.pontaje_digest_daily_recipients,
+      pontaje_digest_daily_time: form.pontaje_digest_daily_time,
+      pontaje_digest_monthly_enabled: String(form.pontaje_digest_monthly_enabled),
+      pontaje_digest_monthly_recipients: form.pontaje_digest_monthly_recipients,
+      pontaje_digest_monthly_day: form.pontaje_digest_monthly_day,
+      hr_weekly_digest_enabled: String(form.hr_weekly_digest_enabled),
+      hr_weekly_digest_recipients: form.hr_weekly_digest_recipients,
     })
   }
 
@@ -309,47 +365,14 @@ export default function NotificationsTab() {
         </CardContent>
       </Card>
 
-      {/* Daily Digest */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Newspaper className="h-5 w-5" />
-            Daily Digest
-          </CardTitle>
-          <CardDescription>AI-generated morning summary with key metrics, pending items, and anomalies. Runs daily at 8:00 AM UTC.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Enable Daily Digest</p>
-              <p className="text-xs text-muted-foreground">Send a morning summary notification to selected users</p>
-            </div>
-            <Switch
-              checked={form.daily_digest_enabled}
-              onCheckedChange={(v) => setForm({ ...form, daily_digest_enabled: v })}
-            />
-          </div>
-          {form.daily_digest_enabled && (
-            <div className="grid gap-1.5 border-l-2 border-muted pl-4">
-              <Label className="text-xs font-medium">Recipients</Label>
-              <Select
-                value={form.daily_digest_recipients}
-                onValueChange={(v) => setForm({ ...form, daily_digest_recipients: v })}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admins">Admins only</SelectItem>
-                  <SelectItem value="managers">Admins & Managers</SelectItem>
-                  <SelectItem value="all">All active users</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">Who receives the daily digest notification</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Commit Digest */}
+      <CommitDigestSection form={form} setForm={setForm} onSave={handleSave} saving={saveMutation.isPending} />
+
+      {/* Pontaje Digest */}
+      <PontajeDigestSection form={form} setForm={setForm} onSave={handleSave} saving={saveMutation.isPending} />
+
+      {/* HR Weekly Digest */}
+      <HrWeeklyDigestSection form={form} setForm={setForm} onSave={handleSave} saving={saveMutation.isPending} />
 
       {/* Push Notifications */}
       <PushNotificationsSection />
@@ -378,6 +401,490 @@ export default function NotificationsTab() {
         </div>
       </div>
     </div>
+  )
+}
+
+
+// ============== Commit Digest Section ==============
+
+type DigestPeriod = 'daily' | 'weekly' | 'monthly'
+
+const DIGEST_PERIODS: { key: DigestPeriod; label: string }[] = [
+  { key: 'daily', label: 'Zilnic' },
+  { key: 'weekly', label: 'Săptămânal' },
+  { key: 'monthly', label: 'Lunar' },
+]
+
+function CommitDigestSection({
+  form,
+  setForm,
+  onSave,
+  saving,
+}: {
+  form: Record<string, any>
+  setForm: (f: any) => void
+  onSave: () => Promise<any>
+  saving: boolean
+}) {
+  const [triggering, setTriggering] = useState<DigestPeriod | null>(null)
+  const [status, setStatus] = useState<Record<string, { last_sent: string | null; commit_count: number }>>({})
+
+  useEffect(() => {
+    fetch('/api/commit-digest/status')
+      .then((r) => r.json())
+      .then((data) => setStatus(data))
+      .catch(() => {})
+  }, [])
+
+  const saveAndTrigger = async (period: DigestPeriod) => {
+    await onSave()
+    setTriggering(period)
+    try {
+      const res = await fetch('/api/commit-digest/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`${period} digest trimis`)
+      } else {
+        toast.error(data.error || 'Failed to trigger digest')
+      }
+    } catch {
+      toast.error('Failed to trigger digest')
+    } finally {
+      setTriggering(null)
+    }
+  }
+
+  const formatLastSent = (iso: string | null, count: number) => {
+    if (!iso) return 'Niciodată'
+    try {
+      const d = new Date(iso)
+      const day = d.getDate()
+      const month = d.toLocaleString('ro-RO', { month: 'short' })
+      return `${day} ${month} — ${count} commit-uri`
+    } catch {
+      return iso
+    }
+  }
+
+  const WEEKDAYS = [
+    { value: '1', label: 'Luni' },
+    { value: '2', label: 'Marți' },
+    { value: '3', label: 'Miercuri' },
+    { value: '4', label: 'Joi' },
+    { value: '5', label: 'Vineri' },
+  ]
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Newspaper className="h-5 w-5" />
+          Commit Digest
+        </CardTitle>
+        <CardDescription>
+          Rezumate AI ale commit-urilor.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {DIGEST_PERIODS.map(({ key, label }) => {
+          const enabledKey = `commit_digest_${key}_enabled` as string
+          const recipientsKey = `commit_digest_${key}_recipients` as string
+          const timeKey = `commit_digest_${key}_time` as string
+          const dayKey = key === 'weekly' ? 'commit_digest_weekly_day' : key === 'monthly' ? 'commit_digest_monthly_day' : ''
+          const enabled = form[enabledKey]
+          const periodStatus = status[key]
+
+          return (
+            <div key={key} className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">{label}</p>
+                  {periodStatus && (
+                    <p className="text-xs text-muted-foreground">
+                      Ultima trimitere: {formatLastSent(periodStatus.last_sent, periodStatus.commit_count)}
+                    </p>
+                  )}
+                </div>
+                <Switch
+                  checked={enabled}
+                  onCheckedChange={(v) => setForm({ ...form, [enabledKey]: v })}
+                />
+              </div>
+
+              {enabled && (
+                <div className="space-y-3 border-l-2 border-muted pl-4">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-medium">Destinatari (comma-separated)</Label>
+                    <Input
+                      value={form[recipientsKey]}
+                      onChange={(e) => setForm({ ...form, [recipientsKey]: e.target.value })}
+                      placeholder="email1@company.com, email2@company.com"
+                    />
+                    <p className="text-xs text-muted-foreground">Lasă gol pentru destinatarii impliciți din script</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {key === 'weekly' && (
+                      <div className="grid gap-1">
+                        <Label className="text-xs">Ziua</Label>
+                        <Select
+                          value={form[dayKey]}
+                          onValueChange={(v) => setForm({ ...form, [dayKey]: v })}
+                        >
+                          <SelectTrigger className="h-8 w-28 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {WEEKDAYS.map((wd) => (
+                              <SelectItem key={wd.value} value={wd.value}>
+                                {wd.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {key === 'monthly' && (
+                      <div className="grid gap-1">
+                        <Label className="text-xs">Ziua din lună</Label>
+                        <Select
+                          value={form[dayKey]}
+                          onValueChange={(v) => setForm({ ...form, [dayKey]: v })}
+                        >
+                          <SelectTrigger className="h-8 w-28 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {[1, 2, 3, 5, 10, 15].map((d) => (
+                              <SelectItem key={d} value={String(d)}>
+                                {d === 1 ? '1 (prima zi)' : `${d}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Ora (Romania)</Label>
+                      <Input
+                        type="time"
+                        className="h-8 w-28 text-sm"
+                        value={form[timeKey]}
+                        onChange={(e) => setForm({ ...form, [timeKey]: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={triggering !== null}
+                    onClick={() => saveAndTrigger(key)}
+                  >
+                    <Play className="mr-1.5 h-3.5 w-3.5" />
+                    {triggering === key ? 'Se trimite...' : 'Trimite Acum'}
+                  </Button>
+                </div>
+              )}
+
+              {key !== 'monthly' && <div className="border-t" />}
+            </div>
+          )
+        })}
+
+        {/* Save button inside card */}
+        <div className="border-t pt-3">
+          <Button size="sm" onClick={onSave} disabled={saving}>
+            <Save className="mr-1.5 h-3.5 w-3.5" />
+            {saving ? 'Se salvează...' : 'Salvează Setări Commit'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+
+// ============== Pontaje Digest Section ==============
+
+function PontajeDigestSection({
+  form, setForm, onSave, saving,
+}: {
+  form: Record<string, any>
+  setForm: (f: any) => void
+  onSave: () => Promise<any>
+  saving: boolean
+}) {
+  const [triggering, setTriggering] = useState<'daily' | 'monthly' | null>(null)
+
+  const saveAndTrigger = async (type: 'daily' | 'monthly') => {
+    await onSave()
+    setTriggering(type)
+    try {
+      const endpoint = type === 'daily'
+        ? '/biostar/api/trigger-daily-digest'
+        : '/biostar/api/trigger-monthly-digest'
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'X-Admin-Token': 'jarvis-trigger-2026' },
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`${type === 'daily' ? 'Zilnic' : 'Lunar'} digest trimis`)
+      } else {
+        toast.error(data.error || 'Failed to trigger digest')
+      }
+    } catch {
+      toast.error('Failed to trigger digest')
+    } finally {
+      setTriggering(null)
+    }
+  }
+
+  const enabled = form.pontaje_digest_enabled
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Clock className="h-5 w-5" />
+          Pontaje Digest
+        </CardTitle>
+        <CardDescription>
+          Rapoarte pontaj trimise pe email. CSV cu prezența angajaților din BioStar.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Activează Pontaje Digest</p>
+            <p className="text-xs text-muted-foreground">Trimite rapoarte CSV de prezență pe email</p>
+          </div>
+          <Switch
+            checked={enabled}
+            onCheckedChange={(v) => setForm({ ...form, pontaje_digest_enabled: v })}
+          />
+        </div>
+
+        {enabled && (
+          <>
+            {/* Daily Digest */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Zilnic</p>
+                  <p className="text-xs text-muted-foreground">Pontaj ziua anterioară + check-in azi</p>
+                </div>
+                <Switch
+                  checked={form.pontaje_digest_daily_enabled}
+                  onCheckedChange={(v) => setForm({ ...form, pontaje_digest_daily_enabled: v })}
+                />
+              </div>
+
+              {form.pontaje_digest_daily_enabled && (
+                <div className="space-y-3 border-l-2 border-muted pl-4">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-medium">Destinatari (comma-separated)</Label>
+                    <Input
+                      value={form.pontaje_digest_daily_recipients}
+                      onChange={(e) => setForm({ ...form, pontaje_digest_daily_recipients: e.target.value })}
+                      placeholder="hr@company.com, manager@company.com"
+                    />
+                    <p className="text-xs text-muted-foreground">Lasă gol pentru destinatarii globali</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Ora trimitere (Romania)</Label>
+                      <Input
+                        type="time"
+                        className="h-8 w-28 text-sm"
+                        value={form.pontaje_digest_daily_time}
+                        onChange={(e) => setForm({ ...form, pontaje_digest_daily_time: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={triggering !== null}
+                    onClick={() => saveAndTrigger('daily')}
+                  >
+                    <Play className="mr-1.5 h-3.5 w-3.5" />
+                    {triggering === 'daily' ? 'Se trimite...' : 'Trimite Acum'}
+                  </Button>
+                </div>
+              )}
+
+              <div className="border-t" />
+            </div>
+
+            {/* Monthly Digest */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Lunar</p>
+                  <p className="text-xs text-muted-foreground">Sumar complet luna anterioară, per angajat/zi</p>
+                </div>
+                <Switch
+                  checked={form.pontaje_digest_monthly_enabled}
+                  onCheckedChange={(v) => setForm({ ...form, pontaje_digest_monthly_enabled: v })}
+                />
+              </div>
+
+              {form.pontaje_digest_monthly_enabled && (
+                <div className="space-y-3 border-l-2 border-muted pl-4">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-medium">Destinatari (comma-separated)</Label>
+                    <Input
+                      value={form.pontaje_digest_monthly_recipients}
+                      onChange={(e) => setForm({ ...form, pontaje_digest_monthly_recipients: e.target.value })}
+                      placeholder="hr@company.com, director@company.com"
+                    />
+                    <p className="text-xs text-muted-foreground">Lasă gol pentru destinatarii globali</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Ziua din lună</Label>
+                      <Select
+                        value={form.pontaje_digest_monthly_day}
+                        onValueChange={(v) => setForm({ ...form, pontaje_digest_monthly_day: v })}
+                      >
+                        <SelectTrigger className="h-8 w-28 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 5, 10, 15].map((d) => (
+                            <SelectItem key={d} value={String(d)}>
+                              {d === 1 ? '1 (prima zi)' : `${d}`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={triggering !== null}
+                    onClick={() => saveAndTrigger('monthly')}
+                  >
+                    <Calendar className="mr-1.5 h-3.5 w-3.5" />
+                    {triggering === 'monthly' ? 'Se trimite...' : 'Trimite Acum'}
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Save button inside the card */}
+            <div className="border-t pt-3">
+              <Button size="sm" onClick={onSave} disabled={saving}>
+                <Save className="mr-1.5 h-3.5 w-3.5" />
+                {saving ? 'Se salvează...' : 'Salvează Setări Pontaje'}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+
+// ============== HR Weekly Digest Section ==============
+
+function HrWeeklyDigestSection({
+  form, setForm, onSave, saving,
+}: {
+  form: Record<string, any>
+  setForm: (f: any) => void
+  onSave: () => Promise<any>
+  saving: boolean
+}) {
+  const [triggering, setTriggering] = useState(false)
+
+  const saveAndTrigger = async () => {
+    await onSave()
+    setTriggering(true)
+    try {
+      const res = await fetch('/biostar/api/trigger-hr-weekly-digest', {
+        method: 'POST',
+        headers: { 'X-Admin-Token': 'jarvis-trigger-2026' },
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success('HR Weekly Digest trimis')
+      } else {
+        toast.error(data.error || 'Failed to trigger digest')
+      }
+    } catch {
+      toast.error('Failed to trigger digest')
+    } finally {
+      setTriggering(false)
+    }
+  }
+
+  const enabled = form.hr_weekly_digest_enabled
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Newspaper className="h-5 w-5" />
+          HR Weekly Digest
+        </CardTitle>
+        <CardDescription>
+          Raport săptămânal HR: concedii YTD, CO rămas, ore lucrate vs potențial — trimis luni dimineața.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Activează HR Weekly Digest</p>
+            <p className="text-xs text-muted-foreground">Trimite raport HTML săptămânal cu metrici HR pe companie</p>
+          </div>
+          <Switch
+            checked={enabled}
+            onCheckedChange={(v) => setForm({ ...form, hr_weekly_digest_enabled: v })}
+          />
+        </div>
+
+        {enabled && (
+          <>
+            <div className="space-y-3 border-l-2 border-muted pl-4">
+              <div className="grid gap-1.5">
+                <Label className="text-xs font-medium">Destinatari (comma-separated)</Label>
+                <Input
+                  value={form.hr_weekly_digest_recipients}
+                  onChange={(e) => setForm({ ...form, hr_weekly_digest_recipients: e.target.value })}
+                  placeholder="hr@company.com, director@company.com"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Se trimite automat luni la 10:00 (Romania). Conține: concedii YTD, CO rămas, check-in/out mediu, ore lucrate vs potențial.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={triggering}
+                onClick={saveAndTrigger}
+              >
+                <Play className="mr-1.5 h-3.5 w-3.5" />
+                {triggering ? 'Se trimite...' : 'Trimite Acum'}
+              </Button>
+            </div>
+
+            <div className="border-t pt-3">
+              <Button size="sm" onClick={onSave} disabled={saving}>
+                <Save className="mr-1.5 h-3.5 w-3.5" />
+                {saving ? 'Se salvează...' : 'Salvează Setări'}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

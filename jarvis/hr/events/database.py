@@ -5,13 +5,14 @@ from core.utils.scope_filter import apply_scope_filter
 
 # ============== HR Employees (now using users table) ==============
 
-def get_all_hr_employees(active_only=True, scope='all', user_context=None):
+def get_all_hr_employees(active_only=True, scope='all', user_context=None, contract_status=None):
     """Get all HR employees from users table with scope-based filtering.
 
     Args:
         active_only: If True, only return active employees
         scope: Permission scope ('own', 'department', 'all')
         user_context: Dict with user_id, company, department for scope filtering
+        contract_status: Filter by contract status ('active', 'suspended', 'closed')
     """
     conn = get_db()
     try:
@@ -19,13 +20,16 @@ def get_all_hr_employees(active_only=True, scope='all', user_context=None):
 
         query = '''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, is_active, created_at, updated_at
+                   notify_on_allocation, notify_missing_punch, is_active, contract_status, created_at, updated_at
             FROM users
             WHERE 1=1
         '''
         params = []
 
-        if active_only:
+        if contract_status:
+            query += ' AND contract_status = %s'
+            params.append(contract_status)
+        elif active_only:
             query += ' AND is_active = TRUE'
 
         scope_sql, scope_params = apply_scope_filter(scope, user_context)
@@ -48,7 +52,7 @@ def get_hr_employee(employee_id):
         cursor = get_cursor(conn)
         cursor.execute('''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, is_active, created_at, updated_at
+                   notify_on_allocation, notify_missing_punch, is_active, contract_status, created_at, updated_at
             FROM users WHERE id = %s
         ''', (employee_id,))
         row = cursor.fetchone()
@@ -75,31 +79,42 @@ def save_hr_employee(name, department=None, subdepartment=None, brand=None, comp
 
     finally:
         release_db(conn)
-def update_hr_employee(employee_id, name, department=None, subdepartment=None, brand=None, company=None,
-                       email=None, phone=None, notify_on_allocation=True, is_active=True):
-    """Update an HR employee in users table."""
+def update_hr_employee(employee_id, name=None, department=None, subdepartment=None, brand=None, company=None,
+                       email=None, phone=None, notify_on_allocation=None, is_active=None,
+                       contract_status=None, notify_missing_punch=None):
+    """Update an HR employee in users table. All fields use COALESCE for partial updates."""
     conn = get_db()
     try:
         cursor = get_cursor(conn)
         cursor.execute('''
             UPDATE users
-            SET name = %s, department = %s, subdepartment = %s, brand = %s, company = %s,
-                email = %s, phone = %s, notify_on_allocation = %s,
-                is_active = %s, updated_at = CURRENT_TIMESTAMP
+            SET name = COALESCE(%s, name),
+                department = COALESCE(%s, department),
+                subdepartment = COALESCE(%s, subdepartment),
+                brand = COALESCE(%s, brand),
+                company = COALESCE(%s, company),
+                email = COALESCE(%s, email),
+                phone = COALESCE(%s, phone),
+                notify_on_allocation = COALESCE(%s, notify_on_allocation),
+                is_active = COALESCE(%s, is_active),
+                contract_status = COALESCE(%s, contract_status),
+                notify_missing_punch = COALESCE(%s, notify_missing_punch),
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
-        ''', (name, department, subdepartment, brand, company, email, phone, notify_on_allocation, is_active, employee_id))
+        ''', (name, department, subdepartment, brand, company, email, phone, notify_on_allocation,
+              is_active, contract_status, notify_missing_punch, employee_id))
         conn.commit()
 
 
     finally:
         release_db(conn)
 def delete_hr_employee(employee_id):
-    """Soft delete an HR employee (set is_active = FALSE)."""
+    """Soft delete an HR employee (set contract_status = 'closed', trigger syncs is_active)."""
     conn = get_db()
     try:
         cursor = get_cursor(conn)
         cursor.execute('''
-            UPDATE users SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s
+            UPDATE users SET contract_status = 'closed', updated_at = CURRENT_TIMESTAMP WHERE id = %s
         ''', (employee_id,))
         conn.commit()
 
@@ -107,13 +122,13 @@ def delete_hr_employee(employee_id):
     finally:
         release_db(conn)
 def search_hr_employees(query):
-    """Search HR employees by name from users table."""
+    """Search HR employees by name from users table (active + suspended)."""
     conn = get_db()
     try:
         cursor = get_cursor(conn)
         cursor.execute('''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, is_active, created_at, updated_at
+                   notify_on_allocation, notify_missing_punch, is_active, contract_status, created_at, updated_at
             FROM users
             WHERE is_active = TRUE AND name ILIKE %s
             ORDER BY name
@@ -250,12 +265,14 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
 
         # user_id references users.id directly
         query = '''
-            SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
+            SELECT b.*, u.name as employee_name, u.department, u.brand,
+                   COALESCE(co.company, u.company) AS company,
                    ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
                    creator.name as created_by_name,
                    b.user_id as effective_employee_id
             FROM hr.event_bonuses b
             LEFT JOIN public.users u ON u.id = b.user_id
+            LEFT JOIN public.companies co ON co.id = u.company_id
             JOIN hr.events ev ON b.event_id = ev.id
             LEFT JOIN public.users creator ON b.created_by = creator.id
             WHERE 1=1
@@ -277,7 +294,7 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
 
         scope_sql, scope_params = apply_scope_filter(
             scope, user_context,
-            user_id_col='b.user_id', dept_col='u.department', company_col='u.company',
+            user_id_col='b.user_id', dept_col='u.department', company_col='COALESCE(co.company, u.company)',
         )
         query += scope_sql
         params.extend(scope_params)
@@ -297,11 +314,13 @@ def get_event_bonus(bonus_id):
     try:
         cursor = get_cursor(conn)
         cursor.execute('''
-            SELECT b.*, u.name as employee_name, u.department, u.brand, u.company,
+            SELECT b.*, u.name as employee_name, u.department, u.brand,
+                   COALESCE(co.company, u.company) AS company,
                    ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
                    b.user_id as effective_employee_id
             FROM hr.event_bonuses b
             LEFT JOIN public.users u ON u.id = b.user_id
+            LEFT JOIN public.companies co ON co.id = u.company_id
             JOIN hr.events ev ON b.event_id = ev.id
             WHERE b.id = %s
         ''', (bonus_id,))
@@ -585,13 +604,14 @@ def get_bonuses_by_employee(year=None, month=None):
         cursor = get_cursor(conn)
 
         query = '''
-            SELECT u.id, u.name, u.department, u.company, u.brand,
+            SELECT u.id, u.name, u.department, COALESCE(co.company, u.company) AS company, u.brand,
                    COUNT(*) as bonus_count,
                    COALESCE(SUM(b.bonus_days), 0) as total_days,
                    COALESCE(SUM(b.hours_free), 0) as total_hours,
                    COALESCE(SUM(b.bonus_net), 0) as total_bonus
             FROM hr.event_bonuses b
             LEFT JOIN public.users u ON u.id = b.user_id
+            LEFT JOIN public.companies co ON co.id = u.company_id
             WHERE 1=1
         '''
         params = []
@@ -602,7 +622,7 @@ def get_bonuses_by_employee(year=None, month=None):
             query += ' AND b.month = %s'
             params.append(month)
 
-        query += ' GROUP BY u.id, u.name, u.department, u.company, u.brand ORDER BY total_bonus DESC'
+        query += ' GROUP BY u.id, u.name, u.department, co.company, u.company, u.brand ORDER BY total_bonus DESC'
 
         cursor.execute(query, params)
         rows = cursor.fetchall()

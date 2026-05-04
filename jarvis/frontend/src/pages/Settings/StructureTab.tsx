@@ -484,13 +484,26 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
   const [parentId, setParentId] = useState<string>('none')
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [regNo, setRegNo] = useState('')
+  const [iban, setIban] = useState('')
+  const [bank, setBank] = useState('')
+  const [swift, setSwift] = useState('')
+  const [street, setStreet] = useState('')
+  const [city, setCity] = useState('')
+  const [county, setCounty] = useState('')
+  const [postalCode, setPostalCode] = useState('')
 
   const resetForm = () => {
     if (company) {
       setName(company.company); setVat(company.vat || ''); setParentId(company.parent_company_id ? String(company.parent_company_id) : 'none')
       setLogoPreview(company.logo_url || null)
+      setRegNo((company as any).reg_no || ''); setIban((company as any).iban || '')
+      setBank((company as any).bank || ''); setSwift((company as any).swift || '')
+      setStreet((company as any).street || ''); setCity((company as any).city || '')
+      setCounty((company as any).county || ''); setPostalCode((company as any).postal_code || '')
     } else {
       setName(''); setVat(''); setParentId('none'); setLogoPreview(null)
+      setRegNo(''); setIban(''); setBank(''); setSwift(''); setStreet(''); setCity(''); setCounty(''); setPostalCode('')
     }
   }
 
@@ -540,6 +553,42 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
             <Input value={vat} onChange={(e) => setVat(e.target.value)} placeholder="Optional" />
           </div>
           <div className="grid gap-2">
+            <Label>Reg No (J-nr)</Label>
+            <Input value={regNo} onChange={(e) => setRegNo(e.target.value)} placeholder="e.g. J2024002657125" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="grid gap-1">
+              <Label>IBAN</Label>
+              <Input value={iban} onChange={(e) => setIban(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label>Bank</Label>
+              <Input value={bank} onChange={(e) => setBank(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <Label>SWIFT</Label>
+            <Input value={swift} onChange={(e) => setSwift(e.target.value)} />
+          </div>
+          <div className="grid gap-2">
+            <Label>Street</Label>
+            <Input value={street} onChange={(e) => setStreet(e.target.value)} placeholder="e.g. Calea Floresti nr. 145" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="grid gap-1">
+              <Label>City</Label>
+              <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Cluj-Napoca" />
+            </div>
+            <div className="grid gap-1">
+              <Label>County</Label>
+              <Input value={county} onChange={(e) => setCounty(e.target.value)} placeholder="e.g. Cluj" />
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <Label>Postal Code</Label>
+            <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="e.g. 400000" />
+          </div>
+          <div className="grid gap-2">
             <Label>Parent Company</Label>
             <Select value={parentId} onValueChange={setParentId}>
               <SelectTrigger><SelectValue placeholder="None (root level)" /></SelectTrigger>
@@ -584,7 +633,7 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             disabled={!name || isPending}
-            onClick={() => onSave({ company: name, vat: vat || undefined, parent_company_id: parentId === 'none' ? null : Number(parentId) })}
+            onClick={() => onSave({ company: name, vat: vat || undefined, parent_company_id: parentId === 'none' ? null : Number(parentId), reg_no: regNo || undefined, iban: iban || undefined, bank: bank || undefined, swift: swift || undefined, street: street || undefined, city: city || undefined, county: county || undefined, postal_code: postalCode || undefined } as any)}
           >
             {isPending ? 'Saving...' : 'Save'}
           </Button>

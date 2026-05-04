@@ -89,6 +89,41 @@ def create_schema_connecteam(conn, cursor):
         ON connecteam_form_submissions(connecteam_user_id)
     """)
 
+    # ── Leave-permit CO conversions ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS leave_permit_conversions (
+            id SERIAL PRIMARY KEY,
+            employee_user_id INTEGER NOT NULL REFERENCES users(id),
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+            total_accumulated_hours NUMERIC(6,2) NOT NULL,
+            co_days_requested INTEGER NOT NULL CHECK (co_days_requested BETWEEN 1 AND 30),
+            approver_user_id INTEGER NOT NULL REFERENCES users(id),
+            requested_by INTEGER NOT NULL REFERENCES users(id),
+            approval_request_id INTEGER,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending','approved','rejected','cancelled')),
+            resolved_at TIMESTAMP WITH TIME ZONE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS leave_permit_conversion_submissions (
+            id SERIAL PRIMARY KEY,
+            conversion_id INTEGER NOT NULL REFERENCES leave_permit_conversions(id) ON DELETE CASCADE,
+            submission_id VARCHAR(100) NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_lpc_employee_year_month
+        ON leave_permit_conversions(employee_user_id, year, month)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_lpcs_conversion
+        ON leave_permit_conversion_submissions(conversion_id)
+    """)
+
     # ── CHECK constraints ──
     for stmt in [
         """ALTER TABLE connecteam_users ADD CONSTRAINT chk_ct_user_confidence

@@ -290,13 +290,14 @@ class StructureNodeRepository(BaseRepository):
             ),
             ranked AS (
                 SELECT u.id, u.name, u.email, u.phone,
-                       u.department, u.subdepartment, u.company, u.brand,
+                       u.department, u.subdepartment, COALESCE(co.company, u.company) AS company, u.brand,
                        u.notify_on_allocation, u.is_active,
                        a.depth,
                        MIN(a.depth) OVER () AS min_depth
                 FROM ancestors a
                 JOIN structure_node_members snm ON snm.node_id = a.id
                 JOIN users u ON u.id = snm.user_id
+                LEFT JOIN companies co ON co.id = u.company_id
                 WHERE snm.role = 'responsable' AND u.is_active = TRUE
             )
             SELECT DISTINCT id, name, email, phone, department, subdepartment,
@@ -308,10 +309,11 @@ class StructureNodeRepository(BaseRepository):
         # Fall back to company-level responsables
         return self.query_all('''
             SELECT DISTINCT u.id, u.name, u.email, u.phone,
-                   u.department, u.subdepartment, u.company, u.brand,
+                   u.department, u.subdepartment, COALESCE(co.company, u.company) AS company, u.brand,
                    u.notify_on_allocation, u.is_active
             FROM company_responsables cr
             JOIN users u ON u.id = cr.user_id
+            LEFT JOIN companies co ON co.id = u.company_id
             WHERE cr.company_id = %s AND u.is_active = TRUE
             ORDER BY u.name
         ''', (company_id,))

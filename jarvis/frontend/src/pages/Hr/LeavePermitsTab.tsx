@@ -1,11 +1,15 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Upload, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Loader2, Upload, ChevronLeft, ChevronRight, ChevronDown, ArrowRightLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Badge } from '@/components/ui/badge'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { SearchSelect } from '@/components/shared/SearchSelect'
 import { connecteamApi } from '@/api/connecteam'
-import type { ConnecteamSubmission } from '@/api/connecteam'
+import type { ConnecteamSubmission, ConversionRequest } from '@/api/connecteam'
 import { toast } from 'sonner'
 
 const now = new Date()
@@ -14,13 +18,25 @@ export default function LeavePermitsTab({ search }: { search: string }) {
   const qc = useQueryClient()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
+  const [companyFilter, setCompanyFilter] = useState<string>('all')
+  const [collapsedEmployees, setCollapsedEmployees] = useState<Set<string>>(new Set())
 
-  const { data: statusData } = useQuery({
+  // Conversion dialog state
+  const [conversionTarget, setConversionTarget] = useState<{
+    employeeName: string
+    employeeUserId: number
+    totalHours: number
+    submissions: ConnecteamSubmission[]
+  } | null>(null)
+  const [coDays, setCoDays] = useState('1')
+  const [approverId, setApproverId] = useState<string>('')
+  const [approverMode, setApproverMode] = useState<'hierarchy' | 'free'>('hierarchy')
+
+  useQuery({
     queryKey: ['connecteam', 'status'],
     queryFn: () => connecteamApi.getStatus().then(r => r.data),
   })
 
-  // Fetch submissions for the selected month (server-side filtered)
   const { data: recentData, isLoading } = useQuery({
     queryKey: ['connecteam', 'submissions', year, month],
     queryFn: () =>
@@ -28,6 +44,26 @@ export default function LeavePermitsTab({ search }: { search: string }) {
         .then(r => r.json())
         .then(r => r.data as ConnecteamSubmission[]),
   })
+
+  // Fetch existing conversions for this month
+  const { data: conversions } = useQuery({
+    queryKey: ['connecteam', 'conversions', year, month],
+    queryFn: () => connecteamApi.getConversions(year, month),
+  })
+
+  // Fetch hierarchy approvers (lazy — only when dialog opens)
+  const { data: approversRes } = useQuery({
+    queryKey: ['connecteam', 'approvers'],
+    queryFn: () => connecteamApi.getApprovers(),
+    enabled: !!conversionTarget,
+  })
+  // Fetch all users for free-select mode
+  const { data: allUsersRes } = useQuery({
+    queryKey: ['connecteam', 'approvers', 'all'],
+    queryFn: () => connecteamApi.getApprovers('all'),
+    enabled: !!conversionTarget && approverMode === 'free',
+  })
+  const approvers = (approverMode === 'free' ? allUsersRes?.data : approversRes?.data) ?? []
 
   const importMut = useMutation({
     mutationFn: (file: File) => connecteamApi.importExcel(file),
@@ -46,6 +82,22 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     onError: () => toast.error('Import failed'),
   })
 
+  const conversionMut = useMutation({
+    mutationFn: (data: Parameters<typeof connecteamApi.createConversion>[0]) =>
+      connecteamApi.createConversion(data),
+    onSuccess: () => {
+      toast.success('Conversion request sent for approval')
+      qc.invalidateQueries({ queryKey: ['connecteam', 'conversions'] })
+      qc.invalidateQueries({ queryKey: ['connecteam', 'submissions'] })
+      setConversionTarget(null)
+      setCoDays('1')
+      setApproverId('')
+    },
+    onError: (err: { response?: { data?: { error?: string } } }) => {
+      toast.error(err.response?.data?.error || 'Failed to create conversion')
+    },
+  })
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
@@ -54,17 +106,63 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     }
   }
 
-  // Filter by search only (year/month filtering is server-side)
+  const companies = useMemo(() => {
+    if (!recentData) return []
+    const set = new Set<string>()
+    for (const s of recentData) {
+      if (s.jarvis_user_company) set.add(s.jarvis_user_company)
+    }
+    return Array.from(set).sort()
+  }, [recentData])
+
   const filtered = useMemo(() => {
     if (!recentData) return []
-    if (!search) return recentData
-    const q = search.toLowerCase()
     return recentData.filter((s) => {
+      if (companyFilter !== 'all' && (s.jarvis_user_company || '') !== companyFilter) return false
+      if (!search) return true
+      const q = search.toLowerCase()
       const name = (s.connecteam_user_name || '').toLowerCase()
       const reason = (s.leave_reason || '').toLowerCase()
       return name.includes(q) || reason.includes(q)
     })
-  }, [recentData, search])
+  }, [recentData, search, companyFilter])
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, { submissions: ConnecteamSubmission[]; totalHours: number; company: string | null; userId: number | null }>()
+    for (const s of filtered) {
+      const key = s.connecteam_user_name || `User #${s.connecteam_user_id}`
+      if (!map.has(key)) {
+        map.set(key, { submissions: [], totalHours: 0, company: s.jarvis_user_company ?? null, userId: s.mapped_jarvis_user_id })
+      }
+      const group = map.get(key)!
+      group.submissions.push(s)
+      group.totalHours += s.leave_hours ?? 0
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+  }, [filtered])
+
+  // Index conversions by employee_user_id for quick lookup
+  const conversionsByUser = useMemo(() => {
+    const map = new Map<number, ConversionRequest>()
+    if (conversions) {
+      for (const c of conversions) {
+        map.set(c.employee_user_id, c)
+      }
+    }
+    return map
+  }, [conversions])
+
+  const toggleEmployee = (name: string) => {
+    setCollapsedEmployees(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  const collapseAll = () => setCollapsedEmployees(new Set(grouped.map(([name]) => name)))
+  const expandAll = () => setCollapsedEmployees(new Set())
 
   const monthLabel = new Date(year, month - 1).toLocaleString('ro-RO', { month: 'long', year: 'numeric' })
 
@@ -77,10 +175,30 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     else setMonth(m => m + 1)
   }
 
+  const openConversion = (name: string, userId: number, totalHours: number, submissions: ConnecteamSubmission[]) => {
+    setConversionTarget({ employeeName: name, employeeUserId: userId, totalHours, submissions })
+    setCoDays('1')
+    setApproverId('')
+  }
+
+  const submitConversion = () => {
+    if (!conversionTarget || !approverId) return
+    conversionMut.mutate({
+      employee_user_id: conversionTarget.employeeUserId,
+      year,
+      month,
+      co_days_requested: parseInt(coDays),
+      approver_user_id: parseInt(approverId),
+      submission_ids: conversionTarget.submissions.map(s => s.submission_id),
+    })
+  }
+
+  const maxCoDays = conversionTarget ? Math.max(1, Math.floor(conversionTarget.totalHours / 8)) : 1
+
   return (
     <div className="space-y-4">
       {/* Header bar */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" onClick={prevMonth}>
             <ChevronLeft className="h-4 w-4" />
@@ -89,11 +207,31 @@ export default function LeavePermitsTab({ search }: { search: string }) {
           <Button variant="ghost" size="icon" onClick={nextMonth}>
             <ChevronRight className="h-4 w-4" />
           </Button>
+
+          {companies.length > 0 && (
+            <Select value={companyFilter} onValueChange={setCompanyFilter}>
+              <SelectTrigger className="w-[200px] h-8 text-xs">
+                <SelectValue placeholder="All Companies" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Companies</SelectItem>
+                {companies.map(c => (
+                  <SelectItem key={c} value={c}>{c.replace(' S.R.L.', '')}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
+          {grouped.length > 1 && (
+            <div className="flex gap-1">
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={expandAll}>Expand All</Button>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={collapseAll}>Collapse All</Button>
+            </div>
+          )}
           <span className="text-xs text-muted-foreground">
-            {statusData?.total_submissions ?? 0} total
+            {filtered.length} permits · {grouped.length} employees
           </span>
           <input
             type="file"
@@ -129,7 +267,9 @@ export default function LeavePermitsTab({ search }: { search: string }) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8" />
                 <TableHead>Name</TableHead>
+                <TableHead>Company</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Start</TableHead>
                 <TableHead>End</TableHead>
@@ -141,41 +281,211 @@ export default function LeavePermitsTab({ search }: { search: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((s) => (
-                <TableRow key={s.submission_id}>
-                  <TableCell className="font-medium whitespace-nowrap">
-                    {s.connecteam_user_name || `User #${s.connecteam_user_id}`}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {s.leave_date
-                      ? new Date(s.leave_date + 'T00:00').toLocaleDateString('ro-RO')
-                      : '-'}
-                  </TableCell>
-                  <TableCell>{s.leave_start_time?.slice(0, 5) || '-'}</TableCell>
-                  <TableCell>{s.leave_end_time?.slice(0, 5) || '-'}</TableCell>
-                  <TableCell>{s.leave_hours != null ? s.leave_hours : '-'}</TableCell>
-                  <TableCell className="max-w-[200px] truncate">{s.leave_reason || '-'}</TableCell>
-                  <TableCell className="whitespace-nowrap">{s.approved_by || '-'}</TableCell>
-                  <TableCell>
-                    <StatusBadge
-                      status={s.status === 'approved' ? 'active' : s.status === 'rejected' ? 'error' : s.status}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                      s.source === 'jarvis'
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    }`}>
-                      {s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {grouped.map(([employeeName, { submissions, totalHours, company, userId }]) => {
+                const isCollapsed = collapsedEmployees.has(employeeName)
+                const existingConversion = userId ? conversionsByUser.get(userId) : undefined
+                return (
+                  <Fragment key={employeeName}>
+                    {/* Employee group header */}
+                    <TableRow
+                      className="bg-muted/40 hover:bg-muted/60 cursor-pointer"
+                      onClick={() => toggleEmployee(employeeName)}
+                    >
+                      <TableCell className="w-8 px-2">
+                        {isCollapsed
+                          ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                          : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+                      </TableCell>
+                      <TableCell className="font-medium whitespace-nowrap">{employeeName}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{company?.replace(' S.R.L.', '') || '—'}</TableCell>
+                      <TableCell colSpan={3} className="text-xs text-muted-foreground">
+                        {submissions.length} permit{submissions.length !== 1 ? 's' : ''}
+                      </TableCell>
+                      <TableCell className="text-xs font-medium tabular-nums">{totalHours}h</TableCell>
+                      <TableCell colSpan={2} />
+                      <TableCell className="text-center">
+                        {existingConversion ? (
+                          <ConversionStatusBadge conversion={existingConversion} />
+                        ) : userId && totalHours >= 8 ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 text-[10px] gap-1"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openConversion(employeeName, userId, totalHours, submissions)
+                            }}
+                          >
+                            <ArrowRightLeft className="h-3 w-3" />
+                            Convert to CO
+                          </Button>
+                        ) : null}
+                      </TableCell>
+                      <TableCell />
+                    </TableRow>
+                    {/* Submission rows */}
+                    {!isCollapsed && submissions.map((s) => (
+                      <TableRow key={s.submission_id} className="hover:bg-muted/20">
+                        <TableCell className="w-8 px-2" />
+                        <TableCell className="pl-6 text-xs text-muted-foreground whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="w-1 h-1 rounded-full bg-primary/40 shrink-0" />
+                            {s.connecteam_user_name || `User #${s.connecteam_user_id}`}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{s.jarvis_user_company?.replace(' S.R.L.', '') || '—'}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">
+                          {s.leave_date
+                            ? new Date(s.leave_date + 'T00:00').toLocaleDateString('ro-RO')
+                            : '-'}
+                        </TableCell>
+                        <TableCell className="text-xs">{s.leave_start_time?.slice(0, 5) || '-'}</TableCell>
+                        <TableCell className="text-xs">{s.leave_end_time?.slice(0, 5) || '-'}</TableCell>
+                        <TableCell className="text-xs tabular-nums">{s.leave_hours != null ? s.leave_hours : '-'}</TableCell>
+                        <TableCell className="max-w-[200px] truncate text-xs">{s.leave_reason || '-'}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">{s.approved_by || '-'}</TableCell>
+                        <TableCell>
+                          <StatusBadge
+                            status={
+                              s.status === 'approved' ? 'active' :
+                              s.status === 'rejected' ? 'error' :
+                              s.status === 'converted' ? 'info' :
+                              s.status
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                            s.source === 'jarvis'
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                          }`}>
+                            {s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </Fragment>
+                )
+              })}
             </TableBody>
           </Table>
         </div>
       )}
+
+      {/* Conversion Dialog */}
+      <Dialog open={!!conversionTarget} onOpenChange={(open) => { if (!open) { setConversionTarget(null); setApproverMode('hierarchy') } }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Convert Leave Permits to CO</DialogTitle>
+          </DialogHeader>
+          {conversionTarget && (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">{conversionTarget.employeeName}</p>
+                <p className="text-xs text-muted-foreground">
+                  Total accumulated: <span className="font-medium text-foreground">{conversionTarget.totalHours}h</span> in {monthLabel}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {conversionTarget.submissions.length} permit{conversionTarget.submissions.length !== 1 ? 's' : ''} will be marked as converted
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">CO Days to convert</label>
+                <Select value={coDays} onValueChange={setCoDays}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: maxCoDays }, (_, i) => i + 1).map(n => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n} day{n > 1 ? 's' : ''} ({n * 8}h)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  1 CO day = 8 hours. Max {maxCoDays} day{maxCoDays > 1 ? 's' : ''} based on {conversionTarget.totalHours}h accumulated.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Send for approval to</label>
+                  <button
+                    type="button"
+                    className="text-[11px] text-muted-foreground hover:text-foreground underline"
+                    onClick={() => { setApproverMode(m => m === 'hierarchy' ? 'free' : 'hierarchy'); setApproverId('') }}
+                  >
+                    {approverMode === 'hierarchy' ? 'Select any user' : 'Show managers only'}
+                  </button>
+                </div>
+                {approverMode === 'hierarchy' ? (
+                  <Select value={approverId} onValueChange={setApproverId}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select manager..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {approvers.map(a => (
+                        <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <SearchSelect
+                    value={approverId}
+                    onValueChange={setApproverId}
+                    options={approvers.map(a => ({ value: String(a.id), label: a.name }))}
+                    placeholder="Search user..."
+                    searchPlaceholder="Type to search..."
+                    emptyMessage="No users found."
+                  />
+                )}
+                <p className="text-[10px] text-muted-foreground">
+                  {approverMode === 'hierarchy' ? 'Showing organigram managers' : 'Showing all active users'}
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setConversionTarget(null)}>Cancel</Button>
+                <Button
+                  onClick={submitConversion}
+                  disabled={!approverId || conversionMut.isPending}
+                >
+                  {conversionMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+                  Send for Approval
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
+}
+
+function ConversionStatusBadge({ conversion }: { conversion: ConversionRequest }) {
+  switch (conversion.status) {
+    case 'pending':
+      return (
+        <Badge variant="outline" className="text-[10px] border-yellow-300 text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30">
+          CO pending ({conversion.co_days_requested}d)
+        </Badge>
+      )
+    case 'approved':
+      return (
+        <Badge variant="outline" className="text-[10px] border-green-300 text-green-600 bg-green-50 dark:bg-green-950/30">
+          {conversion.co_days_requested}d converted
+        </Badge>
+      )
+    case 'rejected':
+      return (
+        <Badge variant="outline" className="text-[10px] border-red-300 text-red-600 bg-red-50 dark:bg-red-950/30">
+          CO rejected
+        </Badge>
+      )
+    default:
+      return null
+  }
 }

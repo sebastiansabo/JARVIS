@@ -242,7 +242,7 @@ class BioStarSyncService:
 
         Delegates to BioStarRepository helpers so the logic stays identical with
         the unified /identity/api/auto-map endpoint:
-            1. CNP  (confidence 100, only when cnp column is populated)
+            1. CNP  (no-op — CNP is canonical in users table, matched via Sincron)
             2. email (confidence 100)
             3. name  (confidence 90)
         Cross-verification via Sincron runs as part of the unified pipeline and
@@ -548,6 +548,14 @@ class BioStarSyncService:
         """Get per-employee aggregated summary over a date range."""
         return self.repo.get_range_summary(start_date, end_date, jarvis_user_ids=jarvis_user_ids)
 
+    def get_attendance_overview(self, date_str, jarvis_user_ids=None):
+        """Get attendance overview with stable employee list for a given date."""
+        return self.repo.get_attendance_overview(date_str, jarvis_user_ids=jarvis_user_ids)
+
+    def get_attendance_week(self, end_date_str, jarvis_user_ids=None):
+        """Get 7-day attendance summary with stable employee list."""
+        return self.repo.get_attendance_week(end_date_str, jarvis_user_ids=jarvis_user_ids)
+
     def get_employee_punches(self, biostar_user_id, date_str):
         """Get all punch events for one employee on a specific date."""
         return self.repo.get_employee_punches(biostar_user_id, date_str)
@@ -676,15 +684,88 @@ class BioStarSyncService:
         target_span = target_worked + int(lunch_break_minutes)
 
         start_offset = random.randint(-5, 5)
+        if isinstance(first_punch, str):
+            first_punch = datetime.fromisoformat(first_punch)
+        if isinstance(schedule_start, str):
+            from datetime import time as _time
+            parts = schedule_start.split(':')
+            schedule_start = _time(int(parts[0]), int(parts[1]))
         date_part = first_punch.date()
         adj_start = datetime.combine(date_part, schedule_start) + timedelta(minutes=start_offset)
         adj_end = adj_start + timedelta(minutes=target_span)
         return adj_start, adj_end
 
+    def _get_sincron_leave_user_ids(self, date_str):
+        """Return set of mapped_jarvis_user_ids with Sincron leave codes for the date."""
+        try:
+            from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+            sincron_repo = SincronRepository()
+            LEAVE_CODES = ('CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV')
+            rows = sincron_repo.query_all('''
+                SELECT DISTINCT se.mapped_jarvis_user_id
+                FROM sincron_employees se
+                JOIN sincron_timesheets st
+                  ON st.sincron_employee_id = se.sincron_employee_id
+                  AND st.company_name = se.company_name
+                  AND st.day = %s::date
+                  AND st.short_code = ANY(%s)
+                WHERE se.is_active = TRUE
+                  AND se.mapped_jarvis_user_id IS NOT NULL
+            ''', (date_str, list(LEAVE_CODES)))
+            return {r['mapped_jarvis_user_id'] for r in rows}
+        except Exception as e:
+            logger.warning('Failed to load Sincron leave user IDs for %s: %s', date_str, e)
+            return set()
+
     def auto_adjust_all(self, date_str, threshold=15, user_id=None):
-        """Auto-adjust overtime employees with randomized natural-looking times."""
+        """Auto-adjust off-schedule, single-punch, and absent employees.
+
+        Uses combined schedule from ALL Sincron contracts (including secondary
+        contracts with exclude_from_pontaje=TRUE) so the adjustment reflects
+        the employee's full daily program.
+        """
         off = self.adj_repo.get_off_schedule(date_str, threshold)
+        absent = self.adj_repo.get_absent_employees(date_str)
+        leave_ids = self._get_sincron_leave_user_ids(date_str)
         adjusted_count = 0
+
+        # Batch-fetch full combined schedules (including secondary contracts)
+        # so we don't do N+1 queries per employee.
+        full_schedules = {}
+        try:
+            from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+            sincron_repo = SincronRepository()
+            rows = sincron_repo.get_all_full_day_schedules_for_date(date_str)
+            for r in rows:
+                if r.get('schedule_start') and r.get('schedule_end'):
+                    full_schedules[r['mapped_jarvis_user_id']] = r
+        except Exception as e:
+            logger.warning('Failed to load full Sincron schedules for %s: %s', date_str, e)
+
+        from datetime import time as _time
+
+        def _parse_time(val):
+            if isinstance(val, str):
+                parts = val.split(':')
+                return _time(int(parts[0]), int(parts[1]))
+            return val
+
+        def _override_schedule(row, sched_start, sched_end, lunch, wh):
+            """Override schedule with full combined schedule if available."""
+            jarvis_uid = row.get('mapped_jarvis_user_id')
+            if jarvis_uid and jarvis_uid in full_schedules:
+                fs = full_schedules[jarvis_uid]
+                fs_start = _parse_time(str(fs['schedule_start'])[:5])
+                fs_end = _parse_time(str(fs['schedule_end'])[:5])
+                fs_lunch = fs.get('lunch_break_minutes') or lunch
+                # Compute working hours from full span
+                full_span_min = (datetime.combine(datetime.today(), fs_end) -
+                                 datetime.combine(datetime.today(), fs_start)).total_seconds() / 60
+                fs_wh = (full_span_min - fs_lunch) / 60
+                return fs_start, fs_end, fs_lunch, fs_wh
+            return sched_start, sched_end, lunch, wh
+
+        # --- Off-schedule employees (have punches but deviate) ---
         for row in off:
             first = row['first_punch']
             last = row['last_punch']
@@ -693,10 +774,21 @@ class BioStarSyncService:
             lunch = row.get('lunch_break_minutes') or 60
             wh = row.get('working_hours') or 8
 
-            if not first or not last or not sched_start or not sched_end:
+            if not sched_start or not sched_end:
                 continue
 
-            # All cases (overtime or missing checkout on past day) get full randomization
+            # Skip employees with Sincron leave codes
+            jarvis_uid = row.get('mapped_jarvis_user_id')
+            if jarvis_uid and jarvis_uid in leave_ids:
+                continue
+
+            if not first or not last:
+                continue
+
+            # Override with full combined schedule (base + secondary contracts)
+            sched_start, sched_end, lunch, wh = _override_schedule(
+                row, sched_start, sched_end, lunch, wh)
+
             adj_first, adj_last = self._randomize_times(first, sched_start, lunch, wh)
 
             self.adjust_employee(
@@ -718,7 +810,160 @@ class BioStarSyncService:
             )
             adjusted_count += 1
 
-        return {'adjusted': adjusted_count, 'total_flagged': len(off)}
+        # --- Absent employees (no punches, past day, no Sincron leave) ---
+        for row in absent:
+            sched_start = row['schedule_start']
+            sched_end = row['schedule_end']
+            lunch = row.get('lunch_break_minutes') or 60
+
+            if not sched_start or not sched_end:
+                continue
+
+            sched_start = _parse_time(sched_start)
+            sched_end = _parse_time(sched_end)
+            wh = row.get('working_hours') or 8
+
+            # Override with full combined schedule (base + secondary contracts)
+            sched_start, sched_end, lunch, wh = _override_schedule(
+                row, sched_start, sched_end, lunch, wh)
+
+            ref_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            start_offset = random.randint(-3, 3)
+            end_offset = random.randint(-3, 5)
+            adj_first = datetime.combine(ref_date, sched_start) + timedelta(minutes=start_offset)
+            adj_last = datetime.combine(ref_date, sched_end) + timedelta(minutes=end_offset)
+
+            self.adjust_employee(
+                biostar_user_id=row['biostar_user_id'],
+                date_str=date_str,
+                adjusted_first=adj_first,
+                adjusted_last=adj_last,
+                original_first=None,
+                original_last=None,
+                schedule_start=sched_start,
+                schedule_end=sched_end,
+                lunch_break_minutes=lunch,
+                working_hours=wh,
+                original_duration=0,
+                deviation_in=0,
+                deviation_out=0,
+                adjustment_type='auto',
+                adjusted_by=user_id,
+            )
+            adjusted_count += 1
+
+        total_flagged = len(off) + len(absent)
+        return {'adjusted': adjusted_count, 'total_flagged': total_flagged}
+
+    def auto_adjust_single(self, biostar_user_id, date_str, user_id=None):
+        """Auto-adjust a single employee for a specific date using Sincron per-day schedule."""
+        from datetime import time as _time
+
+        employee = self.repo.get_employee_by_biostar_id(biostar_user_id)
+        if not employee:
+            return {'success': False, 'error': 'Employee not found'}
+
+        sched_start = employee.get('schedule_start')
+        sched_end = employee.get('schedule_end')
+        lunch = employee.get('lunch_break_minutes') or 60
+        wh = employee.get('working_hours') or 8
+
+        # Override with Sincron per-day schedule (full span across ALL companies)
+        jarvis_uid = employee.get('mapped_jarvis_user_id')
+        if jarvis_uid:
+            try:
+                from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+                sincron_repo = SincronRepository()
+
+                # Block adjustment if the day has a Sincron leave code
+                LEAVE_CODES = ('CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV')
+                leave = sincron_repo.query_one('''
+                    SELECT st.short_code
+                    FROM sincron_employees se
+                    JOIN sincron_timesheets st
+                      ON st.sincron_employee_id = se.sincron_employee_id
+                      AND st.company_name = se.company_name
+                      AND st.day = %s::date
+                      AND st.short_code = ANY(%s)
+                    WHERE se.mapped_jarvis_user_id = %s
+                      AND se.is_active = TRUE
+                    LIMIT 1
+                ''', (date_str, list(LEAVE_CODES), jarvis_uid))
+                if leave:
+                    return {'success': False, 'error': f'Employee has Sincron leave code ({leave["short_code"]}) for this date'}
+
+                full_sched = sincron_repo.get_full_day_schedule_by_jarvis_user(
+                    jarvis_uid, date_str, include_excluded=True)
+                if full_sched:
+                    if full_sched.get('schedule_start'):
+                        parts = str(full_sched['schedule_start']).split(':')
+                        sched_start = _time(int(parts[0]), int(parts[1]))
+                    if full_sched.get('schedule_end'):
+                        parts = str(full_sched['schedule_end']).split(':')
+                        sched_end = _time(int(parts[0]), int(parts[1]))
+                    if full_sched.get('lunch_break_minutes') is not None:
+                        lunch = full_sched['lunch_break_minutes']
+            except Exception as e:
+                logger.warning('Sincron schedule lookup failed for user %s on %s: %s',
+                               jarvis_uid, date_str, e)
+
+        if not sched_start or not sched_end:
+            return {'success': False, 'error': 'No schedule found'}
+
+        # Compute actual working hours from full schedule span
+        full_span_min = (datetime.combine(datetime.today(), sched_end) -
+                         datetime.combine(datetime.today(), sched_start)).total_seconds() / 60
+        wh = (full_span_min - lunch) / 60  # net hours
+
+        # Get punch data for that date (ordered DESC, so [-1]=earliest, [0]=latest)
+        punches = self.repo.get_punch_logs(biostar_user_id, f'{date_str} 00:00:00', f'{date_str} 23:59:59')
+
+        if punches:
+            fp = punches[-1]['event_datetime']
+            lp = punches[0]['event_datetime']
+            first_punch = fp if isinstance(fp, datetime) else datetime.fromisoformat(str(fp))
+            last_punch = lp if isinstance(lp, datetime) else datetime.fromisoformat(str(lp))
+            duration = (last_punch - first_punch).total_seconds() if len(punches) > 1 else 0
+            deviation_in = round((first_punch - datetime.combine(first_punch.date(), sched_start)).total_seconds() / 60)
+            deviation_out = round((last_punch - datetime.combine(last_punch.date(), sched_end)).total_seconds() / 60) if len(punches) > 1 else 0
+        else:
+            # Absent day — no punches, generate times anchored to schedule
+            first_punch = None
+            last_punch = None
+            duration = 0
+            deviation_in = 0
+            deviation_out = 0
+
+        ref_date = first_punch.date() if first_punch else datetime.strptime(date_str, '%Y-%m-%d').date()
+
+        if not punches:
+            # Absent: randomize independently around schedule_start and schedule_end
+            start_offset = random.randint(-3, 3)
+            end_offset = random.randint(-3, 5)
+            adj_first = datetime.combine(ref_date, sched_start) + timedelta(minutes=start_offset)
+            adj_last = datetime.combine(ref_date, sched_end) + timedelta(minutes=end_offset)
+        else:
+            synthetic_ref = datetime.combine(ref_date, sched_start)
+            adj_first, adj_last = self._randomize_times(synthetic_ref, sched_start, lunch, wh)
+
+        self.adjust_employee(
+            biostar_user_id=biostar_user_id,
+            date_str=date_str,
+            adjusted_first=adj_first,
+            adjusted_last=adj_last,
+            original_first=first_punch,
+            original_last=last_punch,
+            schedule_start=sched_start,
+            schedule_end=sched_end,
+            lunch_break_minutes=lunch,
+            working_hours=wh,
+            original_duration=duration,
+            deviation_in=deviation_in,
+            deviation_out=deviation_out,
+            adjustment_type='auto',
+            adjusted_by=user_id,
+        )
+        return {'success': True, 'adjusted_first': str(adj_first), 'adjusted_last': str(adj_last)}
 
     def backfill_adjustments(self, threshold=15, user_id=None):
         """Auto-adjust all past dates with unadjusted off-schedule employees."""
@@ -736,3 +981,7 @@ class BioStarSyncService:
     def revert_adjustment(self, biostar_user_id, date_str):
         """Revert an adjustment (delete it, back to original punches)."""
         return self.adj_repo.delete_adjustment(biostar_user_id, date_str)
+
+    def revert_adjustments_range(self, start_date, end_date):
+        """Revert all auto-adjustments in a date range."""
+        return self.adj_repo.delete_adjustments_range(start_date, end_date, adjustment_type='auto')

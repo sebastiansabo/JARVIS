@@ -120,7 +120,7 @@ class ConnecteamService:
 
         try:
             # Build JARVIS user lookup by uppercase name
-            cursor.execute("SELECT id, name FROM users WHERE name IS NOT NULL")
+            cursor.execute("SELECT id, name FROM users WHERE name IS NOT NULL AND COALESCE(contract_status, 'active') != 'closed'")
             jarvis_users = {}
             for u in cursor.fetchall():
                 name = u['name'] if isinstance(u, dict) else u[1]

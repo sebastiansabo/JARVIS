@@ -3,6 +3,7 @@ import type {
   EventBonus,
   HrEvent,
   HrEmployee,
+  EmployeeWorkStats,
   BonusType,
   HrSettings,
   HrPermissions,
@@ -15,6 +16,9 @@ import type {
   DepartmentStructure,
   MasterItem,
   OrganigramData,
+  CoBalanceImportRun,
+  CoBalanceUnmatchedRow,
+  WeeklyDigestData,
 } from '@/types/hr'
 
 const BASE = '/hr/events/api'
@@ -56,8 +60,10 @@ export const hrApi = {
     api.post<{ success: boolean; deleted: number }>(`${BASE}/events/bulk-delete`, { ids }),
 
   // Employees
-  getEmployees: (activeOnly = true) =>
-    api.get<HrEmployee[]>(`${BASE}/employees${activeOnly ? '?active_only=true' : ''}`),
+  getEmployees: (activeOnly = true, contractStatus?: string) =>
+    api.get<HrEmployee[]>(`${BASE}/employees${qs({ active_only: activeOnly, contract_status: contractStatus })}`),
+  getAbsentToday: (date?: string) =>
+    api.get<Record<number, { status: string; leave_code?: string; first_punch?: string | null; last_punch?: string | null }>>(`${BASE}/employees/absent-today${date ? `?date=${date}` : ''}`),
   searchEmployees: (query: string) =>
     api.get<HrEmployee[]>(`${BASE}/employees/search?q=${encodeURIComponent(query)}`),
   createEmployee: (data: Partial<HrEmployee>) => api.post<{ success: boolean; id: number }>(`${BASE}/employees`, data),
@@ -65,6 +71,10 @@ export const hrApi = {
   updateEmployee: (id: number, data: Partial<HrEmployee>) =>
     api.put<{ success: boolean }>(`${BASE}/employees/${id}`, data),
   deleteEmployee: (id: number) => api.delete<{ success: boolean }>(`${BASE}/employees/${id}`),
+  bulkToggleMissingPunch: (userIds: number[] | undefined, enabled: boolean) =>
+    api.post<{ success: boolean; updated: number }>(`${BASE}/employees/bulk-toggle-missing-punch`, { user_ids: userIds, enabled }),
+  getEmployeeWorkStats: (startDate?: string, endDate?: string) =>
+    api.get<Record<number, EmployeeWorkStats>>(`${BASE}/employees/work-stats${qs({ start_date: startDate, end_date: endDate })}`),
 
   // Bonus Types
   getBonusTypes: (activeOnly = false) =>
@@ -155,7 +165,7 @@ export const hrApi = {
     if (month) p.month = String(month)
     return api.get<{ success: boolean; data: {
       employee: HrEmployee
-      biostar: { biostar_user_id: string; user_name: string; email: string | null; phone: string | null; cnp: string | null; user_group_name: string; is_active: boolean; lunch_break_minutes: number; working_hours: number; schedule_start: string | null; schedule_end: string | null; mapping_method: string; mapping_confidence: number } | null
+      biostar: { biostar_user_id: string; user_name: string; email: string | null; phone: string | null; user_group_name: string; is_active: boolean; lunch_break_minutes: number; working_hours: number; schedule_start: string | null; schedule_end: string | null; mapping_method: string; mapping_confidence: number } | null
       sincron: { sincron_employee_id: string; company_name: string; nume: string; prenume: string; cnp: string | null; nr_contract: string; data_incepere_contract: string | null; mapping_method: string; mapping_confidence: number } | null
       connecteam: { connecteam_user_id: number; connecteam_user_name: string | null; connecteam_email: string | null; mapping_method: string | null; mapping_confidence: number; submission_count: number } | null
       org: { company: string; brand: string; department: string; subdepartment: string }
@@ -167,8 +177,10 @@ export const hrApi = {
         attendance: { days_present: number; total_hours: number; avg_daily_hours: number }
         timesheet: Record<string, { value: number; unit: string }>
         leave_permits: { count: number; total_hours: number }
-        daily_hours: { day: number; date: string; hours: number; expected: number; weekend: boolean }[]
+        daily_hours: { day: number; date: string; hours: number; expected: number; weekend: boolean; holiday?: boolean; holiday_name?: string | null }[]
         daily_codes: { day: number; codes: Record<string, number> }[]
+        missing_punch_days: string[]
+        holidays: { date: string; name: string }[]
       }
       leave_balance: {
         year: number
@@ -187,4 +199,49 @@ export const hrApi = {
 
   // Organigram
   getOrganigram: () => api.get<OrganigramData>(`${BASE}/organigram`),
+
+  // CO Balance (annual leave snapshots imported from HR xlsx)
+  importCoBalance: (file: File, year: number) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('year', String(year))
+    return api.post<{ success: boolean; run_id: string }>(`/hr/api/co-balance/import`, fd)
+  },
+  getCoBalanceImportStatus: (runId: string) =>
+    api.get<{ success: boolean; data: CoBalanceImportRun }>(`/hr/api/co-balance/import/status/${runId}`),
+  getCoBalance: (year: number) =>
+    api.get<{ success: boolean; year: number; data: Record<string, {
+      id: number
+      user_id: number
+      year: number
+      company_name: string
+      cnp: string | null
+      nume: string | null
+      prenume: string | null
+      departament: string | null
+      carry_prev_year: number
+      carry_two_years_ago: number
+      annual_cim: number
+      seniority_bonus: number
+      manual_adjustment: number
+      total_available: number
+      used_ytd: number
+      current_balance: number
+    }> }>(`/hr/api/co-balance${qs({ year })}`),
+  getCoBalanceUnmatched: (year: number) =>
+    api.get<{ success: boolean; year: number; data: CoBalanceUnmatchedRow[] }>(
+      `/hr/api/co-balance/unmatched${qs({ year })}`,
+    ),
+  deleteCoBalanceRows: (ids: number[]) =>
+    api.delete<{ success: boolean; deleted: number }>('/hr/api/co-balance', { ids }),
+  assignCoBalanceUser: (rowId: number, userId: number) =>
+    api.post<{ success: boolean }>(`/hr/api/co-balance/unmatched/${rowId}/assign`, { user_id: userId }),
+  listCoBalanceImports: (limit = 20) =>
+    api.get<{ success: boolean; data: CoBalanceImportRun[] }>(`/hr/api/co-balance/imports${qs({ limit })}`),
+
+  // Reports
+  getWeeklyDigest: (params?: { period?: string }) =>
+    api.get<{ success: boolean; data: WeeklyDigestData }>(
+      `${BASE}/reports/weekly-digest${qs({ period: params?.period })}`,
+    ),
 }

@@ -25,10 +25,7 @@
     </style>
 </head>
 <body>
-    {% set current_module = 'connectors' %}
-    {% set page_title = 'ANAF Authentication' %}
-    {% set page_icon = 'bi-shield-check' %}
-    {% include 'partials/_navbar.html' %}
+    {% include 'partials/_navbar.html' ignore missing %}
 
     <div class="container">
         <div class="result-container">

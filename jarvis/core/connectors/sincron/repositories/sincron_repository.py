@@ -10,13 +10,18 @@ class SincronRepository(BaseRepository):
 
     def upsert_employee(self, sincron_employee_id, company_name, nume, prenume,
                         cnp=None, id_contract=None, nr_contract=None,
-                        data_incepere_contract=None):
+                        data_incepere_contract=None, norma_lucru=None,
+                        norma_lucru_time=None, schedule_start=None,
+                        schedule_end=None, lunch_break_minutes=None,
+                        company_id=None):
         """Insert or update a Sincron employee record."""
         return self.execute('''
             INSERT INTO sincron_employees
                 (sincron_employee_id, company_name, nume, prenume, cnp,
-                 id_contract, nr_contract, data_incepere_contract, last_synced_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                 id_contract, nr_contract, data_incepere_contract,
+                 norma_lucru, norma_lucru_time, schedule_start, schedule_end,
+                 lunch_break_minutes, company_id, last_synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (sincron_employee_id, company_name) DO UPDATE SET
                 nume = EXCLUDED.nume,
                 prenume = EXCLUDED.prenume,
@@ -24,11 +29,21 @@ class SincronRepository(BaseRepository):
                 id_contract = EXCLUDED.id_contract,
                 nr_contract = EXCLUDED.nr_contract,
                 data_incepere_contract = EXCLUDED.data_incepere_contract,
+                norma_lucru = EXCLUDED.norma_lucru,
+                norma_lucru_time = EXCLUDED.norma_lucru_time,
+                schedule_start = EXCLUDED.schedule_start,
+                schedule_end = EXCLUDED.schedule_end,
+                lunch_break_minutes = EXCLUDED.lunch_break_minutes,
+                company_id = COALESCE(EXCLUDED.company_id, sincron_employees.company_id),
+                is_active = TRUE,
+                contract_status = NULL,
                 last_synced_at = NOW(),
                 updated_at = NOW()
             RETURNING id, sincron_employee_id, company_name, mapped_jarvis_user_id
         ''', (sincron_employee_id, company_name, nume, prenume, cnp,
-              id_contract, nr_contract, data_incepere_contract), returning=True)
+              id_contract, nr_contract, data_incepere_contract,
+              norma_lucru, norma_lucru_time, schedule_start, schedule_end,
+              lunch_break_minutes, company_id), returning=True)
 
     def get_all_employees(self, company_name=None, active_only=True):
         """Get all Sincron employees (CNP excluded from response)."""
@@ -64,8 +79,76 @@ class SincronRepository(BaseRepository):
             FROM sincron_employees se
             LEFT JOIN users u ON u.id = se.mapped_jarvis_user_id
             WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
+            ORDER BY se.id ASC
             LIMIT 1
         ''', (jarvis_user_id,))
+
+    def get_all_employees_by_jarvis_id(self, jarvis_user_id):
+        """Get ALL Sincron employee entries mapped to a JARVIS user (multi-company)."""
+        return self.query_all('''
+            SELECT se.id, se.sincron_employee_id, se.company_name,
+                   se.nume, se.prenume, se.id_contract, se.nr_contract,
+                   se.data_incepere_contract, se.mapped_jarvis_user_id,
+                   se.mapping_method, se.mapping_confidence,
+                   se.norma_lucru, se.norma_lucru_time,
+                   se.schedule_start, se.schedule_end, se.lunch_break_minutes,
+                   se.count_for_leave, se.exclude_from_pontaje, se.is_base_contract,
+                   se.company_id, se.last_synced_at
+            FROM sincron_employees se
+            WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
+            ORDER BY se.is_base_contract DESC, se.norma_lucru DESC NULLS LAST, se.company_name
+        ''', (jarvis_user_id,))
+
+    def get_combined_schedules_for_biostar(self):
+        """Get combined schedule data per JARVIS user for BioStar backfill.
+
+        The norm is SPLIT across companies (total never exceeds 8h).
+        Uses primary company (highest norma_lucru) for schedule times/lunch.
+        """
+        return self.query_all('''
+            WITH ranked AS (
+                SELECT se.mapped_jarvis_user_id,
+                       se.norma_lucru,
+                       se.schedule_start,
+                       se.schedule_end,
+                       COALESCE(se.lunch_break_minutes, 0) AS lunch_break_minutes,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY se.mapped_jarvis_user_id
+                           ORDER BY se.norma_lucru DESC
+                       ) AS rn
+                FROM sincron_employees se
+                WHERE se.mapped_jarvis_user_id IS NOT NULL
+                  AND se.is_active = TRUE
+                  AND se.norma_lucru IS NOT NULL
+                  AND se.exclude_from_pontaje = FALSE
+            ),
+            totals AS (
+                SELECT mapped_jarvis_user_id,
+                       LEAST(SUM(norma_lucru), 8)::NUMERIC(5,1) AS total_working_hours
+                FROM ranked
+                GROUP BY mapped_jarvis_user_id
+            )
+            SELECT t.mapped_jarvis_user_id,
+                   t.total_working_hours,
+                   r.schedule_start AS combined_start,
+                   r.schedule_end AS combined_end,
+                   r.lunch_break_minutes AS total_lunch
+            FROM totals t
+            JOIN ranked r ON r.mapped_jarvis_user_id = t.mapped_jarvis_user_id AND r.rn = 1
+        ''')
+
+    def get_all_company_norms(self):
+        """Get per-company norm breakdown for all mapped active employees."""
+        return self.query_all('''
+            SELECT mapped_jarvis_user_id, company_name,
+                   norma_lucru, schedule_start, schedule_end, lunch_break_minutes
+            FROM sincron_employees
+            WHERE mapped_jarvis_user_id IS NOT NULL
+              AND is_active = TRUE
+              AND norma_lucru IS NOT NULL
+              AND exclude_from_pontaje = FALSE
+            ORDER BY mapped_jarvis_user_id, norma_lucru DESC
+        ''')
 
     def get_unmapped_employees(self):
         """Get employees not yet mapped to JARVIS users (CNP excluded)."""
@@ -77,6 +160,17 @@ class SincronRepository(BaseRepository):
             WHERE mapped_jarvis_user_id IS NULL AND is_active = TRUE
             ORDER BY company_name, nume, prenume
         ''')
+
+    def get_employee(self, sincron_employee_id, company_name):
+        """Get a single Sincron employee by composite key."""
+        return self.query_one('''
+            SELECT id, sincron_employee_id, company_name, nume, prenume, cnp,
+                   id_contract, nr_contract, data_incepere_contract,
+                   mapped_jarvis_user_id, mapping_method, mapping_confidence,
+                   is_active, last_synced_at
+            FROM sincron_employees
+            WHERE sincron_employee_id = %s AND company_name = %s
+        ''', (sincron_employee_id, company_name))
 
     def update_mapping(self, sincron_employee_id, company_name, jarvis_user_id, method='manual'):
         """Map a Sincron employee to a JARVIS user."""
@@ -97,6 +191,37 @@ class SincronRepository(BaseRepository):
             WHERE sincron_employee_id = %s AND company_name = %s
         ''', (sincron_employee_id, company_name))
 
+    def get_active_employee_ids(self, company_name):
+        """Get all active sincron_employee_ids for a company."""
+        rows = self.query_all('''
+            SELECT sincron_employee_id
+            FROM sincron_employees
+            WHERE company_name = %s AND is_active = TRUE
+        ''', (company_name,))
+        return {r['sincron_employee_id'] for r in rows}
+
+    def deactivate_employees(self, company_name, sincron_employee_ids):
+        """Mark employees as inactive (contract closed).
+
+        Returns list of mapped_jarvis_user_id values (non-null) for
+        cascading the deactivation to JARVIS users.
+        """
+        if not sincron_employee_ids:
+            return []
+        ids_list = list(sincron_employee_ids)
+        rows = self.query_all('''
+            UPDATE sincron_employees
+            SET is_active = FALSE,
+                contract_status = 'closed',
+                updated_at = NOW()
+            WHERE company_name = %s
+              AND sincron_employee_id = ANY(%s)
+              AND is_active = TRUE
+            RETURNING mapped_jarvis_user_id
+        ''', (company_name, ids_list))
+        return [r['mapped_jarvis_user_id'] for r in rows
+                if r.get('mapped_jarvis_user_id')]
+
     def auto_map_by_cnp(self):
         """Auto-map unmapped employees by CNP match against users table."""
         def _work(cursor):
@@ -112,8 +237,43 @@ class SincronRepository(BaseRepository):
                   AND se.cnp IS NOT NULL
                   AND u.cnp IS NOT NULL
                   AND REPLACE(se.cnp, 'x', '') != ''
-                  AND u.is_active = TRUE
+                  AND COALESCE(u.contract_status, 'active') != 'closed'
                   AND LOWER(TRIM(u.cnp)) = LOWER(TRIM(se.cnp))
+            ''')
+            return cursor.rowcount
+        return self.execute_many(_work)
+
+    def propagate_cnp_to_users(self):
+        """Copy CNP from mapped Sincron employees to JARVIS users where missing.
+
+        Sincron is the authoritative source — users.cnp is the canonical store.
+        Only writes when the user has no CNP yet and the Sincron record has one.
+        Skips CNPs that already exist on another user (unique constraint safety).
+        """
+        def _work(cursor):
+            cursor.execute('''
+                UPDATE users u
+                SET cnp = sub.cnp,
+                    updated_at = NOW()
+                FROM (
+                    SELECT DISTINCT ON (se.mapped_jarvis_user_id)
+                           se.mapped_jarvis_user_id AS uid,
+                           TRIM(se.cnp) AS cnp
+                    FROM sincron_employees se
+                    WHERE se.mapped_jarvis_user_id IS NOT NULL
+                      AND se.is_active = TRUE
+                      AND se.cnp IS NOT NULL
+                      AND TRIM(se.cnp) != ''
+                      AND REPLACE(se.cnp, 'x', '') != ''
+                      AND NOT EXISTS (
+                          SELECT 1 FROM users u2
+                          WHERE TRIM(u2.cnp) = TRIM(se.cnp)
+                            AND u2.id != se.mapped_jarvis_user_id
+                      )
+                    ORDER BY se.mapped_jarvis_user_id, se.mapping_confidence DESC NULLS LAST
+                ) sub
+                WHERE u.id = sub.uid
+                  AND (u.cnp IS NULL OR TRIM(u.cnp) = '')
             ''')
             return cursor.rowcount
         return self.execute_many(_work)
@@ -130,7 +290,7 @@ class SincronRepository(BaseRepository):
                 FROM users u
                 WHERE se.mapped_jarvis_user_id IS NULL
                   AND se.is_active = TRUE
-                  AND u.is_active = TRUE
+                  AND COALESCE(u.contract_status, 'active') != 'closed'
                   AND LOWER(TRIM(u.name)) = LOWER(TRIM(se.nume || ' ' || se.prenume))
             ''')
             name_mapped = cursor.rowcount
@@ -144,7 +304,7 @@ class SincronRepository(BaseRepository):
                 FROM users u
                 WHERE se.mapped_jarvis_user_id IS NULL
                   AND se.is_active = TRUE
-                  AND u.is_active = TRUE
+                  AND COALESCE(u.contract_status, 'active') != 'closed'
                   AND LOWER(TRIM(u.name)) = LOWER(TRIM(se.prenume || ' ' || se.nume))
             ''')
             return name_mapped + cursor.rowcount
@@ -165,20 +325,26 @@ class SincronRepository(BaseRepository):
     # ── Timesheet operations ──
 
     def upsert_timesheet_day(self, sincron_employee_id, company_name, year, month,
-                             day, short_code, short_code_en, unit, value):
+                             day, short_code, short_code_en, unit, value,
+                             program_in=None, program_out=None, program_break=None):
         """Insert or update a single timesheet day activity."""
         return self.execute('''
             INSERT INTO sincron_timesheets
                 (sincron_employee_id, company_name, year, month, day,
-                 short_code, short_code_en, unit, value, synced_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                 short_code, short_code_en, unit, value,
+                 program_in, program_out, program_break, synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (sincron_employee_id, company_name, day, short_code) DO UPDATE SET
                 short_code_en = EXCLUDED.short_code_en,
                 unit = EXCLUDED.unit,
                 value = EXCLUDED.value,
+                program_in = EXCLUDED.program_in,
+                program_out = EXCLUDED.program_out,
+                program_break = EXCLUDED.program_break,
                 synced_at = NOW()
         ''', (sincron_employee_id, company_name, year, month, day,
-              short_code, short_code_en, unit, value))
+              short_code, short_code_en, unit, value,
+              program_in, program_out, program_break))
 
     def bulk_upsert_timesheet(self, records):
         """Bulk upsert timesheet records.
@@ -220,6 +386,7 @@ class SincronRepository(BaseRepository):
         """Get monthly timesheet for a JARVIS user (via mapping)."""
         return self.query_all('''
             SELECT st.day, st.short_code, st.short_code_en, st.unit, st.value,
+                   st.program_in, st.program_out, st.program_break,
                    se.company_name, se.nume, se.prenume
             FROM sincron_timesheets st
             JOIN sincron_employees se
@@ -286,6 +453,128 @@ class SincronRepository(BaseRepository):
             ORDER BY u.name, st.short_code
         ''', (jarvis_user_ids, year, month))
 
+    def get_day_schedule_by_jarvis_user(self, jarvis_user_id, date_str):
+        """Get per-day work schedule from Sincron timesheets for a specific date.
+
+        Returns the primary company's (highest norma_lucru) OZ schedule for
+        that day, falling back to the static sincron_employees schedule.
+        """
+        return self.query_one('''
+            WITH day_schedules AS (
+                SELECT DISTINCT ON (se.company_name)
+                       se.company_name,
+                       se.norma_lucru,
+                       st.program_in,
+                       st.program_out,
+                       st.program_break,
+                       se.schedule_start AS static_start,
+                       se.schedule_end AS static_end,
+                       se.lunch_break_minutes AS static_lunch
+                FROM sincron_employees se
+                LEFT JOIN sincron_timesheets st
+                  ON st.sincron_employee_id = se.sincron_employee_id
+                  AND st.company_name = se.company_name
+                  AND st.day = %s::date
+                  AND st.short_code IN ('OZ', 'OS')
+                WHERE se.mapped_jarvis_user_id = %s
+                  AND se.is_active = TRUE
+                  AND se.norma_lucru IS NOT NULL
+                  AND se.exclude_from_pontaje = FALSE
+                ORDER BY se.company_name, st.program_in NULLS LAST
+            )
+            SELECT company_name,
+                   norma_lucru,
+                   COALESCE(program_in, static_start) AS schedule_start,
+                   COALESCE(program_out, static_end) AS schedule_end,
+                   COALESCE(program_break, static_lunch) AS lunch_break_minutes
+            FROM day_schedules
+            ORDER BY norma_lucru DESC
+            LIMIT 1
+        ''', (date_str, jarvis_user_id))
+
+    def get_full_day_schedule_by_jarvis_user(self, jarvis_user_id, date_str,
+                                               include_excluded=False):
+        """Get combined schedule boundaries across ALL companies for a specific date.
+
+        Returns earliest program_in, latest program_out, and primary company's lunch.
+        When include_excluded=True, includes contracts with exclude_from_pontaje=TRUE
+        (used by adjustment logic to account for secondary contract schedules).
+        """
+        excl = "" if include_excluded else "AND se.exclude_from_pontaje = FALSE"
+        excl2 = "" if include_excluded else "AND se2.exclude_from_pontaje = FALSE"
+        return self.query_one(f'''
+            SELECT MIN(st.program_in) AS schedule_start,
+                   MAX(st.program_out) AS schedule_end,
+                   (SELECT se2.lunch_break_minutes
+                    FROM sincron_employees se2
+                    WHERE se2.mapped_jarvis_user_id = %s AND se2.is_active = TRUE
+                      AND se2.norma_lucru IS NOT NULL
+                      {excl2}
+                    ORDER BY se2.norma_lucru DESC LIMIT 1
+                   ) AS lunch_break_minutes
+            FROM sincron_employees se
+            JOIN sincron_timesheets st
+              ON st.sincron_employee_id = se.sincron_employee_id
+              AND st.company_name = se.company_name
+              AND st.day = %s::date
+              AND st.short_code IN ('OZ', 'OS')
+              AND st.program_in IS NOT NULL
+              AND st.program_out IS NOT NULL
+            WHERE se.mapped_jarvis_user_id = %s
+              AND se.is_active = TRUE
+              {excl}
+        ''', (jarvis_user_id, date_str, jarvis_user_id))
+
+    def get_all_full_day_schedules_for_date(self, date_str):
+        """Get combined schedule boundaries for ALL mapped employees for a date.
+
+        Includes ALL contracts (even those with exclude_from_pontaje=TRUE)
+        so the adjustment logic can use the full combined schedule including
+        secondary contracts.
+
+        Returns list of dicts with mapped_jarvis_user_id, schedule_start,
+        schedule_end, lunch_break_minutes.
+        """
+        return self.query_all('''
+            SELECT se.mapped_jarvis_user_id,
+                   MIN(st.program_in) AS schedule_start,
+                   MAX(st.program_out) AS schedule_end,
+                   (SELECT se2.lunch_break_minutes
+                    FROM sincron_employees se2
+                    WHERE se2.mapped_jarvis_user_id = se.mapped_jarvis_user_id
+                      AND se2.is_active = TRUE
+                      AND se2.norma_lucru IS NOT NULL
+                    ORDER BY se2.norma_lucru DESC LIMIT 1
+                   ) AS lunch_break_minutes
+            FROM sincron_employees se
+            JOIN sincron_timesheets st
+              ON st.sincron_employee_id = se.sincron_employee_id
+              AND st.company_name = se.company_name
+              AND st.day = %s::date
+              AND st.short_code IN ('OZ', 'OS')
+              AND st.program_in IS NOT NULL
+              AND st.program_out IS NOT NULL
+            WHERE se.mapped_jarvis_user_id IS NOT NULL
+              AND se.is_active = TRUE
+            GROUP BY se.mapped_jarvis_user_id
+        ''', (date_str,))
+
+    def get_all_day_codes(self, year, month):
+        """Get day-level activity codes for all mapped employees in a month.
+
+        Returns list of dicts: {mapped_jarvis_user_id, day, short_code}
+        """
+        return self.query_all('''
+            SELECT se.mapped_jarvis_user_id, st.day, st.short_code
+            FROM sincron_timesheets st
+            JOIN sincron_employees se
+              ON se.sincron_employee_id = st.sincron_employee_id
+              AND se.company_name = st.company_name
+            WHERE se.mapped_jarvis_user_id IS NOT NULL
+              AND st.year = %s AND st.month = %s
+            ORDER BY se.mapped_jarvis_user_id, st.day
+        ''', (year, month))
+
     def delete_month_timesheets(self, sincron_employee_id, company_name, year, month):
         """Delete all timesheet records for an employee/month (before re-sync)."""
         return self.execute('''
@@ -293,6 +582,46 @@ class SincronRepository(BaseRepository):
             WHERE sincron_employee_id = %s AND company_name = %s
               AND year = %s AND month = %s
         ''', (sincron_employee_id, company_name, year, month))
+
+    # ── Schedule history ──
+
+    def upsert_schedule_snapshot(self, sincron_employee_id, company_name, year, month,
+                                 norma_lucru=None, norma_lucru_time=None,
+                                 schedule_start=None, schedule_end=None,
+                                 lunch_break_minutes=None):
+        """Capture a monthly schedule snapshot for an employee."""
+        return self.execute('''
+            INSERT INTO sincron_schedule_history
+                (sincron_employee_id, company_name, year, month,
+                 norma_lucru, norma_lucru_time, schedule_start, schedule_end,
+                 lunch_break_minutes, synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (sincron_employee_id, company_name, year, month) DO UPDATE SET
+                norma_lucru = EXCLUDED.norma_lucru,
+                norma_lucru_time = EXCLUDED.norma_lucru_time,
+                schedule_start = EXCLUDED.schedule_start,
+                schedule_end = EXCLUDED.schedule_end,
+                lunch_break_minutes = EXCLUDED.lunch_break_minutes,
+                synced_at = NOW()
+        ''', (sincron_employee_id, company_name, year, month,
+              norma_lucru, norma_lucru_time, schedule_start, schedule_end,
+              lunch_break_minutes))
+
+    def get_schedule_history_by_jarvis_id(self, jarvis_user_id, year, month):
+        """Get schedule snapshot for a JARVIS user for a specific month."""
+        return self.query_all('''
+            SELECT sh.sincron_employee_id, sh.company_name, sh.year, sh.month,
+                   sh.norma_lucru, sh.norma_lucru_time,
+                   sh.schedule_start, sh.schedule_end, sh.lunch_break_minutes,
+                   se.nr_contract, se.data_incepere_contract
+            FROM sincron_schedule_history sh
+            JOIN sincron_employees se
+              ON se.sincron_employee_id = sh.sincron_employee_id
+              AND se.company_name = sh.company_name
+            WHERE se.mapped_jarvis_user_id = %s
+              AND sh.year = %s AND sh.month = %s
+            ORDER BY sh.company_name
+        ''', (jarvis_user_id, year, month))
 
     # ── Activity codes ──
 
@@ -309,17 +638,66 @@ class SincronRepository(BaseRepository):
     def get_activity_codes(self):
         """Get all known activity codes."""
         return self.query_all('''
-            SELECT short_code, short_code_en, description, category, created_at
+            SELECT short_code, short_code_en, description, category, is_leave, created_at
             FROM sincron_activity_codes ORDER BY short_code
         ''')
 
+    def get_leave_codes(self):
+        """Return tuple of short_codes marked as leave in sincron_activity_codes."""
+        rows = self.query_all('''
+            SELECT short_code FROM sincron_activity_codes
+            WHERE is_leave = TRUE ORDER BY short_code
+        ''')
+        return tuple(r['short_code'] for r in rows)
+
+    def get_absence_codes(self):
+        """Return tuple of all motivated-absence codes (leave + absence categories)."""
+        rows = self.query_all('''
+            SELECT short_code FROM sincron_activity_codes
+            WHERE is_leave = TRUE OR category = 'absence'
+            ORDER BY short_code
+        ''')
+        return tuple(r['short_code'] for r in rows)
+
     # ── JARVIS users for mapping dropdown (admin only — no CNP) ──
+
+    def recalculate_base_contracts(self):
+        """Mark the base (primary) contract per employee CNP.
+
+        Logic: highest norma_lucru with 'Numar ore pe zi' wins.
+        Tiebreaker: earliest data_incepere_contract.
+        Returns the number of employees marked as base.
+        """
+        def _work(cursor):
+            cursor.execute("UPDATE sincron_employees SET is_base_contract = FALSE WHERE is_active = TRUE")
+            cursor.execute('''
+                WITH ranked AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY cnp
+                               ORDER BY
+                                   CASE WHEN norma_lucru_time = 'Numar ore pe zi' THEN 0 ELSE 1 END,
+                                   norma_lucru DESC NULLS LAST,
+                                   data_incepere_contract ASC NULLS LAST
+                           ) AS rn
+                    FROM sincron_employees
+                    WHERE is_active = TRUE
+                      AND cnp IS NOT NULL AND cnp != ''
+                )
+                UPDATE sincron_employees se
+                SET is_base_contract = TRUE
+                FROM ranked r
+                WHERE se.id = r.id AND r.rn = 1
+            ''')
+            return cursor.rowcount
+        return self.transaction(_work)
 
     def get_jarvis_users(self):
         """Get active JARVIS users for mapping (excludes sensitive PII)."""
         return self.query_all('''
-            SELECT u.id, u.name, u.email, u.company, u.department
+            SELECT u.id, u.name, u.email, COALESCE(co.company, u.company) AS company, u.department
             FROM users u
+            LEFT JOIN companies co ON co.id = u.company_id
             WHERE u.is_active = TRUE
             ORDER BY u.name
         ''')

@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   User, Building2, Mail, Phone, Fingerprint, FileSpreadsheet, FileText,
@@ -48,6 +49,9 @@ export default function Employee360() {
   const { userId } = useParams<{ userId: string }>()
   const navigate = useNavigate()
   const uid = Number(userId)
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const canEditEmployee = user?.permissions?.['hr.employees.edit'] ?? false
 
   const { data: overviewRes, isLoading } = useQuery({
     queryKey: ['hr', 'employee-overview', uid],
@@ -56,6 +60,16 @@ export default function Employee360() {
   })
 
   const overview = overviewRes?.data ?? null
+
+  const statusMutation = useMutation({
+    mutationFn: (status: string) => hrApi.updateEmployee(uid, { contract_status: status } as Partial<import('@/types/hr').HrEmployee>),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hr', 'employee-overview', uid] })
+      queryClient.invalidateQueries({ queryKey: ['hr', 'employees'] })
+      toast.success('Contract status updated')
+    },
+    onError: () => toast.error('Failed to update contract status'),
+  })
 
   if (isLoading) {
     return (
@@ -116,6 +130,26 @@ export default function Employee360() {
             <div className="flex-1 min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg font-semibold">{emp.name}</h2>
+                {canEditEmployee ? (
+                  <Select
+                    value={emp.contract_status ?? 'active'}
+                    onValueChange={(v) => statusMutation.mutate(v)}
+                    disabled={statusMutation.isPending}
+                  >
+                    <SelectTrigger className="h-6 w-[120px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="suspended">Suspended</SelectItem>
+                      <SelectItem value="closed">Closed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Badge className={cn('text-xs', emp.contract_status === 'suspended' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' : emp.contract_status === 'closed' ? 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200' : '')}>
+                    {emp.contract_status === 'active' ? 'Active' : emp.contract_status === 'suspended' ? 'Suspended' : 'Closed'}
+                  </Badge>
+                )}
                 {bio && <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-950"><Fingerprint className="h-3 w-3 mr-1" />BioStar</Badge>}
                 {sinc && <Badge variant="outline" className="text-xs bg-green-50 dark:bg-green-950"><FileSpreadsheet className="h-3 w-3 mr-1" />Sincron</Badge>}
                 {ct && <Badge variant="outline" className="text-xs bg-indigo-50 dark:bg-indigo-950"><FileText className="h-3 w-3 mr-1" />Connecteam</Badge>}
@@ -227,6 +261,7 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
 
   const md = monthRes?.data ?? overview
   const { biostar: bio, sincron: sinc, connecteam: ct, org, bonuses, month_stats: ms, leave_balance: lb } = md
+  const leaveCodes = (md as any).leave_codes as string[] | undefined
   const monthName = ms ? new Date(ms.year, ms.month - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : ''
 
   // Hours per day (norma) for day→hours conversion
@@ -242,18 +277,22 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
   const overtimeHours = ms?.timesheet?.OSW?.value ?? 0
   const annualLeaveH = dToH(ms?.timesheet?.CO?.value ?? 0)
   const sickLeaveH = dToH(ms?.timesheet?.CM?.value ?? 0)
+  const _leaveCodes: string[] = leaveCodes ?? ['CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG']
   const totalLeaveH = tsEntries
-    .filter(([code]) => ['CO', 'CM', 'CES', 'CIC', 'CMS', 'DLG'].includes(code))
+    .filter(([code]) => _leaveCodes.includes(code))
     .reduce((s, [, v]) => s + (v.unit === 'hour' ? v.value : dToH(v.value)), 0)
 
   // Leave balance — in hours
   const lbUsedH = lb ? dToH(lb.annual_used) : 0
   const lbEntH = lb ? dToH(lb.annual_entitlement) : 0
   const lbRemH = lb ? dToH(lb.annual_remaining) : 0
-  const annualPct = lb ? Math.min(100, Math.round((lb.annual_used / lb.annual_entitlement) * 100)) : 0
+  const annualPct = lb && lb.annual_entitlement > 0 ? Math.min(100, Math.round((lb.annual_used / lb.annual_entitlement) * 100)) : 0
 
   // Daily chart data
   const dailyData = ms?.daily_hours ?? []
+  const missingPunchDays: string[] = ms?.missing_punch_days ?? []
+  const missingPunchDayNums = new Set(missingPunchDays.map(d => parseInt(d.split('-')[2], 10)))
+  const holidayDayNums = new Set((ms?.holidays ?? []).map((h: { date: string }) => parseInt(h.date.split('-')[2], 10)))
 
   // Leave donut data — in hours
   const donutSlices = useMemo(() => {
@@ -318,6 +357,21 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
         {sinc && <StatCard title="Overtime" value={`${overtimeHours}h`} icon={<Timer className="h-4 w-4" />} />}
       </div>
 
+      {/* Missing Punch Alert */}
+      {missingPunchDays.length > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-4 py-3 flex items-start gap-2">
+          <Clock className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+          <div className="text-sm text-amber-800 dark:text-amber-200">
+            <span className="font-medium">{missingPunchDays.length} missing punch {missingPunchDays.length === 1 ? 'day' : 'days'}</span>
+            {' — '}
+            {missingPunchDays.map(d => {
+              const [y, m, day] = d.split('-').map(Number)
+              return new Date(y, m - 1, day).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+            }).join(', ')}
+          </div>
+        </div>
+      )}
+
       {/* Daily Attendance Chart */}
       {bio && dailyData.length > 0 && (
         <Card>
@@ -325,7 +379,7 @@ function OverviewPanel({ overview, userId }: { overview: NonNullable<Awaited<Ret
             <CardTitle className="text-sm font-medium">Daily Attendance — {monthName}</CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <AttendanceBarChart data={dailyData} />
+            <AttendanceBarChart data={dailyData} missingDays={missingPunchDayNums} holidayDays={holidayDayNums} />
           </CardContent>
         </Card>
       )}
@@ -495,7 +549,7 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
 
 // ── Attendance Bar Chart (SVG) ──
 
-function AttendanceBarChart({ data }: { data: { day: number; date: string; hours: number; expected: number; weekend: boolean }[] }) {
+function AttendanceBarChart({ data, missingDays = new Set(), holidayDays = new Set() }: { data: { day: number; date: string; hours: number; expected: number; weekend: boolean; holiday?: boolean; holiday_name?: string | null }[]; missingDays?: Set<number>; holidayDays?: Set<number> }) {
   const maxHours = Math.max(...data.map(d => d.hours), ...data.map(d => d.expected), 1)
   const yMax = Math.ceil(maxHours + 1)
   const w = Math.max(700, data.length * 26)
@@ -535,18 +589,30 @@ function AttendanceBarChart({ data }: { data: { day: number; date: string; hours
           const x = pad.l + gap + i * (barWidth + gap)
           const barH = (d.hours / yMax) * ih
           const y = pad.t + ih - barH
-          const color = d.weekend && d.hours === 0
-            ? 'hsl(0, 0%, 90%)'
-            : d.hours === 0
-              ? 'hsl(0, 0%, 80%)'
-              : d.hours >= d.expected
-                ? 'hsl(142, 76%, 36%)'
-                : d.hours >= d.expected * 0.75
-                  ? 'hsl(38, 92%, 50%)'
-                  : 'hsl(0, 72%, 51%)'
+          const isHoliday = holidayDays.has(d.day) || d.holiday
+          const isMissing = missingDays.has(d.day) && !isHoliday
+          const color = isHoliday
+            ? 'hsl(217, 91%, 60%)'
+            : isMissing
+              ? 'hsl(0, 72%, 51%)'
+              : d.weekend && d.hours === 0
+                ? 'hsl(0, 0%, 90%)'
+                : d.hours === 0
+                  ? 'hsl(0, 0%, 80%)'
+                  : d.hours >= d.expected
+                    ? 'hsl(142, 76%, 36%)'
+                    : d.hours >= d.expected * 0.75
+                      ? 'hsl(38, 92%, 50%)'
+                      : 'hsl(0, 72%, 51%)'
           return (
             <g key={i}>
-              {d.hours === 0 && (
+              {isHoliday && d.hours === 0 && (
+                <rect x={x} y={pad.t + ih - 6} width={barWidth} height={6} rx={1} fill="hsl(217, 91%, 60%)" fillOpacity={0.6} />
+              )}
+              {isMissing && d.hours === 0 && (
+                <rect x={x} y={pad.t + ih - 6} width={barWidth} height={6} rx={1} fill="hsl(0, 72%, 51%)" fillOpacity={0.7} />
+              )}
+              {!isMissing && !isHoliday && d.hours === 0 && (
                 <rect x={x} y={pad.t + ih - 2} width={barWidth} height={2} rx={1} fill="currentColor" fillOpacity={d.weekend ? 0.03 : 0.1} />
               )}
               {d.hours > 0 && (
@@ -575,6 +641,8 @@ function AttendanceBarChart({ data }: { data: { day: number; date: string; hours
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(38, 92%, 50%)' }} />Below target</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(0, 72%, 51%)' }} />Undertime</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm border" style={{ background: 'transparent' }} />Absent</span>
+        {holidayDays.size > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(217, 91%, 60%)', opacity: 0.6 }} />Holiday</span>}
+        {missingDays.size > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: 'hsl(0, 72%, 51%)', opacity: 0.7 }} />Missing punch</span>}
       </div>
     </div>
   )
@@ -646,16 +714,16 @@ function PontajPanel({
   const endDate = now.toISOString().split('T')[0]
   const startDate = new Date(now.getTime() - days * 86400000).toISOString().split('T')[0]
 
-  const { data: historyData, isLoading } = useQuery({
+  const { data: _histResp, isLoading } = useQuery({
     queryKey: ['biostar', 'daily-history', biostarUserId, startDate, endDate],
     queryFn: () => biostarApi.getEmployeeDailyHistory(biostarUserId, startDate, endDate),
   })
 
-  const history = historyData ?? []
+  const history = _histResp?.history ?? []
+  const holidays: Set<string> = useMemo(() => new Set(_histResp?.holidays ?? []), [_histResp?.holidays])
 
   const adjustDayMut = useMutation({
     mutationFn: (day: BioStarDayHistory) => {
-      if (!day.first_punch) throw new Error('No data')
       const datePart = day.date
       const wh = workingHours ?? 8
       const lunch = lunchBreak ?? 60
@@ -677,8 +745,8 @@ function PontajPanel({
         date: datePart,
         adjusted_first_punch: fmtMins(startMin),
         adjusted_last_punch: fmtMins(endMin),
-        original_first_punch: day.first_punch,
-        original_last_punch: day.last_punch || day.first_punch,
+        original_first_punch: day.first_punch || '',
+        original_last_punch: day.last_punch || day.first_punch || '',
         schedule_start: schedStart,
         schedule_end: scheduleEnd?.slice(0, 5),
         lunch_break_minutes: lunch,
@@ -716,6 +784,25 @@ function PontajPanel({
     return { daysPresent, totalHours, avgHours }
   }, [history, lunchBreak])
 
+  // Build full list of weekdays in the period (including absent days)
+  const periodDays = useMemo(() => {
+    const result: (BioStarDayHistory & { isHoliday?: boolean })[] = []
+    for (let i = 0; i < days; i++) {
+      const d = new Date(now.getTime() - i * 86400000)
+      const dateStr = d.toISOString().split('T')[0]
+      const dow = d.getDay()
+      if (dow === 0 || dow === 6) continue // skip weekends
+      const isHol = holidays.has(dateStr)
+      const found = history.find((h) => h.date === dateStr)
+      if (found) {
+        result.push({ ...found, isHoliday: isHol })
+      } else {
+        result.push({ date: dateStr, first_punch: '', last_punch: '', total_punches: 0, duration_seconds: null, isHoliday: isHol })
+      }
+    }
+    return result
+  }, [history, holidays, days])
+
   const fmtTime = (t: string | null) => t ? new Date(t).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : '—'
   const fmtDur = (sec: number) => {
     if (sec <= 0) return '—'
@@ -744,8 +831,8 @@ function PontajPanel({
 
       {isLoading ? (
         <Skeleton className="h-64 w-full" />
-      ) : history.length === 0 ? (
-        <EmptyState icon={<Fingerprint className="h-8 w-8" />} title="No Attendance Data" description="No BioStar records for this period." />
+      ) : periodDays.length === 0 ? (
+        <EmptyState icon={<Fingerprint className="h-8 w-8" />} title="No Attendance Data" description="No working days in this period." />
       ) : (
         <Card>
           <CardContent className="p-0">
@@ -769,9 +856,9 @@ function PontajPanel({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {history.map((d) => {
+                  {periodDays.map((d) => {
                     const dt = new Date(d.date + 'T00:00:00')
-                    const isWeekend = dt.getDay() === 0 || dt.getDay() === 6
+                    const isHoliday = d.isHoliday ?? false
                     const isToday = d.date === today
                     const rawSec = d.duration_seconds ?? 0
                     const netSec = rawSec > lunchBreak * 60 ? rawSec - lunchBreak * 60 : rawSec
@@ -780,7 +867,7 @@ function PontajPanel({
                     const notExited = d.total_punches === 1
                     const isShort = netH > 0 && netH < workingHours
                     return (
-                      <TableRow key={d.date} className={cn(isWeekend && 'bg-muted/40', isToday && 'bg-muted/30')}>
+                      <TableRow key={d.date} className={cn(isHoliday && 'bg-blue-50 dark:bg-blue-950/20', isToday && 'bg-muted/30')}>
                         <TableCell className="tabular-nums text-xs">
                           {d.date}
                           {isToday && <Badge variant="secondary" className="ml-2 text-[10px]">Today</Badge>}
@@ -813,7 +900,11 @@ function PontajPanel({
                           </>
                         )}
                         <TableCell className="text-right tabular-nums text-xs font-medium">
-                          {isAbsent ? (
+                          {isAbsent && isHoliday ? (
+                            <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-300">Holiday</Badge>
+                          ) : isAbsent && d.adjusted_first_punch ? (
+                            <Badge variant="outline" className="text-[10px] text-green-600 border-green-300">Adjusted</Badge>
+                          ) : isAbsent ? (
                             <Badge variant="outline" className="text-[10px] text-muted-foreground">Absent</Badge>
                           ) : notExited ? (
                             <span className="text-muted-foreground">—</span>
@@ -826,7 +917,7 @@ function PontajPanel({
                         </TableCell>
                         {canAdjust && (
                           <TableCell className="text-center">
-                            {!isAbsent && !isToday && (
+                            {!isToday && !isHoliday && (
                               d.adjusted_first_punch ? (
                                 <Button
                                   size="sm"
@@ -877,6 +968,25 @@ function TimesheetPanel({ userId }: { userId: number }) {
     queryKey: ['sincron', 'employee-timesheet', userId, year, month],
     queryFn: () => sincronApi.getEmployeeTimesheet(userId, year, month),
   })
+
+  // Holidays for this month
+  const { data: holidayData } = useQuery({
+    queryKey: ['holidays', 'year', year],
+    queryFn: () => import('@/api/client').then(m => m.api.get<{ success: boolean; holidays: { date: string; name: string; type: string }[] }>(`/api/holidays/year/${year}`)),
+  })
+  const holidaySet: Set<string> = useMemo(() => {
+    const s = new Set<string>()
+    const prefix = `${year}-${String(month).padStart(2, '0')}`
+    for (const h of holidayData?.holidays ?? []) {
+      if (h.date.startsWith(prefix)) s.add(h.date)
+    }
+    return s
+  }, [holidayData, year, month])
+  const holidayNames: Record<string, string> = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const h of holidayData?.holidays ?? []) m[h.date] = h.name
+    return m
+  }, [holidayData])
 
   const ts: SincronTimesheetData | null = data?.data ?? null
   const days = ts?.days ?? {}
@@ -958,13 +1068,19 @@ function TimesheetPanel({ userId }: { userId: number }) {
                     {sortedDays.map((day) => {
                       const d = new Date(day + 'T00:00:00')
                       const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                      const isHoliday = holidaySet.has(day)
                       const entries = days[day]
                       const byCode: Record<string, number> = {}
                       entries.forEach((e) => { byCode[e.short_code] = e.value })
 
                       return (
-                        <TableRow key={day} className={isWeekend ? 'bg-muted/40' : ''}>
-                          <TableCell className="tabular-nums text-xs">{day}</TableCell>
+                        <TableRow key={day} className={cn(isWeekend && 'bg-muted/40', isHoliday && 'bg-blue-50 dark:bg-blue-950/20')}>
+                          <TableCell className="tabular-nums text-xs">
+                            {day}
+                            {isHoliday && (
+                              <Badge variant="outline" className="ml-1.5 text-[9px] text-blue-600 border-blue-300 py-0">{holidayNames[day] ?? 'Holiday'}</Badge>
+                            )}
+                          </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {d.toLocaleDateString('ro-RO', { weekday: 'short' })}
                           </TableCell>

@@ -76,7 +76,7 @@ class ConnecteamRepository(BaseRepository):
             WHERE LOWER(TRIM(cu.connecteam_user_name)) = LOWER(TRIM(u.name))
               AND cu.mapped_jarvis_user_id IS NULL
               AND cu.connecteam_user_name IS NOT NULL
-              AND u.is_active = TRUE
+              AND COALESCE(u.contract_status, 'active') != 'closed'
         ''')
 
     # ── Submission operations ──
@@ -119,7 +119,8 @@ class ConnecteamRepository(BaseRepository):
                    cfs.status, cfs.event_type, cfs.entry_num,
                    cfs.received_at::text, cfs.created_at::text,
                    cu.connecteam_user_name,
-                   u.name AS jarvis_user_name
+                   u.name AS jarvis_user_name,
+                   u.company AS jarvis_user_company
             FROM connecteam_form_submissions cfs
             LEFT JOIN connecteam_users cu ON cu.connecteam_user_id = cfs.connecteam_user_id
             LEFT JOIN users u ON u.id = cfs.mapped_jarvis_user_id

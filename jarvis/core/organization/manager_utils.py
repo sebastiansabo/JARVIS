@@ -57,7 +57,7 @@ def get_managed_employee_ids(manager_user_id, node_id=None):
                     SELECT DISTINCT u.id AS user_id
                     FROM l0_companies lc
                     JOIN companies c ON c.id = lc.company_id
-                    JOIN users u ON u.company = c.company AND u.is_active = TRUE
+                    JOIN users u ON u.company_id = c.id AND u.is_active = TRUE
                     WHERE u.id != %s
                 ),
                 -- Structure tree members under L0 companies (L1→L5 cascade)

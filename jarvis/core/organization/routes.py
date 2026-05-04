@@ -278,7 +278,15 @@ def api_update_company_config(company_id):
             company=data.get('company'),
             vat=data.get('vat'),
             parent_company_id=parent_id,
-            logo_url=logo_url
+            logo_url=logo_url,
+            reg_no=data.get('reg_no', 'UNSET'),
+            iban=data.get('iban', 'UNSET'),
+            bank=data.get('bank', 'UNSET'),
+            swift=data.get('swift', 'UNSET'),
+            street=data.get('street', 'UNSET'),
+            city=data.get('city', 'UNSET'),
+            county=data.get('county', 'UNSET'),
+            postal_code=data.get('postal_code', 'UNSET'),
         )
         if success:
             return jsonify({'success': True})

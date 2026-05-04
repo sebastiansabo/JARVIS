@@ -8,19 +8,101 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { hrApi } from '@/api/hr'
+import { sincronApi } from '@/api/sincron'
 import { toast } from 'sonner'
 import type { BonusType, HrSettings } from '@/types/hr'
 
 export default function HrTab() {
   return (
     <div className="space-y-6">
+      <SecondaryContractsSection />
       <BonusLockSection />
       <BonusTypesSection />
     </div>
+  )
+}
+
+function SecondaryContractsSection() {
+  const qc = useQueryClient()
+
+  const { data: stats } = useQuery({
+    queryKey: ['settings', 'contractStats'],
+    queryFn: sincronApi.getContractStats,
+    staleTime: 30_000,
+  })
+
+  const bulkMutation = useMutation({
+    mutationFn: ({ field, value }: { field: 'count_for_leave' | 'exclude_from_pontaje'; value: boolean }) =>
+      sincronApi.bulkToggleSecondary(field, value),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['settings', 'contractStats'] })
+      const count = res?.updated ?? 0
+      toast.success(`${count} secondary contracts updated`)
+    },
+    onError: () => toast.error('Bulk update failed'),
+  })
+
+  const d = stats
+  const secondaryCount = d?.secondary_count ?? 0
+  const leaveOn = d ? d.secondary_leave_on === d.secondary_count : false
+  const pontajeOn = d ? d.secondary_pontaje_on === d.secondary_count : false
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Secondary Contracts</CardTitle>
+        <CardDescription>
+          Bulk toggle how secondary (non-base) Sincron contracts affect Leave analytics and Pontaje calculations.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-6 text-sm text-muted-foreground">
+          <span><strong className="text-foreground">{d?.base_count ?? '–'}</strong> base contracts</span>
+          <span><strong className="text-foreground">{secondaryCount}</strong> secondary contracts</span>
+        </div>
+
+        {secondaryCount > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Count for Leave</p>
+                <p className="text-xs text-muted-foreground">
+                  Include secondary contracts in CO/Leave analytics ({d?.secondary_leave_on ?? 0}/{secondaryCount} on)
+                </p>
+              </div>
+              <Switch
+                checked={leaveOn}
+                disabled={bulkMutation.isPending}
+                onCheckedChange={(checked) =>
+                  bulkMutation.mutate({ field: 'count_for_leave', value: checked })
+                }
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Include in Pontaje</p>
+                <p className="text-xs text-muted-foreground">
+                  Include secondary contracts in Pontaje / Scheduler / Adjustments ({d?.secondary_pontaje_on ?? 0}/{secondaryCount} on)
+                </p>
+              </div>
+              <Switch
+                checked={pontajeOn}
+                disabled={bulkMutation.isPending}
+                onCheckedChange={(checked) =>
+                  bulkMutation.mutate({ field: 'exclude_from_pontaje', value: !checked })
+                }
+              />
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

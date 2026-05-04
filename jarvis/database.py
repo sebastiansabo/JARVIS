@@ -327,10 +327,11 @@ def init_db():
             )
         """)
         if cursor.fetchone()['exists']:
-            # Run incremental column/index/table migrations
-            from migrations.domains.schema_incremental import create_schema_incremental
-            create_schema_incremental(conn, cursor)
-            logger.info('Database schema already initialized — skipping init_db()')
+            # Run full schema (all CREATE IF NOT EXISTS are idempotent) to catch
+            # any missing domain tables, then run incremental migrations.
+            from migrations.init_schema import create_schema as _full_schema
+            _full_schema(conn, cursor)
+            logger.info('Database schema already initialized — ran full idempotent schema + incremental')
             return
 
 

@@ -20,7 +20,11 @@ from .domains.schema_digest import create_schema_digest
 from .domains.schema_carpark import create_schema_carpark
 from .domains.schema_sincron import create_schema_sincron
 from .domains.schema_connecteam import create_schema_connecteam
+from .domains.schema_holidays import create_schema_holidays
 from .domains.schema_incremental import create_schema_incremental
+from .domains.schema_telemetry import create_schema_telemetry
+from .domains.schema_courses import create_schema_courses
+from .domains.schema_facturare import create_schema_facturare
 from .version_manager import run_pending_migrations
 
 
@@ -48,6 +52,10 @@ def create_schema(conn, cursor):
     create_schema_carpark(conn, cursor)
     create_schema_sincron(conn, cursor)
     create_schema_connecteam(conn, cursor)
+    create_schema_holidays(conn, cursor)
+    create_schema_telemetry(conn, cursor)
+    create_schema_courses(conn, cursor)
+    create_schema_facturare(conn, cursor)
     create_schema_incremental(conn, cursor)
     run_pending_migrations(conn, cursor)
     conn.commit()

@@ -2,8 +2,11 @@
 
 Notification settings, logs, test email, default column configuration,
 in-app notification center (universal — used by all modules),
-and push notification manager admin API.
+push notification manager admin API, and commit digest management.
 """
+import os
+import subprocess
+
 from flask import jsonify, request
 from flask_login import login_required, current_user
 
@@ -338,5 +341,58 @@ def api_test_push():
             bypass_rules=True,
         )
         return jsonify({'success': True, 'message': 'Test notification sent'})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+# ============== Commit Digest Management ==============
+
+@notifications_bp.route('/api/commit-digest/status', methods=['GET'])
+@login_required
+def api_get_commit_digest_status():
+    """Get last-run info per period for commit digests."""
+    err = _require_admin()
+    if err:
+        return err
+    try:
+        settings = _notif_repo.get_settings()
+        result = {}
+        for period in ('daily', 'weekly', 'monthly'):
+            result[period] = {
+                'last_sent': settings.get(f'commit_digest_{period}_last_sent'),
+                'commit_count': int(settings.get(f'commit_digest_{period}_last_count', '0') or '0'),
+            }
+        return jsonify(result)
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@notifications_bp.route('/api/commit-digest/trigger', methods=['POST'])
+@login_required
+def api_trigger_commit_digest():
+    """Trigger a commit digest manually as a background subprocess."""
+    err = _require_admin()
+    if err:
+        return err
+    data = request.get_json() or {}
+    period = data.get('period', 'daily')
+    if period not in ('daily', 'weekly', 'monthly'):
+        return jsonify({'success': False, 'error': f'Invalid period: {period}'}), 400
+    try:
+        # Find the script relative to the JARVIS repo root
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        script_path = os.path.join(repo_root, 'scripts', 'daily_digest.py')
+        if not os.path.isfile(script_path):
+            return jsonify({'success': False, 'error': 'Digest script not found'}), 404
+
+        env = {**os.environ, 'FORCE_RUN': '1', 'DIGEST_PERIOD': period}
+        subprocess.Popen(
+            ['python3', script_path],
+            env=env,
+            cwd=repo_root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return jsonify({'success': True, 'message': f'{period.capitalize()} digest triggered'})
     except Exception as e:
         return safe_error_response(e)

@@ -200,6 +200,73 @@ def remove_mapping():
     return jsonify({'success': True, 'message': 'Mapping removed'})
 
 
+@sincron_bp.route('/api/employees/<int:sincron_employee_id>/count-for-leave', methods=['PUT'])
+@api_login_required
+def toggle_count_for_leave(sincron_employee_id):
+    """Toggle count_for_leave flag on a Sincron employee contract."""
+    data = request.get_json()
+    if data is None or 'count_for_leave' not in data:
+        return jsonify({'success': False, 'error': 'count_for_leave required'}), 400
+    val = bool(data['count_for_leave'])
+    service.repo.execute('''
+        UPDATE sincron_employees SET count_for_leave = %s, updated_at = NOW()
+        WHERE id = %s
+    ''', (val, sincron_employee_id))
+    return jsonify({'success': True, 'count_for_leave': val})
+
+
+@sincron_bp.route('/api/employees/<int:sincron_employee_id>/exclude-from-pontaje', methods=['PUT'])
+@api_login_required
+def toggle_exclude_from_pontaje(sincron_employee_id):
+    """Toggle exclude_from_pontaje flag on a Sincron employee contract."""
+    data = request.get_json()
+    if data is None or 'exclude_from_pontaje' not in data:
+        return jsonify({'success': False, 'error': 'exclude_from_pontaje required'}), 400
+    val = bool(data['exclude_from_pontaje'])
+    service.repo.execute('''
+        UPDATE sincron_employees SET exclude_from_pontaje = %s, updated_at = NOW()
+        WHERE id = %s
+    ''', (val, sincron_employee_id))
+    return jsonify({'success': True, 'exclude_from_pontaje': val})
+
+
+@sincron_bp.route('/api/employees/contract-stats', methods=['GET'])
+@admin_required
+def get_contract_stats():
+    """Get aggregate stats for base vs secondary contract toggles."""
+    row = service.repo.query_one('''
+        SELECT
+            COUNT(*) FILTER (WHERE is_base_contract = TRUE) AS base_count,
+            COUNT(*) FILTER (WHERE is_base_contract = FALSE) AS secondary_count,
+            COUNT(*) FILTER (WHERE is_base_contract = FALSE AND count_for_leave = TRUE) AS secondary_leave_on,
+            COUNT(*) FILTER (WHERE is_base_contract = FALSE AND exclude_from_pontaje = FALSE) AS secondary_pontaje_on
+        FROM sincron_employees
+        WHERE is_active = TRUE
+    ''')
+    return jsonify({'success': True, 'data': dict(row) if row else {}})
+
+
+@sincron_bp.route('/api/employees/bulk-toggle', methods=['POST'])
+@admin_required
+def bulk_toggle_secondary():
+    """Bulk toggle count_for_leave or exclude_from_pontaje on all secondary contracts."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'Request body required'}), 400
+
+    field = data.get('field')
+    value = data.get('value')
+    if field not in ('count_for_leave', 'exclude_from_pontaje') or value is None:
+        return jsonify({'success': False, 'error': 'field (count_for_leave|exclude_from_pontaje) and value required'}), 400
+
+    val = bool(value)
+    count = service.repo.execute(f'''
+        UPDATE sincron_employees SET {field} = %s, updated_at = NOW()
+        WHERE is_active = TRUE AND is_base_contract = FALSE
+    ''', (val,))
+    return jsonify({'success': True, 'field': field, 'value': val, 'updated': count or 0})
+
+
 @sincron_bp.route('/api/employees/auto-map', methods=['POST'])
 @admin_required
 def auto_map():
@@ -291,6 +358,37 @@ def get_employee_timesheet(user_id):
         return safe_error_response(e)
 
 
+@sincron_bp.route('/api/timesheets/tree', methods=['GET'])
+@api_login_required
+@v2_permission_required('hr', 'timesheets', 'view')
+def get_timesheet_tree():
+    """Get visible organigram tree for timesheet node filtering."""
+    from core.organization.hr_utils import get_visible_tree, is_manager
+    scope = getattr(g, 'permission_scope', 'all')
+    if scope == 'own':
+        return jsonify({'success': True, 'companies': [], 'nodes': []})
+    if scope == 'all':
+        # Admin — return all structure nodes + companies
+        from core.organization.manager_utils import get_db, get_cursor, release_db
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            cursor.execute("SELECT id, company as name FROM companies ORDER BY company")
+            companies = [{'id': f'company-{r["id"]}', 'name': r['name'], 'level': 0,
+                          'parent_id': None, 'company_id': r['id']} for r in cursor.fetchall()]
+            cursor.execute("""
+                SELECT id, name, level, parent_id, company_id
+                FROM structure_nodes ORDER BY level, name
+            """)
+            nodes = [dict(r) for r in cursor.fetchall()]
+            return jsonify({'success': True, 'companies': companies, 'nodes': nodes})
+        finally:
+            release_db(conn)
+    # department scope — manager sees their own tree
+    tree = get_visible_tree(current_user.id)
+    return jsonify({'success': True, **tree})
+
+
 @sincron_bp.route('/api/timesheets/team', methods=['GET'])
 @api_login_required
 @v2_permission_required('hr', 'timesheets', 'view')
@@ -323,7 +421,11 @@ def get_team_timesheet():
             managed_ids = [current_user.id]
     else:
         # scope == 'all' — admin sees ALL mapped employees across all companies
-        managed_ids = None  # None = no filter
+        if node_id:
+            # Admin filtering by specific node — get that node's descendants
+            managed_ids = get_managed_employee_ids(current_user.id, node_id=node_id)
+        else:
+            managed_ids = None  # None = no filter
 
     if managed_ids is not None and not managed_ids:
         return jsonify({'success': True, 'data': [],

@@ -11,6 +11,7 @@ import logging
 from core.connectors.sincron.repositories.sincron_repository import SincronRepository
 from core.connectors.biostar.repositories.biostar_repository import BioStarRepository
 from core.connectors.connecteam.repositories.connecteam_repository import ConnecteamRepository
+from core.auth.repositories.user_repository import UserRepository
 
 from ..repositories.unified_mapping_repository import UnifiedMappingRepository
 
@@ -26,6 +27,7 @@ class UnifiedMappingService:
         self.sincron_repo = SincronRepository()
         self.biostar_repo = BioStarRepository()
         self.connecteam_repo = ConnecteamRepository()
+        self.user_repo = UserRepository()
 
     # ── Read-side ──
 
@@ -122,6 +124,15 @@ class UnifiedMappingService:
             + results.get('biostar_cross', 0)
             + results.get('connecteam_name', 0)
         )
+
+        # Propagate CNP from Sincron → users (canonical source of truth)
+        try:
+            results['cnp_propagated'] = self.sincron_repo.propagate_cnp_to_users() or 0
+        except Exception as exc:
+            logger.exception('CNP propagation failed')
+            results['cnp_propagated_error'] = str(exc)
+            results['cnp_propagated'] = 0
+
         return results
 
     # ── Manual mapping ──
@@ -139,6 +150,11 @@ class UnifiedMappingService:
             if not company_name:
                 raise ValueError('company_name is required for Sincron mappings')
             self.sincron_repo.update_mapping(external_id, company_name, user_id, method='manual')
+            # Propagate CNP from Sincron → users (canonical source)
+            try:
+                self.sincron_repo.propagate_cnp_to_users()
+            except Exception:
+                logger.exception('CNP propagation failed after manual Sincron mapping')
             return {'source': 'sincron', 'external_id': external_id,
                     'company_name': company_name, 'user_id': user_id}
         if source == 'biostar':
@@ -149,6 +165,47 @@ class UnifiedMappingService:
             self.connecteam_repo.update_submissions_mapping(int(external_id), user_id)
             return {'source': 'connecteam', 'external_id': external_id, 'user_id': user_id}
         raise ValueError(f"Unknown source: {source!r}")
+
+    def create_user_from_sincron(self, sincron_employee_id, company_name):
+        """Create a new JARVIS user from a Sincron employee and auto-map them.
+
+        Returns dict with user_id, name, company on success.
+        Raises ValueError if employee not found or already mapped.
+        """
+        emp = self.sincron_repo.get_employee(sincron_employee_id, company_name)
+        if not emp:
+            raise ValueError('Sincron employee not found')
+        if emp.get('mapped_jarvis_user_id'):
+            raise ValueError('Sincron employee is already mapped to a JARVIS user')
+
+        prenume = (emp.get('prenume') or '').strip()
+        nume = (emp.get('nume') or '').strip()
+        name = f'{prenume} {nume}'.strip().title()
+        if not name:
+            raise ValueError('Sincron employee has no name')
+
+        # Generate placeholder email (users.email is NOT NULL)
+        import re
+        slug = re.sub(r'[^a-z0-9]+', '.', name.lower()).strip('.')
+        email = f'{slug}@placeholder.jarvis'
+
+        user_id = self.user_repo.save(name=name, email=email, company=company_name)
+
+        # Set CNP and contract start date if available
+        update_kwargs = {}
+        if emp.get('cnp'):
+            update_kwargs['cnp'] = emp['cnp']
+        if emp.get('data_incepere_contract'):
+            update_kwargs['contract_work_date'] = emp['data_incepere_contract']
+        if update_kwargs:
+            self.user_repo.update(user_id, **update_kwargs)
+
+        self.sincron_repo.update_mapping(
+            sincron_employee_id, company_name, user_id, method='auto_created')
+
+        logger.info(f'Created JARVIS user #{user_id} ({name}) from Sincron '
+                    f'{sincron_employee_id}@{company_name}')
+        return {'user_id': user_id, 'name': name, 'company': company_name}
 
     def remove_mapping(self, source, external_id, company_name=None):
         """Remove a mapping. Delegates to the right repo."""

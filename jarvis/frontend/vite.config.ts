@@ -85,6 +85,10 @@ export default defineConfig({
         target: 'http://localhost:5001',
         changeOrigin: true,
       },
+      '/facturare': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
       '/settings': {
         target: 'http://localhost:5001',
         changeOrigin: true,

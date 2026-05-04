@@ -1,6 +1,7 @@
 import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { isChunkLoadError, tryChunkReload } from '@/lib/chunkReload'
+import { telemetry } from '@/lib/telemetry'
 
 interface Props {
   children: ReactNode
@@ -23,6 +24,8 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('ErrorBoundary caught:', error, info.componentStack)
+    // Track component crash in telemetry
+    telemetry.trackError(error, info.componentStack ?? undefined)
     // Auto-reload on chunk-load failures (stale bundle after deploy).
     // tryChunkReload bumps an attempt counter and skips reloading if we've
     // already retried too many times — falling through to the error UI.

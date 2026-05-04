@@ -1,7 +1,7 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import {
@@ -9,83 +9,107 @@ import {
   ChevronRight,
   ChevronLeft,
   ArrowUpDown,
-  Clock,
   LogIn,
   LogOut,
-  UserCheck,
-  Fingerprint,
-  ExternalLink,
-  Calendar,
   Columns3,
+  Download,
+  Wand2,
+  RotateCcw,
+  ExternalLink,
+  UserCheck,
+  UserX,
+  DatabaseZap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { StatCard } from '@/components/shared/StatCard'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DateField } from '@/components/ui/date-field'
+import { Skeleton } from '@/components/ui/skeleton'
 import { biostarApi } from '@/api/biostar'
+import { sincronApi } from '@/api/sincron'
 import { cn } from '@/lib/utils'
-import type { BioStarDailySummary, BioStarRangeSummary, BioStarPunchLog } from '@/types/biostar'
+import { toast } from 'sonner'
+import type { AttendanceRow, BioStarDayHistory } from '@/types/biostar'
 
-type SortField = 'name' | 'group' | 'check_in' | 'check_out' | 'duration' | 'punches'
+type SortField = 'name' | 'company' | 'group' | 'check_in' | 'check_out' | 'duration' | 'punches'
 type SortDir = 'asc' | 'desc'
-type QuickFilter = 'today' | '3d' | '7d' | 'month' | 'last_month' | 'ytd' | 'custom'
-type DailyColKey = 'group' | 'check_in' | 'check_out' | 'adj_in' | 'adj_out' | 'duration' | 'punches'
-type RangeColKey = 'group' | 'avg_check_in' | 'avg_check_out' | 'days' | 'total_hours' | 'adj_hours' | 'avg_day' | 'punches'
 
-const DAILY_COL_DEFS: { key: DailyColKey; label: string }[] = [
-  { key: 'group', label: 'Group' },
-  { key: 'check_in', label: 'Check In' },
-  { key: 'check_out', label: 'Check Out' },
-  { key: 'adj_in', label: 'In' },
-  { key: 'adj_out', label: 'Out' },
+type ColKey = 'group' | 'official_in' | 'official_out' | 'actual_in' | 'actual_out' | 'duration' | 'punches' | 'schedule' | 'company'
+
+const COL_DEFS: { key: ColKey; label: string }[] = [
+  { key: 'official_in', label: 'Checked In' },
+  { key: 'official_out', label: 'Checked Out' },
+  { key: 'actual_in', label: 'Actual In' },
+  { key: 'actual_out', label: 'Actual Out' },
   { key: 'duration', label: 'Duration' },
   { key: 'punches', label: 'Punches' },
-]
-
-const RANGE_COL_DEFS: { key: RangeColKey; label: string }[] = [
+  { key: 'schedule', label: 'Schedule' },
+  { key: 'company', label: 'Company' },
   { key: 'group', label: 'Group' },
-  { key: 'avg_check_in', label: 'Avg Check In' },
-  { key: 'avg_check_out', label: 'Avg Check Out' },
-  { key: 'days', label: 'Days Present' },
-  { key: 'total_hours', label: 'Total Hours' },
-  { key: 'adj_hours', label: 'Adj. Hours' },
-  { key: 'avg_day', label: 'Avg/Day' },
-  { key: 'punches', label: 'Punches' },
 ]
 
-const DEFAULT_DAILY_COLS: DailyColKey[] = ['group', 'check_in', 'check_out', 'adj_in', 'adj_out', 'duration', 'punches']
-const DEFAULT_RANGE_COLS: RangeColKey[] = ['group', 'avg_check_in', 'avg_check_out', 'days', 'total_hours', 'adj_hours', 'avg_day', 'punches']
+const DEFAULT_COLS: ColKey[] = ['official_in', 'official_out', 'duration', 'punches', 'schedule']
 
-function formatTime(dt: string | null) {
-  if (!dt) return '-'
+function fmtScheduleTime(t: string | null) {
+  if (!t) return '08:00'
+  return t.slice(0, 5)
+}
+
+function randomizeAdjustedTimes(
+  datePart: string, scheduleStart: string | null, lunchMin: number, workingHours: number,
+): { adjFirst: string; adjLast: string } {
+  const whMin = Math.round(workingHours * 60)
+  const targetWorked = whMin + Math.floor(Math.random() * 11) // e.g. 480–490
+  const targetSpan = targetWorked + lunchMin
+  const startOffset = Math.floor(Math.random() * 11) - 5 // -5..+5
+  const baseStart = fmtScheduleTime(scheduleStart)
+  const [sh, sm] = baseStart.split(':').map(Number)
+  const startMin = sh * 60 + sm + startOffset
+  const endMin = startMin + targetSpan
+  const fmtMins = (m: number) => {
+    const clamped = Math.max(0, m)
+    const hh = Math.floor(clamped / 60).toString().padStart(2, '0')
+    const mm = (clamped % 60).toString().padStart(2, '0')
+    return `${datePart}T${hh}:${mm}:00`
+  }
+  return { adjFirst: fmtMins(startMin), adjLast: fmtMins(endMin) }
+}
+
+function fmtTime(dt: string | null) {
+  if (!dt) return '—'
   return new Date(dt).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
 }
 
-function formatDuration(seconds: number | null) {
-  if (!seconds || seconds <= 0) return '-'
+function fmtDuration(seconds: number | null) {
+  if (!seconds || seconds <= 0) return '—'
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   if (h === 0) return `${m}m`
   return `${h}h ${m}m`
 }
 
-function formatEpochTime(epoch: number | null) {
-  if (!epoch || epoch <= 0) return '-'
-  const h = Math.floor(epoch / 3600)
-  const m = Math.floor((epoch % 3600) / 60)
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-}
-
-function netSeconds(durationSec: number | null | undefined, lunchMin: number) {
+function netSec(durationSec: number | null | undefined, lunchMin: number) {
   const sec = Number(durationSec)
   if (!sec || sec <= 0 || !isFinite(sec)) return 0
   const lunchSec = (Number(lunchMin) || 0) * 60
   return sec > lunchSec ? sec - lunchSec : sec
+}
+
+function timeDiffSec(a: string, b: string): number {
+  return Math.max(0, (new Date(b).getTime() - new Date(a).getTime()) / 1000)
+}
+
+/** Compute effective duration: use adjusted times if available, else raw duration_seconds */
+function effectiveSec(d: BioStarDayHistory, lunchMin: number): number {
+  if (d.adjusted_first_punch && d.adjusted_last_punch) {
+    return netSec(timeDiffSec(d.adjusted_first_punch, d.adjusted_last_punch), lunchMin)
+  }
+  return netSec(d.duration_seconds, lunchMin)
 }
 
 function todayStr() {
@@ -93,160 +117,187 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function dateOffset(days: number) {
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+function formatSchedule(start: string | null, end: string | null) {
+  if (!start || !end) return '—'
+  return `${start.slice(0, 5)}–${end.slice(0, 5)}`
 }
 
-function getDateRange(filter: QuickFilter, customStart: string, customEnd: string): { start: string; end: string; isSingleDay: boolean } {
-  const now = new Date()
-  const today = todayStr()
-
-  switch (filter) {
-    case 'today':
-      return { start: today, end: today, isSingleDay: true }
-    case '3d':
-      return { start: dateOffset(2), end: today, isSingleDay: false }
-    case '7d': {
-      const d = new Date(now)
-      d.setDate(d.getDate() - 6)
-      return { start: d.toISOString().slice(0, 10), end: today, isSingleDay: false }
-    }
-    case 'month': {
-      const start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-      return { start, end: today, isSingleDay: false }
-    }
-    case 'last_month': {
-      const d = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      const last = new Date(now.getFullYear(), now.getMonth(), 0)
-      return {
-        start: d.toISOString().slice(0, 10),
-        end: last.toISOString().slice(0, 10),
-        isSingleDay: false,
-      }
-    }
-    case 'ytd': {
-      return { start: `${now.getFullYear()}-01-01`, end: today, isSingleDay: false }
-    }
-    case 'custom':
-      if (customStart && customEnd && customStart === customEnd) {
-        return { start: customStart, end: customEnd, isSingleDay: true }
-      }
-      return { start: customStart || today, end: customEnd || today, isSingleDay: false }
-  }
-}
-
-const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
-  { value: 'today', label: 'Today' },
-  { value: '3d', label: 'Last 3 Days' },
-  { value: '7d', label: 'Last 7 Days' },
-  { value: 'month', label: 'This Month' },
-  { value: 'last_month', label: 'Last Month' },
-  { value: 'ytd', label: 'YTD' },
-]
-
-export default function PontajeTab({ showStats = false, showFilters = false, managerFilter = false, search = '' }: { showStats?: boolean; showFilters?: boolean; managerFilter?: boolean; search?: string }) {
+export default function PontajeTab({ showFilters = false, managerFilter = false, search = '' }: { showStats?: boolean; showFilters?: boolean; managerFilter?: boolean; search?: string }) {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
+  const queryClient = useQueryClient()
   const { user } = useAuth()
-  const showOriginal = user?.can_view_original_punches ?? false
-  const showAdjusted = user?.can_view_adjusted_punches ?? false
+  const canAdjust = user?.can_adjust_punches ?? false
+
+  const [date, setDate] = useState(todayStr())
   const [groupFilter, setGroupFilter] = useState<string>('all')
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>('today')
-  const [customStart, setCustomStart] = useState('')
-  const [customEnd, setCustomEnd] = useState('')
-  const [statFilter, setStatFilter] = useState<'all' | 'late'>('all')
+  const [expandedId, setExpandedId] = useState<number | null>(null)
 
   // Column visibility
-  const [visibleDailyCols, setVisibleDailyCols] = useState<Set<DailyColKey>>(new Set(DEFAULT_DAILY_COLS))
-  const [visibleRangeCols, setVisibleRangeCols] = useState<Set<RangeColKey>>(new Set(DEFAULT_RANGE_COLS))
-  const adjInitRef = useRef(false)
+  const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS))
 
-  // Add columns to default once user data loads based on permissions
-  useEffect(() => {
-    if (!adjInitRef.current && user !== null) {
-      adjInitRef.current = true
-      setVisibleDailyCols(prev => {
-        const n = new Set(prev)
-        if (showOriginal) { n.add('check_in'); n.add('check_out') }
-        if (showAdjusted) { n.add('adj_in'); n.add('adj_out') }
-        return n
-      })
+  const toggleCol = (key: ColKey, checked: boolean) => {
+    setVisibleCols(prev => { const n = new Set(prev); checked ? n.add(key) : n.delete(key); return n })
+  }
+  const resetCols = () => setVisibleCols(new Set(DEFAULT_COLS))
+
+  // ── Data query ──
+
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ['biostar', 'attendance-today', date, managerFilter],
+    queryFn: () => biostarApi.getAttendanceToday(date, managerFilter),
+    refetchInterval: date === todayStr() ? 60_000 : false,
+  })
+
+  // ── Adjustments ──
+
+  const [adjusting, setAdjusting] = useState(false)
+  const [lastAdjustRange, setLastAdjustRange] = useState<{ start: string; end: string } | null>(null)
+  const [undoing, setUndoing] = useState(false)
+
+  const undoLastAdjust = useCallback(async () => {
+    if (!lastAdjustRange) return
+    setUndoing(true)
+    const toastId = toast.loading('Undoing auto-adjust…')
+    try {
+      await biostarApi.revertAdjustmentsRange(lastAdjustRange.start, lastAdjustRange.end)
+      toast.success('Auto-adjustments reverted', { id: toastId })
+      setLastAdjustRange(null)
+      queryClient.invalidateQueries({ queryKey: ['biostar'] })
+    } catch {
+      toast.error('Undo failed', { id: toastId })
+    } finally {
+      setUndoing(false)
     }
-  }, [user, showOriginal, showAdjusted])
+  }, [lastAdjustRange, queryClient])
 
-  const toggleDailyCol = (key: DailyColKey, checked: boolean) => {
-    setVisibleDailyCols(prev => { const n = new Set(prev); checked ? n.add(key) : n.delete(key); return n })
-  }
+  const autoAdjustRange = useCallback(async (mode: 'day' | 'week' | 'month' | 'quarter' | 'year') => {
+    setAdjusting(true)
+    const toastId = toast.loading(`Auto-adjusting ${mode}…`)
+    try {
+      const today = todayStr()
+      const ref = new Date(`${date}T12:00:00`)
+      let start: string
+      let end: string
 
-  const toggleCheckInOut = () => {
-    const bothVisible = visibleDailyCols.has('check_in') && visibleDailyCols.has('check_out')
-    setVisibleDailyCols(prev => {
-      const n = new Set(prev)
-      if (bothVisible) { n.delete('check_in'); n.delete('check_out') }
-      else { n.add('check_in'); n.add('check_out') }
-      return n
-    })
-  }
+      if (mode === 'day') {
+        start = date
+        end = date
+      } else if (mode === 'week') {
+        const dow = ref.getDay() || 7 // Mon=1 … Sun=7
+        const mon = new Date(ref)
+        mon.setDate(ref.getDate() - dow + 1)
+        start = mon.toISOString().slice(0, 10)
+        const sun = new Date(mon)
+        sun.setDate(mon.getDate() + 6)
+        end = sun.toISOString().slice(0, 10)
+      } else if (mode === 'month') {
+        const y = ref.getFullYear(), m = ref.getMonth()
+        start = `${y}-${String(m + 1).padStart(2, '0')}-01`
+        end = new Date(y, m + 1, 0).toISOString().slice(0, 10)
+      } else if (mode === 'quarter') {
+        const y = ref.getFullYear(), q = Math.floor(ref.getMonth() / 3)
+        start = `${y}-${String(q * 3 + 1).padStart(2, '0')}-01`
+        end = new Date(y, q * 3 + 3, 0).toISOString().slice(0, 10)
+      } else {
+        start = `${ref.getFullYear()}-01-01`
+        end = `${ref.getFullYear()}-12-31`
+      }
 
-  const toggleAdjInOut = () => {
-    const bothVisible = visibleDailyCols.has('adj_in') && visibleDailyCols.has('adj_out')
-    setVisibleDailyCols(prev => {
-      const n = new Set(prev)
-      if (bothVisible) { n.delete('adj_in'); n.delete('adj_out') }
-      else { n.add('adj_in'); n.add('adj_out') }
-      return n
-    })
-  }
-  const toggleRangeCol = (key: RangeColKey, checked: boolean) => {
-    setVisibleRangeCols(prev => { const n = new Set(prev); checked ? n.add(key) : n.delete(key); return n })
-  }
-  const resetDailyCols = () => {
-    const s = new Set<DailyColKey>(DEFAULT_DAILY_COLS)
-    if (showOriginal) { s.add('check_in'); s.add('check_out') }
-    if (showAdjusted) { s.add('adj_in'); s.add('adj_out') }
-    setVisibleDailyCols(s)
-  }
-  const resetRangeCols = () => setVisibleRangeCols(new Set(DEFAULT_RANGE_COLS))
+      // Collect working days in range up to today
+      const days: string[] = []
+      for (let d = new Date(`${start}T12:00:00`); d.toISOString().slice(0, 10) <= end; d.setDate(d.getDate() + 1)) {
+        const dow = d.getDay()
+        if (dow === 0 || dow === 6) continue
+        const ds = d.toISOString().slice(0, 10)
+        if (ds > today) continue
+        days.push(ds)
+      }
 
-  const is3Day = quickFilter === '3d'
-  const { start, end, isSingleDay } = getDateRange(quickFilter, customStart, customEnd)
+      if (!days.length) {
+        toast.error('No working days in range', { id: toastId })
+        return
+      }
 
-  const { data: status } = useQuery({
-    queryKey: ['biostar', 'status'],
-    queryFn: biostarApi.getStatus,
+      let totalAdj = 0, totalFlagged = 0
+      for (const ds of days) {
+        try {
+          const res = await biostarApi.autoAdjustAll(ds)
+          totalAdj += res.data.adjusted
+          totalFlagged += res.data.total_flagged
+        } catch { /* skip failed days */ }
+      }
+
+      toast.success(`Auto-adjusted ${totalAdj} of ${totalFlagged} across ${days.length} days`, { id: toastId })
+      setLastAdjustRange({ start: days[0], end: days[days.length - 1] })
+      queryClient.invalidateQueries({ queryKey: ['biostar'] })
+    } catch {
+      toast.error('Auto-adjust failed', { id: toastId })
+    } finally {
+      setAdjusting(false)
+    }
+  }, [date, queryClient])
+
+  const backfillMut = useMutation({
+    mutationFn: () => biostarApi.backfillAdjustments(),
+    onSuccess: (res) => {
+      toast.success(`Backfill: ${res.data.total_adjusted} adjusted across ${res.data.dates_processed} dates`)
+      queryClient.invalidateQueries({ queryKey: ['biostar'] })
+    },
+    onError: () => toast.error('Backfill failed'),
   })
 
-  const connected = !!status?.connected
+  // ── Groups ──
 
-  // Single day query
-  const { data: dailySummary = [], isLoading: loadingDaily } = useQuery({
-    queryKey: ['biostar', 'daily-summary', start, managerFilter],
-    queryFn: () => biostarApi.getDailySummary(start, managerFilter),
-    enabled: isSingleDay && !is3Day,
-    refetchInterval: isSingleDay && !is3Day && connected ? 60_000 : false,
-  })
-
-  // Range query
-  const { data: rangeSummary = [], isLoading: loadingRange } = useQuery({
-    queryKey: ['biostar', 'range-summary', start, end, managerFilter],
-    queryFn: () => biostarApi.getRangeSummary(start, end, managerFilter),
-    enabled: !isSingleDay && !is3Day && !!start && !!end,
-  })
-
-  const isLoading = isSingleDay ? loadingDaily : loadingRange
-
-  // Groups from whichever data is active
-  const activeData = isSingleDay ? dailySummary : rangeSummary
   const groups = useMemo(() => {
     const set = new Set<string>()
-    activeData.forEach((e) => { if (e.user_group_name) set.add(e.user_group_name) })
+    rows.forEach((e) => { if (e.user_group_name) set.add(e.user_group_name) })
     return Array.from(set).sort()
-  }, [activeData])
+  }, [rows])
+
+  // ── Filter + sort ──
+
+  const processed = useMemo(() => {
+    let list = [...rows]
+    if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
+    if (search) {
+      const s = search.toLowerCase()
+      list = list.filter((e) =>
+        (e.name || '').toLowerCase().includes(s) ||
+        (e.email || '').toLowerCase().includes(s) ||
+        (e.user_group_name || '').toLowerCase().includes(s) ||
+        (e.company || '').toLowerCase().includes(s),
+      )
+    }
+    list.sort((a, b) => {
+      let cmp = 0
+      switch (sortField) {
+        case 'name': cmp = (a.name || '').localeCompare(b.name || ''); break
+        case 'company': cmp = (a.company || '').localeCompare(b.company || ''); break
+        case 'group': cmp = (a.user_group_name || '').localeCompare(b.user_group_name || ''); break
+        case 'check_in': cmp = ((a.adjusted_first_punch ?? a.first_punch) || '').localeCompare((b.adjusted_first_punch ?? b.first_punch) || ''); break
+        case 'check_out': cmp = ((a.adjusted_last_punch ?? a.last_punch) || '').localeCompare((b.adjusted_last_punch ?? b.last_punch) || ''); break
+        case 'duration': {
+          const aN = a.adjusted_first_punch && a.adjusted_last_punch ? netSec(timeDiffSec(a.adjusted_first_punch, a.adjusted_last_punch), a.lunch_break_minutes ?? 60) : netSec(a.duration_seconds, a.lunch_break_minutes ?? 60)
+          const bN = b.adjusted_first_punch && b.adjusted_last_punch ? netSec(timeDiffSec(b.adjusted_first_punch, b.adjusted_last_punch), b.lunch_break_minutes ?? 60) : netSec(b.duration_seconds, b.lunch_break_minutes ?? 60)
+          cmp = aN - bN; break
+        }
+        case 'punches': cmp = (a.total_punches ?? 0) - (b.total_punches ?? 0); break
+        default: cmp = (a.name || '').localeCompare(b.name || '')
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return list
+  }, [rows, groupFilter, search, sortField, sortDir])
+
+  // ── Stats ──
+
+  const presentCount = processed.filter(e => e.attendance_status === 'present').length
+  const absentCount = processed.filter(e => e.attendance_status === 'absent').length
+
+  // ── Sorting ──
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -257,501 +308,409 @@ export default function PontajeTab({ showStats = false, showFilters = false, man
     }
   }
 
-  // Effective visible cols — strips permission-gated keys regardless of toggle state
-  const effectiveDailyCols = useMemo(() => {
-    const s = new Set(visibleDailyCols)
-    if (!showOriginal) { s.delete('check_in'); s.delete('check_out') }
-    if (!showAdjusted) { s.delete('adj_in'); s.delete('adj_out') }
-    return s
-  }, [visibleDailyCols, showOriginal, showAdjusted])
+  const SortIcon = ({ field }: { field: SortField }) => (
+    <ArrowUpDown className={cn('ml-1 h-3 w-3 inline', sortField === field ? 'opacity-100' : 'opacity-40')} />
+  )
 
-  // Base filtered data (group + search, before statFilter / sort) — used for stats
-  const filteredDaily = useMemo(() => {
-    if (!isSingleDay) return []
-    let list = [...dailySummary]
-    if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
-    if (search) {
-      const s = search.toLowerCase()
-      list = list.filter((e) => (e.name || '').toLowerCase().includes(s) || (e.email || '').toLowerCase().includes(s) || (e.user_group_name || '').toLowerCase().includes(s) || (e.mapped_jarvis_user_name || '').toLowerCase().includes(s))
-    }
-    return list
-  }, [dailySummary, groupFilter, search, isSingleDay])
+  // ── Day navigation ──
 
-  const filteredRange = useMemo(() => {
-    if (isSingleDay) return []
-    let list = [...rangeSummary]
-    if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
-    if (search) {
-      const s = search.toLowerCase()
-      list = list.filter((e) => (e.name || '').toLowerCase().includes(s) || (e.email || '').toLowerCase().includes(s) || (e.user_group_name || '').toLowerCase().includes(s) || (e.mapped_jarvis_user_name || '').toLowerCase().includes(s))
-    }
-    return list
-  }, [rangeSummary, groupFilter, search, isSingleDay])
+  const stepDay = (delta: number) => {
+    const d = new Date(date)
+    d.setDate(d.getDate() + delta)
+    setDate(d.toISOString().slice(0, 10))
+    setExpandedId(null)
+  }
 
-  // Process single-day data (adds statFilter + sort on top of filteredDaily)
-  const processedDaily = useMemo(() => {
-    let list = [...filteredDaily]
-    if (statFilter === 'late') {
-      list = list.filter((e) => {
-        if (!e.first_punch || !e.schedule_start) return false
-        const punchTime = new Date(e.first_punch)
-        const [sh, sm] = (e.schedule_start as string).split(':').map(Number)
-        const schedDate = new Date(punchTime)
-        schedDate.setHours(sh, sm + 15, 0, 0)
-        return punchTime > schedDate
-      })
-    }
-    list.sort((a, b) => {
-      let cmp = 0
-      switch (sortField) {
-        case 'name': cmp = (a.name || '').localeCompare(b.name || ''); break
-        case 'group': cmp = (a.user_group_name || '').localeCompare(b.user_group_name || ''); break
-        case 'check_in': cmp = (a.first_punch || '').localeCompare(b.first_punch || ''); break
-        case 'check_out': cmp = (a.last_punch || '').localeCompare(b.last_punch || ''); break
-        case 'duration': cmp = netSeconds(a.duration_seconds, a.lunch_break_minutes ?? 60) - netSeconds(b.duration_seconds, b.lunch_break_minutes ?? 60); break
-        case 'punches': cmp = a.total_punches - b.total_punches; break
+  // ── CSV Download (monthly, all employees, official columns only) ──
+
+  const [exporting, setExporting] = useState(false)
+
+  const downloadCsv = useCallback(async (mode: 'day' | 'month') => {
+    setExporting(true)
+    const isDay = mode === 'day'
+    const toastId = toast.loading(isDay ? 'Exporting day pontaje…' : 'Exporting monthly pontaje…')
+    try {
+      const today = todayStr()
+      const monthStr = date.slice(0, 7) // e.g. "2026-04"
+      const [y, m] = monthStr.split('-').map(Number)
+      const firstDay = `${monthStr}-01`
+      const lastDay = new Date(y, m, 0).toISOString().slice(0, 10)
+
+      // Build list of working days — skip future dates
+      const workingDays: { date: string; dayLabel: string; weekNum: number }[] = []
+      if (isDay) {
+        const dd = new Date(`${date}T12:00:00`)
+        const dow = dd.getDay()
+        if (dow !== 0 && dow !== 6 && date <= today) {
+          workingDays.push({
+            date,
+            dayLabel: dd.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' }),
+            weekNum: getISOWeek(dd),
+          })
+        }
+      } else {
+        for (let d = new Date(`${firstDay}T12:00:00`); d.toISOString().slice(0, 10) <= lastDay; d.setDate(d.getDate() + 1)) {
+          const dow = d.getDay()
+          if (dow === 0 || dow === 6) continue
+          const ds = d.toISOString().slice(0, 10)
+          if (ds > today) continue // skip future dates
+          workingDays.push({
+            date: ds,
+            dayLabel: d.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' }),
+            weekNum: getISOWeek(d),
+          })
+        }
       }
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-    return list
-  }, [filteredDaily, sortField, sortDir, statFilter])
 
-  // Process range data (sort on top of filteredRange)
-  const processedRange = useMemo(() => {
-    let list = [...filteredRange]
-    list.sort((a, b) => {
-      let cmp = 0
-      switch (sortField) {
-        case 'name': cmp = (a.name || '').localeCompare(b.name || ''); break
-        case 'group': cmp = (a.user_group_name || '').localeCompare(b.user_group_name || ''); break
-        case 'duration': cmp = netSeconds(a.total_duration_seconds, (a.lunch_break_minutes ?? 60) * a.days_present) - netSeconds(b.total_duration_seconds, (b.lunch_break_minutes ?? 60) * b.days_present); break
-        case 'punches': cmp = a.total_punches - b.total_punches; break
-        default: cmp = (a.name || '').localeCompare(b.name || ''); break
+      if (!workingDays.length) {
+        toast.error('No working days to export', { id: toastId })
+        return
       }
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-    return list
-  }, [filteredRange, sortField, sortDir])
 
-  // Stats — computed from filtered data (respects group + search filters)
-  const totalPresent = isSingleDay ? filteredDaily.length : filteredRange.length
-  const totalHours = isSingleDay
-    ? filteredDaily.reduce((acc, e) => acc + netSeconds(e.duration_seconds, e.lunch_break_minutes ?? 60), 0) / 3600
-    : filteredRange.reduce((acc, e) => acc + netSeconds(e.total_duration_seconds, (e.lunch_break_minutes ?? 60) * e.days_present), 0) / 3600
-  const avgHours = totalPresent > 0 ? totalHours / totalPresent : 0
-  const earlyBirds = isSingleDay
-    ? filteredDaily.filter((e) => e.first_punch && new Date(e.first_punch).getHours() < 8).length
-    : 0
-  const lateArrivals = isSingleDay
-    ? filteredDaily.filter((e) => {
-        if (!e.first_punch || !e.schedule_start) return false
-        const punchTime = new Date(e.first_punch)
-        const [sh, sm] = (e.schedule_start as string).split(':').map(Number)
-        const schedDate = new Date(punchTime)
-        schedDate.setHours(sh, sm + 15, 0, 0) // 15min grace
-        return punchTime > schedDate
-      }).length
-    : 0
-  const avgCheckIn = useMemo(() => {
-    const punches = filteredDaily.filter(e => e.first_punch)
-    if (!punches.length) return '-'
-    const avg = punches.reduce((acc, e) => acc + new Date(e.first_punch).getHours() * 3600 + new Date(e.first_punch).getMinutes() * 60, 0) / punches.length
-    return formatEpochTime(avg)
-  }, [filteredDaily])
-  const avgCheckOut = useMemo(() => {
-    const punches = filteredDaily.filter(e => e.total_punches > 1 && e.last_punch)
-    if (!punches.length) return '-'
-    const avg = punches.reduce((acc, e) => acc + new Date(e.last_punch).getHours() * 3600 + new Date(e.last_punch).getMinutes() * 60, 0) / punches.length
-    return formatEpochTime(avg)
-  }, [filteredDaily])
+      // Auto-adjust each day before fetching (sequentially to avoid race conditions)
+      for (const wd of workingDays) {
+        try { await biostarApi.autoAdjustAll(wd.date) } catch { /* ignore — some days may have no off-schedule */ }
+      }
 
-  const dailyMobileFields: MobileCardField<BioStarDailySummary>[] = useMemo(() => {
-    const fields: MobileCardField<BioStarDailySummary>[] = [
-      {
-        key: 'name',
-        label: 'Employee',
-        isPrimary: true,
-        render: (e) => e.name || '—',
-      },
-      {
-        key: 'group',
-        label: 'Group',
-        isSecondary: true,
-        render: (e) => e.user_group_name || '—',
-      },
-      {
-        key: 'checkin',
-        label: 'Check In',
-        render: (e) => (
-          <span className="inline-flex items-center gap-1 text-sm">
-            <LogIn className="h-3 w-3 text-green-600" />
-            {formatTime(e.first_punch)}
-          </span>
-        ),
-      },
-      {
-        key: 'checkout',
-        label: 'Check Out',
-        render: (e) =>
-          e.total_punches === 1
-            ? <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
-            : (
-              <span className="inline-flex items-center gap-1 text-sm">
-                <LogOut className="h-3 w-3 text-red-500" />
-                {formatTime(e.last_punch)}
-              </span>
-            ),
-      },
-    ]
-    if (showAdjusted) {
-      fields.push(
-        {
-          key: 'adj_in',
-          label: 'In',
-          render: (e) => e.adjusted_first_punch
-            ? <span className="text-sm font-medium text-green-600">{formatTime(e.adjusted_first_punch)}</span>
-            : <span className="text-muted-foreground">—</span>,
-        },
-        {
-          key: 'adj_out',
-          label: 'Out',
-          render: (e) => e.adjusted_last_punch
-            ? <span className="text-sm font-medium text-green-600">{formatTime(e.adjusted_last_punch)}</span>
-            : <span className="text-muted-foreground">—</span>,
-        },
+      // Fetch daily summary for each working day (all employees, no manager filter)
+      const dailyData = await Promise.all(
+        workingDays.map(async (wd) => {
+          const summaries = await biostarApi.getDailySummary(wd.date, false)
+          return { ...wd, summaries }
+        }),
       )
-    }
-    fields.push(
-      {
-        key: 'duration',
-        label: 'Duration',
-        render: (e) => {
-          const net = netSeconds(e.duration_seconds, e.lunch_break_minutes ?? 60)
-          const isShort = net / 3600 > 0 && net / 3600 < (e.working_hours ?? 8)
-          return (
-            <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
-              {e.total_punches === 1 ? '—' : formatDuration(net)}
-            </span>
-          )
-        },
-      },
-      {
-        key: 'punches',
-        label: 'Punches',
-        expandOnly: true,
-        render: (e) => <Badge variant="secondary" className="text-xs">{e.total_punches}</Badge>,
-      },
-      {
-        key: 'email',
-        label: 'Email',
-        expandOnly: true,
-        render: (e) => <span className="text-xs text-muted-foreground">{e.email || '—'}</span>,
-      },
-    )
-    return fields
-  }, [showAdjusted])
 
-  const rangeMobileFields: MobileCardField<BioStarRangeSummary>[] = useMemo(() => [
+      // Collect unique employees keyed by jarvis_user_id (dedup multi-BioStar accounts)
+      const employeeMap = new Map<string, { name: string; company: string; schedule: string; jarvisUserId: number | null; biostarIds: Set<string> }>()
+      for (const dd of dailyData) {
+        for (const s of dd.summaries) {
+          const key = s.mapped_jarvis_user_id ? `j${s.mapped_jarvis_user_id}` : `b${s.biostar_user_id}`
+          const existing = employeeMap.get(key)
+          if (existing) {
+            existing.biostarIds.add(s.biostar_user_id)
+          } else {
+            employeeMap.set(key, {
+              name: s.mapped_jarvis_user_name || s.name,
+              company: s.jarvis_company || '',
+              schedule: formatSchedule(s.schedule_start, s.schedule_end),
+              jarvisUserId: s.mapped_jarvis_user_id,
+              biostarIds: new Set([s.biostar_user_id]),
+            })
+          }
+        }
+      }
+
+      // Also add employees from current attendance rows that might have 0 punches
+      for (const r of rows) {
+        const key = r.jarvis_user_id ? `j${r.jarvis_user_id}` : `b${r.biostar_user_id}`
+        const existing = employeeMap.get(key)
+        if (existing) {
+          existing.biostarIds.add(r.biostar_user_id)
+        } else {
+          employeeMap.set(key, {
+            name: r.name,
+            company: r.company || '',
+            schedule: formatSchedule(r.schedule_start, r.schedule_end),
+            jarvisUserId: r.jarvis_user_id,
+            biostarIds: new Set([r.biostar_user_id]),
+          })
+        }
+      }
+
+      // Fetch Sincron day-level codes for all mapped employees
+      const sincronDayCodes = new Map<number, Map<string, string>>()
+      const jarvisIds = [...new Set(
+        Array.from(employeeMap.values()).map(e => e.jarvisUserId).filter((id): id is number => id != null),
+      )]
+
+      // Batch fetch Sincron timesheets (5 concurrent)
+      const BATCH = 5
+      for (let i = 0; i < jarvisIds.length; i += BATCH) {
+        const batch = jarvisIds.slice(i, i + BATCH)
+        const results = await Promise.allSettled(
+          batch.map(uid => sincronApi.getEmployeeTimesheet(uid, y, m)),
+        )
+        for (let j = 0; j < batch.length; j++) {
+          const r = results[j]
+          if (r.status !== 'fulfilled' || !r.value?.data?.days) continue
+          const dayMap = new Map<string, string>()
+          for (const [dayKey, codes] of Object.entries(r.value.data.days)) {
+            const leave = codes.find(c => ['CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV', 'OZ', 'OS'].includes(c.short_code))
+            if (leave) dayMap.set(dayKey, leave.short_code)
+          }
+          sincronDayCodes.set(batch[j], dayMap)
+        }
+      }
+
+      // Build CSV: Company before Name, no Group
+      const headers = ['Week', 'Date', 'Day', 'Company', 'Name', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status']
+      const csvRows: string[][] = [headers]
+
+      const sortedEmployees = Array.from(employeeMap.entries()).sort((a, b) =>
+        (a[1].company || '').localeCompare(b[1].company || '') || a[1].name.localeCompare(b[1].name),
+      )
+
+      for (const dd of dailyData) {
+        for (const [, emp] of sortedEmployees) {
+          // Find best summary across all BioStar IDs for this employee (prefer one with punches/adjustments)
+          const candidates = dd.summaries.filter(x => emp.biostarIds.has(x.biostar_user_id))
+          const s = candidates.find(x => x.adjusted_first_punch || x.first_punch) ?? candidates[0] ?? null
+          const rawIn = s ? (s.adjusted_first_punch ?? s.first_punch) : null
+          const rawOut = s ? (s.adjusted_last_punch ?? s.last_punch) : null
+          const officialIn = rawIn
+          // Single punch: first == last — don't duplicate as check-out
+          const officialOut = rawOut === rawIn ? null : rawOut
+          const lunchMin = s?.lunch_break_minutes ?? 60
+          let duration = ''
+          if (officialIn && officialOut) {
+            const net = s?.adjusted_first_punch && s?.adjusted_last_punch
+              ? netSec(timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch), lunchMin)
+              : netSec(s?.duration_seconds ?? null, lunchMin)
+            if (net > 0) duration = (net / 3600).toFixed(2)
+          }
+
+          const sincronCode = emp.jarvisUserId
+            ? (sincronDayCodes.get(emp.jarvisUserId)?.get(dd.date) ?? '')
+            : ''
+
+          csvRows.push([
+            `W${dd.weekNum}`,
+            dd.date,
+            dd.dayLabel,
+            emp.company,
+            emp.name,
+            officialIn ? fmtTime(officialIn) : '',
+            officialOut ? fmtTime(officialOut) : '',
+            duration,
+            emp.schedule,
+            sincronCode,
+          ])
+        }
+      }
+
+      const csvContent = csvRows.map(r => r.map(c => `"${(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+      const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = isDay ? `pontaje_${date}.csv` : `pontaje_${monthStr}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Export complete', { id: toastId })
+      // Refresh attendance data since auto-adjust may have changed it
+      queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today', date] })
+    } catch {
+      toast.error('Export failed', { id: toastId })
+    } finally {
+      setExporting(false)
+    }
+  }, [date, rows])
+
+  // ── Mobile fields ──
+
+  const mobileFields: MobileCardField<AttendanceRow>[] = useMemo(() => [
+    { key: 'name', label: 'Employee', isPrimary: true, render: (e) => <span className="font-medium">{e.name}</span> },
     {
-      key: 'name',
-      label: 'Employee',
-      isPrimary: true,
-      render: (e) => e.name || '—',
-    },
-    {
-      key: 'group',
-      label: 'Group',
-      isSecondary: true,
-      render: (e) => e.user_group_name || '—',
-    },
-    {
-      key: 'avg_check_in',
-      label: 'Avg Check In',
-      render: (e) => (
-        <span className="inline-flex items-center gap-1 text-sm">
-          <LogIn className="h-3 w-3 text-green-600" />
-          {formatEpochTime(e.avg_check_in_epoch)}
-        </span>
-      ),
-    },
-    {
-      key: 'avg_check_out',
-      label: 'Avg Check Out',
-      render: (e) => (
-        <span className="inline-flex items-center gap-1 text-sm">
-          <LogOut className="h-3 w-3 text-red-500" />
-          {formatEpochTime(e.avg_check_out_epoch)}
-        </span>
-      ),
-    },
-    {
-      key: 'days',
-      label: 'Days Present',
-      render: (e) => <Badge variant="secondary" className="text-xs">{e.days_present}</Badge>,
-    },
-    {
-      key: 'total_hours',
-      label: 'Total Hours',
+      key: 'checkin', label: 'Checked In',
       render: (e) => {
-        const lunch = e.lunch_break_minutes ?? 60
-        const totalNet = netSeconds(e.total_duration_seconds, lunch * e.days_present)
-        const expectedH = (e.working_hours ?? 8) * e.days_present
-        const isShort = totalNet / 3600 > 0 && totalNet / 3600 < expectedH
+        const t = e.adjusted_first_punch ?? e.first_punch
+        if (!t) return <span className="text-muted-foreground">—</span>
         return (
-          <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
-            {formatDuration(totalNet)}
+          <span className="inline-flex items-center gap-1 text-sm">
+            <LogIn className="h-3 w-3 text-green-600" />{fmtTime(t)}
+            {e.adjusted_first_punch && <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300">C</Badge>}
           </span>
         )
       },
     },
     {
-      key: 'adj_hours',
-      label: 'Adj. Hours',
+      key: 'checkout', label: 'Checked Out',
       render: (e) => {
-        if (!e.adjustment_count) return <span className="text-muted-foreground">—</span>
-        const lunch = e.lunch_break_minutes ?? 60
-        const adjNet = netSeconds(e.adjusted_total_duration_seconds, lunch * e.days_present)
-        return <span className="text-sm font-medium text-green-600">{formatDuration(adjNet)}</span>
+        if (!e.first_punch) return <span className="text-muted-foreground">—</span>
+        if ((e.total_punches ?? 0) === 1 && !e.adjusted_last_punch) return <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
+        const t = e.adjusted_last_punch ?? e.last_punch
+        return (
+          <span className="inline-flex items-center gap-1 text-sm">
+            <LogOut className="h-3 w-3 text-red-500" />{fmtTime(t)}
+            {e.adjusted_last_punch && <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300">C</Badge>}
+          </span>
+        )
       },
     },
     {
-      key: 'avg_day',
-      label: 'Avg/Day',
+      key: 'duration', label: 'Duration',
       render: (e) => {
-        const lunch = e.lunch_break_minutes ?? 60
-        const totalNet = netSeconds(e.total_duration_seconds, lunch * e.days_present)
-        const avgH = e.days_present > 0 ? totalNet / e.days_present / 3600 : 0
-        return <span className="text-sm">{avgH.toFixed(1)}h</span>
+        if (e.attendance_status === 'absent') return <span className="text-muted-foreground">—</span>
+        const hasAdj = !!e.adjusted_first_punch
+        const net = e.adjusted_first_punch && e.adjusted_last_punch
+          ? netSec(timeDiffSec(e.adjusted_first_punch, e.adjusted_last_punch), e.lunch_break_minutes ?? 60)
+          : netSec(e.duration_seconds, e.lunch_break_minutes ?? 60)
+        return <span className="text-sm font-medium">{(e.total_punches ?? 0) === 1 && !hasAdj ? '—' : fmtDuration(net)}</span>
       },
-    },
-    {
-      key: 'punches',
-      label: 'Punches',
-      expandOnly: true,
-      render: (e) => <Badge variant="secondary" className="text-xs">{e.total_punches}</Badge>,
     },
   ], [])
 
-  const stepDay = (delta: number) => {
-    const s = new Date(start)
-    const e = new Date(end)
-    s.setDate(s.getDate() + delta)
-    e.setDate(e.getDate() + delta)
-    const fmt = (d: Date) => d.toISOString().slice(0, 10)
-    setQuickFilter('custom')
-    setCustomStart(fmt(s))
-    setCustomEnd(fmt(e))
-    setExpandedId(null)
-  }
-
-  const handleQuickFilter = (f: QuickFilter) => {
-    setQuickFilter(f)
-    setExpandedId(null)
-    setStatFilter('all')
-  }
-
-  const SortIcon = ({ field }: { field: SortField }) => (
-    <ArrowUpDown className={cn('ml-1 h-3 w-3 inline', sortField === field ? 'opacity-100' : 'opacity-40')} />
-  )
-
-  const rangeLabel = isSingleDay
-    ? new Date(start).toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })
-    : `${new Date(start).toLocaleDateString('ro-RO')} — ${new Date(end).toLocaleDateString('ro-RO')}`
-
-  // Determine which col defs to show in the popover
-  const isDaily = isSingleDay || is3Day
-  const activeColDefs = isDaily ? DAILY_COL_DEFS : RANGE_COL_DEFS
-  const visibleCols: Set<string> = isDaily ? effectiveDailyCols : visibleRangeCols
+  const dateLabel = new Date(`${date}T12:00:00`).toLocaleDateString('ro-RO', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  })
 
   return (
     <div className="space-y-4">
-      {/* Connection warning */}
-      {!connected && (
-        <div className="flex items-center gap-2 rounded-md border border-orange-300 bg-orange-50 px-4 py-2 text-sm text-orange-800 dark:border-orange-700 dark:bg-orange-950/30 dark:text-orange-300">
-          <Clock className="h-4 w-4 shrink-0" />
-          <span>BioStar not connected — showing cached data. Configure connection in Settings &gt; Connectors.</span>
-        </div>
-      )}
-
-      {/* Stats */}
-      <div className={`grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6 ${showStats ? '' : 'hidden'}`}>
-        <StatCard title={isSingleDay ? 'Present Today' : 'Employees'} value={totalPresent} icon={<UserCheck className="h-4 w-4" />} />
-        <StatCard title="Total Hours" value={totalHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
-        <StatCard title={isSingleDay ? 'Avg Hours' : 'Avg Hours / Employee'} value={avgHours.toFixed(1)} icon={<Clock className="h-4 w-4" />} />
-        {isSingleDay ? (
-          <>
-            <StatCard title="Early (<8:00)" value={earlyBirds} icon={<LogIn className="h-4 w-4" />} />
-            <div
-              className={cn('cursor-pointer rounded-lg transition-colors', statFilter === 'late' && 'ring-2 ring-orange-500')}
-              onClick={() => setStatFilter(statFilter === 'late' ? 'all' : 'late')}
-            >
-              <StatCard title="Late (>15m)" value={lateArrivals} icon={<Clock className="h-4 w-4 text-orange-500" />} />
-            </div>
-            <StatCard title="Avg In / Out" value={`${avgCheckIn} / ${avgCheckOut}`} icon={<LogOut className="h-4 w-4" />} />
-          </>
-        ) : (
-          <>
-            <StatCard title="Avg Days Present" value={totalPresent > 0 ? (rangeSummary.reduce((a, e) => a + e.days_present, 0) / totalPresent).toFixed(1) : '0'} icon={<Calendar className="h-4 w-4" />} />
-          </>
-        )}
-      </div>
-
       {/* Filters */}
-      {showFilters && <div className="flex flex-wrap items-center gap-2">
-        {/* Quick filter dropdown */}
-        <Select value={quickFilter === 'custom' ? 'custom' : quickFilter} onValueChange={(v) => handleQuickFilter(v as QuickFilter)}>
-          <SelectTrigger className="h-8 w-36 shrink-0 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {QUICK_FILTERS.map((f) => (
-              <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
-            ))}
-            {quickFilter === 'custom' && <SelectItem value="custom">Custom</SelectItem>}
-          </SelectContent>
-        </Select>
-        {/* Day navigation + Date pickers */}
-        <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => stepDay(-1)} title="Previous day">
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <DateField
-          value={quickFilter === 'custom' ? customStart : start}
-          onChange={(v) => { setQuickFilter('custom'); setCustomStart(v); if (!customEnd || v > customEnd) setCustomEnd(v) }}
-          className="h-8 shrink-0"
-        />
-        <span className="text-xs text-muted-foreground">—</span>
-        <DateField
-          value={quickFilter === 'custom' ? customEnd : end}
-          onChange={(v) => { setQuickFilter('custom'); setCustomEnd(v); if (!customStart || v < customStart) setCustomStart(v) }}
-          className="h-8 shrink-0"
-        />
-        <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => stepDay(1)} title="Next day">
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-        <span className="text-xs text-muted-foreground hidden md:inline">{rangeLabel}</span>
-        <Select value={groupFilter} onValueChange={setGroupFilter}>
-          <SelectTrigger className="w-40 md:w-44 shrink-0">
-            <SelectValue placeholder="All Groups" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Groups ({activeData.length})</SelectItem>
-            {groups.map((g) => (
-              <SelectItem key={g} value={g}>
-                {g} ({activeData.filter((e) => e.user_group_name === g).length})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {showFilters && (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Day navigation */}
+          <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => stepDay(-1)} title="Previous day">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <DateField
+            value={date}
+            onChange={(v) => { setDate(v); setExpandedId(null) }}
+            className="h-8 shrink-0"
+          />
+          <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => stepDay(1)} title="Next day">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <span className="text-xs text-muted-foreground hidden md:inline capitalize">{dateLabel}</span>
 
-        {/* Quick column group toggles (daily view only) */}
-        {!isMobile && isDaily && (showOriginal || showAdjusted) && (
-          <div className="flex items-center gap-1">
-            {showOriginal && (
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn('h-9 text-xs px-2.5', (visibleDailyCols.has('check_in') || visibleDailyCols.has('check_out')) && 'border-primary text-primary')}
-                onClick={toggleCheckInOut}
-                title="Toggle Check In / Check Out columns"
-              >
-                Check In/Out
-              </Button>
-            )}
-            {showAdjusted && (
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn('h-9 text-xs px-2.5', (visibleDailyCols.has('adj_in') || visibleDailyCols.has('adj_out')) && 'border-primary text-primary')}
-                onClick={toggleAdjInOut}
-                title="Toggle In / Out (adjusted) columns"
-              >
-                In/Out
-              </Button>
-            )}
-          </div>
-        )}
+          {/* Group filter */}
+          <Select value={groupFilter} onValueChange={setGroupFilter}>
+            <SelectTrigger className="w-40 md:w-44 shrink-0">
+              <SelectValue placeholder="All Groups" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Groups ({processed.length})</SelectItem>
+              {groups.map((g) => (
+                <SelectItem key={g} value={g}>{g}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        {/* Column toggle */}
-        {!isMobile && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                className={cn('h-9 w-9 shrink-0', visibleCols.size < (isDaily ? DAILY_COL_DEFS.filter(c => showAdjusted || !['adj_in', 'adj_out'].includes(c.key)).length : RANGE_COL_DEFS.length) && 'text-primary border-primary')}
-              >
-                <Columns3 className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-52 p-3">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Columns</span>
-                <button
-                  onClick={isDaily ? resetDailyCols : resetRangeCols}
-                  className="text-xs text-muted-foreground hover:text-foreground"
+          <div className="flex items-center gap-1 ml-auto">
+            {/* Adjustment buttons */}
+            {canAdjust && (
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-8 text-xs" disabled={adjusting}>
+                      <Wand2 className="mr-1 h-3.5 w-3.5" />
+                      Auto-adjust
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => autoAdjustRange('day')}>Current Day</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => autoAdjustRange('week')}>Current Week</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => autoAdjustRange('month')}>Current Month</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => autoAdjustRange('quarter')}>Current Quarter</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => autoAdjustRange('year')}>Current Year</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {lastAdjustRange && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs text-orange-500 border-orange-500/40 hover:bg-orange-500/10"
+                    onClick={undoLastAdjust}
+                    disabled={undoing}
+                    title={`Undo: ${lastAdjustRange.start} → ${lastAdjustRange.end}`}
+                  >
+                    <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                    Undo
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => { if (confirm('Backfill will adjust all unadjusted past dates. Continue?')) backfillMut.mutate() }}
+                  disabled={backfillMut.isPending}
                 >
-                  Reset
-                </button>
-              </div>
-              <div className="space-y-0.5">
-                {activeColDefs
-                  .filter(c => !(['check_in', 'check_out'] as string[]).includes(c.key) || showOriginal)
-                  .filter(c => !(['adj_in', 'adj_out'] as string[]).includes(c.key) || showAdjusted)
-                  .map(c => {
-                    const checked = isDaily
-                      ? visibleDailyCols.has(c.key as DailyColKey)
-                      : visibleRangeCols.has(c.key as RangeColKey)
-                    return (
+                  <DatabaseZap className="mr-1 h-3.5 w-3.5" />
+                  Backfill
+                </Button>
+              </>
+            )}
+
+            {/* Export CSV dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" disabled={exporting} title="Export CSV">
+                  <Download className={cn('h-4 w-4', exporting && 'animate-pulse')} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => downloadCsv('day')}>Export Day</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadCsv('month')}>Export Month</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Column toggle */}
+            {!isMobile && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className={cn('h-8 w-8 shrink-0', visibleCols.size < COL_DEFS.length && 'text-primary border-primary')}
+                  >
+                    <Columns3 className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-52 p-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Columns</span>
+                    <button onClick={resetCols} className="text-xs text-muted-foreground hover:text-foreground">Reset</button>
+                  </div>
+                  <div className="space-y-0.5">
+                    {COL_DEFS.map(c => (
                       <label
                         key={c.key}
                         className="flex items-center gap-2.5 px-1 py-1.5 text-sm cursor-pointer hover:bg-accent rounded-md select-none"
                       >
                         <Checkbox
-                          checked={checked}
-                          onCheckedChange={(v) => {
-                            if (isDaily) toggleDailyCol(c.key as DailyColKey, !!v)
-                            else toggleRangeCol(c.key as RangeColKey, !!v)
-                          }}
+                          checked={visibleCols.has(c.key)}
+                          onCheckedChange={(v) => toggleCol(c.key, !!v)}
                           className="h-3.5 w-3.5"
                         />
                         {c.label}
                       </label>
-                    )
-                  })}
-              </div>
-            </PopoverContent>
-          </Popover>
-        )}
-      </div>}
-
-      {/* Last 3 Days: stacked per-day sections */}
-      {is3Day && (
-        <div className="space-y-6">
-          {[0, 1, 2].map((offset) => (
-            <DaySection
-              key={offset}
-              date={dateOffset(offset)}
-              managerFilter={managerFilter}
-              visibleCols={visibleDailyCols}
-              connected={connected}
-            />
-          ))}
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Table / Card list — loading */}
-      {!is3Day && isLoading && (
+      {/* Summary badges */}
+      <div className="flex items-center gap-3 text-sm">
+        <span className="inline-flex items-center gap-1.5">
+          <UserCheck className="h-4 w-4 text-green-600" />
+          <span className="font-medium">{presentCount}</span>
+          <span className="text-muted-foreground">present</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <UserX className="h-4 w-4 text-red-500" />
+          <span className="font-medium">{absentCount}</span>
+          <span className="text-muted-foreground">absent</span>
+        </span>
+        <span className="text-muted-foreground">/ {processed.length} total</span>
+      </div>
+
+      {/* Loading */}
+      {isLoading && (
         isMobile
-          ? <MobileCardList data={[]} fields={dailyMobileFields} getRowId={() => 0} isLoading />
+          ? <MobileCardList data={[]} fields={mobileFields} getRowId={() => 0} isLoading />
           : <div className="space-y-2">{Array.from({ length: 10 }).map((_, i) => <div key={i} className="h-10 animate-pulse rounded bg-muted" />)}</div>
       )}
 
-      {/* Single-day table */}
-      {!is3Day && !isLoading && isSingleDay && (
-        processedDaily.length === 0
-          ? <EmptyState title="No attendance data" description={search ? 'Try a different search term.' : 'No punch logs found for this date.'} />
+      {/* Table */}
+      {!isLoading && (
+        processed.length === 0
+          ? <EmptyState title="No employees found" description={search ? 'Try a different search term.' : 'No active employees with BioStar mapping.'} />
           : isMobile
-            ? <MobileCardList data={processedDaily} fields={dailyMobileFields} getRowId={(e) => Number(e.biostar_user_id)} onRowClick={(e) => navigate(`/app/hr/pontaje/${e.biostar_user_id}`)} />
+            ? <MobileCardList data={processed} fields={mobileFields} getRowId={(e) => e.jarvis_user_id} onRowClick={(e) => navigate(`/app/hr/pontaje/${e.biostar_user_id}`)} />
             : (
               <div className="rounded-md border">
                 <Table>
@@ -759,102 +718,89 @@ export default function PontajeTab({ showStats = false, showFilters = false, man
                     <TableRow>
                       <TableHead className="w-8" />
                       <TableHead className="cursor-pointer select-none" onClick={() => handleSort('name')}>
-                        Employee <SortIcon field="name" />
+                        Name <SortIcon field="name" />
                       </TableHead>
-                      {visibleDailyCols.has('group') && (
-                        <TableHead className="hidden md:table-cell cursor-pointer select-none" onClick={() => handleSort('group')}>
+                      {visibleCols.has('group') && (
+                        <TableHead className="hidden lg:table-cell cursor-pointer select-none" onClick={() => handleSort('group')}>
                           Group <SortIcon field="group" />
                         </TableHead>
                       )}
-                      {visibleCols.has('check_in') && (
+                      {visibleCols.has('official_in') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_in')}>
-                          Check In <SortIcon field="check_in" />
+                          Checked In <SortIcon field="check_in" />
                         </TableHead>
                       )}
-                      {visibleCols.has('check_out') && (
+                      {visibleCols.has('official_out') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('check_out')}>
-                          Check Out <SortIcon field="check_out" />
+                          Checked Out <SortIcon field="check_out" />
                         </TableHead>
                       )}
-                      {showAdjusted && visibleDailyCols.has('adj_in') && (
-                        <TableHead className="text-center hidden lg:table-cell">In</TableHead>
+                      {visibleCols.has('actual_in') && (
+                        <TableHead className="text-center hidden lg:table-cell">Actual In</TableHead>
                       )}
-                      {showAdjusted && visibleDailyCols.has('adj_out') && (
-                        <TableHead className="text-center hidden lg:table-cell">Out</TableHead>
+                      {visibleCols.has('actual_out') && (
+                        <TableHead className="text-center hidden lg:table-cell">Actual Out</TableHead>
                       )}
-                      {visibleDailyCols.has('duration') && (
+                      {visibleCols.has('duration') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('duration')}>
                           Duration <SortIcon field="duration" />
                         </TableHead>
                       )}
-                      {visibleDailyCols.has('punches') && (
+                      {visibleCols.has('punches') && (
                         <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('punches')}>
                           Punches <SortIcon field="punches" />
                         </TableHead>
                       )}
+                      {visibleCols.has('schedule') && (
+                        <TableHead className="text-center">Schedule</TableHead>
+                      )}
+                      {visibleCols.has('company') && (
+                        <TableHead className="hidden md:table-cell cursor-pointer select-none" onClick={() => handleSort('company')}>
+                          Company <SortIcon field="company" />
+                        </TableHead>
+                      )}
+                      {canAdjust && <TableHead className="w-10" />}
+                      <TableHead className="w-10" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {processedDaily.map((emp) => (
+                    {processed.map((emp) => (
                       <EmployeeRow
-                        key={emp.biostar_user_id}
+                        key={emp.jarvis_user_id}
                         employee={emp}
-                        date={start}
-                        isExpanded={expandedId === emp.biostar_user_id}
-                        onToggle={() => setExpandedId(expandedId === emp.biostar_user_id ? null : emp.biostar_user_id)}
+                        date={date}
+                        isExpanded={expandedId === emp.jarvis_user_id}
+                        onToggle={() => setExpandedId(expandedId === emp.jarvis_user_id ? null : emp.jarvis_user_id)}
                         onProfile={() => navigate(`/app/hr/pontaje/${emp.biostar_user_id}`)}
-                        visibleCols={effectiveDailyCols}
-                      />
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )
-      )}
-
-      {/* Range table */}
-      {!is3Day && !isLoading && !isSingleDay && (
-        processedRange.length === 0
-          ? <EmptyState title="No attendance data" description={search ? 'Try a different search term.' : 'No punch logs found for this period.'} />
-          : isMobile
-            ? <MobileCardList data={processedRange} fields={rangeMobileFields} getRowId={(e) => Number(e.biostar_user_id)} onRowClick={(e) => navigate(`/app/hr/pontaje/${e.biostar_user_id}`)} />
-            : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort('name')}>
-                        Employee <SortIcon field="name" />
-                      </TableHead>
-                      {visibleRangeCols.has('group') && (
-                        <TableHead className="hidden md:table-cell cursor-pointer select-none" onClick={() => handleSort('group')}>
-                          Group <SortIcon field="group" />
-                        </TableHead>
-                      )}
-                      {visibleRangeCols.has('avg_check_in') && <TableHead className="text-center">Avg Check In</TableHead>}
-                      {visibleRangeCols.has('avg_check_out') && <TableHead className="text-center">Avg Check Out</TableHead>}
-                      {visibleRangeCols.has('days') && <TableHead className="text-center">Days</TableHead>}
-                      {visibleRangeCols.has('total_hours') && (
-                        <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('duration')}>
-                          Total Hours <SortIcon field="duration" />
-                        </TableHead>
-                      )}
-                      {visibleRangeCols.has('adj_hours') && <TableHead className="text-center">Adj. Hours</TableHead>}
-                      {visibleRangeCols.has('avg_day') && <TableHead className="text-center">Avg/Day</TableHead>}
-                      {visibleRangeCols.has('punches') && (
-                        <TableHead className="cursor-pointer select-none text-center" onClick={() => handleSort('punches')}>
-                          Punches <SortIcon field="punches" />
-                        </TableHead>
-                      )}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {processedRange.map((emp) => (
-                      <RangeEmployeeRow
-                        key={emp.biostar_user_id}
-                        employee={emp}
-                        onProfile={() => navigate(`/app/hr/pontaje/${emp.biostar_user_id}`)}
-                        visibleCols={visibleRangeCols}
+                        visibleCols={visibleCols}
+                        canAdjust={canAdjust}
+                        onAdjust={() => {
+                          const { adjFirst, adjLast } = randomizeAdjustedTimes(
+                            date, emp.schedule_start, emp.lunch_break_minutes ?? 60, emp.working_hours ?? 8,
+                          )
+                          biostarApi.adjustEmployee({
+                            biostar_user_id: emp.biostar_user_id,
+                            date,
+                            adjusted_first_punch: adjFirst,
+                            adjusted_last_punch: adjLast,
+                            original_first_punch: emp.first_punch ?? undefined,
+                            original_last_punch: emp.last_punch ?? emp.first_punch ?? undefined,
+                            schedule_start: emp.schedule_start ?? undefined,
+                            schedule_end: emp.schedule_end ?? undefined,
+                            lunch_break_minutes: emp.lunch_break_minutes ?? 60,
+                            working_hours: emp.working_hours ?? 8,
+                            original_duration_seconds: emp.duration_seconds ?? undefined,
+                          }).then(() => {
+                            toast.success('Adjusted')
+                            queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today', date] })
+                          }).catch(() => toast.error('Adjust failed'))
+                        }}
+                        onRevert={() => {
+                          biostarApi.revertAdjustment(emp.biostar_user_id, date).then(() => {
+                            toast.success('Adjustment reverted')
+                            queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today', date] })
+                          }).catch(() => toast.error('Revert failed'))
+                        }}
                       />
                     ))}
                   </TableBody>
@@ -864,104 +810,13 @@ export default function PontajeTab({ showStats = false, showFilters = false, man
       )}
 
       <div className="text-sm text-muted-foreground">
-        Showing {isSingleDay ? processedDaily.length : processedRange.length} of {activeData.length} employees
+        Showing {processed.length} employees
       </div>
     </div>
   )
 }
 
-// ── Range Employee Row ──
-
-function RangeEmployeeRow({
-  employee,
-  onProfile,
-  visibleCols,
-}: {
-  employee: BioStarRangeSummary
-  onProfile: () => void
-  visibleCols: Set<RangeColKey>
-}) {
-  const lunch = employee.lunch_break_minutes ?? 60
-  const expectedH = (employee.working_hours ?? 8) * employee.days_present
-  const totalNet = netSeconds(employee.total_duration_seconds, lunch * employee.days_present)
-  const totalH = totalNet / 3600
-  const avgNet = employee.days_present > 0 ? totalNet / employee.days_present : 0
-  const avgH = avgNet / 3600
-  const isShort = totalH > 0 && totalH < expectedH
-
-  return (
-    <TableRow className="cursor-pointer hover:bg-muted/50" onClick={onProfile}>
-      <TableCell>
-        <div className="min-w-0">
-          <button className="font-medium hover:underline text-left" onClick={(e) => { e.stopPropagation(); onProfile() }}>
-            {employee.name}
-          </button>
-          {employee.mapped_jarvis_user_name && (
-            <Badge variant="outline" className="ml-2 text-[10px] font-normal">
-              {employee.mapped_jarvis_user_name}
-            </Badge>
-          )}
-        </div>
-      </TableCell>
-      {visibleCols.has('group') && (
-        <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-          {employee.user_group_name || '-'}
-        </TableCell>
-      )}
-      {visibleCols.has('avg_check_in') && (
-        <TableCell className="text-center">
-          <span className="inline-flex items-center gap-1 text-sm">
-            <LogIn className="h-3 w-3 text-green-600" />
-            {formatEpochTime(employee.avg_check_in_epoch)}
-          </span>
-        </TableCell>
-      )}
-      {visibleCols.has('avg_check_out') && (
-        <TableCell className="text-center">
-          <span className="inline-flex items-center gap-1 text-sm">
-            <LogOut className="h-3 w-3 text-red-500" />
-            {formatEpochTime(employee.avg_check_out_epoch)}
-          </span>
-        </TableCell>
-      )}
-      {visibleCols.has('days') && (
-        <TableCell className="text-center">
-          <Badge variant="secondary" className="text-xs">{employee.days_present}</Badge>
-        </TableCell>
-      )}
-      {visibleCols.has('total_hours') && (
-        <TableCell className="text-center">
-          <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
-            {formatDuration(totalNet)}
-          </span>
-        </TableCell>
-      )}
-      {visibleCols.has('adj_hours') && (
-        <TableCell className="text-center">
-          {employee.adjustment_count > 0 ? (
-            <span className="text-sm font-medium text-green-600">
-              {formatDuration(netSeconds(employee.adjusted_total_duration_seconds, lunch * employee.days_present))}
-            </span>
-          ) : (
-            <span className="text-sm text-muted-foreground">—</span>
-          )}
-        </TableCell>
-      )}
-      {visibleCols.has('avg_day') && (
-        <TableCell className="text-center">
-          <span className="text-sm">{avgH.toFixed(1)}h</span>
-        </TableCell>
-      )}
-      {visibleCols.has('punches') && (
-        <TableCell className="text-center">
-          <Badge variant="secondary" className="text-xs">{employee.total_punches}</Badge>
-        </TableCell>
-      )}
-    </TableRow>
-  )
-}
-
-// ── Single-day Employee Row ──
+// ── Employee Row ──
 
 function EmployeeRow({
   employee,
@@ -970,26 +825,47 @@ function EmployeeRow({
   onToggle,
   onProfile,
   visibleCols,
+  canAdjust,
+  onAdjust,
+  onRevert,
 }: {
-  employee: BioStarDailySummary
+  employee: AttendanceRow
   date: string
   isExpanded: boolean
   onToggle: () => void
   onProfile: () => void
-  visibleCols: Set<DailyColKey>
+  visibleCols: Set<ColKey>
+  canAdjust: boolean
+  onAdjust: () => void
+  onRevert: () => void
 }) {
+  const isAbsent = employee.attendance_status === 'absent'
+  const hasLeave = !!employee.sincron_leave_code
   const lunch = employee.lunch_break_minutes ?? 60
+  const net = employee.adjusted_first_punch && employee.adjusted_last_punch
+    ? netSec(timeDiffSec(employee.adjusted_first_punch, employee.adjusted_last_punch), lunch)
+    : netSec(employee.duration_seconds, lunch)
   const expectedH = employee.working_hours ?? 8
-  const net = netSeconds(employee.duration_seconds, lunch)
   const netH = net / 3600
   const isShort = netH > 0 && netH < expectedH
+  const hasAdj = !!employee.adjustment_type
 
-  // colSpan = 2 (chevron + employee) + number of visible optional columns that actually render
-  const colSpan = 2 + Array.from(visibleCols).length
+  const colSpan = 2 /* chevron + name */
+    + (visibleCols.has('group') ? 1 : 0)
+    + (visibleCols.has('official_in') ? 1 : 0)
+    + (visibleCols.has('official_out') ? 1 : 0)
+    + (visibleCols.has('actual_in') ? 1 : 0)
+    + (visibleCols.has('actual_out') ? 1 : 0)
+    + (visibleCols.has('duration') ? 1 : 0)
+    + (visibleCols.has('punches') ? 1 : 0)
+    + (visibleCols.has('schedule') ? 1 : 0)
+    + (visibleCols.has('company') ? 1 : 0)
+    + (canAdjust ? 1 : 0)
+    + 1 /* status dot / link */
 
   return (
     <>
-      <TableRow className="cursor-pointer hover:bg-muted/50" onClick={onToggle}>
+      <TableRow className={cn('cursor-pointer hover:bg-muted/50', isAbsent && !hasAdj && 'opacity-60')} onClick={onToggle}>
         <TableCell className="w-8 px-2">
           {isExpanded ? (
             <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -998,90 +874,144 @@ function EmployeeRow({
           )}
         </TableCell>
         <TableCell>
-          <div className="flex items-center gap-2">
-            <div className="min-w-0">
-              <button
-                className="font-medium hover:underline text-left"
-                onClick={(e) => { e.stopPropagation(); onProfile() }}
-              >
-                {employee.name}
-              </button>
-              {employee.mapped_jarvis_user_name && (
-                <Badge variant="outline" className="ml-2 text-[10px] font-normal">
-                  {employee.mapped_jarvis_user_name}
-                </Badge>
-              )}
-              {employee.email && (
-                <p className="text-xs text-muted-foreground">{employee.email}</p>
-              )}
-            </div>
-          </div>
+          <span className="font-medium">{employee.name}</span>
         </TableCell>
         {visibleCols.has('group') && (
-          <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-            {employee.user_group_name || '-'}
+          <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+            {employee.user_group_name || '—'}
           </TableCell>
         )}
-        {visibleCols.has('check_in') && (
+        {visibleCols.has('official_in') && (
           <TableCell className="text-center">
-            <span className="inline-flex items-center gap-1 text-sm">
-              <LogIn className="h-3 w-3 text-green-600" />
-              {formatTime(employee.first_punch)}
-            </span>
+            {isAbsent && !hasAdj ? (
+              <span className="text-muted-foreground">—</span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-sm">
+                <LogIn className="h-3 w-3 text-green-600" />
+                {fmtTime(employee.adjusted_first_punch ?? employee.first_punch)}
+                {hasAdj && <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300">C</Badge>}
+              </span>
+            )}
           </TableCell>
         )}
-        {visibleCols.has('check_out') && (
+        {visibleCols.has('official_out') && (
           <TableCell className="text-center">
-            {employee.total_punches === 1 ? (
+            {isAbsent && !hasAdj ? (
+              <span className="text-muted-foreground">—</span>
+            ) : (employee.total_punches ?? 0) === 1 && !hasAdj ? (
               <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Not exited</Badge>
             ) : (
               <span className="inline-flex items-center gap-1 text-sm">
                 <LogOut className="h-3 w-3 text-red-500" />
-                {formatTime(employee.last_punch)}
+                {fmtTime(employee.adjusted_last_punch ?? employee.last_punch)}
+                {hasAdj && <Badge variant="outline" className="text-[10px] px-1 py-0 text-blue-600 border-blue-300">C</Badge>}
               </span>
             )}
           </TableCell>
         )}
-        {visibleCols.has('adj_in') && (
+        {visibleCols.has('actual_in') && (
           <TableCell className="text-center hidden lg:table-cell">
-            {employee.adjusted_first_punch
-              ? <span className="text-sm font-medium text-green-600">{formatTime(employee.adjusted_first_punch)}</span>
-              : <span className="text-muted-foreground">—</span>}
+            {isAbsent ? (
+              <span className="text-muted-foreground">—</span>
+            ) : (
+              <span className="text-sm text-muted-foreground">{fmtTime(employee.first_punch)}</span>
+            )}
           </TableCell>
         )}
-        {visibleCols.has('adj_out') && (
+        {visibleCols.has('actual_out') && (
           <TableCell className="text-center hidden lg:table-cell">
-            {employee.adjusted_last_punch
-              ? <span className="text-sm font-medium text-green-600">{formatTime(employee.adjusted_last_punch)}</span>
-              : <span className="text-muted-foreground">—</span>}
+            {isAbsent ? (
+              <span className="text-muted-foreground">—</span>
+            ) : (employee.total_punches ?? 0) === 1 ? (
+              <span className="text-muted-foreground">—</span>
+            ) : (
+              <span className="text-sm text-muted-foreground">{fmtTime(employee.last_punch)}</span>
+            )}
           </TableCell>
         )}
         {visibleCols.has('duration') && (
           <TableCell className="text-center">
-            {employee.total_punches === 1 ? (
-              <span className="text-sm text-muted-foreground">—</span>
+            {(isAbsent && !hasAdj) || ((employee.total_punches ?? 0) === 1 && !hasAdj) ? (
+              <span className="text-muted-foreground">—</span>
             ) : (
               <span className={cn('text-sm font-medium', isShort ? 'text-orange-600' : 'text-foreground')}>
-                {formatDuration(net)}
+                {fmtDuration(net)}
               </span>
-            )}
-            {net > 0 && lunch > 0 && (
-              <span className="block text-[10px] text-muted-foreground">-{lunch}m lunch</span>
             )}
           </TableCell>
         )}
         {visibleCols.has('punches') && (
           <TableCell className="text-center">
-            <Badge variant="secondary" className="text-xs">
-              {employee.total_punches}
-            </Badge>
+            {isAbsent ? (
+              <span className="text-muted-foreground">—</span>
+            ) : (
+              <Badge variant="secondary" className="text-xs">{employee.total_punches}</Badge>
+            )}
           </TableCell>
         )}
+        {visibleCols.has('schedule') && (
+          <TableCell className="text-center text-sm text-muted-foreground">
+            {employee.sincron_day_schedule?.length
+              ? formatSchedule(
+                  employee.sincron_day_schedule.reduce((e, s) => !e || s.start < e ? s.start : e, '' as string),
+                  employee.sincron_day_schedule.reduce((l, s) => !l || s.end > l ? s.end : l, '' as string)
+                )
+              : formatSchedule(employee.schedule_start, employee.schedule_end)}
+          </TableCell>
+        )}
+        {visibleCols.has('company') && (
+          <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+            {employee.company || '—'}
+          </TableCell>
+        )}
+        {canAdjust && (
+          <TableCell className="text-center w-10">
+            {hasAdj && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={(e) => { e.stopPropagation(); onRevert() }}
+                title="Revert adjustment"
+              >
+                <RotateCcw className="h-3 w-3" />
+              </Button>
+            )}
+            {!hasAdj && !hasLeave && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={(e) => { e.stopPropagation(); onAdjust() }}
+                title="Auto-adjust"
+              >
+                <Wand2 className="h-3 w-3" />
+              </Button>
+            )}
+          </TableCell>
+        )}
+        <TableCell className="w-10 text-right pr-3">
+          <div className="flex items-center justify-end gap-2">
+            <span className={cn(
+              'inline-block h-2.5 w-2.5 rounded-full shrink-0',
+              isAbsent && !hasAdj ? 'bg-red-400' : 'bg-green-500',
+            )} />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={(e) => { e.stopPropagation(); onProfile() }}
+              title="Full profile"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </Button>
+          </div>
+        </TableCell>
       </TableRow>
       {isExpanded && (
         <TableRow>
           <TableCell colSpan={colSpan} className="bg-muted/30 p-0">
-            <DayPunches biostarUserId={employee.biostar_user_id} date={date} onProfile={onProfile} />
+            <MonthHistory biostarUserId={employee.biostar_user_id} jarvisUserId={employee.jarvis_user_id} date={date} lunchMin={lunch} workingHours={employee.working_hours ?? 8} scheduleStart={employee.schedule_start} scheduleEnd={employee.schedule_end} canAdjust={canAdjust} />
           </TableCell>
         </TableRow>
       )}
@@ -1089,184 +1019,412 @@ function EmployeeRow({
   )
 }
 
-// ── Day's punches inline ──
+// ── Helpers ──
 
-function DayPunches({ biostarUserId, date, onProfile }: { biostarUserId: string; date: string; onProfile: () => void }) {
-  const { data: punches = [], isLoading } = useQuery({
-    queryKey: ['biostar', 'employee-punches', biostarUserId, date],
-    queryFn: () => biostarApi.getEmployeePunches(biostarUserId, date),
+type DayEntry = { date: string; dayLabel: string; data: BioStarDayHistory | null; isHoliday: boolean; isWeekend: boolean; isOutsideMonth: boolean }
+type WeekGroup = { weekNum: number; weekLabel: string; days: DayEntry[] }
+
+function getISOWeek(d: Date): number {
+  const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7))
+  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1))
+  return Math.ceil(((tmp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+}
+
+function lastDayOfMonth(dateStr: string): string {
+  const [y, m] = dateStr.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m, 0))
+  return d.toISOString().slice(0, 10)
+}
+
+/** Monday of the week containing the given date */
+function weekMonday(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00`)
+  const dow = d.getDay() || 7 // Sun=7
+  d.setDate(d.getDate() - dow + 1)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Sunday of the week containing the given date */
+function weekSunday(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00`)
+  const dow = d.getDay() || 7
+  d.setDate(d.getDate() + (7 - dow))
+  return d.toISOString().slice(0, 10)
+}
+
+function groupByWeek(days: DayEntry[]): WeekGroup[] {
+  const map = new Map<number, DayEntry[]>()
+  for (const day of days) {
+    const d = new Date(`${day.date}T12:00:00`)
+    const wk = getISOWeek(d)
+    if (!map.has(wk)) map.set(wk, [])
+    map.get(wk)!.push(day)
+  }
+  const result: WeekGroup[] = []
+  for (const [weekNum, wkDays] of map) {
+    const first = wkDays[0].date
+    const last = wkDays[wkDays.length - 1].date
+    const fmtD = (s: string) => new Date(`${s}T12:00:00`).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })
+    result.push({ weekNum, weekLabel: `${fmtD(first)} – ${fmtD(last)}`, days: wkDays })
+  }
+  return result.sort((a, b) => a.weekNum - b.weekNum)
+}
+
+async function adjustDays(
+  days: DayEntry[],
+  biostarUserId: string,
+  _scheduleStart: string | null,
+  _lunchMin: number,
+  _workingHours: number,
+  leaveCodes?: Map<string, string>,
+): Promise<number> {
+  const today = todayStr()
+  const eligible = days.filter(d =>
+    !d.isWeekend && !d.isHoliday && !d.isOutsideMonth
+    && d.date <= today
+    && !leaveCodes?.has(d.date)
+    && !(d.data?.adjusted_first_punch),
+  )
+  let count = 0
+  for (const day of eligible) {
+    try {
+      await biostarApi.autoAdjustSingle(biostarUserId, day.date)
+      count++
+    } catch { /* skip — Sincron leave or no schedule */ }
+  }
+  return count
+}
+
+// ── Month History (expansion) ──
+
+function MonthHistory({
+  biostarUserId, jarvisUserId, date, lunchMin, workingHours, scheduleStart, scheduleEnd: _scheduleEnd, canAdjust,
+}: {
+  biostarUserId: string; jarvisUserId: number; date: string; lunchMin: number; workingHours: number
+  scheduleStart: string | null; scheduleEnd: string | null; canAdjust: boolean
+}) {
+  const queryClient = useQueryClient()
+  const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(() => {
+    const now = new Date(`${date}T12:00:00`)
+    return new Set([getISOWeek(now)])
   })
+  const [adjusting, setAdjusting] = useState(false)
+
+  // Month range — extend to complete weeks at boundaries
+  const monthFirst = `${date.slice(0, 7)}-01`
+  const monthLast = lastDayOfMonth(date)
+  const rangeStart = weekMonday(monthFirst)  // Mon of first week
+  const rangeEnd = weekSunday(monthLast)     // Sun of last week
+  const monthLabel = new Date(`${date}T12:00:00`).toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['biostar', 'employee-daily-history', biostarUserId, rangeStart, rangeEnd],
+    queryFn: () => biostarApi.getEmployeeDailyHistory(biostarUserId, rangeStart, rangeEnd),
+  })
+
+  const history = data?.history ?? []
+  const holidays = useMemo(() => new Set(data?.holidays ?? []), [data?.holidays])
+
+  // Sincron leave codes for the month
+  const [y, mo] = date.split('-').map(Number)
+  const { data: sincronData } = useQuery({
+    queryKey: ['sincron', 'employee-timesheet', jarvisUserId, y, mo],
+    queryFn: () => sincronApi.getEmployeeTimesheet(jarvisUserId, y, mo),
+    enabled: !!jarvisUserId,
+  })
+  const leaveCodes = useMemo(() => {
+    const map = new Map<string, string>()
+    if (!sincronData?.data?.days) return map
+    for (const [dayKey, codes] of Object.entries(sincronData.data.days)) {
+      // dayKey is a full date string like "2026-04-06"
+      const leave = codes.find(c => ['CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV'].includes(c.short_code))
+      if (leave) {
+        map.set(dayKey, leave.short_code)
+      }
+    }
+    return map
+  }, [sincronData])
+
+  // Generate all days — full weeks including boundary days from prev/next month
+  const allDays = useMemo(() => {
+    const result: DayEntry[] = []
+    const start = new Date(`${rangeStart}T12:00:00`)
+    const end = new Date(`${rangeEnd}T12:00:00`)
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const ds = d.toISOString().slice(0, 10)
+      const dow = d.getDay()
+      result.push({
+        date: ds,
+        dayLabel: d.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' }),
+        data: history.find(h => h.date?.slice(0, 10) === ds) ?? null,
+        isHoliday: holidays.has(ds),
+        isWeekend: dow === 0 || dow === 6,
+        isOutsideMonth: ds < monthFirst || ds > monthLast,
+      })
+    }
+    return result
+  }, [rangeStart, rangeEnd, monthFirst, monthLast, history, holidays])
+
+  const weeks = useMemo(() => groupByWeek(allDays), [allDays])
+
+  const toggleWeek = (wk: number) => setExpandedWeeks(prev => {
+    const n = new Set(prev); n.has(wk) ? n.delete(wk) : n.add(wk); return n
+  })
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['biostar', 'employee-daily-history', biostarUserId, rangeStart, rangeEnd] })
+
+  // Stats — only count days within the actual month
+  const monthDays = allDays.filter(d => !d.isOutsideMonth)
+  const workingDays = monthDays.filter(d => !d.isWeekend && !d.isHoliday).length
+  const presentDays = monthDays.filter(d => d.data && !d.isWeekend && !d.isHoliday).length
+
+  const handleAdjustMonth = async () => {
+    if (!confirm(`Adjust all unadjusted days in ${monthLabel}?`)) return
+    setAdjusting(true)
+    try {
+      const count = await adjustDays(allDays, biostarUserId, scheduleStart, lunchMin, workingHours, leaveCodes)
+      toast.success(`Adjusted ${count} days in ${monthLabel}`)
+      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today'] })
+    } catch { toast.error('Month adjust failed') }
+    finally { setAdjusting(false) }
+  }
 
   if (isLoading) {
     return (
       <div className="p-4 space-y-2">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="h-6 animate-pulse rounded bg-muted" />
-        ))}
+        {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}
       </div>
     )
   }
 
   return (
     <div className="p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          <Fingerprint className="h-3.5 w-3.5" />
-          {date} — {punches.length} events
-        </div>
-        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onProfile}>
-          <ExternalLink className="mr-1 h-3 w-3" />
-          Full History
-        </Button>
-      </div>
-      {punches.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No punch events found.</p>
-      ) : (
-        <div className="relative ml-4 border-l-2 border-muted-foreground/20 pl-4 space-y-2">
-          {punches.map((p, i) => (
-            <PunchEventLine key={p.id} punch={p} isFirst={i === 0} isLast={i === punches.length - 1} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function PunchEventLine({
-  punch,
-  isFirst,
-  isLast,
-}: {
-  punch: BioStarPunchLog
-  isFirst: boolean
-  isLast: boolean
-}) {
-  const time = new Date(punch.event_datetime).toLocaleTimeString('ro-RO', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-
-  const dirIcon = punch.direction === 'IN'
-    ? <LogIn className="h-3.5 w-3.5 text-green-600" />
-    : punch.direction === 'OUT'
-      ? <LogOut className="h-3.5 w-3.5 text-red-500" />
-      : <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-
-  return (
-    <div className="relative flex items-center gap-3">
-      <div className={cn(
-        'absolute -left-[22px] top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full border-2 border-background',
-        isFirst ? 'bg-green-500' : isLast ? 'bg-red-500' : 'bg-muted-foreground/40',
-      )} />
-      <span className="font-mono font-medium text-sm w-16">{time}</span>
-      <span className="flex items-center gap-1">
-        {dirIcon}
-        <span className={cn(
-          'text-xs font-medium',
-          punch.direction === 'IN' ? 'text-green-600' : punch.direction === 'OUT' ? 'text-red-500' : 'text-muted-foreground',
-        )}>
-          {punch.direction || 'ACCESS'}
+      {/* Month header */}
+      <div className="mb-3 flex items-center gap-3">
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider capitalize">
+          {monthLabel} — {presentDays} / {workingDays} working days
         </span>
-      </span>
-      {punch.device_name && (
-        <span className="text-xs text-muted-foreground truncate max-w-[200px]" title={punch.device_name}>
-          {punch.device_name}
-        </span>
-      )}
-    </div>
-  )
-}
-
-// ── Last 3 Days: per-day section ──
-
-function DaySection({
-  date,
-  managerFilter,
-  visibleCols,
-  connected,
-}: {
-  date: string
-  managerFilter: boolean
-  visibleCols: Set<DailyColKey>
-  connected: boolean
-}) {
-  const navigate = useNavigate()
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const { data: summary = [], isLoading } = useQuery({
-    queryKey: ['biostar', 'daily-summary', date, managerFilter],
-    queryFn: () => biostarApi.getDailySummary(date, managerFilter),
-    refetchInterval: connected ? 60_000 : false,
-  })
-
-  const label = new Date(`${date}T12:00:00`).toLocaleDateString('ro-RO', {
-    weekday: 'long', day: 'numeric', month: 'long',
-  })
-  const presentCount = summary.length
-  const earlyCount = summary.filter((e) => e.first_punch && new Date(e.first_punch).getHours() < 8).length
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-3 px-1">
-        <h3 className="text-sm font-semibold capitalize">{label}</h3>
-        <span className="text-xs text-muted-foreground">{presentCount} present</span>
-        {earlyCount > 0 && (
-          <span className="text-xs text-muted-foreground">{earlyCount} early</span>
+        {canAdjust && (
+          <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2" onClick={handleAdjustMonth} disabled={adjusting}>
+            <Wand2 className="mr-1 h-3 w-3" />Adjust Month
+          </Button>
         )}
       </div>
-      {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-10 animate-pulse rounded bg-muted" />
-          ))}
-        </div>
-      ) : summary.length === 0 ? (
-        <p className="text-sm text-muted-foreground px-1">No attendance data for this date.</p>
+
+      {/* Weeks */}
+      <div className="space-y-1">
+        {weeks.map((week) => {
+          const isOpen = expandedWeeks.has(week.weekNum)
+          const wkWorking = week.days.filter(d => !d.isWeekend && !d.isHoliday)
+          const wkPresent = wkWorking.filter(d => d.data)
+          const wkTotalSec = wkPresent.reduce((sum, d) => sum + effectiveSec(d.data!, d.data!.lunch_break_minutes ?? lunchMin), 0)
+          const wkAvg = wkPresent.length > 0 ? fmtDuration(wkTotalSec / wkPresent.length) : '—'
+
+          const handleAdjustWeek = async (e: React.MouseEvent) => {
+            e.stopPropagation()
+            setAdjusting(true)
+            try {
+              const count = await adjustDays(week.days, biostarUserId, scheduleStart, lunchMin, workingHours, leaveCodes)
+              toast.success(`Adjusted ${count} days in week ${week.weekNum}`)
+              invalidate()
+              queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today'] })
+            } catch { toast.error('Week adjust failed') }
+            finally { setAdjusting(false) }
+          }
+
+          return (
+            <div key={week.weekNum}>
+              {/* Week header */}
+              <div
+                className="flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer hover:bg-muted/50 select-none"
+                onClick={() => toggleWeek(week.weekNum)}
+              >
+                {isOpen
+                  ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                <span className="text-sm font-medium">
+                  W{week.weekNum}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {week.weekLabel}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  — {wkPresent.length}/{wkWorking.length} days, avg {wkAvg}
+                </span>
+                {canAdjust && (
+                  <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5 ml-auto" onClick={handleAdjustWeek} disabled={adjusting}>
+                    <Wand2 className="mr-0.5 h-2.5 w-2.5" />Week
+                  </Button>
+                )}
+              </div>
+
+              {/* Day rows */}
+              {isOpen && (
+                <div className="ml-6 space-y-0.5 mb-2">
+                  {week.days.map((day) => (
+                    <DayRow
+                      key={day.date}
+                      day={day}
+                      leaveCode={leaveCodes.get(day.date)}
+                      lunchMin={lunchMin}
+                      workingHours={workingHours}
+                      biostarUserId={biostarUserId}
+                      scheduleStart={scheduleStart}
+                      scheduleEnd={_scheduleEnd}
+                      canAdjust={canAdjust}
+                      adjusting={adjusting}
+                      onInvalidate={() => { invalidate(); queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today'] }) }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Day Row (inside week) ──
+
+function DayRow({
+  day, leaveCode, lunchMin, workingHours, biostarUserId, scheduleStart, scheduleEnd, canAdjust, adjusting, onInvalidate,
+}: {
+  day: DayEntry; leaveCode?: string; lunchMin: number; workingHours: number; biostarUserId: string
+  scheduleStart: string | null; scheduleEnd: string | null; canAdjust: boolean; adjusting: boolean; onInvalidate: () => void
+}) {
+  const d = day.data
+  const isToday = day.date === todayStr()
+  const isFuture = day.date > todayStr()
+  const isOut = day.isOutsideMonth
+  const net = d ? effectiveSec(d, d.lunch_break_minutes ?? lunchMin) : 0
+  const netH = net / 3600
+  const isShort = netH > 0 && netH < workingHours
+  const hasAdj = !!d?.adjusted_first_punch
+
+  const handleAdjustDay = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await biostarApi.autoAdjustSingle(biostarUserId, day.date)
+      toast.success('Adjusted')
+      onInvalidate()
+    } catch { toast.error('Adjust failed') }
+  }
+
+  const handleRevertDay = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await biostarApi.revertAdjustment(biostarUserId, day.date)
+      toast.success('Reverted')
+      onInvalidate()
+    } catch { toast.error('Revert failed') }
+  }
+
+  return (
+    <div className={cn(
+      'flex items-center gap-3 px-3 py-1.5 rounded-md text-sm',
+      isToday && 'bg-primary/5 font-medium',
+      isOut && 'opacity-40',
+      !isOut && !d && !day.isWeekend && !day.isHoliday && !isFuture && 'opacity-50',
+    )}>
+      <span className={cn(
+        'inline-block h-2 w-2 rounded-full shrink-0',
+        d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : leaveCode ? 'bg-yellow-500' : isFuture ? 'bg-muted-foreground/30' : 'bg-red-400',
+      )} />
+      <span className="w-44 shrink-0 capitalize text-muted-foreground">
+        {day.dayLabel}
+        {d?.sincron_day_schedule && d.sincron_day_schedule.length > 0 ? (
+          <span className="block text-[10px] text-muted-foreground/60 normal-case leading-tight">
+            {d.sincron_day_schedule.map((s, i) => {
+              const short = s.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || s.company;
+              return (
+                <span key={i} className="block whitespace-nowrap" title={`${s.company} ${s.start}–${s.end}`}>
+                  {short} {s.start}–{s.end}
+                </span>
+              );
+            })}
+          </span>
+        ) : d?.sincron_company ? (
+          <span className="block text-[10px] text-muted-foreground/60 normal-case" title={d.sincron_company}>
+            {d.sincron_company}
+          </span>
+        ) : null}
+      </span>
+
+      {day.isWeekend || day.isHoliday || isFuture || leaveCode ? (
+        <>
+          {/* Official in/out — blank for non-working days */}
+          <span className="w-14 shrink-0" />
+          <span className="w-14 shrink-0" />
+          <span className={cn('text-xs', leaveCode ? 'text-yellow-600' : 'text-muted-foreground')}>
+            {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : leaveCode ?? '—'}
+          </span>
+        </>
+      ) : d ? (
+        <>
+          {/* Schedule In/Out — full span across all companies */}
+          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+            {fmtScheduleTime(d.sincron_day_schedule?.length ? d.sincron_day_schedule.reduce((earliest, s) => !earliest || s.start < earliest ? s.start : earliest, '' as string) : d.schedule_start ?? scheduleStart)}
+          </span>
+          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+            {fmtScheduleTime(d.sincron_day_schedule?.length ? d.sincron_day_schedule.reduce((latest, s) => !latest || s.end > latest ? s.end : latest, '' as string) : d.schedule_end ?? scheduleEnd)}
+          </span>
+          {/* Actual In/Out */}
+          <span className="w-14 shrink-0 text-center">
+            {(d.adjusted_first_punch || d.first_punch) ? (
+              <span className="inline-flex items-center gap-1">
+                <LogIn className="h-3 w-3 text-green-600" />
+                {fmtTime(d.adjusted_first_punch ?? d.first_punch)}
+              </span>
+            ) : (
+              <span className="text-xs text-red-400">—</span>
+            )}
+          </span>
+          <span className="w-14 shrink-0 text-center">
+            {d.total_punches === 1 && !hasAdj ? (
+              <span className="text-xs text-orange-600">—</span>
+            ) : (d.adjusted_last_punch || d.last_punch) ? (
+              <span className="inline-flex items-center gap-1">
+                <LogOut className="h-3 w-3 text-red-500" />
+                {fmtTime(d.adjusted_last_punch ?? d.last_punch)}
+              </span>
+            ) : (
+              <span className="text-xs text-red-400">—</span>
+            )}
+          </span>
+          <span className={cn('w-16 shrink-0 text-center font-medium', isShort ? 'text-orange-600' : '')}>
+            {d.total_punches === 1 && !hasAdj && !d.adjusted_first_punch ? '—' : fmtDuration(net)}
+          </span>
+          {canAdjust && !hasAdj && (d.first_punch || !d.total_punches) && (
+            <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust day">
+              <Wand2 className="h-2.5 w-2.5" />
+            </Button>
+          )}
+          {canAdjust && hasAdj && (
+            <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleRevertDay} disabled={adjusting} title="Revert">
+              <RotateCcw className="h-2.5 w-2.5" />
+            </Button>
+          )}
+        </>
       ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8" />
-                <TableHead>Employee</TableHead>
-                {visibleCols.has('group') && (
-                  <TableHead className="hidden md:table-cell">Group</TableHead>
-                )}
-                {visibleCols.has('check_in') && (
-                  <TableHead className="text-center">Check In</TableHead>
-                )}
-                {visibleCols.has('check_out') && (
-                  <TableHead className="text-center">Check Out</TableHead>
-                )}
-                {visibleCols.has('adj_in') && (
-                  <TableHead className="text-center hidden lg:table-cell">In</TableHead>
-                )}
-                {visibleCols.has('adj_out') && (
-                  <TableHead className="text-center hidden lg:table-cell">Out</TableHead>
-                )}
-                {visibleCols.has('duration') && (
-                  <TableHead className="text-center">Duration</TableHead>
-                )}
-                {visibleCols.has('punches') && (
-                  <TableHead className="text-center">Punches</TableHead>
-                )}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {summary.map((emp) => (
-                <EmployeeRow
-                  key={emp.biostar_user_id}
-                  employee={emp}
-                  date={date}
-                  isExpanded={expandedId === emp.biostar_user_id}
-                  onToggle={() => setExpandedId(expandedId === emp.biostar_user_id ? null : emp.biostar_user_id)}
-                  onProfile={() => navigate(`/app/hr/pontaje/${emp.biostar_user_id}`)}
-                  visibleCols={visibleCols}
-                />
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <>
+          {/* Official in/out for absent day */}
+          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+            {fmtScheduleTime(scheduleStart)}
+          </span>
+          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+            {fmtScheduleTime(scheduleEnd)}
+          </span>
+          <span className="text-xs text-red-400">Absent</span>
+          {canAdjust && (
+            <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust absent day">
+              <Wand2 className="h-2.5 w-2.5" />
+            </Button>
+          )}
+        </>
       )}
     </div>
   )
