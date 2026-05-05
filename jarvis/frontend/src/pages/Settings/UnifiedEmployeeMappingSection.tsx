@@ -50,6 +50,13 @@ import {
   type IdentitySincronMapping,
 } from '@/api/identity'
 
+/** Title-case a company name: "AUTOWORLD INTERNATIONAL S.R.L." → "Autoworld International S.R.L." */
+function titleCaseCompany(name: string): string {
+  return name.replace(/\S+/g, (w) =>
+    /^s\.r\.l\.?$/i.test(w) ? 'S.R.L.' : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
+  )
+}
+
 type StatusFilter = 'all' | 'fully_mapped' | 'sincron_only' | 'biostar_only' | 'unmapped'
 type ConfidenceFilter = 'all' | 'high' | 'medium' | 'low'
 
@@ -286,7 +293,7 @@ export function UnifiedEmployeeMappingSection() {
     return rows.filter((row) => {
       const status = computeStatus(row)
       if (statusFilter !== 'all' && status !== statusFilter) return false
-      if (companyFilter !== 'all' && row.company !== companyFilter) return false
+      if (companyFilter !== 'all' && row.company?.toLowerCase() !== companyFilter.toLowerCase()) return false
       if (confidenceFilter !== 'all') {
         const minConf = getMinConfidence(row)
         if (minConf === null && confidenceFilter !== 'low') return false
@@ -556,7 +563,7 @@ export function UnifiedEmployeeMappingSection() {
           <SelectContent>
             <SelectItem value="all">All companies</SelectItem>
             {companies.map(c => (
-              <SelectItem key={c} value={c}>{c}</SelectItem>
+              <SelectItem key={c} value={c}>{titleCaseCompany(c)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
