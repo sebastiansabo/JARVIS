@@ -8,9 +8,10 @@ from typing import Any, Optional
 
 from ..repositories import BilantTemplateRepository, BilantGenerationRepository
 from ..formula_engine import process_bilant_from_template, calculate_metrics_from_config
-from ..excel_handler import read_balanta_from_excel, read_bilant_sheet_for_import, generate_output_excel, generate_anaf_excel
+from ..excel_handler import read_balanta_from_excel, read_balanta_full, read_bilant_sheet_for_import, generate_output_excel, generate_anaf_excel
 from ..pdf_handler import generate_bilant_pdf
 from ..anaf_parser import parse_anaf_pdf, generate_row_mapping, fill_anaf_pdf, generate_anaf_xml, generate_anaf_txt, _nr_rd_to_anaf
+from ..f20_engine import compute_f20
 
 logger = logging.getLogger('jarvis.bilant.service')
 
@@ -265,22 +266,34 @@ class BilantService:
             logger.exception(f'PDF generation failed: {e}')
             return ServiceResult(success=False, error=str(e), status_code=500)
 
-    def generate_filled_pdf(self, generation_id):
-        """Generate filled ANAF XFA PDF — original template with computed values in C1/C2 fields."""
+    def generate_filled_pdf(self, generation_id, accounts_data: dict | None = None):
+        """Generate filled ANAF XFA PDF — original template with computed values in C1/C2 fields.
+
+        Args:
+            generation_id: ID of the bilant generation
+            accounts_data: optional {code: {'tsd': float, 'tsc': float}} for F20 computation.
+                          If provided, F20 (Profit & Loss) section will also be filled.
+        """
         detail = self.get_generation_detail(generation_id)
         if not detail.success:
             return detail
         generation = detail.data['generation']
         results = detail.data['results']
         try:
-            # Build nr_rd → value map
+            # Build nr_rd → value map for F10L
             values = {}
             for r in results:
                 nr = r.get('nr_rd')
                 if nr:
                     values[nr] = r.get('value', 0) or 0
             prior = self._get_prior_results(generation['company_id'], generation_id)
-            output = fill_anaf_pdf(values, prior_values=prior)
+
+            # Compute F20 if accounts data available
+            f20_values = None
+            if accounts_data:
+                f20_values = compute_f20(accounts_data)
+
+            output = fill_anaf_pdf(values, prior_values=prior, f20_values=f20_values)
             return ServiceResult(success=True, data=output)
         except Exception as e:
             logger.exception(f'Filled PDF generation failed: {e}')

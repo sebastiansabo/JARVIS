@@ -22,6 +22,63 @@ def read_balanta_from_excel(file_bytes):
     return pd.read_excel(xlsx, sheet_name='Balanta')
 
 
+def read_balanta_full(file_bytes):
+    """Read balanta Excel with full columns (TSD/TSC + SFD/SFC).
+
+    Supports the standard Romanian accounting software export format:
+    SA, NRC, RAD1, CLS, E, NUC, SID, SIC, RPD, RPC, RCD, RCC, TSD, TSC, SFD, SFC, ...
+
+    Header is auto-detected (row containing 'Nr. Cont' or starting with account data).
+    Account codes are read from column B (index 1).
+
+    Returns:
+        (df_balanta, accounts_dict) where:
+        - df_balanta: DataFrame with columns [Cont, SFD, SFC] for F10L formula engine
+        - accounts_dict: {code: {'tsd': float, 'tsc': float}} for F20 engine
+
+    Raises:
+        ValueError: if file cannot be parsed
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    ws = wb.active
+
+    # Detect header row (contains 'Nr. Cont' or 'NRC')
+    data_start = 1
+    for row_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=10, values_only=True), 1):
+        row_strs = [str(v).lower() if v else '' for v in row[:6]]
+        if any('nr. cont' in s or s == 'nrc' for s in row_strs):
+            data_start = row_idx + 1
+            break
+        # Also detect if row has 'sal_sa' (header indicator)
+        if any('sal_sa' in s for s in row_strs):
+            data_start = row_idx + 1
+            break
+
+    accounts = {}
+    f10l_rows = []
+
+    for row in ws.iter_rows(min_row=data_start, values_only=True):
+        cont = str(row[1]).strip() if row[1] else ''
+        if not cont or not cont[0].isdigit():
+            continue
+
+        tsd = float(row[12]) if len(row) > 12 and row[12] else 0
+        tsc = float(row[13]) if len(row) > 13 and row[13] else 0
+        sfd = float(row[14]) if len(row) > 14 and row[14] else 0
+        sfc = float(row[15]) if len(row) > 15 and row[15] else 0
+
+        accounts[cont] = {'tsd': tsd, 'tsc': tsc}
+        f10l_rows.append([cont, sfd, sfc])
+
+    if not accounts:
+        raise ValueError('No account data found in the uploaded file')
+
+    df_balanta = pd.DataFrame(f10l_rows, columns=['Cont', 'SFD', 'SFC'])
+    return df_balanta, accounts
+
+
 def read_bilant_sheet_for_import(file_bytes):
     """Read Bilant sheet and auto-extract formulas for template import.
 
