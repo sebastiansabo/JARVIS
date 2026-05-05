@@ -307,19 +307,36 @@ class SincronSyncService:
         return updated
 
     def _deactivate_missing_employees(self, company_name, synced_ids):
-        """DISABLED — was incorrectly closing contracts for multi-company employees.
+        """Deactivate employees missing from the Sincron API response.
 
-        Previously marked employees not in the API response as inactive and
-        closed JARVIS user contracts. Disabled to prevent accidental deactivation.
+        1. Marks missing sincron_employees records as inactive/closed.
+        2. For mapped JARVIS users, only closes the user contract if they
+           have NO remaining active sincron_employees across ALL companies.
         """
         db_active_ids = self.repo.get_active_employee_ids(company_name)
         missing_ids = db_active_ids - synced_ids
 
-        if missing_ids:
-            logger.info(f'{company_name}: {len(missing_ids)} employees not in Sincron API '
-                         f'response (deactivation DISABLED): {missing_ids}')
+        if not missing_ids:
+            return 0
 
-        return 0
+        logger.info(f'{company_name}: {len(missing_ids)} employees missing from '
+                     f'Sincron API — deactivating: {missing_ids}')
+
+        # Close sincron_employees records, get affected JARVIS user IDs
+        jarvis_user_ids = self.repo.deactivate_employees(company_name, missing_ids)
+
+        # Only close JARVIS user if they have NO active sincron records left
+        closed_users = 0
+        for user_id in jarvis_user_ids:
+            if not self.repo.has_active_contracts(user_id):
+                self.repo.execute('''
+                    UPDATE users SET contract_status = 'closed', updated_at = NOW()
+                    WHERE id = %s AND COALESCE(contract_status, 'active') != 'closed'
+                ''', (user_id,))
+                logger.info(f'Closed JARVIS user {user_id} — no active Sincron contracts remain')
+                closed_users += 1
+
+        return len(missing_ids)
 
     def _get_company_id_map(self):
         """Build UPPER(company_name) → company_id lookup from companies table."""
