@@ -21,7 +21,9 @@ class BioStarRepository(BaseRepository):
             LEFT JOIN companies co ON co.id = u.company_id
         '''
         if active_only:
-            sql += " WHERE be.status = 'active'"
+            sql += """ WHERE be.status = 'active'
+              AND (be.user_group_name IS NULL OR (be.user_group_name NOT ILIKE '%%plecati%%' AND be.user_group_name NOT ILIKE '%%contracte inchise%%'))
+              AND (be.mapped_jarvis_user_id IS NULL OR COALESCE((SELECT contract_status FROM users WHERE id = be.mapped_jarvis_user_id), 'active') != 'closed')"""
         sql += ' ORDER BY be.name'
         return self.query_all(sql)
 
@@ -424,8 +426,9 @@ class BioStarRepository(BaseRepository):
             FROM punches p
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = p.biostar_user_id AND adj.date = %s::date
-            -- Exclude dismissed JARVIS users (source of truth: users.is_active)
+            -- Exclude dismissed/closed JARVIS users and departed BioStar groups
             WHERE (p.mapped_jarvis_user_id IS NULL OR p.jarvis_user_active = TRUE)
+              AND (p.user_group_name IS NULL OR (p.user_group_name NOT ILIKE '%%plecati%%' AND p.user_group_name NOT ILIKE '%%contracte inchise%%'))
 
             UNION ALL
 
@@ -460,8 +463,9 @@ class BioStarRepository(BaseRepository):
               AND NOT EXISTS (
                   SELECT 1 FROM punches p2 WHERE p2.biostar_user_id = adj2.biostar_user_id
               )
-              -- Exclude dismissed JARVIS users
+              -- Exclude dismissed/closed JARVIS users and departed BioStar groups
               AND (be3.mapped_jarvis_user_id IS NULL OR u3.is_active = TRUE)
+              AND (be3.user_group_name IS NULL OR (be3.user_group_name NOT ILIKE '%%plecati%%' AND be3.user_group_name NOT ILIKE '%%contracte inchise%%'))
 
             ORDER BY jarvis_company NULLS LAST, name
         ''', params)
@@ -526,7 +530,8 @@ class BioStarRepository(BaseRepository):
             LEFT JOIN companies co ON co.id = u.company_id
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = d.biostar_user_id AND adj.date = d.day
-            WHERE (be.mapped_jarvis_user_id IS NULL OR u.is_active = TRUE){extra_where}
+            WHERE (be.mapped_jarvis_user_id IS NULL OR (u.is_active = TRUE AND COALESCE(u.contract_status, 'active') != 'closed'))
+              AND (be.user_group_name IS NULL OR (be.user_group_name NOT ILIKE '%%plecati%%' AND be.user_group_name NOT ILIKE '%%contracte inchise%%')){extra_where}
             GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
                      be.mapped_jarvis_user_id, u.name, co.company, u.company, u.department,
                      be.lunch_break_minutes, be.working_hours,
@@ -693,8 +698,10 @@ class BioStarRepository(BaseRepository):
                 JOIN biostar_employees be ON be.mapped_jarvis_user_id = u.id
                     AND be.status = 'active'
                     AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
+                    AND (be.user_group_name IS NULL OR (be.user_group_name NOT ILIKE '%%plecati%%' AND be.user_group_name NOT ILIKE '%%contracte inchise%%'))
                 LEFT JOIN companies co ON co.id = u.company_id
-                WHERE u.is_active = TRUE{user_filter}
+                WHERE u.is_active = TRUE
+                  AND COALESCE(u.contract_status, 'active') != 'closed'{user_filter}
                 ORDER BY u.id, be.last_synced_at DESC NULLS LAST
             ),
             deduped AS (
@@ -787,8 +794,10 @@ class BioStarRepository(BaseRepository):
                 JOIN biostar_employees be ON be.mapped_jarvis_user_id = u.id
                     AND be.status = 'active'
                     AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
+                    AND (be.user_group_name IS NULL OR (be.user_group_name NOT ILIKE '%%plecati%%' AND be.user_group_name NOT ILIKE '%%contracte inchise%%'))
                 LEFT JOIN companies co ON co.id = u.company_id
-                WHERE u.is_active = TRUE{user_filter}
+                WHERE u.is_active = TRUE
+                  AND COALESCE(u.contract_status, 'active') != 'closed'{user_filter}
                 ORDER BY u.id, be.last_synced_at DESC NULLS LAST
             ),
             deduped AS (
