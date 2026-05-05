@@ -93,4 +93,29 @@ export const organizationApi = {
     api.post<{ success: boolean }>(`/api/structure-nodes/${nodeId}/members/set`, { role, user_ids: userIds }),
   getCascadeResponsables: (nodeId: number) =>
     api.get<number[]>(`/api/structure-nodes/${nodeId}/cascade-responsables`),
+
+  // Sincron organigram
+  getSincronOrganigram: () =>
+    api.get<{
+      success: boolean
+      data: SincronOrgCompany[]
+      total_employees: number
+      total_companies: number
+    }>('/hr/events/api/organigram/sincron'),
+}
+
+export interface SincronOrgEmployee {
+  sincron_employee_id: string
+  nume: string
+  prenume: string
+  nr_contract: string | null
+  norma_lucru: number | null
+  mapped_jarvis_user_id: number | null
+  mapped_user_name: string | null
+}
+
+export interface SincronOrgCompany {
+  company_name: string
+  count: number
+  employees: SincronOrgEmployee[]
 }

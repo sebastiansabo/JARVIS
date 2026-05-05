@@ -547,14 +547,17 @@ _ANAF_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'static', 'anaf_f1
 
 
 def _fill_datasets_xml(datasets_xml: bytes, values: dict, prior_values: dict | None,
-                       form: str = 'F10L') -> bytes:
+                       form: str = 'F10L', f20_values: dict | None = None) -> bytes:
     """Modify XFA datasets XML to fill C1/C2 field values.
 
     Args:
         datasets_xml: Raw XML bytes of the XFA datasets stream.
-        values: {nr_rd: value} for C2 (current period).
-        prior_values: optional {nr_rd: value} for C1 (prior period).
+        values: {nr_rd: value} for F10L C2 (current period).
+        prior_values: optional {nr_rd: value} for F10L C1 (prior period).
         form: 'F10L' or 'F10S'.
+        f20_values: optional dict from f20_engine.compute_f20() with keys:
+            'named': {row_tag: int}, 'standalone': {(row, idx): int},
+            'rows_with_c1_zero': set
 
     Returns:
         Modified XML bytes.
@@ -567,7 +570,7 @@ def _fill_datasets_xml(datasets_xml: bytes, values: dict, prior_values: dict | N
 
     root = ET.fromstring(datasets_xml)
 
-    # Navigate: datasets → data → form1 → F10L → Table1
+    # Navigate: datasets → data → form1
     xfa_ns = '{http://www.xfa.org/schema/xfa-data/1.0/}'
     data_elem = root.find(f'{xfa_ns}data')
     if data_elem is None:
@@ -579,46 +582,45 @@ def _fill_datasets_xml(datasets_xml: bytes, values: dict, prior_values: dict | N
         logger.warning('XFA datasets missing <form1> element')
         return datasets_xml
 
-    form_elem = form1.find(form)
-    if form_elem is None:
-        logger.warning('XFA datasets missing <%s> element', form)
-        return datasets_xml
-
-    table = form_elem.find('Table1')
-    if table is None:
-        logger.warning('XFA datasets missing <Table1> element')
-        return datasets_xml
-
+    # ── Fill F10L/F10S (Balance Sheet) ──
     filled_count = 0
-    for row_elem in table:
-        tag = row_elem.tag
-        # Skip non-row elements (RGOL separators, F10_r1 header)
-        if not tag.startswith('R') or tag.startswith('RGOL') or tag.startswith('F10'):
-            continue
+    form_elem = form1.find(form)
+    if form_elem is not None:
+        table = form_elem.find('Table1')
+        if table is not None:
+            for row_elem in table:
+                tag = row_elem.tag
+                if not tag.startswith('R') or tag.startswith('RGOL') or tag.startswith('F10'):
+                    continue
 
-        # Extract nr_rd from element name: R01 → '01', R103 → '103', R301 → '35a'
-        raw_code = tag[1:]  # strip leading 'R'
-        if raw_code.startswith('_'):
-            raw_code = raw_code[1:]  # R_PP → 'PP'
-        nr_rd = _anaf_to_nr_rd(raw_code)  # '301' → '35a' (B numbering)
+                raw_code = tag[1:]
+                if raw_code.startswith('_'):
+                    raw_code = raw_code[1:]
+                nr_rd = _anaf_to_nr_rd(raw_code)
 
-        # Fill C2 (current period)
-        c2_val = values.get(nr_rd)
-        if c2_val is not None and c2_val != 0:
-            c2 = row_elem.find('C2')
-            if c2 is not None:
-                c2.text = str(int(round(float(c2_val))))
-                filled_count += 1
+                c2_val = values.get(nr_rd)
+                if c2_val is not None and c2_val != 0:
+                    c2 = row_elem.find('C2')
+                    if c2 is not None:
+                        c2.text = str(int(round(float(c2_val))))
+                        filled_count += 1
 
-        # Fill C1 (prior period)
-        if prior_values:
-            c1_val = prior_values.get(nr_rd)
-            if c1_val is not None and c1_val != 0:
-                c1 = row_elem.find('C1')
-                if c1 is not None:
-                    c1.text = str(int(round(float(c1_val))))
+                if prior_values:
+                    c1_val = prior_values.get(nr_rd)
+                    if c1_val is not None and c1_val != 0:
+                        c1 = row_elem.find('C1')
+                        if c1 is not None:
+                            c1.text = str(int(round(float(c1_val))))
+    else:
+        logger.warning('XFA datasets missing <%s> element', form)
 
-    logger.info('Filled %d C2 values in XFA datasets', filled_count)
+    logger.info('Filled %d F10L C2 values in XFA datasets', filled_count)
+
+    # ── Fill F20 (Profit & Loss) ──
+    if f20_values:
+        f20_filled = _fill_f20_in_form1(form1, f20_values)
+        logger.info('Filled %d F20 values in XFA datasets', f20_filled)
+
     # No xml_declaration — datasets is an XDP fragment, not a standalone document.
     # Preserve the leading newline from the original stream.
     xml_bytes = ET.tostring(root, encoding='unicode').encode('utf-8')
@@ -627,18 +629,106 @@ def _fill_datasets_xml(datasets_xml: bytes, values: dict, prior_values: dict | N
     return xml_bytes
 
 
+def _fill_f20_in_form1(form1, f20_values: dict) -> int:
+    """Fill F20 named rows and standalone C1/C2 pairs in form1 element.
+
+    F20 structure in XFA: form1 > F20_r1 > R01, C1, C2, R04, C1, C2, ...
+    Named rows have C1/C2 as child elements.
+    Standalone C1/C2 pairs appear between named rows.
+
+    Args:
+        form1: ElementTree element for form1
+        f20_values: dict with 'named', 'standalone', 'rows_with_c1_zero'
+
+    Returns:
+        Number of fields filled.
+    """
+    named = f20_values.get('named', {})
+    standalone = f20_values.get('standalone', {})
+    rows_with_c1_zero = f20_values.get('rows_with_c1_zero', set())
+
+    children = list(form1)
+
+    # Find F20 section start (after F20_r1 element)
+    start_idx = 0
+    for i, child in enumerate(children):
+        if child.tag == 'F20_r1':
+            start_idx = i + 1
+            break
+
+    if start_idx == 0:
+        logger.warning('F20_r1 element not found in form1')
+        return 0
+
+    filled = 0
+    prev_named = None
+    pair_idx = 0
+    i = start_idx
+
+    while i < len(children):
+        tag = children[i].tag
+
+        if tag.startswith('R') and len(tag) > 1:
+            # Named row — fill C1/C2 children
+            if tag in named:
+                val = named[tag]
+                c2_elem = children[i].find('C2')
+                if c2_elem is None:
+                    c2_elem = ET.SubElement(children[i], 'C2')
+                c2_elem.text = str(val)
+
+                c1_elem = children[i].find('C1')
+                if c1_elem is None:
+                    c1_elem = ET.SubElement(children[i], 'C1')
+                c1_elem.text = '0' if tag in rows_with_c1_zero else ''
+                filled += 1
+
+            prev_named = tag
+            pair_idx = 0
+            i += 1
+
+        elif tag == 'C1':
+            # Standalone C1/C2 pair
+            key = (prev_named, pair_idx)
+            c2_next = i + 1 if (i + 1 < len(children) and children[i + 1].tag == 'C2') else None
+
+            if key in standalone:
+                val = standalone[key]
+                children[i].text = ''  # C1 = empty (prior year)
+                if c2_next is not None:
+                    children[c2_next].text = str(val)
+                filled += 1
+
+            pair_idx += 1
+            i = (c2_next + 1) if c2_next else (i + 1)
+
+        elif tag == 'C2':
+            # Orphan C2 (no preceding C1 in this pair)
+            pair_idx += 1
+            i += 1
+
+        elif tag.startswith('F30') or tag.startswith('F40'):
+            break
+        else:
+            i += 1
+
+    return filled
+
+
 def fill_anaf_pdf(values: dict, prior_values: dict | None = None,
                   template_path: str | None = None,
-                  form: str = 'F10L') -> io.BytesIO:
+                  form: str = 'F10L',
+                  f20_values: dict | None = None) -> io.BytesIO:
     """Fill editable fields in the original ANAF PDF template with computed values.
 
     Preserves the original PDF structure — only modifies the XFA datasets XML stream.
 
     Args:
-        values: {nr_rd: value} mapping row numbers to computed C2 values.
-        prior_values: optional {nr_rd: value} for C1 (prior period) column.
+        values: {nr_rd: value} mapping row numbers to computed F10L C2 values.
+        prior_values: optional {nr_rd: value} for F10L C1 (prior period) column.
         template_path: path to ANAF PDF template (defaults to bundled F10L).
         form: 'F10L' or 'F10S'.
+        f20_values: optional dict from f20_engine.compute_f20() to fill F20 section.
 
     Returns:
         io.BytesIO containing the filled PDF.
@@ -668,7 +758,8 @@ def fill_anaf_pdf(values: dict, prior_values: dict | None = None,
         if str(xfa[i]) == 'datasets':
             stream_obj = xfa[i + 1]
             xml_data = bytes(stream_obj.read_bytes())
-            modified_xml = _fill_datasets_xml(xml_data, values, prior_values, form)
+            modified_xml = _fill_datasets_xml(xml_data, values, prior_values, form,
+                                              f20_values=f20_values)
             stream_obj.write(modified_xml)
             datasets_found = True
             break
