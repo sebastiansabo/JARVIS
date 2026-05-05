@@ -146,15 +146,9 @@ def _parse_proforma(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
         vin = row[3] if len(row) > 3 else None        # D
         rest_amount = row[4] if len(row) > 4 else None  # E — "Rest de plata"
 
-        missing = []
-        if model is None:
-            missing.append("B (model)")
-        if culoare is None:
-            missing.append("C (culoare)")
+        # Only rest_de_plata (amount) is strictly required
         if rest_amount is None:
-            missing.append("E (rest de plata)")
-        if missing:
-            errors.append(f"Row {row_idx}: missing {', '.join(missing)}")
+            errors.append(f"Row {row_idx}: missing E (rest de plata)")
             continue
 
         # Optional per-row metadata (F-H)
@@ -172,8 +166,8 @@ def _parse_proforma(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
 
         lines.append(OrderLine(
             comanda=int(comanda),
-            model=str(model).strip(),
-            culoare=str(culoare).strip(),
+            model=str(model).strip() if model is not None else "",
+            culoare=str(culoare).strip() if culoare is not None else "",
             list_price=None,
             selling_price=None,
             advance=float(rest_amount),

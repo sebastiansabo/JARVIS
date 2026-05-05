@@ -243,6 +243,7 @@ def api_proforma_validate():
         invoice_date=cfg.get("invoice_date", ""),
         anexa_bytes=anexa_file.read(),
         sheet_name=cfg.get("sheet", "Sheet1"),
+        collapse=bool(cfg.get("collapse", False)),
     )
     if not result.success:
         return error_response(result.error, 400)
@@ -285,6 +286,7 @@ def api_proforma_generate():
         intocmit_de=cfg.get("intocmit_de", "Gabriela Oltean"),
         anexa_bytes=anexa_file.read(),
         sheet_name=cfg.get("sheet", "Sheet1"),
+        collapse=bool(cfg.get("collapse", False)),
     )
     if not result.success:
         return error_response(result.error, 400)
