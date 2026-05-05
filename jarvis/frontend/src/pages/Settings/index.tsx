@@ -21,6 +21,7 @@ import {
   BarChart3,
   PanelLeftClose,
   PanelLeftOpen,
+  Router,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -43,6 +44,7 @@ const ApprovalsTab = lazy(() => import('./ApprovalsTab'))
 const MarketingTab = lazy(() => import('./MarketingTab'))
 const DocumentsTab = lazy(() => import('./DocumentsTab'))
 const PontajeTab = lazy(() => import('./PontajeTab'))
+const EmployeeMappingTab = lazy(() => import('./EmployeeMappingTab'))
 const TablesTab = lazy(() => import('./TablesTab'))
 const AutovitDetail = lazy(() => import('./AutovitDetail'))
 const TelemetryTab = lazy(() => import('./TelemetryTab'))
@@ -56,7 +58,8 @@ const baseTabs = [
   // Domain config
   { path: 'accounting', label: 'Accounting', icon: Calculator },
   { path: 'hr', label: 'HR', icon: Briefcase },
-  { path: 'pontaje', label: 'Employee Mapping', icon: Fingerprint },
+  { path: 'employee-mapping', label: 'Employee Mapping', icon: Fingerprint },
+  { path: 'pontaje', label: 'Pontaje', icon: Router },
   { path: 'documents', label: 'Documents', icon: FileText },
   // Appearance
   { path: 'themes', label: 'Themes', icon: Palette },
@@ -161,6 +164,7 @@ export default function Settings() {
               <Route path="tables" element={<TablesTab />} />
               <Route path="tags" element={<TagsTab />} />
               <Route path="hr" element={<HrTab />} />
+              <Route path="employee-mapping" element={<EmployeeMappingTab />} />
               <Route path="pontaje" element={<PontajeTab />} />
               <Route path="documents" element={<DocumentsTab />} />
               <Route path="approvals" element={<ApprovalsTab />} />
