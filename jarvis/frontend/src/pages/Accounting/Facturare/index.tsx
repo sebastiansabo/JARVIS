@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 // ── Shared types ──────────────────────────────────────────────
@@ -534,6 +535,7 @@ function ProformaTab({ companies }: { companies: Company[] }) {
   const [startNo, setStartNo] = useState('')
   const [invoiceDate, setInvoiceDate] = useState('')
   const [intocmitDe, setIntocmitDe] = useState(PRO_DEFAULTS.intocmit)
+  const [collapse, setCollapse] = useState(false)
   const [customerName, setCustomerName] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
   const [customerVat, setCustomerVat] = useState('')
@@ -552,10 +554,11 @@ function ProformaTab({ companies }: { companies: Company[] }) {
     start_no: parseInt(startNo) || 0,
     invoice_date: invoiceDate,
     intocmit_de: intocmitDe,
+    collapse,
     sheet: 'Sheet1',
     supplier: { name: supplierName, address_lines: supplierAddress.split('\n').filter(Boolean), reg_no: supplierRegNo, vat: supplierVat, iban: supplierIban, bank: supplierBank, swift: supplierSwift },
     customer: { name: customerName, address_lines: customerAddress.split('\n').filter(Boolean), vat: customerVat },
-  }), [jobId, startNo, invoiceDate, intocmitDe, supplierName, supplierAddress, supplierVat, supplierRegNo, supplierIban, supplierBank, supplierSwift, customerName, customerAddress, customerVat])
+  }), [jobId, startNo, invoiceDate, intocmitDe, collapse, supplierName, supplierAddress, supplierVat, supplierRegNo, supplierIban, supplierBank, supplierSwift, customerName, customerAddress, customerVat])
 
   const buildFormData = useCallback(() => {
     if (!anexaFile) throw new Error('No Anexa file selected')
@@ -616,11 +619,17 @@ function ProformaTab({ companies }: { companies: Company[] }) {
         {/* Proforma settings — simpler */}
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-base">Proforma Settings</CardTitle></CardHeader>
-          <CardContent className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            <div><Label>Job ID</Label><Input placeholder="pro-2026-04" value={jobId} onChange={e => setJobId(e.target.value)} /></div>
-            <div><Label>Start No</Label><Input type="number" placeholder="550" value={startNo} onChange={e => setStartNo(e.target.value)} /></div>
-            <div><Label>Date</Label><Input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} /></div>
-            <div><Label>Intocmit de</Label><Input value={intocmitDe} onChange={e => setIntocmitDe(e.target.value)} /></div>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div><Label>Job ID</Label><Input placeholder="pro-2026-04" value={jobId} onChange={e => setJobId(e.target.value)} /></div>
+              <div><Label>Start No</Label><Input type="number" placeholder="550" value={startNo} onChange={e => setStartNo(e.target.value)} /></div>
+              <div><Label>Date</Label><Input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} /></div>
+              <div><Label>Intocmit de</Label><Input value={intocmitDe} onChange={e => setIntocmitDe(e.target.value)} /></div>
+            </div>
+            <div className="flex items-center gap-3 pt-1">
+              <Switch id="collapse-toggle" checked={collapse} onCheckedChange={setCollapse} />
+              <Label htmlFor="collapse-toggle" className="text-sm cursor-pointer">Single invoice (collapse all positions)</Label>
+            </div>
           </CardContent>
         </Card>
 
