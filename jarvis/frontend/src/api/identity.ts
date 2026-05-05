@@ -20,6 +20,13 @@ export interface IdentitySincronMapping {
   mapping_method: string | null
   mapping_confidence: number | null
   is_active: boolean
+  norma_lucru: number | null
+  schedule_start: string | null
+  schedule_end: string | null
+  nr_contract: string | null
+  is_base_contract: boolean
+  count_for_leave: boolean
+  exclude_from_pontaje: boolean
 }
 
 export interface IdentityBiostarMapping {

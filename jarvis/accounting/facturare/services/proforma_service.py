@@ -28,7 +28,8 @@ class ProformaService:
 
     def validate(self, supplier: dict, customer: dict, start_no: int,
                  invoice_date: str, anexa_bytes: bytes,
-                 sheet_name: str = "Sheet1") -> ProformaResult:
+                 sheet_name: str = "Sheet1",
+                 collapse: bool = False) -> ProformaResult:
         """Load and validate proforma Anexa. Returns sanity report."""
         try:
             lines = load_anexa(anexa_bytes, sheet_name=sheet_name)
@@ -36,21 +37,26 @@ class ProformaService:
             total = sum(l.advance for l in lines)
             models: dict[str, dict] = {}
             for l in lines:
-                models.setdefault(l.model, {"count": 0, "total": 0.0})
-                models[l.model]["count"] += 1
-                models[l.model]["total"] += l.advance
+                models.setdefault(l.model or "(no model)", {"count": 0, "total": 0.0})
+                models[l.model or "(no model)"]["count"] += 1
+                models[l.model or "(no model)"]["total"] += l.advance
 
-            last_no = start_no + len(lines) - 1
+            if collapse:
+                last_no = start_no  # single invoice
+            else:
+                last_no = start_no + len(lines) - 1
 
             return ProformaResult(
                 success=True,
                 lines_count=len(lines),
                 total_amount=total,
-                proforma_range=f"{start_no}–{last_no}",
+                proforma_range=f"{start_no}" if collapse else f"{start_no}–{last_no}",
                 validation_report={
                     "row_count": len(lines),
                     "total_amount": round(total, 2),
-                    "proforma_range": f"{start_no}–{last_no}",
+                    "proforma_range": f"{start_no}" if collapse else f"{start_no}–{last_no}",
+                    "invoice_count": 1 if collapse else len(lines),
+                    "collapsed": collapse,
                     "models": {
                         k: {"count": v["count"], "total": round(v["total"], 2)}
                         for k, v in models.items()
@@ -64,13 +70,13 @@ class ProformaService:
 
     def generate(self, supplier: dict, customer: dict, start_no: int,
                  invoice_date: str, intocmit_de: str,
-                 anexa_bytes: bytes, sheet_name: str = "Sheet1") -> ProformaResult:
+                 anexa_bytes: bytes, sheet_name: str = "Sheet1",
+                 collapse: bool = False) -> ProformaResult:
         """Load Anexa → generate proforma PDF bytes."""
         try:
             lines = load_anexa(anexa_bytes, sheet_name=sheet_name)
 
             total = sum(l.advance for l in lines)
-            last_no = start_no + len(lines) - 1
 
             from ..generators.proforma_pdf import ProformaPdfRenderer
             renderer = ProformaPdfRenderer(
@@ -79,15 +85,22 @@ class ProformaService:
                 invoice_date=invoice_date,
                 intocmit_de=intocmit_de,
             )
-            pdf_bytes = renderer.render_all_to_bytes(lines, start_no)
-            logger.info(f"Generated {len(lines)} proforma PDFs")
+
+            if collapse:
+                pdf_bytes = renderer.render_collapsed_to_bytes(lines, start_no)
+                last_no = start_no
+                logger.info(f"Generated 1 collapsed proforma with {len(lines)} positions")
+            else:
+                pdf_bytes = renderer.render_all_to_bytes(lines, start_no)
+                last_no = start_no + len(lines) - 1
+                logger.info(f"Generated {len(lines)} proforma PDFs")
 
             return ProformaResult(
                 success=True,
                 lines_count=len(lines),
                 proforma_pdf=pdf_bytes,
                 total_amount=total,
-                proforma_range=f"{start_no}–{last_no}",
+                proforma_range=f"{start_no}" if collapse else f"{start_no}–{last_no}",
             )
 
         except Exception as e:

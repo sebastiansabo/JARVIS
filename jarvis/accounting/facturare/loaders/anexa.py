@@ -128,7 +128,7 @@ def _parse_proforma(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
     """Parse proforma Anexa format.
 
     A=comanda B=model C=culoare D=VIN E=rest_de_plata
-    F=contract_ref G=anexa_ref H=invoice_date (optional per-row overrides)
+    F=contract_ref G=anexa_ref H=invoice_date I=qty (optional per-row overrides)
     """
     lines: list[OrderLine] = []
     errors: list[str] = []
@@ -146,15 +146,9 @@ def _parse_proforma(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
         vin = row[3] if len(row) > 3 else None        # D
         rest_amount = row[4] if len(row) > 4 else None  # E — "Rest de plata"
 
-        missing = []
-        if model is None:
-            missing.append("B (model)")
-        if culoare is None:
-            missing.append("C (culoare)")
+        # Only rest_de_plata (amount) is strictly required
         if rest_amount is None:
-            missing.append("E (rest de plata)")
-        if missing:
-            errors.append(f"Row {row_idx}: missing {', '.join(missing)}")
+            errors.append(f"Row {row_idx}: missing E (rest de plata)")
             continue
 
         # Optional per-row metadata (F-H)
@@ -170,10 +164,17 @@ def _parse_proforma(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
             else:
                 inv_date_str = str(invoice_date_val).strip()
 
+        # Optional qty (column I)
+        qty_val = row[8] if len(row) > 8 and row[8] is not None else 1
+        try:
+            qty = int(qty_val)
+        except (ValueError, TypeError):
+            qty = 1
+
         lines.append(OrderLine(
             comanda=int(comanda),
-            model=str(model).strip(),
-            culoare=str(culoare).strip(),
+            model=str(model).strip() if model is not None else "",
+            culoare=str(culoare).strip() if culoare is not None else "",
             list_price=None,
             selling_price=None,
             advance=float(rest_amount),
@@ -182,6 +183,7 @@ def _parse_proforma(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
             contract_ref=contract_ref,
             anexa_ref=anexa_ref,
             invoice_date=inv_date_str,
+            qty=qty,
         ))
 
     return lines, errors
