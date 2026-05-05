@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   XCircle,
   Search,
-  Link as LinkIcon,
   Unlink,
   UserPlus,
 } from 'lucide-react'
@@ -37,6 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import {
   identityApi,
@@ -47,9 +47,11 @@ import {
   type IdentityOrphanBiostar,
   type IdentityOrphanConnecteam,
   type IdentityMappingSource,
+  type IdentitySincronMapping,
 } from '@/api/identity'
 
 type StatusFilter = 'all' | 'fully_mapped' | 'sincron_only' | 'biostar_only' | 'unmapped'
+type ConfidenceFilter = 'all' | 'high' | 'medium' | 'low'
 
 function computeStatus(row: IdentityUnifiedRow): Exclude<StatusFilter, 'all'> {
   const hasSincron = (row.sincron_mappings?.length ?? 0) > 0
@@ -61,6 +63,16 @@ function computeStatus(row: IdentityUnifiedRow): Exclude<StatusFilter, 'all'> {
   if (hasBiostar) return 'biostar_only'
   if (hasConnecteam) return 'biostar_only' // partial — shows as partial mapped
   return 'unmapped'
+}
+
+function getMinConfidence(row: IdentityUnifiedRow): number | null {
+  const confidences = [
+    ...(row.sincron_mappings ?? []).map(m => m.mapping_confidence),
+    ...(row.biostar_mappings ?? []).map(m => m.mapping_confidence),
+    ...(row.connecteam_mappings ?? []).map(m => m.mapping_confidence),
+  ].filter((c): c is number => c != null)
+  if (confidences.length === 0) return null
+  return Math.min(...confidences)
 }
 
 function StatusPill({ status }: { status: Exclude<StatusFilter, 'all'> }) {
@@ -95,12 +107,31 @@ function StatusPill({ status }: { status: Exclude<StatusFilter, 'all'> }) {
 function MethodBadge({ method, confidence }: { method?: string | null; confidence?: number | null }) {
   if (!method) return <span className="text-xs text-muted-foreground">—</span>
   const label = method.replace('auto_', '').replace('_', ' ')
+  const tone =
+    confidence != null && confidence >= 95
+      ? 'border-green-500/60 text-green-700'
+      : confidence != null && confidence >= 80
+        ? 'border-amber-500/60 text-amber-700'
+        : ''
   return (
-    <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+    <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground ${tone}`}>
       {label}
       {confidence != null && (
         <span className="text-[10px] font-medium">{Math.round(confidence)}</span>
       )}
+    </span>
+  )
+}
+
+function SincronScheduleInfo({ m }: { m: IdentitySincronMapping }) {
+  const parts: string[] = []
+  if (m.norma_lucru != null) parts.push(`${m.norma_lucru}h`)
+  if (m.schedule_start && m.schedule_end) parts.push(`${m.schedule_start}-${m.schedule_end}`)
+  if (parts.length === 0) return null
+  return (
+    <span className="text-[10px] text-muted-foreground">
+      {parts.join(' / ')}
+      {m.nr_contract && <> · #{m.nr_contract}</>}
     </span>
   )
 }
@@ -138,7 +169,10 @@ type DialogState =
 export function UnifiedEmployeeMappingSection() {
   const qc = useQueryClient()
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [companyFilter, setCompanyFilter] = useState<string>('all')
+  const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>('all')
   const [search, setSearch] = useState('')
+  const [contentTab, setContentTab] = useState<'users' | 'orphans'>('users')
   const [dialog, setDialog] = useState<DialogState>({ mode: 'closed' })
   const [dialogSelection, setDialogSelection] = useState<string>('')
   const [dialogMultiSelection, setDialogMultiSelection] = useState<Set<string>>(new Set())
@@ -236,12 +270,32 @@ export function UnifiedEmployeeMappingSection() {
     },
   })
 
+  // Derive unique companies for the filter dropdown
+  const companies = useMemo(() => {
+    const rows = data?.users ?? []
+    const set = new Set<string>()
+    for (const r of rows) {
+      if (r.company) set.add(r.company)
+    }
+    return Array.from(set).sort()
+  }, [data])
+
   const filtered = useMemo(() => {
     const rows = data?.users ?? []
     const term = search.trim().toLowerCase()
     return rows.filter((row) => {
       const status = computeStatus(row)
       if (statusFilter !== 'all' && status !== statusFilter) return false
+      if (companyFilter !== 'all' && row.company !== companyFilter) return false
+      if (confidenceFilter !== 'all') {
+        const minConf = getMinConfidence(row)
+        if (minConf === null && confidenceFilter !== 'low') return false
+        if (minConf !== null) {
+          if (confidenceFilter === 'high' && minConf < 95) return false
+          if (confidenceFilter === 'medium' && (minConf < 80 || minConf >= 95)) return false
+          if (confidenceFilter === 'low' && minConf >= 80) return false
+        }
+      }
       if (!term) return true
       const haystack = [
         row.name,
@@ -257,12 +311,13 @@ export function UnifiedEmployeeMappingSection() {
         .toLowerCase()
       return haystack.includes(term)
     })
-  }, [data, statusFilter, search])
+  }, [data, statusFilter, companyFilter, confidenceFilter, search])
 
   const stats = data?.stats
   const orphanSincron = data?.orphan_sincron ?? []
   const orphanBiostar = data?.orphan_biostar ?? []
   const orphanConnecteam = data?.orphan_connecteam ?? []
+  const totalOrphans = orphanSincron.length + orphanBiostar.length + orphanConnecteam.length
 
   const filteredJarvisUsers = useMemo(() => {
     const term = dialogSearch.trim().toLowerCase()
@@ -494,347 +549,387 @@ export function UnifiedEmployeeMappingSection() {
             <SelectItem value="unmapped">Unmapped</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={companyFilter} onValueChange={setCompanyFilter}>
+          <SelectTrigger className="h-8 w-44 text-xs">
+            <SelectValue placeholder="All companies" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All companies</SelectItem>
+            {companies.map(c => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={confidenceFilter} onValueChange={(v) => setConfidenceFilter(v as ConfidenceFilter)}>
+          <SelectTrigger className="h-8 w-36 text-xs">
+            <SelectValue placeholder="Confidence" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All confidence</SelectItem>
+            <SelectItem value="high">High (95+)</SelectItem>
+            <SelectItem value="medium">Medium (80-94)</SelectItem>
+            <SelectItem value="low">Low (&lt;80)</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[220px]">User</TableHead>
-              <TableHead className="w-[160px]">Company / Dept</TableHead>
-              <TableHead>Sincron</TableHead>
-              <TableHead>BioStar</TableHead>
-              <TableHead>Connecteam</TableHead>
-              <TableHead className="w-[120px]">Status</TableHead>
-              <TableHead className="w-[100px] text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
-                  <Loader2 className="mx-auto h-4 w-4 animate-spin" />
-                </TableCell>
-              </TableRow>
-            ) : isError ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-sm text-red-600 py-6">
-                  Failed to load unified view.
-                </TableCell>
-              </TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
-                  No users match the current filters.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((row) => {
-                const status = computeStatus(row)
-                return (
-                  <TableRow key={row.user_id}>
-                    <TableCell>
-                      <div className="text-sm font-medium">{row.name}</div>
-                      <div className="text-xs text-muted-foreground">{row.email ?? '—'}</div>
-                      {row.cnp && (
-                        <div className="text-[10px] text-muted-foreground font-mono">CNP {row.cnp}</div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-xs">{row.company ?? '—'}</div>
-                      <div className="text-[11px] text-muted-foreground">{row.department ?? ''}</div>
-                    </TableCell>
-                    <TableCell>
-                      {row.sincron_mappings && row.sincron_mappings.length > 0 ? (
-                        <div className="space-y-1">
-                          {row.sincron_mappings.map(m => (
-                            <div
-                              key={`${m.sincron_employee_id}-${m.company_name}`}
-                              className="flex items-center gap-1.5 text-xs"
-                            >
-                              <MethodBadge method={m.mapping_method} confidence={m.mapping_confidence} />
-                              <span>{m.company_name}</span>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0"
-                                onClick={() =>
-                                  removeMappingMut.mutate({
-                                    userId: row.user_id,
-                                    source: 'sincron',
-                                    external_id: m.sincron_employee_id,
-                                    company_name: m.company_name,
-                                  })
-                                }
-                                title="Remove Sincron mapping"
-                              >
-                                <Unlink className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Not mapped</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {row.biostar_mappings && row.biostar_mappings.length > 0 ? (
-                        <div className="space-y-1">
-                          {row.biostar_mappings.map((b) => (
-                            <div
-                              key={b.biostar_user_id}
-                              className="flex items-center gap-1.5 text-xs"
-                            >
-                              <MethodBadge
-                                method={b.mapping_method}
-                                confidence={b.mapping_confidence}
-                              />
-                              <span className="truncate max-w-[160px]">
-                                {b.user_group_name || b.name || b.email || b.biostar_user_id}
-                              </span>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0"
-                                onClick={() =>
-                                  removeMappingMut.mutate({
-                                    userId: row.user_id,
-                                    source: 'biostar',
-                                    external_id: b.biostar_user_id,
-                                  })
-                                }
-                                title="Remove BioStar mapping"
-                              >
-                                <Unlink className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Not mapped</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {row.connecteam_mappings && row.connecteam_mappings.length > 0 ? (
-                        <div className="space-y-1">
-                          {row.connecteam_mappings.map((c) => (
-                            <div
-                              key={c.connecteam_user_id}
-                              className="flex items-center gap-1.5 text-xs"
-                            >
-                              <MethodBadge
-                                method={c.mapping_method}
-                                confidence={c.mapping_confidence}
-                              />
-                              <span className="truncate max-w-[160px]">
-                                {c.connecteam_user_name || String(c.connecteam_user_id)}
-                              </span>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0"
-                                onClick={() =>
-                                  removeMappingMut.mutate({
-                                    userId: row.user_id,
-                                    source: 'connecteam',
-                                    external_id: String(c.connecteam_user_id),
-                                  })
-                                }
-                                title="Remove Connecteam mapping"
-                              >
-                                <Unlink className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Not mapped</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <StatusPill status={status} />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {!row.sincron_mappings?.length && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 px-2 text-xs"
-                            onClick={() => openMapSincronForUser(row.user_id, row.name)}
-                            title="Map Sincron employee"
-                          >
-                            + Sincron
-                          </Button>
-                        )}
-                        {!row.biostar_mappings?.length && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 px-2 text-xs"
-                            onClick={() => openMapBiostarForUser(row.user_id, row.name)}
-                            title="Map BioStar employee"
-                          >
-                            + BioStar
-                          </Button>
-                        )}
-                        {!row.connecteam_mappings?.length && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 px-2 text-xs"
-                            onClick={() => openMapConnecteamForUser(row.user_id, row.name)}
-                            title="Map Connecteam user"
-                          >
-                            + Connecteam
-                          </Button>
-                        )}
-                      </div>
+      <Tabs value={contentTab} onValueChange={(v) => setContentTab(v as 'users' | 'orphans')}>
+        <TabsList>
+          <TabsTrigger value="users">All Users ({filtered.length})</TabsTrigger>
+          <TabsTrigger value="orphans">
+            Unmapped Externals{totalOrphans > 0 && ` (${totalOrphans})`}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="users" className="mt-3">
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[220px]">User</TableHead>
+                  <TableHead className="w-[160px]">Company / Dept</TableHead>
+                  <TableHead>Sincron</TableHead>
+                  <TableHead>BioStar</TableHead>
+                  <TableHead className="hidden lg:table-cell">Connecteam</TableHead>
+                  <TableHead className="w-[120px]">Status</TableHead>
+                  <TableHead className="w-[100px] text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
+                      <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                     </TableCell>
                   </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {(orphanSincron.length > 0 || orphanBiostar.length > 0 || orphanConnecteam.length > 0) && (
-        <div className="space-y-3 rounded-md border p-3">
-          <h4 className="text-sm font-semibold flex items-center gap-2">
-            <LinkIcon className="h-3.5 w-3.5" />
-            Unmatched externals
-          </h4>
-          {orphanSincron.length > 0 && (
-            <div>
-              <div className="text-xs font-medium mb-1">
-                Sincron ({orphanSincron.length})
-              </div>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Company</TableHead>
-                      <TableHead>CNP</TableHead>
-                      <TableHead className="text-right w-36">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {orphanSincron.map((emp) => (
-                      <TableRow key={`${emp.sincron_employee_id}-${emp.company_name}`}>
-                        <TableCell className="text-xs">
-                          {emp.nume} {emp.prenume}
+                ) : isError ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-sm text-red-600 py-6">
+                      Failed to load unified view.
+                    </TableCell>
+                  </TableRow>
+                ) : filtered.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
+                      No users match the current filters.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filtered.map((row) => {
+                    const status = computeStatus(row)
+                    return (
+                      <TableRow key={row.user_id}>
+                        <TableCell>
+                          <div className="text-sm font-medium">{row.name}</div>
+                          <div className="text-xs text-muted-foreground">{row.email ?? '—'}</div>
+                          {row.cnp && (
+                            <div className="text-[10px] text-muted-foreground font-mono">CNP {row.cnp}</div>
+                          )}
                         </TableCell>
-                        <TableCell className="text-xs">{emp.company_name}</TableCell>
-                        <TableCell className="text-[11px] font-mono">{emp.cnp ?? '—'}</TableCell>
+                        <TableCell>
+                          <div className="text-xs">{row.company ?? '—'}</div>
+                          <div className="text-[11px] text-muted-foreground">{row.department ?? ''}</div>
+                        </TableCell>
+                        <TableCell>
+                          {row.sincron_mappings && row.sincron_mappings.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {row.sincron_mappings.map(m => (
+                                <div
+                                  key={`${m.sincron_employee_id}-${m.company_name}`}
+                                  className="flex flex-col gap-0.5"
+                                >
+                                  <div className="flex items-center gap-1.5 text-xs">
+                                    <MethodBadge method={m.mapping_method} confidence={m.mapping_confidence} />
+                                    <span className="truncate max-w-[140px]">{m.company_name}</span>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-6 w-6 p-0"
+                                      onClick={() =>
+                                        removeMappingMut.mutate({
+                                          userId: row.user_id,
+                                          source: 'sincron',
+                                          external_id: m.sincron_employee_id,
+                                          company_name: m.company_name,
+                                        })
+                                      }
+                                      title="Remove Sincron mapping"
+                                    >
+                                      <Unlink className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                  <SincronScheduleInfo m={m} />
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Not mapped</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {row.biostar_mappings && row.biostar_mappings.length > 0 ? (
+                            <div className="space-y-1">
+                              {row.biostar_mappings.map((b) => (
+                                <div
+                                  key={b.biostar_user_id}
+                                  className="flex items-center gap-1.5 text-xs"
+                                >
+                                  <MethodBadge
+                                    method={b.mapping_method}
+                                    confidence={b.mapping_confidence}
+                                  />
+                                  <span className="truncate max-w-[160px]">
+                                    {b.user_group_name || b.name || b.email || b.biostar_user_id}
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0"
+                                    onClick={() =>
+                                      removeMappingMut.mutate({
+                                        userId: row.user_id,
+                                        source: 'biostar',
+                                        external_id: b.biostar_user_id,
+                                      })
+                                    }
+                                    title="Remove BioStar mapping"
+                                  >
+                                    <Unlink className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Not mapped</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell">
+                          {row.connecteam_mappings && row.connecteam_mappings.length > 0 ? (
+                            <div className="space-y-1">
+                              {row.connecteam_mappings.map((c) => (
+                                <div
+                                  key={c.connecteam_user_id}
+                                  className="flex items-center gap-1.5 text-xs"
+                                >
+                                  <MethodBadge
+                                    method={c.mapping_method}
+                                    confidence={c.mapping_confidence}
+                                  />
+                                  <span className="truncate max-w-[160px]">
+                                    {c.connecteam_user_name || String(c.connecteam_user_id)}
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0"
+                                    onClick={() =>
+                                      removeMappingMut.mutate({
+                                        userId: row.user_id,
+                                        source: 'connecteam',
+                                        external_id: String(c.connecteam_user_id),
+                                      })
+                                    }
+                                    title="Remove Connecteam mapping"
+                                  >
+                                    <Unlink className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Not mapped</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <StatusPill status={status} />
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-6 px-2 text-xs"
-                              onClick={() => openMapSincronDialog(emp)}
-                            >
-                              Map
-                            </Button>
-                            <Button
-                              size="sm"
-                              className="h-6 px-2 text-xs"
-                              disabled={createFromSincronMut.isPending}
-                              onClick={() =>
-                                createFromSincronMut.mutate({
-                                  sincron_employee_id: emp.sincron_employee_id,
-                                  company_name: emp.company_name,
-                                })
-                              }
-                            >
-                              <UserPlus className="h-3 w-3 mr-1" />
-                              Create
-                            </Button>
+                            {!row.sincron_mappings?.length && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => openMapSincronForUser(row.user_id, row.name)}
+                                title="Map Sincron employee"
+                              >
+                                + Sincron
+                              </Button>
+                            )}
+                            {!row.biostar_mappings?.length && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => openMapBiostarForUser(row.user_id, row.name)}
+                                title="Map BioStar employee"
+                              >
+                                + BioStar
+                              </Button>
+                            )}
+                            {!row.connecteam_mappings?.length && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-xs hidden lg:inline-flex"
+                                onClick={() => openMapConnecteamForUser(row.user_id, row.name)}
+                                title="Map Connecteam user"
+                              >
+                                + Connecteam
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    )
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="orphans" className="mt-3">
+          {totalOrphans === 0 ? (
+            <div className="rounded-md border p-8 text-center">
+              <CheckCircle2 className="mx-auto h-8 w-8 text-green-500 mb-2" />
+              <p className="text-sm font-medium">All external records are mapped</p>
+              <p className="text-xs text-muted-foreground mt-1">No orphan Sincron, BioStar, or Connecteam records found.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {orphanSincron.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium mb-1">
+                    Sincron ({orphanSincron.length})
+                  </div>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Company</TableHead>
+                          <TableHead>CNP</TableHead>
+                          <TableHead className="text-right w-36">Action</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {orphanSincron.map((emp) => (
+                          <TableRow key={`${emp.sincron_employee_id}-${emp.company_name}`}>
+                            <TableCell className="text-xs">
+                              {emp.nume} {emp.prenume}
+                            </TableCell>
+                            <TableCell className="text-xs">{emp.company_name}</TableCell>
+                            <TableCell className="text-[11px] font-mono">{emp.cnp ?? '—'}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => openMapSincronDialog(emp)}
+                                >
+                                  Map
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="h-6 px-2 text-xs"
+                                  disabled={createFromSincronMut.isPending}
+                                  onClick={() =>
+                                    createFromSincronMut.mutate({
+                                      sincron_employee_id: emp.sincron_employee_id,
+                                      company_name: emp.company_name,
+                                    })
+                                  }
+                                >
+                                  <UserPlus className="h-3 w-3 mr-1" />
+                                  Create
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+              {orphanBiostar.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium mb-1">
+                    BioStar ({orphanBiostar.length})
+                  </div>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Group</TableHead>
+                          <TableHead className="text-right w-24">Action</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {orphanBiostar.map((emp) => (
+                          <TableRow key={emp.biostar_user_id}>
+                            <TableCell className="text-xs">{emp.name ?? '—'}</TableCell>
+                            <TableCell className="text-xs">{emp.email ?? '—'}</TableCell>
+                            <TableCell className="text-xs">{emp.user_group_name ?? '—'}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => openMapBiostarDialog(emp)}
+                              >
+                                Map
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+              {orphanConnecteam.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium mb-1">
+                    Connecteam ({orphanConnecteam.length})
+                  </div>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead className="text-right w-24">Action</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {orphanConnecteam.map((emp) => (
+                          <TableRow key={emp.connecteam_user_id}>
+                            <TableCell className="text-xs">{emp.connecteam_user_name ?? '—'}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => openMapConnecteamDialog(emp)}
+                              >
+                                Map
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
-          {orphanBiostar.length > 0 && (
-            <div>
-              <div className="text-xs font-medium mb-1">
-                BioStar ({orphanBiostar.length})
-              </div>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Group</TableHead>
-                      <TableHead className="text-right w-24">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {orphanBiostar.map((emp) => (
-                      <TableRow key={emp.biostar_user_id}>
-                        <TableCell className="text-xs">{emp.name ?? '—'}</TableCell>
-                        <TableCell className="text-xs">{emp.email ?? '—'}</TableCell>
-                        <TableCell className="text-xs">{emp.user_group_name ?? '—'}</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 px-2 text-xs"
-                            onClick={() => openMapBiostarDialog(emp)}
-                          >
-                            Map
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
-          {orphanConnecteam.length > 0 && (
-            <div>
-              <div className="text-xs font-medium mb-1">
-                Connecteam ({orphanConnecteam.length})
-              </div>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead className="text-right w-24">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {orphanConnecteam.map((emp) => (
-                      <TableRow key={emp.connecteam_user_id}>
-                        <TableCell className="text-xs">{emp.connecteam_user_name ?? '—'}</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 px-2 text-xs"
-                            onClick={() => openMapConnecteamDialog(emp)}
-                          >
-                            Map
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+        </TabsContent>
+      </Tabs>
 
       <Dialog
         open={dialog.mode !== 'closed'}
