@@ -398,11 +398,14 @@ class SincronSyncService:
                 break_val = None
 
             # Upsert employee (with schedule fields)
+            # Clean whitespace from Sincron names (trailing spaces, double spaces)
+            raw_nume = ' '.join(emp.get('nume', '').split())
+            raw_prenume = ' '.join(emp.get('prenume', '').split())
             self.repo.upsert_employee(
                 sincron_employee_id=sincron_id,
                 company_name=company_name,
-                nume=emp.get('nume', ''),
-                prenume=emp.get('prenume', ''),
+                nume=raw_nume,
+                prenume=raw_prenume,
                 cnp=emp.get('cnp'),
                 id_contract=str(emp.get('id_contract', '')),
                 nr_contract=str(emp.get('nr_contract', '')),
