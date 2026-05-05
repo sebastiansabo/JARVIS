@@ -367,7 +367,7 @@ class ProformaPdfRenderer:
                     elif key == "anexa_ref":
                         c.drawString(x, row_y, (line.anexa_ref or "")[:16])
                     elif key == "qty":
-                        c.drawRightString(x + w * mm - 2 * mm, row_y, "1")
+                        c.drawRightString(x + w * mm - 2 * mm, row_y, str(line.qty))
                     elif key == "amount":
                         c.drawRightString(x + w * mm - 2 * mm, row_y, fmt_us(line.advance))
                     x += w * mm
