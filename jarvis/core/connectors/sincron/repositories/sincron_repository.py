@@ -222,6 +222,14 @@ class SincronRepository(BaseRepository):
         return [r['mapped_jarvis_user_id'] for r in rows
                 if r.get('mapped_jarvis_user_id')]
 
+    def has_active_contracts(self, jarvis_user_id):
+        """Check if a JARVIS user still has any active sincron_employees records."""
+        row = self.query_one('''
+            SELECT COUNT(*) AS cnt FROM sincron_employees
+            WHERE mapped_jarvis_user_id = %s AND is_active = TRUE
+        ''', (jarvis_user_id,))
+        return row['cnt'] > 0 if row else False
+
     def auto_map_by_cnp(self):
         """Auto-map unmapped employees by CNP match against users table."""
         def _work(cursor):

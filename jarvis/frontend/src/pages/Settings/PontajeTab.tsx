@@ -30,7 +30,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { biostarApi } from '@/api/biostar'
-import { sincronApi, type SincronEmployee } from '@/api/sincron'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { BioStarEmployee, JarvisUser } from '@/types/biostar'
@@ -604,144 +603,10 @@ export default function PontajeTab() {
     </Card>
     <DeviceDirections />
     <CheckinLocations />
-    <SincronMappingSection />
     </div>
   )
 }
 
-// ── Sincron Employee Mapping ──
-
-function SincronMappingSection() {
-  const qc = useQueryClient()
-  const { data: status } = useQuery({ queryKey: ['sincron', 'status'], queryFn: sincronApi.getStatus })
-  const [showMapping, setShowMapping] = useState(false)
-
-  const { data: unmapped = [] } = useQuery({
-    queryKey: ['sincron', 'unmapped'],
-    queryFn: sincronApi.getUnmapped,
-    enabled: !!status?.connected && showMapping,
-  })
-
-  const { data: jarvisUsers = [] } = useQuery({
-    queryKey: ['sincron', 'jarvisUsers'],
-    queryFn: sincronApi.getJarvisUsers,
-    enabled: !!status?.connected && showMapping,
-  })
-
-  const autoMapMut = useMutation({
-    mutationFn: () => sincronApi.autoMap(),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['sincron'] })
-      toast.success(`Auto-mapped ${res.total_mapped} employees (${res.cnp_mapped} CNP, ${res.name_mapped} name)`)
-    },
-    onError: () => toast.error('Auto-map failed'),
-  })
-
-  const mapMut = useMutation({
-    mutationFn: (params: { sincronId: string; company: string; jarvisId: number }) =>
-      sincronApi.updateMapping(params.sincronId, params.company, params.jarvisId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['sincron'] })
-      toast.success('Employee mapped')
-    },
-    onError: () => toast.error('Mapping failed'),
-  })
-
-  if (!status?.connected) return null
-
-  const unmappedCount = status.employee_count.unmapped
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Link2 className="h-5 w-5" />
-              Sincron HR — Employee Mapping
-            </CardTitle>
-            <CardDescription>
-              Map Sincron HR employees to JARVIS users. {status.employee_count.mapped} mapped, {unmappedCount} unmapped of {status.employee_count.total} active.
-            </CardDescription>
-          </div>
-          <div className="flex gap-2">
-            {unmappedCount > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => autoMapMut.mutate()}
-                disabled={autoMapMut.isPending}
-              >
-                <Wand2 className={cn('mr-1.5 h-3.5 w-3.5', autoMapMut.isPending && 'animate-spin')} />
-                Auto-Map
-              </Button>
-            )}
-            {unmappedCount > 0 && (
-              <Button size="sm" variant="ghost" onClick={() => setShowMapping(!showMapping)}>
-                {showMapping ? 'Hide' : `Show (${unmappedCount})`}
-              </Button>
-            )}
-          </div>
-        </div>
-      </CardHeader>
-      {showMapping && unmapped.length > 0 && (
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Contract</TableHead>
-                  <TableHead className="w-48">Map to JARVIS User</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {unmapped.map((emp: SincronEmployee) => (
-                  <TableRow key={`${emp.sincron_employee_id}-${emp.company_name}`}>
-                    <TableCell className="text-sm font-medium">{emp.nume} {emp.prenume}</TableCell>
-                    <TableCell className="text-xs">{emp.company_name}</TableCell>
-                    <TableCell className="text-xs">{emp.nr_contract}</TableCell>
-                    <TableCell>
-                      <Select
-                        onValueChange={(val) => {
-                          mapMut.mutate({
-                            sincronId: emp.sincron_employee_id,
-                            company: emp.company_name,
-                            jarvisId: Number(val),
-                          })
-                        }}
-                      >
-                        <SelectTrigger className="h-7 text-xs">
-                          <SelectValue placeholder="Select user..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {jarvisUsers.map((u) => (
-                            <SelectItem key={u.id} value={String(u.id)}>
-                              {u.name} ({u.email})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      )}
-      {unmappedCount === 0 && (
-        <CardContent>
-          <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-            <CheckCircle className="h-4 w-4 text-green-500" />
-            All Sincron employees are mapped.
-          </p>
-        </CardContent>
-      )}
-    </Card>
-  )
-}
 
 // ── Device Directions ──
 

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { NavLink, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
 import {
   Users,
@@ -19,6 +19,8 @@ import {
   Fingerprint,
   Table2,
   BarChart3,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -89,6 +91,8 @@ export default function Settings() {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role_name === 'Admin'
 
+  const [navCollapsed, setNavCollapsed] = useState(false)
+
   const tabs = useMemo(() => {
     const t = [...baseTabs]
     if (isAdmin) {
@@ -109,24 +113,33 @@ export default function Settings() {
 
       <div className="flex flex-col gap-4 md:gap-6 lg:flex-row">
         {/* Tab Navigation */}
-        <nav className="flex gap-1 overflow-x-auto lg:w-48 lg:shrink-0 lg:flex-col">
+        <nav className={cn('flex gap-1 overflow-x-auto lg:shrink-0 lg:flex-col', navCollapsed ? 'lg:w-12' : 'lg:w-48')}>
+          <button
+            onClick={() => setNavCollapsed(!navCollapsed)}
+            className="hidden lg:flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground mb-1"
+            title={navCollapsed ? 'Expand menu' : 'Collapse menu'}
+          >
+            {navCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
           {tabs.map((tab) => {
             const Icon = tab.icon
             return (
               <NavLink
                 key={tab.path}
                 to={`${basePath}/${tab.path}`}
+                title={navCollapsed ? tab.label : undefined}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                    'flex items-center whitespace-nowrap rounded-md text-sm font-medium transition-colors',
+                    navCollapsed ? 'justify-center px-2 py-2 gap-0' : 'gap-2 px-3 py-2',
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                   )
                 }
               >
-                <Icon className="h-4 w-4" />
-                {tab.label}
+                <Icon className="h-4 w-4 shrink-0" />
+                {!navCollapsed && tab.label}
               </NavLink>
             )
           })}

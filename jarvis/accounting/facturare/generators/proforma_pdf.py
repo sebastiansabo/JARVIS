@@ -265,3 +265,227 @@ class ProformaPdfRenderer:
             c.showPage()
         c.save()
         return out_path
+
+    # ── Collapsed (single invoice, multiple positions) ────────
+
+    def render_collapsed_to_bytes(self, lines: list[OrderLine], start_no: int) -> bytes:
+        """Render all lines as a single proforma invoice with a table."""
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf, pagesize=A4)
+        self._render_collapsed_pages(c, start_no, lines)
+        c.save()
+        return buf.getvalue()
+
+    def _build_columns(self, lines: list[OrderLine]) -> list[tuple[str, str, float]]:
+        """Build dynamic column list based on which fields have data.
+
+        Returns list of (header, field_key, width_mm) tuples.
+        """
+        has_vin = any(l.vin for l in lines)
+        has_culoare = any(l.culoare for l in lines)
+        has_contract = any(l.contract_ref for l in lines)
+        has_anexa = any(l.anexa_ref for l in lines)
+
+        cols: list[tuple[str, str, float]] = [
+            ("Nr.", "nr", 8),
+            ("Comanda", "comanda", 18),
+            ("Model", "model", 0),  # flex — gets remaining space
+        ]
+        if has_vin:
+            cols.append(("VIN", "vin", 38))
+        if has_culoare:
+            cols.append(("Culoare", "culoare", 22))
+        if has_contract:
+            cols.append(("Contract", "contract_ref", 22))
+        if has_anexa:
+            cols.append(("Anexa", "anexa_ref", 20))
+        cols.append(("Qty", "qty", 10))
+        cols.append(("Amount (EUR)", "amount", 28))
+
+        # Calculate model column width (flex)
+        fixed = sum(w for _, _, w in cols if w > 0)
+        page_w = (A4[0] - 2 * 18 * mm) / mm  # usable width in mm
+        model_w = page_w - fixed
+        cols = [(h, k, model_w if k == "model" else w) for h, k, w in cols]
+
+        return cols
+
+    def _render_collapsed_pages(self, c: canvas.Canvas, inv_no: int, lines: list[OrderLine]):
+        """Draw collapsed proforma — splits across pages if needed."""
+        W, H = A4
+        LM = 18 * mm
+        RM = W - 18 * mm
+
+        ROW_HEIGHT = 4.2 * mm
+        MAX_ROWS_FIRST_PAGE = 18
+        MAX_ROWS_CONT_PAGE = 35
+
+        total = sum(l.advance for l in lines)
+        cols = self._build_columns(lines)
+        page_num = 0
+        line_idx = 0
+
+        while line_idx < len(lines):
+            if page_num == 0:
+                y = self._draw_collapsed_header(c, inv_no, W, H, LM, RM, cols)
+                max_rows = MAX_ROWS_FIRST_PAGE
+            else:
+                # Continuation page — minimal header
+                y = H - 20 * mm
+                c.setFont("Helvetica-Bold", 10)
+                c.drawString(LM, y, f"PROFORMA INVOICE No:{inv_no} (continued)")
+                y -= 10 * mm
+                y = self._draw_table_header(c, y, LM, RM, cols)
+                max_rows = MAX_ROWS_CONT_PAGE
+
+            # Determine how many rows fit on this page
+            is_last_batch = (line_idx + max_rows >= len(lines))
+            if is_last_batch:
+                rows_this_page = len(lines) - line_idx
+            else:
+                rows_this_page = max_rows
+
+            # Draw table rows
+            c.setFont("Helvetica", 8.5)
+            for i in range(rows_this_page):
+                line = lines[line_idx]
+                row_y = y - (i * ROW_HEIGHT)
+                x = LM + 1 * mm
+                for _, key, w in cols:
+                    if key == "nr":
+                        c.drawString(x, row_y, str(line_idx + 1))
+                    elif key == "comanda":
+                        c.drawString(x, row_y, str(line.comanda))
+                    elif key == "model":
+                        c.drawString(x, row_y, (line.model or "")[:35])
+                    elif key == "vin":
+                        c.drawString(x, row_y, (line.vin or "")[:20])
+                    elif key == "culoare":
+                        c.drawString(x, row_y, (line.culoare or "")[:15])
+                    elif key == "contract_ref":
+                        c.drawString(x, row_y, (line.contract_ref or "")[:18])
+                    elif key == "anexa_ref":
+                        c.drawString(x, row_y, (line.anexa_ref or "")[:16])
+                    elif key == "qty":
+                        c.drawRightString(x + w * mm - 2 * mm, row_y, str(line.qty))
+                    elif key == "amount":
+                        c.drawRightString(x + w * mm - 2 * mm, row_y, fmt_us(line.advance))
+                    x += w * mm
+                line_idx += 1
+
+            y = y - (rows_this_page * ROW_HEIGHT) - 3 * mm
+
+            # Draw total + footer only on last page
+            if is_last_batch:
+                c.setLineWidth(0.4)
+                c.line(LM, y + 2 * mm, RM, y + 2 * mm)
+                y -= 5 * mm
+                c.setFont("Helvetica-Bold", 11)
+                c.drawString(LM, y, "TOTAL")
+                c.drawRightString(RM - 2 * mm, y, f"{fmt_us(total)} EUR")
+
+                y -= 10 * mm
+                c.setFont("Helvetica", 9)
+                c.drawString(LM, y, "Scutire conform art. 138 din Directiva 2006/112/CE")
+                y -= 4.5 * mm
+                c.drawString(LM, y, "Livrare Ex Works")
+                y -= 10 * mm
+                c.drawString(LM, y, f"Intocmit de {self.intocmit_de}")
+
+            c.showPage()
+            page_num += 1
+
+    def _draw_collapsed_header(self, c: canvas.Canvas, inv_no: int,
+                               W: float, H: float, LM: float, RM: float,
+                               cols: list[tuple[str, str, float]]) -> float:
+        """Draw the header (logo, title, supplier/customer) and return Y position for table."""
+        # ── Logo ──
+        if self.logo_path:
+            img = ImageReader(str(self.logo_path))
+            iw, ih = img.getSize()
+            tw = 55 * mm
+            th = tw * ih / iw
+            c.drawImage(img, (W - tw) / 2, H - 22 * mm - th, tw, th, mask='auto')
+            y = H - 24 * mm - th
+        else:
+            c.setFont("Helvetica-Bold", 22)
+            c.drawCentredString(W / 2, H - 25 * mm, self.supplier.get("name", "").split()[0])
+            y = H - 32 * mm
+
+        # underline rule
+        c.setStrokeColorRGB(0.65, 0.78, 0.30)
+        c.setLineWidth(0.6)
+        c.line(LM, y, RM, y)
+        c.setStrokeColorRGB(0, 0, 0)
+
+        # ── Title ──
+        y -= 14 * mm
+        c.setFont("Helvetica-Bold", 13)
+        c.drawCentredString(W / 2, y, "FACTURA PROFORMA")
+        y -= 5 * mm
+        c.drawCentredString(W / 2, y, "PROFORMA INVOICE")
+        y -= 5 * mm
+        c.drawCentredString(W / 2, y, f"No:{inv_no}")
+        y -= 5 * mm
+
+        date_str = self.invoice_date
+        if date_str and "-" in date_str:
+            parts = date_str.split("-")
+            date_str = f"{parts[2]}.{parts[1]}.{parts[0]}"
+        c.drawCentredString(W / 2, y, f"Data/ Date: {date_str}")
+
+        # ── Supplier / Customer (compact) ──
+        y -= 10 * mm
+        col_l = LM
+        col_r = LM + 95 * mm
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(col_l, y, "Furnizor/ Supplier:")
+        c.drawString(col_r, y, "Cumparator/ Customer:")
+
+        y -= 5 * mm
+        c.drawString(col_l, y, self.supplier.get("name", ""))
+        c.drawString(col_r, y, self.customer.get("name", ""))
+
+        c.setFont("Helvetica", 8.5)
+        supplier_lines = list(self.supplier.get("address_lines", []))
+        if self.supplier.get("vat"):
+            supplier_lines.append(f"VAT: {self.supplier['vat']}")
+        if self.supplier.get("iban"):
+            supplier_lines.append(f"IBAN: {self.supplier['iban']}")
+
+        customer_lines = list(self.customer.get("address_lines", []))
+        if self.customer.get("vat"):
+            customer_lines.append(self.customer["vat"])
+
+        yl = y - 4 * mm
+        for ln in supplier_lines:
+            c.drawString(col_l, yl, ln)
+            yl -= 3.8 * mm
+        yr = y - 4 * mm
+        for ln in customer_lines:
+            c.drawString(col_r, yr, ln)
+            yr -= 3.8 * mm
+
+        y = min(yl, yr) - 5 * mm
+
+        # ── Table header ──
+        y = self._draw_table_header(c, y, LM, RM, cols)
+        return y
+
+    def _draw_table_header(self, c: canvas.Canvas, y: float, LM: float, RM: float,
+                           cols: list[tuple[str, str, float]]) -> float:
+        """Draw the items table header and return Y for first data row."""
+        c.setLineWidth(0.4)
+        c.line(LM, y + 2 * mm, RM, y + 2 * mm)
+
+        c.setFont("Helvetica-Bold", 8.5)
+        x = LM + 1 * mm
+        for header, key, w in cols:
+            if key in ("qty", "amount"):
+                c.drawRightString(x + w * mm - 2 * mm, y - 3 * mm, header)
+            else:
+                c.drawString(x, y - 3 * mm, header)
+            x += w * mm
+
+        c.line(LM, y - 5.5 * mm, RM, y - 5.5 * mm)
+        return y - 9 * mm

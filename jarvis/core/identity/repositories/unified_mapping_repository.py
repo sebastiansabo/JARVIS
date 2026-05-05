@@ -39,7 +39,14 @@ class UnifiedMappingRepository(BaseRepository):
                             'mapping_method',      se.mapping_method,
                             'mapping_confidence',  se.mapping_confidence,
                             'is_active',           se.is_active,
-                            'last_synced_at',      se.last_synced_at
+                            'last_synced_at',      se.last_synced_at,
+                            'norma_lucru',         se.norma_lucru,
+                            'schedule_start',      to_char(se.schedule_start, 'HH24:MI'),
+                            'schedule_end',        to_char(se.schedule_end, 'HH24:MI'),
+                            'nr_contract',         se.nr_contract,
+                            'is_base_contract',    se.is_base_contract,
+                            'count_for_leave',     se.count_for_leave,
+                            'exclude_from_pontaje', se.exclude_from_pontaje
                         )
                         ORDER BY se.company_name
                     ) AS sincron_mappings
