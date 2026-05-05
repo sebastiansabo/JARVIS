@@ -75,6 +75,7 @@ def send_email(
     department_cc: Optional[str] = None,
     skip_global_cc: bool = False,
     attachments: Optional[list[tuple[str, bytes]]] = None,
+    from_name: Optional[str] = None,
 ) -> tuple[bool, str]:
     """
     Send an email using configured SMTP settings.
@@ -87,6 +88,7 @@ def send_email(
         department_cc: Optional department-specific CC email address
         skip_global_cc: If True, skip the global CC (for private emails like password resets)
         attachments: Optional list of (filename, content_bytes) tuples
+        from_name: Optional override for the sender display name
 
     Returns:
         tuple: (success: bool, error_message: str)
@@ -98,6 +100,8 @@ def send_email(
 
     if not config['from_email']:
         return False, "From email not configured"
+
+    sender_name = from_name or config['from_name']
 
     try:
         # Use 'mixed' when attachments are present, otherwise 'alternative'
@@ -121,7 +125,7 @@ def send_email(
             msg.attach(MIMEText(html_body, 'html'))
 
         msg['Subject'] = subject
-        msg['From'] = f"{config['from_name']} <{config['from_email']}>" if config['from_name'] else config['from_email']
+        msg['From'] = f"{sender_name} <{config['from_email']}>" if sender_name else config['from_email']
         msg['To'] = to_email
 
         # Build CC list from global CC and department CC
@@ -278,7 +282,7 @@ def create_allocation_email_html(
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">
-            O noua bugetare MKT
+            O Noua bugetare alocata dep. {department}
         </h2>
 
         <p>Buna ziua {responsable_name},</p>
@@ -385,7 +389,7 @@ def create_allocation_email_text(
             reinvoice_section += f"\n- Subdepartament: {reinvoice_subdepartment}"
 
     return f"""
-O noua bugetare MKT
+O Noua bugetare alocata dep. {department}
 
 Buna ziua {responsable_name},
 
@@ -512,7 +516,9 @@ def notify_allocation(invoice_data: dict, allocation: dict) -> list[dict]:
         if not responsable_email:
             continue
 
-        subject = f"O noua bugetare MKT - {invoice_data.get('invoice_number', 'Factura')}"
+        invoice_number = invoice_data.get('invoice_number', 'Factura')
+        subject = f"O Noua bugetare alocata dep. {department}"
+        sender_name = f"Jarvis: Bugetare Factura ({invoice_number})"
         html_body = create_allocation_email_html(responsable_name, invoice_data, allocation)
         text_body = create_allocation_email_text(responsable_name, invoice_data, allocation)
 
@@ -527,7 +533,7 @@ def notify_allocation(invoice_data: dict, allocation: dict) -> list[dict]:
         )
 
         # Send the email with department CC if configured
-        success, error_message = send_email(responsable_email, subject, html_body, text_body, department_cc)
+        success, error_message = send_email(responsable_email, subject, html_body, text_body, department_cc, from_name=sender_name)
 
         # Update notification status
         if success:
