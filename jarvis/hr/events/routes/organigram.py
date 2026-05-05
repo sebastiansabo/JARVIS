@@ -37,6 +37,57 @@ def api_get_organigram():
     })
 
 
+# ============== Sincron Organigram ==============
+
+@events_bp.route('/api/organigram/sincron', methods=['GET'])
+@login_required
+@hr_required
+def api_get_sincron_organigram():
+    """API: Get Sincron employees grouped by company for organigram view."""
+    role_id = getattr(current_user, 'role_id', None)
+    if role_id:
+        from core.roles.repositories.permission_repository import PermissionRepository
+        perm = PermissionRepository().check_permission_v2(role_id, 'hr', 'structure', 'view')
+        if not perm.get('has_permission') and not getattr(current_user, 'can_access_settings', False):
+            from flask import abort
+            abort(403)
+
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    rows = SincronRepository().query_all('''
+        SELECT se.sincron_employee_id, se.company_name,
+               se.nume, se.prenume, se.nr_contract, se.norma_lucru,
+               se.mapped_jarvis_user_id, u.name AS mapped_user_name
+        FROM sincron_employees se
+        LEFT JOIN users u ON u.id = se.mapped_jarvis_user_id
+        WHERE se.is_active = TRUE
+        ORDER BY se.company_name, se.nume, se.prenume
+    ''')
+
+    companies = {}
+    for r in rows:
+        cn = r['company_name']
+        if cn not in companies:
+            companies[cn] = {'company_name': cn, 'employees': [], 'count': 0}
+        companies[cn]['employees'].append({
+            'sincron_employee_id': r['sincron_employee_id'],
+            'nume': r['nume'],
+            'prenume': r['prenume'],
+            'nr_contract': r['nr_contract'],
+            'norma_lucru': float(r['norma_lucru']) if r['norma_lucru'] else None,
+            'mapped_jarvis_user_id': r['mapped_jarvis_user_id'],
+            'mapped_user_name': r['mapped_user_name'],
+        })
+        companies[cn]['count'] += 1
+
+    result = sorted(companies.values(), key=lambda c: c['company_name'])
+    return jsonify({
+        'success': True,
+        'data': result,
+        'total_employees': sum(c['count'] for c in result),
+        'total_companies': len(result),
+    })
+
+
 # ============== Employee 360 Overview ==============
 
 @events_bp.route('/api/employees/<int:user_id>/overview', methods=['GET'])
