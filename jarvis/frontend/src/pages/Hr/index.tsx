@@ -19,6 +19,7 @@ const PontajeTab = lazy(() => import('./PontajeTab'))
 const TimesheetTab = lazy(() => import('./TimesheetTab'))
 const EmployeeProfile = lazy(() => import('./EmployeeProfile'))
 const OrganigramTab = lazy(() => import('./OrganigramTab'))
+const SincronOrganigramView = lazy(() => import('./SincronOrganigramView'))
 const EmployeesTab = lazy(() => import('./EmployeesTab'))
 const Employee360 = lazy(() => import('./Employee360'))
 const LeavePermitsTab = lazy(() => import('./LeavePermitsTab'))
@@ -65,6 +66,7 @@ export default function Hr() {
   const showFilters = true
   const [bonusAddTrigger, setBonusAddTrigger] = useState(0)
   const [search, setSearch] = useState('')
+  const [orgView, setOrgView] = useState<'structure' | 'sincron'>('structure')
   const canExport = perms?.['hr.bonuses.export'] ?? false
   const canViewAmounts = perms?.['hr.bonuses.view_amounts'] ?? false
 
@@ -154,6 +156,12 @@ export default function Hr() {
             <SearchInput value={search} onChange={setSearch} placeholder="Search..." className={isSmall ? undefined : 'w-56'} collapsible={isSmall} />
           }
         />
+        <Tabs value={orgView} onValueChange={(v) => setOrgView(v as 'structure' | 'sincron')}>
+          <TabsList>
+            <TabsTrigger value="structure">Structure</TabsTrigger>
+            <TabsTrigger value="sincron">Sincron</TabsTrigger>
+          </TabsList>
+        </Tabs>
         {authLoading ? (
           <Skeleton className="h-64 w-full" />
         ) : !canViewStructure ? (
@@ -162,7 +170,11 @@ export default function Hr() {
           </div>
         ) : (
           <Suspense fallback={<TabLoader />}>
-            <OrganigramTab search={search} />
+            {orgView === 'structure' ? (
+              <OrganigramTab search={search} />
+            ) : (
+              <SincronOrganigramView search={search} />
+            )}
           </Suspense>
         )}
       </div>
