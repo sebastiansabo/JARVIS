@@ -82,6 +82,10 @@ function randomizeAdjustedTimes(
 
 function fmtTime(dt: string | null) {
   if (!dt) return '—'
+  // Extract HH:MM directly — timestamps are stored as Romania local time (naive, no tz offset),
+  // so we avoid browser-timezone conversion which can add UTC+2/+3 offset.
+  const m = dt.match(/[T ](\d{2}:\d{2})/)
+  if (m) return m[1]
   return new Date(dt).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
 }
 
