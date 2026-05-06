@@ -507,7 +507,8 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       toast.success('Export complete', { id: toastId })
       // Refresh attendance data since auto-adjust may have changed it
       queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today', date] })
-    } catch {
+    } catch (err) {
+      console.error('[Export] failed:', err)
       toast.error('Export failed', { id: toastId })
     } finally {
       setExporting(false)
