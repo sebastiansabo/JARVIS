@@ -453,7 +453,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       const csvRows: string[][] = [headers]
 
       const sortedEmployees = Array.from(employeeMap.entries()).sort((a, b) =>
-        (a[1].company || '').localeCompare(b[1].company || '') || a[1].name.localeCompare(b[1].name),
+        (a[1].company || '').localeCompare(b[1].company || '') || (a[1].name || '').localeCompare(b[1].name || ''),
       )
 
       for (const dd of dailyData) {
