@@ -116,6 +116,16 @@ def create_schema_bilant(conn, cursor):
         END $$;
     """)
 
+    # Add source_accounts column to store TSD/TSC data for F20 computation
+    cursor.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'bilant_generations' AND column_name = 'source_accounts') THEN
+                ALTER TABLE bilant_generations ADD COLUMN source_accounts JSONB;
+            END IF;
+        END $$;
+    """)
+
     # Seed default Bilant template if not present
     cursor.execute("SELECT COUNT(*) as cnt FROM bilant_templates")
     if cursor.fetchone()['cnt'] == 0:

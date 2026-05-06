@@ -193,8 +193,8 @@ export function UploadDialog({ open, onOpenChange, companies, templates }: Uploa
               <div className="space-y-1 text-xs text-blue-800 dark:text-blue-300">
                 <p className="font-medium">Cerinte fisier Excel:</p>
                 <ul className="list-inside list-disc space-y-0.5">
-                  <li>Sheet-ul <strong>&quot;Balanta&quot;</strong> cu coloanele: Cont, SFD, SFC</li>
-                  <li>Valorile bilantului se calculeaza automat din formulele template-ului</li>
+                  <li>Balanta Excel — format standard (sheet &quot;Balanta&quot;) sau format complet (TSD/TSC)</li>
+                  <li>F10L + F20 se completeaza automat din datele balantei</li>
                 </ul>
               </div>
             </div>

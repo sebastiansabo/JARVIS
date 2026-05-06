@@ -101,6 +101,10 @@ class BilantService:
             if metrics:
                 self.generation_repo.save_metrics(generation_id, metrics)
 
+            # Store TSD/TSC accounts data for F20 PDF generation
+            if accounts_data:
+                self.generation_repo.save_source_accounts(generation_id, accounts_data)
+
             # Mark completed
             self.generation_repo.update_status(generation_id, 'completed')
 
@@ -276,7 +280,7 @@ class BilantService:
         Args:
             generation_id: ID of the bilant generation
             accounts_data: optional {code: {'tsd': float, 'tsc': float}} for F20 computation.
-                          If provided, F20 (Profit & Loss) section will also be filled.
+                          If not provided, loads from stored source_accounts (if available).
         """
         detail = self.get_generation_detail(generation_id)
         if not detail.success:
@@ -291,6 +295,10 @@ class BilantService:
                 if nr:
                     values[nr] = r.get('value', 0) or 0
             prior = self._get_prior_results(generation['company_id'], generation_id)
+
+            # Load accounts data from DB if not passed directly
+            if not accounts_data:
+                accounts_data = self.generation_repo.get_source_accounts(generation_id)
 
             # Compute F20 if accounts data available
             f20_values = None
