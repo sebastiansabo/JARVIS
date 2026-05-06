@@ -507,7 +507,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             duration,
             emp.schedule,
             sincronCode,
-            sincronCode ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : officialIn ? 'Present' : 'Absent',
+            sincronCode && !['OZ', 'OS'].includes(sincronCode) ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : officialIn ? 'Present' : 'Absent',
           ])
         }
       }
