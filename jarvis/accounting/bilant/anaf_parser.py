@@ -627,8 +627,7 @@ def _fill_datasets_xml(datasets_xml: bytes, values: dict, prior_values: dict | N
         logger.info('Filled %d F20 values in XFA datasets', f20_filled)
 
     # No xml_declaration — datasets is an XDP fragment, not a standalone document.
-    # Use ET.indent() to produce multi-line XML matching the XFA parser expectations.
-    ET.indent(root)
+    # Do NOT use ET.indent() — it corrupts XFA XML structure in Adobe Reader.
     xml_bytes = ET.tostring(root, encoding='unicode').encode('utf-8')
     # Preserve the leading newline from the original stream.
     if datasets_xml.startswith(b'\n') and not xml_bytes.startswith(b'\n'):
@@ -689,39 +688,32 @@ def _fill_f10s_in_datasets(f10s_elem, values: dict, prior_values: dict | None) -
                 # Unexpected element, skip
                 child_idx += 1
                 continue
-            val = values.get(row_tag)
+            val = values.get(row_tag, 0)
             c2_sub = child.find('C2')
-            if c2_sub is not None and val is not None and val != 0:
-                c2_sub.text = str(int(round(float(val))))
+            if c2_sub is not None:
+                c2_sub.text = str(int(round(float(val)))) if val else '0'
                 filled += 1
-            elif c2_sub is not None:
-                c2_sub.text = ''
             c1_sub = child.find('C1')
             if c1_sub is not None:
-                c1_val = prior_values.get(row_tag) if prior_values else None
-                if c1_val is not None and c1_val != 0:
-                    c1_sub.text = str(int(round(float(c1_val))))
-                else:
-                    c1_sub.text = ''
+                if prior_values:
+                    c1_val = prior_values.get(row_tag, 0)
+                    c1_sub.text = str(int(round(float(c1_val)))) if c1_val else '0'
+                # else: leave C1 empty (no prior period data)
             struct_idx += 1
             child_idx += 1
 
         elif kind == 'pair':
             # Standalone C1/C2 pair — tag should be 'C1'
             if tag == 'C1':
-                c1_val = prior_values.get(row_tag) if prior_values else None
-                if c1_val is not None and c1_val != 0:
-                    children[child_idx].text = str(int(round(float(c1_val))))
-                else:
-                    children[child_idx].text = ''
+                if prior_values:
+                    c1_val = prior_values.get(row_tag, 0)
+                    children[child_idx].text = str(int(round(float(c1_val)))) if c1_val else '0'
+                # else: leave C1 empty (no prior period data)
                 # Next should be C2
                 if child_idx + 1 < len(children) and children[child_idx + 1].tag == 'C2':
-                    val = values.get(row_tag)
-                    if val is not None and val != 0:
-                        children[child_idx + 1].text = str(int(round(float(val))))
-                        filled += 1
-                    else:
-                        children[child_idx + 1].text = ''
+                    val = values.get(row_tag, 0)
+                    children[child_idx + 1].text = str(int(round(float(val)))) if val else '0'
+                    filled += 1
                     child_idx += 2
                 else:
                     child_idx += 1
