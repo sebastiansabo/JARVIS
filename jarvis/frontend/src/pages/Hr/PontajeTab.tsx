@@ -335,12 +335,12 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const [exporting, setExporting] = useState(false)
 
-  const exportCompanies = useMemo(() =>
-    [...new Set(rows.map(r => r.company).filter((c): c is string => !!c))].sort(),
+  const exportGroups = useMemo(() =>
+    [...new Set(rows.map(r => r.user_group_name).filter((g): g is string => !!g && !g.toLowerCase().includes('plecati') && !g.toLowerCase().includes('contracte inchise')))].sort(),
     [rows],
   )
 
-  const downloadCsv = useCallback(async (mode: 'day' | 'month', raw = false, company?: string) => {
+  const downloadCsv = useCallback(async (mode: 'day' | 'month', raw = false, group?: string) => {
     setExporting(true)
     const isDay = mode === 'day'
     const toastId = toast.loading(isDay ? 'Exporting day pontaje…' : 'Exporting monthly pontaje…')
@@ -398,7 +398,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       )
 
       // Collect unique employees keyed by jarvis_user_id (dedup multi-BioStar accounts)
-      const employeeMap = new Map<string, { name: string; company: string; schedule: string; jarvisUserId: number | null; biostarIds: Set<string> }>()
+      const employeeMap = new Map<string, { name: string; company: string; group: string; schedule: string; jarvisUserId: number | null; biostarIds: Set<string> }>()
       for (const dd of dailyData) {
         for (const s of dd.summaries) {
           const key = s.mapped_jarvis_user_id ? `j${s.mapped_jarvis_user_id}` : `b${s.biostar_user_id}`
@@ -409,6 +409,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             employeeMap.set(key, {
               name: s.mapped_jarvis_user_name || s.name,
               company: s.jarvis_company || '',
+              group: s.user_group_name || '',
               schedule: formatSchedule(s.schedule_start, s.schedule_end),
               jarvisUserId: s.mapped_jarvis_user_id,
               biostarIds: new Set([s.biostar_user_id]),
@@ -427,6 +428,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
           employeeMap.set(key, {
             name: r.name,
             company: r.company || '',
+            group: r.user_group_name || '',
             schedule: formatSchedule(r.schedule_start, r.schedule_end),
             jarvisUserId: r.jarvis_user_id,
             biostarIds: new Set([r.biostar_user_id]),
@@ -464,7 +466,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       const csvRows: string[][] = [headers]
 
       const sortedEmployees = Array.from(employeeMap.entries())
-        .filter(([, e]) => !company || e.company === company)
+        .filter(([, e]) => !group || e.group === group)
         .sort((a, b) =>
           (a[1].company || '').localeCompare(b[1].company || '') || (a[1].name || '').localeCompare(b[1].name || ''),
         )
@@ -515,8 +517,8 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      const companySuffix = company ? `_${company.replace(/\s+/g, '_')}` : ''
-      a.download = isDay ? `pontaje_${date}${companySuffix}${raw ? '_raw' : ''}.csv` : `pontaje_${monthStr}${companySuffix}${raw ? '_raw' : ''}.csv`
+      const groupSuffix = group ? `_${group.replace(/\s+/g, '_')}` : ''
+      a.download = isDay ? `pontaje_${date}${groupSuffix}${raw ? '_raw' : ''}.csv` : `pontaje_${monthStr}${groupSuffix}${raw ? '_raw' : ''}.csv`
       a.click()
       URL.revokeObjectURL(url)
       toast.success('Export complete', { id: toastId })
@@ -668,19 +670,19 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => downloadCsv('day', true)}>Export Day (raw)</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => downloadCsv('month', true)}>Export Month (raw)</DropdownMenuItem>
-                {exportCompanies.length > 0 && (
+                {exportGroups.length > 0 && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="text-[10px] text-muted-foreground font-normal pb-0">By Company</DropdownMenuLabel>
-                    {exportCompanies.map(c => (
-                      <DropdownMenuSub key={c}>
-                        <DropdownMenuSubTrigger>{c}</DropdownMenuSubTrigger>
+                    <DropdownMenuLabel className="text-[10px] text-muted-foreground font-normal pb-0">By Group</DropdownMenuLabel>
+                    {exportGroups.map(g => (
+                      <DropdownMenuSub key={g}>
+                        <DropdownMenuSubTrigger>{g}</DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>
-                          <DropdownMenuItem onClick={() => downloadCsv('month', false, c)}>Month</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => downloadCsv('day', false, c)}>Day</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadCsv('month', false, g)}>Month</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadCsv('day', false, g)}>Day</DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => downloadCsv('month', true, c)}>Month (raw)</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => downloadCsv('day', true, c)}>Day (raw)</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadCsv('month', true, g)}>Month (raw)</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadCsv('day', true, g)}>Day (raw)</DropdownMenuItem>
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>
                     ))}
