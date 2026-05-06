@@ -52,10 +52,10 @@ class BioStarRepository(BaseRepository):
         ), returning=True)
 
     def bulk_upsert_employees(self, employees):
-        """Insert new employees, skip existing. Returns {created, updated, skipped}."""
+        """Insert new employees, update existing. Returns {created, updated, skipped}."""
         def _work(cursor):
             created = 0
-            skipped = 0
+            updated = 0
             for emp in employees:
                 cursor.execute('''
                     INSERT INTO biostar_employees
@@ -63,7 +63,18 @@ class BioStarRepository(BaseRepository):
                          user_group_name, card_ids, status, last_synced_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
                     ON CONFLICT (biostar_user_id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        email = EXCLUDED.email,
+                        phone = EXCLUDED.phone,
+                        user_group_id = EXCLUDED.user_group_id,
+                        user_group_name = EXCLUDED.user_group_name,
+                        card_ids = EXCLUDED.card_ids,
+                        status = EXCLUDED.status,
                         last_synced_at = NOW()
+                    WHERE biostar_employees.name IS DISTINCT FROM EXCLUDED.name
+                       OR biostar_employees.user_group_name IS DISTINCT FROM EXCLUDED.user_group_name
+                       OR biostar_employees.status IS DISTINCT FROM EXCLUDED.status
+                       OR biostar_employees.email IS DISTINCT FROM EXCLUDED.email
                 ''', (
                     emp['biostar_user_id'], emp['name'], emp.get('email'),
                     emp.get('phone'), emp.get('user_group_id'),
@@ -71,10 +82,11 @@ class BioStarRepository(BaseRepository):
                     emp.get('status', 'active')
                 ))
                 if cursor.rowcount > 0:
-                    created += 1
-                else:
-                    skipped += 1
-            return {'created': created, 'updated': 0, 'skipped': skipped}
+                    if cursor.statusmessage == 'INSERT 0 1':
+                        created += 1
+                    else:
+                        updated += 1
+            return {'created': created, 'updated': updated, 'skipped': 0}
         return self.execute_many(_work)
 
     def update_mapping(self, biostar_user_id, jarvis_user_id, method='manual', confidence=100.0):
