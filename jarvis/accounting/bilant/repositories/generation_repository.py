@@ -76,6 +76,23 @@ class BilantGenerationRepository(BaseRepository):
             (val, generation_id)
         )
 
+    def save_source_accounts(self, generation_id, accounts_data):
+        """Store TSD/TSC account data for F20 computation."""
+        import json
+        val = json.dumps(accounts_data) if accounts_data else None
+        return self.execute(
+            "UPDATE bilant_generations SET source_accounts = %s WHERE id = %s",
+            (val, generation_id)
+        )
+
+    def get_source_accounts(self, generation_id):
+        """Retrieve stored TSD/TSC account data."""
+        row = self.query_one(
+            "SELECT source_accounts FROM bilant_generations WHERE id = %s",
+            (generation_id,)
+        )
+        return row['source_accounts'] if row and row.get('source_accounts') else None
+
     def delete_generation(self, generation_id):
         return self.execute("DELETE FROM bilant_generations WHERE id = %s", (generation_id,))
 
