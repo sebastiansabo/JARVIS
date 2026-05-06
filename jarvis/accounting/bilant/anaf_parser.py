@@ -622,8 +622,10 @@ def _fill_datasets_xml(datasets_xml: bytes, values: dict, prior_values: dict | N
         logger.info('Filled %d F20 values in XFA datasets', f20_filled)
 
     # No xml_declaration — datasets is an XDP fragment, not a standalone document.
-    # Preserve the leading newline from the original stream.
+    # Use ET.indent() to produce multi-line XML matching the XFA parser expectations.
+    ET.indent(root)
     xml_bytes = ET.tostring(root, encoding='unicode').encode('utf-8')
+    # Preserve the leading newline from the original stream.
     if datasets_xml.startswith(b'\n') and not xml_bytes.startswith(b'\n'):
         xml_bytes = b'\n' + xml_bytes
     return xml_bytes
