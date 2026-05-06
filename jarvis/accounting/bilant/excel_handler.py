@@ -61,7 +61,7 @@ def read_balanta_full(file_bytes):
 
     for row in ws.iter_rows(min_row=data_start, values_only=True):
         cont = str(row[1]).strip() if row[1] else ''
-        if not cont or not cont[0].isdigit():
+        if not cont or not cont[0].isdigit() or not cont.replace(' ', '').isdigit():
             continue
 
         tsd = float(row[12]) if len(row) > 12 and row[12] else 0

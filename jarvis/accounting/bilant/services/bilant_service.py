@@ -62,11 +62,15 @@ class BilantService:
             if not template:
                 return ServiceResult(success=False, error='Template not found', status_code=404)
 
-            # Read Balanta
+            # Read Balanta — try standard format first, fall back to full (AW NEXT) format
+            accounts_data = None
             try:
                 df_balanta = read_balanta_from_excel(file_bytes)
-            except ValueError as e:
-                return ServiceResult(success=False, error=str(e), status_code=400)
+            except ValueError:
+                try:
+                    df_balanta, accounts_data = read_balanta_full(file_bytes)
+                except ValueError as e:
+                    return ServiceResult(success=False, error=str(e), status_code=400)
 
             # Load template rows and metric configs
             template_rows = self.template_repo.get_rows(template_id)
