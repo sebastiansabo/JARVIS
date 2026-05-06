@@ -278,11 +278,9 @@ def compute_f10s(df_balanta):
     # R49: CAPITALURI - TOTAL (rd.46+47+48)
     v['R49'] = v['R46'] + v['R47'] + v['R48']
 
-    # Round all values to integers and filter non-zero
+    # Round all values to integers, include all rows (even zeros)
     result = {}
-    for k, val in v.items():
-        rounded = round(val)
-        if rounded != 0:
-            result[k] = rounded
+    for row in F10S_ROW_ORDER:
+        result[row] = round(v.get(row, 0))
 
     return result
