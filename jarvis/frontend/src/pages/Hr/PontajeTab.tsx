@@ -39,9 +39,10 @@ import type { AttendanceRow, BioStarDayHistory } from '@/types/biostar'
 type SortField = 'name' | 'company' | 'group' | 'check_in' | 'check_out' | 'duration' | 'punches'
 type SortDir = 'asc' | 'desc'
 
-type ColKey = 'group' | 'official_in' | 'official_out' | 'actual_in' | 'actual_out' | 'duration' | 'punches' | 'schedule' | 'company'
+type ColKey = 'group' | 'official_in' | 'official_out' | 'actual_in' | 'actual_out' | 'duration' | 'punches' | 'schedule' | 'company' | 'status'
 
 const COL_DEFS: { key: ColKey; label: string }[] = [
+  { key: 'status', label: 'Status' },
   { key: 'official_in', label: 'Checked In' },
   { key: 'official_out', label: 'Checked Out' },
   { key: 'actual_in', label: 'Actual In' },
@@ -53,7 +54,12 @@ const COL_DEFS: { key: ColKey; label: string }[] = [
   { key: 'group', label: 'Group' },
 ]
 
-const DEFAULT_COLS: ColKey[] = ['official_in', 'official_out', 'duration', 'punches', 'schedule']
+const DEFAULT_COLS: ColKey[] = ['status', 'official_in', 'official_out', 'duration', 'punches', 'schedule']
+
+const LEAVE_LABELS: Record<string, string> = {
+  CO: 'Annual Leave', CM: 'Medical', CES: 'Unpaid', CIC: 'Child Care',
+  CMS: 'Sick Family', DLG: 'Delegation', PERMIT: 'Leave Permit',
+}
 
 function fmtScheduleTime(t: string | null) {
   if (!t) return '08:00'
@@ -732,6 +738,9 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                       <TableHead className="cursor-pointer select-none" onClick={() => handleSort('name')}>
                         Name <SortIcon field="name" />
                       </TableHead>
+                      {visibleCols.has('status') && (
+                        <TableHead className="text-center">Status</TableHead>
+                      )}
                       {visibleCols.has('group') && (
                         <TableHead className="hidden lg:table-cell cursor-pointer select-none" onClick={() => handleSort('group')}>
                           Group <SortIcon field="group" />
@@ -864,6 +873,7 @@ function EmployeeRow({
 
   const colSpan = 2 /* chevron + name */
     + (visibleCols.has('group') ? 1 : 0)
+    + (visibleCols.has('status') ? 1 : 0)
     + (visibleCols.has('official_in') ? 1 : 0)
     + (visibleCols.has('official_out') ? 1 : 0)
     + (visibleCols.has('actual_in') ? 1 : 0)
@@ -888,6 +898,33 @@ function EmployeeRow({
         <TableCell>
           <span className="font-medium">{employee.name}</span>
         </TableCell>
+        {visibleCols.has('status') && (
+          <TableCell className="text-center">
+            {employee.sincron_leave_code ? (
+              <Badge variant="outline" className="text-[10px] border-orange-300 text-orange-600 bg-orange-50 dark:bg-orange-950/30">
+                {LEAVE_LABELS[employee.sincron_leave_code] ?? employee.sincron_leave_code}
+              </Badge>
+            ) : employee.attendance_status === 'present' ? (
+              <span className="inline-flex items-center gap-1 text-xs text-green-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                Present
+                {(employee.adjusted_first_punch ?? employee.first_punch) && (
+                  <span className="text-muted-foreground">
+                    ({fmtTime(employee.adjusted_first_punch ?? employee.first_punch)}
+                    {(employee.adjusted_last_punch ?? employee.last_punch) && (employee.adjusted_last_punch ?? employee.last_punch) !== (employee.adjusted_first_punch ?? employee.first_punch)
+                      ? ` - ${fmtTime(employee.adjusted_last_punch ?? employee.last_punch)}`
+                      : ' - …'})
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs text-red-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                Absent
+              </span>
+            )}
+          </TableCell>
+        )}
         {visibleCols.has('group') && (
           <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
             {employee.user_group_name || '—'}
