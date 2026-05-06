@@ -21,7 +21,7 @@ import {
   DatabaseZap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -460,7 +460,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       }
 
       // Build CSV: Company before Name, no Group
-      const headers = ['Week', 'Date', 'Day', 'Company', 'Name', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status']
+      const headers = ['Week', 'Date', 'Day', 'Company', 'Name', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status', 'Status']
       const csvRows: string[][] = [headers]
 
       const sortedEmployees = Array.from(employeeMap.entries())
@@ -505,6 +505,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             duration,
             emp.schedule,
             sincronCode,
+            sincronCode ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : officialIn ? 'Present' : 'Absent',
           ])
         }
       }
@@ -672,9 +673,16 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="text-[10px] text-muted-foreground font-normal pb-0">By Company</DropdownMenuLabel>
                     {exportCompanies.map(c => (
-                      <DropdownMenuItem key={c} onClick={() => downloadCsv('month', false, c)}>
-                        {c}
-                      </DropdownMenuItem>
+                      <DropdownMenuSub key={c}>
+                        <DropdownMenuSubTrigger>{c}</DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuItem onClick={() => downloadCsv('month', false, c)}>Month</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadCsv('day', false, c)}>Day</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => downloadCsv('month', true, c)}>Month (raw)</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadCsv('day', true, c)}>Day (raw)</DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
                     ))}
                   </>
                 )}
@@ -923,18 +931,10 @@ function EmployeeRow({
               <Badge variant="outline" className="text-[10px] border-orange-300 text-orange-600 bg-orange-50 dark:bg-orange-950/30">
                 {LEAVE_LABELS[employee.sincron_leave_code] ?? employee.sincron_leave_code}
               </Badge>
-            ) : employee.attendance_status === 'present' ? (
+            ) : employee.attendance_status === 'present' || hasAdj ? (
               <span className="inline-flex items-center gap-1 text-xs text-green-600">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
                 Present
-                {(employee.adjusted_first_punch ?? employee.first_punch) && (
-                  <span className="text-muted-foreground">
-                    ({fmtTime(employee.adjusted_first_punch ?? employee.first_punch)}
-                    {(employee.adjusted_last_punch ?? employee.last_punch) && (employee.adjusted_last_punch ?? employee.last_punch) !== (employee.adjusted_first_punch ?? employee.first_punch)
-                      ? ` - ${fmtTime(employee.adjusted_last_punch ?? employee.last_punch)}`
-                      : ' - …'})
-                  </span>
-                )}
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 text-xs text-red-600">
