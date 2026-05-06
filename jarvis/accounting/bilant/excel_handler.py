@@ -69,7 +69,7 @@ def read_balanta_full(file_bytes):
         sfd = float(row[14]) if len(row) > 14 and row[14] else 0
         sfc = float(row[15]) if len(row) > 15 and row[15] else 0
 
-        accounts[cont] = {'tsd': tsd, 'tsc': tsc}
+        accounts[cont] = {'tsd': tsd, 'tsc': tsc, 'sfd': sfd, 'sfc': sfc}
         f10l_rows.append([cont, sfd, sfc])
 
     if not accounts:
