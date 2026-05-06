@@ -21,7 +21,7 @@ import {
   DatabaseZap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -335,7 +335,12 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const [exporting, setExporting] = useState(false)
 
-  const downloadCsv = useCallback(async (mode: 'day' | 'month', raw = false) => {
+  const exportCompanies = useMemo(() =>
+    [...new Set(rows.map(r => r.company).filter((c): c is string => !!c))].sort(),
+    [rows],
+  )
+
+  const downloadCsv = useCallback(async (mode: 'day' | 'month', raw = false, company?: string) => {
     setExporting(true)
     const isDay = mode === 'day'
     const toastId = toast.loading(isDay ? 'Exporting day pontaje…' : 'Exporting monthly pontaje…')
@@ -458,9 +463,11 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       const headers = ['Week', 'Date', 'Day', 'Company', 'Name', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status']
       const csvRows: string[][] = [headers]
 
-      const sortedEmployees = Array.from(employeeMap.entries()).sort((a, b) =>
-        (a[1].company || '').localeCompare(b[1].company || '') || (a[1].name || '').localeCompare(b[1].name || ''),
-      )
+      const sortedEmployees = Array.from(employeeMap.entries())
+        .filter(([, e]) => !company || e.company === company)
+        .sort((a, b) =>
+          (a[1].company || '').localeCompare(b[1].company || '') || (a[1].name || '').localeCompare(b[1].name || ''),
+        )
 
       for (const dd of dailyData) {
         for (const [, emp] of sortedEmployees) {
@@ -507,7 +514,8 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = isDay ? `pontaje_${date}${raw ? '_raw' : ''}.csv` : `pontaje_${monthStr}${raw ? '_raw' : ''}.csv`
+      const companySuffix = company ? `_${company.replace(/\s+/g, '_')}` : ''
+      a.download = isDay ? `pontaje_${date}${companySuffix}${raw ? '_raw' : ''}.csv` : `pontaje_${monthStr}${companySuffix}${raw ? '_raw' : ''}.csv`
       a.click()
       URL.revokeObjectURL(url)
       toast.success('Export complete', { id: toastId })
@@ -659,6 +667,17 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => downloadCsv('day', true)}>Export Day (raw)</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => downloadCsv('month', true)}>Export Month (raw)</DropdownMenuItem>
+                {exportCompanies.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-[10px] text-muted-foreground font-normal pb-0">By Company</DropdownMenuLabel>
+                    {exportCompanies.map(c => (
+                      <DropdownMenuItem key={c} onClick={() => downloadCsv('month', false, c)}>
+                        {c}
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 
