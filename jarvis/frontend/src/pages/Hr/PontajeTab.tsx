@@ -461,14 +461,14 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         }
       }
 
-      // Build CSV: Company before Name, no Group
-      const headers = ['Week', 'Date', 'Day', 'Company', 'Name', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status', 'Status']
+      // Build CSV: Group before Name
+      const headers = ['Week', 'Date', 'Day', 'Group', 'Name', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status', 'Status']
       const csvRows: string[][] = [headers]
 
       const sortedEmployees = Array.from(employeeMap.entries())
         .filter(([, e]) => !group || e.group === group)
         .sort((a, b) =>
-          (a[1].company || '').localeCompare(b[1].company || '') || (a[1].name || '').localeCompare(b[1].name || ''),
+          (a[1].group || '').localeCompare(b[1].group || '') || (a[1].name || '').localeCompare(b[1].name || ''),
         )
 
       for (const dd of dailyData) {
@@ -500,7 +500,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             `W${dd.weekNum}`,
             dd.date,
             dd.dayLabel,
-            emp.company,
+            emp.group,
             emp.name,
             officialIn ? fmtTime(officialIn) : '',
             officialOut ? fmtTime(officialOut) : '',
