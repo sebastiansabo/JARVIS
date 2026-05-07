@@ -629,10 +629,12 @@ function BioStarGroupMappingSection() {
   const [localMap, setLocalMap] = useState<Record<string, string>>({})
   const [initialized, setInitialized] = useState(false)
 
+  const NONE = '__none__'
+
   // Initialize localMap from fetched data (once)
   if (!initialized && groups.length > 0) {
     const init: Record<string, string> = {}
-    groups.forEach((g) => { init[g.group_name] = g.company_id ? String(g.company_id) : '' })
+    groups.forEach((g) => { init[g.group_name] = g.company_id ? String(g.company_id) : NONE })
     setLocalMap(init)
     setInitialized(true)
   }
@@ -640,7 +642,7 @@ function BioStarGroupMappingSection() {
   const saveMut = useMutation({
     mutationFn: () => {
       const map: Record<string, number | null> = {}
-      Object.entries(localMap).forEach(([k, v]) => { map[k] = v ? Number(v) : null })
+      Object.entries(localMap).forEach(([k, v]) => { map[k] = v && v !== NONE ? Number(v) : null })
       return biostarApi.saveGroupCompanyMap(map)
     },
     onSuccess: (res) => {
@@ -667,14 +669,14 @@ function BioStarGroupMappingSection() {
             <span className="w-48 text-sm font-mono truncate" title={g.group_name}>{g.group_name}</span>
             <span className="text-xs text-muted-foreground w-12 shrink-0">{g.employee_count} emp</span>
             <Select
-              value={localMap[g.group_name] ?? ''}
+              value={localMap[g.group_name] ?? NONE}
               onValueChange={(v) => setLocalMap((prev) => ({ ...prev, [g.group_name]: v }))}
             >
               <SelectTrigger className="h-7 text-xs flex-1">
                 <SelectValue placeholder="— unmapped —" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">— unmapped —</SelectItem>
+                <SelectItem value={NONE}>— unmapped —</SelectItem>
                 {companies.map((c) => (
                   <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                 ))}
