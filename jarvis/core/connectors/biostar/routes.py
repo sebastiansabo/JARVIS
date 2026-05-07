@@ -84,6 +84,49 @@ def get_config():
     return jsonify({'success': True, 'data': config})
 
 
+@biostar_bp.route('/api/groups', methods=['GET'])
+@api_login_required
+def get_groups():
+    """Return distinct BioStar groups with their company mapping and available companies."""
+    groups = service.repo.query_all('''
+        SELECT user_group_name, company_id, COUNT(*) AS employee_count
+        FROM biostar_employees
+        WHERE user_group_name IS NOT NULL
+        GROUP BY user_group_name, company_id
+        ORDER BY user_group_name
+    ''')
+    companies = service.repo.query_all(
+        'SELECT id, company AS name FROM companies WHERE company IS NOT NULL ORDER BY company'
+    )
+    # Merge with saved config map (may differ from live company_id on employees table)
+    saved_map = service.get_group_company_map()
+    result = []
+    for g in groups:
+        gname = g['user_group_name']
+        result.append({
+            'group_name': gname,
+            'company_id': saved_map.get(gname, g['company_id']),
+            'employee_count': g['employee_count'],
+        })
+    return jsonify({'success': True, 'groups': result, 'companies': [dict(c) for c in companies]})
+
+
+@biostar_bp.route('/api/group-company-map', methods=['POST'])
+@api_login_required
+def save_group_company_map():
+    """Save group→company mapping to connector config and update biostar_employees."""
+    data = request.get_json() or {}
+    mapping = data.get('map', {})
+    if not isinstance(mapping, dict):
+        return jsonify({'success': False, 'error': 'map must be an object'}), 400
+    # Coerce values to int or None
+    clean = {k: (int(v) if v else None) for k, v in mapping.items()}
+    service.save_group_company_map(clean)
+    # Update company_id on existing employees
+    updated = service.repo.update_employees_company_from_map(clean)
+    return jsonify({'success': True, 'updated_employees': updated})
+
+
 @biostar_bp.route('/api/config', methods=['POST'])
 @api_login_required
 def save_config():

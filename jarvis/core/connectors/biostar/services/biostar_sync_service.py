@@ -168,7 +168,8 @@ class BioStarSyncService:
 
             records_fetched = len(all_users)
 
-            # 2. Transform to our schema
+            # 2. Transform to our schema (load group map once for the whole batch)
+            self._sync_group_map = self.get_group_company_map()
             employees = [self._transform_user(u) for u in all_users]
 
             # 3. Bulk upsert
@@ -208,7 +209,7 @@ class BioStarSyncService:
             self.sync_repo.record_error(run_id, 'SYNC', str(e))
             return {'success': False, 'error': str(e)}
 
-    # Maps BioStar group name → JARVIS company_id
+    # Default fallback group→company map (used if no DB config saved)
     GROUP_COMPANY_MAP = {
         'AW HOLDING':       16,
         'ADMINISTRATIV':    16,
@@ -220,6 +221,31 @@ class BioStarSyncService:
         'AW PRESTIGE':      12,
         'AW INSURANCE':     14,
     }
+
+    def get_group_company_map(self):
+        """Return group→company_id map: DB config if saved, else hardcoded fallback."""
+        connector = self.connector_repo.get_by_type('biostar')
+        if connector:
+            cfg = connector.get('config') or {}
+            if isinstance(cfg, str):
+                import json as _json
+                cfg = _json.loads(cfg)
+            saved = cfg.get('group_company_map')
+            if saved and isinstance(saved, dict):
+                return saved
+        return dict(self.GROUP_COMPANY_MAP)
+
+    def save_group_company_map(self, mapping):
+        """Persist group→company_id map into connector config JSON."""
+        connector = self.connector_repo.get_by_type('biostar')
+        if not connector:
+            return
+        cfg = connector.get('config') or {}
+        if isinstance(cfg, str):
+            import json as _json
+            cfg = _json.loads(cfg)
+        cfg['group_company_map'] = mapping
+        self.connector_repo.update(connector['id'], config=cfg)
 
     def _transform_user(self, raw):
         """Transform BioStar API user to our employee dict."""
@@ -246,7 +272,7 @@ class BioStarSyncService:
             'phone': user.get('phone_number', ''),
             'user_group_id': group_id,
             'user_group_name': group_name,
-            'company_id': self.GROUP_COMPANY_MAP.get(group_name),
+            'company_id': self._sync_group_map.get(group_name),
             'card_ids': card_ids,
             'status': status,
         }
