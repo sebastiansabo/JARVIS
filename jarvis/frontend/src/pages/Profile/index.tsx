@@ -166,7 +166,7 @@ export default function Profile() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm border-t pt-3 mt-3">
                   <InfoField icon={Mail} label="Email" value={user?.email} />
                   <InfoField icon={Phone} label="Phone" value={user?.phone} />
-                  <InfoField icon={Building2} label="Department" value={(() => { const depts = orgPaths.map(o => o.department).filter(Boolean); return depts.length > 0 ? depts : user?.department; })()} />
+                  <InfoField icon={Building2} label="Department" value={(() => { const depts = orgPaths.map((o: any) => o.sincron_department || o.department).filter(Boolean); return depts.length > 0 ? depts : (summary?.sincron?.department || user?.department); })()} />
                   <InfoField icon={Shield} label="Company" value={(() => { const comps = [...new Set(orgPaths.map(o => o.company).filter(Boolean))]; return comps.length > 0 ? comps : user?.company; })()} />
                   <InfoField icon={Hash} label="CNP" value={user?.cnp} />
                   <InfoField icon={Calendar} label="Birthdate" value={user?.birthdate ? new Date(user.birthdate).toLocaleDateString('ro-RO') : null} />

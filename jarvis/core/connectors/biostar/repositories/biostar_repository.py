@@ -14,10 +14,11 @@ class BioStarRepository(BaseRepository):
         sql = '''
             SELECT be.*,
                    u.name AS mapped_jarvis_user_name,
-                   COALESCE(co.company, u.company) AS jarvis_company,
+                   COALESCE(bco.company, co.company, u.company) AS jarvis_company,
                    u.is_active AS jarvis_user_active
             FROM biostar_employees be
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+            LEFT JOIN companies bco ON bco.id = be.company_id
             LEFT JOIN companies co ON co.id = u.company_id
         '''
         if active_only:
@@ -39,42 +40,58 @@ class BioStarRepository(BaseRepository):
         return self.execute('''
             INSERT INTO biostar_employees
                 (biostar_user_id, name, email, phone, user_group_id,
-                 user_group_name, card_ids, status, last_synced_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                 user_group_name, company_id, card_ids, status, last_synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (biostar_user_id) DO UPDATE SET
                 last_synced_at = NOW()
             RETURNING id, biostar_user_id
         ''', (
             data['biostar_user_id'], data['name'], data.get('email'),
             data.get('phone'), data.get('user_group_id'),
-            data.get('user_group_name'), json.dumps(data.get('card_ids', [])),
+            data.get('user_group_name'), data.get('company_id'),
+            json.dumps(data.get('card_ids', [])),
             data.get('status', 'active')
         ), returning=True)
 
     def bulk_upsert_employees(self, employees):
-        """Insert new employees, skip existing. Returns {created, updated, skipped}."""
+        """Insert new employees, update existing. Returns {created, updated, skipped}."""
         def _work(cursor):
             created = 0
-            skipped = 0
+            updated = 0
             for emp in employees:
                 cursor.execute('''
                     INSERT INTO biostar_employees
                         (biostar_user_id, name, email, phone, user_group_id,
-                         user_group_name, card_ids, status, last_synced_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                         user_group_name, company_id, card_ids, status, last_synced_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                     ON CONFLICT (biostar_user_id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        email = EXCLUDED.email,
+                        phone = EXCLUDED.phone,
+                        user_group_id = EXCLUDED.user_group_id,
+                        user_group_name = EXCLUDED.user_group_name,
+                        company_id = EXCLUDED.company_id,
+                        card_ids = EXCLUDED.card_ids,
+                        status = EXCLUDED.status,
                         last_synced_at = NOW()
+                    WHERE biostar_employees.name IS DISTINCT FROM EXCLUDED.name
+                       OR biostar_employees.user_group_name IS DISTINCT FROM EXCLUDED.user_group_name
+                       OR biostar_employees.company_id IS DISTINCT FROM EXCLUDED.company_id
+                       OR biostar_employees.status IS DISTINCT FROM EXCLUDED.status
+                       OR biostar_employees.email IS DISTINCT FROM EXCLUDED.email
                 ''', (
                     emp['biostar_user_id'], emp['name'], emp.get('email'),
                     emp.get('phone'), emp.get('user_group_id'),
-                    emp.get('user_group_name'), json.dumps(emp.get('card_ids', [])),
+                    emp.get('user_group_name'), emp.get('company_id'),
+                    json.dumps(emp.get('card_ids', [])),
                     emp.get('status', 'active')
                 ))
                 if cursor.rowcount > 0:
-                    created += 1
-                else:
-                    skipped += 1
-            return {'created': created, 'updated': 0, 'skipped': skipped}
+                    if cursor.statusmessage == 'INSERT 0 1':
+                        created += 1
+                    else:
+                        updated += 1
+            return {'created': created, 'updated': updated, 'skipped': 0}
         return self.execute_many(_work)
 
     def update_mapping(self, biostar_user_id, jarvis_user_id, method='manual', confidence=100.0):
@@ -134,6 +151,17 @@ class BioStarRepository(BaseRepository):
             WHERE biostar_user_id = %s
             RETURNING is_blacklisted
         ''', (biostar_user_id,), returning=True)
+
+    def update_employees_company_from_map(self, group_company_map):
+        """Bulk-update company_id on biostar_employees based on group→company map."""
+        total = 0
+        for group_name, company_id in group_company_map.items():
+            self.execute(
+                'UPDATE biostar_employees SET company_id = %s WHERE user_group_name = %s',
+                (company_id, group_name)
+            )
+            total += 1
+        return total
 
     def blacklist_group(self, group_name, blacklisted=True):
         """Set blacklist status for all employees in a group."""
@@ -399,7 +427,7 @@ class BioStarRepository(BaseRepository):
                     be.user_group_name,
                     be.mapped_jarvis_user_id,
                     u.name AS mapped_jarvis_user_name,
-                    COALESCE(co.company, u.company) AS jarvis_company,
+                    COALESCE(bco.company, co.company, u.company) AS jarvis_company,
                     u.department AS jarvis_department,
                     be.lunch_break_minutes,
                     be.working_hours,
@@ -413,9 +441,10 @@ class BioStarRepository(BaseRepository):
                 FROM deduped d
                 LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
                 LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+                LEFT JOIN companies bco ON bco.id = be.company_id
                 LEFT JOIN companies co ON co.id = u.company_id
                 GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
-                         be.mapped_jarvis_user_id, u.name, co.company, u.company, u.department,
+                         be.mapped_jarvis_user_id, u.name, bco.company, co.company, u.company, u.department,
                          be.lunch_break_minutes, be.working_hours,
                          be.schedule_start, be.schedule_end, u.is_active
             )
@@ -440,7 +469,7 @@ class BioStarRepository(BaseRepository):
                 be3.user_group_name,
                 be3.mapped_jarvis_user_id,
                 u3.name AS mapped_jarvis_user_name,
-                COALESCE(co3.company, u3.company) AS jarvis_company,
+                COALESCE(bco3.company, co3.company, u3.company) AS jarvis_company,
                 u3.department AS jarvis_department,
                 be3.lunch_break_minutes,
                 be3.working_hours,
@@ -457,6 +486,7 @@ class BioStarRepository(BaseRepository):
             FROM biostar_daily_adjustments adj2
             JOIN biostar_employees be3 ON be3.biostar_user_id = adj2.biostar_user_id
             LEFT JOIN users u3 ON u3.id = be3.mapped_jarvis_user_id
+            LEFT JOIN companies bco3 ON bco3.id = be3.company_id
             LEFT JOIN companies co3 ON co3.id = u3.company_id
             WHERE adj2.date = %s::date
               AND adj2.original_first_punch IS NULL
@@ -505,7 +535,7 @@ class BioStarRepository(BaseRepository):
                 be.user_group_name,
                 be.mapped_jarvis_user_id,
                 u.name AS mapped_jarvis_user_name,
-                COALESCE(co.company, u.company) AS jarvis_company,
+                COALESCE(bco.company, co.company, u.company) AS jarvis_company,
                 u.department AS jarvis_department,
                 be.lunch_break_minutes,
                 be.working_hours,
@@ -527,16 +557,17 @@ class BioStarRepository(BaseRepository):
             FROM daily d
             LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+            LEFT JOIN companies bco ON bco.id = be.company_id
             LEFT JOIN companies co ON co.id = u.company_id
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = d.biostar_user_id AND adj.date = d.day
             WHERE (be.mapped_jarvis_user_id IS NULL OR (u.is_active = TRUE AND COALESCE(u.contract_status, 'active') != 'closed'))
               AND (be.user_group_name IS NULL OR (be.user_group_name NOT ILIKE '%%plecati%%' AND be.user_group_name NOT ILIKE '%%contracte inchise%%')){extra_where}
             GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
-                     be.mapped_jarvis_user_id, u.name, co.company, u.company, u.department,
+                     be.mapped_jarvis_user_id, u.name, bco.company, co.company, u.company, u.department,
                      be.lunch_break_minutes, be.working_hours,
                      be.schedule_start, be.schedule_end
-            ORDER BY COALESCE(co.company, u.company) NULLS LAST, be.name
+            ORDER BY COALESCE(bco.company, co.company, u.company) NULLS LAST, be.name
         ''', params)
 
     def get_employee_punches(self, biostar_user_id, date_str):
@@ -548,6 +579,81 @@ class BioStarRepository(BaseRepository):
             WHERE pl.biostar_user_id = %s AND pl.event_datetime::date = %s::date
             ORDER BY pl.event_datetime ASC
         ''', (biostar_user_id, date_str))
+
+    def get_employee_punches_by_interval(self, biostar_user_id, date_str, intervals):
+        """Split raw deduped punches into company time intervals.
+
+        intervals: [{"company": str, "start": "HH:MM", "end": "HH:MM", "norma": float}, ...]
+        Returns: [{"company", "start", "end", "norma", "first_punch", "last_punch",
+                   "punch_count", "duration_seconds"}, ...]
+
+        Assignment: punch belongs to interval if within [start - 15min, end + 15min].
+        Overlapping buffers: assign to the nearest interval boundary.
+        """
+        from datetime import datetime as _dt, timedelta
+
+        if not intervals:
+            return []
+
+        # Fetch deduped punches (same-minute collapse)
+        punches = self.query_all('''
+            SELECT DISTINCT ON (date_trunc('minute', pl.event_datetime))
+                pl.event_datetime
+            FROM biostar_punch_logs pl
+            WHERE pl.biostar_user_id = %s AND pl.event_datetime::date = %s::date
+            ORDER BY date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+        ''', (biostar_user_id, date_str))
+
+        ref_date = _dt.strptime(date_str, '%Y-%m-%d').date()
+        BUFFER = timedelta(minutes=15)
+
+        # Parse intervals into datetime boundaries
+        parsed = []
+        for iv in intervals:
+            h1, m1 = map(int, iv['start'].split(':'))
+            h2, m2 = map(int, iv['end'].split(':'))
+            start_dt = _dt.combine(ref_date, _dt.min.time().replace(hour=h1, minute=m1))
+            end_dt = _dt.combine(ref_date, _dt.min.time().replace(hour=h2, minute=m2))
+            parsed.append({
+                'company': iv['company'], 'start': iv['start'], 'end': iv['end'],
+                'norma': iv.get('norma'),
+                'start_dt': start_dt, 'end_dt': end_dt,
+                'punches': [],
+            })
+
+        # Assign each punch to nearest matching interval
+        for p in punches:
+            evt = p['event_datetime']
+            if not isinstance(evt, _dt):
+                evt = _dt.fromisoformat(str(evt))
+
+            best_idx, best_dist = None, None
+            for i, iv in enumerate(parsed):
+                if iv['start_dt'] - BUFFER <= evt <= iv['end_dt'] + BUFFER:
+                    # Distance = how far from the interval's center or boundaries
+                    dist = min(abs((evt - iv['start_dt']).total_seconds()),
+                               abs((evt - iv['end_dt']).total_seconds()))
+                    if best_dist is None or dist < best_dist:
+                        best_idx, best_dist = i, dist
+            if best_idx is not None:
+                parsed[best_idx]['punches'].append(evt)
+
+        # Build results
+        results = []
+        for iv in parsed:
+            ps = iv['punches']
+            fp = min(ps) if ps else None
+            lp = max(ps) if ps else None
+            dur = (lp - fp).total_seconds() if fp and lp and len(ps) > 1 else None
+            results.append({
+                'company': iv['company'], 'start': iv['start'], 'end': iv['end'],
+                'norma': iv['norma'],
+                'first_punch': str(fp) if fp else None,
+                'last_punch': str(lp) if lp else None,
+                'punch_count': len(ps),
+                'duration_seconds': dur,
+            })
+        return results
 
     def get_employee_daily_history(self, biostar_user_id, start_date, end_date):
         """Get per-day punch summary for one employee over a date range.
@@ -612,7 +718,8 @@ class BioStarRepository(BaseRepository):
                    sd.sincron_day_schedule,
                    adj.adjusted_first_punch,
                    adj.adjusted_last_punch,
-                   adj.adjustment_type
+                   adj.adjustment_type,
+                   adj_co.company_adjustments
             FROM all_days d
             LEFT JOIN biostar_employees be2 ON be2.biostar_user_id = %s
             LEFT JOIN LATERAL (
@@ -652,12 +759,30 @@ class BioStarRepository(BaseRepository):
                 ORDER BY se.norma_lucru DESC NULLS LAST
                 LIMIT 1
             ) sd ON TRUE
-            LEFT JOIN biostar_daily_adjustments adj
-                ON adj.biostar_user_id = %s AND adj.date = d.date
+            LEFT JOIN LATERAL (
+                SELECT adj1.adjusted_first_punch,
+                       adj1.adjusted_last_punch,
+                       adj1.adjustment_type
+                FROM biostar_daily_adjustments adj1
+                WHERE adj1.biostar_user_id = %s AND adj1.date = d.date
+                  AND adj1.company_name IS NULL
+                LIMIT 1
+            ) adj ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT json_agg(json_build_object(
+                    'company_name', adj2.company_name,
+                    'adjusted_first_punch', adj2.adjusted_first_punch,
+                    'adjusted_last_punch', adj2.adjusted_last_punch,
+                    'adjustment_type', adj2.adjustment_type
+                ) ORDER BY adj2.adjusted_first_punch) AS company_adjustments
+                FROM biostar_daily_adjustments adj2
+                WHERE adj2.biostar_user_id = %s AND adj2.date = d.date
+                  AND adj2.company_name IS NOT NULL
+            ) adj_co ON TRUE
             ORDER BY d.date DESC
         ''', (biostar_user_id, start_date, end_date, biostar_user_id,
               biostar_user_id, biostar_user_id, start_date, end_date,
-              biostar_user_id, biostar_user_id))
+              biostar_user_id, biostar_user_id, biostar_user_id))
 
     def get_employee_with_mapping(self, biostar_user_id):
         """Get employee details with JARVIS mapping info."""

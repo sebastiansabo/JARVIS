@@ -286,5 +286,64 @@ def create_schema_sincron(conn, cursor):
         ADD COLUMN IF NOT EXISTS is_base_contract BOOLEAN DEFAULT FALSE
     """)
 
+    # ── department — Sincron department for organigram (manually managed, not from API) ──
+    cursor.execute("""
+        ALTER TABLE sincron_employees
+        ADD COLUMN IF NOT EXISTS department VARCHAR(255)
+    """)
+
+    # ── Sincron org nodes — hierarchical organigram tree ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sincron_org_nodes (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            parent_id INTEGER REFERENCES sincron_org_nodes(id) ON DELETE CASCADE,
+            name VARCHAR(255) NOT NULL,
+            node_type VARCHAR(20) NOT NULL DEFAULT 'department',
+            level INTEGER NOT NULL DEFAULT 1,
+            display_order INTEGER DEFAULT 0,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sincron_org_nodes_company ON sincron_org_nodes(company_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sincron_org_nodes_parent ON sincron_org_nodes(parent_id)")
+
+    for stmt in [
+        """ALTER TABLE sincron_org_nodes ADD CONSTRAINT chk_sincron_org_node_type
+           CHECK (node_type IN ('department', 'role', 'team'))""",
+        """ALTER TABLE sincron_org_nodes ADD CONSTRAINT chk_sincron_org_level
+           CHECK (level BETWEEN 1 AND 6)""",
+    ]:
+        try:
+            cursor.execute(stmt)
+        except Exception:
+            conn.rollback()
+
+    # ── Sincron org members — link nodes to sincron_employees ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sincron_org_members (
+            id SERIAL PRIMARY KEY,
+            node_id INTEGER NOT NULL REFERENCES sincron_org_nodes(id) ON DELETE CASCADE,
+            sincron_employee_id VARCHAR(50) NOT NULL,
+            company_name VARCHAR(255) NOT NULL,
+            role VARCHAR(20) NOT NULL DEFAULT 'member',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE(node_id, sincron_employee_id, company_name)
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sincron_org_members_node ON sincron_org_members(node_id)")
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sincron_org_members_emp
+        ON sincron_org_members(sincron_employee_id, company_name)
+    """)
+
+    try:
+        cursor.execute("""
+            ALTER TABLE sincron_org_members ADD CONSTRAINT chk_sincron_org_member_role
+            CHECK (role IN ('responsable', 'member'))
+        """)
+    except Exception:
+        conn.rollback()
+
     conn.commit()
     logger.info('Sincron schema created/verified')

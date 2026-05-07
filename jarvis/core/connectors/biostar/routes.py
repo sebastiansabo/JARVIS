@@ -84,6 +84,49 @@ def get_config():
     return jsonify({'success': True, 'data': config})
 
 
+@biostar_bp.route('/api/groups', methods=['GET'])
+@api_login_required
+def get_groups():
+    """Return distinct BioStar groups with their company mapping and available companies."""
+    groups = service.repo.query_all('''
+        SELECT user_group_name, company_id, COUNT(*) AS employee_count
+        FROM biostar_employees
+        WHERE user_group_name IS NOT NULL
+        GROUP BY user_group_name, company_id
+        ORDER BY user_group_name
+    ''')
+    companies = service.repo.query_all(
+        'SELECT id, company AS name FROM companies WHERE company IS NOT NULL ORDER BY company'
+    )
+    # Merge with saved config map (may differ from live company_id on employees table)
+    saved_map = service.get_group_company_map()
+    result = []
+    for g in groups:
+        gname = g['user_group_name']
+        result.append({
+            'group_name': gname,
+            'company_id': saved_map.get(gname, g['company_id']),
+            'employee_count': g['employee_count'],
+        })
+    return jsonify({'success': True, 'groups': result, 'companies': [dict(c) for c in companies]})
+
+
+@biostar_bp.route('/api/group-company-map', methods=['POST'])
+@api_login_required
+def save_group_company_map():
+    """Save group→company mapping to connector config and update biostar_employees."""
+    data = request.get_json() or {}
+    mapping = data.get('map', {})
+    if not isinstance(mapping, dict):
+        return jsonify({'success': False, 'error': 'map must be an object'}), 400
+    # Coerce values to int or None
+    clean = {k: (int(v) if v else None) for k, v in mapping.items()}
+    service.save_group_company_map(clean)
+    # Update company_id on existing employees
+    updated = service.repo.update_employees_company_from_map(clean)
+    return jsonify({'success': True, 'updated_employees': updated})
+
+
 @biostar_bp.route('/api/config', methods=['POST'])
 @api_login_required
 def save_config():
@@ -521,15 +564,133 @@ def auto_adjust_all():
 @biostar_bp.route('/api/adjustments/auto-adjust-single', methods=['POST'])
 @adjust_permission_required
 def auto_adjust_single():
-    """Auto-adjust a single employee for a specific date using Sincron per-day schedule."""
+    """Auto-adjust a single employee for a specific date using Sincron per-day schedule.
+
+    Optional company_name in body: if provided, only adjust that company interval.
+    """
     data = request.get_json() or {}
     biostar_user_id = data.get('biostar_user_id')
     date_str = data.get('date')
+    company_name = data.get('company_name')  # optional: per-company adjustment
     if not biostar_user_id or not date_str:
         return jsonify({'success': False, 'error': 'biostar_user_id and date required'}), 400
-    result = service.auto_adjust_single(biostar_user_id, date_str, user_id=current_user.id)
+    result = service.auto_adjust_single(biostar_user_id, date_str,
+                                        user_id=current_user.id,
+                                        company_name=company_name)
     if not result.get('success'):
         return jsonify(result), 400
+    return jsonify({'success': True, 'data': result})
+
+
+@biostar_bp.route('/api/attendance/punches-by-interval', methods=['GET'])
+@api_login_required
+def get_punches_by_interval():
+    """Get per-company interval punch split for a multi-contract employee.
+
+    Query params: biostar_user_id, date
+    Returns intervals with split punches + any per-company adjustments.
+    """
+    biostar_user_id = request.args.get('biostar_user_id')
+    date_str = request.args.get('date')
+    if not biostar_user_id or not date_str:
+        return jsonify({'success': False, 'error': 'biostar_user_id and date required'}), 400
+
+    # Get the employee's JARVIS mapping
+    employee = service.repo.get_employee_by_biostar_id(biostar_user_id)
+    if not employee or not employee.get('mapped_jarvis_user_id'):
+        return jsonify({'success': True, 'intervals': []})
+
+    jarvis_uid = employee['mapped_jarvis_user_id']
+
+    # Get Sincron intervals for the date
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    sincron_repo = SincronRepository()
+    intervals = sincron_repo.get_day_intervals_by_jarvis_user(jarvis_uid, date_str)
+
+    if not intervals or len(intervals) <= 1:
+        return jsonify({'success': True, 'intervals': []})
+
+    # Split punches into intervals
+    split = service.repo.get_employee_punches_by_interval(biostar_user_id, date_str, intervals)
+
+    # Fetch per-company adjustments
+    adj_rows = service.adj_repo.query_all('''
+        SELECT company_name, adjusted_first_punch, adjusted_last_punch, adjustment_type
+        FROM biostar_daily_adjustments
+        WHERE biostar_user_id = %s AND date = %s::date AND company_name IS NOT NULL
+    ''', (biostar_user_id, date_str))
+    adj_map = {r['company_name']: r for r in adj_rows} if adj_rows else {}
+
+    # Merge adjustments into split results
+    for iv in split:
+        adj = adj_map.get(iv['company'])
+        if adj:
+            iv['adjusted_first_punch'] = str(adj['adjusted_first_punch']) if adj['adjusted_first_punch'] else None
+            iv['adjusted_last_punch'] = str(adj['adjusted_last_punch']) if adj['adjusted_last_punch'] else None
+            iv['adjustment_type'] = adj['adjustment_type']
+        else:
+            iv['adjusted_first_punch'] = None
+            iv['adjusted_last_punch'] = None
+            iv['adjustment_type'] = None
+
+    return jsonify({'success': True, 'intervals': split})
+
+
+@biostar_bp.route('/api/attendance/batch-intervals', methods=['POST'])
+@api_login_required
+def batch_intervals():
+    """Get per-company interval punch split for multiple employees on a given date.
+
+    Body: { date, biostar_user_ids: string[] }
+    Returns: { success, data: { [biostar_user_id]: CompanyInterval[] } }
+    Only returns entries for multi-contract employees (>1 interval).
+    """
+    body = request.get_json(force=True) or {}
+    date_str = body.get('date')
+    biostar_user_ids = body.get('biostar_user_ids', [])
+    if not date_str or not biostar_user_ids:
+        return jsonify({'success': False, 'error': 'date and biostar_user_ids required'}), 400
+
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    sincron_repo = SincronRepository()
+
+    result = {}
+    # Build jarvis mapping cache
+    jarvis_map = {}
+    for buid in biostar_user_ids:
+        emp = service.repo.get_employee_by_biostar_id(buid)
+        if emp and emp.get('mapped_jarvis_user_id'):
+            jarvis_map[buid] = emp['mapped_jarvis_user_id']
+
+    # For each mapped employee, check if multi-contract and split
+    for buid, jarvis_uid in jarvis_map.items():
+        intervals = sincron_repo.get_day_intervals_by_jarvis_user(jarvis_uid, date_str)
+        if not intervals or len(intervals) <= 1:
+            continue
+
+        split = service.repo.get_employee_punches_by_interval(buid, date_str, intervals)
+
+        # Merge adjustments
+        adj_rows = service.adj_repo.query_all('''
+            SELECT company_name, adjusted_first_punch, adjusted_last_punch, adjustment_type
+            FROM biostar_daily_adjustments
+            WHERE biostar_user_id = %s AND date = %s::date AND company_name IS NOT NULL
+        ''', (buid, date_str))
+        adj_map = {r['company_name']: r for r in adj_rows} if adj_rows else {}
+
+        for iv in split:
+            adj = adj_map.get(iv['company'])
+            if adj:
+                iv['adjusted_first_punch'] = str(adj['adjusted_first_punch']) if adj['adjusted_first_punch'] else None
+                iv['adjusted_last_punch'] = str(adj['adjusted_last_punch']) if adj['adjusted_last_punch'] else None
+                iv['adjustment_type'] = adj['adjustment_type']
+            else:
+                iv['adjusted_first_punch'] = None
+                iv['adjusted_last_punch'] = None
+                iv['adjustment_type'] = None
+
+        result[buid] = split
+
     return jsonify({'success': True, 'data': result})
 
 
@@ -623,13 +784,18 @@ def get_employee_sincron_timesheet(biostar_user_id):
 @biostar_bp.route('/api/adjustments/revert', methods=['POST'])
 @adjust_permission_required
 def revert_adjustment():
-    """Revert an adjustment (delete it)."""
+    """Revert an adjustment (delete it).
+
+    Optional company_name: if provided, only revert that company's adjustment.
+    If omitted, reverts ALL adjustments for that user/date.
+    """
     data = request.get_json() or {}
     biostar_user_id = data.get('biostar_user_id')
     date_str = data.get('date')
+    company_name = data.get('company_name')
     if not biostar_user_id or not date_str:
         return jsonify({'success': False, 'error': 'biostar_user_id and date required'}), 400
-    service.revert_adjustment(biostar_user_id, date_str)
+    service.revert_adjustment(biostar_user_id, date_str, company_name=company_name)
     return jsonify({'success': True, 'message': 'Adjustment reverted'})
 
 
