@@ -456,8 +456,12 @@ class BioStarRepository(BaseRepository):
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = p.biostar_user_id AND adj.date = %s::date
             -- Exclude dismissed/closed JARVIS users and departed BioStar groups
-            WHERE (p.mapped_jarvis_user_id IS NULL OR p.jarvis_user_active = TRUE)
-              AND (p.user_group_name IS NULL OR (p.user_group_name NOT ILIKE '%%plecati%%' AND p.user_group_name NOT ILIKE '%%contracte inchise%%'))
+            -- BUT keep them if they have punches on this date (were active that day)
+            WHERE (p.mapped_jarvis_user_id IS NULL OR p.jarvis_user_active = TRUE
+                   OR p.total_punches > 0)
+              AND (p.user_group_name IS NULL
+                   OR (p.user_group_name NOT ILIKE '%%plecati%%' AND p.user_group_name NOT ILIKE '%%contracte inchise%%')
+                   OR p.total_punches > 0)
 
             UNION ALL
 
