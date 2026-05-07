@@ -110,12 +110,20 @@ export interface SincronOrgEmployee {
   prenume: string
   nr_contract: string | null
   norma_lucru: number | null
+  department: string | null
   mapped_jarvis_user_id: number | null
   mapped_user_name: string | null
+}
+
+export interface SincronOrgDepartment {
+  name: string
+  count: number
+  employees: SincronOrgEmployee[]
 }
 
 export interface SincronOrgCompany {
   company_name: string
   count: number
   employees: SincronOrgEmployee[]
+  departments: SincronOrgDepartment[]
 }

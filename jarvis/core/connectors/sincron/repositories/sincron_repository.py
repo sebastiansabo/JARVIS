@@ -75,7 +75,7 @@ class SincronRepository(BaseRepository):
                    se.nume, se.prenume, se.id_contract, se.nr_contract,
                    se.data_incepere_contract, se.mapped_jarvis_user_id,
                    se.mapping_method, se.mapping_confidence,
-                   se.last_synced_at,
+                   se.department, se.last_synced_at,
                    u.name AS mapped_jarvis_user_name
             FROM sincron_employees se
             LEFT JOIN users u ON u.id = se.mapped_jarvis_user_id

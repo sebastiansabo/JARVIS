@@ -35,6 +35,13 @@ export interface ProfileSummary {
   activity: {
     total_events: number
   }
+  sincron?: {
+    mapped: boolean
+    company_name?: string
+    nr_contract?: string
+    data_incepere_contract?: string
+    department?: string
+  }
 }
 
 export interface ProfileInvoiceAllocationReinvoiceDest {

@@ -76,6 +76,7 @@ def api_profile_summary():
                     'company_name': sincron_emp.get('company_name'),
                     'nr_contract': sincron_emp.get('nr_contract'),
                     'data_incepere_contract': str(sincron_emp['data_incepere_contract']) if sincron_emp.get('data_incepere_contract') else None,
+                    'department': sincron_emp.get('department'),
                 }
         except Exception:
             pass
