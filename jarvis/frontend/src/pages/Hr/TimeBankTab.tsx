@@ -1007,6 +1007,10 @@ function HelpPanel() {
             <span><strong>Connecteam Import</strong> — leave permit hours (Bilet de Invoire) from Connecteam Excel export. Auto-approved on import.</span>
           </div>
           <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-green-300 text-green-600 bg-green-50">JARVIS Form</Badge>
+            <span><strong>JARVIS Leave Permit</strong> — hours submitted via the internal Bilet de Invoire form in JARVIS. Employees fill in leave date, start/end time, reason, and destination. Requires approval.</span>
+          </div>
+          <div className="flex items-start gap-2">
             <Badge variant="outline" className="shrink-0 text-[10px] border-green-300 text-green-600 bg-green-50">Manual Credit</Badge>
             <span><strong>Manual Credit</strong> — hours added by an admin. Starts as <em>pending</em>, requires approval.</span>
           </div>
@@ -1064,7 +1068,7 @@ function HelpPanel() {
           </div>
           <p className="mt-2">
             <strong>Auto-approved types:</strong> T0, Connecteam, Marketing Event, and CO Conversion skip the pending state
-            and are immediately approved. Manual credits and debits require explicit approval.
+            and are immediately approved. Manual credits, manual debits, and JARVIS Form submissions require explicit approval.
           </p>
         </div>
       ),
@@ -1118,6 +1122,9 @@ function HelpPanel() {
             </div>
             <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400">
               Connecteam Import
+            </div>
+            <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400">
+              JARVIS Form
             </div>
             <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400">
               Manual Credit
