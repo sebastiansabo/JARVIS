@@ -37,10 +37,15 @@ class TimeBankRepository(BaseRepository):
         )
         return {r['jarvis_user_id']: Decimal(r['balance']) for r in rows}
 
-    def get_all_balances(self):
-        """All employee balances with user info. Returns list of dicts."""
+    def get_all_balances(self, include_all_employees=False):
+        """All employee balances with user info. Returns list of dicts.
+
+        If include_all_employees=True, returns every active user (balance 0 if no transactions).
+        """
+        join = 'LEFT' if include_all_employees else 'INNER'
+        where = "WHERE u.is_active = true" if include_all_employees else ""
         return self.query_all(
-            """
+            f"""
             SELECT
                 u.id AS user_id,
                 u.name,
@@ -49,11 +54,12 @@ class TimeBankRepository(BaseRepository):
                 u.department,
                 COALESCE(tb.balance, 0) AS balance
             FROM public.users u
-            INNER JOIN (
+            {join} JOIN (
                 SELECT jarvis_user_id, SUM(amount) AS balance
                 FROM hr.time_bank_transactions
                 GROUP BY jarvis_user_id
             ) tb ON tb.jarvis_user_id = u.id
+            {where}
             ORDER BY u.name
             """
         )

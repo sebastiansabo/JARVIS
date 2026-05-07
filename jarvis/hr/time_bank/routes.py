@@ -3,9 +3,10 @@
 Routes mounted under `/hr/time-bank/*` via `time_bank_bp`.
 """
 
+import io
 import logging
 
-from flask import request, jsonify
+from flask import request, jsonify, send_file
 from flask_login import current_user
 
 from core.utils.api_helpers import api_login_required, safe_error_response
@@ -44,7 +45,8 @@ def time_bank_balances():
         return forbidden
     try:
         svc = TimeBankService()
-        all_balances = svc.get_all_balances()
+        show_all = request.args.get('all', '').lower() in ('1', 'true', 'yes')
+        all_balances = svc.get_all_balances(include_all_employees=show_all)
         managed = _get_managed_ids()
         if managed is not None:
             all_balances = [b for b in all_balances if b['user_id'] in managed]
@@ -242,3 +244,35 @@ def time_bank_import_t0():
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:  # noqa: BLE001
         return safe_error_response(e)
+
+
+@time_bank_bp.route('/api/time-bank/t0-template', methods=['GET'])
+@api_login_required
+def time_bank_t0_template():
+    """Download a blank T0 import template (.xlsx)."""
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Time Bank T0'
+    headers = ['Nume', 'Prenume', 'CNP', 'Ore']
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = openpyxl.styles.Font(bold=True)
+    ws.column_dimensions['A'].width = 20
+    ws.column_dimensions['B'].width = 20
+    ws.column_dimensions['C'].width = 18
+    ws.column_dimensions['D'].width = 10
+    # Example row
+    ws.cell(row=2, column=1, value='Popescu')
+    ws.cell(row=2, column=2, value='Ion')
+    ws.cell(row=2, column=3, value='1234567890123')
+    ws.cell(row=2, column=4, value=8)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name='time_bank_t0_template.xlsx',
+    )
