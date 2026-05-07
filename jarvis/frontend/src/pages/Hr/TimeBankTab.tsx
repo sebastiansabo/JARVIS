@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Loader2, Upload, Plus, Minus, ArrowRightLeft,
-  ChevronDown, TrendingUp, TrendingDown,
+  ChevronDown, TrendingUp, TrendingDown, Check, X, Clock, CheckCircle2,
+  HelpCircle, ArrowDown, MessageCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SearchSelect } from '@/components/shared/SearchSelect'
+import { EphemeralChatPopup } from '@/components/EphemeralChatPopup'
 import { timeBankApi } from '@/api/timeBank'
 import type { TimeBankBalance } from '@/api/timeBank'
 import { connecteamApi } from '@/api/connecteam'
@@ -41,7 +43,7 @@ function formatTime(iso: string) {
 }
 
 export default function TimeBankTab({ search }: { search: string }) {
-  const [innerTab, setInnerTab] = useState<'balances' | 'transactions' | 'conversion'>('balances')
+  const [innerTab, setInnerTab] = useState<'balances' | 'transactions' | 'conversion' | 'help'>('balances')
 
   return (
     <div className="space-y-4">
@@ -50,12 +52,14 @@ export default function TimeBankTab({ search }: { search: string }) {
           <TabsTrigger value="balances">Balances</TabsTrigger>
           <TabsTrigger value="transactions">Transactions</TabsTrigger>
           <TabsTrigger value="conversion">CO Conversion</TabsTrigger>
+          <TabsTrigger value="help"><HelpCircle className="mr-1 h-3.5 w-3.5" />Help</TabsTrigger>
         </TabsList>
       </Tabs>
 
       {innerTab === 'balances' && <BalancesPanel search={search} />}
       {innerTab === 'transactions' && <TransactionsPanel search={search} />}
       {innerTab === 'conversion' && <ConversionPanel search={search} />}
+      {innerTab === 'help' && <HelpPanel />}
     </div>
   )
 }
@@ -70,11 +74,14 @@ function BalancesPanel({ search }: { search: string }) {
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [detailUser, setDetailUser] = useState<{ id: number; name: string } | null>(null)
+  const [addMode, setAddMode] = useState<'credit' | 'debit' | 't0' | null>(null)
+  const [selectedUserId, setSelectedUserId] = useState<string>('')
 
   const { data: balances, isLoading } = useQuery({
     queryKey: ['time-bank', 'balances'],
     queryFn: () => timeBankApi.getBalances(),
   })
+
 
   const creditMut = useMutation({
     mutationFn: (data: { user_id: number; amount: number; description?: string }) =>
@@ -152,9 +159,19 @@ function BalancesPanel({ search }: { search: string }) {
     <>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <span className="text-xs text-muted-foreground">
-          {filtered.length} employee{filtered.length !== 1 ? 's' : ''} with Time Bank balance
+          {filtered.length} employee{filtered.length !== 1 ? 's' : ''}
         </span>
         <div className="flex items-center gap-2">
+          <Button variant="default" size="sm" onClick={() => { setAddMode('credit'); setSelectedUserId(''); setAmount(''); setDescription('') }}>
+            <Plus className="mr-1.5 h-4 w-4" /> Add Credit
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setAddMode('debit'); setSelectedUserId(''); setAmount(''); setDescription('') }}>
+            <Minus className="mr-1.5 h-4 w-4" /> Add Debit
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setAddMode('t0'); setSelectedUserId(''); setAmount('') }}>
+            <TrendingUp className="mr-1.5 h-4 w-4" /> Set T0
+          </Button>
+          <div className="w-px h-5 bg-border" />
           <input
             type="file" accept=".xlsx" className="hidden" id="tb-import-t0"
             onChange={(e) => {
@@ -172,6 +189,13 @@ function BalancesPanel({ search }: { search: string }) {
               : <Upload className="mr-1.5 h-4 w-4" />}
             Import T0
           </Button>
+          <a
+            href="/hr/api/time-bank/t0-template"
+            download="time_bank_t0_template.xlsx"
+            className="text-xs text-muted-foreground hover:text-foreground underline"
+          >
+            Download Template
+          </a>
         </div>
       </div>
 
@@ -191,6 +215,7 @@ function BalancesPanel({ search }: { search: string }) {
                 <TableHead>Name</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Department</TableHead>
+                <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-right">Balance (h)</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -207,6 +232,24 @@ function BalancesPanel({ search }: { search: string }) {
                     {b.company?.replace(' S.R.L.', '') || '—'}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{b.department || '—'}</TableCell>
+                  <TableCell className="text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      {b.balance > 0 ? (
+                        <Badge variant="outline" className="text-[10px] border-green-300 text-green-600 bg-green-50 dark:bg-green-950/30">
+                          <CheckCircle2 className="mr-0.5 h-3 w-3" />Active
+                        </Badge>
+                      ) : b.balance < 0 ? (
+                        <Badge variant="outline" className="text-[10px] border-red-300 text-red-600 bg-red-50 dark:bg-red-950/30">Overdrawn</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] border-gray-300 text-gray-500 bg-gray-50 dark:bg-gray-950/30">Not Set</Badge>
+                      )}
+                      {b.pending_count > 0 && (
+                        <Badge variant="outline" className="text-[10px] border-yellow-300 text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30">
+                          <Clock className="mr-0.5 h-3 w-3" />{b.pending_count} pending
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right tabular-nums font-medium">
                     <span className={b.balance > 0 ? 'text-green-600 dark:text-green-400' : b.balance < 0 ? 'text-red-600 dark:text-red-400' : ''}>
                       {b.balance}h
@@ -288,6 +331,73 @@ function BalancesPanel({ search }: { search: string }) {
         isPending={t0Mut.isPending}
         submitLabel="Set T0"
       />
+
+      {/* Add Credit/Debit/T0 with employee picker */}
+      <Dialog open={!!addMode} onOpenChange={(o) => { if (!o) setAddMode(null) }}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>
+              {addMode === 'credit' ? 'Add Credit' : addMode === 'debit' ? 'Add Debit' : 'Set T0 Balance'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Employee</label>
+              <SearchSelect
+                value={selectedUserId}
+                onValueChange={setSelectedUserId}
+                options={(balances ?? []).map(u => ({ value: String(u.user_id), label: u.name }))}
+                placeholder="Select employee..."
+                searchPlaceholder="Type to search..."
+                emptyMessage="No employees found."
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                {addMode === 't0' ? 'Starting balance (hours)' : 'Hours'}
+              </label>
+              <Input
+                type="number" step="0.5" min="0"
+                value={amount} onChange={(e) => setAmount(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            {addMode !== 't0' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Description</label>
+                <Input
+                  value={description} onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Optional description..."
+                />
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setAddMode(null)}>Cancel</Button>
+              <Button
+                disabled={!selectedUserId || !amount || creditMut.isPending || debitMut.isPending || t0Mut.isPending}
+                onClick={() => {
+                  const uid = parseInt(selectedUserId)
+                  const amt = parseFloat(amount)
+                  if (!uid || !amt) return
+                  if (addMode === 'credit') {
+                    creditMut.mutate({ user_id: uid, amount: amt, description: description || undefined })
+                  } else if (addMode === 'debit') {
+                    debitMut.mutate({ user_id: uid, amount: amt, description: description || undefined })
+                  } else {
+                    t0Mut.mutate({ userId: uid, amount: amt })
+                  }
+                  setAddMode(null)
+                }}
+              >
+                {(creditMut.isPending || debitMut.isPending || t0Mut.isPending) && (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                )}
+                {addMode === 'credit' ? 'Add Credit' : addMode === 'debit' ? 'Apply Debit' : 'Set T0'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -295,9 +405,26 @@ function BalancesPanel({ search }: { search: string }) {
 // ─── User Transactions Detail ───
 
 function UserTransactions({ user, onBack }: { user: { id: number; name: string }; onBack: () => void }) {
+  const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['time-bank', 'transactions', user.id],
     queryFn: () => timeBankApi.getUserTransactions(user.id, { limit: 200 }),
+  })
+
+  const approveMut = useMutation({
+    mutationFn: (txId: number) => timeBankApi.approve(txId),
+    onSuccess: () => { toast.success('Approved'); qc.invalidateQueries({ queryKey: ['time-bank'] }) },
+    onError: () => toast.error('Failed to approve'),
+  })
+  const rejectMut = useMutation({
+    mutationFn: (txId: number) => timeBankApi.reject(txId),
+    onSuccess: () => { toast.success('Rejected'); qc.invalidateQueries({ queryKey: ['time-bank'] }) },
+    onError: () => toast.error('Failed to reject'),
+  })
+  const processMut = useMutation({
+    mutationFn: (txId: number) => timeBankApi.process(txId),
+    onSuccess: () => { toast.success('Processed'); qc.invalidateQueries({ queryKey: ['time-bank'] }) },
+    onError: () => toast.error('Failed to process'),
   })
 
   return (
@@ -331,7 +458,9 @@ function UserTransactions({ user, onBack }: { user: { id: number; name: string }
                 <TableHead>Type</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Description</TableHead>
+                <TableHead className="text-center">Status</TableHead>
                 <TableHead>By</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -349,7 +478,13 @@ function UserTransactions({ user, onBack }: { user: { id: number; name: string }
                     </span>
                   </TableCell>
                   <TableCell className="text-xs max-w-[250px] truncate">{tx.description || '—'}</TableCell>
+                  <TableCell className="text-center">
+                    <TxStatusBadge status={tx.status} />
+                  </TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{tx.created_by_name || 'System'}</TableCell>
+                  <TableCell className="text-right">
+                    <TxActions tx={tx} onApprove={approveMut.mutate} onReject={rejectMut.mutate} onProcess={processMut.mutate} />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -363,17 +498,36 @@ function UserTransactions({ user, onBack }: { user: { id: number; name: string }
 // ─── Transactions Panel ───
 
 function TransactionsPanel({ search }: { search: string }) {
+  const qc = useQueryClient()
   const [txType, setTxType] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const [page, setPage] = useState(0)
   const pageSize = 50
 
   const { data, isLoading } = useQuery({
-    queryKey: ['time-bank', 'all-transactions', txType, page],
+    queryKey: ['time-bank', 'all-transactions', txType, statusFilter, page],
     queryFn: () => timeBankApi.getTransactions({
       limit: pageSize,
       offset: page * pageSize,
       tx_type: txType !== 'all' ? txType : undefined,
+      status: statusFilter !== 'all' ? statusFilter : undefined,
     }),
+  })
+
+  const approveMut = useMutation({
+    mutationFn: (txId: number) => timeBankApi.approve(txId),
+    onSuccess: () => { toast.success('Approved'); qc.invalidateQueries({ queryKey: ['time-bank'] }) },
+    onError: () => toast.error('Failed to approve'),
+  })
+  const rejectMut = useMutation({
+    mutationFn: (txId: number) => timeBankApi.reject(txId),
+    onSuccess: () => { toast.success('Rejected'); qc.invalidateQueries({ queryKey: ['time-bank'] }) },
+    onError: () => toast.error('Failed to reject'),
+  })
+  const processMut = useMutation({
+    mutationFn: (txId: number) => timeBankApi.process(txId),
+    onSuccess: () => { toast.success('Processed'); qc.invalidateQueries({ queryKey: ['time-bank'] }) },
+    onError: () => toast.error('Failed to process'),
   })
 
   const filtered = useMemo(() => {
@@ -392,17 +546,31 @@ function TransactionsPanel({ search }: { search: string }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <Select value={txType} onValueChange={(v) => { setTxType(v); setPage(0) }}>
-          <SelectTrigger className="w-[200px] h-8 text-xs">
-            <SelectValue placeholder="All Types" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            {Object.entries(TX_TYPE_LABELS).map(([k, v]) => (
-              <SelectItem key={k} value={k}>{v}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={txType} onValueChange={(v) => { setTxType(v); setPage(0) }}>
+            <SelectTrigger className="w-[180px] h-8 text-xs">
+              <SelectValue placeholder="All Types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              {Object.entries(TX_TYPE_LABELS).map(([k, v]) => (
+                <SelectItem key={k} value={k}>{v}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0) }}>
+            <SelectTrigger className="w-[140px] h-8 text-xs">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="processed">Processed</SelectItem>
+              <SelectItem value="rejected">Rejected</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <span className="text-xs text-muted-foreground">{total} transaction{total !== 1 ? 's' : ''}</span>
       </div>
 
@@ -424,7 +592,9 @@ function TransactionsPanel({ search }: { search: string }) {
                 <TableHead>Type</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Description</TableHead>
+                <TableHead className="text-center">Status</TableHead>
                 <TableHead>By</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -445,7 +615,13 @@ function TransactionsPanel({ search }: { search: string }) {
                     </span>
                   </TableCell>
                   <TableCell className="text-xs max-w-[250px] truncate">{tx.description || '—'}</TableCell>
+                  <TableCell className="text-center">
+                    <TxStatusBadge status={tx.status} />
+                  </TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{tx.created_by_name || 'System'}</TableCell>
+                  <TableCell className="text-right">
+                    <TxActions tx={tx} onApprove={approveMut.mutate} onReject={rejectMut.mutate} onProcess={processMut.mutate} />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -796,6 +972,234 @@ function ConversionPanel({ search }: { search: string }) {
   )
 }
 
+// ─── Help Panel ───
+
+function HelpPanel() {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [showChat, setShowChat] = useState(false)
+
+  const toggle = (key: string) => setExpanded(expanded === key ? null : key)
+
+  const sections: { key: string; title: string; content: React.ReactNode }[] = [
+    {
+      key: 'overview',
+      title: 'What is the Time Bank?',
+      content: (
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          The Time Bank is an <strong>append-only ledger</strong> that tracks hours for each employee.
+          Hours flow in from various sources (leave permits, starting balances, manual credits) and can be
+          used for CO (vacation day) conversion or manual debits. Only <strong>approved</strong> and{' '}
+          <strong>processed</strong> transactions count toward the visible balance.
+        </p>
+      ),
+    },
+    {
+      key: 'inflows',
+      title: 'Sources of Hours (Inflows)',
+      content: (
+        <div className="space-y-2 text-sm text-muted-foreground">
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-green-300 text-green-600 bg-green-50">T0</Badge>
+            <span><strong>Starting Balance</strong> — initial hours imported from Excel or set manually. One-time per employee. Auto-approved.</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-green-300 text-green-600 bg-green-50">Connecteam</Badge>
+            <span><strong>Connecteam Import</strong> — leave permit hours (Bilet de Invoire) from Connecteam Excel export. Auto-approved on import.</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-green-300 text-green-600 bg-green-50">Manual Credit</Badge>
+            <span><strong>Manual Credit</strong> — hours added by an admin. Starts as <em>pending</em>, requires approval.</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-green-300 text-green-600 bg-green-50">Marketing</Badge>
+            <span><strong>Marketing Event</strong> — hours earned from marketing activities. Auto-approved.</span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'outflows',
+      title: 'Uses of Hours (Outflows)',
+      content: (
+        <div className="space-y-2 text-sm text-muted-foreground">
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-red-300 text-red-600 bg-red-50">CO Conversion</Badge>
+            <span><strong>CO Conversion</strong> — convert 8 hours = 1 vacation day (CO). Employee must have at least 8h balance. Debits 8h per CO day. Requires approval.</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-red-300 text-red-600 bg-red-50">Manual Debit</Badge>
+            <span><strong>Manual Debit</strong> — hours removed by an admin. Starts as <em>pending</em>, requires approval. Cannot exceed current balance.</span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'approval',
+      title: 'Approval Workflow',
+      content: (
+        <div className="space-y-3 text-sm text-muted-foreground">
+          <p>Transactions go through a lifecycle of statuses:</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="outline" className="text-[10px] border-yellow-300 text-yellow-600 bg-yellow-50">
+              <Clock className="mr-0.5 h-3 w-3" />Pending
+            </Badge>
+            <span className="text-muted-foreground">→</span>
+            <Badge variant="outline" className="text-[10px] border-green-300 text-green-600 bg-green-50">
+              <Check className="mr-0.5 h-3 w-3" />Approved
+            </Badge>
+            <span className="text-muted-foreground">→</span>
+            <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600 bg-blue-50">
+              <CheckCircle2 className="mr-0.5 h-3 w-3" />Processed
+            </Badge>
+          </div>
+          <p>Or rejected:</p>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-[10px] border-yellow-300 text-yellow-600 bg-yellow-50">
+              <Clock className="mr-0.5 h-3 w-3" />Pending
+            </Badge>
+            <span className="text-muted-foreground">→</span>
+            <Badge variant="outline" className="text-[10px] border-red-300 text-red-600 bg-red-50">
+              <X className="mr-0.5 h-3 w-3" />Rejected
+            </Badge>
+          </div>
+          <p className="mt-2">
+            <strong>Auto-approved types:</strong> T0, Connecteam, Marketing Event, and CO Conversion skip the pending state
+            and are immediately approved. Manual credits and debits require explicit approval.
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'co-conversion',
+      title: 'CO Conversion Rules',
+      content: (
+        <div className="space-y-2 text-sm text-muted-foreground">
+          <ul className="list-disc list-inside space-y-1">
+            <li><strong>1 CO day = 8 hours</strong> deducted from the Time Bank</li>
+            <li>Employee must have <strong>at least 8 hours</strong> approved balance to be eligible</li>
+            <li>Maximum CO days = floor(balance / 8). E.g., 20h balance → max 2 CO days</li>
+            <li>After conversion, remaining hours stay in the bank. E.g., 20h - 16h (2 days) = 4h remaining</li>
+            <li>CO conversion creates an approval request sent to the selected approver</li>
+            <li>Once approved, the employee's CO balance is credited in the Sincron system</li>
+          </ul>
+        </div>
+      ),
+    },
+    {
+      key: 't0',
+      title: 'T0 — Starting Balance',
+      content: (
+        <div className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            T0 is the <strong>initial balance</strong> imported when the Time Bank is first set up for an employee.
+            It represents hours accumulated before the system was in place.
+          </p>
+          <ul className="list-disc list-inside space-y-1">
+            <li>Can be set individually via the Balances tab (click T0 on an employee row)</li>
+            <li>Can be bulk-imported from an Excel template (download template from the toolbar)</li>
+            <li>Only one T0 per employee — re-importing replaces the previous value</li>
+            <li>T0 is auto-approved and immediately reflected in the balance</li>
+          </ul>
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <div className="space-y-6">
+      {/* Flow Diagram */}
+      <div className="rounded-lg border bg-card p-6">
+        <h3 className="text-sm font-semibold mb-4">How Hours Flow Through the Time Bank</h3>
+        <div className="flex flex-col items-center gap-2">
+          {/* Inflows */}
+          <div className="flex flex-wrap justify-center gap-3">
+            <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400">
+              T0 (Starting)
+            </div>
+            <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400">
+              Connecteam Import
+            </div>
+            <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400">
+              Manual Credit
+            </div>
+            <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400">
+              Marketing Event
+            </div>
+          </div>
+
+          {/* Down arrows */}
+          <div className="flex gap-8">
+            <ArrowDown className="h-5 w-5 text-green-500" />
+            <ArrowDown className="h-5 w-5 text-green-500" />
+            <ArrowDown className="h-5 w-5 text-green-500" />
+          </div>
+
+          {/* Central Bank */}
+          <div className="rounded-xl border-2 border-primary bg-primary/5 px-8 py-4 text-center">
+            <div className="text-lg font-bold">TIME BANK</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Balance = SUM of approved + processed</div>
+          </div>
+
+          {/* Down arrows */}
+          <div className="flex gap-12">
+            <ArrowDown className="h-5 w-5 text-red-500" />
+            <ArrowDown className="h-5 w-5 text-red-500" />
+          </div>
+
+          {/* Outflows */}
+          <div className="flex flex-wrap justify-center gap-3">
+            <div className="rounded-md border border-red-200 bg-red-50 dark:bg-red-950/30 px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-400">
+              CO Conversion (8h = 1 day)
+            </div>
+            <div className="rounded-md border border-red-200 bg-red-50 dark:bg-red-950/30 px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-400">
+              Manual Debit
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Collapsible Sections */}
+      <div className="rounded-lg border bg-card divide-y">
+        {sections.map((s) => (
+          <div key={s.key}>
+            <button
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-muted/50 transition-colors"
+              onClick={() => toggle(s.key)}
+            >
+              <span className="text-sm font-medium">{s.title}</span>
+              <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${expanded === s.key ? '' : '-rotate-90'}`} />
+            </button>
+            {expanded === s.key && (
+              <div className="px-4 pb-4">
+                {s.content}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* AI Assistant */}
+      <div className="rounded-lg border bg-card p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold">Ask AI about Time Bank</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Get instant answers about how the Time Bank works</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setShowChat(!showChat)}>
+            <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
+            {showChat ? 'Hide Chat' : 'Ask AI'}
+          </Button>
+        </div>
+        {showChat && (
+          <div className="mt-4 h-[400px] rounded-md border overflow-hidden">
+            <EphemeralChatPopup pageContext="/app/hr/time-bank/help" />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Shared Components ───
 
 function TxTypeBadge({ type }: { type: string }) {
@@ -811,6 +1215,68 @@ function TxTypeBadge({ type }: { type: string }) {
       {label}
     </Badge>
   )
+}
+
+function TxStatusBadge({ status }: { status: string }) {
+  switch (status) {
+    case 'pending':
+      return (
+        <Badge variant="outline" className="text-[10px] border-yellow-300 text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30">
+          <Clock className="mr-0.5 h-3 w-3" />Pending
+        </Badge>
+      )
+    case 'approved':
+      return (
+        <Badge variant="outline" className="text-[10px] border-green-300 text-green-600 bg-green-50 dark:bg-green-950/30">
+          <Check className="mr-0.5 h-3 w-3" />Approved
+        </Badge>
+      )
+    case 'processed':
+      return (
+        <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600 bg-blue-50 dark:bg-blue-950/30">
+          <CheckCircle2 className="mr-0.5 h-3 w-3" />Processed
+        </Badge>
+      )
+    case 'rejected':
+      return (
+        <Badge variant="outline" className="text-[10px] border-red-300 text-red-600 bg-red-50 dark:bg-red-950/30">
+          <X className="mr-0.5 h-3 w-3" />Rejected
+        </Badge>
+      )
+    default:
+      return <span className="text-[10px] text-muted-foreground">{status}</span>
+  }
+}
+
+function TxActions({ tx, onApprove, onReject, onProcess }: {
+  tx: { id: number; status: string }
+  onApprove: (id: number) => void
+  onReject: (id: number) => void
+  onProcess: (id: number) => void
+}) {
+  if (tx.status === 'pending') {
+    return (
+      <div className="flex justify-end gap-1">
+        <Button variant="ghost" size="icon" className="h-7 w-7" title="Approve"
+          onClick={() => onApprove(tx.id)}>
+          <Check className="h-3.5 w-3.5 text-green-600" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7" title="Reject"
+          onClick={() => onReject(tx.id)}>
+          <X className="h-3.5 w-3.5 text-red-600" />
+        </Button>
+      </div>
+    )
+  }
+  if (tx.status === 'approved') {
+    return (
+      <Button variant="ghost" size="icon" className="h-7 w-7" title="Mark as Processed"
+        onClick={() => onProcess(tx.id)}>
+        <CheckCircle2 className="h-3.5 w-3.5 text-blue-600" />
+      </Button>
+    )
+  }
+  return null
 }
 
 function ConversionStatusBadge({ conversion }: { conversion: ConversionRequest }) {
