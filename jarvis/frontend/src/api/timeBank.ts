@@ -17,6 +17,7 @@ export interface TimeBankBalance {
   company: string
   department: string
   balance: number
+  pending_count: number
 }
 
 export interface TimeBankTransaction {
@@ -30,6 +31,10 @@ export interface TimeBankTransaction {
   created_by: number | null
   created_by_name: string | null
   created_at: string
+  status: string
+  approved_by: number | null
+  approved_by_name: string | null
+  approved_at: string | null
   employee_name?: string
   employee_company?: string
 }
@@ -56,7 +61,7 @@ export const timeBankApi = {
     return res.data
   },
 
-  getTransactions: async (params?: { limit?: number; offset?: number; tx_type?: string; user_id?: number }) => {
+  getTransactions: async (params?: { limit?: number; offset?: number; tx_type?: string; user_id?: number; status?: string }) => {
     const res = await api.get<{ success: boolean; data: TimeBankTransaction[]; total: number }>(
       `${BASE}/transactions${qs(params ?? {})}`,
     )
@@ -80,6 +85,15 @@ export const timeBankApi = {
     api.post<{ success: boolean; data: TimeBankTransaction | null }>(`${BASE}/set-t0`, {
       user_id: userId, amount,
     }),
+
+  approve: (txId: number) =>
+    api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/transactions/${txId}/approve`),
+
+  reject: (txId: number) =>
+    api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/transactions/${txId}/reject`),
+
+  process: (txId: number) =>
+    api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/transactions/${txId}/process`),
 
   importT0: (file: File) => {
     const form = new FormData()
