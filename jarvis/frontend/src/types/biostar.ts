@@ -116,8 +116,31 @@ export interface BioStarDayHistory {
   schedule_start?: string | null
   schedule_end?: string | null
   sincron_company?: string | null
-  sincron_day_schedule?: { company: string; start: string; end: string }[] | null
-  // Adjustment data (null if not adjusted)
+  sincron_day_schedule?: { company: string; start: string; end: string; norma?: number }[] | null
+  // Adjustment data — legacy single-record (company_name IS NULL)
+  adjusted_first_punch?: string | null
+  adjusted_last_punch?: string | null
+  adjustment_type?: string | null
+  // Per-company adjustments (company_name IS NOT NULL)
+  company_adjustments?: CompanyAdjustment[] | null
+}
+
+export interface CompanyAdjustment {
+  company_name: string
+  adjusted_first_punch: string | null
+  adjusted_last_punch: string | null
+  adjustment_type: string | null
+}
+
+export interface CompanyInterval {
+  company: string
+  start: string
+  end: string
+  norma: number | null
+  first_punch: string | null
+  last_punch: string | null
+  punch_count: number
+  duration_seconds: number | null
   adjusted_first_punch?: string | null
   adjusted_last_punch?: string | null
   adjustment_type?: string | null

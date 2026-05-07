@@ -501,6 +501,32 @@ class SincronRepository(BaseRepository):
             LIMIT 1
         ''', (date_str, jarvis_user_id))
 
+    def get_day_intervals_by_jarvis_user(self, jarvis_user_id, date_str):
+        """Get all company intervals for a JARVIS user on a specific date.
+
+        Returns one row per company with OZ/OS activity, ordered by norma DESC.
+        Used for per-company punch splitting.
+        """
+        return self.query_all('''
+            SELECT COALESCE(co.company, se.company_name) AS company,
+                   to_char(st.program_in, 'HH24:MI') AS start,
+                   to_char(st.program_out, 'HH24:MI') AS "end",
+                   se.norma_lucru AS norma,
+                   se.lunch_break_minutes
+            FROM sincron_employees se
+            JOIN sincron_timesheets st
+              ON st.sincron_employee_id = se.sincron_employee_id
+              AND st.company_name = se.company_name
+              AND st.day = %s::date
+              AND st.short_code IN ('OZ', 'OS')
+              AND st.program_in IS NOT NULL
+              AND st.program_out IS NOT NULL
+            LEFT JOIN companies co ON co.id = se.company_id
+            WHERE se.mapped_jarvis_user_id = %s
+              AND se.is_active = TRUE
+            ORDER BY se.norma_lucru DESC NULLS LAST
+        ''', (date_str, jarvis_user_id))
+
     def get_full_day_schedule_by_jarvis_user(self, jarvis_user_id, date_str,
                                                include_excluded=False):
         """Get combined schedule boundaries across ALL companies for a specific date.

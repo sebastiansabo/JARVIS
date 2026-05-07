@@ -683,7 +683,7 @@ class BioStarSyncService:
                         original_first, original_last, schedule_start, schedule_end,
                         lunch_break_minutes, working_hours, original_duration,
                         deviation_in, deviation_out, adjustment_type='manual',
-                        adjusted_by=None, notes=None):
+                        adjusted_by=None, notes=None, **kwargs):
         """Create or update a schedule adjustment for one employee/day."""
         # Calculate adjusted duration
         if adjusted_first and adjusted_last:
@@ -695,6 +695,7 @@ class BioStarSyncService:
         return self.adj_repo.upsert_adjustment({
             'biostar_user_id': biostar_user_id,
             'date': date_str,
+            'company_name': kwargs.get('company_name'),
             'original_first_punch': original_first,
             'original_last_punch': original_last,
             'original_duration_seconds': original_duration,
@@ -895,27 +896,28 @@ class BioStarSyncService:
         total_flagged = len(off) + len(absent)
         return {'adjusted': adjusted_count, 'total_flagged': total_flagged}
 
-    def auto_adjust_single(self, biostar_user_id, date_str, user_id=None):
-        """Auto-adjust a single employee for a specific date using Sincron per-day schedule."""
+    def auto_adjust_single(self, biostar_user_id, date_str, user_id=None,
+                           company_name=None):
+        """Auto-adjust a single employee for a specific date using Sincron per-day schedule.
+
+        company_name: if provided, only adjust that specific company interval.
+                      If None, auto-detect: multi-contract employees get per-company adjustments,
+                      single-contract employees get a single adjustment (legacy behavior).
+        """
         from datetime import time as _time
 
         employee = self.repo.get_employee_by_biostar_id(biostar_user_id)
         if not employee:
             return {'success': False, 'error': 'Employee not found'}
 
-        sched_start = employee.get('schedule_start')
-        sched_end = employee.get('schedule_end')
-        lunch = employee.get('lunch_break_minutes') or 60
-        wh = employee.get('working_hours') or 8
-
-        # Override with Sincron per-day schedule (full span across ALL companies)
         jarvis_uid = employee.get('mapped_jarvis_user_id')
+
+        # Check for Sincron leave codes
         if jarvis_uid:
             try:
                 from core.connectors.sincron.repositories.sincron_repository import SincronRepository
                 sincron_repo = SincronRepository()
 
-                # Block adjustment if the day has a Sincron leave code
                 LEAVE_CODES = ('CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV')
                 leave = sincron_repo.query_one('''
                     SELECT st.short_code
@@ -932,6 +934,42 @@ class BioStarSyncService:
                 if leave:
                     return {'success': False, 'error': f'Employee has Sincron leave code ({leave["short_code"]}) for this date'}
 
+                # Get per-company intervals
+                intervals = sincron_repo.get_day_intervals_by_jarvis_user(jarvis_uid, date_str)
+            except Exception as e:
+                logger.warning('Sincron schedule lookup failed for user %s on %s: %s',
+                               jarvis_uid, date_str, e)
+                intervals = []
+        else:
+            intervals = []
+
+        # If a specific company was requested, filter to just that interval
+        if company_name and intervals:
+            intervals = [iv for iv in intervals if iv['company'] == company_name]
+            if not intervals:
+                return {'success': False, 'error': f'No schedule found for company {company_name}'}
+
+        # Multi-contract: per-company adjustments
+        if len(intervals) > 1 or (len(intervals) == 1 and company_name):
+            return self._adjust_per_company(
+                biostar_user_id, date_str, intervals, user_id)
+
+        # Single-contract / legacy: full-span adjustment
+        sched_start = employee.get('schedule_start')
+        sched_end = employee.get('schedule_end')
+        lunch = employee.get('lunch_break_minutes') or 60
+        wh = employee.get('working_hours') or 8
+
+        if intervals:
+            # Single Sincron interval
+            iv = intervals[0]
+            parts_s = iv['start'].split(':')
+            parts_e = iv['end'].split(':')
+            sched_start = _time(int(parts_s[0]), int(parts_s[1]))
+            sched_end = _time(int(parts_e[0]), int(parts_e[1]))
+            lunch = iv.get('lunch_break_minutes') or 0
+        elif jarvis_uid:
+            try:
                 full_sched = sincron_repo.get_full_day_schedule_by_jarvis_user(
                     jarvis_uid, date_str, include_excluded=True)
                 if full_sched:
@@ -943,19 +981,16 @@ class BioStarSyncService:
                         sched_end = _time(int(parts[0]), int(parts[1]))
                     if full_sched.get('lunch_break_minutes') is not None:
                         lunch = full_sched['lunch_break_minutes']
-            except Exception as e:
-                logger.warning('Sincron schedule lookup failed for user %s on %s: %s',
-                               jarvis_uid, date_str, e)
+            except Exception:
+                pass
 
         if not sched_start or not sched_end:
             return {'success': False, 'error': 'No schedule found'}
 
-        # Compute actual working hours from full schedule span
         full_span_min = (datetime.combine(datetime.today(), sched_end) -
                          datetime.combine(datetime.today(), sched_start)).total_seconds() / 60
-        wh = (full_span_min - lunch) / 60  # net hours
+        wh = (full_span_min - lunch) / 60
 
-        # Get punch data for that date (ordered DESC, so [-1]=earliest, [0]=latest)
         punches = self.repo.get_punch_logs(biostar_user_id, f'{date_str} 00:00:00', f'{date_str} 23:59:59')
 
         if punches:
@@ -967,7 +1002,6 @@ class BioStarSyncService:
             deviation_in = round((first_punch - datetime.combine(first_punch.date(), sched_start)).total_seconds() / 60)
             deviation_out = round((last_punch - datetime.combine(last_punch.date(), sched_end)).total_seconds() / 60) if len(punches) > 1 else 0
         else:
-            # Absent day — no punches, generate times anchored to schedule
             first_punch = None
             last_punch = None
             duration = 0
@@ -977,7 +1011,6 @@ class BioStarSyncService:
         ref_date = first_punch.date() if first_punch else datetime.strptime(date_str, '%Y-%m-%d').date()
 
         if not punches:
-            # Absent: randomize independently around schedule_start and schedule_end
             start_offset = random.randint(-3, 3)
             end_offset = random.randint(-3, 5)
             adj_first = datetime.combine(ref_date, sched_start) + timedelta(minutes=start_offset)
@@ -1005,6 +1038,80 @@ class BioStarSyncService:
         )
         return {'success': True, 'adjusted_first': str(adj_first), 'adjusted_last': str(adj_last)}
 
+    def _adjust_per_company(self, biostar_user_id, date_str, intervals, user_id):
+        """Generate per-company interval adjustments for multi-contract employees."""
+        from datetime import time as _time
+
+        ref_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+
+        # Split raw punches into company intervals
+        split = self.repo.get_employee_punches_by_interval(biostar_user_id, date_str, intervals)
+
+        results = []
+        for iv in split:
+            parts_s = iv['start'].split(':')
+            parts_e = iv['end'].split(':')
+            sched_start = _time(int(parts_s[0]), int(parts_s[1]))
+            sched_end = _time(int(parts_e[0]), int(parts_e[1]))
+
+            # Find lunch from the interval data (base contract has lunch, secondary usually 0)
+            matching_iv = next((x for x in intervals if x['company'] == iv['company']), None)
+            lunch = (matching_iv.get('lunch_break_minutes') or 0) if matching_iv else 0
+
+            span_min = (datetime.combine(ref_date, sched_end) -
+                        datetime.combine(ref_date, sched_start)).total_seconds() / 60
+            wh = (span_min - lunch) / 60
+
+            fp_str = iv.get('first_punch')
+            lp_str = iv.get('last_punch')
+            first_punch = datetime.fromisoformat(fp_str) if fp_str else None
+            last_punch = datetime.fromisoformat(lp_str) if lp_str else None
+            punch_count = iv.get('punch_count', 0)
+            duration = iv.get('duration_seconds') or 0
+
+            if first_punch:
+                deviation_in = round((first_punch - datetime.combine(ref_date, sched_start)).total_seconds() / 60)
+                deviation_out = round((last_punch - datetime.combine(ref_date, sched_end)).total_seconds() / 60) if punch_count > 1 else 0
+            else:
+                deviation_in = 0
+                deviation_out = 0
+
+            # Generate adjusted times for this interval
+            if not first_punch:
+                start_offset = random.randint(-3, 3)
+                end_offset = random.randint(-3, 5)
+                adj_first = datetime.combine(ref_date, sched_start) + timedelta(minutes=start_offset)
+                adj_last = datetime.combine(ref_date, sched_end) + timedelta(minutes=end_offset)
+            else:
+                synthetic_ref = datetime.combine(ref_date, sched_start)
+                adj_first, adj_last = self._randomize_times(synthetic_ref, sched_start, lunch, wh)
+
+            self.adjust_employee(
+                biostar_user_id=biostar_user_id,
+                date_str=date_str,
+                adjusted_first=adj_first,
+                adjusted_last=adj_last,
+                original_first=first_punch,
+                original_last=last_punch,
+                schedule_start=sched_start,
+                schedule_end=sched_end,
+                lunch_break_minutes=lunch,
+                working_hours=wh,
+                original_duration=duration,
+                deviation_in=deviation_in,
+                deviation_out=deviation_out,
+                adjustment_type='auto',
+                adjusted_by=user_id,
+                company_name=iv['company'],
+            )
+            results.append({
+                'company': iv['company'],
+                'adjusted_first': str(adj_first),
+                'adjusted_last': str(adj_last),
+            })
+
+        return {'success': True, 'intervals': results}
+
     def backfill_adjustments(self, threshold=15, user_id=None):
         """Auto-adjust all past dates with unadjusted off-schedule employees."""
         dates = self.adj_repo.get_unadjusted_dates()
@@ -1018,9 +1125,9 @@ class BioStarSyncService:
                 dates_processed += 1
         return {'dates_processed': dates_processed, 'total_adjusted': total_adjusted}
 
-    def revert_adjustment(self, biostar_user_id, date_str):
+    def revert_adjustment(self, biostar_user_id, date_str, company_name=None):
         """Revert an adjustment (delete it, back to original punches)."""
-        return self.adj_repo.delete_adjustment(biostar_user_id, date_str)
+        return self.adj_repo.delete_adjustment(biostar_user_id, date_str, company_name=company_name)
 
     def revert_adjustments_range(self, start_date, end_date):
         """Revert all auto-adjustments in a date range."""

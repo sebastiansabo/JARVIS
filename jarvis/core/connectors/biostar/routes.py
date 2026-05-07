@@ -564,16 +564,76 @@ def auto_adjust_all():
 @biostar_bp.route('/api/adjustments/auto-adjust-single', methods=['POST'])
 @adjust_permission_required
 def auto_adjust_single():
-    """Auto-adjust a single employee for a specific date using Sincron per-day schedule."""
+    """Auto-adjust a single employee for a specific date using Sincron per-day schedule.
+
+    Optional company_name in body: if provided, only adjust that company interval.
+    """
     data = request.get_json() or {}
     biostar_user_id = data.get('biostar_user_id')
     date_str = data.get('date')
+    company_name = data.get('company_name')  # optional: per-company adjustment
     if not biostar_user_id or not date_str:
         return jsonify({'success': False, 'error': 'biostar_user_id and date required'}), 400
-    result = service.auto_adjust_single(biostar_user_id, date_str, user_id=current_user.id)
+    result = service.auto_adjust_single(biostar_user_id, date_str,
+                                        user_id=current_user.id,
+                                        company_name=company_name)
     if not result.get('success'):
         return jsonify(result), 400
     return jsonify({'success': True, 'data': result})
+
+
+@biostar_bp.route('/api/attendance/punches-by-interval', methods=['GET'])
+@api_login_required
+def get_punches_by_interval():
+    """Get per-company interval punch split for a multi-contract employee.
+
+    Query params: biostar_user_id, date
+    Returns intervals with split punches + any per-company adjustments.
+    """
+    biostar_user_id = request.args.get('biostar_user_id')
+    date_str = request.args.get('date')
+    if not biostar_user_id or not date_str:
+        return jsonify({'success': False, 'error': 'biostar_user_id and date required'}), 400
+
+    # Get the employee's JARVIS mapping
+    employee = service.repo.get_employee_by_biostar_id(biostar_user_id)
+    if not employee or not employee.get('mapped_jarvis_user_id'):
+        return jsonify({'success': True, 'intervals': []})
+
+    jarvis_uid = employee['mapped_jarvis_user_id']
+
+    # Get Sincron intervals for the date
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    sincron_repo = SincronRepository()
+    intervals = sincron_repo.get_day_intervals_by_jarvis_user(jarvis_uid, date_str)
+
+    if not intervals or len(intervals) <= 1:
+        return jsonify({'success': True, 'intervals': []})
+
+    # Split punches into intervals
+    split = service.repo.get_employee_punches_by_interval(biostar_user_id, date_str, intervals)
+
+    # Fetch per-company adjustments
+    adj_rows = service.adj_repo.query_all('''
+        SELECT company_name, adjusted_first_punch, adjusted_last_punch, adjustment_type
+        FROM biostar_daily_adjustments
+        WHERE biostar_user_id = %s AND date = %s::date AND company_name IS NOT NULL
+    ''', (biostar_user_id, date_str))
+    adj_map = {r['company_name']: r for r in adj_rows} if adj_rows else {}
+
+    # Merge adjustments into split results
+    for iv in split:
+        adj = adj_map.get(iv['company'])
+        if adj:
+            iv['adjusted_first_punch'] = str(adj['adjusted_first_punch']) if adj['adjusted_first_punch'] else None
+            iv['adjusted_last_punch'] = str(adj['adjusted_last_punch']) if adj['adjusted_last_punch'] else None
+            iv['adjustment_type'] = adj['adjustment_type']
+        else:
+            iv['adjusted_first_punch'] = None
+            iv['adjusted_last_punch'] = None
+            iv['adjustment_type'] = None
+
+    return jsonify({'success': True, 'intervals': split})
 
 
 @biostar_bp.route('/api/employees/<biostar_user_id>/sincron-schedule', methods=['GET'])
@@ -666,13 +726,18 @@ def get_employee_sincron_timesheet(biostar_user_id):
 @biostar_bp.route('/api/adjustments/revert', methods=['POST'])
 @adjust_permission_required
 def revert_adjustment():
-    """Revert an adjustment (delete it)."""
+    """Revert an adjustment (delete it).
+
+    Optional company_name: if provided, only revert that company's adjustment.
+    If omitted, reverts ALL adjustments for that user/date.
+    """
     data = request.get_json() or {}
     biostar_user_id = data.get('biostar_user_id')
     date_str = data.get('date')
+    company_name = data.get('company_name')
     if not biostar_user_id or not date_str:
         return jsonify({'success': False, 'error': 'biostar_user_id and date required'}), 400
-    service.revert_adjustment(biostar_user_id, date_str)
+    service.revert_adjustment(biostar_user_id, date_str, company_name=company_name)
     return jsonify({'success': True, 'message': 'Adjustment reverted'})
 
 

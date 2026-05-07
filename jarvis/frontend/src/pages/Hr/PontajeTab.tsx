@@ -34,7 +34,7 @@ import { biostarApi } from '@/api/biostar'
 import { sincronApi } from '@/api/sincron'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { AttendanceRow, BioStarDayHistory } from '@/types/biostar'
+import type { AttendanceRow, BioStarDayHistory, CompanyInterval } from '@/types/biostar'
 
 type SortField = 'name' | 'company' | 'group' | 'check_in' | 'check_out' | 'duration' | 'punches'
 type SortDir = 'asc' | 'desc'
@@ -1374,6 +1374,80 @@ function MonthHistory({
 
 // ── Day Row (inside week) ──
 
+function IntervalSubRow({
+  iv, biostarUserId, date, canAdjust, adjusting, onInvalidate,
+}: {
+  iv: CompanyInterval; biostarUserId: string; date: string
+  canAdjust: boolean; adjusting: boolean; onInvalidate: () => void
+}) {
+  const hasAdj = !!iv.adjusted_first_punch
+  const effectiveIn = iv.adjusted_first_punch ?? iv.first_punch
+  const effectiveOut = iv.adjusted_last_punch ?? iv.last_punch
+  const dur = effectiveIn && effectiveOut && (iv.punch_count > 1 || hasAdj)
+    ? timeDiffSec(effectiveIn, effectiveOut) : null
+  const short = iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
+
+  const handleAdjust = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await biostarApi.autoAdjustSingle(biostarUserId, date, iv.company)
+      toast.success(`Adjusted ${short}`)
+      onInvalidate()
+    } catch { toast.error('Adjust failed') }
+  }
+
+  const handleRevert = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await biostarApi.revertAdjustment(biostarUserId, date, iv.company)
+      toast.success(`Reverted ${short}`)
+      onInvalidate()
+    } catch { toast.error('Revert failed') }
+  }
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-0.5 text-xs">
+      <span className="w-2 shrink-0" />
+      <span className="w-44 shrink-0 text-muted-foreground/70 truncate" title={iv.company}>
+        {short}
+      </span>
+      <span className="w-14 shrink-0 text-center text-muted-foreground">{fmtScheduleTime(iv.start)}</span>
+      <span className="w-14 shrink-0 text-center text-muted-foreground">{fmtScheduleTime(iv.end)}</span>
+      <span className="w-14 shrink-0 text-center">
+        {effectiveIn ? (
+          <span className="inline-flex items-center gap-1">
+            <LogIn className="h-2.5 w-2.5 text-green-600" />
+            {fmtTime(effectiveIn)}
+            {hasAdj && <span className="text-[9px] text-blue-500 font-medium">C</span>}
+          </span>
+        ) : <span className="text-red-400">—</span>}
+      </span>
+      <span className="w-14 shrink-0 text-center">
+        {effectiveOut && (iv.punch_count > 1 || hasAdj) ? (
+          <span className="inline-flex items-center gap-1">
+            <LogOut className="h-2.5 w-2.5 text-red-500" />
+            {fmtTime(effectiveOut)}
+            {hasAdj && <span className="text-[9px] text-blue-500 font-medium">C</span>}
+          </span>
+        ) : <span className="text-orange-600">—</span>}
+      </span>
+      <span className="w-16 shrink-0 text-center font-medium">
+        {dur != null ? fmtDuration(dur) : '—'}
+      </span>
+      {canAdjust && !hasAdj && (
+        <Button variant="ghost" size="icon" className="h-4 w-4 ml-auto" onClick={handleAdjust} disabled={adjusting} title={`Adjust ${short}`}>
+          <Wand2 className="h-2 w-2" />
+        </Button>
+      )}
+      {canAdjust && hasAdj && (
+        <Button variant="ghost" size="icon" className="h-4 w-4 ml-auto" onClick={handleRevert} disabled={adjusting} title={`Revert ${short}`}>
+          <RotateCcw className="h-2 w-2" />
+        </Button>
+      )}
+    </div>
+  )
+}
+
 function DayRow({
   day, leaveCode, lunchMin, workingHours, biostarUserId, scheduleStart, scheduleEnd, canAdjust, adjusting, onInvalidate,
 }: {
@@ -1388,12 +1462,35 @@ function DayRow({
   const netH = net / 3600
   const isShort = netH > 0 && netH < workingHours
   const hasAdj = !!d?.adjusted_first_punch
+  const isMultiContract = (d?.sincron_day_schedule?.length ?? 0) > 1
+
+  // Per-company interval data (lazy-loaded for multi-contract days)
+  const [intervals, setIntervals] = useState<CompanyInterval[] | null>(null)
+  const [loadingIntervals, setLoadingIntervals] = useState(false)
+
+  const loadIntervals = useCallback(async () => {
+    if (intervals || loadingIntervals || !isMultiContract) return
+    setLoadingIntervals(true)
+    try {
+      const data = await biostarApi.getPunchesByInterval(biostarUserId, day.date)
+      setIntervals(data)
+    } catch { /* silently fall back to combined view */ }
+    setLoadingIntervals(false)
+  }, [intervals, loadingIntervals, isMultiContract, biostarUserId, day.date])
+
+  // Auto-load intervals for multi-contract present/absent days
+  useState(() => {
+    if (isMultiContract && !day.isWeekend && !day.isHoliday && !isFuture && !leaveCode) {
+      loadIntervals()
+    }
+  })
 
   const handleAdjustDay = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
       await biostarApi.autoAdjustSingle(biostarUserId, day.date)
       toast.success('Adjusted')
+      setIntervals(null) // reset so it reloads
       onInvalidate()
     } catch { toast.error('Adjust failed') }
   }
@@ -1403,112 +1500,139 @@ function DayRow({
     try {
       await biostarApi.revertAdjustment(biostarUserId, day.date)
       toast.success('Reverted')
+      setIntervals(null)
       onInvalidate()
     } catch { toast.error('Revert failed') }
   }
 
+  const handleIntervalInvalidate = useCallback(() => {
+    setIntervals(null)
+    onInvalidate()
+  }, [onInvalidate])
+
+  // Check if any per-company adjustment exists
+  const hasCompanyAdj = !!(d?.company_adjustments?.length)
+  const anyAdj = hasAdj || hasCompanyAdj
+
   return (
     <div className={cn(
-      'flex items-center gap-3 px-3 py-1.5 rounded-md text-sm',
       isToday && 'bg-primary/5 font-medium',
       isOut && 'opacity-40',
       !isOut && !d && !day.isWeekend && !day.isHoliday && !isFuture && 'opacity-50',
     )}>
-      <span className={cn(
-        'inline-block h-2 w-2 rounded-full shrink-0',
-        d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : leaveCode ? 'bg-yellow-500' : isFuture ? 'bg-muted-foreground/30' : 'bg-red-400',
-      )} />
-      <span className="w-44 shrink-0 capitalize text-muted-foreground">
-        {day.dayLabel}
-        {d?.sincron_day_schedule && d.sincron_day_schedule.length > 0 ? (
-          <span className="block text-[10px] text-muted-foreground/60 normal-case leading-tight">
-            {d.sincron_day_schedule.map((s, i) => {
-              const short = s.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || s.company;
-              return (
-                <span key={i} className="block whitespace-nowrap" title={`${s.company} ${s.start}–${s.end}`}>
-                  {short} {s.start}–{s.end}
-                </span>
-              );
-            })}
-          </span>
-        ) : d?.sincron_company ? (
-          <span className="block text-[10px] text-muted-foreground/60 normal-case" title={d.sincron_company}>
-            {d.sincron_company}
-          </span>
-        ) : null}
-      </span>
+      {/* Main summary row */}
+      <div className="flex items-center gap-3 px-3 py-1.5 rounded-md text-sm">
+        <span className={cn(
+          'inline-block h-2 w-2 rounded-full shrink-0',
+          d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : leaveCode ? 'bg-yellow-500' : isFuture ? 'bg-muted-foreground/30' : (anyAdj ? 'bg-green-500' : 'bg-red-400'),
+        )} />
+        <span className="w-44 shrink-0 capitalize text-muted-foreground">
+          {day.dayLabel}
+          {d?.sincron_day_schedule && d.sincron_day_schedule.length > 0 && !intervals ? (
+            <span className="block text-[10px] text-muted-foreground/60 normal-case leading-tight">
+              {d.sincron_day_schedule.map((s, i) => {
+                const short = s.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || s.company;
+                return (
+                  <span key={i} className="block whitespace-nowrap" title={`${s.company} ${s.start}–${s.end}`}>
+                    {short} {s.start}–{s.end}
+                  </span>
+                );
+              })}
+            </span>
+          ) : d?.sincron_company ? (
+            <span className="block text-[10px] text-muted-foreground/60 normal-case" title={d.sincron_company}>
+              {d.sincron_company}
+            </span>
+          ) : null}
+        </span>
 
-      {day.isWeekend || day.isHoliday || isFuture || leaveCode ? (
-        <>
-          {/* Official in/out — blank for non-working days */}
-          <span className="w-14 shrink-0" />
-          <span className="w-14 shrink-0" />
-          <span className={cn('text-xs', leaveCode ? 'text-yellow-600' : 'text-muted-foreground')}>
-            {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : leaveCode ?? '—'}
-          </span>
-        </>
-      ) : d ? (
-        <>
-          {/* Schedule In/Out — full span across all companies */}
-          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
-            {fmtScheduleTime(d.sincron_day_schedule?.length ? d.sincron_day_schedule.reduce((earliest, s) => !earliest || s.start < earliest ? s.start : earliest, '' as string) : d.schedule_start ?? scheduleStart)}
-          </span>
-          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
-            {fmtScheduleTime(d.sincron_day_schedule?.length ? d.sincron_day_schedule.reduce((latest, s) => !latest || s.end > latest ? s.end : latest, '' as string) : d.schedule_end ?? scheduleEnd)}
-          </span>
-          {/* Actual In/Out */}
-          <span className="w-14 shrink-0 text-center">
-            {(d.adjusted_first_punch || d.first_punch) ? (
-              <span className="inline-flex items-center gap-1">
-                <LogIn className="h-3 w-3 text-green-600" />
-                {fmtTime(d.adjusted_first_punch ?? d.first_punch)}
-              </span>
-            ) : (
-              <span className="text-xs text-red-400">—</span>
+        {day.isWeekend || day.isHoliday || isFuture || leaveCode ? (
+          <>
+            <span className="w-14 shrink-0" />
+            <span className="w-14 shrink-0" />
+            <span className={cn('text-xs', leaveCode ? 'text-yellow-600' : 'text-muted-foreground')}>
+              {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : leaveCode ?? '—'}
+            </span>
+          </>
+        ) : d ? (
+          <>
+            {/* Schedule In/Out — full span across all companies */}
+            <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+              {fmtScheduleTime(d.sincron_day_schedule?.length ? d.sincron_day_schedule.reduce((earliest, s) => !earliest || s.start < earliest ? s.start : earliest, '' as string) : d.schedule_start ?? scheduleStart)}
+            </span>
+            <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+              {fmtScheduleTime(d.sincron_day_schedule?.length ? d.sincron_day_schedule.reduce((latest, s) => !latest || s.end > latest ? s.end : latest, '' as string) : d.schedule_end ?? scheduleEnd)}
+            </span>
+            {/* Actual In/Out — combined view (first/last of entire day) */}
+            <span className="w-14 shrink-0 text-center">
+              {(d.adjusted_first_punch || d.first_punch) ? (
+                <span className="inline-flex items-center gap-1">
+                  <LogIn className="h-3 w-3 text-green-600" />
+                  {fmtTime(d.adjusted_first_punch ?? d.first_punch)}
+                </span>
+              ) : (
+                <span className="text-xs text-red-400">—</span>
+              )}
+            </span>
+            <span className="w-14 shrink-0 text-center">
+              {d.total_punches === 1 && !anyAdj ? (
+                <span className="text-xs text-orange-600">—</span>
+              ) : (d.adjusted_last_punch || d.last_punch) ? (
+                <span className="inline-flex items-center gap-1">
+                  <LogOut className="h-3 w-3 text-red-500" />
+                  {fmtTime(d.adjusted_last_punch ?? d.last_punch)}
+                </span>
+              ) : (
+                <span className="text-xs text-red-400">—</span>
+              )}
+            </span>
+            <span className={cn('w-16 shrink-0 text-center font-medium', isShort ? 'text-orange-600' : '')}>
+              {d.total_punches === 1 && !anyAdj && !d.adjusted_first_punch ? '—' : fmtDuration(net)}
+            </span>
+            {canAdjust && !anyAdj && (d.first_punch || !d.total_punches) && (
+              <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust day">
+                <Wand2 className="h-2.5 w-2.5" />
+              </Button>
             )}
-          </span>
-          <span className="w-14 shrink-0 text-center">
-            {d.total_punches === 1 && !hasAdj ? (
-              <span className="text-xs text-orange-600">—</span>
-            ) : (d.adjusted_last_punch || d.last_punch) ? (
-              <span className="inline-flex items-center gap-1">
-                <LogOut className="h-3 w-3 text-red-500" />
-                {fmtTime(d.adjusted_last_punch ?? d.last_punch)}
-              </span>
-            ) : (
-              <span className="text-xs text-red-400">—</span>
+            {canAdjust && anyAdj && !isMultiContract && (
+              <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleRevertDay} disabled={adjusting} title="Revert">
+                <RotateCcw className="h-2.5 w-2.5" />
+              </Button>
             )}
-          </span>
-          <span className={cn('w-16 shrink-0 text-center font-medium', isShort ? 'text-orange-600' : '')}>
-            {d.total_punches === 1 && !hasAdj && !d.adjusted_first_punch ? '—' : fmtDuration(net)}
-          </span>
-          {canAdjust && !hasAdj && (d.first_punch || !d.total_punches) && (
-            <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust day">
-              <Wand2 className="h-2.5 w-2.5" />
-            </Button>
-          )}
-          {canAdjust && hasAdj && (
-            <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleRevertDay} disabled={adjusting} title="Revert">
-              <RotateCcw className="h-2.5 w-2.5" />
-            </Button>
-          )}
-        </>
-      ) : (
-        <>
-          {/* Official in/out for absent day */}
-          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
-            {fmtScheduleTime(scheduleStart)}
-          </span>
-          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
-            {fmtScheduleTime(scheduleEnd)}
-          </span>
-          <span className="text-xs text-red-400">Absent</span>
-          {canAdjust && (
-            <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust absent day">
-              <Wand2 className="h-2.5 w-2.5" />
-            </Button>
-          )}
-        </>
+          </>
+        ) : (
+          <>
+            <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+              {fmtScheduleTime(scheduleStart)}
+            </span>
+            <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+              {fmtScheduleTime(scheduleEnd)}
+            </span>
+            <span className="text-xs text-red-400">{anyAdj ? '' : 'Absent'}</span>
+            {canAdjust && !anyAdj && (
+              <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust absent day">
+                <Wand2 className="h-2.5 w-2.5" />
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Per-company sub-rows for multi-contract employees */}
+      {intervals && intervals.length > 1 && (
+        <div className="border-l-2 border-muted ml-5 mb-1">
+          {intervals.map((iv, i) => (
+            <IntervalSubRow
+              key={i}
+              iv={iv}
+              biostarUserId={biostarUserId}
+              date={day.date}
+              canAdjust={canAdjust}
+              adjusting={adjusting}
+              onInvalidate={handleIntervalInvalidate}
+            />
+          ))}
+        </div>
       )}
     </div>
   )

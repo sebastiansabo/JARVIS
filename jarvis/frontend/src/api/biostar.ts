@@ -262,10 +262,10 @@ export const biostarApi = {
       { date, threshold },
     ),
 
-  autoAdjustSingle: (biostarUserId: string, date: string) =>
-    api.post<{ success: boolean; data: { success: boolean; adjusted_first: string; adjusted_last: string } }>(
+  autoAdjustSingle: (biostarUserId: string, date: string, companyName?: string) =>
+    api.post<{ success: boolean; data: { success: boolean; adjusted_first: string; adjusted_last: string; intervals?: { company: string; adjusted_first: string; adjusted_last: string }[] } }>(
       `${BASE}/adjustments/auto-adjust-single`,
-      { biostar_user_id: biostarUserId, date },
+      { biostar_user_id: biostarUserId, date, ...(companyName ? { company_name: companyName } : {}) },
     ),
 
   getSincronSchedule: async (biostarUserId: string) => {
@@ -284,10 +284,17 @@ export const biostarApi = {
     return res
   },
 
-  revertAdjustment: (biostarUserId: string, date: string) =>
+  revertAdjustment: (biostarUserId: string, date: string, companyName?: string) =>
     api.post<{ success: boolean; message: string }>(`${BASE}/adjustments/revert`, {
-      biostar_user_id: biostarUserId, date,
+      biostar_user_id: biostarUserId, date, ...(companyName ? { company_name: companyName } : {}),
     }),
+
+  getPunchesByInterval: async (biostarUserId: string, date: string) => {
+    const res = await api.get<{ success: boolean; intervals: import('../types/biostar').CompanyInterval[] }>(
+      `${BASE}/attendance/punches-by-interval?biostar_user_id=${biostarUserId}&date=${date}`,
+    )
+    return res.intervals
+  },
 
   revertAdjustmentsRange: (startDate: string, endDate: string) =>
     api.post<{ success: boolean; message: string }>(`${BASE}/adjustments/revert-range`, {

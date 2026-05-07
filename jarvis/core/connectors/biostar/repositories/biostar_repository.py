@@ -580,6 +580,81 @@ class BioStarRepository(BaseRepository):
             ORDER BY pl.event_datetime ASC
         ''', (biostar_user_id, date_str))
 
+    def get_employee_punches_by_interval(self, biostar_user_id, date_str, intervals):
+        """Split raw deduped punches into company time intervals.
+
+        intervals: [{"company": str, "start": "HH:MM", "end": "HH:MM", "norma": float}, ...]
+        Returns: [{"company", "start", "end", "norma", "first_punch", "last_punch",
+                   "punch_count", "duration_seconds"}, ...]
+
+        Assignment: punch belongs to interval if within [start - 15min, end + 15min].
+        Overlapping buffers: assign to the nearest interval boundary.
+        """
+        from datetime import datetime as _dt, timedelta
+
+        if not intervals:
+            return []
+
+        # Fetch deduped punches (same-minute collapse)
+        punches = self.query_all('''
+            SELECT DISTINCT ON (date_trunc('minute', pl.event_datetime))
+                pl.event_datetime
+            FROM biostar_punch_logs pl
+            WHERE pl.biostar_user_id = %s AND pl.event_datetime::date = %s::date
+            ORDER BY date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+        ''', (biostar_user_id, date_str))
+
+        ref_date = _dt.strptime(date_str, '%Y-%m-%d').date()
+        BUFFER = timedelta(minutes=15)
+
+        # Parse intervals into datetime boundaries
+        parsed = []
+        for iv in intervals:
+            h1, m1 = map(int, iv['start'].split(':'))
+            h2, m2 = map(int, iv['end'].split(':'))
+            start_dt = _dt.combine(ref_date, _dt.min.time().replace(hour=h1, minute=m1))
+            end_dt = _dt.combine(ref_date, _dt.min.time().replace(hour=h2, minute=m2))
+            parsed.append({
+                'company': iv['company'], 'start': iv['start'], 'end': iv['end'],
+                'norma': iv.get('norma'),
+                'start_dt': start_dt, 'end_dt': end_dt,
+                'punches': [],
+            })
+
+        # Assign each punch to nearest matching interval
+        for p in punches:
+            evt = p['event_datetime']
+            if not isinstance(evt, _dt):
+                evt = _dt.fromisoformat(str(evt))
+
+            best_idx, best_dist = None, None
+            for i, iv in enumerate(parsed):
+                if iv['start_dt'] - BUFFER <= evt <= iv['end_dt'] + BUFFER:
+                    # Distance = how far from the interval's center or boundaries
+                    dist = min(abs((evt - iv['start_dt']).total_seconds()),
+                               abs((evt - iv['end_dt']).total_seconds()))
+                    if best_dist is None or dist < best_dist:
+                        best_idx, best_dist = i, dist
+            if best_idx is not None:
+                parsed[best_idx]['punches'].append(evt)
+
+        # Build results
+        results = []
+        for iv in parsed:
+            ps = iv['punches']
+            fp = min(ps) if ps else None
+            lp = max(ps) if ps else None
+            dur = (lp - fp).total_seconds() if fp and lp and len(ps) > 1 else None
+            results.append({
+                'company': iv['company'], 'start': iv['start'], 'end': iv['end'],
+                'norma': iv['norma'],
+                'first_punch': str(fp) if fp else None,
+                'last_punch': str(lp) if lp else None,
+                'punch_count': len(ps),
+                'duration_seconds': dur,
+            })
+        return results
+
     def get_employee_daily_history(self, biostar_user_id, start_date, end_date):
         """Get per-day punch summary for one employee over a date range.
 
@@ -643,7 +718,8 @@ class BioStarRepository(BaseRepository):
                    sd.sincron_day_schedule,
                    adj.adjusted_first_punch,
                    adj.adjusted_last_punch,
-                   adj.adjustment_type
+                   adj.adjustment_type,
+                   adj_co.company_adjustments
             FROM all_days d
             LEFT JOIN biostar_employees be2 ON be2.biostar_user_id = %s
             LEFT JOIN LATERAL (
@@ -683,12 +759,30 @@ class BioStarRepository(BaseRepository):
                 ORDER BY se.norma_lucru DESC NULLS LAST
                 LIMIT 1
             ) sd ON TRUE
-            LEFT JOIN biostar_daily_adjustments adj
-                ON adj.biostar_user_id = %s AND adj.date = d.date
+            LEFT JOIN LATERAL (
+                SELECT adj1.adjusted_first_punch,
+                       adj1.adjusted_last_punch,
+                       adj1.adjustment_type
+                FROM biostar_daily_adjustments adj1
+                WHERE adj1.biostar_user_id = %s AND adj1.date = d.date
+                  AND adj1.company_name IS NULL
+                LIMIT 1
+            ) adj ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT json_agg(json_build_object(
+                    'company_name', adj2.company_name,
+                    'adjusted_first_punch', adj2.adjusted_first_punch,
+                    'adjusted_last_punch', adj2.adjusted_last_punch,
+                    'adjustment_type', adj2.adjustment_type
+                ) ORDER BY adj2.adjusted_first_punch) AS company_adjustments
+                FROM biostar_daily_adjustments adj2
+                WHERE adj2.biostar_user_id = %s AND adj2.date = d.date
+                  AND adj2.company_name IS NOT NULL
+            ) adj_co ON TRUE
             ORDER BY d.date DESC
         ''', (biostar_user_id, start_date, end_date, biostar_user_id,
               biostar_user_id, biostar_user_id, start_date, end_date,
-              biostar_user_id, biostar_user_id))
+              biostar_user_id, biostar_user_id, biostar_user_id))
 
     def get_employee_with_mapping(self, biostar_user_id):
         """Get employee details with JARVIS mapping info."""
