@@ -89,6 +89,8 @@ def time_bank_transactions():
         filter_user = request.args.get('user_id')
         filter_user = int(filter_user) if filter_user else None
 
+        status = request.args.get('status') or None
+
         svc = TimeBankService()
         managed = _get_managed_ids()
 
@@ -97,11 +99,11 @@ def time_bank_transactions():
                 return jsonify({'success': False, 'error': 'Access denied'}), 403
             rows = svc.get_transactions(filter_user, limit=limit, offset=offset, tx_type=tx_type)
         else:
-            rows = svc.get_all_transactions(limit=limit, offset=offset, tx_type=tx_type)
+            rows = svc.get_all_transactions(limit=limit, offset=offset, tx_type=tx_type, status=status)
             if managed is not None:
                 rows = [r for r in rows if r.get('jarvis_user_id') in managed]
 
-        total = svc.count_transactions(user_id=filter_user, tx_type=tx_type)
+        total = svc.count_transactions(user_id=filter_user, tx_type=tx_type, status=status)
         return jsonify({'success': True, 'data': rows, 'total': total})
     except Exception as e:  # noqa: BLE001
         return safe_error_response(e)
@@ -190,6 +192,59 @@ def time_bank_debit():
             description=description,
             created_by=current_user.id,
         )
+        return jsonify({'success': True, 'data': row})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        return safe_error_response(e)
+
+
+# ── Approve / Reject / Process ──
+
+@time_bank_bp.route('/api/time-bank/approve/<int:tx_id>', methods=['POST'])
+@api_login_required
+def time_bank_approve(tx_id):
+    """Approve a pending transaction."""
+    forbidden = _require_hr()
+    if forbidden:
+        return forbidden
+    try:
+        svc = TimeBankService()
+        row = svc.approve(tx_id, approved_by=current_user.id)
+        return jsonify({'success': True, 'data': row})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        return safe_error_response(e)
+
+
+@time_bank_bp.route('/api/time-bank/reject/<int:tx_id>', methods=['POST'])
+@api_login_required
+def time_bank_reject(tx_id):
+    """Reject a pending transaction."""
+    forbidden = _require_hr()
+    if forbidden:
+        return forbidden
+    try:
+        svc = TimeBankService()
+        row = svc.reject(tx_id, approved_by=current_user.id)
+        return jsonify({'success': True, 'data': row})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        return safe_error_response(e)
+
+
+@time_bank_bp.route('/api/time-bank/process/<int:tx_id>', methods=['POST'])
+@api_login_required
+def time_bank_process(tx_id):
+    """Mark an approved transaction as processed."""
+    forbidden = _require_hr()
+    if forbidden:
+        return forbidden
+    try:
+        svc = TimeBankService()
+        row = svc.mark_processed(tx_id, approved_by=current_user.id)
         return jsonify({'success': True, 'data': row})
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400

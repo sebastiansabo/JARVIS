@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Loader2, Upload, Plus, Minus, ArrowRightLeft,
-  ChevronDown, TrendingUp, TrendingDown,
+  ChevronDown, TrendingUp, TrendingDown, Check, X, Clock, CheckCircle2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -229,13 +229,22 @@ function BalancesPanel({ search }: { search: string }) {
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{b.department || '—'}</TableCell>
                   <TableCell className="text-center">
-                    {b.balance > 0 ? (
-                      <Badge variant="outline" className="text-[10px] border-green-300 text-green-600 bg-green-50 dark:bg-green-950/30">Active</Badge>
-                    ) : b.balance < 0 ? (
-                      <Badge variant="outline" className="text-[10px] border-red-300 text-red-600 bg-red-50 dark:bg-red-950/30">Overdrawn</Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-[10px] border-gray-300 text-gray-500 bg-gray-50 dark:bg-gray-950/30">Not Set</Badge>
-                    )}
+                    <div className="flex items-center justify-center gap-1">
+                      {b.balance > 0 ? (
+                        <Badge variant="outline" className="text-[10px] border-green-300 text-green-600 bg-green-50 dark:bg-green-950/30">
+                          <CheckCircle2 className="mr-0.5 h-3 w-3" />Active
+                        </Badge>
+                      ) : b.balance < 0 ? (
+                        <Badge variant="outline" className="text-[10px] border-red-300 text-red-600 bg-red-50 dark:bg-red-950/30">Overdrawn</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] border-gray-300 text-gray-500 bg-gray-50 dark:bg-gray-950/30">Not Set</Badge>
+                      )}
+                      {b.pending_count > 0 && (
+                        <Badge variant="outline" className="text-[10px] border-yellow-300 text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30">
+                          <Clock className="mr-0.5 h-3 w-3" />{b.pending_count} pending
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right tabular-nums font-medium">
                     <span className={b.balance > 0 ? 'text-green-600 dark:text-green-400' : b.balance < 0 ? 'text-red-600 dark:text-red-400' : ''}>
@@ -392,9 +401,26 @@ function BalancesPanel({ search }: { search: string }) {
 // ─── User Transactions Detail ───
 
 function UserTransactions({ user, onBack }: { user: { id: number; name: string }; onBack: () => void }) {
+  const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['time-bank', 'transactions', user.id],
     queryFn: () => timeBankApi.getUserTransactions(user.id, { limit: 200 }),
+  })
+
+  const approveMut = useMutation({
+    mutationFn: (txId: number) => timeBankApi.approve(txId),
+    onSuccess: () => { toast.success('Approved'); qc.invalidateQueries({ queryKey: ['time-bank'] }) },
+    onError: () => toast.error('Failed to approve'),
+  })
+  const rejectMut = useMutation({
+    mutationFn: (txId: number) => timeBankApi.reject(txId),
+    onSuccess: () => { toast.success('Rejected'); qc.invalidateQueries({ queryKey: ['time-bank'] }) },
+    onError: () => toast.error('Failed to reject'),
+  })
+  const processMut = useMutation({
+    mutationFn: (txId: number) => timeBankApi.process(txId),
+    onSuccess: () => { toast.success('Processed'); qc.invalidateQueries({ queryKey: ['time-bank'] }) },
+    onError: () => toast.error('Failed to process'),
   })
 
   return (
@@ -428,7 +454,9 @@ function UserTransactions({ user, onBack }: { user: { id: number; name: string }
                 <TableHead>Type</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Description</TableHead>
+                <TableHead className="text-center">Status</TableHead>
                 <TableHead>By</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -446,7 +474,13 @@ function UserTransactions({ user, onBack }: { user: { id: number; name: string }
                     </span>
                   </TableCell>
                   <TableCell className="text-xs max-w-[250px] truncate">{tx.description || '—'}</TableCell>
+                  <TableCell className="text-center">
+                    <TxStatusBadge status={tx.status} />
+                  </TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{tx.created_by_name || 'System'}</TableCell>
+                  <TableCell className="text-right">
+                    <TxActions tx={tx} onApprove={approveMut.mutate} onReject={rejectMut.mutate} onProcess={processMut.mutate} />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -460,17 +494,36 @@ function UserTransactions({ user, onBack }: { user: { id: number; name: string }
 // ─── Transactions Panel ───
 
 function TransactionsPanel({ search }: { search: string }) {
+  const qc = useQueryClient()
   const [txType, setTxType] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const [page, setPage] = useState(0)
   const pageSize = 50
 
   const { data, isLoading } = useQuery({
-    queryKey: ['time-bank', 'all-transactions', txType, page],
+    queryKey: ['time-bank', 'all-transactions', txType, statusFilter, page],
     queryFn: () => timeBankApi.getTransactions({
       limit: pageSize,
       offset: page * pageSize,
       tx_type: txType !== 'all' ? txType : undefined,
+      status: statusFilter !== 'all' ? statusFilter : undefined,
     }),
+  })
+
+  const approveMut = useMutation({
+    mutationFn: (txId: number) => timeBankApi.approve(txId),
+    onSuccess: () => { toast.success('Approved'); qc.invalidateQueries({ queryKey: ['time-bank'] }) },
+    onError: () => toast.error('Failed to approve'),
+  })
+  const rejectMut = useMutation({
+    mutationFn: (txId: number) => timeBankApi.reject(txId),
+    onSuccess: () => { toast.success('Rejected'); qc.invalidateQueries({ queryKey: ['time-bank'] }) },
+    onError: () => toast.error('Failed to reject'),
+  })
+  const processMut = useMutation({
+    mutationFn: (txId: number) => timeBankApi.process(txId),
+    onSuccess: () => { toast.success('Processed'); qc.invalidateQueries({ queryKey: ['time-bank'] }) },
+    onError: () => toast.error('Failed to process'),
   })
 
   const filtered = useMemo(() => {
@@ -489,17 +542,31 @@ function TransactionsPanel({ search }: { search: string }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <Select value={txType} onValueChange={(v) => { setTxType(v); setPage(0) }}>
-          <SelectTrigger className="w-[200px] h-8 text-xs">
-            <SelectValue placeholder="All Types" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            {Object.entries(TX_TYPE_LABELS).map(([k, v]) => (
-              <SelectItem key={k} value={k}>{v}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={txType} onValueChange={(v) => { setTxType(v); setPage(0) }}>
+            <SelectTrigger className="w-[180px] h-8 text-xs">
+              <SelectValue placeholder="All Types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              {Object.entries(TX_TYPE_LABELS).map(([k, v]) => (
+                <SelectItem key={k} value={k}>{v}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0) }}>
+            <SelectTrigger className="w-[140px] h-8 text-xs">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="processed">Processed</SelectItem>
+              <SelectItem value="rejected">Rejected</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <span className="text-xs text-muted-foreground">{total} transaction{total !== 1 ? 's' : ''}</span>
       </div>
 
@@ -521,7 +588,9 @@ function TransactionsPanel({ search }: { search: string }) {
                 <TableHead>Type</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Description</TableHead>
+                <TableHead className="text-center">Status</TableHead>
                 <TableHead>By</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -542,7 +611,13 @@ function TransactionsPanel({ search }: { search: string }) {
                     </span>
                   </TableCell>
                   <TableCell className="text-xs max-w-[250px] truncate">{tx.description || '—'}</TableCell>
+                  <TableCell className="text-center">
+                    <TxStatusBadge status={tx.status} />
+                  </TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{tx.created_by_name || 'System'}</TableCell>
+                  <TableCell className="text-right">
+                    <TxActions tx={tx} onApprove={approveMut.mutate} onReject={rejectMut.mutate} onProcess={processMut.mutate} />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -838,6 +913,68 @@ function TxTypeBadge({ type }: { type: string }) {
       {label}
     </Badge>
   )
+}
+
+function TxStatusBadge({ status }: { status: string }) {
+  switch (status) {
+    case 'pending':
+      return (
+        <Badge variant="outline" className="text-[10px] border-yellow-300 text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30">
+          <Clock className="mr-0.5 h-3 w-3" />Pending
+        </Badge>
+      )
+    case 'approved':
+      return (
+        <Badge variant="outline" className="text-[10px] border-green-300 text-green-600 bg-green-50 dark:bg-green-950/30">
+          <Check className="mr-0.5 h-3 w-3" />Approved
+        </Badge>
+      )
+    case 'processed':
+      return (
+        <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600 bg-blue-50 dark:bg-blue-950/30">
+          <CheckCircle2 className="mr-0.5 h-3 w-3" />Processed
+        </Badge>
+      )
+    case 'rejected':
+      return (
+        <Badge variant="outline" className="text-[10px] border-red-300 text-red-600 bg-red-50 dark:bg-red-950/30">
+          <X className="mr-0.5 h-3 w-3" />Rejected
+        </Badge>
+      )
+    default:
+      return <span className="text-[10px] text-muted-foreground">{status}</span>
+  }
+}
+
+function TxActions({ tx, onApprove, onReject, onProcess }: {
+  tx: { id: number; status: string }
+  onApprove: (id: number) => void
+  onReject: (id: number) => void
+  onProcess: (id: number) => void
+}) {
+  if (tx.status === 'pending') {
+    return (
+      <div className="flex justify-end gap-1">
+        <Button variant="ghost" size="icon" className="h-7 w-7" title="Approve"
+          onClick={() => onApprove(tx.id)}>
+          <Check className="h-3.5 w-3.5 text-green-600" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7" title="Reject"
+          onClick={() => onReject(tx.id)}>
+          <X className="h-3.5 w-3.5 text-red-600" />
+        </Button>
+      </div>
+    )
+  }
+  if (tx.status === 'approved') {
+    return (
+      <Button variant="ghost" size="icon" className="h-7 w-7" title="Mark as Processed"
+        onClick={() => onProcess(tx.id)}>
+        <CheckCircle2 className="h-3.5 w-3.5 text-blue-600" />
+      </Button>
+    )
+  }
+  return null
 }
 
 function ConversionStatusBadge({ conversion }: { conversion: ConversionRequest }) {
