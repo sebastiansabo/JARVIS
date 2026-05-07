@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -1478,12 +1478,12 @@ function DayRow({
     setLoadingIntervals(false)
   }, [intervals, loadingIntervals, isMultiContract, biostarUserId, day.date])
 
-  // Auto-load intervals for multi-contract present/absent days
-  useState(() => {
+  // Auto-load intervals for multi-contract present/absent days (re-fires after invalidation sets intervals=null)
+  useEffect(() => {
     if (isMultiContract && !day.isWeekend && !day.isHoliday && !isFuture && !leaveCode) {
       loadIntervals()
     }
-  })
+  }, [loadIntervals, isMultiContract, day.isWeekend, day.isHoliday, isFuture, leaveCode])
 
   const handleAdjustDay = async (e: React.MouseEvent) => {
     e.stopPropagation()
