@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { BarChart3, Download, FileCheck, FileSpreadsheet, Fingerprint, GraduationCap, LayoutDashboard, Pencil, Plus, Users, CalendarClock } from 'lucide-react'
+import { BarChart3, Download, FileCheck, FileSpreadsheet, Fingerprint, GraduationCap, LayoutDashboard, Pencil, Plus, Users, CalendarClock, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -28,6 +28,7 @@ const LeavesTab = lazy(() => import('./LeavesTab'))
 const CoursesTab = lazy(() => import('./CoursesTab'))
 const CourseDetail = lazy(() => import('./CourseDetail'))
 const ReportsTab = lazy(() => import('./ReportsTab'))
+const TimeBankTab = lazy(() => import('./TimeBankTab'))
 
 function TabLoader() {
   return (
@@ -55,6 +56,7 @@ export default function Hr() {
   const isCoursesPage = useMatch('/app/hr/courses')
   const isCourseDetailPage = useMatch('/app/hr/courses/:courseId')
   const isReportsPage = useMatch('/app/hr/reports')
+  const isTimeBankPage = useMatch('/app/hr/time-bank')
   const isEmployee360Page = useMatch('/app/hr/employees/:userId')
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('hr_summary')
   const filters = useHrStore((s) => s.filters)
@@ -85,6 +87,7 @@ export default function Hr() {
   const canViewLeaves = authLoading || !user ? true : (user?.can_access_hr ?? false)
   const canViewCourses = authLoading || !user ? true : (perms?.['hr.courses.view'] ?? (user?.can_access_hr ?? false))
   const canViewReports = authLoading || !user ? true : (user?.can_access_hr ?? false)
+  const canViewTimeBank = authLoading || !user ? true : (user?.can_access_hr ?? false)
 
   // Manager filter for pontaje route (still accessible via direct URL)
   const forceTeamFilter = canViewTeamPontaje && teamPontajeScope !== 'all' && teamPontajeScope !== 'deny'
@@ -106,6 +109,9 @@ export default function Hr() {
     if (canViewLeaves) {
       t.push({ to: '/app/hr/leaves', label: 'Leaves', icon: CalendarClock })
     }
+    if (canViewTimeBank) {
+      t.push({ to: '/app/hr/time-bank', label: 'Time Bank', icon: Wallet })
+    }
     if (canViewCourses) {
       t.push({ to: '/app/hr/courses', label: 'Cursuri', icon: GraduationCap })
     }
@@ -113,7 +119,7 @@ export default function Hr() {
       t.push({ to: '/app/hr/reports', label: 'Reports', icon: BarChart3 })
     }
     return t
-  }, [canViewTimesheets, canViewEmployees, canViewLeavePermits, canViewLeaves, canViewCourses, canViewReports])
+  }, [canViewTimesheets, canViewEmployees, canViewLeavePermits, canViewLeaves, canViewTimeBank, canViewCourses, canViewReports])
 
   // Standalone pages — no tabs/stats
   if (isCourseDetailPage) {
@@ -203,11 +209,11 @@ export default function Hr() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title={
-          isBonusesPage ? 'Bonuses' : isTimesheetsPage ? 'Timesheets' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete de Invoire' : isLeavesPage ? 'Leaves (CO Balance)' : isCoursesPage ? 'Cursuri' : isReportsPage ? 'Reports' : 'Pontaje'
+          isBonusesPage ? 'Bonuses' : isTimesheetsPage ? 'Timesheets' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete de Invoire' : isLeavesPage ? 'Leaves (CO Balance)' : isTimeBankPage ? 'Time Bank' : isCoursesPage ? 'Cursuri' : isReportsPage ? 'Reports' : 'Pontaje'
         }
         breadcrumbs={[
           { label: 'HR', href: '/app/hr/employees' },
-          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete de Invoire' }] : isLeavesPage ? [{ label: 'Leaves' }] : isCoursesPage ? [{ label: 'Cursuri' }] : isReportsPage ? [{ label: 'Reports' }] : [{ label: 'Pontaje' }]),
+          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete de Invoire' }] : isLeavesPage ? [{ label: 'Leaves' }] : isTimeBankPage ? [{ label: 'Time Bank' }] : isCoursesPage ? [{ label: 'Cursuri' }] : isReportsPage ? [{ label: 'Reports' }] : [{ label: 'Pontaje' }]),
         ]}
         search={
           <SearchInput
@@ -236,7 +242,7 @@ export default function Hr() {
               </Button>
             )}
             {!isMobile && !isBonusesPage && tabs.length > 1 && (
-              <Tabs value={isReportsPage ? 'reports' : isCoursesPage ? 'courses' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+              <Tabs value={isReportsPage ? 'reports' : isCoursesPage ? 'courses' : isTimeBankPage ? 'time-bank' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
                 <TabsList className="w-auto">
                   {tabs.map((t) => {
                     const val = t.to.split('/').pop()!
@@ -256,7 +262,7 @@ export default function Hr() {
 
       {/* Mobile tab nav */}
       {!isBonusesPage && isMobile && tabs.length > 1 && (
-        <Tabs value={isReportsPage ? 'reports' : isCoursesPage ? 'courses' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+        <Tabs value={isReportsPage ? 'reports' : isCoursesPage ? 'courses' : isTimeBankPage ? 'time-bank' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
               {tabs.map((t) => {
@@ -292,6 +298,7 @@ export default function Hr() {
           {canViewEmployees && <Route path="employees" element={<EmployeesTab search={search} />} />}
           {canViewLeavePermits && <Route path="leave-permits" element={<LeavePermitsTab search={search} />} />}
           {canViewLeaves && <Route path="leaves" element={<LeavesTab search={search} />} />}
+          {canViewTimeBank && <Route path="time-bank" element={<TimeBankTab search={search} />} />}
           {canViewCourses && <Route path="courses" element={<CoursesTab search={search} />} />}
           {canViewReports && <Route path="reports" element={<ReportsTab search={search} />} />}
         </Routes>
