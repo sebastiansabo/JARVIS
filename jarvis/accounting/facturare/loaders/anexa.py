@@ -73,10 +73,17 @@ def _detect_format(ws, header_row: int) -> str:
 
     Returns 'proforma' if headers match the simple VIN+Rest layout,
     otherwise 'standard' for the full invoice layout.
+
+    Standard headers include price columns (list price, selling price, discount)
+    that are absent in proforma. Check for those first to avoid false positives
+    when both 'vin' and 'rest' appear in the standard header row.
     """
     for row in ws.iter_rows(min_row=header_row, max_row=header_row + 1, values_only=True):
         headers = [str(c).strip().lower() if c else "" for c in row]
         joined = " ".join(headers)
+        # Standard format has price columns — match these first
+        if any(kw in joined for kw in ("list price", "selling price", "discount")):
+            return "standard"
         if "vin" in headers and ("rest" in joined or "plata" in joined):
             return "proforma"
     return "standard"
@@ -87,8 +94,8 @@ def _parse_standard(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
     lines: list[OrderLine] = []
     errors: list[str] = []
 
-    # Skip header row(s) — data starts 2 rows after header_start
-    first_data_row = data_start + 2
+    # Skip header row — data starts on the next row after the header
+    first_data_row = data_start + 1
 
     for row_idx, row in enumerate(ws.iter_rows(min_row=first_data_row, values_only=True), start=first_data_row):
         comanda = row[0]  # A
