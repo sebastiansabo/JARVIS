@@ -31,7 +31,7 @@ export interface TimeBankTransaction {
   created_by: number | null
   created_by_name: string | null
   created_at: string
-  status: 'pending' | 'approved' | 'rejected' | 'processed'
+  status: string
   approved_by: number | null
   approved_by_name: string | null
   approved_at: string | null
@@ -86,12 +86,6 @@ export const timeBankApi = {
       user_id: userId, amount,
     }),
 
-  importT0: (file: File) => {
-    const form = new FormData()
-    form.append('file', file)
-    return api.post<{ success: boolean; data: TimeBankImportResult }>(`${BASE}/import-t0`, form)
-  },
-
   approve: (txId: number) =>
     api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/approve/${txId}`),
 
@@ -100,4 +94,10 @@ export const timeBankApi = {
 
   process: (txId: number) =>
     api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/process/${txId}`),
+
+  importT0: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<{ success: boolean; data: TimeBankImportResult }>(`${BASE}/import-t0`, form)
+  },
 }
