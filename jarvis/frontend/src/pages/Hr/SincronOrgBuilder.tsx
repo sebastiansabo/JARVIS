@@ -103,12 +103,12 @@ export default function SincronOrgBuilder() {
   const [editNode, setEditNode] = useState<SincronOrgNode | null>(null)
   const [deleteNodeId, setDeleteNodeId] = useState<number | null>(null)
 
-  // Data queries
-  const { data: companies = [] } = useQuery({
-    queryKey: ['settings', 'companiesConfig'],
-    queryFn: organizationApi.getCompaniesConfig,
-    staleTime: 10 * 60_000,
+  // Data queries — only Sincron companies (not all JARVIS companies)
+  const { data: companiesRes } = useQuery({
+    queryKey: ['sincron', 'orgCompanies'],
+    queryFn: organizationApi.getSincronOrgCompanies,
   })
+  const companies = companiesRes?.data ?? []
 
   const { data: nodesRes } = useQuery({
     queryKey: ['sincron', 'orgNodes'],
@@ -164,7 +164,7 @@ export default function SincronOrgBuilder() {
   // Auto-expand companies on first load
   useEffect(() => {
     if (companies.length > 0 && expanded.size === 0) {
-      setExpanded(new Set(companies.map((c) => `c-${c.id}`)))
+      setExpanded(new Set(companies.map((c) => `c-${c.company_id}`)))
     }
   }, [companies.length])
 
@@ -211,22 +211,22 @@ export default function SincronOrgBuilder() {
   })
 
   if (!companies.length) {
-    return <EmptyState title="No companies" description="Configure companies first." />
+    return <EmptyState title="No Sincron data" description="No active Sincron employees found." />
   }
 
   return (
     <div className="space-y-3">
       {companies.map((company) => {
-        const companyKey = `c-${company.id}`
+        const companyKey = `c-${company.company_id}`
         const isExpanded = expanded.has(companyKey)
-        const companyNodes = treeByCompany.get(company.id) || []
-        const companyName = company.company
+        const companyNodes = treeByCompany.get(company.company_id) || []
+        const companyName = company.company_name
 
         // Get employee options for this company
         const compEmployees = employeesByCompany.get(companyName) || []
 
         return (
-          <Card key={company.id} className="overflow-hidden">
+          <Card key={company.company_id} className="overflow-hidden">
             {/* Company header */}
             <button
               onClick={() => toggleExpand(companyKey)}
@@ -264,7 +264,7 @@ export default function SincronOrgBuilder() {
                       membersByNode={membersByNode}
                       employees={compEmployees}
                       companyName={companyName}
-                      onAdd={(parentId, level) => setAddNodeParent({ companyId: company.id, parentId, level })}
+                      onAdd={(parentId, level) => setAddNodeParent({ companyId: company.company_id, parentId, level })}
                       onEdit={setEditNode}
                       onDelete={setDeleteNodeId}
                       onSetMembers={(nodeId, role, keys) => setMembersMut.mutate({ nodeId, role, memberKeys: keys })}
@@ -278,7 +278,7 @@ export default function SincronOrgBuilder() {
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => setAddNodeParent({ companyId: company.id, level: 1 })}
+                    onClick={() => setAddNodeParent({ companyId: company.company_id, level: 1 })}
                   >
                     <Plus className="mr-1 h-3 w-3" />
                     Add L1
@@ -287,7 +287,7 @@ export default function SincronOrgBuilder() {
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => seedMut.mutate(company.id)}
+                    onClick={() => seedMut.mutate(company.company_id)}
                     disabled={seedMut.isPending}
                   >
                     <Sprout className="mr-1 h-3 w-3" />
