@@ -474,17 +474,25 @@ function ConversionPanel({ search }: { search: string }) {
   const qc = useQueryClient()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
+  const [expandedUser, setExpandedUser] = useState<number | null>(null)
   const [conversionTarget, setConversionTarget] = useState<{
     employeeName: string
     employeeUserId: number
-    totalHours: number
+    balance: number
     submissions: ConnecteamSubmission[]
   } | null>(null)
   const [coDays, setCoDays] = useState('1')
   const [approverId, setApproverId] = useState<string>('')
   const [approverMode, setApproverMode] = useState<'hierarchy' | 'free'>('hierarchy')
 
-  const { data: recentData, isLoading } = useQuery({
+  // Fetch Time Bank balances — only employees with >= 8h are eligible
+  const { data: balancesData, isLoading: balancesLoading } = useQuery({
+    queryKey: ['time-bank', 'balances'],
+    queryFn: () => timeBankApi.getBalances(),
+  })
+
+  // Fetch Connecteam submissions for the selected month (context info)
+  const { data: recentData, isLoading: subsLoading } = useQuery({
     queryKey: ['connecteam', 'submissions', year, month],
     queryFn: () =>
       fetch(`/connecteam/api/submissions/recent?year=${year}&month=${month}&limit=500`, { credentials: 'include' })
@@ -528,24 +536,18 @@ function ConversionPanel({ search }: { search: string }) {
     },
   })
 
-  const grouped = useMemo(() => {
-    if (!recentData) return []
-    const flt = search
-      ? recentData.filter(s => {
-          const q = search.toLowerCase()
-          return (s.connecteam_user_name || '').toLowerCase().includes(q)
-        })
-      : recentData
-    const map = new Map<string, { submissions: ConnecteamSubmission[]; totalHours: number; company: string | null; userId: number | null }>()
-    for (const s of flt) {
-      const key = s.connecteam_user_name || `User #${s.connecteam_user_id}`
-      if (!map.has(key)) map.set(key, { submissions: [], totalHours: 0, company: s.jarvis_user_company ?? null, userId: s.mapped_jarvis_user_id })
-      const group = map.get(key)!
-      group.submissions.push(s)
-      group.totalHours += s.leave_hours ?? 0
+  // Group Connecteam submissions by jarvis user id for detail display
+  const submissionsByUser = useMemo(() => {
+    const map = new Map<number, ConnecteamSubmission[]>()
+    if (!recentData) return map
+    for (const s of recentData) {
+      if (!s.mapped_jarvis_user_id) continue
+      const arr = map.get(s.mapped_jarvis_user_id) || []
+      arr.push(s)
+      map.set(s.mapped_jarvis_user_id, arr)
     }
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]))
-  }, [recentData, search])
+    return map
+  }, [recentData])
 
   const conversionsByUser = useMemo(() => {
     const map = new Map<number, ConversionRequest>()
@@ -555,12 +557,26 @@ function ConversionPanel({ search }: { search: string }) {
     return map
   }, [conversions])
 
+  // Eligible employees: balance >= 8h, filtered by search
+  const eligible = useMemo(() => {
+    if (!balancesData) return []
+    return (balancesData as TimeBankBalance[])
+      .filter((b: TimeBankBalance) => b.balance >= 8)
+      .filter((b: TimeBankBalance) => {
+        if (!search) return true
+        const q = search.toLowerCase()
+        return b.name.toLowerCase().includes(q) || (b.company || '').toLowerCase().includes(q)
+      })
+      .sort((a: TimeBankBalance, b: TimeBankBalance) => b.balance - a.balance)
+  }, [balancesData, search])
+
   const monthLabel = new Date(year, month - 1).toLocaleString('ro-RO', { month: 'long', year: 'numeric' })
   const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 12) { setMonth(1); setYear(y => y + 1) } else setMonth(m => m + 1) }
 
-  const openConversion = (name: string, userId: number, totalHours: number, submissions: ConnecteamSubmission[]) => {
-    setConversionTarget({ employeeName: name, employeeUserId: userId, totalHours, submissions })
+  const openConversion = (emp: { user_id: number; name: string; balance: number }) => {
+    const subs = submissionsByUser.get(emp.user_id) || []
+    setConversionTarget({ employeeName: emp.name, employeeUserId: emp.user_id, balance: emp.balance, submissions: subs })
     setCoDays('1')
     setApproverId('')
   }
@@ -576,7 +592,8 @@ function ConversionPanel({ search }: { search: string }) {
     })
   }
 
-  const maxCoDays = conversionTarget ? Math.max(1, Math.floor(conversionTarget.totalHours / 8)) : 1
+  const maxCoDays = conversionTarget ? Math.max(1, Math.floor(conversionTarget.balance / 8)) : 1
+  const isLoading = balancesLoading || subsLoading
 
   return (
     <div className="space-y-4">
@@ -588,59 +605,109 @@ function ConversionPanel({ search }: { search: string }) {
         <Button variant="ghost" size="icon" onClick={nextMonth}>
           <ChevronDown className="h-4 w-4 -rotate-90" />
         </Button>
+        <span className="text-xs text-muted-foreground ml-2">
+          {eligible.length} employee{eligible.length !== 1 ? 's' : ''} eligible (balance {'\u2265'} 8h)
+        </span>
       </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading...
         </div>
-      ) : grouped.length === 0 ? (
+      ) : eligible.length === 0 ? (
         <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-          No leave permits for {monthLabel}
+          No employees with 8h+ Time Bank balance
         </div>
       ) : (
-        <div className="rounded-md border overflow-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Employee</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead className="text-right">Permits</TableHead>
-                <TableHead className="text-right">Total Hours</TableHead>
-                <TableHead className="text-center">CO Conversion</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {grouped.map(([name, { submissions, totalHours, company, userId }]) => {
-                const existing = userId ? conversionsByUser.get(userId) : undefined
-                return (
-                  <TableRow key={name}>
-                    <TableCell className="font-medium whitespace-nowrap">{name}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                      {company?.replace(' S.R.L.', '') || '—'}
-                    </TableCell>
-                    <TableCell className="text-right text-xs">{submissions.length}</TableCell>
-                    <TableCell className="text-right tabular-nums font-medium text-xs">{totalHours}h</TableCell>
-                    <TableCell className="text-center">
-                      {existing ? (
-                        <ConversionStatusBadge conversion={existing} />
-                      ) : userId && totalHours >= 8 ? (
+        <div className="rounded-md border divide-y">
+          {eligible.map(emp => {
+            const isOpen = expandedUser === emp.user_id
+            const existing = conversionsByUser.get(emp.user_id)
+            const subs = submissionsByUser.get(emp.user_id) || []
+            const maxDays = Math.floor(emp.balance / 8)
+
+            return (
+              <div key={emp.user_id}>
+                {/* Collapsed row */}
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-3 px-3 py-2 hover:bg-muted/50 transition-colors text-left"
+                  onClick={() => setExpandedUser(isOpen ? null : emp.user_id)}
+                >
+                  <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? '' : '-rotate-90'}`} />
+                  <span className="font-medium text-sm flex-1 truncate">{emp.name}</span>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {emp.company?.replace(' S.R.L.', '') || '—'}
+                  </span>
+                  <span className="tabular-nums text-sm font-semibold text-green-600 dark:text-green-400 w-16 text-right">
+                    {emp.balance}h
+                  </span>
+                  <span className="text-xs text-muted-foreground w-20 text-right">
+                    max {maxDays} CO day{maxDays !== 1 ? 's' : ''}
+                  </span>
+                  <span className="w-28 text-center">
+                    {existing ? (
+                      <ConversionStatusBadge conversion={existing} />
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] border-blue-200 text-blue-600 bg-blue-50 dark:bg-blue-950/30">
+                        Eligible
+                      </Badge>
+                    )}
+                  </span>
+                </button>
+
+                {/* Expanded detail */}
+                {isOpen && (
+                  <div className="px-4 pb-3 pt-1 bg-muted/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-muted-foreground space-y-0.5">
+                        <p>Time Bank balance: <span className="font-semibold text-foreground">{emp.balance}h</span></p>
+                        <p>Max convertible: <span className="font-semibold text-foreground">{maxDays} CO day{maxDays !== 1 ? 's' : ''}</span> ({maxDays * 8}h)</p>
+                        {subs.length > 0 && (
+                          <p>Leave permits this month: <span className="font-medium text-foreground">{subs.length}</span> ({subs.reduce((s, x) => s + (x.leave_hours ?? 0), 0)}h)</p>
+                        )}
+                      </div>
+                      {!existing && (
                         <Button
-                          variant="outline" size="sm" className="h-6 text-[10px] gap-1"
-                          onClick={() => openConversion(name, userId, totalHours, submissions)}
+                          variant="default" size="sm" className="h-7 text-xs gap-1.5"
+                          onClick={() => openConversion(emp)}
                         >
                           <ArrowRightLeft className="h-3 w-3" />
                           Convert to CO
                         </Button>
-                      ) : totalHours < 8 ? (
-                        <span className="text-[10px] text-muted-foreground">Need 8h+</span>
-                      ) : null}
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
+                      )}
+                    </div>
+
+                    {/* Permit details if any */}
+                    {subs.length > 0 && (
+                      <div className="rounded border bg-background">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs py-1">Date</TableHead>
+                              <TableHead className="text-xs py-1">Hours</TableHead>
+                              <TableHead className="text-xs py-1">Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {subs.map(s => (
+                              <TableRow key={s.submission_id}>
+                                <TableCell className="text-xs py-1">{formatDate(s.leave_date || '')}</TableCell>
+                                <TableCell className="text-xs py-1 tabular-nums">{s.leave_hours ?? 0}h</TableCell>
+                                <TableCell className="text-xs py-1">
+                                  <Badge variant="outline" className="text-[9px]">{s.status || 'submitted'}</Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -648,18 +715,20 @@ function ConversionPanel({ search }: { search: string }) {
       <Dialog open={!!conversionTarget} onOpenChange={(open) => { if (!open) { setConversionTarget(null); setApproverMode('hierarchy') } }}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
-            <DialogTitle>Convert Leave Permits to CO</DialogTitle>
+            <DialogTitle>Convert Time Bank to CO</DialogTitle>
           </DialogHeader>
           {conversionTarget && (
             <div className="space-y-4">
               <div className="space-y-1">
                 <p className="text-sm font-medium">{conversionTarget.employeeName}</p>
                 <p className="text-xs text-muted-foreground">
-                  Total accumulated: <span className="font-medium text-foreground">{conversionTarget.totalHours}h</span> in {monthLabel}
+                  Time Bank balance: <span className="font-medium text-foreground">{conversionTarget.balance}h</span>
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  {conversionTarget.submissions.length} permit{conversionTarget.submissions.length !== 1 ? 's' : ''} will be marked as converted
-                </p>
+                {conversionTarget.submissions.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {conversionTarget.submissions.length} permit{conversionTarget.submissions.length !== 1 ? 's' : ''} will be marked as converted
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -669,13 +738,14 @@ function ConversionPanel({ search }: { search: string }) {
                   <SelectContent>
                     {Array.from({ length: maxCoDays }, (_, i) => i + 1).map(n => (
                       <SelectItem key={n} value={String(n)}>
-                        {n} day{n > 1 ? 's' : ''} ({n * 8}h)
+                        {n} day{n > 1 ? 's' : ''} ({n * 8}h) — remaining: {conversionTarget.balance - n * 8}h
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-[10px] text-muted-foreground">
-                  1 CO day = 8 hours. Max {maxCoDays} day{maxCoDays > 1 ? 's' : ''} based on {conversionTarget.totalHours}h accumulated.
+                  1 CO day = 8 hours. Max {maxCoDays} day{maxCoDays > 1 ? 's' : ''} from {conversionTarget.balance}h balance.
+                  After conversion: <span className="font-medium">{conversionTarget.balance - parseInt(coDays) * 8}h remaining</span>.
                 </p>
               </div>
 
