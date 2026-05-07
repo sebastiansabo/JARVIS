@@ -65,6 +65,9 @@ def api_create_event_bonus():
         created_by=current_user.id
     )
 
+    # Time Bank auto-credit for hours_free
+    _time_bank_credit_hours(data['employee_id'], data.get('hours_free'), bonus_id, data.get('event_id'), current_user.id)
+
     return jsonify({'success': True, 'id': bonus_id})
 
 
@@ -84,6 +87,11 @@ def api_create_event_bonuses_bulk():
         bonus['bonus_net'] = _compute_bonus_net(bonus)
 
     created_ids = save_event_bonuses_bulk(bonuses, created_by=current_user.id)
+
+    # Time Bank auto-credit for hours_free in bulk
+    for bonus, bonus_id in zip(bonuses, created_ids):
+        _time_bank_credit_hours(bonus['employee_id'], bonus.get('hours_free'), bonus_id, bonus.get('event_id'), current_user.id)
+
     return jsonify({'success': True, 'ids': created_ids, 'count': len(created_ids)})
 
 
@@ -358,3 +366,30 @@ def api_update_hr_settings():
         NotificationRepository().save_setting('hr_bonus_max_hours_per_day', str(max_hours))
 
     return jsonify({'success': True})
+
+
+def _time_bank_credit_hours(employee_id, hours_free, bonus_id, event_id, created_by):
+    """Auto-credit Time Bank when a bonus with hours_free is created."""
+    if not hours_free or int(hours_free) <= 0:
+        return
+    try:
+        from hr.time_bank.service import TimeBankService
+        svc = TimeBankService()
+        event_name = ''
+        if event_id:
+            ev = get_hr_event(event_id)
+            event_name = ev.get('name', '') if ev else ''
+        svc.credit(
+            user_id=int(employee_id),
+            amount=int(hours_free),
+            tx_type='marketing_event',
+            description=f'Marketing event: {event_name}' if event_name else 'Marketing event bonus',
+            reference_type='bonus',
+            reference_id=bonus_id,
+            created_by=created_by,
+        )
+    except Exception:
+        import logging
+        logging.getLogger('jarvis.hr.time_bank').exception(
+            'Failed to credit Time Bank for bonus %s', bonus_id,
+        )
