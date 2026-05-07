@@ -49,8 +49,8 @@ export interface TimeBankImportResult {
 }
 
 export const timeBankApi = {
-  getBalances: async () => {
-    const res = await api.get<{ success: boolean; data: TimeBankBalance[] }>(`${BASE}/balances`)
+  getBalances: async (showAll = true) => {
+    const res = await api.get<{ success: boolean; data: TimeBankBalance[] }>(`${BASE}/balances${showAll ? '?all=1' : ''}`)
     return res.data
   },
 
@@ -87,13 +87,13 @@ export const timeBankApi = {
     }),
 
   approve: (txId: number) =>
-    api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/transactions/${txId}/approve`),
+    api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/approve/${txId}`),
 
   reject: (txId: number) =>
-    api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/transactions/${txId}/reject`),
+    api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/reject/${txId}`),
 
   process: (txId: number) =>
-    api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/transactions/${txId}/process`),
+    api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/process/${txId}`),
 
   importT0: (file: File) => {
     const form = new FormData()
