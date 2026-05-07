@@ -286,5 +286,11 @@ def create_schema_sincron(conn, cursor):
         ADD COLUMN IF NOT EXISTS is_base_contract BOOLEAN DEFAULT FALSE
     """)
 
+    # ── department — Sincron department for organigram (manually managed, not from API) ──
+    cursor.execute("""
+        ALTER TABLE sincron_employees
+        ADD COLUMN IF NOT EXISTS department VARCHAR(255)
+    """)
+
     conn.commit()
     logger.info('Sincron schema created/verified')
