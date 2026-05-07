@@ -499,7 +499,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             if (ivs && ivs.length > 1) { intervals = ivs; break }
           }
 
-          if (intervals && intervals.length > 1) {
+          if (intervals && intervals.length > 1 && !group) {
             // Deduplicate: skip if this jarvisUserId was already output as multi-contract this day
             if (emp.jarvisUserId && multiOutputThisDay.has(emp.jarvisUserId)) continue
             if (emp.jarvisUserId) multiOutputThisDay.add(emp.jarvisUserId)
