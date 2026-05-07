@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { sincronApi, type SincronTeamMember, type SincronTimesheetData } from '@/api/sincron'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useHrStore } from '@/stores/hrStore'
@@ -16,8 +16,9 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Users, Clock, CalendarDays, Timer, ArrowUpDown,
-  ChevronLeft, ChevronRight, FileSpreadsheet, Building2,
+  ChevronLeft, ChevronRight, FileSpreadsheet, Building2, RefreshCw,
 } from 'lucide-react'
+import { toast } from 'sonner'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -86,6 +87,17 @@ export default function TimesheetTab({ search }: Props) {
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [detailUser, setDetailUser] = useState<{ id: number; name: string } | null>(null)
+
+  const queryClient = useQueryClient()
+
+  const syncMutation = useMutation({
+    mutationFn: () => sincronApi.syncTimesheets({ year, month }),
+    onSuccess: () => {
+      toast.success('Sync started', { description: `Sincron timesheet sync for ${MONTHS[month - 1]} ${year} started in background.` })
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ['sincron', 'team-timesheet'] }), 5000)
+    },
+    onError: () => toast.error('Sync failed', { description: 'Could not start Sincron sync. Try again.' }),
+  })
 
   // Fetch tree for node filter
   const { data: treeData } = useQuery({
@@ -303,6 +315,27 @@ export default function TimesheetTab({ search }: Props) {
             </Select>
           </>
         )}
+
+        {/* Sync button — top-right */}
+        <div className="ml-auto">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5"
+                  onClick={() => syncMutation.mutate()}
+                  disabled={syncMutation.isPending}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+                  {syncMutation.isPending ? 'Syncing…' : 'Sync'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Sync Sincron timesheets for {MONTHS[month - 1]} {year}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       </div>
 
       {/* Stats */}
