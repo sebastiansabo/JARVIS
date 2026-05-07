@@ -141,6 +141,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const [date, setDate] = useState(todayStr())
   const [groupFilter, setGroupFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -272,6 +273,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
   const processed = useMemo(() => {
     let list = [...rows]
     if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
+    if (statusFilter !== 'all') list = list.filter((e) => e.attendance_status === statusFilter)
     if (search) {
       const s = search.toLowerCase()
       list = list.filter((e) =>
@@ -300,7 +302,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       return sortDir === 'asc' ? cmp : -cmp
     })
     return list
-  }, [rows, groupFilter, search, sortField, sortDir])
+  }, [rows, groupFilter, statusFilter, search, sortField, sortDir])
 
   // ── Stats ──
 
@@ -609,6 +611,18 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               {groups.map((g) => (
                 <SelectItem key={g} value={g}>{g}</SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+
+          {/* Status filter */}
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-32 shrink-0">
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="present">Present ({presentCount})</SelectItem>
+              <SelectItem value="absent">Absent ({absentCount})</SelectItem>
             </SelectContent>
           </Select>
 
