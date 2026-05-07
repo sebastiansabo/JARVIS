@@ -23,6 +23,9 @@ hr_bp.register_blueprint(courses_bp, url_prefix='/courses')
 from .co_balance import co_balance_bp  # noqa: E402
 hr_bp.register_blueprint(co_balance_bp)
 
+from .time_bank import time_bank_bp  # noqa: E402
+hr_bp.register_blueprint(time_bank_bp)
+
 
 @hr_bp.route('/')
 def index():
