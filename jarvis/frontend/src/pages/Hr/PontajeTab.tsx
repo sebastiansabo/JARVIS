@@ -342,7 +342,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
     [rows],
   )
 
-  const downloadCsv = useCallback(async (mode: 'day' | 'month', raw = false, group?: string) => {
+  const downloadXlsx = useCallback(async (mode: 'day' | 'month', raw = false, group?: string) => {
     setExporting(true)
     const isDay = mode === 'day'
     const toastId = toast.loading(isDay ? 'Exporting day pontaje…' : 'Exporting monthly pontaje…')
@@ -569,15 +569,28 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         }
       }
 
-      const csvContent = csvRows.map(r => r.map(c => `"${(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
-      const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
+      const XLSX = await import('xlsx')
+      const ws = XLSX.utils.aoa_to_sheet(csvRows)
+      // Column widths
+      ws['!cols'] = [
+        { wch: 5 },  // Week
+        { wch: 12 }, // Date
+        { wch: 16 }, // Day
+        { wch: 18 }, // Group
+        { wch: 24 }, // Name
+        { wch: 20 }, // Company
+        { wch: 10 }, // Checked In
+        { wch: 10 }, // Checked Out
+        { wch: 12 }, // Duration
+        { wch: 14 }, // Schedule
+        { wch: 14 }, // Sincron Status
+        { wch: 10 }, // Status
+      ]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Pontaje')
       const groupSuffix = group ? `_${group.replace(/\s+/g, '_')}` : ''
-      a.download = isDay ? `pontaje_${date}${groupSuffix}${raw ? '_raw' : ''}.csv` : `pontaje_${monthStr}${groupSuffix}${raw ? '_raw' : ''}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
+      const fileName = isDay ? `pontaje_${date}${groupSuffix}${raw ? '_raw' : ''}.xlsx` : `pontaje_${monthStr}${groupSuffix}${raw ? '_raw' : ''}.xlsx`
+      XLSX.writeFile(wb, fileName)
       toast.success('Export complete', { id: toastId })
       // Refresh attendance data since auto-adjust may have changed it
       queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today', date] })
@@ -726,19 +739,19 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               </>
             )}
 
-            {/* Export CSV dropdown */}
+            {/* Export Excel dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" disabled={exporting} title="Export CSV">
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" disabled={exporting} title="Export Excel">
                   <Download className={cn('h-4 w-4', exporting && 'animate-pulse')} />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => downloadCsv('day')}>Export Day</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => downloadCsv('month')}>Export Month</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadXlsx('day')}>Export Day</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadXlsx('month')}>Export Month</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => downloadCsv('day', true)}>Export Day (raw)</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => downloadCsv('month', true)}>Export Month (raw)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadXlsx('day', true)}>Export Day (raw)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadXlsx('month', true)}>Export Month (raw)</DropdownMenuItem>
                 {exportGroups.length > 0 && (
                   <>
                     <DropdownMenuSeparator />
@@ -747,11 +760,11 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                       <DropdownMenuSub key={g}>
                         <DropdownMenuSubTrigger>{g}</DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>
-                          <DropdownMenuItem onClick={() => downloadCsv('month', false, g)}>Month</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => downloadCsv('day', false, g)}>Day</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadXlsx('month', false, g)}>Month</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadXlsx('day', false, g)}>Day</DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => downloadCsv('month', true, g)}>Month (raw)</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => downloadCsv('day', true, g)}>Day (raw)</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadXlsx('month', true, g)}>Month (raw)</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadXlsx('day', true, g)}>Day (raw)</DropdownMenuItem>
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>
                     ))}
