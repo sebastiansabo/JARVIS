@@ -474,3 +474,21 @@ def get_sync_history():
     limit = min(request.args.get('limit', 20, type=int), 100)
     runs = service.get_sync_history(sync_type, limit)
     return jsonify({'success': True, 'data': runs})
+
+
+@sincron_bp.route('/api/sync/last-run', methods=['GET'])
+@api_login_required
+def get_last_sync_run():
+    """Get the last sync run for a given year/month (login-only, not admin)."""
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+    if not year or not month:
+        from datetime import datetime
+        now = datetime.now()
+        year = year or now.year
+        month = month or now.month
+    year, month, err = _validate_year_month(year, month)
+    if err:
+        return err
+    run = service.sync_repo.get_last_run_for_month(year, month)
+    return jsonify({'success': True, 'data': dict(run) if run else None})
