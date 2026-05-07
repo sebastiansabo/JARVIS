@@ -296,6 +296,14 @@ export const biostarApi = {
     return res.intervals
   },
 
+  batchIntervals: async (date: string, biostarUserIds: string[]) => {
+    const res = await api.post<{ success: boolean; data: Record<string, import('../types/biostar').CompanyInterval[]> }>(
+      `${BASE}/attendance/batch-intervals`,
+      { date, biostar_user_ids: biostarUserIds },
+    )
+    return res.data
+  },
+
   revertAdjustmentsRange: (startDate: string, endDate: string) =>
     api.post<{ success: boolean; message: string }>(`${BASE}/adjustments/revert-range`, {
       start_date: startDate, end_date: endDate,
