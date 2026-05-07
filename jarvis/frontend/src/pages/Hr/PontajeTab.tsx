@@ -485,17 +485,25 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
       for (const dd of dailyData) {
         const dayIntervals = intervalsByDay.get(dd.date) ?? {}
+        const multiOutputThisDay = new Set<number>() // dedup multi-contract employees across BioStar groups
 
         for (const [, emp] of sortedEmployees) {
           const sincronCode = emp.jarvisUserId
             ? (sincronDayCodes.get(emp.jarvisUserId)?.get(dd.date) ?? '')
             : ''
 
-          // Check if multi-contract intervals exist for this employee
-          const buid = [...emp.biostarIds][0]
-          const intervals = dayIntervals[buid]
+          // Check if multi-contract intervals exist for this employee (try all biostarIds)
+          let intervals: CompanyInterval[] | undefined
+          for (const bid of emp.biostarIds) {
+            const ivs = dayIntervals[bid]
+            if (ivs && ivs.length > 1) { intervals = ivs; break }
+          }
 
           if (intervals && intervals.length > 1) {
+            // Deduplicate: skip if this jarvisUserId was already output as multi-contract this day
+            if (emp.jarvisUserId && multiOutputThisDay.has(emp.jarvisUserId)) continue
+            if (emp.jarvisUserId) multiOutputThisDay.add(emp.jarvisUserId)
+
             // Multi-contract: output one row per company interval
             for (const iv of intervals) {
               const effectiveIn = raw ? iv.first_punch : (iv.adjusted_first_punch ?? iv.first_punch)
@@ -524,7 +532,8 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               ])
             }
           } else {
-            // Single-contract: existing logic
+            // Single-contract: also skip if already output as multi-contract
+            if (emp.jarvisUserId && multiOutputThisDay.has(emp.jarvisUserId)) continue
             const candidates = dd.summaries.filter(x => emp.biostarIds.has(x.biostar_user_id))
             const s = candidates.find(x => x.adjusted_first_punch || x.first_punch) ?? candidates[0] ?? null
             const punchIn = s ? (raw ? s.first_punch : (s.adjusted_first_punch ?? s.first_punch)) : null
