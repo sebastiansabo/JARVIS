@@ -500,6 +500,13 @@ from .repositories.sincron_org_node_repository import SincronOrgNodeRepository
 _org_repo = SincronOrgNodeRepository()
 
 
+@sincron_bp.route('/api/org-companies', methods=['GET'])
+@api_login_required
+def get_org_companies():
+    """Get companies that have active Sincron employees."""
+    return jsonify({'success': True, 'data': _org_repo.get_sincron_companies()})
+
+
 @sincron_bp.route('/api/org-nodes', methods=['GET'])
 @api_login_required
 def get_org_nodes():

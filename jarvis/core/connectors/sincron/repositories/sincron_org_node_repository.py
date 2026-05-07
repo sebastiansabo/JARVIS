@@ -119,6 +119,18 @@ class SincronOrgNodeRepository(BaseRepository):
             WHERE node_id = %s AND sincron_employee_id = %s AND company_name = %s
         ''', (node_id, sincron_employee_id, company_name)) > 0
 
+    # ── Sincron companies (derived from sincron_employees) ──
+
+    def get_sincron_companies(self) -> list[dict]:
+        """Get companies that have active Sincron employees, with their JARVIS company_id."""
+        return self.query_all('''
+            SELECT DISTINCT se.company_name, c.id AS company_id
+            FROM sincron_employees se
+            JOIN companies c ON UPPER(c.company) = UPPER(se.company_name)
+            WHERE se.is_active = TRUE
+            ORDER BY se.company_name
+        ''')
+
     # ── Seed helpers ──
 
     def seed_from_departments(self, company_id: int) -> dict:
@@ -129,10 +141,10 @@ class SincronOrgNodeRepository(BaseRepository):
             raise ValueError(f'Company {company_id} not found')
         company_name = comp['company']
 
-        # Get unique departments
+        # Get unique departments (case-insensitive match — companies table is mixed case, sincron is uppercase)
         depts = self.query_all('''
             SELECT DISTINCT department FROM sincron_employees
-            WHERE company_name = %s AND department IS NOT NULL AND is_active = TRUE
+            WHERE UPPER(company_name) = UPPER(%s) AND department IS NOT NULL AND is_active = TRUE
             ORDER BY department
         ''', (company_name,))
 
@@ -165,7 +177,7 @@ class SincronOrgNodeRepository(BaseRepository):
         emps = self.query_all('''
             SELECT sincron_employee_id, company_name, department
             FROM sincron_employees
-            WHERE company_name = %s AND department IS NOT NULL AND is_active = TRUE
+            WHERE UPPER(company_name) = UPPER(%s) AND department IS NOT NULL AND is_active = TRUE
         ''', (company_name,))
 
         assigned = 0

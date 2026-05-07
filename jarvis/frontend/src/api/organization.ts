@@ -103,6 +103,10 @@ export const organizationApi = {
       total_companies: number
     }>('/hr/events/api/organigram/sincron'),
 
+  // Sincron org companies (derived from sincron_employees)
+  getSincronOrgCompanies: () =>
+    api.get<{ success: boolean; data: { company_name: string; company_id: number }[] }>('/sincron/api/org-companies'),
+
   // Sincron org nodes (hierarchical tree)
   getSincronOrgNodes: (companyId?: number) =>
     api.get<{ success: boolean; data: SincronOrgNode[] }>(
