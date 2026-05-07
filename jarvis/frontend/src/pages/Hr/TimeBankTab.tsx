@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Loader2, Upload, Plus, Minus, ArrowRightLeft,
   ChevronDown, TrendingUp, TrendingDown, Check, X, Clock, CheckCircle2,
+  HelpCircle, ArrowDown, MessageCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SearchSelect } from '@/components/shared/SearchSelect'
+import { EphemeralChatPopup } from '@/components/EphemeralChatPopup'
 import { timeBankApi } from '@/api/timeBank'
 import type { TimeBankBalance } from '@/api/timeBank'
 import { connecteamApi } from '@/api/connecteam'
@@ -41,7 +43,7 @@ function formatTime(iso: string) {
 }
 
 export default function TimeBankTab({ search }: { search: string }) {
-  const [innerTab, setInnerTab] = useState<'balances' | 'transactions' | 'conversion'>('balances')
+  const [innerTab, setInnerTab] = useState<'balances' | 'transactions' | 'conversion' | 'help'>('balances')
 
   return (
     <div className="space-y-4">
@@ -50,12 +52,14 @@ export default function TimeBankTab({ search }: { search: string }) {
           <TabsTrigger value="balances">Balances</TabsTrigger>
           <TabsTrigger value="transactions">Transactions</TabsTrigger>
           <TabsTrigger value="conversion">CO Conversion</TabsTrigger>
+          <TabsTrigger value="help"><HelpCircle className="mr-1 h-3.5 w-3.5" />Help</TabsTrigger>
         </TabsList>
       </Tabs>
 
       {innerTab === 'balances' && <BalancesPanel search={search} />}
       {innerTab === 'transactions' && <TransactionsPanel search={search} />}
       {innerTab === 'conversion' && <ConversionPanel search={search} />}
+      {innerTab === 'help' && <HelpPanel />}
     </div>
   )
 }
@@ -964,6 +968,234 @@ function ConversionPanel({ search }: { search: string }) {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+// ─── Help Panel ───
+
+function HelpPanel() {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [showChat, setShowChat] = useState(false)
+
+  const toggle = (key: string) => setExpanded(expanded === key ? null : key)
+
+  const sections: { key: string; title: string; content: React.ReactNode }[] = [
+    {
+      key: 'overview',
+      title: 'What is the Time Bank?',
+      content: (
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          The Time Bank is an <strong>append-only ledger</strong> that tracks hours for each employee.
+          Hours flow in from various sources (leave permits, starting balances, manual credits) and can be
+          used for CO (vacation day) conversion or manual debits. Only <strong>approved</strong> and{' '}
+          <strong>processed</strong> transactions count toward the visible balance.
+        </p>
+      ),
+    },
+    {
+      key: 'inflows',
+      title: 'Sources of Hours (Inflows)',
+      content: (
+        <div className="space-y-2 text-sm text-muted-foreground">
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-green-300 text-green-600 bg-green-50">T0</Badge>
+            <span><strong>Starting Balance</strong> — initial hours imported from Excel or set manually. One-time per employee. Auto-approved.</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-green-300 text-green-600 bg-green-50">Connecteam</Badge>
+            <span><strong>Connecteam Import</strong> — leave permit hours (Bilet de Invoire) from Connecteam Excel export. Auto-approved on import.</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-green-300 text-green-600 bg-green-50">Manual Credit</Badge>
+            <span><strong>Manual Credit</strong> — hours added by an admin. Starts as <em>pending</em>, requires approval.</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-green-300 text-green-600 bg-green-50">Marketing</Badge>
+            <span><strong>Marketing Event</strong> — hours earned from marketing activities. Auto-approved.</span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'outflows',
+      title: 'Uses of Hours (Outflows)',
+      content: (
+        <div className="space-y-2 text-sm text-muted-foreground">
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-red-300 text-red-600 bg-red-50">CO Conversion</Badge>
+            <span><strong>CO Conversion</strong> — convert 8 hours = 1 vacation day (CO). Employee must have at least 8h balance. Debits 8h per CO day. Requires approval.</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <Badge variant="outline" className="shrink-0 text-[10px] border-red-300 text-red-600 bg-red-50">Manual Debit</Badge>
+            <span><strong>Manual Debit</strong> — hours removed by an admin. Starts as <em>pending</em>, requires approval. Cannot exceed current balance.</span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'approval',
+      title: 'Approval Workflow',
+      content: (
+        <div className="space-y-3 text-sm text-muted-foreground">
+          <p>Transactions go through a lifecycle of statuses:</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="outline" className="text-[10px] border-yellow-300 text-yellow-600 bg-yellow-50">
+              <Clock className="mr-0.5 h-3 w-3" />Pending
+            </Badge>
+            <span className="text-muted-foreground">→</span>
+            <Badge variant="outline" className="text-[10px] border-green-300 text-green-600 bg-green-50">
+              <Check className="mr-0.5 h-3 w-3" />Approved
+            </Badge>
+            <span className="text-muted-foreground">→</span>
+            <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600 bg-blue-50">
+              <CheckCircle2 className="mr-0.5 h-3 w-3" />Processed
+            </Badge>
+          </div>
+          <p>Or rejected:</p>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-[10px] border-yellow-300 text-yellow-600 bg-yellow-50">
+              <Clock className="mr-0.5 h-3 w-3" />Pending
+            </Badge>
+            <span className="text-muted-foreground">→</span>
+            <Badge variant="outline" className="text-[10px] border-red-300 text-red-600 bg-red-50">
+              <X className="mr-0.5 h-3 w-3" />Rejected
+            </Badge>
+          </div>
+          <p className="mt-2">
+            <strong>Auto-approved types:</strong> T0, Connecteam, Marketing Event, and CO Conversion skip the pending state
+            and are immediately approved. Manual credits and debits require explicit approval.
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'co-conversion',
+      title: 'CO Conversion Rules',
+      content: (
+        <div className="space-y-2 text-sm text-muted-foreground">
+          <ul className="list-disc list-inside space-y-1">
+            <li><strong>1 CO day = 8 hours</strong> deducted from the Time Bank</li>
+            <li>Employee must have <strong>at least 8 hours</strong> approved balance to be eligible</li>
+            <li>Maximum CO days = floor(balance / 8). E.g., 20h balance → max 2 CO days</li>
+            <li>After conversion, remaining hours stay in the bank. E.g., 20h - 16h (2 days) = 4h remaining</li>
+            <li>CO conversion creates an approval request sent to the selected approver</li>
+            <li>Once approved, the employee's CO balance is credited in the Sincron system</li>
+          </ul>
+        </div>
+      ),
+    },
+    {
+      key: 't0',
+      title: 'T0 — Starting Balance',
+      content: (
+        <div className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            T0 is the <strong>initial balance</strong> imported when the Time Bank is first set up for an employee.
+            It represents hours accumulated before the system was in place.
+          </p>
+          <ul className="list-disc list-inside space-y-1">
+            <li>Can be set individually via the Balances tab (click T0 on an employee row)</li>
+            <li>Can be bulk-imported from an Excel template (download template from the toolbar)</li>
+            <li>Only one T0 per employee — re-importing replaces the previous value</li>
+            <li>T0 is auto-approved and immediately reflected in the balance</li>
+          </ul>
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <div className="space-y-6">
+      {/* Flow Diagram */}
+      <div className="rounded-lg border bg-card p-6">
+        <h3 className="text-sm font-semibold mb-4">How Hours Flow Through the Time Bank</h3>
+        <div className="flex flex-col items-center gap-2">
+          {/* Inflows */}
+          <div className="flex flex-wrap justify-center gap-3">
+            <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400">
+              T0 (Starting)
+            </div>
+            <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400">
+              Connecteam Import
+            </div>
+            <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400">
+              Manual Credit
+            </div>
+            <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400">
+              Marketing Event
+            </div>
+          </div>
+
+          {/* Down arrows */}
+          <div className="flex gap-8">
+            <ArrowDown className="h-5 w-5 text-green-500" />
+            <ArrowDown className="h-5 w-5 text-green-500" />
+            <ArrowDown className="h-5 w-5 text-green-500" />
+          </div>
+
+          {/* Central Bank */}
+          <div className="rounded-xl border-2 border-primary bg-primary/5 px-8 py-4 text-center">
+            <div className="text-lg font-bold">TIME BANK</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Balance = SUM of approved + processed</div>
+          </div>
+
+          {/* Down arrows */}
+          <div className="flex gap-12">
+            <ArrowDown className="h-5 w-5 text-red-500" />
+            <ArrowDown className="h-5 w-5 text-red-500" />
+          </div>
+
+          {/* Outflows */}
+          <div className="flex flex-wrap justify-center gap-3">
+            <div className="rounded-md border border-red-200 bg-red-50 dark:bg-red-950/30 px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-400">
+              CO Conversion (8h = 1 day)
+            </div>
+            <div className="rounded-md border border-red-200 bg-red-50 dark:bg-red-950/30 px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-400">
+              Manual Debit
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Collapsible Sections */}
+      <div className="rounded-lg border bg-card divide-y">
+        {sections.map((s) => (
+          <div key={s.key}>
+            <button
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-muted/50 transition-colors"
+              onClick={() => toggle(s.key)}
+            >
+              <span className="text-sm font-medium">{s.title}</span>
+              <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${expanded === s.key ? '' : '-rotate-90'}`} />
+            </button>
+            {expanded === s.key && (
+              <div className="px-4 pb-4">
+                {s.content}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* AI Assistant */}
+      <div className="rounded-lg border bg-card p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold">Ask AI about Time Bank</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Get instant answers about how the Time Bank works</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setShowChat(!showChat)}>
+            <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
+            {showChat ? 'Hide Chat' : 'Ask AI'}
+          </Button>
+        </div>
+        {showChat && (
+          <div className="mt-4 h-[400px] rounded-md border overflow-hidden">
+            <EphemeralChatPopup pageContext="/app/hr/time-bank/help" />
+          </div>
+        )}
+      </div>
     </div>
   )
 }
