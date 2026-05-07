@@ -463,8 +463,18 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         }
       }
 
-      // Build CSV: Group before Name
-      const headers = ['Week', 'Date', 'Day', 'Group', 'Name', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status', 'Status']
+      // Batch-fetch per-company intervals for each working day (multi-contract employees)
+      const allBiostarIds = [...new Set(Array.from(employeeMap.values()).flatMap(e => [...e.biostarIds]))]
+      const intervalsByDay = new Map<string, Record<string, CompanyInterval[]>>()
+      for (const dd of dailyData) {
+        try {
+          const data = await biostarApi.batchIntervals(dd.date, allBiostarIds)
+          if (data && Object.keys(data).length > 0) intervalsByDay.set(dd.date, data)
+        } catch { /* ignore — fall back to combined */ }
+      }
+
+      // Build CSV: Group before Name, with Company column
+      const headers = ['Week', 'Date', 'Day', 'Group', 'Name', 'Company', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status', 'Status']
       const csvRows: string[][] = [headers]
 
       const sortedEmployees = Array.from(employeeMap.entries())
@@ -474,43 +484,79 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         )
 
       for (const dd of dailyData) {
-        for (const [, emp] of sortedEmployees) {
-          // Find best summary across all BioStar IDs for this employee (prefer one with punches/adjustments)
-          const candidates = dd.summaries.filter(x => emp.biostarIds.has(x.biostar_user_id))
-          const s = candidates.find(x => x.adjusted_first_punch || x.first_punch) ?? candidates[0] ?? null
-          const punchIn = s ? (raw ? s.first_punch : (s.adjusted_first_punch ?? s.first_punch)) : null
-          const punchOut = s ? (raw ? s.last_punch : (s.adjusted_last_punch ?? s.last_punch)) : null
-          const officialIn = punchIn
-          // Single punch: first == last — don't duplicate as check-out
-          const officialOut = punchOut === punchIn ? null : punchOut
-          const lunchMin = s?.lunch_break_minutes ?? 60
-          let duration = ''
-          if (officialIn && officialOut) {
-            const secs = raw
-              ? (s?.duration_seconds ?? timeDiffSec(officialIn, officialOut))
-              : (s?.adjusted_first_punch && s?.adjusted_last_punch
-                  ? netSec(timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch), lunchMin)
-                  : netSec(s?.duration_seconds ?? null, lunchMin))
-            if (secs > 0) duration = (secs / 3600).toFixed(2)
-          }
+        const dayIntervals = intervalsByDay.get(dd.date) ?? {}
 
+        for (const [, emp] of sortedEmployees) {
           const sincronCode = emp.jarvisUserId
             ? (sincronDayCodes.get(emp.jarvisUserId)?.get(dd.date) ?? '')
             : ''
 
-          csvRows.push([
-            `W${dd.weekNum}`,
-            dd.date,
-            dd.dayLabel,
-            emp.group,
-            emp.name,
-            officialIn ? fmtTime(officialIn) : '',
-            officialOut ? fmtTime(officialOut) : '',
-            duration,
-            emp.schedule,
-            sincronCode,
-            sincronCode && !['OZ', 'OS'].includes(sincronCode) ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : officialIn ? 'Present' : 'Absent',
-          ])
+          // Check if multi-contract intervals exist for this employee
+          const buid = [...emp.biostarIds][0]
+          const intervals = dayIntervals[buid]
+
+          if (intervals && intervals.length > 1) {
+            // Multi-contract: output one row per company interval
+            for (const iv of intervals) {
+              const effectiveIn = raw ? iv.first_punch : (iv.adjusted_first_punch ?? iv.first_punch)
+              const effectiveOut = raw ? iv.last_punch : (iv.adjusted_last_punch ?? iv.last_punch)
+              const pIn = effectiveIn ?? null
+              const pOut = effectiveOut && effectiveOut !== effectiveIn ? effectiveOut : null
+              let duration = ''
+              if (pIn && pOut) {
+                const secs = timeDiffSec(pIn, pOut)
+                if (secs > 0) duration = (secs / 3600).toFixed(2)
+              }
+              const companyShort = iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
+              csvRows.push([
+                `W${dd.weekNum}`,
+                dd.date,
+                dd.dayLabel,
+                emp.group,
+                emp.name,
+                companyShort,
+                pIn ? fmtTime(pIn) : '',
+                pOut ? fmtTime(pOut) : '',
+                duration,
+                `${iv.start || ''}–${iv.end || ''}`,
+                sincronCode,
+                sincronCode && !['OZ', 'OS'].includes(sincronCode) ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : pIn ? 'Present' : 'Absent',
+              ])
+            }
+          } else {
+            // Single-contract: existing logic
+            const candidates = dd.summaries.filter(x => emp.biostarIds.has(x.biostar_user_id))
+            const s = candidates.find(x => x.adjusted_first_punch || x.first_punch) ?? candidates[0] ?? null
+            const punchIn = s ? (raw ? s.first_punch : (s.adjusted_first_punch ?? s.first_punch)) : null
+            const punchOut = s ? (raw ? s.last_punch : (s.adjusted_last_punch ?? s.last_punch)) : null
+            const officialIn = punchIn
+            const officialOut = punchOut === punchIn ? null : punchOut
+            const lunchMin = s?.lunch_break_minutes ?? 60
+            let duration = ''
+            if (officialIn && officialOut) {
+              const secs = raw
+                ? (s?.duration_seconds ?? timeDiffSec(officialIn, officialOut))
+                : (s?.adjusted_first_punch && s?.adjusted_last_punch
+                    ? netSec(timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch), lunchMin)
+                    : netSec(s?.duration_seconds ?? null, lunchMin))
+              if (secs > 0) duration = (secs / 3600).toFixed(2)
+            }
+
+            csvRows.push([
+              `W${dd.weekNum}`,
+              dd.date,
+              dd.dayLabel,
+              emp.group,
+              emp.name,
+              emp.company,
+              officialIn ? fmtTime(officialIn) : '',
+              officialOut ? fmtTime(officialOut) : '',
+              duration,
+              emp.schedule,
+              sincronCode,
+              sincronCode && !['OZ', 'OS'].includes(sincronCode) ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : officialIn ? 'Present' : 'Absent',
+            ])
+          }
         }
       }
 

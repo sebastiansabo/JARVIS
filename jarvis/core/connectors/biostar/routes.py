@@ -636,6 +636,64 @@ def get_punches_by_interval():
     return jsonify({'success': True, 'intervals': split})
 
 
+@biostar_bp.route('/api/attendance/batch-intervals', methods=['POST'])
+@api_login_required
+def batch_intervals():
+    """Get per-company interval punch split for multiple employees on a given date.
+
+    Body: { date, biostar_user_ids: string[] }
+    Returns: { success, data: { [biostar_user_id]: CompanyInterval[] } }
+    Only returns entries for multi-contract employees (>1 interval).
+    """
+    body = request.get_json(force=True) or {}
+    date_str = body.get('date')
+    biostar_user_ids = body.get('biostar_user_ids', [])
+    if not date_str or not biostar_user_ids:
+        return jsonify({'success': False, 'error': 'date and biostar_user_ids required'}), 400
+
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    sincron_repo = SincronRepository()
+
+    result = {}
+    # Build jarvis mapping cache
+    jarvis_map = {}
+    for buid in biostar_user_ids:
+        emp = service.repo.get_employee_by_biostar_id(buid)
+        if emp and emp.get('mapped_jarvis_user_id'):
+            jarvis_map[buid] = emp['mapped_jarvis_user_id']
+
+    # For each mapped employee, check if multi-contract and split
+    for buid, jarvis_uid in jarvis_map.items():
+        intervals = sincron_repo.get_day_intervals_by_jarvis_user(jarvis_uid, date_str)
+        if not intervals or len(intervals) <= 1:
+            continue
+
+        split = service.repo.get_employee_punches_by_interval(buid, date_str, intervals)
+
+        # Merge adjustments
+        adj_rows = service.adj_repo.query_all('''
+            SELECT company_name, adjusted_first_punch, adjusted_last_punch, adjustment_type
+            FROM biostar_daily_adjustments
+            WHERE biostar_user_id = %s AND date = %s::date AND company_name IS NOT NULL
+        ''', (buid, date_str))
+        adj_map = {r['company_name']: r for r in adj_rows} if adj_rows else {}
+
+        for iv in split:
+            adj = adj_map.get(iv['company'])
+            if adj:
+                iv['adjusted_first_punch'] = str(adj['adjusted_first_punch']) if adj['adjusted_first_punch'] else None
+                iv['adjusted_last_punch'] = str(adj['adjusted_last_punch']) if adj['adjusted_last_punch'] else None
+                iv['adjustment_type'] = adj['adjustment_type']
+            else:
+                iv['adjusted_first_punch'] = None
+                iv['adjusted_last_punch'] = None
+                iv['adjustment_type'] = None
+
+        result[buid] = split
+
+    return jsonify({'success': True, 'data': result})
+
+
 @biostar_bp.route('/api/employees/<biostar_user_id>/sincron-schedule', methods=['GET'])
 @api_login_required
 def get_employee_sincron_schedule(biostar_user_id):
