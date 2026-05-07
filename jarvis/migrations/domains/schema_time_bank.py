@@ -37,4 +37,31 @@ def create_schema_time_bank(conn, cursor):
         ON hr.time_bank_transactions(created_at)
     ''')
 
+    # ── Status column (pending → approved → processed) ──
+    cursor.execute("""
+        DO $$ BEGIN
+            ALTER TABLE hr.time_bank_transactions
+                ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'approved';
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$
+    """)
+    cursor.execute("""
+        DO $$ BEGIN
+            ALTER TABLE hr.time_bank_transactions
+                ADD COLUMN approved_by INTEGER REFERENCES public.users(id);
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$
+    """)
+    cursor.execute("""
+        DO $$ BEGIN
+            ALTER TABLE hr.time_bank_transactions
+                ADD COLUMN approved_at TIMESTAMPTZ;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$
+    """)
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_tb_tx_status
+        ON hr.time_bank_transactions(status)
+    ''')
+
     conn.commit()
