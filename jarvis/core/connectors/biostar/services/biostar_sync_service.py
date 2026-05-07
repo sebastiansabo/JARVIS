@@ -208,6 +208,19 @@ class BioStarSyncService:
             self.sync_repo.record_error(run_id, 'SYNC', str(e))
             return {'success': False, 'error': str(e)}
 
+    # Maps BioStar group name → JARVIS company_id
+    GROUP_COMPANY_MAP = {
+        'AW HOLDING':       16,
+        'ADMINISTRATIV':    16,
+        'AW ONE':           15,
+        'AW NEXT':          13,
+        'AW INTERNATIONAL': 10,
+        'AW PREMIUM':       11,
+        'AW PLUS':          9,
+        'AW PRESTIGE':      12,
+        'AW INSURANCE':     14,
+    }
+
     def _transform_user(self, raw):
         """Transform BioStar API user to our employee dict."""
         # API returns user nested or flat depending on endpoint
@@ -233,6 +246,7 @@ class BioStarSyncService:
             'phone': user.get('phone_number', ''),
             'user_group_id': group_id,
             'user_group_name': group_name,
+            'company_id': self.GROUP_COMPANY_MAP.get(group_name),
             'card_ids': card_ids,
             'status': status,
         }

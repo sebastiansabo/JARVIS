@@ -14,10 +14,11 @@ class BioStarRepository(BaseRepository):
         sql = '''
             SELECT be.*,
                    u.name AS mapped_jarvis_user_name,
-                   COALESCE(co.company, u.company) AS jarvis_company,
+                   COALESCE(bco.company, co.company, u.company) AS jarvis_company,
                    u.is_active AS jarvis_user_active
             FROM biostar_employees be
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+            LEFT JOIN companies bco ON bco.id = be.company_id
             LEFT JOIN companies co ON co.id = u.company_id
         '''
         if active_only:
@@ -39,15 +40,16 @@ class BioStarRepository(BaseRepository):
         return self.execute('''
             INSERT INTO biostar_employees
                 (biostar_user_id, name, email, phone, user_group_id,
-                 user_group_name, card_ids, status, last_synced_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                 user_group_name, company_id, card_ids, status, last_synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (biostar_user_id) DO UPDATE SET
                 last_synced_at = NOW()
             RETURNING id, biostar_user_id
         ''', (
             data['biostar_user_id'], data['name'], data.get('email'),
             data.get('phone'), data.get('user_group_id'),
-            data.get('user_group_name'), json.dumps(data.get('card_ids', [])),
+            data.get('user_group_name'), data.get('company_id'),
+            json.dumps(data.get('card_ids', [])),
             data.get('status', 'active')
         ), returning=True)
 
@@ -60,25 +62,28 @@ class BioStarRepository(BaseRepository):
                 cursor.execute('''
                     INSERT INTO biostar_employees
                         (biostar_user_id, name, email, phone, user_group_id,
-                         user_group_name, card_ids, status, last_synced_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                         user_group_name, company_id, card_ids, status, last_synced_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                     ON CONFLICT (biostar_user_id) DO UPDATE SET
                         name = EXCLUDED.name,
                         email = EXCLUDED.email,
                         phone = EXCLUDED.phone,
                         user_group_id = EXCLUDED.user_group_id,
                         user_group_name = EXCLUDED.user_group_name,
+                        company_id = EXCLUDED.company_id,
                         card_ids = EXCLUDED.card_ids,
                         status = EXCLUDED.status,
                         last_synced_at = NOW()
                     WHERE biostar_employees.name IS DISTINCT FROM EXCLUDED.name
                        OR biostar_employees.user_group_name IS DISTINCT FROM EXCLUDED.user_group_name
+                       OR biostar_employees.company_id IS DISTINCT FROM EXCLUDED.company_id
                        OR biostar_employees.status IS DISTINCT FROM EXCLUDED.status
                        OR biostar_employees.email IS DISTINCT FROM EXCLUDED.email
                 ''', (
                     emp['biostar_user_id'], emp['name'], emp.get('email'),
                     emp.get('phone'), emp.get('user_group_id'),
-                    emp.get('user_group_name'), json.dumps(emp.get('card_ids', [])),
+                    emp.get('user_group_name'), emp.get('company_id'),
+                    json.dumps(emp.get('card_ids', [])),
                     emp.get('status', 'active')
                 ))
                 if cursor.rowcount > 0:
@@ -411,7 +416,7 @@ class BioStarRepository(BaseRepository):
                     be.user_group_name,
                     be.mapped_jarvis_user_id,
                     u.name AS mapped_jarvis_user_name,
-                    COALESCE(co.company, u.company) AS jarvis_company,
+                    COALESCE(bco.company, co.company, u.company) AS jarvis_company,
                     u.department AS jarvis_department,
                     be.lunch_break_minutes,
                     be.working_hours,
@@ -425,9 +430,10 @@ class BioStarRepository(BaseRepository):
                 FROM deduped d
                 LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
                 LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+                LEFT JOIN companies bco ON bco.id = be.company_id
                 LEFT JOIN companies co ON co.id = u.company_id
                 GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
-                         be.mapped_jarvis_user_id, u.name, co.company, u.company, u.department,
+                         be.mapped_jarvis_user_id, u.name, bco.company, co.company, u.company, u.department,
                          be.lunch_break_minutes, be.working_hours,
                          be.schedule_start, be.schedule_end, u.is_active
             )
@@ -452,7 +458,7 @@ class BioStarRepository(BaseRepository):
                 be3.user_group_name,
                 be3.mapped_jarvis_user_id,
                 u3.name AS mapped_jarvis_user_name,
-                COALESCE(co3.company, u3.company) AS jarvis_company,
+                COALESCE(bco3.company, co3.company, u3.company) AS jarvis_company,
                 u3.department AS jarvis_department,
                 be3.lunch_break_minutes,
                 be3.working_hours,
@@ -469,6 +475,7 @@ class BioStarRepository(BaseRepository):
             FROM biostar_daily_adjustments adj2
             JOIN biostar_employees be3 ON be3.biostar_user_id = adj2.biostar_user_id
             LEFT JOIN users u3 ON u3.id = be3.mapped_jarvis_user_id
+            LEFT JOIN companies bco3 ON bco3.id = be3.company_id
             LEFT JOIN companies co3 ON co3.id = u3.company_id
             WHERE adj2.date = %s::date
               AND adj2.original_first_punch IS NULL
@@ -517,7 +524,7 @@ class BioStarRepository(BaseRepository):
                 be.user_group_name,
                 be.mapped_jarvis_user_id,
                 u.name AS mapped_jarvis_user_name,
-                COALESCE(co.company, u.company) AS jarvis_company,
+                COALESCE(bco.company, co.company, u.company) AS jarvis_company,
                 u.department AS jarvis_department,
                 be.lunch_break_minutes,
                 be.working_hours,
@@ -539,16 +546,17 @@ class BioStarRepository(BaseRepository):
             FROM daily d
             LEFT JOIN biostar_employees be ON be.biostar_user_id = d.biostar_user_id
             LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+            LEFT JOIN companies bco ON bco.id = be.company_id
             LEFT JOIN companies co ON co.id = u.company_id
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = d.biostar_user_id AND adj.date = d.day
             WHERE (be.mapped_jarvis_user_id IS NULL OR (u.is_active = TRUE AND COALESCE(u.contract_status, 'active') != 'closed'))
               AND (be.user_group_name IS NULL OR (be.user_group_name NOT ILIKE '%%plecati%%' AND be.user_group_name NOT ILIKE '%%contracte inchise%%')){extra_where}
             GROUP BY d.biostar_user_id, be.name, be.email, be.user_group_name,
-                     be.mapped_jarvis_user_id, u.name, co.company, u.company, u.department,
+                     be.mapped_jarvis_user_id, u.name, bco.company, co.company, u.company, u.department,
                      be.lunch_break_minutes, be.working_hours,
                      be.schedule_start, be.schedule_end
-            ORDER BY COALESCE(co.company, u.company) NULLS LAST, be.name
+            ORDER BY COALESCE(bco.company, co.company, u.company) NULLS LAST, be.name
         ''', params)
 
     def get_employee_punches(self, biostar_user_id, date_str):

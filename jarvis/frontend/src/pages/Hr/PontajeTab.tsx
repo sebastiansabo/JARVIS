@@ -397,11 +397,11 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         }),
       )
 
-      // Collect unique employees keyed by jarvis_user_id (dedup multi-BioStar accounts)
+      // Collect unique employees keyed by (jarvis_user_id + group) to keep multi-company employees as separate rows
       const employeeMap = new Map<string, { name: string; company: string; group: string; schedule: string; jarvisUserId: number | null; biostarIds: Set<string> }>()
       for (const dd of dailyData) {
         for (const s of dd.summaries) {
-          const key = s.mapped_jarvis_user_id ? `j${s.mapped_jarvis_user_id}` : `b${s.biostar_user_id}`
+          const key = s.mapped_jarvis_user_id ? `j${s.mapped_jarvis_user_id}_${s.user_group_name || ''}` : `b${s.biostar_user_id}`
           const existing = employeeMap.get(key)
           if (existing) {
             existing.biostarIds.add(s.biostar_user_id)
@@ -420,7 +420,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
       // Also add employees from current attendance rows that might have 0 punches
       for (const r of rows) {
-        const key = r.jarvis_user_id ? `j${r.jarvis_user_id}` : `b${r.biostar_user_id}`
+        const key = r.jarvis_user_id ? `j${r.jarvis_user_id}_${r.user_group_name || ''}` : `b${r.biostar_user_id}`
         const existing = employeeMap.get(key)
         if (existing) {
           existing.biostarIds.add(r.biostar_user_id)

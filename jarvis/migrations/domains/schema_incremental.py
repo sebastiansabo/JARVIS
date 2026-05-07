@@ -1745,6 +1745,30 @@ def _create_schema_incremental_continued(conn, cursor):
         END $$;
     ''')
 
+    # ── company_id on biostar_employees — maps BioStar group → JARVIS company ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'biostar_employees' AND column_name = 'company_id') THEN
+                ALTER TABLE biostar_employees
+                    ADD COLUMN company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL;
+                UPDATE biostar_employees SET company_id = CASE user_group_name
+                    WHEN 'AW HOLDING'       THEN 16
+                    WHEN 'ADMINISTRATIV'    THEN 16
+                    WHEN 'AW ONE'           THEN 15
+                    WHEN 'AW NEXT'          THEN 13
+                    WHEN 'AW INTERNATIONAL' THEN 10
+                    WHEN 'AW PREMIUM'       THEN 11
+                    WHEN 'AW PLUS'          THEN 9
+                    WHEN 'AW PRESTIGE'      THEN 12
+                    WHEN 'AW INSURANCE'     THEN 14
+                    ELSE NULL
+                END;
+            END IF;
+        END $$;
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_biostar_employees_company ON biostar_employees(company_id)')
+
     # ── Leave permit CO conversion approval flow ──
     cursor.execute('''
         INSERT INTO approval_flows (name, slug, description, entity_type, is_active, priority, created_by)
