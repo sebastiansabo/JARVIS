@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Company, CompanyWithBrands, Brand, Department, DepartmentStructure, StructureNode, StructureNodeMember } from '@/types/organization'
+import type { Company, CompanyWithBrands, Brand, Department, DepartmentStructure, StructureNode, StructureNodeMember, SincronOrgNode, SincronOrgMember } from '@/types/organization'
 
 export const organizationApi = {
   // Company lookups
@@ -102,6 +102,24 @@ export const organizationApi = {
       total_employees: number
       total_companies: number
     }>('/hr/events/api/organigram/sincron'),
+
+  // Sincron org nodes (hierarchical tree)
+  getSincronOrgNodes: (companyId?: number) =>
+    api.get<{ success: boolean; data: SincronOrgNode[] }>(
+      companyId ? `/sincron/api/org-nodes?company_id=${companyId}` : '/sincron/api/org-nodes',
+    ),
+  createSincronOrgNode: (data: { company_id: number; parent_id?: number | null; name: string; node_type?: string }) =>
+    api.post<{ success: boolean; id: number }>('/sincron/api/org-nodes', data),
+  updateSincronOrgNode: (id: number, data: { name?: string; node_type?: string }) =>
+    api.put<{ success: boolean }>(`/sincron/api/org-nodes/${id}`, data),
+  deleteSincronOrgNode: (id: number) =>
+    api.delete<{ success: boolean }>(`/sincron/api/org-nodes/${id}`),
+  getSincronOrgMembers: () =>
+    api.get<{ success: boolean; data: SincronOrgMember[] }>('/sincron/api/org-nodes/members'),
+  setSincronOrgMembers: (nodeId: number, role: 'responsable' | 'member', members: { sincron_employee_id: string; company_name: string }[]) =>
+    api.post<{ success: boolean }>(`/sincron/api/org-nodes/${nodeId}/members/set`, { role, members }),
+  seedSincronOrgNodes: (companyId: number) =>
+    api.post<{ success: boolean; created: number; skipped: number; assigned: number }>('/sincron/api/org-nodes/seed', { company_id: companyId }),
 }
 
 export interface SincronOrgEmployee {

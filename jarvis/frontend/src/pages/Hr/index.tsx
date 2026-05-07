@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { BarChart3, Download, FileCheck, FileSpreadsheet, Fingerprint, GraduationCap, LayoutDashboard, Plus, Users, CalendarClock } from 'lucide-react'
+import { BarChart3, Download, FileCheck, FileSpreadsheet, Fingerprint, GraduationCap, LayoutDashboard, Pencil, Plus, Users, CalendarClock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -20,6 +20,7 @@ const TimesheetTab = lazy(() => import('./TimesheetTab'))
 const EmployeeProfile = lazy(() => import('./EmployeeProfile'))
 const OrganigramTab = lazy(() => import('./OrganigramTab'))
 const SincronOrganigramView = lazy(() => import('./SincronOrganigramView'))
+const SincronOrgBuilder = lazy(() => import('./SincronOrgBuilder'))
 const EmployeesTab = lazy(() => import('./EmployeesTab'))
 const Employee360 = lazy(() => import('./Employee360'))
 const LeavePermitsTab = lazy(() => import('./LeavePermitsTab'))
@@ -67,6 +68,8 @@ export default function Hr() {
   const [bonusAddTrigger, setBonusAddTrigger] = useState(0)
   const [search, setSearch] = useState('')
   const [orgView, setOrgView] = useState<'structure' | 'sincron'>('structure')
+  const [sincronEditMode, setSincronEditMode] = useState(false)
+  const isAdmin = user?.can_access_settings ?? false
   const canExport = perms?.['hr.bonuses.export'] ?? false
   const canViewAmounts = perms?.['hr.bonuses.view_amounts'] ?? false
 
@@ -156,12 +159,25 @@ export default function Hr() {
             <SearchInput value={search} onChange={setSearch} placeholder="Search..." className={isSmall ? undefined : 'w-56'} collapsible={isSmall} />
           }
         />
-        <Tabs value={orgView} onValueChange={(v) => setOrgView(v as 'structure' | 'sincron')}>
-          <TabsList>
-            <TabsTrigger value="structure">Structure</TabsTrigger>
-            <TabsTrigger value="sincron">Sincron</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center gap-2">
+          <Tabs value={orgView} onValueChange={(v) => setOrgView(v as 'structure' | 'sincron')}>
+            <TabsList>
+              <TabsTrigger value="structure">Structure</TabsTrigger>
+              <TabsTrigger value="sincron">Sincron</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {orgView === 'sincron' && isAdmin && (
+            <Button
+              variant={sincronEditMode ? 'default' : 'ghost'}
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setSincronEditMode((p) => !p)}
+              title={sincronEditMode ? 'View mode' : 'Edit mode'}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
         {authLoading ? (
           <Skeleton className="h-64 w-full" />
         ) : !canViewStructure ? (
@@ -172,6 +188,8 @@ export default function Hr() {
           <Suspense fallback={<TabLoader />}>
             {orgView === 'structure' ? (
               <OrganigramTab search={search} />
+            ) : sincronEditMode ? (
+              <SincronOrgBuilder />
             ) : (
               <SincronOrganigramView search={search} />
             )}
