@@ -477,6 +477,23 @@ class StructureNodeRepository(BaseRepository):
                 'level': a['level'],
             })
 
+        # Enrich with Sincron department if available
+        try:
+            from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+            sincron_entries = SincronRepository().get_all_employees_by_jarvis_id(user_id)
+            if sincron_entries:
+                # Build company -> department lookup from Sincron
+                sincron_dept_map = {}
+                for se in sincron_entries:
+                    if se.get('department') and se.get('company_name'):
+                        sincron_dept_map.setdefault(se['company_name'], se['department'])
+                for r in results:
+                    sd = sincron_dept_map.get(r['company'])
+                    if sd:
+                        r['sincron_department'] = sd
+        except Exception:
+            pass
+
         # Also include L0 company responsable assignments
         l0 = self.query_all('''
             SELECT c.company

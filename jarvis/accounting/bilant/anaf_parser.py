@@ -543,7 +543,7 @@ def generate_anaf_xml(values: dict, prior_values: dict | None = None,
 # XFA PDF Field Filling
 # ════════════════════════════════════════════════════════════════
 
-_ANAF_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'static', 'anaf_f10l_template.pdf')
+_ANAF_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'static', 'anaf_f10s_template.pdf')
 
 
 def _fill_datasets_xml(datasets_xml: bytes, values: dict, prior_values: dict | None,
@@ -582,39 +582,44 @@ def _fill_datasets_xml(datasets_xml: bytes, values: dict, prior_values: dict | N
         logger.warning('XFA datasets missing <form1> element')
         return datasets_xml
 
-    # ── Fill F10L/F10S (Balance Sheet) ──
+    # ── Fill F10S (Balance Sheet — Bilant Prescurtat) ──
     filled_count = 0
-    form_elem = form1.find(form)
-    if form_elem is not None:
-        table = form_elem.find('Table1')
-        if table is not None:
-            for row_elem in table:
-                tag = row_elem.tag
-                if not tag.startswith('R') or tag.startswith('RGOL') or tag.startswith('F10'):
-                    continue
-
-                raw_code = tag[1:]
-                if raw_code.startswith('_'):
-                    raw_code = raw_code[1:]
-                nr_rd = _anaf_to_nr_rd(raw_code)
-
-                c2_val = values.get(nr_rd)
-                if c2_val is not None and c2_val != 0:
-                    c2 = row_elem.find('C2')
-                    if c2 is not None:
-                        c2.text = str(int(round(float(c2_val))))
-                        filled_count += 1
-
-                if prior_values:
-                    c1_val = prior_values.get(nr_rd)
-                    if c1_val is not None and c1_val != 0:
-                        c1 = row_elem.find('C1')
-                        if c1 is not None:
-                            c1.text = str(int(round(float(c1_val))))
+    f10s_elem = form1.find('F10S')
+    if f10s_elem is not None:
+        filled_count = _fill_f10s_in_datasets(f10s_elem, values, prior_values)
     else:
-        logger.warning('XFA datasets missing <%s> element', form)
+        # Fallback: try F10L Table1 structure (legacy templates)
+        form_elem = form1.find(form)
+        if form_elem is not None:
+            table = form_elem.find('Table1')
+            if table is not None:
+                for row_elem in table:
+                    tag = row_elem.tag
+                    if not tag.startswith('R') or tag.startswith('RGOL') or tag.startswith('F10'):
+                        continue
 
-    logger.info('Filled %d F10L C2 values in XFA datasets', filled_count)
+                    raw_code = tag[1:]
+                    if raw_code.startswith('_'):
+                        raw_code = raw_code[1:]
+                    nr_rd = _anaf_to_nr_rd(raw_code)
+
+                    c2_val = values.get(nr_rd)
+                    if c2_val is not None and c2_val != 0:
+                        c2 = row_elem.find('C2')
+                        if c2 is not None:
+                            c2.text = str(int(round(float(c2_val))))
+                            filled_count += 1
+
+                    if prior_values:
+                        c1_val = prior_values.get(nr_rd)
+                        if c1_val is not None and c1_val != 0:
+                            c1 = row_elem.find('C1')
+                            if c1 is not None:
+                                c1.text = str(int(round(float(c1_val))))
+        else:
+            logger.warning('XFA datasets missing F10S and <%s> elements', form)
+
+    logger.info('Filled %d F10 C2 values in XFA datasets', filled_count)
 
     # ── Fill F20 (Profit & Loss) ──
     if f20_values:
@@ -622,13 +627,105 @@ def _fill_datasets_xml(datasets_xml: bytes, values: dict, prior_values: dict | N
         logger.info('Filled %d F20 values in XFA datasets', f20_filled)
 
     # No xml_declaration — datasets is an XDP fragment, not a standalone document.
-    # Use ET.indent() to produce multi-line XML matching the XFA parser expectations.
-    ET.indent(root)
+    # Do NOT use ET.indent() — it corrupts XFA XML structure in Adobe Reader.
     xml_bytes = ET.tostring(root, encoding='unicode').encode('utf-8')
     # Preserve the leading newline from the original stream.
     if datasets_xml.startswith(b'\n') and not xml_bytes.startswith(b'\n'):
         xml_bytes = b'\n' + xml_bytes
     return xml_bytes
+
+
+# F10S XFA datasets positional structure.
+# Each entry: (row_tag, 'pair') for standalone C1/C2 or (row_tag, 'named') for named elements.
+_F10S_STRUCTURE = [
+    ('R01', 'pair'), ('R02', 'pair'), ('R03', 'pair'), ('R04', 'pair'),
+    ('R05', 'pair'), ('R301', 'pair'), ('R302', 'pair'), ('R06', 'pair'),
+    ('R07', 'pair'), ('R08', 'pair'), ('R09', 'pair'), ('R10', 'pair'),
+    ('R11', 'named'), ('R12', 'named'),
+    ('R13', 'pair'), ('R14', 'pair'), ('R15', 'pair'), ('R16', 'pair'),
+    ('R17', 'pair'), ('R18', 'pair'), ('R19', 'pair'), ('R20', 'pair'),
+    ('R21', 'pair'), ('R22', 'pair'), ('R23', 'pair'), ('R24', 'pair'), ('R25', 'pair'),
+    ('R26', 'named'), ('R27', 'named'), ('R28', 'named'),
+    ('R29', 'pair'), ('R30', 'pair'), ('R31', 'pair'), ('R32', 'pair'),
+    ('R33', 'named'),
+    ('R34', 'pair'), ('R35', 'pair'), ('R36', 'pair'), ('R37', 'pair'),
+    ('R38', 'pair'), ('R39', 'pair'), ('R40', 'pair'), ('R41', 'pair'), ('R42', 'pair'),
+    ('R43', 'pair'), ('R44', 'pair'), ('R45', 'pair'),
+    ('R46', 'pair'), ('R47', 'pair'), ('R48', 'pair'), ('R49', 'pair'),
+]
+
+
+def _fill_f10s_in_datasets(f10s_elem, values: dict, prior_values: dict | None) -> int:
+    """Fill F10S section in XFA datasets.
+
+    F10S has a flat structure under <F10S>:
+      [0] F10_info, [1] C1 (date), [2] C2 (date),
+      then alternating named rows (R11, R12, R26, R27, R28, R33) with C1/C2 children,
+      and standalone C1/C2 pairs for all other rows.
+      Ends with Cell1 (text), Scontrol1, SEMNATURI.
+
+    Args:
+        f10s_elem: ElementTree element for <F10S>
+        values: {row_tag: int_value} from compute_f10s() — C2 (current period)
+        prior_values: optional {row_tag: int_value} for C1 (prior period)
+
+    Returns:
+        Number of fields filled.
+    """
+    children = list(f10s_elem)
+    filled = 0
+    struct_idx = 0  # index into _F10S_STRUCTURE
+    child_idx = 3   # start after F10_info + date C1/C2
+
+    while child_idx < len(children) and struct_idx < len(_F10S_STRUCTURE):
+        child = children[child_idx]
+        tag = child.tag
+        row_tag, kind = _F10S_STRUCTURE[struct_idx]
+
+        if kind == 'named':
+            # Named row element (R11, R12, etc.) — must match tag
+            if tag != row_tag:
+                # Unexpected element, skip
+                child_idx += 1
+                continue
+            val = values.get(row_tag, 0)
+            c2_sub = child.find('C2')
+            if c2_sub is not None:
+                c2_sub.text = str(int(round(float(val)))) if val else '0'
+                filled += 1
+            c1_sub = child.find('C1')
+            if c1_sub is not None:
+                if prior_values:
+                    c1_val = prior_values.get(row_tag, 0)
+                    c1_sub.text = str(int(round(float(c1_val)))) if c1_val else '0'
+                # else: leave C1 empty (no prior period data)
+            struct_idx += 1
+            child_idx += 1
+
+        elif kind == 'pair':
+            # Standalone C1/C2 pair — tag should be 'C1'
+            if tag == 'C1':
+                if prior_values:
+                    c1_val = prior_values.get(row_tag, 0)
+                    children[child_idx].text = str(int(round(float(c1_val)))) if c1_val else '0'
+                # else: leave C1 empty (no prior period data)
+                # Next should be C2
+                if child_idx + 1 < len(children) and children[child_idx + 1].tag == 'C2':
+                    val = values.get(row_tag, 0)
+                    children[child_idx + 1].text = str(int(round(float(val)))) if val else '0'
+                    filled += 1
+                    child_idx += 2
+                else:
+                    child_idx += 1
+                struct_idx += 1
+            elif tag == 'Cell1' or tag == 'Scontrol1' or tag == 'SEMNATURI':
+                # Skip non-data elements between rows
+                child_idx += 1
+            else:
+                # Unexpected element, skip
+                child_idx += 1
+
+    return filled
 
 
 def _fill_f20_in_form1(form1, f20_values: dict) -> int:

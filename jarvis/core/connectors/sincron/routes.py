@@ -90,8 +90,8 @@ def get_status():
 def sync_timesheets():
     """Trigger timesheet sync (runs in background)."""
     data = request.get_json(silent=True) or {}
-    year = data.get('year', type=int) if hasattr(data.get('year'), '__int__') else data.get('year')
-    month = data.get('month', type=int) if hasattr(data.get('month'), '__int__') else data.get('month')
+    year = data.get('year')
+    month = data.get('month')
     company_name = data.get('company_name')
 
     if year is not None or month is not None:
@@ -228,6 +228,21 @@ def toggle_exclude_from_pontaje(sincron_employee_id):
         WHERE id = %s
     ''', (val, sincron_employee_id))
     return jsonify({'success': True, 'exclude_from_pontaje': val})
+
+
+@sincron_bp.route('/api/employees/<int:sincron_employee_id>/department', methods=['PUT'])
+@admin_required
+def update_department(sincron_employee_id):
+    """Update department on a Sincron employee (for organigram)."""
+    data = request.get_json()
+    if data is None or 'department' not in data:
+        return jsonify({'success': False, 'error': 'department required'}), 400
+    val = (data['department'] or '').strip() or None
+    service.repo.execute('''
+        UPDATE sincron_employees SET department = %s, updated_at = NOW()
+        WHERE id = %s
+    ''', (val, sincron_employee_id))
+    return jsonify({'success': True, 'department': val})
 
 
 @sincron_bp.route('/api/employees/contract-stats', methods=['GET'])
@@ -459,3 +474,136 @@ def get_sync_history():
     limit = min(request.args.get('limit', 20, type=int), 100)
     runs = service.get_sync_history(sync_type, limit)
     return jsonify({'success': True, 'data': runs})
+
+
+@sincron_bp.route('/api/sync/last-run', methods=['GET'])
+@api_login_required
+def get_last_sync_run():
+    """Get the last sync run for a given year/month (login-only, not admin)."""
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+    if not year or not month:
+        from datetime import datetime
+        now = datetime.now()
+        year = year or now.year
+        month = month or now.month
+    year, month, err = _validate_year_month(year, month)
+    if err:
+        return err
+    run = service.sync_repo.get_last_run_for_month(year, month)
+    return jsonify({'success': True, 'data': dict(run) if run else None})
+
+
+# ── Org Nodes (hierarchical organigram) ──
+
+from .repositories.sincron_org_node_repository import SincronOrgNodeRepository
+_org_repo = SincronOrgNodeRepository()
+
+
+@sincron_bp.route('/api/org-companies', methods=['GET'])
+@api_login_required
+def get_org_companies():
+    """Get companies that have active Sincron employees."""
+    return jsonify({'success': True, 'data': _org_repo.get_sincron_companies()})
+
+
+@sincron_bp.route('/api/org-nodes', methods=['GET'])
+@api_login_required
+def get_org_nodes():
+    """Get all Sincron org nodes."""
+    company_id = request.args.get('company_id', type=int)
+    if company_id:
+        nodes = _org_repo.get_by_company(company_id)
+    else:
+        nodes = _org_repo.get_all()
+    return jsonify({'success': True, 'data': nodes})
+
+
+@sincron_bp.route('/api/org-nodes', methods=['POST'])
+@admin_required
+def create_org_node():
+    """Create a Sincron org node."""
+    data = request.get_json()
+    if not data or not data.get('company_id') or not data.get('name'):
+        return jsonify({'success': False, 'error': 'company_id and name required'}), 400
+    try:
+        nid = _org_repo.create(
+            company_id=data['company_id'],
+            name=data['name'].strip(),
+            parent_id=data.get('parent_id'),
+            node_type=data.get('node_type', 'department'),
+        )
+        return jsonify({'success': True, 'id': nid})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@sincron_bp.route('/api/org-nodes/<int:node_id>', methods=['PUT'])
+@admin_required
+def update_org_node(node_id):
+    """Update a Sincron org node."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'No data'}), 400
+    _org_repo.update(node_id, name=data.get('name'), node_type=data.get('node_type'))
+    return jsonify({'success': True})
+
+
+@sincron_bp.route('/api/org-nodes/<int:node_id>', methods=['DELETE'])
+@admin_required
+def delete_org_node(node_id):
+    """Delete a Sincron org node (cascade removes children + members)."""
+    _org_repo.delete(node_id)
+    return jsonify({'success': True})
+
+
+@sincron_bp.route('/api/org-nodes/members', methods=['GET'])
+@api_login_required
+def get_org_members():
+    """Get all Sincron org members."""
+    return jsonify({'success': True, 'data': _org_repo.get_all_members()})
+
+
+@sincron_bp.route('/api/org-nodes/<int:node_id>/members/set', methods=['POST'])
+@admin_required
+def set_org_members(node_id):
+    """Atomic replace members for a role on a node."""
+    data = request.get_json()
+    if not data or 'role' not in data or 'members' not in data:
+        return jsonify({'success': False, 'error': 'role and members required'}), 400
+    keys = [(m['sincron_employee_id'], m['company_name']) for m in data['members']]
+    try:
+        _org_repo.set_members(node_id, data['role'], keys)
+        return jsonify({'success': True})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@sincron_bp.route('/api/org-nodes/seed', methods=['POST'])
+@admin_required
+def seed_org_nodes():
+    """Seed org nodes from existing department data for a company."""
+    data = request.get_json()
+    if not data or not data.get('company_id'):
+        return jsonify({'success': False, 'error': 'company_id required'}), 400
+    try:
+        result = _org_repo.seed_from_departments(data['company_id'])
+        return jsonify({'success': True, **result})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@sincron_bp.route('/api/org-nodes/seed-all', methods=['POST'])
+@admin_required
+def seed_all_org_nodes():
+    """Seed org nodes for all companies."""
+    companies = _org_repo.query_all('SELECT id FROM companies ORDER BY id')
+    total = {'created': 0, 'assigned': 0}
+    for c in companies:
+        try:
+            r = _org_repo.seed_from_departments(c['id'])
+            total['created'] += r['created']
+            total['assigned'] += r['assigned']
+        except Exception:
+            pass
+    return jsonify({'success': True, **total})

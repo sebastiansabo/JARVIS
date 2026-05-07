@@ -91,3 +91,27 @@ export interface StructureNodeMember {
   user_name: string
   user_email: string
 }
+
+export interface SincronOrgNode {
+  id: number
+  company_id: number
+  parent_id: number | null
+  name: string
+  node_type: 'department' | 'role' | 'team'
+  level: number
+  display_order: number
+  created_at: string
+}
+
+export interface SincronOrgMember {
+  id: number
+  node_id: number
+  sincron_employee_id: string
+  company_name: string
+  role: 'responsable' | 'member'
+  nume: string
+  prenume: string
+  nr_contract: string | null
+  mapped_jarvis_user_id: number | null
+  mapped_user_name: string | null
+}

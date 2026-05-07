@@ -146,17 +146,23 @@ class AdjustmentRepository(BaseRepository):
         ''', (date_str,))
 
     def upsert_adjustment(self, data):
-        """Insert or update a daily adjustment."""
+        """Insert or update a daily adjustment.
+
+        company_name in data: None for single-contract/legacy, string for per-company.
+        Uses COALESCE-based unique index: (biostar_user_id, date, COALESCE(company_name, '')).
+        """
+        company = data.get('company_name')
         return self.execute('''
             INSERT INTO biostar_daily_adjustments
-                (biostar_user_id, date, original_first_punch, original_last_punch,
+                (biostar_user_id, date, company_name,
+                 original_first_punch, original_last_punch,
                  original_duration_seconds, adjusted_first_punch, adjusted_last_punch,
                  adjusted_duration_seconds, schedule_start, schedule_end,
                  lunch_break_minutes, working_hours,
                  deviation_minutes_in, deviation_minutes_out,
                  adjustment_type, adjusted_by, notes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (biostar_user_id, date) DO UPDATE SET
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (biostar_user_id, date, COALESCE(company_name, '')) DO UPDATE SET
                 adjusted_first_punch = EXCLUDED.adjusted_first_punch,
                 adjusted_last_punch = EXCLUDED.adjusted_last_punch,
                 adjusted_duration_seconds = EXCLUDED.adjusted_duration_seconds,
@@ -166,7 +172,7 @@ class AdjustmentRepository(BaseRepository):
                 updated_at = NOW()
             RETURNING id
         ''', (
-            data['biostar_user_id'], data['date'],
+            data['biostar_user_id'], data['date'], company,
             data['original_first_punch'], data['original_last_punch'],
             data.get('original_duration_seconds'),
             data['adjusted_first_punch'], data['adjusted_last_punch'],
@@ -179,8 +185,17 @@ class AdjustmentRepository(BaseRepository):
             data.get('notes'),
         ), returning=True)
 
-    def delete_adjustment(self, biostar_user_id, date_str):
-        """Remove an adjustment (revert to original)."""
+    def delete_adjustment(self, biostar_user_id, date_str, company_name=None):
+        """Remove an adjustment (revert to original).
+
+        company_name=None: deletes ALL adjustments for that user/date (legacy + per-company).
+        company_name=str: deletes only the specific company interval.
+        """
+        if company_name is not None:
+            return self.execute('''
+                DELETE FROM biostar_daily_adjustments
+                WHERE biostar_user_id = %s AND date = %s::date AND company_name = %s
+            ''', (biostar_user_id, date_str, company_name))
         return self.execute('''
             DELETE FROM biostar_daily_adjustments
             WHERE biostar_user_id = %s AND date = %s::date

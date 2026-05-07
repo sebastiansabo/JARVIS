@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, Building2, User, Link2, Unlink } from 'lucide-react'
+import { ChevronDown, ChevronRight, Building2, Users, User, Link2, Unlink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -24,18 +24,18 @@ export default function SincronOrganigramView({ search = '' }: { search?: string
 
   const companies = data?.data ?? []
 
-  // Auto-expand all on first load
+  // Auto-expand companies on first load
   useEffect(() => {
     if (companies.length > 0 && expanded.size === 0) {
       setExpanded(new Set(companies.map((c) => c.company_name)))
     }
   }, [companies.length])
 
-  const toggle = (name: string) =>
+  const toggle = (key: string) =>
     setExpanded((prev) => {
       const next = new Set(prev)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
 
@@ -45,12 +45,23 @@ export default function SincronOrganigramView({ search = '' }: { search?: string
     return companies
       .map((company) => {
         if (company.company_name.toLowerCase().includes(q)) return company
-        const matchEmps = company.employees.filter(
-          (e) =>
-            `${e.nume} ${e.prenume}`.toLowerCase().includes(q) ||
-            (e.mapped_user_name?.toLowerCase().includes(q)),
-        )
-        if (matchEmps.length > 0) return { ...company, employees: matchEmps, count: matchEmps.length }
+        // Filter departments + employees matching search
+        const filteredDepts = company.departments
+          .map((dept) => {
+            if (dept.name.toLowerCase().includes(q)) return dept
+            const matchEmps = dept.employees.filter(
+              (e) =>
+                `${e.nume} ${e.prenume}`.toLowerCase().includes(q) ||
+                e.mapped_user_name?.toLowerCase().includes(q),
+            )
+            if (matchEmps.length > 0) return { ...dept, employees: matchEmps, count: matchEmps.length }
+            return null
+          })
+          .filter(Boolean) as typeof company.departments
+        if (filteredDepts.length > 0) {
+          const matchEmps = filteredDepts.flatMap((d) => d.employees)
+          return { ...company, departments: filteredDepts, employees: matchEmps, count: matchEmps.length }
+        }
         return null
       })
       .filter(Boolean) as SincronOrgCompany[]
@@ -68,16 +79,17 @@ export default function SincronOrganigramView({ search = '' }: { search?: string
   return (
     <div className="space-y-3">
       {filtered.map((company) => {
-        const isExpanded = expanded.has(company.company_name)
+        const isCompanyExpanded = expanded.has(company.company_name)
         const mappedCount = company.employees.filter((e) => e.mapped_jarvis_user_id).length
 
         return (
           <Card key={company.company_name} className="overflow-hidden">
+            {/* Company header */}
             <button
               onClick={() => toggle(company.company_name)}
               className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/50 transition-colors"
             >
-              {isExpanded ? (
+              {isCompanyExpanded ? (
                 <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
               ) : (
                 <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -94,38 +106,76 @@ export default function SincronOrganigramView({ search = '' }: { search?: string
               </div>
             </button>
 
-            {isExpanded && (
-              <div className="border-t divide-y divide-muted/30">
-                {company.employees.map((emp) => (
-                  <div
-                    key={`${emp.sincron_employee_id}-${company.company_name}`}
-                    className="flex items-center gap-3 px-8 py-2 text-sm hover:bg-muted/30 transition-colors"
-                  >
-                    <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium">
-                      {titleCase(emp.nume)} {titleCase(emp.prenume)}
-                    </span>
-                    {emp.norma_lucru && (
-                      <span className="text-xs text-muted-foreground">{emp.norma_lucru}h</span>
-                    )}
-                    {emp.nr_contract && (
-                      <span className="text-xs text-muted-foreground">#{emp.nr_contract}</span>
-                    )}
-                    <div className="ml-auto flex items-center gap-1.5">
-                      {emp.mapped_user_name ? (
-                        <>
-                          <Link2 className="h-3 w-3 text-green-600" />
-                          <span className="text-xs text-muted-foreground">{emp.mapped_user_name}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Unlink className="h-3 w-3 text-orange-500" />
-                          <span className="text-xs text-orange-500">Unmapped</span>
-                        </>
+            {/* Departments within company */}
+            {isCompanyExpanded && (
+              <div className="border-t">
+                {company.departments.map((dept) => {
+                  const deptKey = `${company.company_name}::${dept.name}`
+                  const isDeptExpanded = expanded.has(deptKey)
+                  const deptMapped = dept.employees.filter((e) => e.mapped_jarvis_user_id).length
+
+                  return (
+                    <div key={deptKey}>
+                      {/* Department header */}
+                      <button
+                        onClick={() => toggle(deptKey)}
+                        className="flex w-full items-center gap-3 pl-8 pr-4 py-2 text-left hover:bg-muted/40 transition-colors border-b border-muted/20"
+                      >
+                        {isDeptExpanded ? (
+                          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        )}
+                        <Users className="h-4 w-4 text-blue-600 shrink-0" />
+                        <span className="text-sm font-medium text-foreground/80">{dept.name}</span>
+                        <div className="ml-auto flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {deptMapped}/{dept.count}
+                          </span>
+                          <Badge variant="outline" className="text-xs">
+                            {dept.count}
+                          </Badge>
+                        </div>
+                      </button>
+
+                      {/* Employees within department */}
+                      {isDeptExpanded && (
+                        <div className="divide-y divide-muted/20">
+                          {dept.employees.map((emp) => (
+                            <div
+                              key={`${emp.sincron_employee_id}-${company.company_name}`}
+                              className="flex items-center gap-3 pl-16 pr-4 py-2 text-sm hover:bg-muted/30 transition-colors"
+                            >
+                              <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              <span className="font-medium">
+                                {titleCase(emp.nume)} {titleCase(emp.prenume)}
+                              </span>
+                              {emp.norma_lucru && (
+                                <span className="text-xs text-muted-foreground">{emp.norma_lucru}h</span>
+                              )}
+                              {emp.nr_contract && (
+                                <span className="text-xs text-muted-foreground">#{emp.nr_contract}</span>
+                              )}
+                              <div className="ml-auto flex items-center gap-1.5">
+                                {emp.mapped_user_name ? (
+                                  <>
+                                    <Link2 className="h-3 w-3 text-green-600" />
+                                    <span className="text-xs text-muted-foreground">{emp.mapped_user_name}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Unlink className="h-3 w-3 text-orange-500" />
+                                    <span className="text-xs text-orange-500">Unmapped</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </Card>

@@ -57,6 +57,18 @@ export const biostarApi = {
   saveConfig: (data: { host: string; port: number; login_id: string; password: string; verify_ssl?: boolean }) =>
     api.post<{ success: boolean; message: string; connector_id: number }>(`${BASE}/config`, data),
 
+  getGroups: async () => {
+    const res = await api.get<{
+      success: boolean
+      groups: { group_name: string; company_id: number | null; employee_count: number }[]
+      companies: { id: number; name: string }[]
+    }>(`${BASE}/groups`)
+    return res
+  },
+
+  saveGroupCompanyMap: (map: Record<string, number | null>) =>
+    api.post<{ success: boolean; updated_employees: number }>(`${BASE}/group-company-map`, { map }),
+
   testConnection: (data?: { host?: string; port?: number; login_id?: string; password?: string }) =>
     api.post<{ success: boolean; data?: { success: boolean; user: string; total_users: number }; error?: string }>(
       `${BASE}/test-connection`,
@@ -250,10 +262,10 @@ export const biostarApi = {
       { date, threshold },
     ),
 
-  autoAdjustSingle: (biostarUserId: string, date: string) =>
-    api.post<{ success: boolean; data: { success: boolean; adjusted_first: string; adjusted_last: string } }>(
+  autoAdjustSingle: (biostarUserId: string, date: string, companyName?: string) =>
+    api.post<{ success: boolean; data: { success: boolean; adjusted_first: string; adjusted_last: string; intervals?: { company: string; adjusted_first: string; adjusted_last: string }[] } }>(
       `${BASE}/adjustments/auto-adjust-single`,
-      { biostar_user_id: biostarUserId, date },
+      { biostar_user_id: biostarUserId, date, ...(companyName ? { company_name: companyName } : {}) },
     ),
 
   getSincronSchedule: async (biostarUserId: string) => {
@@ -272,10 +284,25 @@ export const biostarApi = {
     return res
   },
 
-  revertAdjustment: (biostarUserId: string, date: string) =>
+  revertAdjustment: (biostarUserId: string, date: string, companyName?: string) =>
     api.post<{ success: boolean; message: string }>(`${BASE}/adjustments/revert`, {
-      biostar_user_id: biostarUserId, date,
+      biostar_user_id: biostarUserId, date, ...(companyName ? { company_name: companyName } : {}),
     }),
+
+  getPunchesByInterval: async (biostarUserId: string, date: string) => {
+    const res = await api.get<{ success: boolean; intervals: import('../types/biostar').CompanyInterval[] }>(
+      `${BASE}/attendance/punches-by-interval?biostar_user_id=${biostarUserId}&date=${date}`,
+    )
+    return res.intervals
+  },
+
+  batchIntervals: async (date: string, biostarUserIds: string[]) => {
+    const res = await api.post<{ success: boolean; data: Record<string, import('../types/biostar').CompanyInterval[]> }>(
+      `${BASE}/attendance/batch-intervals`,
+      { date, biostar_user_ids: biostarUserIds },
+    )
+    return res.data
+  },
 
   revertAdjustmentsRange: (startDate: string, endDate: string) =>
     api.post<{ success: boolean; message: string }>(`${BASE}/adjustments/revert-range`, {

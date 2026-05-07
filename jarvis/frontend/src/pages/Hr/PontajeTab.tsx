@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -21,7 +21,7 @@ import {
   DatabaseZap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -34,14 +34,15 @@ import { biostarApi } from '@/api/biostar'
 import { sincronApi } from '@/api/sincron'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { AttendanceRow, BioStarDayHistory } from '@/types/biostar'
+import type { AttendanceRow, BioStarDayHistory, CompanyInterval } from '@/types/biostar'
 
 type SortField = 'name' | 'company' | 'group' | 'check_in' | 'check_out' | 'duration' | 'punches'
 type SortDir = 'asc' | 'desc'
 
-type ColKey = 'group' | 'official_in' | 'official_out' | 'actual_in' | 'actual_out' | 'duration' | 'punches' | 'schedule' | 'company'
+type ColKey = 'group' | 'official_in' | 'official_out' | 'actual_in' | 'actual_out' | 'duration' | 'punches' | 'schedule' | 'company' | 'status'
 
 const COL_DEFS: { key: ColKey; label: string }[] = [
+  { key: 'status', label: 'Status' },
   { key: 'official_in', label: 'Checked In' },
   { key: 'official_out', label: 'Checked Out' },
   { key: 'actual_in', label: 'Actual In' },
@@ -53,7 +54,12 @@ const COL_DEFS: { key: ColKey; label: string }[] = [
   { key: 'group', label: 'Group' },
 ]
 
-const DEFAULT_COLS: ColKey[] = ['official_in', 'official_out', 'duration', 'punches', 'schedule']
+const DEFAULT_COLS: ColKey[] = ['status', 'official_in', 'official_out', 'duration', 'punches', 'schedule']
+
+const LEAVE_LABELS: Record<string, string> = {
+  CO: 'Annual Leave', CM: 'Medical', CES: 'Unpaid', CIC: 'Child Care',
+  CMS: 'Sick Family', DLG: 'Delegation', PERMIT: 'Leave Permit',
+}
 
 function fmtScheduleTime(t: string | null) {
   if (!t) return '08:00'
@@ -82,6 +88,10 @@ function randomizeAdjustedTimes(
 
 function fmtTime(dt: string | null) {
   if (!dt) return '—'
+  // Extract HH:MM directly — timestamps are stored as Romania local time (naive, no tz offset),
+  // so we avoid browser-timezone conversion which can add UTC+2/+3 offset.
+  const m = dt.match(/[T ](\d{2}:\d{2})/)
+  if (m) return m[1]
   return new Date(dt).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
 }
 
@@ -131,6 +141,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const [date, setDate] = useState(todayStr())
   const [groupFilter, setGroupFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -262,6 +273,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
   const processed = useMemo(() => {
     let list = [...rows]
     if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
+    if (statusFilter !== 'all') list = list.filter((e) => e.attendance_status === statusFilter)
     if (search) {
       const s = search.toLowerCase()
       list = list.filter((e) =>
@@ -290,7 +302,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       return sortDir === 'asc' ? cmp : -cmp
     })
     return list
-  }, [rows, groupFilter, search, sortField, sortDir])
+  }, [rows, groupFilter, statusFilter, search, sortField, sortDir])
 
   // ── Stats ──
 
@@ -325,7 +337,12 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const [exporting, setExporting] = useState(false)
 
-  const downloadCsv = useCallback(async (mode: 'day' | 'month', raw = false) => {
+  const exportGroups = useMemo(() =>
+    [...new Set(rows.map(r => r.user_group_name).filter((g): g is string => !!g && !g.toLowerCase().includes('plecati') && !g.toLowerCase().includes('contracte inchise')))].sort(),
+    [rows],
+  )
+
+  const downloadXlsx = useCallback(async (mode: 'day' | 'month', raw = false, group?: string) => {
     setExporting(true)
     const isDay = mode === 'day'
     const toastId = toast.loading(isDay ? 'Exporting day pontaje…' : 'Exporting monthly pontaje…')
@@ -382,11 +399,11 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         }),
       )
 
-      // Collect unique employees keyed by jarvis_user_id (dedup multi-BioStar accounts)
-      const employeeMap = new Map<string, { name: string; company: string; schedule: string; jarvisUserId: number | null; biostarIds: Set<string> }>()
+      // Collect unique employees keyed by (jarvis_user_id + group) to keep multi-company employees as separate rows
+      const employeeMap = new Map<string, { name: string; company: string; group: string; schedule: string; jarvisUserId: number | null; biostarIds: Set<string> }>()
       for (const dd of dailyData) {
         for (const s of dd.summaries) {
-          const key = s.mapped_jarvis_user_id ? `j${s.mapped_jarvis_user_id}` : `b${s.biostar_user_id}`
+          const key = s.mapped_jarvis_user_id ? `j${s.mapped_jarvis_user_id}_${s.user_group_name || ''}` : `b${s.biostar_user_id}`
           const existing = employeeMap.get(key)
           if (existing) {
             existing.biostarIds.add(s.biostar_user_id)
@@ -394,6 +411,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             employeeMap.set(key, {
               name: s.mapped_jarvis_user_name || s.name,
               company: s.jarvis_company || '',
+              group: s.user_group_name || '',
               schedule: formatSchedule(s.schedule_start, s.schedule_end),
               jarvisUserId: s.mapped_jarvis_user_id,
               biostarIds: new Set([s.biostar_user_id]),
@@ -404,7 +422,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
       // Also add employees from current attendance rows that might have 0 punches
       for (const r of rows) {
-        const key = r.jarvis_user_id ? `j${r.jarvis_user_id}` : `b${r.biostar_user_id}`
+        const key = r.jarvis_user_id ? `j${r.jarvis_user_id}_${r.user_group_name || ''}` : `b${r.biostar_user_id}`
         const existing = employeeMap.get(key)
         if (existing) {
           existing.biostarIds.add(r.biostar_user_id)
@@ -412,6 +430,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
           employeeMap.set(key, {
             name: r.name,
             company: r.company || '',
+            group: r.user_group_name || '',
             schedule: formatSchedule(r.schedule_start, r.schedule_end),
             jarvisUserId: r.jarvis_user_id,
             biostarIds: new Set([r.biostar_user_id]),
@@ -444,66 +463,139 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         }
       }
 
-      // Build CSV: Company before Name, no Group
-      const headers = ['Week', 'Date', 'Day', 'Company', 'Name', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status']
+      // Batch-fetch per-company intervals for each working day (multi-contract employees)
+      const allBiostarIds = [...new Set(Array.from(employeeMap.values()).flatMap(e => [...e.biostarIds]))]
+      const intervalsByDay = new Map<string, Record<string, CompanyInterval[]>>()
+      for (const dd of dailyData) {
+        try {
+          const data = await biostarApi.batchIntervals(dd.date, allBiostarIds)
+          if (data && Object.keys(data).length > 0) intervalsByDay.set(dd.date, data)
+        } catch { /* ignore — fall back to combined */ }
+      }
+
+      // Build CSV: Group before Name, with Company column
+      const headers = ['Week', 'Date', 'Day', 'Group', 'Name', 'Company', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status', 'Status']
       const csvRows: string[][] = [headers]
 
-      const sortedEmployees = Array.from(employeeMap.entries()).sort((a, b) =>
-        (a[1].company || '').localeCompare(b[1].company || '') || a[1].name.localeCompare(b[1].name),
-      )
+      const sortedEmployees = Array.from(employeeMap.entries())
+        .filter(([, e]) => !group || e.group === group)
+        .sort((a, b) =>
+          (a[1].group || '').localeCompare(b[1].group || '') || (a[1].name || '').localeCompare(b[1].name || ''),
+        )
 
       for (const dd of dailyData) {
-        for (const [, emp] of sortedEmployees) {
-          // Find best summary across all BioStar IDs for this employee (prefer one with punches/adjustments)
-          const candidates = dd.summaries.filter(x => emp.biostarIds.has(x.biostar_user_id))
-          const s = candidates.find(x => x.adjusted_first_punch || x.first_punch) ?? candidates[0] ?? null
-          const punchIn = s ? (raw ? s.first_punch : (s.adjusted_first_punch ?? s.first_punch)) : null
-          const punchOut = s ? (raw ? s.last_punch : (s.adjusted_last_punch ?? s.last_punch)) : null
-          const officialIn = punchIn
-          // Single punch: first == last — don't duplicate as check-out
-          const officialOut = punchOut === punchIn ? null : punchOut
-          const lunchMin = s?.lunch_break_minutes ?? 60
-          let duration = ''
-          if (officialIn && officialOut) {
-            const secs = raw
-              ? (s?.duration_seconds ?? timeDiffSec(officialIn, officialOut))
-              : (s?.adjusted_first_punch && s?.adjusted_last_punch
-                  ? netSec(timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch), lunchMin)
-                  : netSec(s?.duration_seconds ?? null, lunchMin))
-            if (secs > 0) duration = (secs / 3600).toFixed(2)
-          }
+        const dayIntervals = intervalsByDay.get(dd.date) ?? {}
+        const multiOutputThisDay = new Set<number>() // dedup multi-contract employees across BioStar groups
 
+        for (const [, emp] of sortedEmployees) {
           const sincronCode = emp.jarvisUserId
             ? (sincronDayCodes.get(emp.jarvisUserId)?.get(dd.date) ?? '')
             : ''
 
-          csvRows.push([
-            `W${dd.weekNum}`,
-            dd.date,
-            dd.dayLabel,
-            emp.company,
-            emp.name,
-            officialIn ? fmtTime(officialIn) : '',
-            officialOut ? fmtTime(officialOut) : '',
-            duration,
-            emp.schedule,
-            sincronCode,
-          ])
+          // Check if multi-contract intervals exist for this employee (try all biostarIds)
+          let intervals: CompanyInterval[] | undefined
+          for (const bid of emp.biostarIds) {
+            const ivs = dayIntervals[bid]
+            if (ivs && ivs.length > 1) { intervals = ivs; break }
+          }
+
+          if (intervals && intervals.length > 1 && !group) {
+            // Deduplicate: skip if this jarvisUserId was already output as multi-contract this day
+            if (emp.jarvisUserId && multiOutputThisDay.has(emp.jarvisUserId)) continue
+            if (emp.jarvisUserId) multiOutputThisDay.add(emp.jarvisUserId)
+
+            // Multi-contract: output one row per company interval
+            for (const iv of intervals) {
+              const effectiveIn = raw ? iv.first_punch : (iv.adjusted_first_punch ?? iv.first_punch)
+              const effectiveOut = raw ? iv.last_punch : (iv.adjusted_last_punch ?? iv.last_punch)
+              const pIn = effectiveIn ?? null
+              const pOut = effectiveOut && effectiveOut !== effectiveIn ? effectiveOut : null
+              let duration = ''
+              if (pIn && pOut) {
+                const secs = timeDiffSec(pIn, pOut)
+                if (secs > 0) duration = (secs / 3600).toFixed(2)
+              }
+              const companyShort = iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
+              csvRows.push([
+                `W${dd.weekNum}`,
+                dd.date,
+                dd.dayLabel,
+                emp.group,
+                emp.name,
+                companyShort,
+                pIn ? fmtTime(pIn) : '',
+                pOut ? fmtTime(pOut) : '',
+                duration,
+                `${iv.start || ''}–${iv.end || ''}`,
+                sincronCode,
+                sincronCode && !['OZ', 'OS'].includes(sincronCode) ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : pIn ? 'Present' : 'Absent',
+              ])
+            }
+          } else {
+            // Single-contract: also skip if already output as multi-contract
+            if (emp.jarvisUserId && multiOutputThisDay.has(emp.jarvisUserId)) continue
+            const candidates = dd.summaries.filter(x => emp.biostarIds.has(x.biostar_user_id))
+            const s = candidates.find(x => x.adjusted_first_punch || x.first_punch) ?? candidates[0] ?? null
+            const punchIn = s ? (raw ? s.first_punch : (s.adjusted_first_punch ?? s.first_punch)) : null
+            const punchOut = s ? (raw ? s.last_punch : (s.adjusted_last_punch ?? s.last_punch)) : null
+            const officialIn = punchIn
+            const officialOut = punchOut === punchIn ? null : punchOut
+            const lunchMin = s?.lunch_break_minutes ?? 60
+            let duration = ''
+            if (officialIn && officialOut) {
+              const secs = raw
+                ? (s?.duration_seconds ?? timeDiffSec(officialIn, officialOut))
+                : (s?.adjusted_first_punch && s?.adjusted_last_punch
+                    ? netSec(timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch), lunchMin)
+                    : netSec(s?.duration_seconds ?? null, lunchMin))
+              if (secs > 0) duration = (secs / 3600).toFixed(2)
+            }
+
+            csvRows.push([
+              `W${dd.weekNum}`,
+              dd.date,
+              dd.dayLabel,
+              emp.group,
+              emp.name,
+              emp.company,
+              officialIn ? fmtTime(officialIn) : '',
+              officialOut ? fmtTime(officialOut) : '',
+              duration,
+              emp.schedule,
+              sincronCode,
+              sincronCode && !['OZ', 'OS'].includes(sincronCode) ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : officialIn ? 'Present' : 'Absent',
+            ])
+          }
         }
       }
 
-      const csvContent = csvRows.map(r => r.map(c => `"${(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
-      const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = isDay ? `pontaje_${date}${raw ? '_raw' : ''}.csv` : `pontaje_${monthStr}${raw ? '_raw' : ''}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
+      const XLSX = await import('xlsx')
+      const ws = XLSX.utils.aoa_to_sheet(csvRows)
+      // Column widths
+      ws['!cols'] = [
+        { wch: 5 },  // Week
+        { wch: 12 }, // Date
+        { wch: 16 }, // Day
+        { wch: 18 }, // Group
+        { wch: 24 }, // Name
+        { wch: 20 }, // Company
+        { wch: 10 }, // Checked In
+        { wch: 10 }, // Checked Out
+        { wch: 12 }, // Duration
+        { wch: 14 }, // Schedule
+        { wch: 14 }, // Sincron Status
+        { wch: 10 }, // Status
+      ]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Pontaje')
+      const groupSuffix = group ? `_${group.replace(/\s+/g, '_')}` : ''
+      const fileName = isDay ? `pontaje_${date}${groupSuffix}${raw ? '_raw' : ''}.xlsx` : `pontaje_${monthStr}${groupSuffix}${raw ? '_raw' : ''}.xlsx`
+      XLSX.writeFile(wb, fileName)
       toast.success('Export complete', { id: toastId })
       // Refresh attendance data since auto-adjust may have changed it
       queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today', date] })
-    } catch {
+    } catch (err) {
+      console.error('[Export] failed:', err)
       toast.error('Export failed', { id: toastId })
     } finally {
       setExporting(false)
@@ -590,6 +682,18 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             </SelectContent>
           </Select>
 
+          {/* Status filter */}
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-32 shrink-0">
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="present">Present ({presentCount})</SelectItem>
+              <SelectItem value="absent">Absent ({absentCount})</SelectItem>
+            </SelectContent>
+          </Select>
+
           <div className="flex items-center gap-1 ml-auto">
             {/* Adjustment buttons */}
             {canAdjust && (
@@ -635,19 +739,37 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               </>
             )}
 
-            {/* Export CSV dropdown */}
+            {/* Export Excel dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" disabled={exporting} title="Export CSV">
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" disabled={exporting} title="Export Excel">
                   <Download className={cn('h-4 w-4', exporting && 'animate-pulse')} />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => downloadCsv('day')}>Export Day</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => downloadCsv('month')}>Export Month</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadXlsx('day')}>Export Day</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadXlsx('month')}>Export Month</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => downloadCsv('day', true)}>Export Day (raw)</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => downloadCsv('month', true)}>Export Month (raw)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadXlsx('day', true)}>Export Day (raw)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadXlsx('month', true)}>Export Month (raw)</DropdownMenuItem>
+                {exportGroups.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-[10px] text-muted-foreground font-normal pb-0">By Group</DropdownMenuLabel>
+                    {exportGroups.map(g => (
+                      <DropdownMenuSub key={g}>
+                        <DropdownMenuSubTrigger>{g}</DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuItem onClick={() => downloadXlsx('month', false, g)}>Month</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadXlsx('day', false, g)}>Day</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => downloadXlsx('month', true, g)}>Month (raw)</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadXlsx('day', true, g)}>Day (raw)</DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    ))}
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -727,6 +849,9 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                       <TableHead className="cursor-pointer select-none" onClick={() => handleSort('name')}>
                         Name <SortIcon field="name" />
                       </TableHead>
+                      {visibleCols.has('status') && (
+                        <TableHead className="text-center">Status</TableHead>
+                      )}
                       {visibleCols.has('group') && (
                         <TableHead className="hidden lg:table-cell cursor-pointer select-none" onClick={() => handleSort('group')}>
                           Group <SortIcon field="group" />
@@ -859,6 +984,7 @@ function EmployeeRow({
 
   const colSpan = 2 /* chevron + name */
     + (visibleCols.has('group') ? 1 : 0)
+    + (visibleCols.has('status') ? 1 : 0)
     + (visibleCols.has('official_in') ? 1 : 0)
     + (visibleCols.has('official_out') ? 1 : 0)
     + (visibleCols.has('actual_in') ? 1 : 0)
@@ -883,6 +1009,25 @@ function EmployeeRow({
         <TableCell>
           <span className="font-medium">{employee.name}</span>
         </TableCell>
+        {visibleCols.has('status') && (
+          <TableCell className="text-center">
+            {employee.sincron_leave_code ? (
+              <Badge variant="outline" className="text-[10px] border-orange-300 text-orange-600 bg-orange-50 dark:bg-orange-950/30">
+                {LEAVE_LABELS[employee.sincron_leave_code] ?? employee.sincron_leave_code}
+              </Badge>
+            ) : employee.attendance_status === 'present' || hasAdj ? (
+              <span className="inline-flex items-center gap-1 text-xs text-green-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                Present
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs text-red-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                Absent
+              </span>
+            )}
+          </TableCell>
+        )}
         {visibleCols.has('group') && (
           <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
             {employee.user_group_name || '—'}
@@ -1297,6 +1442,80 @@ function MonthHistory({
 
 // ── Day Row (inside week) ──
 
+function IntervalSubRow({
+  iv, biostarUserId, date, canAdjust, adjusting, onInvalidate,
+}: {
+  iv: CompanyInterval; biostarUserId: string; date: string
+  canAdjust: boolean; adjusting: boolean; onInvalidate: () => void
+}) {
+  const hasAdj = !!iv.adjusted_first_punch
+  const effectiveIn = iv.adjusted_first_punch ?? iv.first_punch
+  const effectiveOut = iv.adjusted_last_punch ?? iv.last_punch
+  const dur = effectiveIn && effectiveOut && (iv.punch_count > 1 || hasAdj)
+    ? timeDiffSec(effectiveIn, effectiveOut) : null
+  const short = iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
+
+  const handleAdjust = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await biostarApi.autoAdjustSingle(biostarUserId, date, iv.company)
+      toast.success(`Adjusted ${short}`)
+      onInvalidate()
+    } catch { toast.error('Adjust failed') }
+  }
+
+  const handleRevert = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await biostarApi.revertAdjustment(biostarUserId, date, iv.company)
+      toast.success(`Reverted ${short}`)
+      onInvalidate()
+    } catch { toast.error('Revert failed') }
+  }
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-0.5 text-xs">
+      <span className="w-2 shrink-0" />
+      <span className="w-44 shrink-0 text-muted-foreground/70 truncate" title={iv.company}>
+        {short}
+      </span>
+      <span className="w-14 shrink-0 text-center text-muted-foreground">{fmtScheduleTime(iv.start)}</span>
+      <span className="w-14 shrink-0 text-center text-muted-foreground">{fmtScheduleTime(iv.end)}</span>
+      <span className="w-14 shrink-0 text-center">
+        {effectiveIn ? (
+          <span className="inline-flex items-center gap-1">
+            <LogIn className="h-2.5 w-2.5 text-green-600" />
+            {fmtTime(effectiveIn)}
+            {hasAdj && <span className="text-[9px] text-blue-500 font-medium">C</span>}
+          </span>
+        ) : <span className="text-red-400">—</span>}
+      </span>
+      <span className="w-14 shrink-0 text-center">
+        {effectiveOut && (iv.punch_count > 1 || hasAdj) ? (
+          <span className="inline-flex items-center gap-1">
+            <LogOut className="h-2.5 w-2.5 text-red-500" />
+            {fmtTime(effectiveOut)}
+            {hasAdj && <span className="text-[9px] text-blue-500 font-medium">C</span>}
+          </span>
+        ) : <span className="text-orange-600">—</span>}
+      </span>
+      <span className="w-16 shrink-0 text-center font-medium">
+        {dur != null ? fmtDuration(dur) : '—'}
+      </span>
+      {canAdjust && !hasAdj && (
+        <Button variant="ghost" size="icon" className="h-4 w-4 ml-auto" onClick={handleAdjust} disabled={adjusting} title={`Adjust ${short}`}>
+          <Wand2 className="h-2 w-2" />
+        </Button>
+      )}
+      {canAdjust && hasAdj && (
+        <Button variant="ghost" size="icon" className="h-4 w-4 ml-auto" onClick={handleRevert} disabled={adjusting} title={`Revert ${short}`}>
+          <RotateCcw className="h-2 w-2" />
+        </Button>
+      )}
+    </div>
+  )
+}
+
 function DayRow({
   day, leaveCode, lunchMin, workingHours, biostarUserId, scheduleStart, scheduleEnd, canAdjust, adjusting, onInvalidate,
 }: {
@@ -1311,12 +1530,35 @@ function DayRow({
   const netH = net / 3600
   const isShort = netH > 0 && netH < workingHours
   const hasAdj = !!d?.adjusted_first_punch
+  const isMultiContract = (d?.sincron_day_schedule?.length ?? 0) > 1
+
+  // Per-company interval data (lazy-loaded for multi-contract days)
+  const [intervals, setIntervals] = useState<CompanyInterval[] | null>(null)
+  const [loadingIntervals, setLoadingIntervals] = useState(false)
+
+  const loadIntervals = useCallback(async () => {
+    if (intervals || loadingIntervals || !isMultiContract) return
+    setLoadingIntervals(true)
+    try {
+      const data = await biostarApi.getPunchesByInterval(biostarUserId, day.date)
+      setIntervals(data)
+    } catch { /* silently fall back to combined view */ }
+    setLoadingIntervals(false)
+  }, [intervals, loadingIntervals, isMultiContract, biostarUserId, day.date])
+
+  // Auto-load intervals for multi-contract present/absent days (re-fires after invalidation sets intervals=null)
+  useEffect(() => {
+    if (isMultiContract && !day.isWeekend && !day.isHoliday && !isFuture && !leaveCode) {
+      loadIntervals()
+    }
+  }, [loadIntervals, isMultiContract, day.isWeekend, day.isHoliday, isFuture, leaveCode])
 
   const handleAdjustDay = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
       await biostarApi.autoAdjustSingle(biostarUserId, day.date)
       toast.success('Adjusted')
+      setIntervals(null) // reset so it reloads
       onInvalidate()
     } catch { toast.error('Adjust failed') }
   }
@@ -1326,112 +1568,139 @@ function DayRow({
     try {
       await biostarApi.revertAdjustment(biostarUserId, day.date)
       toast.success('Reverted')
+      setIntervals(null)
       onInvalidate()
     } catch { toast.error('Revert failed') }
   }
 
+  const handleIntervalInvalidate = useCallback(() => {
+    setIntervals(null)
+    onInvalidate()
+  }, [onInvalidate])
+
+  // Check if any per-company adjustment exists
+  const hasCompanyAdj = !!(d?.company_adjustments?.length)
+  const anyAdj = hasAdj || hasCompanyAdj
+
   return (
     <div className={cn(
-      'flex items-center gap-3 px-3 py-1.5 rounded-md text-sm',
       isToday && 'bg-primary/5 font-medium',
       isOut && 'opacity-40',
       !isOut && !d && !day.isWeekend && !day.isHoliday && !isFuture && 'opacity-50',
     )}>
-      <span className={cn(
-        'inline-block h-2 w-2 rounded-full shrink-0',
-        d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : leaveCode ? 'bg-yellow-500' : isFuture ? 'bg-muted-foreground/30' : 'bg-red-400',
-      )} />
-      <span className="w-44 shrink-0 capitalize text-muted-foreground">
-        {day.dayLabel}
-        {d?.sincron_day_schedule && d.sincron_day_schedule.length > 0 ? (
-          <span className="block text-[10px] text-muted-foreground/60 normal-case leading-tight">
-            {d.sincron_day_schedule.map((s, i) => {
-              const short = s.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || s.company;
-              return (
-                <span key={i} className="block whitespace-nowrap" title={`${s.company} ${s.start}–${s.end}`}>
-                  {short} {s.start}–{s.end}
-                </span>
-              );
-            })}
-          </span>
-        ) : d?.sincron_company ? (
-          <span className="block text-[10px] text-muted-foreground/60 normal-case" title={d.sincron_company}>
-            {d.sincron_company}
-          </span>
-        ) : null}
-      </span>
+      {/* Main summary row */}
+      <div className="flex items-center gap-3 px-3 py-1.5 rounded-md text-sm">
+        <span className={cn(
+          'inline-block h-2 w-2 rounded-full shrink-0',
+          d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : leaveCode ? 'bg-yellow-500' : isFuture ? 'bg-muted-foreground/30' : (anyAdj ? 'bg-green-500' : 'bg-red-400'),
+        )} />
+        <span className="w-44 shrink-0 capitalize text-muted-foreground">
+          {day.dayLabel}
+          {d?.sincron_day_schedule && d.sincron_day_schedule.length > 0 && !intervals ? (
+            <span className="block text-[10px] text-muted-foreground/60 normal-case leading-tight">
+              {d.sincron_day_schedule.map((s, i) => {
+                const short = s.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || s.company;
+                return (
+                  <span key={i} className="block whitespace-nowrap" title={`${s.company} ${s.start}–${s.end}`}>
+                    {short} {s.start}–{s.end}
+                  </span>
+                );
+              })}
+            </span>
+          ) : d?.sincron_company ? (
+            <span className="block text-[10px] text-muted-foreground/60 normal-case" title={d.sincron_company}>
+              {d.sincron_company}
+            </span>
+          ) : null}
+        </span>
 
-      {day.isWeekend || day.isHoliday || isFuture || leaveCode ? (
-        <>
-          {/* Official in/out — blank for non-working days */}
-          <span className="w-14 shrink-0" />
-          <span className="w-14 shrink-0" />
-          <span className={cn('text-xs', leaveCode ? 'text-yellow-600' : 'text-muted-foreground')}>
-            {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : leaveCode ?? '—'}
-          </span>
-        </>
-      ) : d ? (
-        <>
-          {/* Schedule In/Out — full span across all companies */}
-          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
-            {fmtScheduleTime(d.sincron_day_schedule?.length ? d.sincron_day_schedule.reduce((earliest, s) => !earliest || s.start < earliest ? s.start : earliest, '' as string) : d.schedule_start ?? scheduleStart)}
-          </span>
-          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
-            {fmtScheduleTime(d.sincron_day_schedule?.length ? d.sincron_day_schedule.reduce((latest, s) => !latest || s.end > latest ? s.end : latest, '' as string) : d.schedule_end ?? scheduleEnd)}
-          </span>
-          {/* Actual In/Out */}
-          <span className="w-14 shrink-0 text-center">
-            {(d.adjusted_first_punch || d.first_punch) ? (
-              <span className="inline-flex items-center gap-1">
-                <LogIn className="h-3 w-3 text-green-600" />
-                {fmtTime(d.adjusted_first_punch ?? d.first_punch)}
-              </span>
-            ) : (
-              <span className="text-xs text-red-400">—</span>
+        {day.isWeekend || day.isHoliday || isFuture || leaveCode ? (
+          <>
+            <span className="w-14 shrink-0" />
+            <span className="w-14 shrink-0" />
+            <span className={cn('text-xs', leaveCode ? 'text-yellow-600' : 'text-muted-foreground')}>
+              {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : leaveCode ?? '—'}
+            </span>
+          </>
+        ) : d ? (
+          <>
+            {/* Schedule In/Out — full span across all companies */}
+            <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+              {fmtScheduleTime(d.sincron_day_schedule?.length ? d.sincron_day_schedule.reduce((earliest, s) => !earliest || s.start < earliest ? s.start : earliest, '' as string) : d.schedule_start ?? scheduleStart)}
+            </span>
+            <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+              {fmtScheduleTime(d.sincron_day_schedule?.length ? d.sincron_day_schedule.reduce((latest, s) => !latest || s.end > latest ? s.end : latest, '' as string) : d.schedule_end ?? scheduleEnd)}
+            </span>
+            {/* Actual In/Out — combined view (first/last of entire day) */}
+            <span className="w-14 shrink-0 text-center">
+              {(d.adjusted_first_punch || d.first_punch) ? (
+                <span className="inline-flex items-center gap-1">
+                  <LogIn className="h-3 w-3 text-green-600" />
+                  {fmtTime(d.adjusted_first_punch ?? d.first_punch)}
+                </span>
+              ) : (
+                <span className="text-xs text-red-400">—</span>
+              )}
+            </span>
+            <span className="w-14 shrink-0 text-center">
+              {d.total_punches === 1 && !anyAdj ? (
+                <span className="text-xs text-orange-600">—</span>
+              ) : (d.adjusted_last_punch || d.last_punch) ? (
+                <span className="inline-flex items-center gap-1">
+                  <LogOut className="h-3 w-3 text-red-500" />
+                  {fmtTime(d.adjusted_last_punch ?? d.last_punch)}
+                </span>
+              ) : (
+                <span className="text-xs text-red-400">—</span>
+              )}
+            </span>
+            <span className={cn('w-16 shrink-0 text-center font-medium', isShort ? 'text-orange-600' : '')}>
+              {d.total_punches === 1 && !anyAdj && !d.adjusted_first_punch ? '—' : fmtDuration(net)}
+            </span>
+            {canAdjust && !anyAdj && (d.first_punch || !d.total_punches) && (
+              <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust day">
+                <Wand2 className="h-2.5 w-2.5" />
+              </Button>
             )}
-          </span>
-          <span className="w-14 shrink-0 text-center">
-            {d.total_punches === 1 && !hasAdj ? (
-              <span className="text-xs text-orange-600">—</span>
-            ) : (d.adjusted_last_punch || d.last_punch) ? (
-              <span className="inline-flex items-center gap-1">
-                <LogOut className="h-3 w-3 text-red-500" />
-                {fmtTime(d.adjusted_last_punch ?? d.last_punch)}
-              </span>
-            ) : (
-              <span className="text-xs text-red-400">—</span>
+            {canAdjust && anyAdj && !isMultiContract && (
+              <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleRevertDay} disabled={adjusting} title="Revert">
+                <RotateCcw className="h-2.5 w-2.5" />
+              </Button>
             )}
-          </span>
-          <span className={cn('w-16 shrink-0 text-center font-medium', isShort ? 'text-orange-600' : '')}>
-            {d.total_punches === 1 && !hasAdj && !d.adjusted_first_punch ? '—' : fmtDuration(net)}
-          </span>
-          {canAdjust && !hasAdj && (d.first_punch || !d.total_punches) && (
-            <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust day">
-              <Wand2 className="h-2.5 w-2.5" />
-            </Button>
-          )}
-          {canAdjust && hasAdj && (
-            <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleRevertDay} disabled={adjusting} title="Revert">
-              <RotateCcw className="h-2.5 w-2.5" />
-            </Button>
-          )}
-        </>
-      ) : (
-        <>
-          {/* Official in/out for absent day */}
-          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
-            {fmtScheduleTime(scheduleStart)}
-          </span>
-          <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
-            {fmtScheduleTime(scheduleEnd)}
-          </span>
-          <span className="text-xs text-red-400">Absent</span>
-          {canAdjust && (
-            <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust absent day">
-              <Wand2 className="h-2.5 w-2.5" />
-            </Button>
-          )}
-        </>
+          </>
+        ) : (
+          <>
+            <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+              {fmtScheduleTime(scheduleStart)}
+            </span>
+            <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
+              {fmtScheduleTime(scheduleEnd)}
+            </span>
+            <span className="text-xs text-red-400">{anyAdj ? '' : 'Absent'}</span>
+            {canAdjust && !anyAdj && (
+              <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust absent day">
+                <Wand2 className="h-2.5 w-2.5" />
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Per-company sub-rows for multi-contract employees */}
+      {intervals && intervals.length > 1 && (
+        <div className="border-l-2 border-muted ml-5 mb-1">
+          {intervals.map((iv, i) => (
+            <IntervalSubRow
+              key={i}
+              iv={iv}
+              biostarUserId={biostarUserId}
+              date={day.date}
+              canAdjust={canAdjust}
+              adjusting={adjusting}
+              onInvalidate={handleIntervalInvalidate}
+            />
+          ))}
+        </div>
       )}
     </div>
   )

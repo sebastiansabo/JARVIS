@@ -12,6 +12,7 @@ from ..excel_handler import read_balanta_from_excel, read_balanta_full, read_bil
 from ..pdf_handler import generate_bilant_pdf
 from ..anaf_parser import parse_anaf_pdf, generate_row_mapping, fill_anaf_pdf, generate_anaf_xml, generate_anaf_txt, _nr_rd_to_anaf
 from ..f20_engine import compute_f20
+from ..f10s_engine import compute_f10s
 
 logger = logging.getLogger('jarvis.bilant.service')
 
@@ -277,6 +278,9 @@ class BilantService:
     def generate_filled_pdf(self, generation_id, accounts_data: dict | None = None):
         """Generate filled ANAF XFA PDF — original template with computed values in C1/C2 fields.
 
+        Uses F10S (bilant prescurtat) engine for balance sheet values,
+        and F20 engine for profit & loss when TSD/TSC accounts are available.
+
         Args:
             generation_id: ID of the bilant generation
             accounts_data: optional {code: {'tsd': float, 'tsc': float}} for F20 computation.
@@ -288,24 +292,39 @@ class BilantService:
         generation = detail.data['generation']
         results = detail.data['results']
         try:
-            # Build nr_rd → value map for F10L
-            values = {}
-            for r in results:
-                nr = r.get('nr_rd')
-                if nr:
-                    values[nr] = r.get('value', 0) or 0
             prior = self._get_prior_results(generation['company_id'], generation_id)
 
             # Load accounts data from DB if not passed directly
             if not accounts_data:
                 accounts_data = self.generation_repo.get_source_accounts(generation_id)
 
+            # Compute F10S values from stored accounts (SFD/SFC data)
+            f10s_values = {}
+            if accounts_data:
+                import pandas as pd
+                # Reconstruct balanta DataFrame from stored accounts
+                rows = []
+                for code, vals in accounts_data.items():
+                    sfd = vals.get('sfd', 0) or 0
+                    sfc = vals.get('sfc', 0) or 0
+                    rows.append([code, sfd, sfc])
+                if rows:
+                    df_balanta = pd.DataFrame(rows, columns=['Cont', 'SFD', 'SFC'])
+                    f10s_values = compute_f10s(df_balanta)
+            if not f10s_values:
+                # Fallback: use template-engine results (F10L nr_rd values)
+                for r in results:
+                    nr = r.get('nr_rd')
+                    if nr:
+                        f10s_values[nr] = r.get('value', 0) or 0
+
             # Compute F20 if accounts data available
             f20_values = None
             if accounts_data:
                 f20_values = compute_f20(accounts_data)
 
-            output = fill_anaf_pdf(values, prior_values=prior, f20_values=f20_values)
+            output = fill_anaf_pdf(f10s_values, prior_values=prior,
+                                   form='F10S', f20_values=f20_values)
             return ServiceResult(success=True, data=output)
         except Exception as e:
             logger.exception(f'Filled PDF generation failed: {e}')

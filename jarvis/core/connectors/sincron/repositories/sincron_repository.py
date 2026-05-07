@@ -53,6 +53,7 @@ class SincronRepository(BaseRepository):
                    se.data_incepere_contract, se.mapped_jarvis_user_id,
                    se.mapping_method, se.mapping_confidence, se.is_active,
                    se.last_synced_at, se.created_at, se.updated_at,
+                   se.department,
                    u.name AS mapped_jarvis_user_name
             FROM sincron_employees se
             LEFT JOIN users u ON u.id = se.mapped_jarvis_user_id
@@ -74,7 +75,7 @@ class SincronRepository(BaseRepository):
                    se.nume, se.prenume, se.id_contract, se.nr_contract,
                    se.data_incepere_contract, se.mapped_jarvis_user_id,
                    se.mapping_method, se.mapping_confidence,
-                   se.last_synced_at,
+                   se.department, se.last_synced_at,
                    u.name AS mapped_jarvis_user_name
             FROM sincron_employees se
             LEFT JOIN users u ON u.id = se.mapped_jarvis_user_id
@@ -93,7 +94,7 @@ class SincronRepository(BaseRepository):
                    se.norma_lucru, se.norma_lucru_time,
                    se.schedule_start, se.schedule_end, se.lunch_break_minutes,
                    se.count_for_leave, se.exclude_from_pontaje, se.is_base_contract,
-                   se.company_id, se.last_synced_at
+                   se.company_id, se.department, se.last_synced_at
             FROM sincron_employees se
             WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
             ORDER BY se.is_base_contract DESC, se.norma_lucru DESC NULLS LAST, se.company_name
@@ -498,6 +499,32 @@ class SincronRepository(BaseRepository):
             FROM day_schedules
             ORDER BY norma_lucru DESC
             LIMIT 1
+        ''', (date_str, jarvis_user_id))
+
+    def get_day_intervals_by_jarvis_user(self, jarvis_user_id, date_str):
+        """Get all company intervals for a JARVIS user on a specific date.
+
+        Returns one row per company with OZ/OS activity, ordered by norma DESC.
+        Used for per-company punch splitting.
+        """
+        return self.query_all('''
+            SELECT COALESCE(co.company, se.company_name) AS company,
+                   to_char(st.program_in, 'HH24:MI') AS start,
+                   to_char(st.program_out, 'HH24:MI') AS "end",
+                   se.norma_lucru AS norma,
+                   se.lunch_break_minutes
+            FROM sincron_employees se
+            JOIN sincron_timesheets st
+              ON st.sincron_employee_id = se.sincron_employee_id
+              AND st.company_name = se.company_name
+              AND st.day = %s::date
+              AND st.short_code IN ('OZ', 'OS')
+              AND st.program_in IS NOT NULL
+              AND st.program_out IS NOT NULL
+            LEFT JOIN companies co ON co.id = se.company_id
+            WHERE se.mapped_jarvis_user_id = %s
+              AND se.is_active = TRUE
+            ORDER BY se.norma_lucru DESC NULLS LAST
         ''', (date_str, jarvis_user_id))
 
     def get_full_day_schedule_by_jarvis_user(self, jarvis_user_id, date_str,
