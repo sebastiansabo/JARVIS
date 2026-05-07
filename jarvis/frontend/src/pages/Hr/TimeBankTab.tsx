@@ -70,11 +70,14 @@ function BalancesPanel({ search }: { search: string }) {
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [detailUser, setDetailUser] = useState<{ id: number; name: string } | null>(null)
+  const [addMode, setAddMode] = useState<'credit' | 'debit' | 't0' | null>(null)
+  const [selectedUserId, setSelectedUserId] = useState<string>('')
 
   const { data: balances, isLoading } = useQuery({
     queryKey: ['time-bank', 'balances'],
     queryFn: () => timeBankApi.getBalances(),
   })
+
 
   const creditMut = useMutation({
     mutationFn: (data: { user_id: number; amount: number; description?: string }) =>
@@ -152,9 +155,19 @@ function BalancesPanel({ search }: { search: string }) {
     <>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <span className="text-xs text-muted-foreground">
-          {filtered.length} employee{filtered.length !== 1 ? 's' : ''} with Time Bank balance
+          {filtered.length} employee{filtered.length !== 1 ? 's' : ''}
         </span>
         <div className="flex items-center gap-2">
+          <Button variant="default" size="sm" onClick={() => { setAddMode('credit'); setSelectedUserId(''); setAmount(''); setDescription('') }}>
+            <Plus className="mr-1.5 h-4 w-4" /> Add Credit
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setAddMode('debit'); setSelectedUserId(''); setAmount(''); setDescription('') }}>
+            <Minus className="mr-1.5 h-4 w-4" /> Add Debit
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setAddMode('t0'); setSelectedUserId(''); setAmount('') }}>
+            <TrendingUp className="mr-1.5 h-4 w-4" /> Set T0
+          </Button>
+          <div className="w-px h-5 bg-border" />
           <input
             type="file" accept=".xlsx" className="hidden" id="tb-import-t0"
             onChange={(e) => {
@@ -172,6 +185,13 @@ function BalancesPanel({ search }: { search: string }) {
               : <Upload className="mr-1.5 h-4 w-4" />}
             Import T0
           </Button>
+          <a
+            href="/hr/api/time-bank/t0-template"
+            download="time_bank_t0_template.xlsx"
+            className="text-xs text-muted-foreground hover:text-foreground underline"
+          >
+            Download Template
+          </a>
         </div>
       </div>
 
@@ -191,6 +211,7 @@ function BalancesPanel({ search }: { search: string }) {
                 <TableHead>Name</TableHead>
                 <TableHead>Company</TableHead>
                 <TableHead>Department</TableHead>
+                <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-right">Balance (h)</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -207,6 +228,15 @@ function BalancesPanel({ search }: { search: string }) {
                     {b.company?.replace(' S.R.L.', '') || '—'}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{b.department || '—'}</TableCell>
+                  <TableCell className="text-center">
+                    {b.balance > 0 ? (
+                      <Badge variant="outline" className="text-[10px] border-green-300 text-green-600 bg-green-50 dark:bg-green-950/30">Active</Badge>
+                    ) : b.balance < 0 ? (
+                      <Badge variant="outline" className="text-[10px] border-red-300 text-red-600 bg-red-50 dark:bg-red-950/30">Overdrawn</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] border-gray-300 text-gray-500 bg-gray-50 dark:bg-gray-950/30">Not Set</Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums font-medium">
                     <span className={b.balance > 0 ? 'text-green-600 dark:text-green-400' : b.balance < 0 ? 'text-red-600 dark:text-red-400' : ''}>
                       {b.balance}h
@@ -288,6 +318,73 @@ function BalancesPanel({ search }: { search: string }) {
         isPending={t0Mut.isPending}
         submitLabel="Set T0"
       />
+
+      {/* Add Credit/Debit/T0 with employee picker */}
+      <Dialog open={!!addMode} onOpenChange={(o) => { if (!o) setAddMode(null) }}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>
+              {addMode === 'credit' ? 'Add Credit' : addMode === 'debit' ? 'Add Debit' : 'Set T0 Balance'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Employee</label>
+              <SearchSelect
+                value={selectedUserId}
+                onValueChange={setSelectedUserId}
+                options={(balances ?? []).map(u => ({ value: String(u.user_id), label: u.name }))}
+                placeholder="Select employee..."
+                searchPlaceholder="Type to search..."
+                emptyMessage="No employees found."
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                {addMode === 't0' ? 'Starting balance (hours)' : 'Hours'}
+              </label>
+              <Input
+                type="number" step="0.5" min="0"
+                value={amount} onChange={(e) => setAmount(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            {addMode !== 't0' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Description</label>
+                <Input
+                  value={description} onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Optional description..."
+                />
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setAddMode(null)}>Cancel</Button>
+              <Button
+                disabled={!selectedUserId || !amount || creditMut.isPending || debitMut.isPending || t0Mut.isPending}
+                onClick={() => {
+                  const uid = parseInt(selectedUserId)
+                  const amt = parseFloat(amount)
+                  if (!uid || !amt) return
+                  if (addMode === 'credit') {
+                    creditMut.mutate({ user_id: uid, amount: amt, description: description || undefined })
+                  } else if (addMode === 'debit') {
+                    debitMut.mutate({ user_id: uid, amount: amt, description: description || undefined })
+                  } else {
+                    t0Mut.mutate({ userId: uid, amount: amt })
+                  }
+                  setAddMode(null)
+                }}
+              >
+                {(creditMut.isPending || debitMut.isPending || t0Mut.isPending) && (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                )}
+                {addMode === 'credit' ? 'Add Credit' : addMode === 'debit' ? 'Apply Debit' : 'Set T0'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

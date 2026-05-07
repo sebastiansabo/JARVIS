@@ -44,8 +44,8 @@ export interface TimeBankImportResult {
 }
 
 export const timeBankApi = {
-  getBalances: async () => {
-    const res = await api.get<{ success: boolean; data: TimeBankBalance[] }>(`${BASE}/balances`)
+  getBalances: async (showAll = true) => {
+    const res = await api.get<{ success: boolean; data: TimeBankBalance[] }>(`${BASE}/balances${showAll ? '?all=1' : ''}`)
     return res.data
   },
 

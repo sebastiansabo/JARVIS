@@ -78,9 +78,9 @@ class TimeBankService:
         """Get current balance for a user."""
         return float(self.repo.get_balance(user_id))
 
-    def get_all_balances(self):
+    def get_all_balances(self, include_all_employees=False):
         """Get all employee balances."""
-        rows = self.repo.get_all_balances()
+        rows = self.repo.get_all_balances(include_all_employees=include_all_employees)
         for r in rows:
             r['balance'] = float(r['balance'])
         return rows
