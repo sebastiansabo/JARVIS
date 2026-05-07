@@ -146,6 +146,13 @@ export const sincronApi = {
       companies: Record<string, { success: boolean; employees?: number; records?: number; error?: string }>
     }>(`${BASE}/sync/timesheets/now`, params),
 
+  getSyncLastRun: async (year: number, month: number) => {
+    const res = await api.get<{ success: boolean; data: SincronSyncRun | null }>(
+      `${BASE}/sync/last-run${qs({ year, month })}`,
+    )
+    return res.data ?? null
+  },
+
   getSyncHistory: async (params?: { sync_type?: string; limit?: number }) => {
     const res = await api.get<{ success: boolean; data: SincronSyncRun[] }>(
       `${BASE}/sync/history${qs(params ?? {})}`,
