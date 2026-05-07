@@ -90,8 +90,8 @@ def get_status():
 def sync_timesheets():
     """Trigger timesheet sync (runs in background)."""
     data = request.get_json(silent=True) or {}
-    year = data.get('year', type=int) if hasattr(data.get('year'), '__int__') else data.get('year')
-    month = data.get('month', type=int) if hasattr(data.get('month'), '__int__') else data.get('month')
+    year = data.get('year')
+    month = data.get('month')
     company_name = data.get('company_name')
 
     if year is not None or month is not None:
