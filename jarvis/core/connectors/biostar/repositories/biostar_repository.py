@@ -152,6 +152,17 @@ class BioStarRepository(BaseRepository):
             RETURNING is_blacklisted
         ''', (biostar_user_id,), returning=True)
 
+    def update_employees_company_from_map(self, group_company_map):
+        """Bulk-update company_id on biostar_employees based on group→company map."""
+        total = 0
+        for group_name, company_id in group_company_map.items():
+            self.execute(
+                'UPDATE biostar_employees SET company_id = %s WHERE user_group_name = %s',
+                (company_id, group_name)
+            )
+            total += 1
+        return total
+
     def blacklist_group(self, group_name, blacklisted=True):
         """Set blacklist status for all employees in a group."""
         return self.execute('''

@@ -608,8 +608,81 @@ function BioStarConnectionSection() {
         </div>
       )}
 
+      <BioStarGroupMappingSection />
       <BioStarCronJobs />
       <BioStarSyncHistory />
+    </div>
+  )
+}
+
+function BioStarGroupMappingSection() {
+  const qc = useQueryClient()
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['biostar', 'groups'],
+    queryFn: biostarApi.getGroups,
+  })
+
+  const groups = data?.groups ?? []
+  const companies = data?.companies ?? []
+
+  const [localMap, setLocalMap] = useState<Record<string, string>>({})
+  const [initialized, setInitialized] = useState(false)
+
+  // Initialize localMap from fetched data (once)
+  if (!initialized && groups.length > 0) {
+    const init: Record<string, string> = {}
+    groups.forEach((g) => { init[g.group_name] = g.company_id ? String(g.company_id) : '' })
+    setLocalMap(init)
+    setInitialized(true)
+  }
+
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const map: Record<string, number | null> = {}
+      Object.entries(localMap).forEach(([k, v]) => { map[k] = v ? Number(v) : null })
+      return biostarApi.saveGroupCompanyMap(map)
+    },
+    onSuccess: (res) => {
+      toast.success(`Saved — ${res.updated_employees} groups updated`)
+      qc.invalidateQueries({ queryKey: ['biostar', 'groups'] })
+    },
+    onError: () => toast.error('Failed to save mapping'),
+  })
+
+  if (isLoading || groups.length === 0) return null
+
+  return (
+    <div className="mt-4 border rounded-lg p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-semibold">Group → Company Mapping</h4>
+        <Button size="sm" className="h-7" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
+          {saveMut.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}
+          Save
+        </Button>
+      </div>
+      <div className="space-y-1.5">
+        {groups.map((g) => (
+          <div key={g.group_name} className="flex items-center gap-3">
+            <span className="w-48 text-sm font-mono truncate" title={g.group_name}>{g.group_name}</span>
+            <span className="text-xs text-muted-foreground w-12 shrink-0">{g.employee_count} emp</span>
+            <Select
+              value={localMap[g.group_name] ?? ''}
+              onValueChange={(v) => setLocalMap((prev) => ({ ...prev, [g.group_name]: v }))}
+            >
+              <SelectTrigger className="h-7 text-xs flex-1">
+                <SelectValue placeholder="— unmapped —" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">— unmapped —</SelectItem>
+                {companies.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
