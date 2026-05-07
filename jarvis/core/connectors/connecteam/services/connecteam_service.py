@@ -225,6 +225,22 @@ class ConnecteamService:
                 ))
                 stats['inserted'] += 1
 
+                # Credit leave hours to Time Bank (auto-approved)
+                if jarvis_uid and hours and hours > 0:
+                    try:
+                        from hr.time_bank.service import TimeBankService
+                        TimeBankService().credit(
+                            user_id=jarvis_uid,
+                            amount=hours,
+                            tx_type='connecteam',
+                            description=f'Bilet de invoire: {hours}h on {leave_date or "N/A"}',
+                            reference_type='connecteam_submission',
+                            reference_id=int(entry_num),
+                            created_by=None,
+                        )
+                    except Exception as tb_err:
+                        logger.warning('Time Bank credit failed for %s: %s', submission_id, tb_err)
+
             conn.commit()
             logger.info('Excel import: %d inserted, %d skipped, %d users created',
                         stats['inserted'], stats['skipped'], stats['users_created'])
