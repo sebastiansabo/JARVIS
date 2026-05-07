@@ -53,6 +53,7 @@ class SincronRepository(BaseRepository):
                    se.data_incepere_contract, se.mapped_jarvis_user_id,
                    se.mapping_method, se.mapping_confidence, se.is_active,
                    se.last_synced_at, se.created_at, se.updated_at,
+                   se.department,
                    u.name AS mapped_jarvis_user_name
             FROM sincron_employees se
             LEFT JOIN users u ON u.id = se.mapped_jarvis_user_id
@@ -93,7 +94,7 @@ class SincronRepository(BaseRepository):
                    se.norma_lucru, se.norma_lucru_time,
                    se.schedule_start, se.schedule_end, se.lunch_break_minutes,
                    se.count_for_leave, se.exclude_from_pontaje, se.is_base_contract,
-                   se.company_id, se.last_synced_at
+                   se.company_id, se.department, se.last_synced_at
             FROM sincron_employees se
             WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
             ORDER BY se.is_base_contract DESC, se.norma_lucru DESC NULLS LAST, se.company_name

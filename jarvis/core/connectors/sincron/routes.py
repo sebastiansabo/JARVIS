@@ -230,6 +230,21 @@ def toggle_exclude_from_pontaje(sincron_employee_id):
     return jsonify({'success': True, 'exclude_from_pontaje': val})
 
 
+@sincron_bp.route('/api/employees/<int:sincron_employee_id>/department', methods=['PUT'])
+@admin_required
+def update_department(sincron_employee_id):
+    """Update department on a Sincron employee (for organigram)."""
+    data = request.get_json()
+    if data is None or 'department' not in data:
+        return jsonify({'success': False, 'error': 'department required'}), 400
+    val = (data['department'] or '').strip() or None
+    service.repo.execute('''
+        UPDATE sincron_employees SET department = %s, updated_at = NOW()
+        WHERE id = %s
+    ''', (val, sincron_employee_id))
+    return jsonify({'success': True, 'department': val})
+
+
 @sincron_bp.route('/api/employees/contract-stats', methods=['GET'])
 @admin_required
 def get_contract_stats():
