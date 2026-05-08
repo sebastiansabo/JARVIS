@@ -531,6 +531,69 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 sincronCode && !['OZ', 'OS'].includes(sincronCode) ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : pIn ? 'Present' : 'Absent',
               ])
             }
+          } else if (group && intervals && intervals.length > 1) {
+            // Group-filtered multi-contract: use the matching company's interval
+            if (emp.jarvisUserId && multiOutputThisDay.has(emp.jarvisUserId)) continue
+            const companyIv = intervals.find(iv =>
+              iv.company.toLowerCase().trim() === emp.company.toLowerCase().trim(),
+            )
+            if (companyIv) {
+              const effectiveIn = raw ? companyIv.first_punch : (companyIv.adjusted_first_punch ?? companyIv.first_punch)
+              const effectiveOut = raw ? companyIv.last_punch : (companyIv.adjusted_last_punch ?? companyIv.last_punch)
+              const pIn = effectiveIn ?? null
+              const pOut = effectiveOut && effectiveOut !== effectiveIn ? effectiveOut : null
+              let duration = ''
+              if (pIn && pOut) {
+                const secs = timeDiffSec(pIn, pOut)
+                if (secs > 0) duration = (secs / 3600).toFixed(2)
+              }
+              csvRows.push([
+                `W${dd.weekNum}`,
+                dd.date,
+                dd.dayLabel,
+                emp.group,
+                emp.name,
+                emp.company,
+                pIn ? fmtTime(pIn) : '',
+                pOut ? fmtTime(pOut) : '',
+                duration,
+                `${companyIv.start || ''}–${companyIv.end || ''}`,
+                sincronCode,
+                sincronCode && !['OZ', 'OS'].includes(sincronCode) ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : pIn ? 'Present' : 'Absent',
+              ])
+            } else {
+              // No matching interval — fall through to combined data
+              const candidates = dd.summaries.filter(x => emp.biostarIds.has(x.biostar_user_id))
+              const s = candidates.find(x => x.adjusted_first_punch || x.first_punch) ?? candidates[0] ?? null
+              const punchIn = s ? (raw ? s.first_punch : (s.adjusted_first_punch ?? s.first_punch)) : null
+              const punchOut = s ? (raw ? s.last_punch : (s.adjusted_last_punch ?? s.last_punch)) : null
+              const officialIn = punchIn
+              const officialOut = punchOut === punchIn ? null : punchOut
+              const lunchMin = s?.lunch_break_minutes ?? 60
+              let duration = ''
+              if (officialIn && officialOut) {
+                const secs = raw
+                  ? (s?.duration_seconds ?? timeDiffSec(officialIn, officialOut))
+                  : (s?.adjusted_first_punch && s?.adjusted_last_punch
+                      ? netSec(timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch), lunchMin)
+                      : netSec(s?.duration_seconds ?? null, lunchMin))
+                if (secs > 0) duration = (secs / 3600).toFixed(2)
+              }
+              csvRows.push([
+                `W${dd.weekNum}`,
+                dd.date,
+                dd.dayLabel,
+                emp.group,
+                emp.name,
+                emp.company,
+                officialIn ? fmtTime(officialIn) : '',
+                officialOut ? fmtTime(officialOut) : '',
+                duration,
+                emp.schedule,
+                sincronCode,
+                sincronCode && !['OZ', 'OS'].includes(sincronCode) ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : officialIn ? 'Present' : 'Absent',
+              ])
+            }
           } else {
             // Single-contract: also skip if already output as multi-contract
             if (emp.jarvisUserId && multiOutputThisDay.has(emp.jarvisUserId)) continue
