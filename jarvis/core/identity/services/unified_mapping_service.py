@@ -189,7 +189,16 @@ class UnifiedMappingService:
         slug = re.sub(r'[^a-z0-9]+', '.', name.lower()).strip('.')
         email = f'{slug}@placeholder.jarvis'
 
-        user_id = self.user_repo.save(name=name, email=email, company=company_name)
+        # Reuse existing unmapped user with same placeholder email (idempotent)
+        existing = self.user_repo.get_by_email(email)
+        if existing:
+            user_id = existing['id']
+            logger.info(f'Reusing existing JARVIS user #{user_id} ({name}) '
+                        f'for Sincron {sincron_employee_id}@{company_name}')
+        else:
+            user_id = self.user_repo.save(name=name, email=email, company=company_name)
+            logger.info(f'Created JARVIS user #{user_id} ({name}) from Sincron '
+                        f'{sincron_employee_id}@{company_name}')
 
         # Set CNP and contract start date if available
         update_kwargs = {}
@@ -203,8 +212,6 @@ class UnifiedMappingService:
         self.sincron_repo.update_mapping(
             sincron_employee_id, company_name, user_id, method='auto_created')
 
-        logger.info(f'Created JARVIS user #{user_id} ({name}) from Sincron '
-                    f'{sincron_employee_id}@{company_name}')
         return {'user_id': user_id, 'name': name, 'company': company_name}
 
     def remove_mapping(self, source, external_id, company_name=None):
