@@ -310,3 +310,79 @@ class CompanyRepository(BaseRepository):
                     return company
 
         return None
+
+    # ── Company aliases ──
+
+    def resolve_alias(self, alias, source=None):
+        """Resolve a company alias to its company_id. Case-insensitive.
+
+        Returns company_id (int) or None.
+        """
+        if not alias:
+            return None
+        if source:
+            row = self.query_one(
+                'SELECT company_id FROM company_aliases '
+                'WHERE LOWER(TRIM(alias)) = LOWER(TRIM(%s)) AND source = %s',
+                (alias, source),
+            )
+        else:
+            row = self.query_one(
+                'SELECT company_id FROM company_aliases '
+                'WHERE LOWER(TRIM(alias)) = LOWER(TRIM(%s)) '
+                'ORDER BY source LIMIT 1',
+                (alias,),
+            )
+        return row['company_id'] if row else None
+
+    def get_aliases(self, company_id=None):
+        """Get all aliases, optionally filtered by company_id."""
+        if company_id:
+            return self.query_all(
+                'SELECT ca.*, c.company AS canonical '
+                'FROM company_aliases ca '
+                'JOIN companies c ON c.id = ca.company_id '
+                'WHERE ca.company_id = %s ORDER BY ca.source, ca.alias',
+                (company_id,),
+            )
+        return self.query_all(
+            'SELECT ca.*, c.company AS canonical '
+            'FROM company_aliases ca '
+            'JOIN companies c ON c.id = ca.company_id '
+            'ORDER BY ca.source, ca.alias',
+        )
+
+    def add_alias(self, company_id, alias, source):
+        """Insert or update a company alias."""
+        return self.execute(
+            'INSERT INTO company_aliases (company_id, alias, source) '
+            'VALUES (%s, %s, %s) '
+            'ON CONFLICT (alias, source) DO UPDATE SET company_id = EXCLUDED.company_id',
+            (company_id, alias, source),
+        )
+
+    def remove_alias(self, alias_id):
+        """Delete a company alias by id."""
+        return self.execute(
+            'DELETE FROM company_aliases WHERE id = %s', (alias_id,)
+        )
+
+    def get_group_company_map(self):
+        """Return {alias: company_id} dict for source='biostar'.
+
+        Drop-in replacement for the hardcoded GROUP_COMPANY_MAP.
+        """
+        rows = self.query_all(
+            "SELECT alias, company_id FROM company_aliases WHERE source = 'biostar'"
+        )
+        return {r['alias']: r['company_id'] for r in rows} if rows else {}
+
+    def get_all_alias_lookup(self):
+        """Return {lower(alias): company_id} dict across all sources.
+
+        Useful for fast O(1) company name resolution.
+        """
+        rows = self.query_all(
+            'SELECT alias, company_id FROM company_aliases'
+        )
+        return {r['alias'].lower().strip(): r['company_id'] for r in rows} if rows else {}
