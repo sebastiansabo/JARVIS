@@ -114,7 +114,7 @@ def get_groups():
 @biostar_bp.route('/api/group-company-map', methods=['POST'])
 @api_login_required
 def save_group_company_map():
-    """Save group→company mapping to connector config and update biostar_employees."""
+    """Save group→company mapping to company_aliases table and update biostar_employees."""
     data = request.get_json() or {}
     mapping = data.get('map', {})
     if not isinstance(mapping, dict):
