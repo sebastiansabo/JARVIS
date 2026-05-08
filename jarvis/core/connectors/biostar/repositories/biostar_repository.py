@@ -453,8 +453,13 @@ class BioStarRepository(BaseRepository):
                    adj.adjusted_last_punch,
                    adj.adjustment_type
             FROM punches p
-            LEFT JOIN biostar_daily_adjustments adj
-                ON adj.biostar_user_id = p.biostar_user_id AND adj.date = %s::date
+            LEFT JOIN LATERAL (
+                SELECT adj0.adjusted_first_punch, adj0.adjusted_last_punch, adj0.adjustment_type
+                FROM biostar_daily_adjustments adj0
+                WHERE adj0.biostar_user_id = p.biostar_user_id AND adj0.date = %s::date
+                ORDER BY adj0.company_name NULLS FIRST
+                LIMIT 1
+            ) adj ON TRUE
             -- Exclude dismissed/closed JARVIS users and departed BioStar groups
             -- BUT keep them if they have punches on this date (were active that day)
             WHERE (p.mapped_jarvis_user_id IS NULL OR p.jarvis_user_active = TRUE
@@ -466,7 +471,8 @@ class BioStarRepository(BaseRepository):
             UNION ALL
 
             -- Include absent employees who have adjustments but no punches
-            SELECT
+            -- Use DISTINCT ON to avoid duplicates from per-company adjustment rows
+            SELECT DISTINCT ON (adj2.biostar_user_id)
                 adj2.biostar_user_id,
                 be3.name,
                 be3.email,
@@ -687,8 +693,13 @@ class BioStarRepository(BaseRepository):
                 ORDER BY se.norma_lucru DESC NULLS LAST
                 LIMIT 1
             ) sd ON TRUE
-            LEFT JOIN biostar_daily_adjustments adj
-                ON adj.biostar_user_id = %s AND adj.date = d.date
+            LEFT JOIN LATERAL (
+                SELECT adj0.adjusted_first_punch, adj0.adjusted_last_punch, adj0.adjustment_type
+                FROM biostar_daily_adjustments adj0
+                WHERE adj0.biostar_user_id = %s AND adj0.date = d.date
+                ORDER BY adj0.company_name NULLS FIRST
+                LIMIT 1
+            ) adj ON TRUE
             ORDER BY d.date DESC
         ''', (biostar_user_id, start_date, end_date, biostar_user_id,
               biostar_user_id, biostar_user_id, start_date, end_date,
@@ -763,8 +774,13 @@ class BioStarRepository(BaseRepository):
                    sl.sincron_leave_code
             FROM active_employees ae
             LEFT JOIN punch_summary ps ON ps.biostar_user_id = ae.biostar_user_id
-            LEFT JOIN biostar_daily_adjustments adj
-                ON adj.biostar_user_id = ae.biostar_user_id AND adj.date = %s::date
+            LEFT JOIN LATERAL (
+                SELECT adj0.adjusted_first_punch, adj0.adjusted_last_punch, adj0.adjustment_type
+                FROM biostar_daily_adjustments adj0
+                WHERE adj0.biostar_user_id = ae.biostar_user_id AND adj0.date = %s::date
+                ORDER BY adj0.company_name NULLS FIRST
+                LIMIT 1
+            ) adj ON TRUE
             LEFT JOIN LATERAL (
                 SELECT (SELECT json_agg(sub ORDER BY sub.norma DESC NULLS LAST)
                         FROM (
