@@ -49,6 +49,7 @@ const LUNCH_OPTIONS = [
 ]
 
 const HOURS_OPTIONS = [
+  { value: '2', label: '2h' },
   { value: '4', label: '4h' },
   { value: '6', label: '6h' },
   { value: '7', label: '7h' },
