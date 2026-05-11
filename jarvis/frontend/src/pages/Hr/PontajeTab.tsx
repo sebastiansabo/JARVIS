@@ -207,11 +207,13 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       } else if (mode === 'month') {
         const y = ref.getFullYear(), m = ref.getMonth()
         start = `${y}-${String(m + 1).padStart(2, '0')}-01`
-        end = new Date(y, m + 1, 0).toISOString().slice(0, 10)
+        const mld = new Date(y, m + 1, 0)
+        end = `${mld.getFullYear()}-${String(mld.getMonth() + 1).padStart(2, '0')}-${String(mld.getDate()).padStart(2, '0')}`
       } else if (mode === 'quarter') {
         const y = ref.getFullYear(), q = Math.floor(ref.getMonth() / 3)
         start = `${y}-${String(q * 3 + 1).padStart(2, '0')}-01`
-        end = new Date(y, q * 3 + 3, 0).toISOString().slice(0, 10)
+        const qld = new Date(y, q * 3 + 3, 0)
+        end = `${qld.getFullYear()}-${String(qld.getMonth() + 1).padStart(2, '0')}-${String(qld.getDate()).padStart(2, '0')}`
       } else {
         start = `${ref.getFullYear()}-01-01`
         end = `${ref.getFullYear()}-12-31`
@@ -351,7 +353,8 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       const monthStr = date.slice(0, 7) // e.g. "2026-04"
       const [y, m] = monthStr.split('-').map(Number)
       const firstDay = `${monthStr}-01`
-      const lastDay = new Date(y, m, 0).toISOString().slice(0, 10)
+      const ld = new Date(y, m, 0)
+      const lastDay = `${ld.getFullYear()}-${String(ld.getMonth() + 1).padStart(2, '0')}-${String(ld.getDate()).padStart(2, '0')}`
 
       // Build list of working days — skip future dates
       const workingDays: { date: string; dayLabel: string; weekNum: number }[] = []
