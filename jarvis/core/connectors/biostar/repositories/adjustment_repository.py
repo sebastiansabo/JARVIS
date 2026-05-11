@@ -241,23 +241,15 @@ class AdjustmentRepository(BaseRepository):
         """Get active employees with schedules who have NO punches for the date.
 
         Excludes:
-        - Employees already adjusted for that date
-        - Employees with Sincron leave codes
+        - Employees already adjusted for that date (combined adjustment only;
+          per-company adjustments are handled in auto_adjust_all)
         - Current day (absent might still arrive)
+
+        NOTE: Sincron leave filtering is now done in Python (auto_adjust_all)
+        to support per-company leave for multi-contract employees.
         """
         return self.query_all('''
-            WITH sincron_leave AS (
-                SELECT DISTINCT se.mapped_jarvis_user_id
-                FROM sincron_employees se
-                JOIN sincron_timesheets st
-                  ON st.sincron_employee_id = se.sincron_employee_id
-                  AND st.company_name = se.company_name
-                  AND st.day = %s::date
-                  AND st.short_code IN ('CO','CM','CIC','CES','CMS','DLG','ZLS','CFP','CFS','INV')
-                WHERE se.is_active = TRUE
-                  AND se.mapped_jarvis_user_id IS NOT NULL
-            ),
-            sincron_day AS (
+            WITH sincron_day AS (
                 SELECT DISTINCT ON (se.mapped_jarvis_user_id)
                        se.mapped_jarvis_user_id,
                        st.program_in  AS program_start,
@@ -293,21 +285,19 @@ class AdjustmentRepository(BaseRepository):
             FROM biostar_employees be
             LEFT JOIN sincron_day sd
               ON sd.mapped_jarvis_user_id = be.mapped_jarvis_user_id
-            LEFT JOIN sincron_leave sl
-              ON sl.mapped_jarvis_user_id = be.mapped_jarvis_user_id
             LEFT JOIN has_punches hp
               ON hp.biostar_user_id = be.biostar_user_id
             LEFT JOIN biostar_daily_adjustments adj
               ON adj.biostar_user_id = be.biostar_user_id AND adj.date = %s::date
+                 AND adj.company_name IS NULL
             WHERE be.status = 'active'
               AND COALESCE(sd.program_start, be.schedule_start) IS NOT NULL
               AND COALESCE(sd.program_end,   be.schedule_end)   IS NOT NULL
               AND hp.biostar_user_id IS NULL
               AND adj.id IS NULL
-              AND sl.mapped_jarvis_user_id IS NULL
               AND %s::date < CURRENT_DATE
             ORDER BY be.name
-        ''', (date_str, date_str, date_str, date_str, date_str))
+        ''', (date_str, date_str, date_str, date_str))
 
     def get_unadjusted_dates(self):
         """Get all distinct past dates with punch logs that have unadjusted employees."""
