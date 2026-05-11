@@ -453,16 +453,26 @@ class BioStarRepository(BaseRepository):
                    adj.adjusted_last_punch,
                    adj.adjustment_type
             FROM punches p
-            LEFT JOIN biostar_daily_adjustments adj
-                ON adj.biostar_user_id = p.biostar_user_id AND adj.date = %s::date
+            LEFT JOIN LATERAL (
+                SELECT adj0.adjusted_first_punch, adj0.adjusted_last_punch, adj0.adjustment_type
+                FROM biostar_daily_adjustments adj0
+                WHERE adj0.biostar_user_id = p.biostar_user_id AND adj0.date = %s::date
+                ORDER BY adj0.company_name NULLS FIRST
+                LIMIT 1
+            ) adj ON TRUE
             -- Exclude dismissed/closed JARVIS users and departed BioStar groups
-            WHERE (p.mapped_jarvis_user_id IS NULL OR p.jarvis_user_active = TRUE)
-              AND (p.user_group_name IS NULL OR (p.user_group_name NOT ILIKE '%%plecati%%' AND p.user_group_name NOT ILIKE '%%contracte inchise%%'))
+            -- BUT keep them if they have punches on this date (were active that day)
+            WHERE (p.mapped_jarvis_user_id IS NULL OR p.jarvis_user_active = TRUE
+                   OR p.total_punches > 0)
+              AND (p.user_group_name IS NULL
+                   OR (p.user_group_name NOT ILIKE '%%plecati%%' AND p.user_group_name NOT ILIKE '%%contracte inchise%%')
+                   OR p.total_punches > 0)
 
             UNION ALL
 
             -- Include absent employees who have adjustments but no punches
-            SELECT
+            -- Use DISTINCT ON to avoid duplicates from per-company adjustment rows
+            SELECT DISTINCT ON (adj2.biostar_user_id)
                 adj2.biostar_user_id,
                 be3.name,
                 be3.email,
@@ -853,8 +863,13 @@ class BioStarRepository(BaseRepository):
                    sl.sincron_leave_code
             FROM active_employees ae
             LEFT JOIN punch_summary ps ON ps.biostar_user_id = ae.biostar_user_id
-            LEFT JOIN biostar_daily_adjustments adj
-                ON adj.biostar_user_id = ae.biostar_user_id AND adj.date = %s::date
+            LEFT JOIN LATERAL (
+                SELECT adj0.adjusted_first_punch, adj0.adjusted_last_punch, adj0.adjustment_type
+                FROM biostar_daily_adjustments adj0
+                WHERE adj0.biostar_user_id = ae.biostar_user_id AND adj0.date = %s::date
+                ORDER BY adj0.company_name NULLS FIRST
+                LIMIT 1
+            ) adj ON TRUE
             LEFT JOIN LATERAL (
                 SELECT (SELECT json_agg(sub ORDER BY sub.norma DESC NULLS LAST)
                         FROM (

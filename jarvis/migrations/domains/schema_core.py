@@ -180,6 +180,22 @@ def create_schema_core(conn, cursor):
         END $$;
     ''')
 
+    # Company aliases — normalise names across BioStar, Sincron, etc.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS company_aliases (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            alias VARCHAR(200) NOT NULL,
+            source VARCHAR(50) NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(alias, source)
+        )
+    ''')
+    cursor.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_company_aliases_lower
+            ON company_aliases (LOWER(TRIM(alias)), source)
+    ''')
+
     # Structure nodes (generic 5-level organigram tree under each company)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS structure_nodes (
@@ -273,6 +289,11 @@ def create_schema_core(conn, cursor):
     if result['count'] == 0:
         _seed_companies(cursor)
 
+    cursor.execute('SELECT COUNT(*) FROM company_aliases')
+    result = cursor.fetchone()
+    if result['count'] == 0:
+        _seed_company_aliases(cursor)
+
 
 def _seed_department_structure(cursor):
     """Seed initial department structure data."""
@@ -330,3 +351,35 @@ def _seed_companies(cursor):
         VALUES (%s, %s, %s)
     '''
     cursor.executemany(query, companies_data)
+
+
+def _seed_company_aliases(cursor):
+    """Seed company aliases for BioStar groups and Sincron company names."""
+    # Map: (alias, source, canonical_company_name)
+    aliases = [
+        # BioStar group names
+        ('AW HOLDING', 'biostar', 'AUTOWORLD S.R.L.'),
+        ('ADMINISTRATIV', 'biostar', 'AUTOWORLD S.R.L.'),
+        ('AW ONE', 'biostar', 'Autoworld ONE S.R.L.'),
+        ('AW NEXT', 'biostar', 'Autoworld NEXT S.R.L.'),
+        ('AW INTERNATIONAL', 'biostar', 'Autoworld INTERNATIONAL S.R.L.'),
+        ('AW PREMIUM', 'biostar', 'Autoworld PREMIUM S.R.L.'),
+        ('AW PLUS', 'biostar', 'Autoworld PLUS S.R.L.'),
+        ('AW PRESTIGE', 'biostar', 'Autoworld PRESTIGE S.R.L.'),
+        ('AW INSURANCE', 'biostar', 'Autoworld INSURANCE S.R.L.'),
+        # Sincron company names (uppercase variant)
+        ('AUTOWORLD S.R.L.', 'sincron', 'AUTOWORLD S.R.L.'),
+        ('AUTOWORLD ONE S.R.L.', 'sincron', 'Autoworld ONE S.R.L.'),
+        ('AUTOWORLD NEXT S.R.L.', 'sincron', 'Autoworld NEXT S.R.L.'),
+        ('AUTOWORLD INTERNATIONAL S.R.L.', 'sincron', 'Autoworld INTERNATIONAL S.R.L.'),
+        ('AUTOWORLD PREMIUM S.R.L.', 'sincron', 'Autoworld PREMIUM S.R.L.'),
+        ('AUTOWORLD PLUS S.R.L.', 'sincron', 'Autoworld PLUS S.R.L.'),
+        ('AUTOWORLD PRESTIGE S.R.L.', 'sincron', 'Autoworld PRESTIGE S.R.L.'),
+        ('AUTOWORLD INSURANCE S.R.L.', 'sincron', 'Autoworld INSURANCE S.R.L.'),
+    ]
+    for alias, source, canonical in aliases:
+        cursor.execute('''
+            INSERT INTO company_aliases (company_id, alias, source)
+            SELECT id, %s, %s FROM companies WHERE company = %s
+            ON CONFLICT (alias, source) DO NOTHING
+        ''', (alias, source, canonical))

@@ -1,36 +1,25 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Upload, ChevronLeft, ChevronRight, ChevronDown, ArrowRightLeft } from 'lucide-react'
+import { Loader2, Upload, ChevronLeft, ChevronRight, ChevronDown, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import { SearchSelect } from '@/components/shared/SearchSelect'
 import { connecteamApi } from '@/api/connecteam'
 import type { ConnecteamSubmission, ConversionRequest } from '@/api/connecteam'
 import { toast } from 'sonner'
+import { useNavigate } from 'react-router-dom'
 
 const now = new Date()
 
 export default function LeavePermitsTab({ search }: { search: string }) {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [companyFilter, setCompanyFilter] = useState<string>('all')
   const [collapsedEmployees, setCollapsedEmployees] = useState<Set<string>>(new Set())
-
-  // Conversion dialog state
-  const [conversionTarget, setConversionTarget] = useState<{
-    employeeName: string
-    employeeUserId: number
-    totalHours: number
-    submissions: ConnecteamSubmission[]
-  } | null>(null)
-  const [coDays, setCoDays] = useState('1')
-  const [approverId, setApproverId] = useState<string>('')
-  const [approverMode, setApproverMode] = useState<'hierarchy' | 'free'>('hierarchy')
 
   useQuery({
     queryKey: ['connecteam', 'status'],
@@ -45,25 +34,11 @@ export default function LeavePermitsTab({ search }: { search: string }) {
         .then(r => r.data as ConnecteamSubmission[]),
   })
 
-  // Fetch existing conversions for this month
+  // Fetch existing conversions for status display
   const { data: conversions } = useQuery({
     queryKey: ['connecteam', 'conversions', year, month],
     queryFn: () => connecteamApi.getConversions(year, month),
   })
-
-  // Fetch hierarchy approvers (lazy — only when dialog opens)
-  const { data: approversRes } = useQuery({
-    queryKey: ['connecteam', 'approvers'],
-    queryFn: () => connecteamApi.getApprovers(),
-    enabled: !!conversionTarget,
-  })
-  // Fetch all users for free-select mode
-  const { data: allUsersRes } = useQuery({
-    queryKey: ['connecteam', 'approvers', 'all'],
-    queryFn: () => connecteamApi.getApprovers('all'),
-    enabled: !!conversionTarget && approverMode === 'free',
-  })
-  const approvers = (approverMode === 'free' ? allUsersRes?.data : approversRes?.data) ?? []
 
   const importMut = useMutation({
     mutationFn: (file: File) => connecteamApi.importExcel(file),
@@ -80,22 +55,6 @@ export default function LeavePermitsTab({ search }: { search: string }) {
       }
     },
     onError: () => toast.error('Import failed'),
-  })
-
-  const conversionMut = useMutation({
-    mutationFn: (data: Parameters<typeof connecteamApi.createConversion>[0]) =>
-      connecteamApi.createConversion(data),
-    onSuccess: () => {
-      toast.success('Conversion request sent for approval')
-      qc.invalidateQueries({ queryKey: ['connecteam', 'conversions'] })
-      qc.invalidateQueries({ queryKey: ['connecteam', 'submissions'] })
-      setConversionTarget(null)
-      setCoDays('1')
-      setApproverId('')
-    },
-    onError: (err: { response?: { data?: { error?: string } } }) => {
-      toast.error(err.response?.data?.error || 'Failed to create conversion')
-    },
   })
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,7 +100,6 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]))
   }, [filtered])
 
-  // Index conversions by employee_user_id for quick lookup
   const conversionsByUser = useMemo(() => {
     const map = new Map<number, ConversionRequest>()
     if (conversions) {
@@ -175,28 +133,24 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     else setMonth(m => m + 1)
   }
 
-  const openConversion = (name: string, userId: number, totalHours: number, submissions: ConnecteamSubmission[]) => {
-    setConversionTarget({ employeeName: name, employeeUserId: userId, totalHours, submissions })
-    setCoDays('1')
-    setApproverId('')
-  }
-
-  const submitConversion = () => {
-    if (!conversionTarget || !approverId) return
-    conversionMut.mutate({
-      employee_user_id: conversionTarget.employeeUserId,
-      year,
-      month,
-      co_days_requested: parseInt(coDays),
-      approver_user_id: parseInt(approverId),
-      submission_ids: conversionTarget.submissions.map(s => s.submission_id),
-    })
-  }
-
-  const maxCoDays = conversionTarget ? Math.max(1, Math.floor(conversionTarget.totalHours / 8)) : 1
-
   return (
     <div className="space-y-4">
+      {/* CO Conversion notice */}
+      <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 px-3 py-2">
+        <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+        <span className="text-xs text-blue-700 dark:text-blue-300">
+          CO Conversion has moved to the{' '}
+          <button
+            type="button"
+            className="font-medium underline hover:no-underline"
+            onClick={() => navigate('/app/hr/time-bank')}
+          >
+            Time Bank
+          </button>{' '}
+          tab.
+        </span>
+      </div>
+
       {/* Header bar */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
@@ -306,19 +260,6 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                       <TableCell className="text-center">
                         {existingConversion ? (
                           <ConversionStatusBadge conversion={existingConversion} />
-                        ) : userId && totalHours >= 8 ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-6 text-[10px] gap-1"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              openConversion(employeeName, userId, totalHours, submissions)
-                            }}
-                          >
-                            <ArrowRightLeft className="h-3 w-3" />
-                            Convert to CO
-                          </Button>
                         ) : null}
                       </TableCell>
                       <TableCell />
@@ -372,95 +313,6 @@ export default function LeavePermitsTab({ search }: { search: string }) {
           </Table>
         </div>
       )}
-
-      {/* Conversion Dialog */}
-      <Dialog open={!!conversionTarget} onOpenChange={(open) => { if (!open) { setConversionTarget(null); setApproverMode('hierarchy') } }}>
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>Convert Leave Permits to CO</DialogTitle>
-          </DialogHeader>
-          {conversionTarget && (
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">{conversionTarget.employeeName}</p>
-                <p className="text-xs text-muted-foreground">
-                  Total accumulated: <span className="font-medium text-foreground">{conversionTarget.totalHours}h</span> in {monthLabel}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {conversionTarget.submissions.length} permit{conversionTarget.submissions.length !== 1 ? 's' : ''} will be marked as converted
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">CO Days to convert</label>
-                <Select value={coDays} onValueChange={setCoDays}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: maxCoDays }, (_, i) => i + 1).map(n => (
-                      <SelectItem key={n} value={String(n)}>
-                        {n} day{n > 1 ? 's' : ''} ({n * 8}h)
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[10px] text-muted-foreground">
-                  1 CO day = 8 hours. Max {maxCoDays} day{maxCoDays > 1 ? 's' : ''} based on {conversionTarget.totalHours}h accumulated.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">Send for approval to</label>
-                  <button
-                    type="button"
-                    className="text-[11px] text-muted-foreground hover:text-foreground underline"
-                    onClick={() => { setApproverMode(m => m === 'hierarchy' ? 'free' : 'hierarchy'); setApproverId('') }}
-                  >
-                    {approverMode === 'hierarchy' ? 'Select any user' : 'Show managers only'}
-                  </button>
-                </div>
-                {approverMode === 'hierarchy' ? (
-                  <Select value={approverId} onValueChange={setApproverId}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select manager..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {approvers.map(a => (
-                        <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <SearchSelect
-                    value={approverId}
-                    onValueChange={setApproverId}
-                    options={approvers.map(a => ({ value: String(a.id), label: a.name }))}
-                    placeholder="Search user..."
-                    searchPlaceholder="Type to search..."
-                    emptyMessage="No users found."
-                  />
-                )}
-                <p className="text-[10px] text-muted-foreground">
-                  {approverMode === 'hierarchy' ? 'Showing organigram managers' : 'Showing all active users'}
-                </p>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setConversionTarget(null)}>Cancel</Button>
-                <Button
-                  onClick={submitConversion}
-                  disabled={!approverId || conversionMut.isPending}
-                >
-                  {conversionMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-                  Send for Approval
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
