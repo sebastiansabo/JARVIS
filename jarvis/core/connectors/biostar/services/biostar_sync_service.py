@@ -52,6 +52,8 @@ class BioStarSyncService:
         self.connector_repo = ConnectorRepository()
         self.adj_repo = AdjustmentRepository()
         self._device_directions = None  # Cache for sync runs
+        # Lazy-init; avoids circular import at module level
+        self._company_repo = None
 
     # ── Connection Management ──
 
@@ -209,43 +211,31 @@ class BioStarSyncService:
             self.sync_repo.record_error(run_id, 'SYNC', str(e))
             return {'success': False, 'error': str(e)}
 
-    # Default fallback group→company map (used if no DB config saved)
-    GROUP_COMPANY_MAP = {
-        'AW HOLDING':       16,
-        'ADMINISTRATIV':    16,
-        'AW ONE':           15,
-        'AW NEXT':          13,
-        'AW INTERNATIONAL': 10,
-        'AW PREMIUM':       11,
-        'AW PLUS':          9,
-        'AW PRESTIGE':      12,
-        'AW INSURANCE':     14,
+    # Hardcoded fallback — only used if company_aliases table is empty
+    _FALLBACK_GROUP_MAP = {
+        'AW HOLDING': 16, 'ADMINISTRATIV': 16,
+        'AW ONE': 15, 'AW NEXT': 13, 'AW INTERNATIONAL': 10,
+        'AW PREMIUM': 11, 'AW PLUS': 9, 'AW PRESTIGE': 12,
+        'AW INSURANCE': 14,
     }
 
+    @property
+    def company_repo(self):
+        if self._company_repo is None:
+            from core.organization.repositories.company_repository import CompanyRepository
+            self._company_repo = CompanyRepository()
+        return self._company_repo
+
     def get_group_company_map(self):
-        """Return group→company_id map: DB config if saved, else hardcoded fallback."""
-        connector = self.connector_repo.get_by_type('biostar')
-        if connector:
-            cfg = connector.get('config') or {}
-            if isinstance(cfg, str):
-                import json as _json
-                cfg = _json.loads(cfg)
-            saved = cfg.get('group_company_map')
-            if saved and isinstance(saved, dict):
-                return saved
-        return dict(self.GROUP_COMPANY_MAP)
+        """Return group→company_id map from company_aliases table."""
+        mapping = self.company_repo.get_group_company_map()
+        return mapping if mapping else dict(self._FALLBACK_GROUP_MAP)
 
     def save_group_company_map(self, mapping):
-        """Persist group→company_id map into connector config JSON."""
-        connector = self.connector_repo.get_by_type('biostar')
-        if not connector:
-            return
-        cfg = connector.get('config') or {}
-        if isinstance(cfg, str):
-            import json as _json
-            cfg = _json.loads(cfg)
-        cfg['group_company_map'] = mapping
-        self.connector_repo.update(connector['id'], config=cfg)
+        """Persist group→company_id map into company_aliases table."""
+        for alias, company_id in mapping.items():
+            if company_id:
+                self.company_repo.add_alias(int(company_id), alias, 'biostar')
 
     def _transform_user(self, raw):
         """Transform BioStar API user to our employee dict."""

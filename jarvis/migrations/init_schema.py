@@ -25,6 +25,7 @@ from .domains.schema_incremental import create_schema_incremental
 from .domains.schema_telemetry import create_schema_telemetry
 from .domains.schema_courses import create_schema_courses
 from .domains.schema_facturare import create_schema_facturare
+from .domains.schema_time_bank import create_schema_time_bank
 from .version_manager import run_pending_migrations
 
 
@@ -56,6 +57,7 @@ def create_schema(conn, cursor):
     create_schema_telemetry(conn, cursor)
     create_schema_courses(conn, cursor)
     create_schema_facturare(conn, cursor)
+    create_schema_time_bank(conn, cursor)
     create_schema_incremental(conn, cursor)
     run_pending_migrations(conn, cursor)
     conn.commit()

@@ -38,6 +38,22 @@ def handle_approved(entity_id, request_id, requester_id):
                 (sid,),
             )
 
+        # 4. Debit Time Bank (hours_converted = co_days * 8)
+        try:
+            from hr.time_bank.service import TimeBankService
+            hours = conversion['co_days_requested'] * 8
+            TimeBankService().debit(
+                user_id=conversion['employee_user_id'],
+                amount=hours,
+                tx_type='co_conversion',
+                description=f'CO conversion: {hours}h -> {conversion["co_days_requested"]} days CO',
+                reference_type='co_conversion',
+                reference_id=entity_id,
+                created_by=None,
+            )
+        except Exception as tb_err:
+            logger.warning(f'Time Bank debit failed for conversion #{entity_id}: {tb_err}')
+
         logger.info(
             f'Leave permit conversion #{entity_id} approved: '
             f'{conversion["co_days_requested"]} CO days deducted for user {conversion["employee_user_id"]}'

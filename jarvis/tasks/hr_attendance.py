@@ -736,35 +736,23 @@ def compute_hr_weekly_report_data(reference_date=None, period=None):
     bio_repo = BioStarRepository()
     co_repo = CoBalanceRepository()
 
-    # Build canonical company name map (any variant → canonical from companies table)
-    canonical_rows = _base.query_all('SELECT company FROM companies ORDER BY company')
-    _canonical_names = [r['company'] for r in canonical_rows]
-    _norm_cache = {}
+    # Build canonical company name map via company_aliases table
+    from core.organization.repositories.company_repository import CompanyRepository
+    _company_repo = CompanyRepository()
+    _alias_rows = _base.query_all(
+        'SELECT ca.alias, c.company AS canonical '
+        'FROM company_aliases ca JOIN companies c ON c.id = ca.company_id'
+    )
+    _alias_lookup = {r['alias'].lower().strip(): r['canonical'] for r in _alias_rows}
+    # Also add canonical names themselves (case-insensitive)
+    for r in _base.query_all('SELECT company FROM companies'):
+        _alias_lookup[r['company'].lower().strip()] = r['company']
 
     def _normalize_company(raw_name):
-        """Map any company name variant to the canonical form."""
+        """Map any company name variant to the canonical form via company_aliases."""
         if not raw_name:
             return raw_name
-        if raw_name in _norm_cache:
-            return _norm_cache[raw_name]
-        # Exact match first
-        for c in _canonical_names:
-            if c == raw_name:
-                _norm_cache[raw_name] = c
-                return c
-        # Case-insensitive match
-        upper = raw_name.upper().replace(' S.R.L.', '').replace(' SRL', '').strip()
-        for c in _canonical_names:
-            if c.upper().replace(' S.R.L.', '').replace(' SRL', '').strip() == upper:
-                _norm_cache[raw_name] = c
-                return c
-        # Prefix match (e.g. "AUTOWORLD INTERNATIONAL" → "Autoworld INTERNATIONAL S.R.L.")
-        for c in _canonical_names:
-            if c.upper().startswith(upper) or upper.startswith(c.upper().replace(' S.R.L.', '').replace(' SRL', '').strip()):
-                _norm_cache[raw_name] = c
-                return c
-        _norm_cache[raw_name] = raw_name
-        return raw_name
+        return _alias_lookup.get(raw_name.lower().strip(), raw_name)
 
     # Build primary company map (user_id → main company name)
     primary_rows = _base.query_all(_PRIMARY_CONTRACTS_CTE + '''
