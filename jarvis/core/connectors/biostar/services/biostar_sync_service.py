@@ -780,10 +780,15 @@ class BioStarSyncService:
     def auto_adjust_all(self, date_str, threshold=15, user_id=None):
         """Auto-adjust off-schedule, single-punch, and absent employees.
 
-        For multi-contract employees, generates per-company adjustments based on
-        each company's Sincron schedule. Leave codes are checked per-company:
-        only the company on leave is skipped, others are still adjusted.
+        Skips public holidays entirely.  For multi-contract employees, generates
+        per-company adjustments based on each company's Sincron schedule.
+        Leave codes are checked per-company: only the company on leave is
+        skipped, others are still adjusted.
         """
+        # Skip public holidays
+        if self._is_public_holiday(date_str):
+            return {'adjusted': 0, 'total_flagged': 0, 'skipped': 'public_holiday'}
+
         off = self.adj_repo.get_off_schedule(date_str, threshold)
         absent = self.adj_repo.get_absent_employees(date_str)
         leave_ids = self._get_sincron_leave_user_ids(date_str)
@@ -962,6 +967,26 @@ class BioStarSyncService:
         total_flagged = len(off) + len(absent)
         return {'adjusted': adjusted_count, 'total_flagged': total_flagged}
 
+    def _is_public_holiday(self, date_str):
+        """Check if a date is a public holiday."""
+        try:
+            from core.utils.holidays_repository import HolidayRepository
+            repo = HolidayRepository()
+            year = int(date_str[:4])
+            holidays = repo.get_holidays_for_year(year)
+            holiday_dates = set()
+            for h in holidays:
+                d = h['date']
+                holiday_dates.add(d.isoformat() if hasattr(d, 'isoformat') else str(d))
+            return date_str in holiday_dates
+        except Exception:
+            return False
+
+    def _is_weekend(self, date_str):
+        """Check if a date is a weekend (Saturday or Sunday)."""
+        d = datetime.strptime(date_str, '%Y-%m-%d')
+        return d.weekday() >= 5  # 5=Saturday, 6=Sunday
+
     def auto_adjust_single(self, biostar_user_id, date_str, user_id=None,
                            group_name=None):
         """Auto-adjust a single employee for a specific date using Sincron per-day schedule.
@@ -973,33 +998,38 @@ class BioStarSyncService:
         """
         from datetime import time as _time
 
+        # Skip public holidays
+        if self._is_public_holiday(date_str):
+            return {'success': False, 'error': 'Date is a public holiday'}
+
         employee = self.repo.get_employee_by_biostar_id(biostar_user_id)
         if not employee:
             return {'success': False, 'error': 'Employee not found'}
 
         jarvis_uid = employee.get('mapped_jarvis_user_id')
 
-        # Check for Sincron leave codes
+        # Check for Sincron leave codes and get per-company intervals
+        leave_companies = set()  # companies on leave (for per-company filtering)
         if jarvis_uid:
             try:
                 from core.connectors.sincron.repositories.sincron_repository import SincronRepository
                 sincron_repo = SincronRepository()
 
                 LEAVE_CODES = ('CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV')
-                leave = sincron_repo.query_one('''
-                    SELECT st.short_code
+                leave_rows = sincron_repo.query_all('''
+                    SELECT COALESCE(co.company, se.company_name) AS company,
+                           st.short_code
                     FROM sincron_employees se
                     JOIN sincron_timesheets st
                       ON st.sincron_employee_id = se.sincron_employee_id
                       AND st.company_name = se.company_name
                       AND st.day = %s::date
                       AND st.short_code = ANY(%s)
+                    LEFT JOIN companies co ON co.id = se.company_id
                     WHERE se.mapped_jarvis_user_id = %s
                       AND se.is_active = TRUE
-                    LIMIT 1
                 ''', (date_str, list(LEAVE_CODES), jarvis_uid))
-                if leave:
-                    return {'success': False, 'error': f'Employee has Sincron leave code ({leave["short_code"]}) for this date'}
+                leave_companies = {r['company'] for r in leave_rows}
 
                 # Get per-company intervals
                 intervals = sincron_repo.get_day_intervals_by_jarvis_user(jarvis_uid, date_str)
@@ -1019,6 +1049,15 @@ class BioStarSyncService:
                              if iv.get('company_id') == target_cid]
             if not intervals:
                 return {'success': False, 'error': f'No schedule found for group {group_name}'}
+
+        # Filter out companies on leave (per-company, not blanket)
+        if leave_companies and intervals:
+            intervals = [iv for iv in intervals if iv['company'] not in leave_companies]
+
+        # If ALL companies are on leave, skip entirely
+        if not intervals and leave_companies:
+            codes = ', '.join(r['short_code'] for r in leave_rows)
+            return {'success': False, 'error': f'Employee on leave ({codes}) for this date'}
 
         # Multi-contract: per-group adjustments
         if len(intervals) > 1 or (len(intervals) == 1 and group_name):
