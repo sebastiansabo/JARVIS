@@ -741,7 +741,7 @@ class BioStarRepository(BaseRepository):
                    adj.adjusted_first_punch,
                    adj.adjusted_last_punch,
                    adj.adjustment_type,
-                   adj_co.company_adjustments
+                   adj.company_adjustments
             FROM all_days d
             LEFT JOIN biostar_employees be2 ON be2.biostar_user_id = %s
             LEFT JOIN LATERAL (
