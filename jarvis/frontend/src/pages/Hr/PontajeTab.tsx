@@ -511,7 +511,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 const secs = timeDiffSec(pIn, pOut)
                 if (secs > 0) duration = (secs / 3600).toFixed(2)
               }
-              const companyShort = iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
+              const companyShort = iv.group_name || iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
               csvRows.push([
                 `W${dd.weekNum}`,
                 dd.date,
@@ -558,21 +558,17 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 sincronCode && !['OZ', 'OS'].includes(sincronCode) ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : pIn ? 'Present' : 'Absent',
               ])
             } else {
-              // No matching interval — fall through to combined data
+              // No matching interval — fall through to combined data (always raw punches)
               const candidates = dd.summaries.filter(x => emp.biostarIds.has(x.biostar_user_id))
-              const s = candidates.find(x => x.adjusted_first_punch || x.first_punch) ?? candidates[0] ?? null
-              const punchIn = s ? (raw ? s.first_punch : (s.adjusted_first_punch ?? s.first_punch)) : null
-              const punchOut = s ? (raw ? s.last_punch : (s.adjusted_last_punch ?? s.last_punch)) : null
+              const s = candidates.find(x => x.first_punch) ?? candidates[0] ?? null
+              const punchIn = s?.first_punch ?? null
+              const punchOut = s?.last_punch ?? null
               const officialIn = punchIn
               const officialOut = punchOut === punchIn ? null : punchOut
               const lunchMin = s?.lunch_break_minutes ?? 60
               let duration = ''
               if (officialIn && officialOut) {
-                const secs = raw
-                  ? (s?.duration_seconds ?? timeDiffSec(officialIn, officialOut))
-                  : (s?.adjusted_first_punch && s?.adjusted_last_punch
-                      ? netSec(timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch), lunchMin)
-                      : netSec(s?.duration_seconds ?? null, lunchMin))
+                const secs = netSec(s?.duration_seconds ?? timeDiffSec(officialIn, officialOut), lunchMin)
                 if (secs > 0) duration = (secs / 3600).toFixed(2)
               }
               csvRows.push([
@@ -1512,7 +1508,7 @@ function IntervalSubRow({
   const effectiveOut = iv.adjusted_last_punch ?? iv.last_punch
   const dur = effectiveIn && effectiveOut && (iv.punch_count > 1 || hasAdj)
     ? timeDiffSec(effectiveIn, effectiveOut) : null
-  const short = iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
+  const short = iv.group_name || iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
 
   const handleAdjust = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -1666,9 +1662,9 @@ function DayRow({
                 );
               })}
             </span>
-          ) : d?.sincron_company ? (
+          ) : !intervals && d?.sincron_company ? (
             <span className="block text-[10px] text-muted-foreground/60 normal-case" title={d.sincron_company}>
-              {d.sincron_company}
+              {d.sincron_company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim()}
             </span>
           ) : null}
         </span>

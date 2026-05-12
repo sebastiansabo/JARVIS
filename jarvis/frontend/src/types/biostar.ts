@@ -144,6 +144,7 @@ export interface CompanyInterval {
   adjusted_first_punch?: string | null
   adjusted_last_punch?: string | null
   adjustment_type?: string | null
+  group_name?: string | null
 }
 
 export interface BioStarEmployeeProfile {
