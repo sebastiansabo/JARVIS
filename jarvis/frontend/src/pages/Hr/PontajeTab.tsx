@@ -1438,18 +1438,6 @@ function MonthHistory({
           const wkTotalSec = wkPresent.reduce((sum, d) => sum + effectiveSec(d.data!, d.data!.lunch_break_minutes ?? lunchMin), 0)
           const wkAvg = wkPresent.length > 0 ? fmtDuration(wkTotalSec / wkPresent.length) : '—'
 
-          const handleAdjustWeek = async (e: React.MouseEvent) => {
-            e.stopPropagation()
-            setAdjusting(true)
-            try {
-              const count = await adjustDays(week.days, biostarUserId, scheduleStart, lunchMin, workingHours, leaveCodes)
-              toast.success(`Adjusted ${count} days in week ${week.weekNum}`)
-              invalidate()
-              queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today'] })
-            } catch { toast.error('Week adjust failed') }
-            finally { setAdjusting(false) }
-          }
-
           return (
             <div key={week.weekNum}>
               {/* Week header */}
@@ -1469,11 +1457,6 @@ function MonthHistory({
                 <span className="text-xs text-muted-foreground">
                   — {wkPresent.length}/{wkWorking.length} days, avg {wkAvg}
                 </span>
-                {canAdjust && (
-                  <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5 ml-auto" onClick={handleAdjustWeek} disabled={adjusting}>
-                    <Wand2 className="mr-0.5 h-2.5 w-2.5" />Week
-                  </Button>
-                )}
               </div>
 
               {/* Day rows */}
@@ -1621,16 +1604,6 @@ function DayRow({
     }
   }, [loadIntervals, isMultiContract, day.isWeekend, day.isHoliday, isFuture, leaveCode])
 
-  const handleAdjustDay = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    try {
-      await biostarApi.autoAdjustSingle(biostarUserId, day.date)
-      toast.success('Adjusted')
-      setIntervals(null) // reset so it reloads
-      onInvalidate()
-    } catch { toast.error('Adjust failed') }
-  }
-
   const handleRevertDay = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
@@ -1725,11 +1698,6 @@ function DayRow({
             <span className={cn('w-16 shrink-0 text-center font-medium', isShort ? 'text-orange-600' : '')}>
               {d.total_punches === 1 && !anyAdj && !d.adjusted_first_punch ? '—' : fmtDuration(net)}
             </span>
-            {canAdjust && !anyAdj && (d.first_punch || !d.total_punches) && (
-              <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust day">
-                <Wand2 className="h-2.5 w-2.5" />
-              </Button>
-            )}
             {canAdjust && anyAdj && !isMultiContract && (
               <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleRevertDay} disabled={adjusting} title="Revert">
                 <RotateCcw className="h-2.5 w-2.5" />
@@ -1745,11 +1713,6 @@ function DayRow({
               {fmtScheduleTime(scheduleEnd)}
             </span>
             <span className="text-xs text-red-400">{anyAdj ? '' : 'Absent'}</span>
-            {canAdjust && !anyAdj && (
-              <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust absent day">
-                <Wand2 className="h-2.5 w-2.5" />
-              </Button>
-            )}
           </>
         )}
       </div>
