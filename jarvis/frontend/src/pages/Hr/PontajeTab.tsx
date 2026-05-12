@@ -388,7 +388,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       }
 
       // Fetch daily summary for each working day (all employees, no manager filter)
-      let dailyData = await Promise.all(
+      const dailyData = await Promise.all(
         workingDays.map(async (wd) => {
           const summaries = await biostarApi.getDailySummary(wd.date, false)
           return { ...wd, summaries }
@@ -461,33 +461,12 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
       // Batch-fetch per-company intervals for each working day (multi-contract employees)
       const allBiostarIds = [...new Set(Array.from(employeeMap.values()).flatMap(e => [...e.biostarIds]))]
-      let intervalsByDay = new Map<string, Record<string, CompanyInterval[]>>()
+      const intervalsByDay = new Map<string, Record<string, CompanyInterval[]>>()
       for (const dd of dailyData) {
         try {
           const data = await biostarApi.batchIntervals(dd.date, allBiostarIds)
           if (data && Object.keys(data).length > 0) intervalsByDay.set(dd.date, data)
         } catch { /* ignore — fall back to combined */ }
-      }
-
-      // Auto-adjust after all data is fetched so multi-contract users also get adjusted
-      if (!raw) {
-        for (const wd of workingDays) {
-          try { await biostarApi.autoAdjustAll(wd.date) } catch { /* ignore */ }
-        }
-        // Re-fetch with adjustments applied
-        dailyData = await Promise.all(
-          workingDays.map(async (wd) => {
-            const summaries = await biostarApi.getDailySummary(wd.date, false)
-            return { ...wd, summaries }
-          }),
-        )
-        intervalsByDay = new Map()
-        for (const dd of dailyData) {
-          try {
-            const data = await biostarApi.batchIntervals(dd.date, allBiostarIds)
-            if (data && Object.keys(data).length > 0) intervalsByDay.set(dd.date, data)
-          } catch { /* ignore */ }
-        }
       }
 
       // Build CSV: Group before Name, with Company column
