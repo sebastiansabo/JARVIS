@@ -1502,17 +1502,6 @@ function IntervalSubRow({
     ? timeDiffSec(effectiveIn, effectiveOut) : null
   const short = iv.group_name || iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
 
-  const handleAdjust = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    try {
-      // Use the owning buid for this group's interval, fall back to parent buid
-      const targetBuid = iv.biostar_user_id || biostarUserId
-      await biostarApi.autoAdjustSingle(targetBuid, date, iv.group_name || undefined)
-      toast.success(`Adjusted ${short}`)
-      onInvalidate()
-    } catch { toast.error('Adjust failed') }
-  }
-
   const handleRevert = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
@@ -1553,11 +1542,6 @@ function IntervalSubRow({
       <span className="w-16 shrink-0 text-center font-medium">
         {dur != null ? fmtDuration(dur) : '—'}
       </span>
-      {canAdjust && !hasAdj && (
-        <Button variant="ghost" size="icon" className="h-4 w-4 ml-auto" onClick={handleAdjust} disabled={adjusting} title={`Adjust ${short}`}>
-          <Wand2 className="h-2 w-2" />
-        </Button>
-      )}
       {canAdjust && hasAdj && (
         <Button variant="ghost" size="icon" className="h-4 w-4 ml-auto" onClick={handleRevert} disabled={adjusting} title={`Revert ${short}`}>
           <RotateCcw className="h-2 w-2" />
