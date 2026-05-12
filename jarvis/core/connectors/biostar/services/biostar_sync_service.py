@@ -748,21 +748,52 @@ class BioStarSyncService:
             logger.warning('Failed to load Sincron leave user IDs for %s: %s', date_str, e)
             return set()
 
+    def _get_sincron_leave_by_company(self, date_str):
+        """Return {jarvis_user_id: {company_name, ...}} — which companies have leave per user."""
+        try:
+            from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+            sincron_repo = SincronRepository()
+            LEAVE_CODES = ('CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV')
+            rows = sincron_repo.query_all('''
+                SELECT se.mapped_jarvis_user_id,
+                       COALESCE(co.company, se.company_name) AS company
+                FROM sincron_employees se
+                JOIN sincron_timesheets st
+                  ON st.sincron_employee_id = se.sincron_employee_id
+                  AND st.company_name = se.company_name
+                  AND st.day = %s::date
+                  AND st.short_code = ANY(%s)
+                LEFT JOIN companies co ON co.id = se.company_id
+                WHERE se.is_active = TRUE
+                  AND se.mapped_jarvis_user_id IS NOT NULL
+            ''', (date_str, list(LEAVE_CODES)))
+            result = {}
+            for r in rows:
+                uid = r['mapped_jarvis_user_id']
+                if uid not in result:
+                    result[uid] = set()
+                result[uid].add(r['company'])
+            return result
+        except Exception as e:
+            logger.warning('Failed to load per-company Sincron leave for %s: %s', date_str, e)
+            return {}
+
     def auto_adjust_all(self, date_str, threshold=15, user_id=None):
         """Auto-adjust off-schedule, single-punch, and absent employees.
 
-        Uses combined schedule from ALL Sincron contracts (including secondary
-        contracts with exclude_from_pontaje=TRUE) so the adjustment reflects
-        the employee's full daily program.
+        For multi-contract employees, generates per-company adjustments based on
+        each company's Sincron schedule. Leave codes are checked per-company:
+        only the company on leave is skipped, others are still adjusted.
         """
         off = self.adj_repo.get_off_schedule(date_str, threshold)
         absent = self.adj_repo.get_absent_employees(date_str)
         leave_ids = self._get_sincron_leave_user_ids(date_str)
+        leave_by_company = self._get_sincron_leave_by_company(date_str)
         adjusted_count = 0
 
         # Batch-fetch full combined schedules (including secondary contracts)
-        # so we don't do N+1 queries per employee.
         full_schedules = {}
+        all_intervals = {}  # {jarvis_uid: [intervals]}
         try:
             from core.connectors.sincron.repositories.sincron_repository import SincronRepository
             sincron_repo = SincronRepository()
@@ -770,8 +801,9 @@ class BioStarSyncService:
             for r in rows:
                 if r.get('schedule_start') and r.get('schedule_end'):
                     full_schedules[r['mapped_jarvis_user_id']] = r
+            all_intervals = sincron_repo.get_all_day_intervals(date_str)
         except Exception as e:
-            logger.warning('Failed to load full Sincron schedules for %s: %s', date_str, e)
+            logger.warning('Failed to load Sincron schedules for %s: %s', date_str, e)
 
         from datetime import time as _time
 
@@ -789,12 +821,15 @@ class BioStarSyncService:
                 fs_start = _parse_time(str(fs['schedule_start'])[:5])
                 fs_end = _parse_time(str(fs['schedule_end'])[:5])
                 fs_lunch = fs.get('lunch_break_minutes') or lunch
-                # Compute working hours from full span
                 full_span_min = (datetime.combine(datetime.today(), fs_end) -
                                  datetime.combine(datetime.today(), fs_start)).total_seconds() / 60
                 fs_wh = (full_span_min - fs_lunch) / 60
                 return fs_start, fs_end, fs_lunch, fs_wh
             return sched_start, sched_end, lunch, wh
+
+        # Track which employees got a combined adjustment so we can add
+        # per-company adjustments after.
+        combined_adjusted_uids = set()  # jarvis_user_ids that got combined adj
 
         # --- Off-schedule employees (have punches but deviate) ---
         for row in off:
@@ -808,10 +843,15 @@ class BioStarSyncService:
             if not sched_start or not sched_end:
                 continue
 
-            # Skip employees with Sincron leave codes
             jarvis_uid = row.get('mapped_jarvis_user_id')
-            if jarvis_uid and jarvis_uid in leave_ids:
-                continue
+
+            # For multi-contract employees, skip blanket leave check —
+            # per-company adjustments handle partial leave below.
+            intervals = all_intervals.get(jarvis_uid, []) if jarvis_uid else []
+            if len(intervals) <= 1:
+                # Single-contract: blanket leave check
+                if jarvis_uid and jarvis_uid in leave_ids:
+                    continue
 
             if not first or not last:
                 continue
@@ -840,8 +880,10 @@ class BioStarSyncService:
                 adjusted_by=user_id,
             )
             adjusted_count += 1
+            if jarvis_uid:
+                combined_adjusted_uids.add(jarvis_uid)
 
-        # --- Absent employees (no punches, past day, no Sincron leave) ---
+        # --- Absent employees (no punches, past day) ---
         for row in absent:
             sched_start = row['schedule_start']
             sched_end = row['schedule_end']
@@ -849,6 +891,15 @@ class BioStarSyncService:
 
             if not sched_start or not sched_end:
                 continue
+
+            jarvis_uid = row.get('mapped_jarvis_user_id')
+
+            # For multi-contract employees, skip blanket leave check
+            intervals = all_intervals.get(jarvis_uid, []) if jarvis_uid else []
+            if len(intervals) <= 1:
+                # Single-contract: blanket leave check
+                if jarvis_uid and jarvis_uid in leave_ids:
+                    continue
 
             sched_start = _parse_time(sched_start)
             sched_end = _parse_time(sched_end)
@@ -882,6 +933,33 @@ class BioStarSyncService:
                 adjusted_by=user_id,
             )
             adjusted_count += 1
+            if jarvis_uid:
+                combined_adjusted_uids.add(jarvis_uid)
+
+        # --- Per-company adjustments for multi-contract employees ---
+        # Collect unique (jarvis_uid → biostar_user_id) from both off + absent
+        uid_to_biostar = {}
+        for row in list(off) + list(absent):
+            juid = row.get('mapped_jarvis_user_id')
+            if juid and juid in all_intervals and len(all_intervals[juid]) > 1:
+                uid_to_biostar.setdefault(juid, row['biostar_user_id'])
+
+        user_leave = leave_by_company
+        for jarvis_uid, biostar_user_id in uid_to_biostar.items():
+            intervals = all_intervals[jarvis_uid]
+            # Filter out companies on leave
+            leave_companies = user_leave.get(jarvis_uid, set())
+            active_intervals = [iv for iv in intervals if iv['company'] not in leave_companies]
+
+            if not active_intervals:
+                continue
+
+            try:
+                self._adjust_per_company(biostar_user_id, date_str, active_intervals, user_id)
+                adjusted_count += len(active_intervals)
+            except Exception as e:
+                logger.warning('Per-company adjust failed for user %s on %s: %s',
+                               jarvis_uid, date_str, e)
 
         total_flagged = len(off) + len(absent)
         return {'adjusted': adjusted_count, 'total_flagged': total_flagged}
