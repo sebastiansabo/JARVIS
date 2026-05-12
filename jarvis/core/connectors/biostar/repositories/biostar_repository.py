@@ -590,12 +590,18 @@ class BioStarRepository(BaseRepository):
             ORDER BY pl.event_datetime ASC
         ''', (biostar_user_id, date_str))
 
-    def get_employee_punches_by_interval(self, biostar_user_id, date_str, intervals):
+    def get_employee_punches_by_interval(self, biostar_user_ids, date_str, intervals):
         """Split raw deduped punches into company time intervals.
 
-        intervals: [{"company": str, "start": "HH:MM", "end": "HH:MM", "norma": float}, ...]
-        Returns: [{"company", "start", "end", "norma", "first_punch", "last_punch",
-                   "punch_count", "duration_seconds"}, ...]
+        biostar_user_ids: single string or list of strings — all buids for the
+            same JARVIS user.  Punches from every buid are collected and deduped
+            so that a single physical badge event recorded on multiple devices
+            is counted only once.
+        intervals: [{"company": str, "company_id": int, "start": "HH:MM",
+                     "end": "HH:MM", "norma": float}, ...]
+        Returns: [{"company", "company_id", "start", "end", "norma",
+                   "first_punch", "last_punch", "punch_count",
+                   "duration_seconds"}, ...]
 
         Assignment: punch belongs to interval if within [start - 15min, end + 15min].
         Overlapping buffers: assign to the nearest interval boundary.
@@ -605,14 +611,18 @@ class BioStarRepository(BaseRepository):
         if not intervals:
             return []
 
-        # Fetch deduped punches (same-minute collapse)
+        # Normalise to list
+        if isinstance(biostar_user_ids, str):
+            biostar_user_ids = [biostar_user_ids]
+
+        # Fetch deduped punches across ALL buids (same-minute collapse)
         punches = self.query_all('''
             SELECT DISTINCT ON (date_trunc('minute', pl.event_datetime))
                 pl.event_datetime
             FROM biostar_punch_logs pl
-            WHERE pl.biostar_user_id = %s AND pl.event_datetime::date = %s::date
+            WHERE pl.biostar_user_id = ANY(%s) AND pl.event_datetime::date = %s::date
             ORDER BY date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
-        ''', (biostar_user_id, date_str))
+        ''', (biostar_user_ids, date_str))
 
         ref_date = _dt.strptime(date_str, '%Y-%m-%d').date()
         BUFFER = timedelta(minutes=15)
@@ -625,7 +635,8 @@ class BioStarRepository(BaseRepository):
             start_dt = _dt.combine(ref_date, _dt.min.time().replace(hour=h1, minute=m1))
             end_dt = _dt.combine(ref_date, _dt.min.time().replace(hour=h2, minute=m2))
             parsed.append({
-                'company': iv['company'], 'start': iv['start'], 'end': iv['end'],
+                'company': iv['company'], 'company_id': iv.get('company_id'),
+                'start': iv['start'], 'end': iv['end'],
                 'norma': iv.get('norma'),
                 'start_dt': start_dt, 'end_dt': end_dt,
                 'punches': [],
@@ -656,7 +667,8 @@ class BioStarRepository(BaseRepository):
             lp = max(ps) if ps else None
             dur = (lp - fp).total_seconds() if fp and lp and len(ps) > 1 else None
             results.append({
-                'company': iv['company'], 'start': iv['start'], 'end': iv['end'],
+                'company': iv['company'], 'company_id': iv['company_id'],
+                'start': iv['start'], 'end': iv['end'],
                 'norma': iv['norma'],
                 'first_punch': str(fp) if fp else None,
                 'last_punch': str(lp) if lp else None,
@@ -770,29 +782,29 @@ class BioStarRepository(BaseRepository):
                 LIMIT 1
             ) sd ON TRUE
             LEFT JOIN LATERAL (
-                SELECT adj1.adjusted_first_punch,
-                       adj1.adjusted_last_punch,
-                       adj1.adjustment_type
+                -- Aggregate adjustments from ALL buids of the same JARVIS user
+                SELECT MIN(adj1.adjusted_first_punch) AS adjusted_first_punch,
+                       MAX(adj1.adjusted_last_punch) AS adjusted_last_punch,
+                       MAX(adj1.adjustment_type) AS adjustment_type,
+                       CASE WHEN COUNT(*) > 1 THEN
+                           json_agg(json_build_object(
+                               'biostar_user_id', adj1.biostar_user_id,
+                               'adjusted_first_punch', adj1.adjusted_first_punch,
+                               'adjusted_last_punch', adj1.adjusted_last_punch,
+                               'adjustment_type', adj1.adjustment_type
+                           ) ORDER BY adj1.adjusted_first_punch)
+                       END AS company_adjustments
                 FROM biostar_daily_adjustments adj1
-                WHERE adj1.biostar_user_id = %s AND adj1.date = d.date
-                  AND adj1.company_name IS NULL
-                LIMIT 1
+                JOIN biostar_employees be1
+                  ON be1.biostar_user_id = adj1.biostar_user_id
+                  AND be1.status = 'active'
+                WHERE be1.mapped_jarvis_user_id = be2.mapped_jarvis_user_id
+                  AND adj1.date = d.date
             ) adj ON TRUE
-            LEFT JOIN LATERAL (
-                SELECT json_agg(json_build_object(
-                    'company_name', adj2.company_name,
-                    'adjusted_first_punch', adj2.adjusted_first_punch,
-                    'adjusted_last_punch', adj2.adjusted_last_punch,
-                    'adjustment_type', adj2.adjustment_type
-                ) ORDER BY adj2.adjusted_first_punch) AS company_adjustments
-                FROM biostar_daily_adjustments adj2
-                WHERE adj2.biostar_user_id = %s AND adj2.date = d.date
-                  AND adj2.company_name IS NOT NULL
-            ) adj_co ON TRUE
             ORDER BY d.date DESC
         ''', (biostar_user_id, start_date, end_date, biostar_user_id,
               biostar_user_id, biostar_user_id, start_date, end_date,
-              biostar_user_id, biostar_user_id, biostar_user_id))
+              biostar_user_id))
 
     def get_employee_with_mapping(self, biostar_user_id):
         """Get employee details with JARVIS mapping info."""
@@ -864,11 +876,15 @@ class BioStarRepository(BaseRepository):
             FROM active_employees ae
             LEFT JOIN punch_summary ps ON ps.biostar_user_id = ae.biostar_user_id
             LEFT JOIN LATERAL (
-                SELECT adj0.adjusted_first_punch, adj0.adjusted_last_punch, adj0.adjustment_type
+                SELECT MIN(adj0.adjusted_first_punch) AS adjusted_first_punch,
+                       MAX(adj0.adjusted_last_punch) AS adjusted_last_punch,
+                       MAX(adj0.adjustment_type) AS adjustment_type
                 FROM biostar_daily_adjustments adj0
-                WHERE adj0.biostar_user_id = ae.biostar_user_id AND adj0.date = %s::date
-                ORDER BY adj0.company_name NULLS FIRST
-                LIMIT 1
+                JOIN biostar_employees be0
+                  ON be0.biostar_user_id = adj0.biostar_user_id
+                  AND be0.status = 'active'
+                WHERE be0.mapped_jarvis_user_id = ae.jarvis_user_id
+                  AND adj0.date = %s::date
             ) adj ON TRUE
             LEFT JOIN LATERAL (
                 SELECT (SELECT json_agg(sub ORDER BY sub.norma DESC NULLS LAST)

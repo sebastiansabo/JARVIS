@@ -685,7 +685,6 @@ class BioStarSyncService:
         return self.adj_repo.upsert_adjustment({
             'biostar_user_id': biostar_user_id,
             'date': date_str,
-            'company_name': kwargs.get('company_name'),
             'original_first_punch': original_first,
             'original_last_punch': original_last,
             'original_duration_seconds': original_duration,
@@ -827,9 +826,12 @@ class BioStarSyncService:
                 return fs_start, fs_end, fs_lunch, fs_wh
             return sched_start, sched_end, lunch, wh
 
-        # Track which employees got a combined adjustment so we can add
-        # per-company adjustments after.
-        combined_adjusted_uids = set()  # jarvis_user_ids that got combined adj
+        # Identify multi-contract jarvis_uids — these are handled by
+        # _adjust_per_group instead of getting individual global adjustments.
+        multi_contract_uids = set()
+        for juid, ivs in all_intervals.items():
+            if len(ivs) > 1:
+                multi_contract_uids.add(juid)
 
         # --- Off-schedule employees (have punches but deviate) ---
         for row in off:
@@ -845,13 +847,13 @@ class BioStarSyncService:
 
             jarvis_uid = row.get('mapped_jarvis_user_id')
 
-            # For multi-contract employees, skip blanket leave check —
-            # per-company adjustments handle partial leave below.
-            intervals = all_intervals.get(jarvis_uid, []) if jarvis_uid else []
-            if len(intervals) <= 1:
-                # Single-contract: blanket leave check
-                if jarvis_uid and jarvis_uid in leave_ids:
-                    continue
+            # Multi-contract: handled by _adjust_per_group below
+            if jarvis_uid and jarvis_uid in multi_contract_uids:
+                continue
+
+            # Single-contract: blanket leave check
+            if jarvis_uid and jarvis_uid in leave_ids:
+                continue
 
             if not first or not last:
                 continue
@@ -880,8 +882,6 @@ class BioStarSyncService:
                 adjusted_by=user_id,
             )
             adjusted_count += 1
-            if jarvis_uid:
-                combined_adjusted_uids.add(jarvis_uid)
 
         # --- Absent employees (no punches, past day) ---
         for row in absent:
@@ -894,12 +894,13 @@ class BioStarSyncService:
 
             jarvis_uid = row.get('mapped_jarvis_user_id')
 
-            # For multi-contract employees, skip blanket leave check
-            intervals = all_intervals.get(jarvis_uid, []) if jarvis_uid else []
-            if len(intervals) <= 1:
-                # Single-contract: blanket leave check
-                if jarvis_uid and jarvis_uid in leave_ids:
-                    continue
+            # Multi-contract: handled by _adjust_per_group below
+            if jarvis_uid and jarvis_uid in multi_contract_uids:
+                continue
+
+            # Single-contract: blanket leave check
+            if jarvis_uid and jarvis_uid in leave_ids:
+                continue
 
             sched_start = _parse_time(sched_start)
             sched_end = _parse_time(sched_end)
@@ -933,44 +934,42 @@ class BioStarSyncService:
                 adjusted_by=user_id,
             )
             adjusted_count += 1
-            if jarvis_uid:
-                combined_adjusted_uids.add(jarvis_uid)
 
-        # --- Per-company adjustments for multi-contract employees ---
-        # Collect unique (jarvis_uid → biostar_user_id) from both off + absent
-        uid_to_biostar = {}
+        # --- Per-group adjustments for multi-contract employees ---
+        # Each group's buid gets its own adjustment based on Sincron schedule.
+        processed_uids = set()
         for row in list(off) + list(absent):
             juid = row.get('mapped_jarvis_user_id')
-            if juid and juid in all_intervals and len(all_intervals[juid]) > 1:
-                uid_to_biostar.setdefault(juid, row['biostar_user_id'])
+            if not juid or juid not in multi_contract_uids or juid in processed_uids:
+                continue
+            processed_uids.add(juid)
 
-        user_leave = leave_by_company
-        for jarvis_uid, biostar_user_id in uid_to_biostar.items():
-            intervals = all_intervals[jarvis_uid]
+            intervals = all_intervals[juid]
             # Filter out companies on leave
-            leave_companies = user_leave.get(jarvis_uid, set())
+            leave_companies = leave_by_company.get(juid, set())
             active_intervals = [iv for iv in intervals if iv['company'] not in leave_companies]
 
             if not active_intervals:
                 continue
 
             try:
-                self._adjust_per_company(biostar_user_id, date_str, active_intervals, user_id)
+                self._adjust_per_group(juid, date_str, active_intervals, user_id)
                 adjusted_count += len(active_intervals)
             except Exception as e:
-                logger.warning('Per-company adjust failed for user %s on %s: %s',
-                               jarvis_uid, date_str, e)
+                logger.warning('Per-group adjust failed for user %s on %s: %s',
+                               juid, date_str, e)
 
         total_flagged = len(off) + len(absent)
         return {'adjusted': adjusted_count, 'total_flagged': total_flagged}
 
     def auto_adjust_single(self, biostar_user_id, date_str, user_id=None,
-                           company_name=None):
+                           group_name=None):
         """Auto-adjust a single employee for a specific date using Sincron per-day schedule.
 
-        company_name: if provided, only adjust that specific company interval.
-                      If None, auto-detect: multi-contract employees get per-company adjustments,
-                      single-contract employees get a single adjustment (legacy behavior).
+        group_name: if provided, only adjust that specific group's interval.
+                    The adjustment is stored under the buid belonging to that group.
+                    If None, auto-detect: multi-contract employees get per-group
+                    adjustments, single-contract get a single adjustment.
         """
         from datetime import time as _time
 
@@ -1011,16 +1010,20 @@ class BioStarSyncService:
         else:
             intervals = []
 
-        # If a specific company was requested, filter to just that interval
-        if company_name and intervals:
-            intervals = [iv for iv in intervals if iv['company'] == company_name]
+        # If a specific group was requested, filter to its company_id
+        if group_name and intervals:
+            group_map = self.get_group_company_map()  # {group: company_id}
+            target_cid = group_map.get(group_name)
+            if target_cid:
+                intervals = [iv for iv in intervals
+                             if iv.get('company_id') == target_cid]
             if not intervals:
-                return {'success': False, 'error': f'No schedule found for company {company_name}'}
+                return {'success': False, 'error': f'No schedule found for group {group_name}'}
 
-        # Multi-contract: per-company adjustments
-        if len(intervals) > 1 or (len(intervals) == 1 and company_name):
-            return self._adjust_per_company(
-                biostar_user_id, date_str, intervals, user_id)
+        # Multi-contract: per-group adjustments
+        if len(intervals) > 1 or (len(intervals) == 1 and group_name):
+            return self._adjust_per_group(
+                jarvis_uid, date_str, intervals, user_id)
 
         # Single-contract / legacy: full-span adjustment
         sched_start = employee.get('schedule_start')
@@ -1106,24 +1109,52 @@ class BioStarSyncService:
         )
         return {'success': True, 'adjusted_first': str(adj_first), 'adjusted_last': str(adj_last)}
 
-    def _adjust_per_company(self, biostar_user_id, date_str, intervals, user_id):
-        """Generate per-company interval adjustments for multi-contract employees."""
+    def _adjust_per_group(self, jarvis_uid, date_str, intervals, user_id):
+        """Generate per-group adjustments for multi-contract employees.
+
+        Each BioStar group (= biostar_user_id) gets its own adjustment based on
+        the Sincron schedule for the company mapped to that group.  Punches from
+        ALL of the employee's buids are collected and split across time windows.
+        """
         from datetime import time as _time
 
         ref_date = datetime.strptime(date_str, '%Y-%m-%d').date()
 
-        # Split raw punches into company intervals
-        split = self.repo.get_employee_punches_by_interval(biostar_user_id, date_str, intervals)
+        # Get all active buids for this JARVIS user, keyed by group name
+        buids = self.repo.query_all('''
+            SELECT biostar_user_id, user_group_name
+            FROM biostar_employees
+            WHERE mapped_jarvis_user_id = %s AND status = 'active'
+        ''', (jarvis_uid,))
+        all_buid_list = [b['biostar_user_id'] for b in buids]
+
+        # Build company_id → buid map via group → company_id
+        group_map = self.get_group_company_map()  # {group_name: company_id}
+        cid_to_buid = {}
+        for b in buids:
+            cid = group_map.get(b['user_group_name'])
+            if cid:
+                cid_to_buid[cid] = b['biostar_user_id']
+
+        # Split punches from ALL buids into time intervals
+        split = self.repo.get_employee_punches_by_interval(
+            all_buid_list, date_str, intervals)
 
         results = []
         for iv in split:
+            # Find the buid that owns this interval's company
+            target_buid = cid_to_buid.get(iv.get('company_id'))
+            if not target_buid:
+                continue  # no BioStar employee for this group — skip
+
             parts_s = iv['start'].split(':')
             parts_e = iv['end'].split(':')
             sched_start = _time(int(parts_s[0]), int(parts_s[1]))
             sched_end = _time(int(parts_e[0]), int(parts_e[1]))
 
             # Find lunch from the interval data (base contract has lunch, secondary usually 0)
-            matching_iv = next((x for x in intervals if x['company'] == iv['company']), None)
+            matching_iv = next((x for x in intervals
+                                if x.get('company_id') == iv.get('company_id')), None)
             lunch = (matching_iv.get('lunch_break_minutes') or 0) if matching_iv else 0
 
             span_min = (datetime.combine(ref_date, sched_end) -
@@ -1155,7 +1186,7 @@ class BioStarSyncService:
                 adj_first, adj_last = self._randomize_times(synthetic_ref, sched_start, lunch, wh)
 
             self.adjust_employee(
-                biostar_user_id=biostar_user_id,
+                biostar_user_id=target_buid,
                 date_str=date_str,
                 adjusted_first=adj_first,
                 adjusted_last=adj_last,
@@ -1170,9 +1201,9 @@ class BioStarSyncService:
                 deviation_out=deviation_out,
                 adjustment_type='auto',
                 adjusted_by=user_id,
-                company_name=iv['company'],
             )
             results.append({
+                'biostar_user_id': target_buid,
                 'company': iv['company'],
                 'adjusted_first': str(adj_first),
                 'adjusted_last': str(adj_last),
@@ -1193,9 +1224,9 @@ class BioStarSyncService:
                 dates_processed += 1
         return {'dates_processed': dates_processed, 'total_adjusted': total_adjusted}
 
-    def revert_adjustment(self, biostar_user_id, date_str, company_name=None):
+    def revert_adjustment(self, biostar_user_id, date_str):
         """Revert an adjustment (delete it, back to original punches)."""
-        return self.adj_repo.delete_adjustment(biostar_user_id, date_str, company_name=company_name)
+        return self.adj_repo.delete_adjustment(biostar_user_id, date_str)
 
     def revert_adjustments_range(self, start_date, end_date):
         """Revert all auto-adjustments in a date range."""

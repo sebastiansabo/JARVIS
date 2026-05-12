@@ -566,17 +566,18 @@ def auto_adjust_all():
 def auto_adjust_single():
     """Auto-adjust a single employee for a specific date using Sincron per-day schedule.
 
-    Optional company_name in body: if provided, only adjust that company interval.
+    Optional group_name in body: if provided, only adjust that group's interval.
+    The adjustment is stored under the buid belonging to that group.
     """
     data = request.get_json() or {}
     biostar_user_id = data.get('biostar_user_id')
     date_str = data.get('date')
-    company_name = data.get('company_name')  # optional: per-company adjustment
+    group_name = data.get('group_name')  # optional: per-group adjustment
     if not biostar_user_id or not date_str:
         return jsonify({'success': False, 'error': 'biostar_user_id and date required'}), 400
     result = service.auto_adjust_single(biostar_user_id, date_str,
                                         user_id=current_user.id,
-                                        company_name=company_name)
+                                        group_name=group_name)
     if not result.get('success'):
         return jsonify(result), 400
     return jsonify({'success': True, 'data': result})
@@ -585,10 +586,11 @@ def auto_adjust_single():
 @biostar_bp.route('/api/attendance/punches-by-interval', methods=['GET'])
 @api_login_required
 def get_punches_by_interval():
-    """Get per-company interval punch split for a multi-contract employee.
+    """Get per-group interval punch split for a multi-contract employee.
 
     Query params: biostar_user_id, date
-    Returns intervals with split punches + any per-company adjustments.
+    Returns intervals with split punches + per-group adjustments.
+    Each interval includes the owning biostar_user_id for adjust/revert calls.
     """
     biostar_user_id = request.args.get('biostar_user_id')
     date_str = request.args.get('date')
@@ -610,32 +612,44 @@ def get_punches_by_interval():
     if not intervals or len(intervals) <= 1:
         return jsonify({'success': True, 'intervals': []})
 
-    # Split punches into intervals
-    split = service.repo.get_employee_punches_by_interval(biostar_user_id, date_str, intervals)
+    # Get all active buids for this JARVIS user
+    all_buids = service.repo.query_all('''
+        SELECT biostar_user_id, user_group_name
+        FROM biostar_employees
+        WHERE mapped_jarvis_user_id = %s AND status = 'active'
+    ''', (jarvis_uid,))
+    all_buid_list = [b['biostar_user_id'] for b in all_buids]
 
-    # Fetch per-company adjustments — use jarvis_uid to find adjustments
-    # stored under ANY biostar_user_id mapped to the same JARVIS user
-    adj_rows = service.adj_repo.query_all('''
-        SELECT company_name, adjusted_first_punch, adjusted_last_punch, adjustment_type
-        FROM biostar_daily_adjustments
-        WHERE biostar_user_id IN (
-            SELECT biostar_user_id FROM biostar_employees
-            WHERE mapped_jarvis_user_id = %s AND status = 'active'
-        )
-        AND date = %s::date AND company_name IS NOT NULL
-    ''', (jarvis_uid, date_str))
-    adj_map = {r['company_name']: r for r in adj_rows} if adj_rows else {}
-
-    # Build company_id → group_name reverse map
+    # Build company_id → buid and company_id → group_name maps
     group_map = service.get_group_company_map()  # {group_name: company_id}
-    cid_to_group = {v: k for k, v in group_map.items()}
-    companies_lookup = {r['company']: r['id'] for r in service.repo.query_all(
-        'SELECT id, company FROM companies WHERE company IS NOT NULL'
-    )}
+    cid_to_buid = {}
+    cid_to_group = {}
+    for b in all_buids:
+        cid = group_map.get(b['user_group_name'])
+        if cid:
+            cid_to_buid[cid] = b['biostar_user_id']
+            cid_to_group[cid] = b['user_group_name']
 
-    # Merge adjustments + group_name into split results
+    # Split punches from ALL buids into intervals
+    split = service.repo.get_employee_punches_by_interval(
+        all_buid_list, date_str, intervals)
+
+    # Fetch adjustments keyed by biostar_user_id (one per buid per date)
+    adj_rows = service.adj_repo.query_all('''
+        SELECT biostar_user_id, adjusted_first_punch, adjusted_last_punch, adjustment_type
+        FROM biostar_daily_adjustments
+        WHERE biostar_user_id = ANY(%s) AND date = %s::date
+    ''', (all_buid_list, date_str))
+    adj_by_buid = {r['biostar_user_id']: r for r in adj_rows} if adj_rows else {}
+
+    # Merge adjustments + group info into split results
     for iv in split:
-        adj = adj_map.get(iv['company'])
+        cid = iv.get('company_id')
+        owning_buid = cid_to_buid.get(cid) if cid else None
+        iv['group_name'] = cid_to_group.get(cid) if cid else None
+        iv['biostar_user_id'] = owning_buid
+
+        adj = adj_by_buid.get(owning_buid) if owning_buid else None
         if adj:
             iv['adjusted_first_punch'] = str(adj['adjusted_first_punch']) if adj['adjusted_first_punch'] else None
             iv['adjusted_last_punch'] = str(adj['adjusted_last_punch']) if adj['adjusted_last_punch'] else None
@@ -644,8 +658,6 @@ def get_punches_by_interval():
             iv['adjusted_first_punch'] = None
             iv['adjusted_last_punch'] = None
             iv['adjustment_type'] = None
-        cid = companies_lookup.get(iv['company'])
-        iv['group_name'] = cid_to_group.get(cid) if cid else None
 
     return jsonify({'success': True, 'intervals': split})
 
@@ -653,7 +665,7 @@ def get_punches_by_interval():
 @biostar_bp.route('/api/attendance/batch-intervals', methods=['POST'])
 @api_login_required
 def batch_intervals():
-    """Get per-company interval punch split for multiple employees on a given date.
+    """Get per-group interval punch split for multiple employees on a given date.
 
     Body: { date, biostar_user_ids: string[] }
     Returns: { success, data: { [biostar_user_id]: CompanyInterval[] } }
@@ -676,36 +688,55 @@ def batch_intervals():
         if emp and emp.get('mapped_jarvis_user_id'):
             jarvis_map[buid] = emp['mapped_jarvis_user_id']
 
-    # Build company_id → group_name reverse map (once for all employees)
+    # Build group → company_id map (once for all employees)
     group_map = service.get_group_company_map()  # {group_name: company_id}
-    cid_to_group = {v: k for k, v in group_map.items()}
-    companies_lookup = {r['company']: r['id'] for r in service.repo.query_all(
-        'SELECT id, company FROM companies WHERE company IS NOT NULL'
-    )}
 
-    # For each mapped employee, check if multi-contract and split
+    # Deduplicate by jarvis_uid (multiple buids may map to same person)
+    processed_jarvis = {}  # {jarvis_uid: first_buid}
     for buid, jarvis_uid in jarvis_map.items():
+        if jarvis_uid not in processed_jarvis:
+            processed_jarvis[jarvis_uid] = buid
+
+    for jarvis_uid, primary_buid in processed_jarvis.items():
         intervals = sincron_repo.get_day_intervals_by_jarvis_user(jarvis_uid, date_str)
         if not intervals or len(intervals) <= 1:
             continue
 
-        split = service.repo.get_employee_punches_by_interval(buid, date_str, intervals)
+        # Get all active buids for this JARVIS user
+        all_buids = service.repo.query_all('''
+            SELECT biostar_user_id, user_group_name
+            FROM biostar_employees
+            WHERE mapped_jarvis_user_id = %s AND status = 'active'
+        ''', (jarvis_uid,))
+        all_buid_list = [b['biostar_user_id'] for b in all_buids]
 
-        # Merge adjustments + group_name — use jarvis_uid to find adjustments
-        # stored under ANY biostar_user_id mapped to the same JARVIS user
+        # Build company_id → buid and company_id → group_name
+        cid_to_buid = {}
+        cid_to_group = {}
+        for b in all_buids:
+            cid = group_map.get(b['user_group_name'])
+            if cid:
+                cid_to_buid[cid] = b['biostar_user_id']
+                cid_to_group[cid] = b['user_group_name']
+
+        split = service.repo.get_employee_punches_by_interval(
+            all_buid_list, date_str, intervals)
+
+        # Fetch adjustments keyed by buid
         adj_rows = service.adj_repo.query_all('''
-            SELECT company_name, adjusted_first_punch, adjusted_last_punch, adjustment_type
+            SELECT biostar_user_id, adjusted_first_punch, adjusted_last_punch, adjustment_type
             FROM biostar_daily_adjustments
-            WHERE biostar_user_id IN (
-                SELECT biostar_user_id FROM biostar_employees
-                WHERE mapped_jarvis_user_id = %s AND status = 'active'
-            )
-            AND date = %s::date AND company_name IS NOT NULL
-        ''', (jarvis_uid, date_str))
-        adj_map = {r['company_name']: r for r in adj_rows} if adj_rows else {}
+            WHERE biostar_user_id = ANY(%s) AND date = %s::date
+        ''', (all_buid_list, date_str))
+        adj_by_buid = {r['biostar_user_id']: r for r in adj_rows} if adj_rows else {}
 
         for iv in split:
-            adj = adj_map.get(iv['company'])
+            cid = iv.get('company_id')
+            owning_buid = cid_to_buid.get(cid) if cid else None
+            iv['group_name'] = cid_to_group.get(cid) if cid else None
+            iv['biostar_user_id'] = owning_buid
+
+            adj = adj_by_buid.get(owning_buid) if owning_buid else None
             if adj:
                 iv['adjusted_first_punch'] = str(adj['adjusted_first_punch']) if adj['adjusted_first_punch'] else None
                 iv['adjusted_last_punch'] = str(adj['adjusted_last_punch']) if adj['adjusted_last_punch'] else None
@@ -714,10 +745,8 @@ def batch_intervals():
                 iv['adjusted_first_punch'] = None
                 iv['adjusted_last_punch'] = None
                 iv['adjustment_type'] = None
-            cid = companies_lookup.get(iv['company'])
-            iv['group_name'] = cid_to_group.get(cid) if cid else None
 
-        result[buid] = split
+        result[primary_buid] = split
 
     return jsonify({'success': True, 'data': result})
 
@@ -814,16 +843,32 @@ def get_employee_sincron_timesheet(biostar_user_id):
 def revert_adjustment():
     """Revert an adjustment (delete it).
 
-    Optional company_name: if provided, only revert that company's adjustment.
-    If omitted, reverts ALL adjustments for that user/date.
+    For per-group reverts, pass the owning buid directly.
+    If revert_all=true, reverts ALL buids of the same JARVIS user for that date.
     """
     data = request.get_json() or {}
     biostar_user_id = data.get('biostar_user_id')
     date_str = data.get('date')
-    company_name = data.get('company_name')
+    revert_all = data.get('revert_all', False)
     if not biostar_user_id or not date_str:
         return jsonify({'success': False, 'error': 'biostar_user_id and date required'}), 400
-    service.revert_adjustment(biostar_user_id, date_str, company_name=company_name)
+
+    if revert_all:
+        # Revert ALL buids of the same JARVIS user for this date
+        emp = service.repo.get_employee_by_biostar_id(biostar_user_id)
+        jarvis_uid = emp.get('mapped_jarvis_user_id') if emp else None
+        if jarvis_uid:
+            sibling_buids = service.repo.query_all('''
+                SELECT biostar_user_id FROM biostar_employees
+                WHERE mapped_jarvis_user_id = %s AND status = 'active'
+            ''', (jarvis_uid,))
+            for b in sibling_buids:
+                service.revert_adjustment(b['biostar_user_id'], date_str)
+        else:
+            service.revert_adjustment(biostar_user_id, date_str)
+    else:
+        service.revert_adjustment(biostar_user_id, date_str)
+
     return jsonify({'success': True, 'message': 'Adjustment reverted'})
 
 
