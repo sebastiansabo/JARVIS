@@ -1658,10 +1658,10 @@ function DayRow({
           {d?.sincron_day_schedule && d.sincron_day_schedule.length > 0 && !intervals ? (
             <span className="block text-[10px] text-muted-foreground/60 normal-case leading-tight">
               {d.sincron_day_schedule.map((s, i) => {
-                const short = s.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || s.company;
+                const label = s.group_name || s.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || s.company;
                 return (
-                  <span key={i} className="block whitespace-nowrap" title={`${s.company} ${s.start}–${s.end}`}>
-                    {short} {s.start}–{s.end}
+                  <span key={i} className="block whitespace-nowrap" title={`${s.group_name ? s.group_name + ' — ' : ''}${s.company} ${s.start}–${s.end}`}>
+                    {label} {s.start}–{s.end}
                   </span>
                 );
               })}

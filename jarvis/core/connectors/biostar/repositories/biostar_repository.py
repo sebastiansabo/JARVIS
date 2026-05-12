@@ -753,7 +753,16 @@ class BioStarRepository(BaseRepository):
                             SELECT COALESCE(co2.company, se2.company_name) AS company,
                                    to_char(st2.program_in, 'HH24:MI') AS start,
                                    to_char(st2.program_out, 'HH24:MI') AS "end",
-                                   se2.norma_lucru AS norma
+                                   se2.norma_lucru AS norma,
+                                   (SELECT beg.user_group_name
+                                    FROM company_aliases ca
+                                    JOIN biostar_employees beg
+                                      ON beg.user_group_name = ca.alias
+                                      AND beg.mapped_jarvis_user_id = se2.mapped_jarvis_user_id
+                                      AND beg.status = 'active'
+                                    WHERE ca.company_id = se2.company_id
+                                      AND ca.source = 'biostar'
+                                    LIMIT 1) AS group_name
                             FROM sincron_employees se2
                             JOIN sincron_timesheets st2
                               ON st2.sincron_employee_id = se2.sincron_employee_id
