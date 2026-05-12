@@ -613,12 +613,17 @@ def get_punches_by_interval():
     # Split punches into intervals
     split = service.repo.get_employee_punches_by_interval(biostar_user_id, date_str, intervals)
 
-    # Fetch per-company adjustments
+    # Fetch per-company adjustments — use jarvis_uid to find adjustments
+    # stored under ANY biostar_user_id mapped to the same JARVIS user
     adj_rows = service.adj_repo.query_all('''
         SELECT company_name, adjusted_first_punch, adjusted_last_punch, adjustment_type
         FROM biostar_daily_adjustments
-        WHERE biostar_user_id = %s AND date = %s::date AND company_name IS NOT NULL
-    ''', (biostar_user_id, date_str))
+        WHERE biostar_user_id IN (
+            SELECT biostar_user_id FROM biostar_employees
+            WHERE mapped_jarvis_user_id = %s AND status = 'active'
+        )
+        AND date = %s::date AND company_name IS NOT NULL
+    ''', (jarvis_uid, date_str))
     adj_map = {r['company_name']: r for r in adj_rows} if adj_rows else {}
 
     # Build company_id → group_name reverse map
@@ -686,12 +691,17 @@ def batch_intervals():
 
         split = service.repo.get_employee_punches_by_interval(buid, date_str, intervals)
 
-        # Merge adjustments + group_name
+        # Merge adjustments + group_name — use jarvis_uid to find adjustments
+        # stored under ANY biostar_user_id mapped to the same JARVIS user
         adj_rows = service.adj_repo.query_all('''
             SELECT company_name, adjusted_first_punch, adjusted_last_punch, adjustment_type
             FROM biostar_daily_adjustments
-            WHERE biostar_user_id = %s AND date = %s::date AND company_name IS NOT NULL
-        ''', (buid, date_str))
+            WHERE biostar_user_id IN (
+                SELECT biostar_user_id FROM biostar_employees
+                WHERE mapped_jarvis_user_id = %s AND status = 'active'
+            )
+            AND date = %s::date AND company_name IS NOT NULL
+        ''', (jarvis_uid, date_str))
         adj_map = {r['company_name']: r for r in adj_rows} if adj_rows else {}
 
         for iv in split:
