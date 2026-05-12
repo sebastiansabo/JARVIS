@@ -621,7 +621,14 @@ def get_punches_by_interval():
     ''', (biostar_user_id, date_str))
     adj_map = {r['company_name']: r for r in adj_rows} if adj_rows else {}
 
-    # Merge adjustments into split results
+    # Build company_id → group_name reverse map
+    group_map = service.get_group_company_map()  # {group_name: company_id}
+    cid_to_group = {v: k for k, v in group_map.items()}
+    companies_lookup = {r['company']: r['id'] for r in service.repo.query_all(
+        'SELECT id, company FROM companies WHERE company IS NOT NULL'
+    )}
+
+    # Merge adjustments + group_name into split results
     for iv in split:
         adj = adj_map.get(iv['company'])
         if adj:
@@ -632,6 +639,8 @@ def get_punches_by_interval():
             iv['adjusted_first_punch'] = None
             iv['adjusted_last_punch'] = None
             iv['adjustment_type'] = None
+        cid = companies_lookup.get(iv['company'])
+        iv['group_name'] = cid_to_group.get(cid) if cid else None
 
     return jsonify({'success': True, 'intervals': split})
 
@@ -662,6 +671,13 @@ def batch_intervals():
         if emp and emp.get('mapped_jarvis_user_id'):
             jarvis_map[buid] = emp['mapped_jarvis_user_id']
 
+    # Build company_id → group_name reverse map (once for all employees)
+    group_map = service.get_group_company_map()  # {group_name: company_id}
+    cid_to_group = {v: k for k, v in group_map.items()}
+    companies_lookup = {r['company']: r['id'] for r in service.repo.query_all(
+        'SELECT id, company FROM companies WHERE company IS NOT NULL'
+    )}
+
     # For each mapped employee, check if multi-contract and split
     for buid, jarvis_uid in jarvis_map.items():
         intervals = sincron_repo.get_day_intervals_by_jarvis_user(jarvis_uid, date_str)
@@ -670,7 +686,7 @@ def batch_intervals():
 
         split = service.repo.get_employee_punches_by_interval(buid, date_str, intervals)
 
-        # Merge adjustments
+        # Merge adjustments + group_name
         adj_rows = service.adj_repo.query_all('''
             SELECT company_name, adjusted_first_punch, adjusted_last_punch, adjustment_type
             FROM biostar_daily_adjustments
@@ -688,6 +704,8 @@ def batch_intervals():
                 iv['adjusted_first_punch'] = None
                 iv['adjusted_last_punch'] = None
                 iv['adjustment_type'] = None
+            cid = companies_lookup.get(iv['company'])
+            iv['group_name'] = cid_to_group.get(cid) if cid else None
 
         result[buid] = split
 
