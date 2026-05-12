@@ -453,13 +453,8 @@ class BioStarRepository(BaseRepository):
                    adj.adjusted_last_punch,
                    adj.adjustment_type
             FROM punches p
-            LEFT JOIN LATERAL (
-                SELECT adj0.adjusted_first_punch, adj0.adjusted_last_punch, adj0.adjustment_type
-                FROM biostar_daily_adjustments adj0
-                WHERE adj0.biostar_user_id = p.biostar_user_id AND adj0.date = %s::date
-                ORDER BY adj0.company_name NULLS FIRST
-                LIMIT 1
-            ) adj ON TRUE
+            LEFT JOIN biostar_daily_adjustments adj
+                ON adj.biostar_user_id = p.biostar_user_id AND adj.date = %s::date
             -- Exclude dismissed/closed JARVIS users and departed BioStar groups
             -- BUT keep them if they have punches on this date (were active that day)
             WHERE (p.mapped_jarvis_user_id IS NULL OR p.jarvis_user_active = TRUE
