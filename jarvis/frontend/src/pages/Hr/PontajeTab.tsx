@@ -983,7 +983,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                           }).catch(() => toast.error('Adjust failed'))
                         }}
                         onRevert={() => {
-                          biostarApi.revertAdjustment(emp.biostar_user_id, date).then(() => {
+                          biostarApi.revertAdjustment(emp.biostar_user_id, date, true).then(() => {
                             toast.success('Adjustment reverted')
                             queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today', date] })
                           }).catch(() => toast.error('Revert failed'))
@@ -1513,7 +1513,9 @@ function IntervalSubRow({
   const handleAdjust = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
-      await biostarApi.autoAdjustSingle(biostarUserId, date, iv.company)
+      // Use the owning buid for this group's interval, fall back to parent buid
+      const targetBuid = iv.biostar_user_id || biostarUserId
+      await biostarApi.autoAdjustSingle(targetBuid, date, iv.group_name || undefined)
       toast.success(`Adjusted ${short}`)
       onInvalidate()
     } catch { toast.error('Adjust failed') }
@@ -1522,7 +1524,9 @@ function IntervalSubRow({
   const handleRevert = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
-      await biostarApi.revertAdjustment(biostarUserId, date, iv.company)
+      // Revert the owning buid's adjustment for this group
+      const targetBuid = iv.biostar_user_id || biostarUserId
+      await biostarApi.revertAdjustment(targetBuid, date)
       toast.success(`Reverted ${short}`)
       onInvalidate()
     } catch { toast.error('Revert failed') }
@@ -1621,7 +1625,7 @@ function DayRow({
   const handleRevertDay = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
-      await biostarApi.revertAdjustment(biostarUserId, day.date)
+      await biostarApi.revertAdjustment(biostarUserId, day.date, true)
       toast.success('Reverted')
       setIntervals(null)
       onInvalidate()

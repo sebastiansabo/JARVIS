@@ -117,16 +117,16 @@ export interface BioStarDayHistory {
   schedule_end?: string | null
   sincron_company?: string | null
   sincron_day_schedule?: { company: string; start: string; end: string; norma?: number }[] | null
-  // Adjustment data — legacy single-record (company_name IS NULL)
+  // Aggregated adjustment data (MIN/MAX across all group buids)
   adjusted_first_punch?: string | null
   adjusted_last_punch?: string | null
   adjustment_type?: string | null
-  // Per-company adjustments (company_name IS NOT NULL)
+  // Per-group adjustments (one per buid, only when >1 group)
   company_adjustments?: CompanyAdjustment[] | null
 }
 
 export interface CompanyAdjustment {
-  company_name: string
+  biostar_user_id: string
   adjusted_first_punch: string | null
   adjusted_last_punch: string | null
   adjustment_type: string | null
@@ -134,6 +134,7 @@ export interface CompanyAdjustment {
 
 export interface CompanyInterval {
   company: string
+  company_id?: number | null
   start: string
   end: string
   norma: number | null
@@ -145,6 +146,7 @@ export interface CompanyInterval {
   adjusted_last_punch?: string | null
   adjustment_type?: string | null
   group_name?: string | null
+  biostar_user_id?: string | null  // owning buid for this group
 }
 
 export interface BioStarEmployeeProfile {
