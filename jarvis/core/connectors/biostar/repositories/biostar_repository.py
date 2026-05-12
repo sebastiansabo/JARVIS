@@ -941,7 +941,7 @@ class BioStarRepository(BaseRepository):
                 LIMIT 1
             ) sl ON TRUE
             ORDER BY ae.company NULLS LAST,
-                     CASE WHEN ps.biostar_user_id IS NULL THEN 1 ELSE 0 END,
+                     CASE WHEN ps.jarvis_user_id IS NULL THEN 1 ELSE 0 END,
                      ae.name
         ''', params)
 
