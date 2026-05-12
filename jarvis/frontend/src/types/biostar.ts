@@ -254,6 +254,7 @@ export interface AttendanceRow {
   department: string | null
   biostar_user_id: string
   user_group_name: string | null
+  user_group_names: string[] | null
   email: string | null
   lunch_break_minutes: number
   working_hours: number

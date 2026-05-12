@@ -266,7 +266,10 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const groups = useMemo(() => {
     const set = new Set<string>()
-    rows.forEach((e) => { if (e.user_group_name) set.add(e.user_group_name) })
+    rows.forEach((e) => {
+      if (e.user_group_names) e.user_group_names.forEach(g => set.add(g))
+      else if (e.user_group_name) set.add(e.user_group_name)
+    })
     return Array.from(set).sort()
   }, [rows])
 
@@ -274,7 +277,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const processed = useMemo(() => {
     let list = [...rows]
-    if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
+    if (groupFilter !== 'all') list = list.filter((e) => e.user_group_names ? e.user_group_names.includes(groupFilter) : e.user_group_name === groupFilter)
     if (statusFilter !== 'all') list = list.filter((e) => e.attendance_status === statusFilter)
     if (search) {
       const s = search.toLowerCase()
@@ -339,10 +342,14 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const [exporting, setExporting] = useState(false)
 
-  const exportGroups = useMemo(() =>
-    [...new Set(rows.map(r => r.user_group_name).filter((g): g is string => !!g && !g.toLowerCase().includes('plecati') && !g.toLowerCase().includes('contracte inchise')))].sort(),
-    [rows],
-  )
+  const exportGroups = useMemo(() => {
+    const set = new Set<string>()
+    rows.forEach(r => {
+      if (r.user_group_names) r.user_group_names.forEach(g => set.add(g))
+      else if (r.user_group_name) set.add(r.user_group_name)
+    })
+    return [...set].filter(g => !g.toLowerCase().includes('plecati') && !g.toLowerCase().includes('contracte inchise')).sort()
+  }, [rows])
 
   const downloadXlsx = useCallback(async (mode: 'day' | 'month', raw = false, group?: string) => {
     setExporting(true)
@@ -1085,7 +1092,9 @@ function EmployeeRow({
         )}
         {visibleCols.has('group') && (
           <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-            {employee.user_group_name || '—'}
+            {employee.user_group_names && employee.user_group_names.length > 1
+              ? <span title={employee.user_group_names.join(', ')}>{employee.user_group_names.length} groups</span>
+              : employee.user_group_name || '—'}
           </TableCell>
         )}
         {visibleCols.has('official_in') && (

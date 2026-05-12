@@ -849,7 +849,16 @@ class BioStarRepository(BaseRepository):
                        u.department,
                        be.biostar_user_id, be.user_group_name, be.email,
                        be.lunch_break_minutes, be.working_hours,
-                       be.schedule_start, be.schedule_end
+                       be.schedule_start, be.schedule_end,
+                       (SELECT array_agg(DISTINCT be_all.user_group_name)
+                        FROM biostar_employees be_all
+                        WHERE be_all.mapped_jarvis_user_id = u.id
+                          AND be_all.status = 'active'
+                          AND (be_all.is_blacklisted IS NULL OR be_all.is_blacklisted = FALSE)
+                          AND be_all.user_group_name IS NOT NULL
+                          AND be_all.user_group_name NOT ILIKE '%%plecati%%'
+                          AND be_all.user_group_name NOT ILIKE '%%contracte inchise%%'
+                       ) AS user_group_names
                 FROM users u
                 JOIN biostar_employees be ON be.mapped_jarvis_user_id = u.id
                     AND be.status = 'active'
@@ -868,22 +877,25 @@ class BioStarRepository(BaseRepository):
                 ORDER BY pl.biostar_user_id, date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
             ),
             punch_summary AS (
-                SELECT d.biostar_user_id,
+                SELECT be_ps.mapped_jarvis_user_id AS jarvis_user_id,
                        MIN(d.event_datetime) AS first_punch,
                        MAX(d.event_datetime) AS last_punch,
-                       COUNT(*) AS total_punches,
+                       COUNT(DISTINCT date_trunc('minute', d.event_datetime)) AS total_punches,
                        EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds
                 FROM deduped d
-                GROUP BY d.biostar_user_id
+                JOIN biostar_employees be_ps ON be_ps.biostar_user_id = d.biostar_user_id
+                  AND be_ps.status = 'active'
+                WHERE be_ps.mapped_jarvis_user_id IS NOT NULL
+                GROUP BY be_ps.mapped_jarvis_user_id
             )
             SELECT ae.*,
                    ps.first_punch, ps.last_punch, ps.total_punches, ps.duration_seconds,
                    adj.adjusted_first_punch, adj.adjusted_last_punch, adj.adjustment_type,
-                   CASE WHEN ps.biostar_user_id IS NULL THEN 'absent' ELSE 'present' END AS attendance_status,
+                   CASE WHEN ps.jarvis_user_id IS NULL THEN 'absent' ELSE 'present' END AS attendance_status,
                    sd.sincron_day_schedule,
                    sl.sincron_leave_code
             FROM active_employees ae
-            LEFT JOIN punch_summary ps ON ps.biostar_user_id = ae.biostar_user_id
+            LEFT JOIN punch_summary ps ON ps.jarvis_user_id = ae.jarvis_user_id
             LEFT JOIN LATERAL (
                 SELECT MIN(adj0.adjusted_first_punch) AS adjusted_first_punch,
                        MAX(adj0.adjusted_last_punch) AS adjusted_last_punch,
