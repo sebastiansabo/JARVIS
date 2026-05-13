@@ -365,6 +365,7 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
   const [kontoDebit, setKontoDebit] = useState('41214286')
   const [kontoCredit, setKontoCredit] = useState('419968')
   const [eurofibKlient, setEurofibKlient] = useState(139)
+  const [textTemplate, setTextTemplate] = useState('avans {brand_short} {comanda}')
 
   const preset = SUPPLIER_PRESETS[INV_DEFAULTS.supplier]
   const [supplierName, setSupplierName] = useState(INV_DEFAULTS.supplier)
@@ -383,9 +384,9 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
     fx: { currency: 'EUR', kurs: parseFloat(kurs) || 0, kurs_date: kursDate || invoiceDate },
     supplier: { name: supplierName, address_lines: supplierAddress.split('\n').filter(Boolean), reg_no: supplierRegNo, vat: supplierVat, iban: supplierIban, bank: supplierBank, swift: supplierSwift },
     customer: { name: customerName, address_lines: customerAddress.split('\n').filter(Boolean), vat: customerVat },
-    eurofib: { klient: eurofibKlient, konto_debit: parseInt(kontoDebit) || 41214286, konto_credit: parseInt(kontoCredit) || 419968, belegart: 'JVV', steuercode: 'L00', fw_steuercode: 'L00', text_template: 'avans {brand_short} {comanda}', brand_map: {} },
+    eurofib: { klient: eurofibKlient, konto_debit: parseInt(kontoDebit) || 41214286, konto_credit: parseInt(kontoCredit) || 419968, belegart: 'JVV', steuercode: 'L00', fw_steuercode: 'L00', text_template: textTemplate, brand_map: {} },
     output: {},
-  }), [jobId, contractRef, anexaRef, startNo, invoiceDate, intocmitDe, kurs, kursDate, supplierName, supplierAddress, supplierVat, supplierRegNo, supplierIban, supplierBank, supplierSwift, customerName, customerAddress, customerVat, kontoDebit, kontoCredit, eurofibKlient])
+  }), [jobId, contractRef, anexaRef, startNo, invoiceDate, intocmitDe, kurs, kursDate, supplierName, supplierAddress, supplierVat, supplierRegNo, supplierIban, supplierBank, supplierSwift, customerName, customerAddress, customerVat, kontoDebit, kontoCredit, eurofibKlient, textTemplate])
 
   const buildFormData = useCallback(() => {
     if (!anexaFile) throw new Error('No Anexa file selected')
@@ -504,10 +505,17 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
         {/* EuroFib accounts */}
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-base">EuroFib Accounts</CardTitle></CardHeader>
-          <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div><Label>Klient Nr</Label><Input type="number" value={eurofibKlient} onChange={e => setEurofibKlient(parseInt(e.target.value) || 0)} /></div>
-            <div><Label>Konto Debit</Label><Input type="number" value={kontoDebit} onChange={e => setKontoDebit(e.target.value)} /></div>
-            <div><Label>Konto Credit</Label><Input type="number" value={kontoCredit} onChange={e => setKontoCredit(e.target.value)} /></div>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div><Label>Klient Nr</Label><Input type="number" value={eurofibKlient} onChange={e => setEurofibKlient(parseInt(e.target.value) || 0)} /></div>
+              <div><Label>Konto Debit</Label><Input type="number" value={kontoDebit} onChange={e => setKontoDebit(e.target.value)} /></div>
+              <div><Label>Konto Credit</Label><Input type="number" value={kontoCredit} onChange={e => setKontoCredit(e.target.value)} /></div>
+            </div>
+            <div>
+              <Label>Text (Col Q)</Label>
+              <Input placeholder="avans {brand_short} {comanda}" value={textTemplate} onChange={e => setTextTemplate(e.target.value)} />
+              <p className="text-xs text-muted-foreground mt-1">Variables: {'{brand_short}'} = auto-detected brand, {'{comanda}'} = order number</p>
+            </div>
           </CardContent>
         </Card>
 
