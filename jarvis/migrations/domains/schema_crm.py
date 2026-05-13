@@ -160,6 +160,28 @@ def create_schema_crm(conn, cursor):
     cursor.execute("ALTER TABLE crm_clients ADD COLUMN IF NOT EXISTS contact_person TEXT")
     cursor.execute("ALTER TABLE crm_clients ADD COLUMN IF NOT EXISTS dealer_codes TEXT[]")
 
+    # -- EuroFib konto_debit per CRM client, keyed by eurofib_klient_id --
+    # Migration: convert INTEGER → JSONB if column exists as integer
+    cursor.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'crm_clients' AND column_name = 'eurofib_konto_debit' AND data_type = 'integer'
+            ) THEN
+                ALTER TABLE crm_clients ALTER COLUMN eurofib_konto_debit TYPE JSONB
+                    USING CASE WHEN eurofib_konto_debit IS NOT NULL
+                        THEN jsonb_build_object('139', eurofib_konto_debit)
+                        ELSE NULL END;
+            ELSIF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'crm_clients' AND column_name = 'eurofib_konto_debit'
+            ) THEN
+                ALTER TABLE crm_clients ADD COLUMN eurofib_konto_debit JSONB;
+            END IF;
+        END $$;
+    """)
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS client_phones (
             id SERIAL PRIMARY KEY,

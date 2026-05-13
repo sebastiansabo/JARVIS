@@ -40,6 +40,41 @@ def _check_facturare_perm(action: str) -> bool:
     return bool(getattr(current_user, "can_add_invoices", False))
 
 
+@facturare_bp.route("/facturare/api/bnr-rate")
+@login_required
+@handle_api_errors
+def api_bnr_rate():
+    """Get BNR EUR/RON rate for the day before a given date.
+
+    Query params:
+      - date: invoice date (YYYY-MM-DD) — rate will be fetched for date-1
+    """
+    from datetime import datetime, timedelta
+    from core.services.currency_converter import get_exchange_rate
+
+    date_str = request.args.get("date")
+    if not date_str:
+        return error_response("date query param is required", 400)
+
+    try:
+        invoice_date = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        return error_response("date must be YYYY-MM-DD", 400)
+
+    kurs_date = invoice_date - timedelta(days=1)
+    kurs_date_str = kurs_date.strftime("%Y-%m-%d")
+
+    rate = get_exchange_rate("EUR", kurs_date_str)
+    if rate is None:
+        return error_response(f"No BNR rate found for {kurs_date_str}", 404)
+
+    return jsonify({
+        "success": True,
+        "kurs": round(rate, 4),
+        "kurs_date": kurs_date_str,
+    })
+
+
 @facturare_bp.route("/facturare/api/parse-anexa", methods=["POST"])
 @login_required
 @handle_api_errors
