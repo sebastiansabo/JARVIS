@@ -28,6 +28,7 @@ interface Company {
   city?: string | null
   county?: string | null
   postal_code?: string | null
+  eurofib_klient_id?: number | null
 }
 
 interface CrmClient {
@@ -96,7 +97,7 @@ function handleDownload(url: string, filename: string) {
 
 function SupplierCard({ companies, supplierName, setSupplierName, supplierVat, setSupplierVat,
   supplierRegNo, setSupplierRegNo, supplierIban, setSupplierIban, supplierBank, setSupplierBank,
-  supplierSwift, setSupplierSwift, supplierAddress, setSupplierAddress,
+  supplierSwift, setSupplierSwift, supplierAddress, setSupplierAddress, onCompanyChange,
 }: {
   companies: Company[]
   supplierName: string; setSupplierName: (v: string) => void
@@ -106,6 +107,7 @@ function SupplierCard({ companies, supplierName, setSupplierName, supplierVat, s
   supplierBank: string; setSupplierBank: (v: string) => void
   supplierSwift: string; setSupplierSwift: (v: string) => void
   supplierAddress: string; setSupplierAddress: (v: string) => void
+  onCompanyChange?: (company: Company | undefined) => void
 }) {
   return (
     <Card>
@@ -130,6 +132,7 @@ function SupplierCard({ companies, supplierName, setSupplierName, supplierVat, s
               setSupplierIban(company?.iban || preset?.iban || '')
               setSupplierBank(company?.bank || preset?.bank || '')
               setSupplierSwift(company?.swift || preset?.swift || '')
+              onCompanyChange?.(company)
             }}
           >
             <SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger>
@@ -361,6 +364,7 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
   const [customerVat, setCustomerVat] = useState('')
   const [kontoDebit, setKontoDebit] = useState('41214286')
   const [kontoCredit, setKontoCredit] = useState('419968')
+  const [eurofibKlient, setEurofibKlient] = useState(139)
 
   const preset = SUPPLIER_PRESETS[INV_DEFAULTS.supplier]
   const [supplierName, setSupplierName] = useState(INV_DEFAULTS.supplier)
@@ -379,9 +383,9 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
     fx: { currency: 'EUR', kurs: parseFloat(kurs) || 0, kurs_date: kursDate || invoiceDate },
     supplier: { name: supplierName, address_lines: supplierAddress.split('\n').filter(Boolean), reg_no: supplierRegNo, vat: supplierVat, iban: supplierIban, bank: supplierBank, swift: supplierSwift },
     customer: { name: customerName, address_lines: customerAddress.split('\n').filter(Boolean), vat: customerVat },
-    eurofib: { klient: 139, konto_debit: parseInt(kontoDebit) || 41214286, konto_credit: parseInt(kontoCredit) || 419968, belegart: 'JVV', steuercode: 'L00', fw_steuercode: 'L00', text_template: 'avans {brand_short} {comanda}', brand_map: {} },
+    eurofib: { klient: eurofibKlient, konto_debit: parseInt(kontoDebit) || 41214286, konto_credit: parseInt(kontoCredit) || 419968, belegart: 'JVV', steuercode: 'L00', fw_steuercode: 'L00', text_template: 'avans {brand_short} {comanda}', brand_map: {} },
     output: {},
-  }), [jobId, contractRef, anexaRef, startNo, invoiceDate, intocmitDe, kurs, kursDate, supplierName, supplierAddress, supplierVat, supplierRegNo, supplierIban, supplierBank, supplierSwift, customerName, customerAddress, customerVat, kontoDebit, kontoCredit])
+  }), [jobId, contractRef, anexaRef, startNo, invoiceDate, intocmitDe, kurs, kursDate, supplierName, supplierAddress, supplierVat, supplierRegNo, supplierIban, supplierBank, supplierSwift, customerName, customerAddress, customerVat, kontoDebit, kontoCredit, eurofibKlient])
 
   const buildFormData = useCallback(() => {
     if (!anexaFile) throw new Error('No Anexa file selected')
@@ -474,7 +478,10 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
           supplierIban={supplierIban} setSupplierIban={setSupplierIban}
           supplierBank={supplierBank} setSupplierBank={setSupplierBank}
           supplierSwift={supplierSwift} setSupplierSwift={setSupplierSwift}
-          supplierAddress={supplierAddress} setSupplierAddress={setSupplierAddress} />
+          supplierAddress={supplierAddress} setSupplierAddress={setSupplierAddress}
+          onCompanyChange={(c) => {
+            if (c?.eurofib_klient_id) setEurofibKlient(c.eurofib_klient_id)
+          }} />
 
         <CustomerCard customerName={customerName} setCustomerName={setCustomerName}
           customerAddress={customerAddress} setCustomerAddress={setCustomerAddress}
@@ -484,6 +491,7 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-base">EuroFib Accounts</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div><Label>Klient Nr</Label><Input type="number" value={eurofibKlient} onChange={e => setEurofibKlient(parseInt(e.target.value) || 0)} /></div>
             <div><Label>Konto Debit</Label><Input type="number" value={kontoDebit} onChange={e => setKontoDebit(e.target.value)} /></div>
             <div><Label>Konto Credit</Label><Input type="number" value={kontoCredit} onChange={e => setKontoCredit(e.target.value)} /></div>
           </CardContent>

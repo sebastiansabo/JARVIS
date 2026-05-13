@@ -186,7 +186,7 @@ class CompanyRepository(BaseRepository):
     def get_all_with_vat_and_brands(self) -> list[dict]:
         """Get all companies with VAT numbers, brand associations, and hierarchy."""
         def _work(cursor):
-            cursor.execute('SELECT id, company, vat, parent_company_id, display_order, logo_url, reg_no, iban, bank, swift, street, city, county, postal_code FROM companies ORDER BY display_order, company')
+            cursor.execute('SELECT id, company, vat, parent_company_id, display_order, logo_url, reg_no, iban, bank, swift, street, city, county, postal_code, eurofib_klient_id FROM companies ORDER BY display_order, company')
             companies = [dict(row) for row in cursor.fetchall()]
 
             cursor.execute('''
