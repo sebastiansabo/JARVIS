@@ -17,6 +17,7 @@ export interface CrmClient {
   nr_reg?: string
   client_since?: string
   is_blacklisted?: boolean
+  eurofib_konto_debit?: number | null
   source_flags: Record<string, boolean>
   merged_into_id?: number
   created_at: string
