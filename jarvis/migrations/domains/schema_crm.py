@@ -171,7 +171,7 @@ def create_schema_crm(conn, cursor):
             ) THEN
                 ALTER TABLE crm_clients ALTER COLUMN eurofib_konto_debit TYPE JSONB
                     USING CASE WHEN eurofib_konto_debit IS NOT NULL
-                        THEN jsonb_build_object('139', eurofib_konto_debit)
+                        THEN jsonb_build_object('138', eurofib_konto_debit, '139', eurofib_konto_debit, '140', eurofib_konto_debit, '141', eurofib_konto_debit)
                         ELSE NULL END;
             ELSIF NOT EXISTS (
                 SELECT 1 FROM information_schema.columns
