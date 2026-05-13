@@ -266,7 +266,10 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const groups = useMemo(() => {
     const set = new Set<string>()
-    rows.forEach((e) => { if (e.user_group_name) set.add(e.user_group_name) })
+    rows.forEach((e) => {
+      if (e.user_group_names) e.user_group_names.forEach(g => set.add(g))
+      else if (e.user_group_name) set.add(e.user_group_name)
+    })
     return Array.from(set).sort()
   }, [rows])
 
@@ -274,7 +277,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const processed = useMemo(() => {
     let list = [...rows]
-    if (groupFilter !== 'all') list = list.filter((e) => e.user_group_name === groupFilter)
+    if (groupFilter !== 'all') list = list.filter((e) => e.user_group_names ? e.user_group_names.includes(groupFilter) : e.user_group_name === groupFilter)
     if (statusFilter !== 'all') list = list.filter((e) => e.attendance_status === statusFilter)
     if (search) {
       const s = search.toLowerCase()
@@ -339,10 +342,14 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const [exporting, setExporting] = useState(false)
 
-  const exportGroups = useMemo(() =>
-    [...new Set(rows.map(r => r.user_group_name).filter((g): g is string => !!g && !g.toLowerCase().includes('plecati') && !g.toLowerCase().includes('contracte inchise')))].sort(),
-    [rows],
-  )
+  const exportGroups = useMemo(() => {
+    const set = new Set<string>()
+    rows.forEach(r => {
+      if (r.user_group_names) r.user_group_names.forEach(g => set.add(g))
+      else if (r.user_group_name) set.add(r.user_group_name)
+    })
+    return [...set].filter(g => !g.toLowerCase().includes('plecati') && !g.toLowerCase().includes('contracte inchise')).sort()
+  }, [rows])
 
   const downloadXlsx = useCallback(async (mode: 'day' | 'month', raw = false, group?: string) => {
     setExporting(true)
@@ -385,13 +392,6 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       if (!workingDays.length) {
         toast.error('No working days to export', { id: toastId })
         return
-      }
-
-      // Auto-adjust each day before fetching (skip for raw export)
-      if (!raw) {
-        for (const wd of workingDays) {
-          try { await biostarApi.autoAdjustAll(wd.date) } catch { /* ignore — some days may have no off-schedule */ }
-        }
       }
 
       // Fetch daily summary for each working day (all employees, no manager filter)
@@ -518,7 +518,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 const secs = timeDiffSec(pIn, pOut)
                 if (secs > 0) duration = (secs / 3600).toFixed(2)
               }
-              const companyShort = iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
+              const companyShort = iv.group_name || iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
               csvRows.push([
                 `W${dd.weekNum}`,
                 dd.date,
@@ -565,21 +565,17 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 sincronCode && !['OZ', 'OS'].includes(sincronCode) ? (LEAVE_LABELS[sincronCode] ?? sincronCode) : pIn ? 'Present' : 'Absent',
               ])
             } else {
-              // No matching interval — fall through to combined data
+              // No matching interval — fall through to combined data (always raw punches)
               const candidates = dd.summaries.filter(x => emp.biostarIds.has(x.biostar_user_id))
-              const s = candidates.find(x => x.adjusted_first_punch || x.first_punch) ?? candidates[0] ?? null
-              const punchIn = s ? (raw ? s.first_punch : (s.adjusted_first_punch ?? s.first_punch)) : null
-              const punchOut = s ? (raw ? s.last_punch : (s.adjusted_last_punch ?? s.last_punch)) : null
+              const s = candidates.find(x => x.first_punch) ?? candidates[0] ?? null
+              const punchIn = s?.first_punch ?? null
+              const punchOut = s?.last_punch ?? null
               const officialIn = punchIn
               const officialOut = punchOut === punchIn ? null : punchOut
               const lunchMin = s?.lunch_break_minutes ?? 60
               let duration = ''
               if (officialIn && officialOut) {
-                const secs = raw
-                  ? (s?.duration_seconds ?? timeDiffSec(officialIn, officialOut))
-                  : (s?.adjusted_first_punch && s?.adjusted_last_punch
-                      ? netSec(timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch), lunchMin)
-                      : netSec(s?.duration_seconds ?? null, lunchMin))
+                const secs = netSec(s?.duration_seconds ?? timeDiffSec(officialIn, officialOut), lunchMin)
                 if (secs > 0) duration = (secs / 3600).toFixed(2)
               }
               csvRows.push([
@@ -994,7 +990,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                           }).catch(() => toast.error('Adjust failed'))
                         }}
                         onRevert={() => {
-                          biostarApi.revertAdjustment(emp.biostar_user_id, date).then(() => {
+                          biostarApi.revertAdjustment(emp.biostar_user_id, date, true).then(() => {
                             toast.success('Adjustment reverted')
                             queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today', date] })
                           }).catch(() => toast.error('Revert failed'))
@@ -1096,7 +1092,9 @@ function EmployeeRow({
         )}
         {visibleCols.has('group') && (
           <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-            {employee.user_group_name || '—'}
+            {employee.user_group_names && employee.user_group_names.length > 1
+              ? <span title={employee.user_group_names.join(', ')}>{employee.user_group_names.length} groups</span>
+              : employee.user_group_name || '—'}
           </TableCell>
         )}
         {visibleCols.has('official_in') && (
@@ -1440,18 +1438,6 @@ function MonthHistory({
           const wkTotalSec = wkPresent.reduce((sum, d) => sum + effectiveSec(d.data!, d.data!.lunch_break_minutes ?? lunchMin), 0)
           const wkAvg = wkPresent.length > 0 ? fmtDuration(wkTotalSec / wkPresent.length) : '—'
 
-          const handleAdjustWeek = async (e: React.MouseEvent) => {
-            e.stopPropagation()
-            setAdjusting(true)
-            try {
-              const count = await adjustDays(week.days, biostarUserId, scheduleStart, lunchMin, workingHours, leaveCodes)
-              toast.success(`Adjusted ${count} days in week ${week.weekNum}`)
-              invalidate()
-              queryClient.invalidateQueries({ queryKey: ['biostar', 'attendance-today'] })
-            } catch { toast.error('Week adjust failed') }
-            finally { setAdjusting(false) }
-          }
-
           return (
             <div key={week.weekNum}>
               {/* Week header */}
@@ -1471,11 +1457,6 @@ function MonthHistory({
                 <span className="text-xs text-muted-foreground">
                   — {wkPresent.length}/{wkWorking.length} days, avg {wkAvg}
                 </span>
-                {canAdjust && (
-                  <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5 ml-auto" onClick={handleAdjustWeek} disabled={adjusting}>
-                    <Wand2 className="mr-0.5 h-2.5 w-2.5" />Week
-                  </Button>
-                )}
               </div>
 
               {/* Day rows */}
@@ -1519,21 +1500,14 @@ function IntervalSubRow({
   const effectiveOut = iv.adjusted_last_punch ?? iv.last_punch
   const dur = effectiveIn && effectiveOut && (iv.punch_count > 1 || hasAdj)
     ? timeDiffSec(effectiveIn, effectiveOut) : null
-  const short = iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
-
-  const handleAdjust = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    try {
-      await biostarApi.autoAdjustSingle(biostarUserId, date, iv.company)
-      toast.success(`Adjusted ${short}`)
-      onInvalidate()
-    } catch { toast.error('Adjust failed') }
-  }
+  const short = iv.group_name || iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
 
   const handleRevert = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
-      await biostarApi.revertAdjustment(biostarUserId, date, iv.company)
+      // Revert the owning buid's adjustment for this group
+      const targetBuid = iv.biostar_user_id || biostarUserId
+      await biostarApi.revertAdjustment(targetBuid, date)
       toast.success(`Reverted ${short}`)
       onInvalidate()
     } catch { toast.error('Revert failed') }
@@ -1568,11 +1542,6 @@ function IntervalSubRow({
       <span className="w-16 shrink-0 text-center font-medium">
         {dur != null ? fmtDuration(dur) : '—'}
       </span>
-      {canAdjust && !hasAdj && (
-        <Button variant="ghost" size="icon" className="h-4 w-4 ml-auto" onClick={handleAdjust} disabled={adjusting} title={`Adjust ${short}`}>
-          <Wand2 className="h-2 w-2" />
-        </Button>
-      )}
       {canAdjust && hasAdj && (
         <Button variant="ghost" size="icon" className="h-4 w-4 ml-auto" onClick={handleRevert} disabled={adjusting} title={`Revert ${short}`}>
           <RotateCcw className="h-2 w-2" />
@@ -1619,20 +1588,10 @@ function DayRow({
     }
   }, [loadIntervals, isMultiContract, day.isWeekend, day.isHoliday, isFuture, leaveCode])
 
-  const handleAdjustDay = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    try {
-      await biostarApi.autoAdjustSingle(biostarUserId, day.date)
-      toast.success('Adjusted')
-      setIntervals(null) // reset so it reloads
-      onInvalidate()
-    } catch { toast.error('Adjust failed') }
-  }
-
   const handleRevertDay = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
-      await biostarApi.revertAdjustment(biostarUserId, day.date)
+      await biostarApi.revertAdjustment(biostarUserId, day.date, true)
       toast.success('Reverted')
       setIntervals(null)
       onInvalidate()
@@ -1665,17 +1624,17 @@ function DayRow({
           {d?.sincron_day_schedule && d.sincron_day_schedule.length > 0 && !intervals ? (
             <span className="block text-[10px] text-muted-foreground/60 normal-case leading-tight">
               {d.sincron_day_schedule.map((s, i) => {
-                const short = s.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || s.company;
+                const label = s.group_name || s.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || s.company;
                 return (
-                  <span key={i} className="block whitespace-nowrap" title={`${s.company} ${s.start}–${s.end}`}>
-                    {short} {s.start}–{s.end}
+                  <span key={i} className="block whitespace-nowrap" title={`${s.group_name ? s.group_name + ' — ' : ''}${s.company} ${s.start}–${s.end}`}>
+                    {label} {s.start}–{s.end}
                   </span>
                 );
               })}
             </span>
-          ) : d?.sincron_company ? (
+          ) : !intervals && d?.sincron_company ? (
             <span className="block text-[10px] text-muted-foreground/60 normal-case" title={d.sincron_company}>
-              {d.sincron_company}
+              {d.sincron_company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim()}
             </span>
           ) : null}
         </span>
@@ -1723,11 +1682,6 @@ function DayRow({
             <span className={cn('w-16 shrink-0 text-center font-medium', isShort ? 'text-orange-600' : '')}>
               {d.total_punches === 1 && !anyAdj && !d.adjusted_first_punch ? '—' : fmtDuration(net)}
             </span>
-            {canAdjust && !anyAdj && (d.first_punch || !d.total_punches) && (
-              <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust day">
-                <Wand2 className="h-2.5 w-2.5" />
-              </Button>
-            )}
             {canAdjust && anyAdj && !isMultiContract && (
               <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleRevertDay} disabled={adjusting} title="Revert">
                 <RotateCcw className="h-2.5 w-2.5" />
@@ -1743,11 +1697,6 @@ function DayRow({
               {fmtScheduleTime(scheduleEnd)}
             </span>
             <span className="text-xs text-red-400">{anyAdj ? '' : 'Absent'}</span>
-            {canAdjust && !anyAdj && (
-              <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={handleAdjustDay} disabled={adjusting} title="Adjust absent day">
-                <Wand2 className="h-2.5 w-2.5" />
-              </Button>
-            )}
           </>
         )}
       </div>

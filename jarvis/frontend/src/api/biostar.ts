@@ -262,10 +262,10 @@ export const biostarApi = {
       { date, threshold },
     ),
 
-  autoAdjustSingle: (biostarUserId: string, date: string, companyName?: string) =>
+  autoAdjustSingle: (biostarUserId: string, date: string, groupName?: string) =>
     api.post<{ success: boolean; data: { success: boolean; adjusted_first: string; adjusted_last: string; intervals?: { company: string; adjusted_first: string; adjusted_last: string }[] } }>(
       `${BASE}/adjustments/auto-adjust-single`,
-      { biostar_user_id: biostarUserId, date, ...(companyName ? { company_name: companyName } : {}) },
+      { biostar_user_id: biostarUserId, date, ...(groupName ? { group_name: groupName } : {}) },
     ),
 
   getSincronSchedule: async (biostarUserId: string) => {
@@ -284,9 +284,9 @@ export const biostarApi = {
     return res
   },
 
-  revertAdjustment: (biostarUserId: string, date: string, companyName?: string) =>
+  revertAdjustment: (biostarUserId: string, date: string, revertAll?: boolean) =>
     api.post<{ success: boolean; message: string }>(`${BASE}/adjustments/revert`, {
-      biostar_user_id: biostarUserId, date, ...(companyName ? { company_name: companyName } : {}),
+      biostar_user_id: biostarUserId, date, ...(revertAll ? { revert_all: true } : {}),
     }),
 
   getPunchesByInterval: async (biostarUserId: string, date: string) => {

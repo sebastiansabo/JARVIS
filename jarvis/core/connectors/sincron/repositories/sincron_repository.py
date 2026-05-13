@@ -509,6 +509,7 @@ class SincronRepository(BaseRepository):
         """
         return self.query_all('''
             SELECT COALESCE(co.company, se.company_name) AS company,
+                   se.company_id,
                    to_char(st.program_in, 'HH24:MI') AS start,
                    to_char(st.program_out, 'HH24:MI') AS "end",
                    se.norma_lucru AS norma,
@@ -535,6 +536,7 @@ class SincronRepository(BaseRepository):
         rows = self.query_all('''
             SELECT se.mapped_jarvis_user_id,
                    COALESCE(co.company, se.company_name) AS company,
+                   se.company_id,
                    to_char(st.program_in, 'HH24:MI') AS start,
                    to_char(st.program_out, 'HH24:MI') AS "end",
                    se.norma_lucru AS norma,
@@ -559,6 +561,7 @@ class SincronRepository(BaseRepository):
                 result[uid] = []
             result[uid].append({
                 'company': r['company'],
+                'company_id': r['company_id'],
                 'start': r['start'],
                 'end': r['end'],
                 'norma': r['norma'],
