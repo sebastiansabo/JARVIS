@@ -286,8 +286,8 @@ class ClientRepository(BaseRepository):
 
     _EDITABLE = {
         'display_name', 'client_type', 'phone', 'email', 'street',
-        'city', 'region', 'company_name', 'responsible', 'nr_reg',
-        'is_blacklisted', 'contact_person',
+        'city', 'region', 'country', 'company_name', 'responsible', 'nr_reg',
+        'is_blacklisted', 'contact_person', 'eurofib_konto_debit',
     }
 
     def update(self, client_id, data):
@@ -297,6 +297,11 @@ class ClientRepository(BaseRepository):
         # Keep name_normalized in sync
         if 'display_name' in fields and fields['display_name']:
             fields['name_normalized'] = fields['display_name'].lower().strip()
+        # Wrap dict/list values for JSONB columns
+        from psycopg2.extras import Json
+        for k, v in fields.items():
+            if isinstance(v, (dict, list)):
+                fields[k] = Json(v)
         sets = ', '.join(f'{k} = %s' for k in fields)
         vals = list(fields.values()) + [client_id]
         self.execute(

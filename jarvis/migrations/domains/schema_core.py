@@ -180,6 +180,20 @@ def create_schema_core(conn, cursor):
         END $$;
     ''')
 
+    # Add EuroFib klient ID to companies for facturare integration
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'eurofib_klient_id') THEN
+                ALTER TABLE companies ADD COLUMN eurofib_klient_id INTEGER;
+                UPDATE companies SET eurofib_klient_id = 138 WHERE UPPER(company) LIKE '%PLUS%';
+                UPDATE companies SET eurofib_klient_id = 139 WHERE UPPER(company) LIKE '%INTERNATIONAL%';
+                UPDATE companies SET eurofib_klient_id = 140 WHERE UPPER(company) LIKE '%PREMIUM%';
+                UPDATE companies SET eurofib_klient_id = 141 WHERE UPPER(company) LIKE '%PRESTIGE%';
+            END IF;
+        END $$;
+    ''')
+
     # Company aliases — normalise names across BioStar, Sincron, etc.
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS company_aliases (
