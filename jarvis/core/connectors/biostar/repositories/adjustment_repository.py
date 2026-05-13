@@ -108,6 +108,10 @@ class AdjustmentRepository(BaseRepository):
             LEFT JOIN biostar_daily_adjustments adj
                 ON adj.biostar_user_id = f.biostar_user_id AND adj.date = %s::date
             WHERE adj.id IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM public_holidays ph
+                  WHERE ph.date = %s::date
+              )
               AND (
                   -- Case 1: only 1 punch + past day = forgot to check out
                   f.missing_checkout
@@ -127,7 +131,7 @@ class AdjustmentRepository(BaseRepository):
             ORDER BY f.name
         ''', (date_str, date_str, date_str,
               threshold_minutes, threshold_minutes, threshold_minutes, threshold_minutes,
-              date_str,
+              date_str, date_str,
               threshold_minutes, threshold_minutes, threshold_minutes, threshold_minutes))
 
     def get_adjustments(self, date_str):
@@ -148,21 +152,20 @@ class AdjustmentRepository(BaseRepository):
     def upsert_adjustment(self, data):
         """Insert or update a daily adjustment.
 
-        company_name in data: None for single-contract/legacy, string for per-company.
-        Uses COALESCE-based unique index: (biostar_user_id, date, COALESCE(company_name, '')).
+        One adjustment per (biostar_user_id, date).  For multi-contract employees
+        each group's buid gets its own row.
         """
-        company = data.get('company_name')
         return self.execute('''
             INSERT INTO biostar_daily_adjustments
-                (biostar_user_id, date, company_name,
+                (biostar_user_id, date,
                  original_first_punch, original_last_punch,
                  original_duration_seconds, adjusted_first_punch, adjusted_last_punch,
                  adjusted_duration_seconds, schedule_start, schedule_end,
                  lunch_break_minutes, working_hours,
                  deviation_minutes_in, deviation_minutes_out,
                  adjustment_type, adjusted_by, notes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (biostar_user_id, date, COALESCE(company_name, '')) DO UPDATE SET
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (biostar_user_id, date) DO UPDATE SET
                 adjusted_first_punch = EXCLUDED.adjusted_first_punch,
                 adjusted_last_punch = EXCLUDED.adjusted_last_punch,
                 adjusted_duration_seconds = EXCLUDED.adjusted_duration_seconds,
@@ -172,7 +175,7 @@ class AdjustmentRepository(BaseRepository):
                 updated_at = NOW()
             RETURNING id
         ''', (
-            data['biostar_user_id'], data['date'], company,
+            data['biostar_user_id'], data['date'],
             data['original_first_punch'], data['original_last_punch'],
             data.get('original_duration_seconds'),
             data['adjusted_first_punch'], data['adjusted_last_punch'],
@@ -185,17 +188,8 @@ class AdjustmentRepository(BaseRepository):
             data.get('notes'),
         ), returning=True)
 
-    def delete_adjustment(self, biostar_user_id, date_str, company_name=None):
-        """Remove an adjustment (revert to original).
-
-        company_name=None: deletes ALL adjustments for that user/date (legacy + per-company).
-        company_name=str: deletes only the specific company interval.
-        """
-        if company_name is not None:
-            return self.execute('''
-                DELETE FROM biostar_daily_adjustments
-                WHERE biostar_user_id = %s AND date = %s::date AND company_name = %s
-            ''', (biostar_user_id, date_str, company_name))
+    def delete_adjustment(self, biostar_user_id, date_str):
+        """Remove the adjustment for a specific buid + date."""
         return self.execute('''
             DELETE FROM biostar_daily_adjustments
             WHERE biostar_user_id = %s AND date = %s::date
@@ -238,12 +232,17 @@ class AdjustmentRepository(BaseRepository):
         ''', params)
 
     def get_absent_employees(self, date_str):
-        """Get active employees with schedules who have NO punches for the date.
+        """Get active employees with Sincron schedules who have NO punches for the date.
+
+        Only considers employees with confirmed Sincron OZ/OS schedules for the
+        specific date.  This ensures weekends and holidays (which have no OZ/OS
+        timesheets) are automatically excluded — employees are not flagged as
+        absent on days they are not scheduled to work.
 
         Excludes:
-        - Employees already adjusted for that date (combined adjustment only;
-          per-company adjustments are handled in auto_adjust_all)
+        - Employees already adjusted for that date
         - Current day (absent might still arrive)
+        - Public holidays
 
         NOTE: Sincron leave filtering is now done in Python (auto_adjust_all)
         to support per-company leave for multi-contract employees.
@@ -277,27 +276,28 @@ class AdjustmentRepository(BaseRepository):
                 be.name,
                 be.email,
                 be.user_group_name,
-                COALESCE(sd.program_start, be.schedule_start) AS schedule_start,
-                COALESCE(sd.program_end,   be.schedule_end)   AS schedule_end,
-                COALESCE(sd.program_lunch,  be.lunch_break_minutes) AS lunch_break_minutes,
+                sd.program_start AS schedule_start,
+                sd.program_end   AS schedule_end,
+                COALESCE(sd.program_lunch, be.lunch_break_minutes) AS lunch_break_minutes,
                 be.working_hours,
                 be.mapped_jarvis_user_id
             FROM biostar_employees be
-            LEFT JOIN sincron_day sd
+            JOIN sincron_day sd
               ON sd.mapped_jarvis_user_id = be.mapped_jarvis_user_id
             LEFT JOIN has_punches hp
               ON hp.biostar_user_id = be.biostar_user_id
             LEFT JOIN biostar_daily_adjustments adj
               ON adj.biostar_user_id = be.biostar_user_id AND adj.date = %s::date
-                 AND adj.company_name IS NULL
             WHERE be.status = 'active'
-              AND COALESCE(sd.program_start, be.schedule_start) IS NOT NULL
-              AND COALESCE(sd.program_end,   be.schedule_end)   IS NOT NULL
               AND hp.biostar_user_id IS NULL
               AND adj.id IS NULL
               AND %s::date < CURRENT_DATE
+              AND NOT EXISTS (
+                  SELECT 1 FROM public_holidays ph
+                  WHERE ph.date = %s::date
+              )
             ORDER BY be.name
-        ''', (date_str, date_str, date_str, date_str))
+        ''', (date_str, date_str, date_str, date_str, date_str))
 
     def get_unadjusted_dates(self):
         """Get all distinct past dates with punch logs that have unadjusted employees."""
