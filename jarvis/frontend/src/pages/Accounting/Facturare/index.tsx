@@ -38,6 +38,7 @@ interface CrmClient {
   city?: string
   country?: string
   nr_reg?: string
+  eurofib_konto_debit?: number | null
 }
 
 // ── Supplier presets ──────────────────────────────────────────
@@ -163,11 +164,12 @@ function SupplierCard({ companies, supplierName, setSupplierName, supplierVat, s
 // ── Customer Card (shared, with CRM search) ──────────────────
 
 function CustomerCard({ customerName, setCustomerName, customerAddress, setCustomerAddress,
-  customerVat, setCustomerVat,
+  customerVat, setCustomerVat, onClientChange,
 }: {
   customerName: string; setCustomerName: (v: string) => void
   customerAddress: string; setCustomerAddress: (v: string) => void
   customerVat: string; setCustomerVat: (v: string) => void
+  onClientChange?: (client: CrmClient) => void
 }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<CrmClient[]>([])
@@ -213,6 +215,7 @@ function CustomerCard({ customerName, setCustomerName, customerAddress, setCusto
                   setCustomerVat(client.nr_reg || '')
                   setSearchResults([])
                   setSearchQuery('')
+                  onClientChange?.(client)
                   toast.success(`Loaded: ${client.display_name}`)
                 }}>
                 <span className="font-medium">{client.display_name}</span>
@@ -500,7 +503,10 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
 
         <CustomerCard customerName={customerName} setCustomerName={setCustomerName}
           customerAddress={customerAddress} setCustomerAddress={setCustomerAddress}
-          customerVat={customerVat} setCustomerVat={setCustomerVat} />
+          customerVat={customerVat} setCustomerVat={setCustomerVat}
+          onClientChange={(client) => {
+            if (client.eurofib_konto_debit) setKontoDebit(String(client.eurofib_konto_debit))
+          }} />
 
         {/* EuroFib accounts */}
         <Card>
