@@ -33,16 +33,14 @@ BODY_TYPES = {"sportback", "allstreet", "avant"}
 
 
 def split_model_lines(model: str) -> list[str]:
-    """Split Audi model name into 1-3 display lines.
+    """Split model name into 1-3 display lines.
 
     Examples:
         'Audi Q5 Sportback 40 TDI quattro' → ['AUDI Q5', 'SPORTBACK', '40 TDI QUATTRO']
-        'Audi A3 Allstreet 35 TDI'         → ['AUDI A3', 'ALLSTREET 35 TDI']
-        'A3 Sportback 30 TDI'              → ['AUDI A3', 'SPORTBACK', '30 TDI']
+        'VW MULTIVAN LIFE 2.0 TDI'         → ['VW MULTIVAN', 'LIFE 2.0 TDI']
+        'MG ZS EV Standard'                → ['MG ZS', 'EV STANDARD']
     """
     s = (model or "").strip()
-    if not s.lower().startswith("audi"):
-        s = "Audi " + s
     parts = s.split()
     if len(parts) < 2:
         return [s.upper()]
