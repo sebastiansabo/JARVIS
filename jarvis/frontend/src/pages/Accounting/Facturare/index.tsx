@@ -38,7 +38,7 @@ interface CrmClient {
   city?: string
   country?: string
   nr_reg?: string
-  eurofib_konto_debit?: number | null
+  eurofib_konto_debit?: Record<string, number> | null
 }
 
 // ── Supplier presets ──────────────────────────────────────────
@@ -505,7 +505,8 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
           customerAddress={customerAddress} setCustomerAddress={setCustomerAddress}
           customerVat={customerVat} setCustomerVat={setCustomerVat}
           onClientChange={(client) => {
-            if (client.eurofib_konto_debit) setKontoDebit(String(client.eurofib_konto_debit))
+            const kd = client.eurofib_konto_debit?.[String(eurofibKlient)]
+            if (kd) setKontoDebit(String(kd))
           }} />
 
         {/* EuroFib accounts */}
