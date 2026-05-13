@@ -160,6 +160,34 @@ def create_schema_crm(conn, cursor):
     cursor.execute("ALTER TABLE crm_clients ADD COLUMN IF NOT EXISTS contact_person TEXT")
     cursor.execute("ALTER TABLE crm_clients ADD COLUMN IF NOT EXISTS dealer_codes TEXT[]")
 
+    # -- EuroFib konto_debit per CRM client (for facturare integration) --
+    cursor.execute("ALTER TABLE crm_clients ADD COLUMN IF NOT EXISTS eurofib_konto_debit INTEGER")
+    # Seed known customer account codes (AW Premium / AW International clients)
+    _eurofib_clients = {
+        'AT RENT GMBH': 41210328,
+        'AUTO KOMBI BV': 41227689,
+        'AUTOLAND AG': 41195662,
+        'SCHOENI CARS AG': 41158348,
+        'GIERSE & SCHOELLMANN GMBH': 41215148,
+        'SIEMON GMBH': 41224061,
+        'AUTOHAUS MOLL GMBH': 41217835,
+        'AURENTO GMBH': 41223454,
+        'GGH GMBH': 41193851,
+        'GENERAL LEASE NV': 41214286,
+        'SAPPHIRE CONSULTING GMBH': 41228342,
+        'SWING AUTOVERMIETUNG': 41207607,
+        'AUTOWOLF': 41146922,
+        'AUTO RINGLER SERVICE GMBH': 41206270,
+        'TA TRADING GMBH': 41228939,
+        'DUS MOBILITY GMBH': 41230702,
+        'AUTOLAND 24 SE&CO': 41101995,
+    }
+    for name, konto in _eurofib_clients.items():
+        cursor.execute(
+            "UPDATE crm_clients SET eurofib_konto_debit = %s WHERE eurofib_konto_debit IS NULL AND UPPER(display_name) LIKE %s",
+            (konto, f"%{name.upper()}%")
+        )
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS client_phones (
             id SERIAL PRIMARY KEY,
