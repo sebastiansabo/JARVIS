@@ -170,7 +170,7 @@ export default function ClientProfile() {
   const startEdit = () => {
     if (!client) return
     const init: Record<string, string> = {}
-    for (const k of ['display_name', 'client_type', 'phone', 'email', 'street', 'city', 'region', 'country', 'company_name', 'responsible', 'nr_reg']) {
+    for (const k of ['display_name', 'client_type', 'phone', 'email', 'street', 'city', 'region', 'country', 'company_name', 'responsible', 'nr_reg', 'eurofib_konto_debit']) {
       init[k] = (client as unknown as Record<string, unknown>)[k] as string ?? ''
     }
     setForm(init)
@@ -367,6 +367,10 @@ export default function ClientProfile() {
                   <Label className="text-xs">Responsible</Label>
                   <Input value={form.responsible ?? ''} onChange={e => set('responsible', e.target.value)} />
                 </div>
+                <div>
+                  <Label className="text-xs">Konto Debit (EuroFib)</Label>
+                  <Input type="number" value={form.eurofib_konto_debit ?? ''} onChange={e => set('eurofib_konto_debit', e.target.value)} />
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-x-4">
@@ -379,6 +383,7 @@ export default function ClientProfile() {
                 <InfoRow icon={Globe} label="Country" value={client.country} />
                 <InfoRow icon={MapPin} label="Street" value={client.street} />
                 <InfoRow icon={User} label="Responsible" value={client.responsible} />
+                <InfoRow icon={Hash} label="Konto Debit" value={client.eurofib_konto_debit} />
                 <InfoRow icon={Hash} label="Client Since" value={client.client_since ? new Date(client.client_since).toLocaleDateString('ro-RO') : undefined} />
                 <InfoRow label="Sources" value={Object.keys(client.source_flags || {}).filter(k => client.source_flags[k]).join(', ')} className="col-span-2" />
               </div>
