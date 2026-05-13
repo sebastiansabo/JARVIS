@@ -368,7 +368,7 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
   const [kontoDebit, setKontoDebit] = useState('41214286')
   const [kontoCredit, setKontoCredit] = useState('419968')
   const [eurofibKlient, setEurofibKlient] = useState(139)
-  const [textTemplate, setTextTemplate] = useState('avans {brand_short} {comanda}')
+  const [textTemplate, setTextTemplate] = useState('avans {comanda}')
 
   const preset = SUPPLIER_PRESETS[INV_DEFAULTS.supplier]
   const [supplierName, setSupplierName] = useState(INV_DEFAULTS.supplier)
@@ -520,8 +520,8 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
             </div>
             <div>
               <Label>Text (Col Q)</Label>
-              <Input placeholder="avans {brand_short} {comanda}" value={textTemplate} onChange={e => setTextTemplate(e.target.value)} />
-              <p className="text-xs text-muted-foreground mt-1">Variables: {'{brand_short}'} = auto-detected brand, {'{comanda}'} = order number</p>
+              <Input placeholder="avans audi {comanda}" value={textTemplate} onChange={e => setTextTemplate(e.target.value)} />
+              <p className="text-xs text-muted-foreground mt-1">{'{comanda}'} = order number (auto-filled). Type brand manually, e.g. "avans audi {'{comanda}'}"</p>
             </div>
           </CardContent>
         </Card>
