@@ -463,7 +463,21 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
           <CardContent className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div><Label>Job ID</Label><Input placeholder="ctr677-2026-04" value={jobId} onChange={e => setJobId(e.target.value)} /></div>
             <div><Label>Start No *</Label><Input type="number" placeholder="9102842" value={startNo} onChange={e => setStartNo(e.target.value)} /></div>
-            <div><Label>Invoice Date *</Label><Input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} /></div>
+            <div><Label>Invoice Date *</Label><Input type="date" value={invoiceDate} onChange={e => {
+              const d = e.target.value
+              setInvoiceDate(d)
+              if (d) {
+                fetch(`/facturare/api/bnr-rate?date=${d}`)
+                  .then(r => r.ok ? r.json() : null)
+                  .then(data => {
+                    if (data?.success) {
+                      setKurs(String(data.kurs))
+                      setKursDate(data.kurs_date)
+                      toast.success(`BNR rate: ${data.kurs} (${data.kurs_date})`)
+                    }
+                  }).catch(() => {})
+              }
+            }} /></div>
             <div><Label>Kurs (EUR/RON) *</Label><Input type="number" step="0.0001" placeholder="5.0924" value={kurs} onChange={e => setKurs(e.target.value)} /></div>
             <div><Label>Kurs Date</Label><Input type="date" value={kursDate} onChange={e => setKursDate(e.target.value)} /></div>
             <div><Label>Contract Ref</Label><Input placeholder="ctr 677/03.04.2026" value={contractRef} onChange={e => setContractRef(e.target.value)} /></div>
