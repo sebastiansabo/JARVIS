@@ -167,11 +167,23 @@ export default function ClientProfile() {
   }, [enrichmentData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Start editing
+  const EUROFIB_COMPANIES = [
+    { klientId: '138', label: 'AW Plus' },
+    { klientId: '139', label: 'AW International' },
+    { klientId: '140', label: 'AW Premium' },
+    { klientId: '141', label: 'AW Prestige' },
+  ] as const
+
   const startEdit = () => {
     if (!client) return
     const init: Record<string, string> = {}
-    for (const k of ['display_name', 'client_type', 'phone', 'email', 'street', 'city', 'region', 'country', 'company_name', 'responsible', 'nr_reg', 'eurofib_konto_debit']) {
+    for (const k of ['display_name', 'client_type', 'phone', 'email', 'street', 'city', 'region', 'country', 'company_name', 'responsible', 'nr_reg']) {
       init[k] = (client as unknown as Record<string, unknown>)[k] as string ?? ''
+    }
+    // Flatten konto_debit map into form fields
+    const kdMap = (client as unknown as Record<string, unknown>).eurofib_konto_debit as Record<string, number> | null
+    for (const c of EUROFIB_COMPANIES) {
+      init[`kd_${c.klientId}`] = kdMap?.[c.klientId] != null ? String(kdMap[c.klientId]) : ''
     }
     setForm(init)
     setEditing(true)
@@ -251,7 +263,18 @@ export default function ClientProfile() {
               <Button size="sm" variant="outline" onClick={() => { setEditing(false); setForm({}) }}>
                 <X className="h-3.5 w-3.5 mr-1" />Cancel
               </Button>
-              <Button size="sm" onClick={() => editMutation.mutate(form)} disabled={editMutation.isPending}>
+              <Button size="sm" onClick={() => {
+                const payload: Record<string, unknown> = { ...form }
+                // Reconstruct eurofib_konto_debit JSONB from kd_* fields
+                const kdMap: Record<string, number> = {}
+                for (const c of EUROFIB_COMPANIES) {
+                  const v = form[`kd_${c.klientId}`]
+                  if (v) kdMap[c.klientId] = parseInt(v)
+                  delete payload[`kd_${c.klientId}`]
+                }
+                payload.eurofib_konto_debit = Object.keys(kdMap).length > 0 ? kdMap : null
+                editMutation.mutate(payload as Record<string, string>)
+              }} disabled={editMutation.isPending}>
                 <Save className="h-3.5 w-3.5 mr-1" />{editMutation.isPending ? 'Saving...' : 'Save'}
               </Button>
             </>
@@ -367,9 +390,16 @@ export default function ClientProfile() {
                   <Label className="text-xs">Responsible</Label>
                   <Input value={form.responsible ?? ''} onChange={e => set('responsible', e.target.value)} />
                 </div>
-                <div>
-                  <Label className="text-xs">Konto Debit (EuroFib)</Label>
-                  <Input type="number" value={form.eurofib_konto_debit ?? ''} onChange={e => set('eurofib_konto_debit', e.target.value)} />
+                <div className="col-span-2">
+                  <Label className="text-xs mb-1.5 block">Konto Debit (EuroFib)</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {EUROFIB_COMPANIES.map(c => (
+                      <div key={c.klientId} className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground w-28 shrink-0">{c.label}</span>
+                        <Input type="number" className="h-8" value={form[`kd_${c.klientId}`] ?? ''} onChange={e => set(`kd_${c.klientId}`, e.target.value)} />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             ) : (
@@ -383,7 +413,10 @@ export default function ClientProfile() {
                 <InfoRow icon={Globe} label="Country" value={client.country} />
                 <InfoRow icon={MapPin} label="Street" value={client.street} />
                 <InfoRow icon={User} label="Responsible" value={client.responsible} />
-                <InfoRow icon={Hash} label="Konto Debit" value={client.eurofib_konto_debit} />
+                {client.eurofib_konto_debit && Object.entries(client.eurofib_konto_debit).map(([kid, val]) => {
+                  const label = EUROFIB_COMPANIES.find(c => c.klientId === kid)?.label ?? kid
+                  return <InfoRow key={kid} icon={Hash} label={`Konto ${label}`} value={val} />
+                })}
                 <InfoRow icon={Hash} label="Client Since" value={client.client_since ? new Date(client.client_since).toLocaleDateString('ro-RO') : undefined} />
                 <InfoRow label="Sources" value={Object.keys(client.source_flags || {}).filter(k => client.source_flags[k]).join(', ')} className="col-span-2" />
               </div>
