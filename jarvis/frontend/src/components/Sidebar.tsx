@@ -459,6 +459,23 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link
+                    to="/app/ticketing"
+                    className={cn(
+                      'flex items-center justify-center rounded-md p-2 transition-colors',
+                      location.pathname.startsWith('/app/ticketing')
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-accent',
+                    )}
+                  >
+                    <Headset className="h-5 w-5 shrink-0" />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="right">Tickets</TooltipContent>
+              </Tooltip>
+              <Separator className="my-2" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
                     to="/app/mobile-checkin"
                     className={cn(
                       'flex items-center justify-center rounded-md p-2 transition-colors',
@@ -506,6 +523,19 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
             </>
           ) : (
             <>
+              <Link
+                to="/app/ticketing"
+                className={cn(
+                  'flex items-center gap-3 rounded-md px-3 py-2 transition-colors',
+                  location.pathname.startsWith('/app/ticketing')
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-accent',
+                )}
+              >
+                <Headset className="h-5 w-5 shrink-0" />
+                <span className="text-sm font-medium">Tickets</span>
+              </Link>
+              <Separator className="my-2" />
               <Link
                 to="/app/mobile-checkin"
                 className={cn(
