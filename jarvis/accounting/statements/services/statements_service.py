@@ -358,6 +358,7 @@ class StatementsService:
         success = self.transaction_repo.update(
             transaction_id,
             invoice_id=invoice_id,
+            matched_supplier=invoice.get('supplier'),
             status='resolved'
         )
 
