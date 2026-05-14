@@ -47,6 +47,8 @@ const CarParkVehicleForm = lazy(() => import('./pages/CarPark/VehicleForm'))
 const CarParkPricingRules = lazy(() => import('./pages/CarPark/PricingRules'))
 const CarParkPromotions = lazy(() => import('./pages/CarPark/Promotions'))
 const CarParkDashboard = lazy(() => import('./pages/CarPark/Dashboard'))
+const Ticketing = lazy(() => import('./pages/Ticketing'))
+const TicketDetail = lazy(() => import('./pages/Ticketing/TicketDetail'))
 
 function PageLoader() {
   return (
@@ -202,6 +204,10 @@ export default function App() {
 
         {/* AI Agent — requires can_access_ai_agent */}
         <Route path="ai-agent" element={<Guard flag="can_access_ai_agent"><SuspensePage><AiAgent /></SuspensePage></Guard>} />
+
+        {/* Ticketing — open to all authenticated users */}
+        <Route path="ticketing" element={<SuspensePage><Ticketing /></SuspensePage>} />
+        <Route path="ticketing/:ticketId" element={<SuspensePage><TicketDetail /></SuspensePage>} />
 
         {/* Digest — open to all authenticated users */}
         <Route path="digest" element={<SuspensePage><Digest /></SuspensePage>} />
