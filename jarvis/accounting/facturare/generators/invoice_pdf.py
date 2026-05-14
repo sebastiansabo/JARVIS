@@ -63,7 +63,7 @@ class InvoicePdfRenderer:
         else:
             c.drawCentredString(W / 2, y, "FACTURA")
             y -= 5 * mm
-            c.drawCentredString(W / 2, y, "A INVOICE")
+            c.drawCentredString(W / 2, y, "INVOICE")
 
         y -= 5 * mm
         c.drawCentredString(W / 2, y, f"No:{inv_no}")
