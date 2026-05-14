@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, LifeBuoy, ClipboardList, Newspaper, Car, DollarSign, Tag, BarChart3, Receipt, Headset } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, ClipboardList, Newspaper, Car, DollarSign, Tag, BarChart3, Receipt, Headset } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
