@@ -94,7 +94,7 @@ const navItemsDef: NavItem[] = [
       { path: '/app/carpark/promotions', label: 'Promoții', icon: Tag, moduleKey: 'carpark_promotions' },
     ],
   },
-  { path: '/app/ticketing', label: 'IT Helpdesk', icon: Headset, moduleKey: 'ticketing' },
+  { path: '/app/ticketing', label: 'Tickets', icon: Headset, moduleKey: 'ticketing' },
   { path: '/app/settings', label: 'Settings', icon: Settings, moduleKey: 'settings', permission: 'can_access_settings' },
 ]
 
@@ -458,16 +458,19 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
             <>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <a
-                    href="https://autoworldro.atlassian.net/jira/core/projects/JAR/form/36"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center rounded-md p-2 transition-colors hover:bg-accent"
+                  <Link
+                    to="/app/ticketing"
+                    className={cn(
+                      'flex items-center justify-center rounded-md p-2 transition-colors',
+                      location.pathname.startsWith('/app/ticketing')
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-accent',
+                    )}
                   >
-                    <LifeBuoy className="h-5 w-5 shrink-0" />
-                  </a>
+                    <Headset className="h-5 w-5 shrink-0" />
+                  </Link>
                 </TooltipTrigger>
-                <TooltipContent side="right">Support</TooltipContent>
+                <TooltipContent side="right">Tickets</TooltipContent>
               </Tooltip>
               <Separator className="my-2" />
               <Tooltip>
@@ -520,15 +523,18 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
             </>
           ) : (
             <>
-              <a
-                href="https://autoworldro.atlassian.net/jira/core/projects/JAR/form/36"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-accent"
+              <Link
+                to="/app/ticketing"
+                className={cn(
+                  'flex items-center gap-3 rounded-md px-3 py-2 transition-colors',
+                  location.pathname.startsWith('/app/ticketing')
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-accent',
+                )}
               >
-                <LifeBuoy className="h-5 w-5 shrink-0" />
-                <span className="text-sm font-medium">Support</span>
-              </a>
+                <Headset className="h-5 w-5 shrink-0" />
+                <span className="text-sm font-medium">Tickets</span>
+              </Link>
               <Separator className="my-2" />
               <Link
                 to="/app/mobile-checkin"

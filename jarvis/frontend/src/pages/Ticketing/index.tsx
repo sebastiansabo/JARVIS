@@ -80,8 +80,8 @@ export default function Ticketing() {
   return (
     <div className="space-y-4 md:space-y-6">
       <PageHeader
-        title="IT Helpdesk"
-        breadcrumbs={[{ label: 'IT Helpdesk' }]}
+        title="Tickets"
+        breadcrumbs={[{ label: 'Tickets' }]}
         search={
           <SearchInput
             value={search}

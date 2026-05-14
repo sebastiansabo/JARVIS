@@ -111,7 +111,7 @@ MODULES = [
     },
     {
         'module_key': 'ticketing',
-        'name': 'IT Helpdesk',
+        'name': 'Tickets',
         'description': 'Technical Support Tickets',
         'icon': 'bi-headset',
         'url': '/ticketing',

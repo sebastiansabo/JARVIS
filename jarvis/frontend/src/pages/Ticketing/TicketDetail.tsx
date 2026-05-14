@@ -166,7 +166,7 @@ export default function TicketDetail() {
           </div>
         }
         breadcrumbs={[
-          { label: 'IT Helpdesk', href: '/app/ticketing' },
+          { label: 'Tickets', href: '/app/ticketing' },
           { label: `#${ticket.id}` },
         ]}
         actions={
