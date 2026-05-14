@@ -237,6 +237,9 @@ def _register_blueprints(flask_app: Flask):
     from core.telemetry import telemetry_bp
     flask_app.register_blueprint(telemetry_bp)
 
+    from ticketing import ticketing_bp
+    flask_app.register_blueprint(ticketing_bp, url_prefix='/ticketing')
+
 
 def _register_hooks(flask_app: Flask):
     """Register before/after request hooks and approval notification handlers."""
