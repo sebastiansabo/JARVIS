@@ -60,6 +60,10 @@ class InvoicePdfRenderer:
             c.drawCentredString(W / 2, y, "FACTURA PROFORMA")
             y -= 5 * mm
             c.drawCentredString(W / 2, y, "PROFORMA INVOICE")
+        elif line.advance < 0:
+            c.drawCentredString(W / 2, y, "FACTURA STORNO")
+            y -= 5 * mm
+            c.drawCentredString(W / 2, y, "STORNO INVOICE")
         else:
             c.drawCentredString(W / 2, y, "FACTURA")
             y -= 5 * mm
