@@ -431,13 +431,39 @@ class ApprovalEngine:
     # ════════════════════════════════════════════
 
     def process_timeouts(self):
-        """Check for timed-out steps and escalate."""
+        """Check for timed-out steps. Escalate if path exists, otherwise auto-approve."""
         timed_out = self._request_repo.get_timed_out_requests()
         for item in timed_out:
             try:
-                self.escalate(item['request_id'], reason='timeout')
+                step = self._flow_repo.get_step_by_id(item['step_id'])
+                has_escalation = step and (
+                    step.get('escalation_step_id') or step.get('escalation_user_id')
+                )
+                if has_escalation:
+                    self.escalate(item['request_id'], reason='timeout')
+                else:
+                    # No escalation path — auto-approve to unblock
+                    req = self._request_repo.get_by_id(item['request_id'])
+                    self._request_repo.update_status(
+                        item['request_id'], 'approved',
+                        resolved_at=datetime.now(timezone.utc),
+                        resolution_note=f"Auto-approved after {item['timeout_hours']}h timeout (no escalation path)",
+                    )
+                    self._audit_repo.log(
+                        item['request_id'], 'auto_approved',
+                        actor_type='scheduler',
+                        details={'reason': 'timeout', 'timeout_hours': item['timeout_hours']},
+                    )
+                    if req:
+                        hooks.fire('approval.approved', {
+                            'request_id': item['request_id'],
+                            'entity_type': req['entity_type'],
+                            'entity_id': req['entity_id'],
+                            'auto_approved': True,
+                        })
+                    logger.info(f"Request {item['request_id']} auto-approved after {item['timeout_hours']}h timeout")
             except Exception as e:
-                logger.error(f"Timeout escalation failed for request {item['request_id']}: {e}")
+                logger.error(f"Timeout processing failed for request {item['request_id']}: {e}")
 
     def process_reminders(self):
         """Send reminders for stale steps."""

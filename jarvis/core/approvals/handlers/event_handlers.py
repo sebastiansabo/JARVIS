@@ -306,12 +306,42 @@ def _on_step_advanced(payload):
 def _on_reminder(payload):
     """Remind current step approvers about a pending request."""
     request_id = payload.get('request_id')
+    req = _get_request(request_id)
+    entity_type = req.get('entity_type', '')
+    entity_id = req.get('entity_id')
+    ctx = req.get('context_snapshot') or {}
+    project_title = ctx.get('title') or f'{entity_type} #{entity_id}'
+    link = _entity_link(entity_type, entity_id)
 
     approver_ids = _get_current_step_approvers(request_id)
     if approver_ids:
         notify_users(
             approver_ids,
-            'Reminder: Approval request pending your decision',
-            link='/app/approvals',
+            f'Reminder: {project_title} awaits your approval',
+            message='This request has been pending for over 48 hours.',
+            link=link,
+            entity_type=entity_type,
+            entity_id=entity_id,
             type='approval',
         )
+        for name, email in _get_users_email(approver_ids):
+            body = f"""
+            <p>Buna ziua {name},</p>
+            <p>Aceasta este o reamintire ca urmatoarea cerere de aprobare asteapta
+            decizia dumneavoastra de mai mult de <strong>48 de ore</strong>:</p>
+            <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+              <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:bold;border:1px solid #ddd;width:40%;">Proiect</td>
+                  <td style="padding:8px 12px;border:1px solid #ddd;">{project_title}</td></tr>
+            </table>
+            <p style="color:#555;font-size:13px;">Va rugam sa accesati JARVIS pentru a revizui si lua o decizie.</p>
+            """
+            _send_approval_email(
+                email,
+                f'Reamintire: {project_title} — aprobare in asteptare',
+                _approval_email_base(
+                    'Reamintire — cerere de aprobare',
+                    body,
+                    f'{_APP_BASE_URL}{link}',
+                    'Revizuieste cererea',
+                ),
+            )
