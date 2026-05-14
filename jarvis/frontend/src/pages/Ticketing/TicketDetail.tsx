@@ -146,8 +146,7 @@ export default function TicketDetail() {
   }
 
   const isCreator = ticket.created_by === user?.id
-  const isAdmin = user?.can_access_settings || user?.is_admin
-  const canManage = isAdmin // Simplified — IT staff = admin for v1
+  const canManage = !!user?.can_access_settings
   const canClose = isCreator && ticket.status === 'resolved'
 
   const staffOptions = (staffQ.data?.users ?? []).map((u) => ({

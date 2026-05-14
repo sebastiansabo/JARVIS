@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, Inbox, Clock, CheckCircle2, XCircle, AlertTriangle, CircleDot } from 'lucide-react'
+import { Plus, Inbox, Clock, CheckCircle2, XCircle } from 'lucide-react'
 
 import { ticketingApi } from '@/api/ticketing'
-import type { Ticket, TicketStatus, TicketPriority } from '@/types/ticketing'
+import type { TicketStatus, TicketPriority } from '@/types/ticketing'
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
