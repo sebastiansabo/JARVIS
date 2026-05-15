@@ -8,6 +8,7 @@ from marketing import marketing_bp
 from marketing.repositories import BudgetRepository, ActivityRepository
 from marketing.decorators import mkt_permission_required
 from core.utils.api_helpers import get_json_or_error, safe_error_response
+from core.services.currency_converter import convert_currency
 
 logger = logging.getLogger('jarvis.marketing.routes.budget')
 
@@ -118,6 +119,30 @@ def api_create_transaction(line_id):
         return jsonify({'success': False, 'error': 'amount and transaction_date are required'}), 400
 
     try:
+        # Auto-convert currency when invoice currency differs from budget line currency
+        invoice_id = data.get('invoice_id')
+        description = data.get('description')
+        converted_from = None
+        if invoice_id and data.get('source') == 'invoice':
+            line_info = _budget_repo.get_line_by_id(line_id)
+            inv_info = _budget_repo.get_invoice_info(invoice_id)
+            if line_info and inv_info:
+                line_currency = (line_info.get('currency') or 'RON').upper()
+                inv_currency = (inv_info.get('currency') or 'RON').upper()
+                if inv_currency != line_currency:
+                    converted_amount, rate = convert_currency(
+                        float(amount), inv_currency, line_currency, transaction_date
+                    )
+                    if converted_amount is not None:
+                        original_amount = float(amount)
+                        amount = converted_amount
+                        # Append conversion details to description
+                        rate_info = f"{original_amount:,.2f} {inv_currency} @ {rate} = {converted_amount:,.2f} {line_currency}"
+                        description = f"{description} ({rate_info})" if description else rate_info
+                        converted_from = inv_currency
+                    else:
+                        logger.warning(f"BNR rate not found for {inv_currency}->{line_currency} on {transaction_date}")
+
         tx_id = _budget_repo.create_transaction(
             budget_line_id=line_id,
             amount=amount,
@@ -126,15 +151,18 @@ def api_create_transaction(line_id):
             direction=data.get('direction', 'debit'),
             source=data.get('source', 'manual'),
             reference_id=data.get('reference_id'),
-            invoice_id=data.get('invoice_id'),
-            description=data.get('description'),
+            invoice_id=invoice_id,
+            description=description,
         )
 
         # Log activity on parent project
         line = _budget_repo.get_line_by_id(line_id)
         if line:
+            log_details = {'channel': line['channel'], 'amount': float(amount)}
+            if converted_from:
+                log_details['converted_from'] = converted_from
             _activity_repo.log(line['project_id'], 'spend_recorded', actor_id=current_user.id,
-                               details={'channel': line['channel'], 'amount': float(amount)})
+                               details=log_details)
 
         return jsonify({'success': True, 'id': tx_id}), 201
     except Exception as e:
