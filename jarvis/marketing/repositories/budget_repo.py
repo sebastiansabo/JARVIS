@@ -152,6 +152,14 @@ class BudgetRepository(BaseRepository):
             return deleted
         return self.execute_many(_work)
 
+    def get_invoice_info(self, invoice_id):
+        """Get invoice currency and value for currency conversion."""
+        return self.query_one('''
+            SELECT id, currency, COALESCE(net_value, invoice_value) as net_value,
+                   invoice_date
+            FROM invoices WHERE id = %s
+        ''', (invoice_id,))
+
     # ---- Budget Transactions ----
 
     def get_transactions(self, budget_line_id):

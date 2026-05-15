@@ -85,6 +85,8 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
   const [confirmEvent, setConfirmEvent] = useState<MktProjectEvent | null>(null)
   const [confirmAmount, setConfirmAmount] = useState('')
   const [linkFileTxId, setLinkFileTxId] = useState<number | null>(null)
+  const [editLineId, setEditLineId] = useState<number | null>(null)
+  const [editLineForm, setEditLineForm] = useState({ channel: '', description: '', planned_amount: '', period_type: 'campaign', notes: '', agency_name: '' })
 
   const { data } = useQuery({
     queryKey: ['mkt-budget-lines', projectId],
@@ -411,6 +413,22 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                               <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
                             </Button>
                           )}
+                          {!isEventLine && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit Budget Line"
+                              onClick={() => {
+                                setEditLineId(l.id)
+                                setEditLineForm({
+                                  channel: l.channel || '',
+                                  description: l.description || '',
+                                  planned_amount: String(l.planned_amount ?? ''),
+                                  period_type: l.period_type || 'campaign',
+                                  notes: l.notes || '',
+                                  agency_name: l.agency_name || '',
+                                })
+                              }}>
+                              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -581,6 +599,12 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
             {linkedInvoiceIds.size > 0 && (
               <p className="text-sm text-muted-foreground">{linkedInvoiceIds.size} invoice{linkedInvoiceIds.size > 1 ? 's' : ''} linked</p>
             )}
+            {(() => {
+              const linkLine = lines.find(l => l.id === linkLineId)
+              return linkLine && linkLine.currency !== 'RON' ? (
+                <p className="text-xs text-blue-600">Invoices in a different currency will be auto-converted to {linkLine.currency} using the BNR rate at invoice date.</p>
+              ) : null
+            })()}
           </DialogHeader>
           <div className="space-y-3">
             <div className="relative">
@@ -610,12 +634,17 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                   <TableBody>
                     {invoiceResults.map((inv) => {
                       const alreadyLinked = linkedInvoiceIds.has(inv.id)
+                      const linkLine = lines.find(l => l.id === linkLineId)
+                      const willConvert = linkLine && inv.currency.toUpperCase() !== (linkLine.currency || 'RON').toUpperCase()
                       return (
                         <TableRow key={inv.id} className={alreadyLinked ? 'opacity-50' : ''}>
                           <TableCell className="text-xs max-w-[200px] truncate">{inv.supplier}</TableCell>
                           <TableCell className="text-xs font-mono">{inv.invoice_number}</TableCell>
                           <TableCell className="text-xs">{fmtDate(inv.invoice_date)}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{fmt(inv.invoice_value, inv.currency)}</TableCell>
+                          <TableCell className="text-right text-xs tabular-nums">
+                            {fmt(inv.invoice_value, inv.currency)}
+                            {willConvert && <Badge variant="outline" className="ml-1 text-[10px] px-1 py-0 text-blue-600 border-blue-300">BNR</Badge>}
+                          </TableCell>
                           <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{fmt(inv.total_value, inv.currency)}</TableCell>
                           <TableCell className="text-right">
                             {alreadyLinked ? (
@@ -983,6 +1012,89 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
                 })}
               >
                 {addMut.isPending ? 'Adding...' : 'Add'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Budget Line Dialog */}
+      <Dialog open={!!editLineId} onOpenChange={(open) => { if (!open) setEditLineId(null) }}>
+        <DialogContent className="max-w-md" aria-describedby={undefined}>
+          <DialogHeader><DialogTitle>Edit Budget Line</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Channel *</Label>
+              <Select value={editLineForm.channel} onValueChange={(v) => setEditLineForm((f) => ({ ...f, channel: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select channel" /></SelectTrigger>
+                <SelectContent>
+                  {(channelOpts ?? []).map((o: { value: string; label: string }) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Planned Amount</Label>
+              <Input
+                type="number"
+                value={editLineForm.planned_amount}
+                onChange={(e) => setEditLineForm((f) => ({ ...f, planned_amount: e.target.value }))}
+                placeholder="0"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Input
+                value={editLineForm.description}
+                onChange={(e) => setEditLineForm((f) => ({ ...f, description: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Agency Name</Label>
+              <Input
+                value={editLineForm.agency_name}
+                onChange={(e) => setEditLineForm((f) => ({ ...f, agency_name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Period Type</Label>
+              <Select value={editLineForm.period_type} onValueChange={(v) => setEditLineForm((f) => ({ ...f, period_type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="campaign">Campaign</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="quarterly">Quarterly</SelectItem>
+                  <SelectItem value="yearly">Yearly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Input
+                value={editLineForm.notes}
+                onChange={(e) => setEditLineForm((f) => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditLineId(null)}>Cancel</Button>
+              <Button
+                disabled={!editLineForm.channel || updateLineMut.isPending}
+                onClick={() => {
+                  updateLineMut.mutate({
+                    lineId: editLineId!,
+                    data: {
+                      channel: editLineForm.channel,
+                      planned_amount: Number(editLineForm.planned_amount) || 0,
+                      description: editLineForm.description || undefined,
+                      agency_name: editLineForm.agency_name || undefined,
+                      period_type: editLineForm.period_type,
+                      notes: editLineForm.notes || undefined,
+                    } as Partial<MktBudgetLine>,
+                  }, { onSuccess: () => setEditLineId(null) })
+                }}
+              >
+                {updateLineMut.isPending ? 'Saving...' : 'Save'}
               </Button>
             </div>
           </div>
