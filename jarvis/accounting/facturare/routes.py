@@ -119,7 +119,8 @@ def api_validate():
     except Exception as e:
         return error_response(f"Invalid config: {e}", 400)
 
-    result = _service.validate(cfg, anexa_file.read())
+    collapse = bool(json.loads(config_json).get("collapse", False))
+    result = _service.validate(cfg, anexa_file.read(), collapse=collapse)
     if not result.success:
         return error_response(result.error, 400)
 
@@ -160,14 +161,16 @@ def api_generate():
     output_type = request.form.get("output", "all")
     gen_pdf = output_type in ("all", "pdf")
     gen_xlsx = output_type in ("all", "xlsx")
+    collapse = bool(json.loads(config_json).get("collapse", False))
 
     result = _service.generate(cfg, anexa_file.read(),
-                               generate_pdf=gen_pdf, generate_xlsx=gen_xlsx)
+                               generate_pdf=gen_pdf, generate_xlsx=gen_xlsx,
+                               collapse=collapse)
     if not result.success:
         return error_response(result.error, 400)
 
     # Persist generation record first — use DB-based URLs to survive multi-worker deployments
-    last_no = cfg.invoice.start_no + result.lines_count - 1
+    last_no = cfg.invoice.start_no if collapse else cfg.invoice.start_no + result.lines_count - 1
     gen_id = None
     try:
         record = _gen_repo.save_generation(
