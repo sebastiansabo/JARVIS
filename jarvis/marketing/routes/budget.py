@@ -9,7 +9,7 @@ from marketing import marketing_bp
 from marketing.repositories import BudgetRepository, ActivityRepository, ProjectRepository, ProjectEventRepository
 from marketing.decorators import mkt_permission_required
 from core.utils.api_helpers import get_json_or_error, safe_error_response
-from core.services.currency_converter import get_exchange_rate
+from core.services.currency_converter import convert_currency
 
 logger = logging.getLogger('jarvis.marketing.routes.budget')
 
@@ -42,10 +42,7 @@ def _sync_event_line_costs(project_id):
         project = _project_repo.get_by_id(project_id)
         project_currency = (project.get('currency') or 'EUR').upper() if project else 'EUR'
 
-        eur_rate = None
-        if project_currency != 'RON':
-            today = datetime.now().strftime('%Y-%m-%d')
-            eur_rate = get_exchange_rate('EUR', today)
+        today = datetime.now().strftime('%Y-%m-%d')
 
         for line in event_lines:
             event_id = (line.get('metadata') or {}).get('event_id')
@@ -55,12 +52,13 @@ def _sync_event_line_costs(project_id):
             if not info:
                 continue
             cost_ron = float(info.get('event_cost') or 0)
-            if project_currency != 'RON' and cost_ron > 0 and eur_rate and eur_rate > 0:
-                new_cost = round(cost_ron / eur_rate, 2)
-                new_currency = project_currency
+            if project_currency != 'RON' and cost_ron > 0:
+                converted, _rate = convert_currency(cost_ron, 'RON', project_currency, today)
+                new_cost = converted if converted is not None else cost_ron
+                new_currency = project_currency if converted is not None else 'RON'
             else:
                 new_cost = cost_ron
-                new_currency = 'RON' if project_currency == 'RON' else project_currency
+                new_currency = project_currency
 
             current = float(line.get('planned_amount') or 0)
             if abs(current - new_cost) > 0.01:
