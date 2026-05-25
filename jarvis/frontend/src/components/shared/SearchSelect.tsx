@@ -82,7 +82,7 @@ export function SearchSelect({
           <ChevronsUpDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start" collisionPadding={8}>
         <div className="flex items-center border-b px-2">
           <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <Input
@@ -94,7 +94,7 @@ export function SearchSelect({
             className="h-8 border-0 shadow-none focus-visible:ring-0 text-sm"
           />
         </div>
-        <div className="max-h-48 overflow-y-auto overscroll-contain">
+        <div className="max-h-64 overflow-y-auto overscroll-contain">
           {showCustomOption && (
             <div className="p-1 border-b">
               <button
