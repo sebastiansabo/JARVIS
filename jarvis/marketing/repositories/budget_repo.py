@@ -71,6 +71,12 @@ class BudgetRepository(BaseRepository):
             ''', (project_id, str(event_id)))
             existing = cursor.fetchone()
             if existing:
+                cursor.execute('''
+                    UPDATE mkt_budget_lines
+                    SET planned_amount = %s, currency = %s, updated_at = NOW()
+                    WHERE id = %s
+                ''', (event_cost or 0, currency, existing['id']))
+                self._recalc_project_budget(cursor, project_id)
                 return existing['id']
             metadata = json.dumps({
                 'source': 'event',
