@@ -9,7 +9,7 @@ from marketing import marketing_bp
 from marketing.repositories import ProjectEventRepository, ActivityRepository, BudgetRepository, ProjectRepository
 from marketing.decorators import mkt_permission_required
 from core.utils.api_helpers import get_json_or_error, safe_error_response
-from core.services.currency_converter import get_exchange_rate
+from core.services.currency_converter import convert_currency
 
 logger = logging.getLogger('jarvis.marketing.routes.events')
 
@@ -61,9 +61,9 @@ def api_link_event(project_id):
 
                 if project_currency != 'RON' and cost_ron > 0:
                     today = datetime.now().strftime('%Y-%m-%d')
-                    eur_rate = get_exchange_rate('EUR', today)
-                    if eur_rate and eur_rate > 0:
-                        budget_cost = round(cost_ron / eur_rate, 2)
+                    converted, _rate = convert_currency(cost_ron, 'RON', project_currency, today)
+                    if converted is not None:
+                        budget_cost = converted
                     else:
                         budget_cost = cost_ron
                         project_currency = 'RON'
