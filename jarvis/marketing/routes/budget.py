@@ -1,18 +1,22 @@
 """Marketing budget lines + transactions routes."""
 
 import logging
+from datetime import datetime
 from flask import jsonify, request, g
 from flask_login import login_required, current_user
 
 from marketing import marketing_bp
-from marketing.repositories import BudgetRepository, ActivityRepository
+from marketing.repositories import BudgetRepository, ActivityRepository, ProjectRepository, ProjectEventRepository
 from marketing.decorators import mkt_permission_required
 from core.utils.api_helpers import get_json_or_error, safe_error_response
+from core.services.currency_converter import get_exchange_rate
 
 logger = logging.getLogger('jarvis.marketing.routes.budget')
 
 _budget_repo = BudgetRepository()
 _activity_repo = ActivityRepository()
+_project_repo = ProjectRepository()
+_event_repo = ProjectEventRepository()
 
 
 # ---- Budget Lines ----
@@ -21,9 +25,48 @@ _activity_repo = ActivityRepository()
 @login_required
 @mkt_permission_required('budget', 'view')
 def api_get_budget_lines(project_id):
-    """Get all budget lines for a project."""
+    """Get all budget lines for a project, auto-syncing event costs."""
+    _sync_event_line_costs(project_id)
     lines = _budget_repo.get_lines_by_project(project_id)
     return jsonify({'budget_lines': lines})
+
+
+def _sync_event_line_costs(project_id):
+    """Re-sync event-sourced budget lines with current event cost + BNR rate."""
+    try:
+        lines = _budget_repo.get_lines_by_project(project_id)
+        event_lines = [l for l in lines if (l.get('metadata') or {}).get('source') == 'event']
+        if not event_lines:
+            return
+
+        project = _project_repo.get_by_id(project_id)
+        project_currency = (project.get('currency') or 'EUR').upper() if project else 'EUR'
+
+        eur_rate = None
+        if project_currency != 'RON':
+            today = datetime.now().strftime('%Y-%m-%d')
+            eur_rate = get_exchange_rate('EUR', today)
+
+        for line in event_lines:
+            event_id = (line.get('metadata') or {}).get('event_id')
+            if not event_id:
+                continue
+            info = _event_repo.get_event_info(int(event_id))
+            if not info:
+                continue
+            cost_ron = float(info.get('event_cost') or 0)
+            if project_currency != 'RON' and cost_ron > 0 and eur_rate and eur_rate > 0:
+                new_cost = round(cost_ron / eur_rate, 2)
+                new_currency = project_currency
+            else:
+                new_cost = cost_ron
+                new_currency = 'RON' if project_currency == 'RON' else project_currency
+
+            current = float(line.get('planned_amount') or 0)
+            if abs(current - new_cost) > 0.01:
+                _budget_repo.update_line(line['id'], planned_amount=new_cost, currency=new_currency)
+    except Exception as e:
+        logger.warning('Event line cost sync failed for project %s: %s', project_id, e)
 
 
 @marketing_bp.route('/api/projects/<int:project_id>/budget-lines', methods=['POST'])
