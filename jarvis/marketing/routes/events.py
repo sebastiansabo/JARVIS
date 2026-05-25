@@ -1,19 +1,22 @@
 """Marketing project ↔ HR event linking routes + invoice search for budget."""
 
 import logging
+from datetime import datetime
 from flask import jsonify, request
 from flask_login import login_required, current_user
 
 from marketing import marketing_bp
-from marketing.repositories import ProjectEventRepository, ActivityRepository, BudgetRepository
+from marketing.repositories import ProjectEventRepository, ActivityRepository, BudgetRepository, ProjectRepository
 from marketing.decorators import mkt_permission_required
 from core.utils.api_helpers import get_json_or_error, safe_error_response
+from core.services.currency_converter import get_exchange_rate
 
 logger = logging.getLogger('jarvis.marketing.routes.events')
 
 _event_repo = ProjectEventRepository()
 _activity_repo = ActivityRepository()
 _budget_repo = BudgetRepository()
+_project_repo = ProjectRepository()
 
 
 # ---- Project ↔ HR Event links ----
@@ -52,11 +55,27 @@ def api_link_event(project_id):
         try:
             info = _event_repo.get_event_info(event_id)
             if info:
+                cost_ron = float(info.get('event_cost') or 0)
+                project = _project_repo.get_by_id(project_id)
+                project_currency = (project.get('currency') or 'EUR').upper() if project else 'EUR'
+
+                if project_currency != 'RON' and cost_ron > 0:
+                    today = datetime.now().strftime('%Y-%m-%d')
+                    eur_rate = get_exchange_rate('EUR', today)
+                    if eur_rate and eur_rate > 0:
+                        budget_cost = round(cost_ron / eur_rate, 2)
+                    else:
+                        budget_cost = cost_ron
+                        project_currency = 'RON'
+                else:
+                    budget_cost = cost_ron
+
                 budget_line_id = _budget_repo.create_for_event(
                     project_id=project_id,
                     event_id=event_id,
                     event_name=info.get('name') or f'Event #{event_id}',
-                    event_cost=float(info.get('event_cost') or 0),
+                    event_cost=budget_cost,
+                    currency=project_currency,
                 )
         except Exception as budget_err:
             # Don't fail the link if budget-line creation hits an edge case.
