@@ -180,6 +180,22 @@ def api_get_entity_tags_bulk():
     return jsonify({str(k): v for k, v in tags_map.items()})
 
 
+@tags_bp.route('/api/entity-tags/bulk-query', methods=['POST'])
+@login_required
+def api_get_entity_tags_bulk_post():
+    """Bulk fetch entity tags via POST (avoids URL length limits)."""
+    data = request.get_json()
+    entity_type = (data or {}).get('entity_type', '')
+    if entity_type not in VALID_ENTITY_TYPES:
+        return error_response('Invalid entity_type')
+    entity_ids = (data or {}).get('entity_ids', [])
+    if not entity_ids:
+        return jsonify({})
+    entity_ids = [int(x) for x in entity_ids]
+    tags_map = _tag_repo.get_entities_tags_bulk(entity_type, entity_ids, current_user.id)
+    return jsonify({str(k): v for k, v in tags_map.items()})
+
+
 @tags_bp.route('/api/entity-tags', methods=['POST'])
 @login_required
 def api_add_entity_tag():
