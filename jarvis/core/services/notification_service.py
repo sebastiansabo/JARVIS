@@ -49,7 +49,7 @@ def get_smtp_config() -> dict:
         'username': settings.get('smtp_username', ''),
         'password': settings.get('smtp_password', ''),
         'from_email': settings.get('from_email', ''),
-        'from_name': settings.get('from_name', 'Bugetare System'),
+        'from_name': settings.get('from_name', 'Jarvis'),
         'global_cc': settings.get('global_cc', ''),
     }
 
@@ -178,19 +178,19 @@ def send_email(
 
 def send_test_email(to_email: str) -> tuple[bool, str]:
     """Send a test email to verify SMTP configuration."""
-    subject = "Test Email - Bugetare Notification System"
+    subject = "Test Email - Jarvis Notification System"
     html_body = """
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #333;">Test Email</h2>
-        <p>This is a test email from the Bugetare notification system.</p>
+        <p>This is a test email from the Jarvis notification system.</p>
         <p>If you received this email, your SMTP configuration is working correctly.</p>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-        <p style="color: #666; font-size: 12px;">This is an automated message from Bugetare.</p>
+        <p style="color: #666; font-size: 12px;">This is an automated message from Jarvis.</p>
     </body>
     </html>
     """
-    text_body = "This is a test email from the Bugetare notification system.\n\nIf you received this email, your SMTP configuration is working correctly."
+    text_body = "This is a test email from the Jarvis notification system.\n\nIf you received this email, your SMTP configuration is working correctly."
 
     return send_email(to_email, subject, html_body, text_body)
 
@@ -334,7 +334,7 @@ def create_allocation_email_html(
         <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
 
         <p style="color: #666; font-size: 12px;">
-            Aceasta este o notificare automata din sistemul Bugetare.<br>
+            Aceasta este o notificare automata din sistemul Jarvis.<br>
             Va rugam sa nu raspundeti la acest email.
         </p>
     </body>
@@ -408,7 +408,7 @@ Alocare:
 - Val. Neta Alocata: {format_currency(allocation_value, currency)}{reinvoice_section}
 
 ---
-Aceasta este o notificare automata din sistemul Bugetare.
+Aceasta este o notificare automata din sistemul Jarvis.
 Va rugam sa nu raspundeti la acest email.
 """
 
@@ -518,7 +518,7 @@ def notify_allocation(invoice_data: dict, allocation: dict) -> list[dict]:
 
         invoice_number = invoice_data.get('invoice_number', 'Factura')
         subject = f"O Noua bugetare alocata dep. {department}"
-        sender_name = f"Jarvis: Bugetare Factura ({invoice_number})"
+        sender_name = f"Jarvis: Factura ({invoice_number})"
         html_body = create_allocation_email_html(responsable_name, invoice_data, allocation)
         text_body = create_allocation_email_text(responsable_name, invoice_data, allocation)
 
