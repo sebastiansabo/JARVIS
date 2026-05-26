@@ -27,8 +27,9 @@ export const tagsApi = {
     api.get<EntityTag[]>(`/api/entity-tags?entity_type=${entityType}&entity_id=${entityId}`),
 
   getEntityTagsBulk: (entityType: string, entityIds: number[]) =>
-    api.get<Record<string, EntityTag[]>>(
-      `/api/entity-tags/bulk?entity_type=${entityType}&entity_ids=${entityIds.join(',')}`
+    api.post<Record<string, EntityTag[]>>(
+      '/api/entity-tags/bulk-query',
+      { entity_type: entityType, entity_ids: entityIds },
     ),
 
   addEntityTag: (entityType: string, entityId: number, tagId: number) =>
