@@ -26,28 +26,37 @@ class GenerationResult:
 class FacturareService:
     """Orchestrates the full facturare pipeline."""
 
+    @staticmethod
+    def _invoice_range(cfg: JobConfig, lines: list[OrderLine], collapse: bool = False) -> str:
+        """Compute display range accounting for per-row overrides and collapse."""
+        if collapse:
+            return str(cfg.invoice.start_no)
+        inv_nos = []
+        for i, line in enumerate(lines):
+            inv_nos.append(line.start_no if line.start_no is not None else cfg.invoice.start_no + i)
+        if not inv_nos:
+            return ""
+        mn, mx = min(inv_nos), max(inv_nos)
+        return str(mn) if mn == mx else f"{mn}–{mx}"
+
     def validate(self, cfg: JobConfig, anexa_bytes: bytes,
                  collapse: bool = False) -> GenerationResult:
         """Load and validate Anexa + config. Returns a sanity report, no files."""
         try:
             lines = load_anexa(anexa_bytes, sheet_name=cfg.input.sheet)
-            if not collapse:
+            has_row_overrides = any(l.start_no is not None for l in lines)
+            if not collapse and not has_row_overrides:
                 cfg.validate_invoice_range(len(lines))
 
-            total_advance = sum(l.advance for l in lines)
+            total_advance = sum(l.advance * l.qty for l in lines)
             models = {}
             for l in lines:
                 models.setdefault(l.model, {"count": 0, "total": 0.0})
                 models[l.model]["count"] += 1
-                models[l.model]["total"] += l.advance
+                models[l.model]["total"] += l.advance * l.qty
 
-            if collapse:
-                last_no = cfg.invoice.start_no  # single invoice
-            else:
-                last_no = cfg.invoice.start_no + len(lines) - 1
-
-            inv_range = (f"{cfg.invoice.start_no}" if collapse
-                         else f"{cfg.invoice.start_no}–{last_no}")
+            inv_range = self._invoice_range(cfg, lines, collapse)
+            storno_count = sum(1 for l in lines if l.qty < 0)
 
             return GenerationResult(
                 success=True,
@@ -60,6 +69,7 @@ class FacturareService:
                     "invoice_range": inv_range,
                     "invoice_count": 1 if collapse else len(lines),
                     "collapsed": collapse,
+                    "storno_count": storno_count,
                     "models": {
                         k: {"count": v["count"], "total": round(v["total"], 2)}
                         for k, v in models.items()
@@ -79,15 +89,11 @@ class FacturareService:
         """Run the full pipeline: load → validate → generate PDF + xlsx."""
         try:
             lines = load_anexa(anexa_bytes, sheet_name=cfg.input.sheet)
-            if not collapse:
+            has_row_overrides = any(l.start_no is not None for l in lines)
+            if not collapse and not has_row_overrides:
                 cfg.validate_invoice_range(len(lines))
 
-            total_advance = sum(l.advance for l in lines)
-
-            if collapse:
-                last_no = cfg.invoice.start_no
-            else:
-                last_no = cfg.invoice.start_no + len(lines) - 1
+            total_advance = sum(l.advance * l.qty for l in lines)
 
             pdf_bytes = None
             xlsx_bytes = None
@@ -108,8 +114,7 @@ class FacturareService:
                 xlsx_bytes = xlsx_renderer.render_to_bytes(lines)
                 logger.info(f"Generated EuroFib xlsx with {len(lines) * 2} rows")
 
-            inv_range = (f"{cfg.invoice.start_no}" if collapse
-                         else f"{cfg.invoice.start_no}–{last_no}")
+            inv_range = self._invoice_range(cfg, lines, collapse)
 
             return GenerationResult(
                 success=True,
@@ -134,11 +139,13 @@ class FacturareService:
                 )
 
             lines = load_anexa(str(anexa_path), sheet_name=cfg.input.sheet)
-            cfg.validate_invoice_range(len(lines))
+            has_row_overrides = any(l.start_no is not None for l in lines)
+            if not has_row_overrides:
+                cfg.validate_invoice_range(len(lines))
 
             paths = cfg.resolve_paths(base_dir)
-            total_advance = sum(l.advance for l in lines)
-            last_no = cfg.invoice.start_no + len(lines) - 1
+            total_advance = sum(l.advance * l.qty for l in lines)
+            inv_range = self._invoice_range(cfg, lines)
 
             from ..generators.invoice_pdf import InvoicePdfRenderer
             pdf_renderer = InvoicePdfRenderer(cfg)
@@ -154,7 +161,7 @@ class FacturareService:
                 success=True,
                 lines_count=len(lines),
                 total_advance=total_advance,
-                invoice_range=f"{cfg.invoice.start_no}–{last_no}",
+                invoice_range=inv_range,
             )
 
         except Exception as e:
