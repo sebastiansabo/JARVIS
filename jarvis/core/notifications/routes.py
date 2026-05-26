@@ -63,7 +63,7 @@ def api_test_email():
         return jsonify({'success': False, 'error': 'SMTP not configured'}), 500
 
     data = request.get_json()
-    to_email = data.get('email')
+    to_email = data.get('email') or data.get('to')
     if not to_email:
         return jsonify({'success': False, 'error': 'Email address is required'}), 400
 
