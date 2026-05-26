@@ -90,7 +90,10 @@ def _detect_format(ws, header_row: int) -> str:
 
 
 def _parse_standard(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
-    """Parse full Anexa format: A=comanda B=model C=culoare D=list E=sell F=disc G=advance H=rest I=vin."""
+    """Parse full Anexa format.
+
+    Columns: A=comanda B=model C=culoare D=cant E=list F=sell G=disc H=advance I=rest J=vin K=invoice_no L=kurs
+    """
     lines: list[OrderLine] = []
     errors: list[str] = []
 
@@ -104,7 +107,8 @@ def _parse_standard(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
 
         model = row[1]    # B
         culoare = row[2]  # C
-        advance = row[6] if len(row) > 6 else None  # G
+        qty_raw = row[3] if len(row) > 3 else None  # D (Cant)
+        advance = row[7] if len(row) > 7 else None   # H
 
         missing = []
         if model is None:
@@ -112,20 +116,31 @@ def _parse_standard(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
         if culoare is None:
             missing.append("C (culoare)")
         if advance is None:
-            missing.append("G (advance)")
+            missing.append("H (advance)")
         if missing:
             errors.append(f"Row {row_idx}: missing {', '.join(missing)}")
             continue
+
+        qty = int(qty_raw) if qty_raw is not None else 1
+        inv_no = None
+        if len(row) > 10 and row[10] is not None:  # K
+            inv_no = int(row[10])
+        kurs = None
+        if len(row) > 11 and row[11] is not None:  # L
+            kurs = float(row[11])
 
         lines.append(OrderLine(
             comanda=int(comanda),
             model=str(model).strip(),
             culoare=str(culoare).strip(),
-            list_price=float(row[3]) if row[3] is not None else None,
-            selling_price=float(row[4]) if row[4] is not None else None,
+            list_price=float(row[4]) if len(row) > 4 and row[4] is not None else None,
+            selling_price=float(row[5]) if len(row) > 5 and row[5] is not None else None,
             advance=float(advance),
-            rest=float(row[7]) if len(row) > 7 and row[7] is not None else None,
-            vin=str(row[8]).strip() if len(row) > 8 and row[8] is not None else None,
+            rest=float(row[8]) if len(row) > 8 and row[8] is not None else None,
+            vin=str(row[9]).strip() if len(row) > 9 and row[9] is not None else None,
+            qty=qty,
+            start_no=inv_no,
+            kurs=kurs,
         ))
 
     return lines, errors

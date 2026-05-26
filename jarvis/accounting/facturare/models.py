@@ -20,6 +20,8 @@ class OrderLine:
     start_no: int | None = None
     invoice_date: str | None = None
     qty: int = 1
+    # Per-row overrides for invoice (standard Anexa columns K-L)
+    kurs: float | None = None
 
 
 InvoiceKind = Literal["invoice", "proforma"]
