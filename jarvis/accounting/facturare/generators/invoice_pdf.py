@@ -168,11 +168,14 @@ class InvoicePdfRenderer:
         y -= 24 * mm
         c.setFont("Helvetica", 9.5)
 
-        desc_lines = [
-            cfg.invoice.description_prefix,
+        has_overrides = line.start_no is not None or line.kurs is not None
+        desc_lines = []
+        if not has_overrides or is_storno:
+            desc_lines.append(cfg.invoice.description_prefix)
+        desc_lines.extend([
             str(line.model).upper(),
             f"Culoare: {line.culoare}",
-        ]
+        ])
         if line.vin:
             desc_lines.append(f"VIN: {line.vin}")
         desc_lines.append(f"Comanda: {line.comanda} / {cfg.contract.anexa_ref}")
