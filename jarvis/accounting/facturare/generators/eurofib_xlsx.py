@@ -63,6 +63,8 @@ class EurofibXlsxRenderer:
         kurs_date = datetime(
             cfg.fx.kurs_date.year, cfg.fx.kurs_date.month, cfg.fx.kurs_date.day
         )
+        row_kurs = line.kurs if line.kurs is not None else cfg.fx.kurs
+        fw_amount = line.advance * line.qty  # negative for storno
 
         ws.cell(row=r, column=1, value="x")                      # A marker
         ws.cell(row=r, column=2, value=cfg.eurofib.klient)        # B klient
@@ -76,14 +78,14 @@ class EurofibXlsxRenderer:
         # J steuercode: blank for debit
         # K steuerbetrag: blank for debit
         ws.cell(row=r, column=12, value=cfg.fx.currency)          # L fwcd
-        ws.cell(row=r, column=13, value=line.advance)             # M fwbetrag
+        ws.cell(row=r, column=13, value=fw_amount)                # M fwbetrag
         # N fw_steuercode: blank for debit
         ws.cell(row=r, column=16, value=cfg.eurofib.konto_credit) # P gegenkonto
         ws.cell(row=r, column=17, value=text)                     # Q text
         ws.cell(row=r, column=18, value="B")                      # R brutto_netto
         ws.cell(row=r, column=25, value=line.comanda)             # Y extbeleg
         ws.cell(row=r, column=32, value=kurs_date)                # AF kursdatum
-        ws.cell(row=r, column=33, value=cfg.fx.kurs)              # AG kurs
+        ws.cell(row=r, column=33, value=row_kurs)                 # AG kurs
         # AH (col 34) kurs_per: MUST stay blank — see module docstring
         # AI (col 35) kurs_fix: MUST stay blank
 
@@ -96,6 +98,8 @@ class EurofibXlsxRenderer:
         kurs_date = datetime(
             cfg.fx.kurs_date.year, cfg.fx.kurs_date.month, cfg.fx.kurs_date.day
         )
+        row_kurs = line.kurs if line.kurs is not None else cfg.fx.kurs
+        fw_amount = line.advance * line.qty  # negative for storno
 
         # A marker: blank for credit
         ws.cell(row=r, column=2, value=cfg.eurofib.klient)        # B klient
@@ -109,14 +113,14 @@ class EurofibXlsxRenderer:
         ws.cell(row=r, column=10, value=cfg.eurofib.steuercode)   # J steuercode
         ws.cell(row=r, column=11, value=0)                        # K steuerbetrag
         ws.cell(row=r, column=12, value=cfg.fx.currency)          # L fwcd
-        ws.cell(row=r, column=13, value=line.advance)             # M fwbetrag
+        ws.cell(row=r, column=13, value=fw_amount)                # M fwbetrag
         ws.cell(row=r, column=14, value=cfg.eurofib.fw_steuercode) # N fw_steuercode
         # P gegenkonto: blank for credit
         ws.cell(row=r, column=17, value=text)                     # Q text
         ws.cell(row=r, column=18, value="N")                      # R brutto_netto
         ws.cell(row=r, column=25, value=line.comanda)             # Y extbeleg
         ws.cell(row=r, column=32, value=kurs_date)                # AF kursdatum
-        ws.cell(row=r, column=33, value=cfg.fx.kurs)              # AG kurs
+        ws.cell(row=r, column=33, value=row_kurs)                 # AG kurs
         # AH (col 34) kurs_per: MUST stay blank
         # AI (col 35) kurs_fix: MUST stay blank
 
@@ -125,13 +129,17 @@ class EurofibXlsxRenderer:
         for col in (5, 7, 32):  # E, G, AF
             ws.cell(row=r, column=col).number_format = _DATE_FMT
 
+    def _resolve_inv_no(self, idx: int, line: OrderLine) -> int:
+        """Per-row invoice number override, or fall back to sequential."""
+        return line.start_no if line.start_no is not None else self.cfg.invoice.start_no + idx
+
     def render(self, lines: list[OrderLine], out_path: Path) -> Path:
         """Generate EuroFib xlsx to disk."""
         out_path.parent.mkdir(parents=True, exist_ok=True)
         wb, ws = self._load_template()
 
         for i, line in enumerate(lines):
-            inv_no = self.cfg.invoice.start_no + i
+            inv_no = self._resolve_inv_no(i, line)
             brand = _brand_short(line.model, self.cfg.eurofib.brand_map)
             text = self.cfg.eurofib.text_template.format(
                 brand_short=brand, comanda=line.comanda
@@ -154,7 +162,7 @@ class EurofibXlsxRenderer:
         wb, ws = self._load_template()
 
         for i, line in enumerate(lines):
-            inv_no = self.cfg.invoice.start_no + i
+            inv_no = self._resolve_inv_no(i, line)
             brand = _brand_short(line.model, self.cfg.eurofib.brand_map)
             text = self.cfg.eurofib.text_template.format(
                 brand_short=brand, comanda=line.comanda

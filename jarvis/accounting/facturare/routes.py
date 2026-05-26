@@ -132,12 +132,15 @@ def api_generate():
         return error_response(result.error, 400)
 
     # Persist generation record first — use DB-based URLs to survive multi-worker deployments
-    last_no = cfg.invoice.start_no + result.lines_count - 1
+    # Parse range from result (handles per-row overrides)
+    range_parts = result.invoice_range.replace('–', '-').split('-')
+    start_no = int(range_parts[0]) if range_parts[0].strip() else cfg.invoice.start_no
+    last_no = int(range_parts[-1]) if range_parts[-1].strip() else start_no
     gen_id = None
     try:
         record = _gen_repo.save_generation(
             gen_type="invoice", job_id=cfg.job_id,
-            start_no=cfg.invoice.start_no, end_no=last_no,
+            start_no=start_no, end_no=last_no,
             line_count=result.lines_count, total_amount=float(result.total_advance),
             currency=cfg.fx.currency, invoice_date=cfg.invoice.date or None,
             supplier_name=cfg.supplier.name, customer_name=cfg.customer.name,

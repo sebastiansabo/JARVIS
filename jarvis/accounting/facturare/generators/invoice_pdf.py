@@ -33,6 +33,7 @@ class InvoicePdfRenderer:
         W, H = A4
         LM = 18 * mm
         RM = W - 18 * mm
+        is_storno = line.qty < 0
 
         # ---- Logo ----
         if self.logo_path:
@@ -61,9 +62,11 @@ class InvoicePdfRenderer:
             y -= 5 * mm
             c.drawCentredString(W / 2, y, "PROFORMA INVOICE")
         else:
-            c.drawCentredString(W / 2, y, "FACTURA")
+            title = "FACTURA STORNO" if is_storno else "FACTURA"
+            c.drawCentredString(W / 2, y, title)
             y -= 5 * mm
-            c.drawCentredString(W / 2, y, "INVOICE")
+            title2 = "STORNO INVOICE" if is_storno else "INVOICE"
+            c.drawCentredString(W / 2, y, title2)
 
         y -= 5 * mm
         c.drawCentredString(W / 2, y, f"No:{inv_no}")
@@ -169,10 +172,14 @@ class InvoicePdfRenderer:
             desc_lines.append(f"VIN: {line.vin}")
         desc_lines.append(f"Comanda: {line.comanda} / {cfg.contract.anexa_ref}")
 
+        qty = line.qty
+        unit_price = abs(line.advance)
+        total_value = line.advance * qty  # negative when storno
+
         c.drawString(LM + 78 * mm, y, "buc")
-        c.drawRightString(LM + 105 * mm, y, "1")
-        c.drawRightString(LM + 138 * mm, y, fmt_eur(line.advance))
-        c.drawRightString(LM + 158 * mm, y, fmt_eur(line.advance))
+        c.drawRightString(LM + 105 * mm, y, str(qty))
+        c.drawRightString(LM + 138 * mm, y, fmt_eur(unit_price))
+        c.drawRightString(LM + 158 * mm, y, fmt_eur(total_value))
 
         yl = y
         for ln in desc_lines:
@@ -189,19 +196,23 @@ class InvoicePdfRenderer:
         c.line(LM, y + 6 * mm, RM, y + 6 * mm)
         c.setFont("Helvetica-Bold", 11)
         c.drawString(LM, y, "PRICE")
-        c.drawRightString(RM, y, f"{fmt_eur(line.advance)} {currency}")
+        c.drawRightString(RM, y, f"{fmt_eur(total_value)} {currency}")
 
         # ---- Footer ----
         y -= 18 * mm
         c.setFont("Helvetica", 9.5)
         c.drawString(LM, y, f"Intocmit de {cfg.invoice.intocmit_de}")
 
+    def _resolve_inv_no(self, idx: int, line: OrderLine) -> int:
+        """Per-row invoice number override, or fall back to sequential."""
+        return line.start_no if line.start_no is not None else self.cfg.invoice.start_no + idx
+
     def render_all(self, lines: list[OrderLine], out_path: Path) -> Path:
         """Render all invoices into a single multi-page PDF."""
         out_path.parent.mkdir(parents=True, exist_ok=True)
         c = canvas.Canvas(str(out_path), pagesize=A4)
         for i, line in enumerate(lines):
-            inv_no = self.cfg.invoice.start_no + i
+            inv_no = self._resolve_inv_no(i, line)
             self.render_one(c, inv_no, line)
             c.showPage()
         c.save()
@@ -213,7 +224,7 @@ class InvoicePdfRenderer:
         buf = io.BytesIO()
         c = canvas.Canvas(buf, pagesize=A4)
         for i, line in enumerate(lines):
-            inv_no = self.cfg.invoice.start_no + i
+            inv_no = self._resolve_inv_no(i, line)
             self.render_one(c, inv_no, line)
             c.showPage()
         c.save()
