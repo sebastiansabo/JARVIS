@@ -170,7 +170,9 @@ class InvoicePdfRenderer:
 
         has_overrides = line.start_no is not None or line.kurs is not None
         desc_lines = []
-        if not has_overrides or is_storno:
+        if is_storno and line.storno_description:
+            desc_lines.append(line.storno_description)
+        elif not has_overrides or is_storno:
             desc_lines.append(cfg.invoice.description_prefix)
         desc_lines.extend([
             str(line.model).upper(),
