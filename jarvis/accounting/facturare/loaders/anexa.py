@@ -128,6 +128,9 @@ def _parse_standard(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
         kurs = None
         if len(row) > 11 and row[11] is not None:  # L
             kurs = float(row[11])
+        storno_desc = None
+        if len(row) > 12 and row[12] is not None:  # M
+            storno_desc = str(row[12]).strip()
 
         lines.append(OrderLine(
             comanda=int(comanda),
@@ -141,6 +144,7 @@ def _parse_standard(ws, data_start: int) -> tuple[list[OrderLine], list[str]]:
             qty=qty,
             start_no=inv_no,
             kurs=kurs,
+            storno_description=storno_desc,
         ))
 
     return lines, errors
