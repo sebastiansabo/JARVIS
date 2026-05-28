@@ -185,7 +185,7 @@ export function FilesTab({ projectId }: { projectId: number }) {
   const [newCategory, setNewCategory] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [addingCategory, setAddingCategory] = useState(false)
   const [addCategoryName, setAddCategoryName] = useState('')
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false)
@@ -282,7 +282,7 @@ export function FilesTab({ projectId }: { projectId: number }) {
   }
 
   function toggleCategory(cat: string) {
-    setCollapsedCategories((prev) => {
+    setExpandedCategories((prev) => {
       const next = new Set(prev)
       if (next.has(cat)) next.delete(cat)
       else next.add(cat)
@@ -369,7 +369,7 @@ export function FilesTab({ projectId }: { projectId: number }) {
             key={key}
             label={key === '__uncategorized__' ? 'Uncategorized' : key}
             files={grouped[key]}
-            collapsed={collapsedCategories.has(key)}
+            collapsed={!expandedCategories.has(key)}
             onToggle={() => toggleCategory(key)}
             onDelete={(id) => deleteMut.mutate(id)}
             onChangeCategory={(fileId, category) => updateCategoryMut.mutate({ fileId, category })}
@@ -383,7 +383,7 @@ export function FilesTab({ projectId }: { projectId: number }) {
             key={cat}
             label={cat}
             files={[]}
-            collapsed={collapsedCategories.has(cat)}
+            collapsed={!expandedCategories.has(cat)}
             onToggle={() => toggleCategory(cat)}
             onDelete={() => {}}
             onChangeCategory={() => {}}
@@ -475,7 +475,16 @@ export function FilesTab({ projectId }: { projectId: number }) {
         onOpenChange={setManageCategoriesOpen}
         categories={predefinedCategories}
         fileCategories={categories}
-        onSave={(cats) => setCategoriesMut.mutate(cats)}
+        files={files}
+        onSave={(cats, renames) => {
+          setCategoriesMut.mutate(cats)
+          // Rename files that belong to renamed categories
+          for (const [oldName, newName] of Object.entries(renames)) {
+            files.filter((f) => f.category === oldName).forEach((f) => {
+              updateCategoryMut.mutate({ fileId: f.id, category: newName || null })
+            })
+          }
+        }}
       />
 
       {/* ── Link DMS Document Dialog ── */}
@@ -498,21 +507,23 @@ function ManageCategoriesDialog({
   onOpenChange,
   categories,
   fileCategories,
+  files,
   onSave,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   categories: string[]
   fileCategories: string[]
-  onSave: (cats: string[]) => void
+  files: MktFile[]
+  onSave: (cats: string[], renames: Record<string, string>) => void
 }) {
-  const [items, setItems] = useState<string[]>([])
+  const [items, setItems] = useState<{ original: string; current: string }[]>([])
   const [newName, setNewName] = useState('')
 
   // Sync state when dialog opens
   const [lastOpen, setLastOpen] = useState(false)
   if (open && !lastOpen) {
-    setItems([...categories])
+    setItems(categories.map((c) => ({ original: c, current: c })))
     setLastOpen(true)
   }
   if (!open && lastOpen) {
@@ -521,24 +532,40 @@ function ManageCategoriesDialog({
 
   function handleAdd() {
     const name = newName.trim()
-    if (name && !items.includes(name)) {
-      setItems([...items, name])
+    if (name && !items.some((i) => i.current === name)) {
+      setItems([...items, { original: '', current: name }])
       setNewName('')
     }
   }
 
-  function handleRemove(cat: string) {
-    setItems(items.filter((c) => c !== cat))
+  function handleRemove(idx: number) {
+    setItems(items.filter((_, i) => i !== idx))
   }
 
   function handleRename(idx: number, newVal: string) {
     const updated = [...items]
-    updated[idx] = newVal
+    updated[idx] = { ...updated[idx], current: newVal }
     setItems(updated)
   }
 
-  // Categories that exist on files but not in predefined list
-  const inUseOnly = fileCategories.filter((c) => !items.includes(c))
+  function handleSave() {
+    const renames: Record<string, string> = {}
+    for (const item of items) {
+      if (item.original && item.original !== item.current.trim()) {
+        renames[item.original] = item.current.trim()
+      }
+    }
+    onSave(items.map((i) => i.current.trim()).filter(Boolean), renames)
+    onOpenChange(false)
+  }
+
+  const currentNames = items.map((i) => i.current)
+  const inUseOnly = fileCategories.filter((c) => !currentNames.includes(c))
+  const fileCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    files.forEach((f) => { if (f.category) counts[f.category] = (counts[f.category] || 0) + 1 })
+    return counts
+  }, [files])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -546,15 +573,18 @@ function ManageCategoriesDialog({
         <DialogHeader><DialogTitle>Manage File Categories</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5 max-h-[250px] overflow-y-auto">
-            {items.map((cat, idx) => (
+            {items.map((item, idx) => (
               <div key={idx} className="flex items-center gap-2">
                 <FolderOpen className="h-4 w-4 text-amber-500 shrink-0" />
                 <Input
                   className="h-7 text-sm flex-1"
-                  value={cat}
+                  value={item.current}
                   onChange={(e) => handleRename(idx, e.target.value)}
                 />
-                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => handleRemove(cat)}>
+                {fileCounts[item.original] ? (
+                  <Badge variant="secondary" className="text-[10px] shrink-0">{fileCounts[item.original]}</Badge>
+                ) : null}
+                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => handleRemove(idx)}>
                   <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
                 </Button>
               </div>
@@ -578,7 +608,7 @@ function ManageCategoriesDialog({
           </form>
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button size="sm" onClick={() => { onSave(items.filter((c) => c.trim())); onOpenChange(false) }}>Save</Button>
+            <Button size="sm" onClick={handleSave}>Save</Button>
           </div>
         </div>
       </DialogContent>
