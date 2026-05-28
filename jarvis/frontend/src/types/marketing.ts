@@ -225,6 +225,7 @@ export interface MktFile {
   uploaded_by: number
   uploaded_by_name: string | null
   description: string | null
+  category: string | null
   created_at: string
 }
 

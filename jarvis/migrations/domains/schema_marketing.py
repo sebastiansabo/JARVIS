@@ -219,10 +219,15 @@ def create_schema_marketing(conn, cursor):
             storage_uri TEXT NOT NULL,
             uploaded_by INTEGER NOT NULL REFERENCES users(id),
             description TEXT,
+            category TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_files_project ON mkt_project_files(project_id)')
+    # Migration: add category column if missing
+    cursor.execute("""
+        ALTER TABLE mkt_project_files ADD COLUMN IF NOT EXISTS category TEXT
+    """)
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS mkt_project_events (
