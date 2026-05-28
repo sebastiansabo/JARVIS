@@ -194,6 +194,9 @@ export const marketingApi = {
   createFile: (projectId: number, data: { file_name: string; storage_uri: string; file_type?: string; mime_type?: string; file_size?: number; description?: string }) =>
     api.post<{ success: boolean; id: number }>(`${BASE}/projects/${projectId}/files`, data),
 
+  updateFile: (fileId: number, data: { category?: string | null; description?: string | null }) =>
+    api.put<{ success: boolean }>(`${BASE}/files/${fileId}`, data),
+
   deleteFile: (fileId: number) =>
     api.delete<{ success: boolean }>(`${BASE}/files/${fileId}`),
 
@@ -243,10 +246,11 @@ export const marketingApi = {
   searchInvoices: (q?: string, company?: string, limit = 20) =>
     api.get<{ invoices: InvoiceSearchResult[] }>(`${BASE}/invoices/search${toQs({ q, company, limit })}`),
 
-  uploadFile: (projectId: number, file: File, description?: string) => {
+  uploadFile: (projectId: number, file: File, description?: string, category?: string) => {
     const form = new FormData()
     form.append('file', file)
     if (description) form.append('description', description)
+    if (category) form.append('category', category)
     return api.post<{ success: boolean; id: number; drive_link: string; file_name: string; file_size: number }>(
       `${BASE}/projects/${projectId}/files/upload`, form,
     )

@@ -208,6 +208,23 @@ def api_create_file(project_id):
         return safe_error_response(e)
 
 
+@marketing_bp.route('/api/files/<int:file_id>', methods=['PUT'])
+@login_required
+def api_update_file(file_id):
+    """Update file metadata (category, description)."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+    updates = {}
+    if 'category' in data:
+        updates['category'] = data['category'] or None
+    if 'description' in data:
+        updates['description'] = data['description'] or None
+    if _file_repo.update(file_id, **updates):
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'File not found'}), 404
+
+
 @marketing_bp.route('/api/files/<int:file_id>', methods=['DELETE'])
 @login_required
 def api_delete_file(file_id):
@@ -234,6 +251,7 @@ def api_upload_file(project_id):
     result = ProjectService().upload_file(
         project_id, f.read(), f.filename,
         description=request.form.get('description', ''),
+        category=request.form.get('category', ''),
         user_id=current_user.id,
     )
     if result.success:
