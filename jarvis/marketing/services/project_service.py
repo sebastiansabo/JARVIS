@@ -121,7 +121,7 @@ class ProjectService:
             return ServiceResult(success=False, error=str(e), status_code=500)
 
     def upload_file(self, project_id: int, file_bytes: bytes, filename: str,
-                    description: str, user_id: int) -> ServiceResult:
+                    description: str, user_id: int, category: str = '') -> ServiceResult:
         """Upload file to Google Drive and attach to project.
 
         Orchestrates: validation -> folder structure -> Drive upload ->
@@ -177,6 +177,7 @@ class ProjectService:
                 mime_type=mime_type,
                 file_size=len(file_bytes),
                 description=description or None,
+                category=category or None,
             )
             self.activity_repo.log(project_id, 'file_attached', actor_id=user_id,
                                    details={'file_name': filename})
