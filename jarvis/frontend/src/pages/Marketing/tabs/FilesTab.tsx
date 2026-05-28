@@ -186,6 +186,9 @@ export function FilesTab({ projectId }: { projectId: number }) {
   const [isDragging, setIsDragging] = useState(false)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
+  const [addingCategory, setAddingCategory] = useState(false)
+  const [addCategoryName, setAddCategoryName] = useState('')
+  const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false)
 
   // ── Project files ──
   const { data } = useQuery({
@@ -194,12 +197,24 @@ export function FilesTab({ projectId }: { projectId: number }) {
   })
   const files = data?.files ?? []
 
-  // Derive categories from files
+  // ── Predefined categories ──
+  const { data: catData } = useQuery({
+    queryKey: ['mkt-file-categories', projectId],
+    queryFn: () => marketingApi.getFileCategories(projectId),
+  })
+  const predefinedCategories = catData?.categories ?? []
+
+  const setCategoriesMut = useMutation({
+    mutationFn: (cats: string[]) => marketingApi.setFileCategories(projectId, cats),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mkt-file-categories', projectId] }),
+  })
+
+  // Merge predefined + file-derived categories
   const categories = useMemo(() => {
-    const cats = new Set<string>()
+    const cats = new Set<string>(predefinedCategories)
     files.forEach((f) => { if (f.category) cats.add(f.category) })
     return Array.from(cats).sort()
-  }, [files])
+  }, [files, predefinedCategories])
 
   // Group files by category
   const grouped = useMemo(() => {
@@ -309,23 +324,73 @@ export function FilesTab({ projectId }: { projectId: number }) {
       </div>
 
       {/* ── Categorized file sections ── */}
-      {files.length > 0 && (
-        <div className="space-y-3">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
           <p className="text-sm font-medium text-muted-foreground">Project Files ({files.length})</p>
-          {sortedKeys.map((key) => (
-            <CategorySection
-              key={key}
-              label={key === '__uncategorized__' ? 'Uncategorized' : key}
-              files={grouped[key]}
-              collapsed={collapsedCategories.has(key)}
-              onToggle={() => toggleCategory(key)}
-              onDelete={(id) => deleteMut.mutate(id)}
-              onChangeCategory={(fileId, category) => updateCategoryMut.mutate({ fileId, category })}
-              categories={categories}
-            />
-          ))}
+          <div className="flex items-center gap-1">
+            {addingCategory ? (
+              <form className="flex items-center gap-1" onSubmit={(e) => {
+                e.preventDefault()
+                const name = addCategoryName.trim()
+                if (name && !categories.includes(name)) {
+                  setCategoriesMut.mutate([...predefinedCategories, name])
+                }
+                setAddCategoryName('')
+                setAddingCategory(false)
+              }}>
+                <Input
+                  className="h-7 w-[160px] text-xs"
+                  placeholder="Category name..."
+                  value={addCategoryName}
+                  onChange={(e) => setAddCategoryName(e.target.value)}
+                  autoFocus
+                  onBlur={() => { if (!addCategoryName.trim()) setAddingCategory(false) }}
+                />
+                <Button type="submit" variant="ghost" size="icon" className="h-7 w-7">
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </form>
+            ) : (
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAddingCategory(true)}>
+                <FolderOpen className="h-3.5 w-3.5 mr-1" />
+                Add Category
+              </Button>
+            )}
+            {categories.length > 0 && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setManageCategoriesOpen(true)}>
+                Manage
+              </Button>
+            )}
+          </div>
         </div>
-      )}
+
+        {sortedKeys.map((key) => (
+          <CategorySection
+            key={key}
+            label={key === '__uncategorized__' ? 'Uncategorized' : key}
+            files={grouped[key]}
+            collapsed={collapsedCategories.has(key)}
+            onToggle={() => toggleCategory(key)}
+            onDelete={(id) => deleteMut.mutate(id)}
+            onChangeCategory={(fileId, category) => updateCategoryMut.mutate({ fileId, category })}
+            categories={categories}
+          />
+        ))}
+
+        {/* Show empty predefined categories that have no files */}
+        {predefinedCategories.filter((c) => !grouped[c]).map((cat) => (
+          <CategorySection
+            key={cat}
+            label={cat}
+            files={[]}
+            collapsed={collapsedCategories.has(cat)}
+            onToggle={() => toggleCategory(cat)}
+            onDelete={() => {}}
+            onChangeCategory={() => {}}
+            categories={categories}
+          />
+        ))}
+      </div>
 
       {files.length === 0 && linkedDocs.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">
@@ -404,6 +469,15 @@ export function FilesTab({ projectId }: { projectId: number }) {
         </DialogContent>
       </Dialog>
 
+      {/* ── Manage Categories Dialog ── */}
+      <ManageCategoriesDialog
+        open={manageCategoriesOpen}
+        onOpenChange={setManageCategoriesOpen}
+        categories={predefinedCategories}
+        fileCategories={categories}
+        onSave={(cats) => setCategoriesMut.mutate(cats)}
+      />
+
       {/* ── Link DMS Document Dialog ── */}
       <LinkDocumentDialog
         open={linkDialogOpen}
@@ -412,6 +486,103 @@ export function FilesTab({ projectId }: { projectId: number }) {
         linkedDocIds={linkedDocs.map((d) => d.document_id)}
       />
     </div>
+  )
+}
+
+/* ────────────────────────────────────────────────────────
+   Manage Categories Dialog
+   ──────────────────────────────────────────────────────── */
+
+function ManageCategoriesDialog({
+  open,
+  onOpenChange,
+  categories,
+  fileCategories,
+  onSave,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  categories: string[]
+  fileCategories: string[]
+  onSave: (cats: string[]) => void
+}) {
+  const [items, setItems] = useState<string[]>([])
+  const [newName, setNewName] = useState('')
+
+  // Sync state when dialog opens
+  const [lastOpen, setLastOpen] = useState(false)
+  if (open && !lastOpen) {
+    setItems([...categories])
+    setLastOpen(true)
+  }
+  if (!open && lastOpen) {
+    setLastOpen(false)
+  }
+
+  function handleAdd() {
+    const name = newName.trim()
+    if (name && !items.includes(name)) {
+      setItems([...items, name])
+      setNewName('')
+    }
+  }
+
+  function handleRemove(cat: string) {
+    setItems(items.filter((c) => c !== cat))
+  }
+
+  function handleRename(idx: number, newVal: string) {
+    const updated = [...items]
+    updated[idx] = newVal
+    setItems(updated)
+  }
+
+  // Categories that exist on files but not in predefined list
+  const inUseOnly = fileCategories.filter((c) => !items.includes(c))
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm" aria-describedby={undefined}>
+        <DialogHeader><DialogTitle>Manage File Categories</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5 max-h-[250px] overflow-y-auto">
+            {items.map((cat, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <FolderOpen className="h-4 w-4 text-amber-500 shrink-0" />
+                <Input
+                  className="h-7 text-sm flex-1"
+                  value={cat}
+                  onChange={(e) => handleRename(idx, e.target.value)}
+                />
+                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => handleRemove(cat)}>
+                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                </Button>
+              </div>
+            ))}
+            {inUseOnly.map((cat) => (
+              <div key={cat} className="flex items-center gap-2 opacity-60">
+                <FolderOpen className="h-4 w-4 text-amber-500 shrink-0" />
+                <span className="text-sm flex-1">{cat}</span>
+                <Badge variant="outline" className="text-[10px]">in use</Badge>
+              </div>
+            ))}
+          </div>
+          <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); handleAdd() }}>
+            <Input
+              className="h-8 text-sm flex-1"
+              placeholder="New category name..."
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+            <Button type="submit" variant="outline" size="sm" className="h-8" disabled={!newName.trim()}>Add</Button>
+          </form>
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => { onSave(items.filter((c) => c.trim())); onOpenChange(false) }}>Save</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
