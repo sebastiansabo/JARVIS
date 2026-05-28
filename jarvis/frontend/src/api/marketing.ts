@@ -200,6 +200,12 @@ export const marketingApi = {
   deleteFile: (fileId: number) =>
     api.delete<{ success: boolean }>(`${BASE}/files/${fileId}`),
 
+  getFileCategories: (projectId: number) =>
+    api.get<{ categories: string[] }>(`${BASE}/projects/${projectId}/file-categories`),
+
+  setFileCategories: (projectId: number, categories: string[]) =>
+    api.put<{ success: boolean; categories: string[] }>(`${BASE}/projects/${projectId}/file-categories`, { categories }),
+
   // ---- Activity ----
 
   getActivity: (projectId: number, limit = 50, offset = 0) =>

@@ -7,7 +7,7 @@ from flask_login import login_required, current_user
 from marketing import marketing_bp
 from marketing.repositories import (
     MemberRepository, CommentRepository, MarketingFileRepository, ActivityRepository,
-    KpiRepository,
+    KpiRepository, ProjectRepository,
 )
 from marketing.decorators import mkt_permission_required
 from core.utils.api_helpers import get_json_or_error, safe_error_response
@@ -18,6 +18,7 @@ _member_repo = MemberRepository()
 _comment_repo = CommentRepository()
 _file_repo = MarketingFileRepository()
 _activity_repo = ActivityRepository()
+_project_repo = ProjectRepository()
 _kpi_repo = KpiRepository()
 
 
@@ -232,6 +233,36 @@ def api_delete_file(file_id):
     if _file_repo.delete(file_id):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'File not found'}), 404
+
+
+@marketing_bp.route('/api/projects/<int:project_id>/file-categories', methods=['GET'])
+@login_required
+@mkt_permission_required('project', 'view')
+def api_get_file_categories(project_id):
+    """Get predefined file categories for a project."""
+    proj = _project_repo.get_by_id(project_id)
+    if not proj:
+        return jsonify({'success': False, 'error': 'Project not found'}), 404
+    meta = proj.get('metadata') or {}
+    return jsonify({'categories': meta.get('file_categories', [])})
+
+
+@marketing_bp.route('/api/projects/<int:project_id>/file-categories', methods=['PUT'])
+@login_required
+@mkt_permission_required('project', 'edit')
+def api_set_file_categories(project_id):
+    """Set predefined file categories for a project."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+    proj = _project_repo.get_by_id(project_id)
+    if not proj:
+        return jsonify({'success': False, 'error': 'Project not found'}), 404
+    meta = proj.get('metadata') or {}
+    cats = data.get('categories', [])
+    meta['file_categories'] = [c.strip() for c in cats if c and c.strip()]
+    _project_repo.update(project_id, metadata=meta)
+    return jsonify({'success': True, 'categories': meta['file_categories']})
 
 
 @marketing_bp.route('/api/projects/<int:project_id>/files/upload', methods=['POST'])
