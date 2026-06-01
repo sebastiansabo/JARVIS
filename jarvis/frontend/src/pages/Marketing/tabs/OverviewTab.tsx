@@ -22,7 +22,7 @@ const DONUT_COLORS = [
   '#06b6d4', '#ec4899', '#f97316', '#14b8a6', '#6366f1',
 ]
 
-function BudgetDonutChart({ lines, currency }: { lines: { channel: string; planned: number; spent: number; gross: number; credits: number }[]; currency: string }) {
+function BudgetDonutChart({ lines, currency }: { lines: { channel: string; label: string; planned: number; spent: number; gross: number; credits: number }[]; currency: string }) {
   if (lines.length === 0) return null
   const total = lines.reduce((s, l) => s + l.planned, 0)
   if (total <= 0) return null
@@ -71,7 +71,7 @@ function BudgetDonutChart({ lines, currency }: { lines: { channel: string; plann
                   />
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
-                  <div className="font-medium">{s.channel.replace('_', ' ')}</div>
+                  <div className="font-medium">{s.label}</div>
                   <div>Planned: {fmt(s.planned, currency)}</div>
                   <div>Gross Spent: {fmt(s.gross, currency)}</div>
                   {s.credits > 0 && <div className="text-green-600">Credits: {fmt(s.credits, currency)}</div>}
@@ -90,7 +90,7 @@ function BudgetDonutChart({ lines, currency }: { lines: { channel: string; plann
             return (
               <div key={i} className="flex items-center gap-2 text-xs">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                <span className="truncate flex-1">{s.channel.replace('_', ' ')}</span>
+                <span className="truncate flex-1">{s.label}</span>
                 <span className="tabular-nums text-muted-foreground shrink-0">{fmt(s.planned, currency)}</span>
                 <span className="tabular-nums text-muted-foreground shrink-0 w-8 text-right">{exec}%</span>
               </div>
@@ -98,52 +98,66 @@ function BudgetDonutChart({ lines, currency }: { lines: { channel: string; plann
           })}
         </div>
       </div>
-      {/* Stacked bar: execution by channel */}
-      <div className="space-y-1.5">
-        <div className="flex justify-between text-[10px] text-muted-foreground">
-          <span>Execution by Channel</span>
-        </div>
-        {slices.map((s, i) => {
-          const execReal = s.planned > 0 ? Math.max(0, Math.round((s.spent / s.planned) * 100)) : 0
-          // Bar scales up to 120% so overruns are visibly drawn past the planned line at 100/120 = 83.3%.
-          const BAR_MAX = 120
-          const plannedMark = (100 / BAR_MAX) * 100      // = 83.33%
-          const fillPct = Math.min(BAR_MAX, execReal)
-          const fillWidth = (fillPct / BAR_MAX) * 100
-          const over = execReal >= 100
-          const warn = execReal >= 90 && execReal < 100
-          return (
-            <div key={i} className="flex items-center gap-2">
-              <span className="text-[10px] w-20 truncate text-muted-foreground">{s.channel.replace('_', ' ')}</span>
-              <div className="relative flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${fillWidth}%`,
-                    backgroundColor: over ? '#ef4444' : warn ? '#f59e0b' : s.color,
-                    opacity: 0.85,
-                  }}
-                />
-                {/* Planned marker at the 100% mark of the bar's scale */}
-                <div
-                  className="absolute top-0 bottom-0 w-px bg-foreground/50"
-                  style={{ left: `${plannedMark}%` }}
-                  title={`Planned: ${fmt(s.planned, currency)}`}
-                />
-              </div>
-              <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 w-28 text-right">
-                {fmt(s.spent, currency)} / {fmt(s.planned, currency)}
-              </span>
-              <span className={cn(
-                'text-[10px] tabular-nums w-10 text-right shrink-0',
-                over ? 'text-red-600 font-semibold' : warn ? 'text-orange-600 font-semibold' : 'text-muted-foreground',
-              )}>
-                {execReal}%
-              </span>
+      {/* Stacked bar: execution by channel (merged) */}
+      {(() => {
+        const channelMap = new Map<string, { planned: number; spent: number; color: string }>()
+        slices.forEach((s) => {
+          const key = s.channel
+          const existing = channelMap.get(key)
+          if (existing) {
+            existing.planned += s.planned
+            existing.spent += s.spent
+          } else {
+            channelMap.set(key, { planned: s.planned, spent: s.spent, color: s.color })
+          }
+        })
+        const merged = Array.from(channelMap.entries())
+        return (
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>Execution by Channel</span>
             </div>
-          )
-        })}
-      </div>
+            {merged.map(([channel, m]) => {
+              const execReal = m.planned > 0 ? Math.max(0, Math.round((m.spent / m.planned) * 100)) : 0
+              const BAR_MAX = 120
+              const plannedMark = (100 / BAR_MAX) * 100
+              const fillPct = Math.min(BAR_MAX, execReal)
+              const fillWidth = (fillPct / BAR_MAX) * 100
+              const over = execReal >= 100
+              const warn = execReal >= 90 && execReal < 100
+              return (
+                <div key={channel} className="flex items-center gap-2">
+                  <span className="text-[10px] w-20 truncate text-muted-foreground">{channel.replace('_', ' ')}</span>
+                  <div className="relative flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${fillWidth}%`,
+                        backgroundColor: over ? '#ef4444' : warn ? '#f59e0b' : m.color,
+                        opacity: 0.85,
+                      }}
+                    />
+                    <div
+                      className="absolute top-0 bottom-0 w-px bg-foreground/50"
+                      style={{ left: `${plannedMark}%` }}
+                      title={`Planned: ${fmt(m.planned, currency)}`}
+                    />
+                  </div>
+                  <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 w-28 text-right">
+                    {fmt(m.spent, currency)} / {fmt(m.planned, currency)}
+                  </span>
+                  <span className={cn(
+                    'text-[10px] tabular-nums w-10 text-right shrink-0',
+                    over ? 'text-red-600 font-semibold' : warn ? 'text-orange-600 font-semibold' : 'text-muted-foreground',
+                  )}>
+                    {execReal}%
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
     </div>
   )
 }
@@ -204,6 +218,7 @@ export function OverviewTab({ project }: { project: MktProject }) {
     const credits = Number(l.credit_amount) || 0
     return {
       channel: l.channel,
+      label: l.description ? `${l.channel.replace('_', ' ')} — ${l.description}` : l.channel.replace('_', ' '),
       planned: Number(l.planned_amount) || 0,
       spent: net,
       credits,
