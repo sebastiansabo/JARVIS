@@ -27,8 +27,10 @@ class FacturareService:
     """Orchestrates the full facturare pipeline."""
 
     @staticmethod
-    def _invoice_range(cfg: JobConfig, lines: list[OrderLine]) -> str:
-        """Compute display range accounting for per-row overrides."""
+    def _invoice_range(cfg: JobConfig, lines: list[OrderLine], collapse: bool = False) -> str:
+        """Compute display range accounting for per-row overrides and collapse."""
+        if collapse:
+            return str(cfg.invoice.start_no)
         inv_nos = []
         for i, line in enumerate(lines):
             inv_nos.append(line.start_no if line.start_no is not None else cfg.invoice.start_no + i)
@@ -37,12 +39,13 @@ class FacturareService:
         mn, mx = min(inv_nos), max(inv_nos)
         return str(mn) if mn == mx else f"{mn}–{mx}"
 
-    def validate(self, cfg: JobConfig, anexa_bytes: bytes) -> GenerationResult:
+    def validate(self, cfg: JobConfig, anexa_bytes: bytes,
+                 collapse: bool = False) -> GenerationResult:
         """Load and validate Anexa + config. Returns a sanity report, no files."""
         try:
             lines = load_anexa(anexa_bytes, sheet_name=cfg.input.sheet)
             has_row_overrides = any(l.start_no is not None for l in lines)
-            if not has_row_overrides:
+            if not collapse and not has_row_overrides:
                 cfg.validate_invoice_range(len(lines))
 
             total_advance = sum(l.advance * l.qty for l in lines)
@@ -52,7 +55,7 @@ class FacturareService:
                 models[l.model]["count"] += 1
                 models[l.model]["total"] += l.advance * l.qty
 
-            inv_range = self._invoice_range(cfg, lines)
+            inv_range = self._invoice_range(cfg, lines, collapse)
             storno_count = sum(1 for l in lines if l.qty < 0)
 
             return GenerationResult(
@@ -64,6 +67,8 @@ class FacturareService:
                     "row_count": len(lines),
                     "total_advance": round(total_advance, 2),
                     "invoice_range": inv_range,
+                    "invoice_count": 1 if collapse else len(lines),
+                    "collapsed": collapse,
                     "storno_count": storno_count,
                     "models": {
                         k: {"count": v["count"], "total": round(v["total"], 2)}
@@ -79,16 +84,16 @@ class FacturareService:
 
     def generate(self, cfg: JobConfig, anexa_bytes: bytes,
                  generate_pdf: bool = True,
-                 generate_xlsx: bool = True) -> GenerationResult:
+                 generate_xlsx: bool = True,
+                 collapse: bool = False) -> GenerationResult:
         """Run the full pipeline: load → validate → generate PDF + xlsx."""
         try:
             lines = load_anexa(anexa_bytes, sheet_name=cfg.input.sheet)
             has_row_overrides = any(l.start_no is not None for l in lines)
-            if not has_row_overrides:
+            if not collapse and not has_row_overrides:
                 cfg.validate_invoice_range(len(lines))
 
             total_advance = sum(l.advance * l.qty for l in lines)
-            inv_range = self._invoice_range(cfg, lines)
 
             pdf_bytes = None
             xlsx_bytes = None
@@ -96,14 +101,20 @@ class FacturareService:
             if generate_pdf:
                 from ..generators.invoice_pdf import InvoicePdfRenderer
                 pdf_renderer = InvoicePdfRenderer(cfg)
-                pdf_bytes = pdf_renderer.render_all_to_bytes(lines)
-                logger.info(f"Generated {len(lines)} invoice PDFs")
+                if collapse:
+                    pdf_bytes = pdf_renderer.render_collapsed_to_bytes(lines)
+                    logger.info(f"Generated 1 collapsed invoice with {len(lines)} positions")
+                else:
+                    pdf_bytes = pdf_renderer.render_all_to_bytes(lines)
+                    logger.info(f"Generated {len(lines)} invoice PDFs")
 
             if generate_xlsx:
                 from ..generators.eurofib_xlsx import EurofibXlsxRenderer
                 xlsx_renderer = EurofibXlsxRenderer(cfg)
                 xlsx_bytes = xlsx_renderer.render_to_bytes(lines)
                 logger.info(f"Generated EuroFib xlsx with {len(lines) * 2} rows")
+
+            inv_range = self._invoice_range(cfg, lines, collapse)
 
             return GenerationResult(
                 success=True,
