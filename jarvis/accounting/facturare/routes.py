@@ -40,6 +40,41 @@ def _check_facturare_perm(action: str) -> bool:
     return bool(getattr(current_user, "can_add_invoices", False))
 
 
+@facturare_bp.route("/facturare/api/bnr-rate")
+@login_required
+@handle_api_errors
+def api_bnr_rate():
+    """Get BNR EUR/RON rate for the day before a given date.
+
+    Query params:
+      - date: invoice date (YYYY-MM-DD) — rate will be fetched for date-1
+    """
+    from datetime import datetime, timedelta
+    from core.services.currency_converter import get_exchange_rate
+
+    date_str = request.args.get("date")
+    if not date_str:
+        return error_response("date query param is required", 400)
+
+    try:
+        invoice_date = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        return error_response("date must be YYYY-MM-DD", 400)
+
+    kurs_date = invoice_date - timedelta(days=1)
+    kurs_date_str = kurs_date.strftime("%Y-%m-%d")
+
+    rate = get_exchange_rate("EUR", kurs_date_str)
+    if rate is None:
+        return error_response(f"No BNR rate found for {kurs_date_str}", 404)
+
+    return jsonify({
+        "success": True,
+        "kurs": round(rate, 4),
+        "kurs_date": kurs_date_str,
+    })
+
+
 @facturare_bp.route("/facturare/api/parse-anexa", methods=["POST"])
 @login_required
 @handle_api_errors
@@ -84,7 +119,8 @@ def api_validate():
     except Exception as e:
         return error_response(f"Invalid config: {e}", 400)
 
-    result = _service.validate(cfg, anexa_file.read())
+    collapse = bool(json.loads(config_json).get("collapse", False))
+    result = _service.validate(cfg, anexa_file.read(), collapse=collapse)
     if not result.success:
         return error_response(result.error, 400)
 
@@ -125,14 +161,16 @@ def api_generate():
     output_type = request.form.get("output", "all")
     gen_pdf = output_type in ("all", "pdf")
     gen_xlsx = output_type in ("all", "xlsx")
+    collapse = bool(json.loads(config_json).get("collapse", False))
 
     result = _service.generate(cfg, anexa_file.read(),
-                               generate_pdf=gen_pdf, generate_xlsx=gen_xlsx)
+                               generate_pdf=gen_pdf, generate_xlsx=gen_xlsx,
+                               collapse=collapse)
     if not result.success:
         return error_response(result.error, 400)
 
     # Persist generation record first — use DB-based URLs to survive multi-worker deployments
-    # Parse range from result (handles per-row overrides)
+    # Parse range from result (handles per-row overrides and collapse)
     range_parts = result.invoice_range.replace('–', '-').split('-')
     start_no = int(range_parts[0]) if range_parts[0].strip() else cfg.invoice.start_no
     last_no = int(range_parts[-1]) if range_parts[-1].strip() else start_no

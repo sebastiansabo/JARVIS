@@ -28,6 +28,7 @@ interface Company {
   city?: string | null
   county?: string | null
   postal_code?: string | null
+  eurofib_klient_id?: number | null
 }
 
 interface CrmClient {
@@ -37,6 +38,7 @@ interface CrmClient {
   city?: string
   country?: string
   nr_reg?: string
+  eurofib_konto_debit?: Record<string, number> | null
 }
 
 // ── Supplier presets ──────────────────────────────────────────
@@ -96,7 +98,7 @@ function handleDownload(url: string, filename: string) {
 
 function SupplierCard({ companies, supplierName, setSupplierName, supplierVat, setSupplierVat,
   supplierRegNo, setSupplierRegNo, supplierIban, setSupplierIban, supplierBank, setSupplierBank,
-  supplierSwift, setSupplierSwift, supplierAddress, setSupplierAddress,
+  supplierSwift, setSupplierSwift, supplierAddress, setSupplierAddress, onCompanyChange,
 }: {
   companies: Company[]
   supplierName: string; setSupplierName: (v: string) => void
@@ -106,6 +108,7 @@ function SupplierCard({ companies, supplierName, setSupplierName, supplierVat, s
   supplierBank: string; setSupplierBank: (v: string) => void
   supplierSwift: string; setSupplierSwift: (v: string) => void
   supplierAddress: string; setSupplierAddress: (v: string) => void
+  onCompanyChange?: (company: Company | undefined) => void
 }) {
   return (
     <Card>
@@ -130,6 +133,7 @@ function SupplierCard({ companies, supplierName, setSupplierName, supplierVat, s
               setSupplierIban(company?.iban || preset?.iban || '')
               setSupplierBank(company?.bank || preset?.bank || '')
               setSupplierSwift(company?.swift || preset?.swift || '')
+              onCompanyChange?.(company)
             }}
           >
             <SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger>
@@ -160,11 +164,12 @@ function SupplierCard({ companies, supplierName, setSupplierName, supplierVat, s
 // ── Customer Card (shared, with CRM search) ──────────────────
 
 function CustomerCard({ customerName, setCustomerName, customerAddress, setCustomerAddress,
-  customerVat, setCustomerVat,
+  customerVat, setCustomerVat, onClientChange,
 }: {
   customerName: string; setCustomerName: (v: string) => void
   customerAddress: string; setCustomerAddress: (v: string) => void
   customerVat: string; setCustomerVat: (v: string) => void
+  onClientChange?: (client: CrmClient) => void
 }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<CrmClient[]>([])
@@ -210,6 +215,7 @@ function CustomerCard({ customerName, setCustomerName, customerAddress, setCusto
                   setCustomerVat(client.nr_reg || '')
                   setSearchResults([])
                   setSearchQuery('')
+                  onClientChange?.(client)
                   toast.success(`Loaded: ${client.display_name}`)
                 }}>
                 <span className="font-medium">{client.display_name}</span>
@@ -356,11 +362,14 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
   const [intocmitDe, setIntocmitDe] = useState(INV_DEFAULTS.intocmit)
   const [kurs, setKurs] = useState('')
   const [kursDate, setKursDate] = useState('')
+  const [collapse, setCollapse] = useState(false)
   const [customerName, setCustomerName] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
   const [customerVat, setCustomerVat] = useState('')
   const [kontoDebit, setKontoDebit] = useState('41214286')
   const [kontoCredit, setKontoCredit] = useState('419968')
+  const [eurofibKlient, setEurofibKlient] = useState(139)
+  const [textTemplate, setTextTemplate] = useState('avans {comanda}')
 
   const preset = SUPPLIER_PRESETS[INV_DEFAULTS.supplier]
   const [supplierName, setSupplierName] = useState(INV_DEFAULTS.supplier)
@@ -379,9 +388,10 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
     fx: { currency: 'EUR', kurs: parseFloat(kurs) || 0, kurs_date: kursDate || invoiceDate },
     supplier: { name: supplierName, address_lines: supplierAddress.split('\n').filter(Boolean), reg_no: supplierRegNo, vat: supplierVat, iban: supplierIban, bank: supplierBank, swift: supplierSwift },
     customer: { name: customerName, address_lines: customerAddress.split('\n').filter(Boolean), vat: customerVat },
-    eurofib: { klient: 139, konto_debit: parseInt(kontoDebit) || 41214286, konto_credit: parseInt(kontoCredit) || 419968, belegart: 'JVV', steuercode: 'L00', fw_steuercode: 'L00', text_template: 'avans {brand_short} {comanda}', brand_map: {} },
+    eurofib: { klient: eurofibKlient, konto_debit: parseInt(kontoDebit) || 41214286, konto_credit: parseInt(kontoCredit) || 419968, belegart: 'JVV', steuercode: 'L00', fw_steuercode: 'L00', text_template: textTemplate, brand_map: {} },
+    collapse,
     output: {},
-  }), [jobId, contractRef, anexaRef, startNo, invoiceDate, intocmitDe, kurs, kursDate, supplierName, supplierAddress, supplierVat, supplierRegNo, supplierIban, supplierBank, supplierSwift, customerName, customerAddress, customerVat, kontoDebit, kontoCredit])
+  }), [jobId, contractRef, anexaRef, startNo, invoiceDate, intocmitDe, kurs, kursDate, collapse, supplierName, supplierAddress, supplierVat, supplierRegNo, supplierIban, supplierBank, supplierSwift, customerName, customerAddress, customerVat, kontoDebit, kontoCredit, eurofibKlient, textTemplate])
 
   const buildFormData = useCallback(() => {
     if (!anexaFile) throw new Error('No Anexa file selected')
@@ -456,15 +466,35 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
         {/* Invoice settings */}
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-base">Invoice Settings</CardTitle></CardHeader>
-          <CardContent className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div><Label>Job ID</Label><Input placeholder="ctr677-2026-04" value={jobId} onChange={e => setJobId(e.target.value)} /></div>
             <div><Label>Start No *</Label><Input type="number" placeholder="9102842" value={startNo} onChange={e => setStartNo(e.target.value)} /></div>
-            <div><Label>Invoice Date *</Label><Input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} /></div>
+            <div><Label>Invoice Date *</Label><Input type="date" value={invoiceDate} onChange={e => {
+              const d = e.target.value
+              setInvoiceDate(d)
+              if (d) {
+                fetch(`/facturare/api/bnr-rate?date=${d}`)
+                  .then(r => r.ok ? r.json() : null)
+                  .then(data => {
+                    if (data?.success) {
+                      setKurs(String(data.kurs))
+                      setKursDate(data.kurs_date)
+                      toast.success(`BNR rate: ${data.kurs} (${data.kurs_date})`)
+                    }
+                  }).catch(() => {})
+              }
+            }} /></div>
             <div><Label>Kurs (EUR/RON) *</Label><Input type="number" step="0.0001" placeholder="5.0924" value={kurs} onChange={e => setKurs(e.target.value)} /></div>
             <div><Label>Kurs Date</Label><Input type="date" value={kursDate} onChange={e => setKursDate(e.target.value)} /></div>
             <div><Label>Contract Ref</Label><Input placeholder="ctr 677/03.04.2026" value={contractRef} onChange={e => setContractRef(e.target.value)} /></div>
             <div><Label>Anexa Ref</Label><Input placeholder="Anexa 1 la CTR.677 din 03.04.2026" value={anexaRef} onChange={e => setAnexaRef(e.target.value)} /></div>
             <div><Label>Intocmit de</Label><Input value={intocmitDe} onChange={e => setIntocmitDe(e.target.value)} /></div>
+            </div>
+            <div className="flex items-center gap-3 pt-1">
+              <Switch id="inv-collapse-toggle" checked={collapse} onCheckedChange={setCollapse} />
+              <Label htmlFor="inv-collapse-toggle" className="text-sm cursor-pointer">Single invoice (collapse all positions)</Label>
+            </div>
           </CardContent>
         </Card>
 
@@ -474,18 +504,33 @@ function InvoiceTab({ companies }: { companies: Company[] }) {
           supplierIban={supplierIban} setSupplierIban={setSupplierIban}
           supplierBank={supplierBank} setSupplierBank={setSupplierBank}
           supplierSwift={supplierSwift} setSupplierSwift={setSupplierSwift}
-          supplierAddress={supplierAddress} setSupplierAddress={setSupplierAddress} />
+          supplierAddress={supplierAddress} setSupplierAddress={setSupplierAddress}
+          onCompanyChange={(c) => {
+            if (c?.eurofib_klient_id) setEurofibKlient(c.eurofib_klient_id)
+          }} />
 
         <CustomerCard customerName={customerName} setCustomerName={setCustomerName}
           customerAddress={customerAddress} setCustomerAddress={setCustomerAddress}
-          customerVat={customerVat} setCustomerVat={setCustomerVat} />
+          customerVat={customerVat} setCustomerVat={setCustomerVat}
+          onClientChange={(client) => {
+            const kd = client.eurofib_konto_debit?.[String(eurofibKlient)]
+            if (kd) setKontoDebit(String(kd))
+          }} />
 
         {/* EuroFib accounts */}
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-base">EuroFib Accounts</CardTitle></CardHeader>
-          <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div><Label>Konto Debit</Label><Input type="number" value={kontoDebit} onChange={e => setKontoDebit(e.target.value)} /></div>
-            <div><Label>Konto Credit</Label><Input type="number" value={kontoCredit} onChange={e => setKontoCredit(e.target.value)} /></div>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div><Label>Klient Nr</Label><Input type="number" value={eurofibKlient} onChange={e => setEurofibKlient(parseInt(e.target.value) || 0)} /></div>
+              <div><Label>Konto Debit</Label><Input type="number" value={kontoDebit} onChange={e => setKontoDebit(e.target.value)} /></div>
+              <div><Label>Konto Credit</Label><Input type="number" value={kontoCredit} onChange={e => setKontoCredit(e.target.value)} /></div>
+            </div>
+            <div>
+              <Label>Text (Col Q)</Label>
+              <Input placeholder="avans audi {comanda}" value={textTemplate} onChange={e => setTextTemplate(e.target.value)} />
+              <p className="text-xs text-muted-foreground mt-1">{'{comanda}'} = order number (auto-filled). Type brand manually, e.g. "avans audi {'{comanda}'}"</p>
+            </div>
           </CardContent>
         </Card>
 
@@ -535,6 +580,8 @@ function ProformaTab({ companies }: { companies: Company[] }) {
   const [startNo, setStartNo] = useState('')
   const [invoiceDate, setInvoiceDate] = useState('')
   const [intocmitDe, setIntocmitDe] = useState(PRO_DEFAULTS.intocmit)
+  const [kurs, setKurs] = useState('')
+  const [kursDate, setKursDate] = useState('')
   const [collapse, setCollapse] = useState(false)
   const [customerName, setCustomerName] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
@@ -556,9 +603,10 @@ function ProformaTab({ companies }: { companies: Company[] }) {
     intocmit_de: intocmitDe,
     collapse,
     sheet: 'Sheet1',
+    fx: kurs ? { currency: 'EUR', kurs: parseFloat(kurs) || 0, kurs_date: kursDate || invoiceDate } : undefined,
     supplier: { name: supplierName, address_lines: supplierAddress.split('\n').filter(Boolean), reg_no: supplierRegNo, vat: supplierVat, iban: supplierIban, bank: supplierBank, swift: supplierSwift },
     customer: { name: customerName, address_lines: customerAddress.split('\n').filter(Boolean), vat: customerVat },
-  }), [jobId, startNo, invoiceDate, intocmitDe, collapse, supplierName, supplierAddress, supplierVat, supplierRegNo, supplierIban, supplierBank, supplierSwift, customerName, customerAddress, customerVat])
+  }), [jobId, startNo, invoiceDate, intocmitDe, kurs, kursDate, collapse, supplierName, supplierAddress, supplierVat, supplierRegNo, supplierIban, supplierBank, supplierSwift, customerName, customerAddress, customerVat])
 
   const buildFormData = useCallback(() => {
     if (!anexaFile) throw new Error('No Anexa file selected')
@@ -601,7 +649,19 @@ function ProformaTab({ companies }: { companies: Company[] }) {
                     if (m.customer_name) setCustomerName(m.customer_name)
                     if (m.customer_address) setCustomerAddress(m.customer_address)
                     if (m.customer_vat) setCustomerVat(m.customer_vat)
-                    if (m.invoice_date) setInvoiceDate(m.invoice_date)
+                    if (m.invoice_date) {
+                      setInvoiceDate(m.invoice_date)
+                      // Auto-fetch BNR rate for the parsed date
+                      fetch(`/facturare/api/bnr-rate?date=${m.invoice_date}`)
+                        .then(r => r.ok ? r.json() : null)
+                        .then(rateData => {
+                          if (rateData?.success) {
+                            setKurs(String(rateData.kurs))
+                            setKursDate(rateData.kurs_date)
+                          }
+                        }).catch(() => {})
+                    }
+                    if (m.kurs) setKurs(m.kurs)
                     if (m.start_no) setStartNo(m.start_no)
                     if (m.intocmit_de) setIntocmitDe(m.intocmit_de)
                     if (m.job_id) setJobId(m.job_id)
@@ -623,7 +683,23 @@ function ProformaTab({ companies }: { companies: Company[] }) {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               <div><Label>Job ID</Label><Input placeholder="pro-2026-04" value={jobId} onChange={e => setJobId(e.target.value)} /></div>
               <div><Label>Start No</Label><Input type="number" placeholder="550" value={startNo} onChange={e => setStartNo(e.target.value)} /></div>
-              <div><Label>Date</Label><Input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} /></div>
+              <div><Label>Date</Label><Input type="date" value={invoiceDate} onChange={e => {
+                const d = e.target.value
+                setInvoiceDate(d)
+                if (d) {
+                  fetch(`/facturare/api/bnr-rate?date=${d}`)
+                    .then(r => r.ok ? r.json() : null)
+                    .then(data => {
+                      if (data?.success) {
+                        setKurs(String(data.kurs))
+                        setKursDate(data.kurs_date)
+                        toast.success(`BNR rate: ${data.kurs} (${data.kurs_date})`)
+                      }
+                    }).catch(() => {})
+                }
+              }} /></div>
+              <div><Label>Kurs (EUR/RON)</Label><Input type="number" step="0.0001" placeholder="4.9750" value={kurs} onChange={e => setKurs(e.target.value)} /></div>
+              <div><Label>Kurs Date</Label><Input type="date" value={kursDate} onChange={e => setKursDate(e.target.value)} /></div>
               <div><Label>Intocmit de</Label><Input value={intocmitDe} onChange={e => setIntocmitDe(e.target.value)} /></div>
             </div>
             <div className="flex items-center gap-3 pt-1">
@@ -667,7 +743,7 @@ function ProformaTab({ companies }: { companies: Company[] }) {
       </div>
 
       <ResultsPanel report={report} generateResult={generateResult} jobId={jobId}
-        label="Proformas" showKurs={false} showXlsx={false}
+        label="Proformas" showKurs={!!kurs} showXlsx={false}
         validateError={validateMut.error} generateError={generateMut.error} />
     </div>
   )

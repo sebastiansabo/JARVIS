@@ -961,6 +961,30 @@ def _seed_missing_permissions_v2(cursor, conn):
     conn.commit()
 
 
+def _seed_checkin_bypass_permission(cursor, conn):
+    """Add hr.checkin.bypass_radius permission for unrestricted GPS check-in."""
+    cursor.execute('''
+        INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label,
+                                    action_key, action_label, description, is_scope_based, sort_order)
+        VALUES ('hr', 'HR', 'bi-people-fill', 'checkin', 'Check-in', 'bypass_radius', 'Bypass Radius',
+                'Allow check-in from any GPS location (bypass radius restriction)', FALSE, 40)
+        ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+    ''')
+
+    # Grant to Admin role by default, deny for all others
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'all', TRUE
+        FROM roles r
+        CROSS JOIN permissions_v2 p
+        WHERE r.name = 'Admin'
+          AND p.module_key = 'hr' AND p.entity_key = 'checkin' AND p.action_key = 'bypass_radius'
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+    ''')
+
+    conn.commit()
+
+
 def _seed_mobile_permissions_v2(cursor, conn):
     """Add mobile.access and missing module.access v2 permissions.
 
