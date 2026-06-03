@@ -150,6 +150,7 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
       direction: 'debit',
       source: 'invoice',
       invoice_id: inv.id,
+      invoice_currency: inv.currency,
       description: `${inv.supplier} #${inv.invoice_number}`,
     } as Record<string, unknown>),
     onSuccess: (_data, inv) => {
