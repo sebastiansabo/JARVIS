@@ -5,8 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Pencil, AlertTriangle, AlertCircle, TrendingUp } from 'lucide-react'
+import { Pencil, AlertTriangle, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { marketingApi } from '@/api/marketing'
 import type { MktProject } from '@/types/marketing'
@@ -14,153 +13,6 @@ import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
 import { RichTextEditor, RichTextDisplay } from '@/components/shared/RichTextEditor'
 import { OkrCard } from './OkrCard'
 import { statusColors, fmt, fmtDate } from './utils'
-
-// ── Donut Chart for Budget Breakdown ──
-
-const DONUT_COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#06b6d4', '#ec4899', '#f97316', '#14b8a6', '#6366f1',
-]
-
-function BudgetDonutChart({ lines, currency }: { lines: { channel: string; label: string; planned: number; spent: number; gross: number; credits: number }[]; currency: string }) {
-  if (lines.length === 0) return null
-  const total = lines.reduce((s, l) => s + l.planned, 0)
-  if (total <= 0) return null
-
-  const size = 160
-  const cx = size / 2
-  const cy = size / 2
-  const r = 55
-  const strokeWidth = 24
-
-  let cumulative = 0
-  const slices = lines.map((l, i) => {
-    const pct = l.planned / total
-    const startAngle = cumulative * 2 * Math.PI - Math.PI / 2
-    cumulative += pct
-    const endAngle = cumulative * 2 * Math.PI - Math.PI / 2
-    const largeArc = pct > 0.5 ? 1 : 0
-    const x1 = cx + r * Math.cos(startAngle)
-    const y1 = cy + r * Math.sin(startAngle)
-    const x2 = cx + r * Math.cos(endAngle)
-    const y2 = cy + r * Math.sin(endAngle)
-    return {
-      ...l, pct, color: DONUT_COLORS[i % DONUT_COLORS.length],
-      d: pct >= 0.999
-        ? `M ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx + r - 0.001} ${cy}`
-        : `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`,
-    }
-  })
-
-  return (
-    <div className="rounded-lg border p-4 space-y-3">
-      <h3 className="font-semibold text-sm">Budget Allocation</h3>
-      <div className="flex items-center gap-6">
-        <TooltipProvider delayDuration={150}>
-          <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
-            {slices.map((s, i) => (
-              <Tooltip key={i}>
-                <TooltipTrigger asChild>
-                  <path
-                    d={s.d}
-                    fill="none"
-                    stroke={s.color}
-                    strokeWidth={strokeWidth}
-                    strokeLinecap="butt"
-                    className="cursor-pointer transition-opacity hover:opacity-80"
-                  />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  <div className="font-medium">{s.label}</div>
-                  <div>Planned: {fmt(s.planned, currency)}</div>
-                  <div>Gross Spent: {fmt(s.gross, currency)}</div>
-                  {s.credits > 0 && <div className="text-green-600">Credits: {fmt(s.credits, currency)}</div>}
-                  <div>Net: {fmt(s.spent, currency)}</div>
-                  <div>{Math.round(s.pct * 100)}% of budget</div>
-                </TooltipContent>
-              </Tooltip>
-            ))}
-            <text x={cx} y={cy - 6} textAnchor="middle" className="fill-foreground text-sm font-bold">{fmt(total, currency)}</text>
-            <text x={cx} y={cy + 10} textAnchor="middle" className="fill-muted-foreground text-[10px]">Total Budget</text>
-          </svg>
-        </TooltipProvider>
-        <div className="flex-1 space-y-1.5 min-w-0">
-          {slices.map((s, i) => {
-            const exec = s.planned > 0 ? Math.max(0, Math.round((s.spent / s.planned) * 100)) : 0
-            return (
-              <div key={i} className="flex items-center gap-2 text-xs">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                <span className="truncate flex-1">{s.label}</span>
-                <span className="tabular-nums text-muted-foreground shrink-0">{fmt(s.planned, currency)}</span>
-                <span className="tabular-nums text-muted-foreground shrink-0 w-8 text-right">{exec}%</span>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-      {/* Stacked bar: execution by channel (merged) */}
-      {(() => {
-        const channelMap = new Map<string, { planned: number; spent: number; color: string }>()
-        slices.forEach((s) => {
-          const key = s.channel
-          const existing = channelMap.get(key)
-          if (existing) {
-            existing.planned += s.planned
-            existing.spent += s.spent
-          } else {
-            channelMap.set(key, { planned: s.planned, spent: s.spent, color: s.color })
-          }
-        })
-        const merged = Array.from(channelMap.entries())
-        return (
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-[10px] text-muted-foreground">
-              <span>Execution by Channel</span>
-            </div>
-            {merged.map(([channel, m]) => {
-              const execReal = m.planned > 0 ? Math.max(0, Math.round((m.spent / m.planned) * 100)) : 0
-              const BAR_MAX = 120
-              const plannedMark = (100 / BAR_MAX) * 100
-              const fillPct = Math.min(BAR_MAX, execReal)
-              const fillWidth = (fillPct / BAR_MAX) * 100
-              const over = execReal >= 100
-              const warn = execReal >= 90 && execReal < 100
-              return (
-                <div key={channel} className="flex items-center gap-2">
-                  <span className="text-[10px] w-20 truncate text-muted-foreground">{channel.replace('_', ' ')}</span>
-                  <div className="relative flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${fillWidth}%`,
-                        backgroundColor: over ? '#ef4444' : warn ? '#f59e0b' : m.color,
-                        opacity: 0.85,
-                      }}
-                    />
-                    <div
-                      className="absolute top-0 bottom-0 w-px bg-foreground/50"
-                      style={{ left: `${plannedMark}%` }}
-                      title={`Planned: ${fmt(m.planned, currency)}`}
-                    />
-                  </div>
-                  <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 w-28 text-right">
-                    {fmt(m.spent, currency)} / {fmt(m.planned, currency)}
-                  </span>
-                  <span className={cn(
-                    'text-[10px] tabular-nums w-10 text-right shrink-0',
-                    over ? 'text-red-600 font-semibold' : warn ? 'text-orange-600 font-semibold' : 'text-muted-foreground',
-                  )}>
-                    {execReal}%
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        )
-      })()}
-    </div>
-  )
-}
 
 function KpiVarianceBadge({ kpiId, isLowerBetter }: { kpiId: number; isLowerBetter: boolean }) {
   const { data } = useQuery({
@@ -186,14 +38,12 @@ function KpiVarianceBadge({ kpiId, isLowerBetter }: { kpiId: number; isLowerBett
 
 export function OverviewTab({ project }: { project: MktProject }) {
   const queryClient = useQueryClient()
-  const budget = typeof project.total_budget === 'string' ? parseFloat(project.total_budget as string) : (project.total_budget ?? 0)
-  const spent = typeof project.total_spent === 'string' ? parseFloat(project.total_spent as string) : (project.total_spent ?? 0)
-  const eventCost = typeof project.event_cost === 'string' ? parseFloat(project.event_cost as string) : (project.event_cost ?? 0)
+  const planned = typeof project.total_budget === 'string' ? parseFloat(project.total_budget as string) : (project.total_budget ?? 0)
+  const netCost = typeof project.total_spent === 'string' ? parseFloat(project.total_spent as string) : (project.total_spent ?? 0)
   const totalCredits = typeof project.total_credits === 'string' ? parseFloat(project.total_credits as string) : (project.total_credits ?? 0)
-  const netCost = spent                                 // sum of budget line spent_amount (debits - credits)
-  const grossSpent = spent + totalCredits               // actual debit outflows (credits added back)
-  const remaining = budget - netCost                    // how much budget is left
-  const execution = budget ? Math.max(0, Math.round((netCost / budget) * 100)) : 0  // net cost efficiency
+  const totalSpent = netCost + totalCredits
+  const remaining = planned - netCost
+  const execution = planned ? Math.max(0, Math.round((netCost / planned) * 100)) : 0
 
   const [editingDesc, setEditingDesc] = useState(false)
   const [descDraft, setDescDraft] = useState(project.description ?? '')
@@ -261,100 +111,70 @@ export function OverviewTab({ project }: { project: MktProject }) {
         <div className="rounded-lg border p-4 space-y-3">
           <h3 className="font-semibold text-sm">Budget</h3>
           {/* Top-level KPIs */}
-          <div className={`grid gap-4 text-center ${(eventCost > 0 && totalCredits > 0) ? 'grid-cols-5' : (eventCost > 0 || totalCredits > 0) ? 'grid-cols-4' : 'grid-cols-3'}`}>
+          <div className="grid grid-cols-4 gap-4 text-center">
             <div>
-              <div className="text-lg font-bold">{fmt(budget, project.currency)}</div>
-              <div className="text-xs text-muted-foreground">Total Budget</div>
+              <div className="text-lg font-bold">{fmt(planned, project.currency)}</div>
+              <div className="text-xs text-muted-foreground">Planned</div>
             </div>
+            <div>
+              <div className="text-lg font-bold">{fmt(totalSpent, project.currency)}</div>
+              <div className="text-xs text-muted-foreground">Spent</div>
+            </div>
+            {totalCredits > 0 ? (
+              <div>
+                <div className="text-lg font-bold text-green-600">{fmt(totalCredits, project.currency)}</div>
+                <div className="text-xs text-muted-foreground">Credits</div>
+              </div>
+            ) : (
+              <div>
+                <div className={`text-lg font-bold ${remaining < 0 ? 'text-red-600' : ''}`}>{fmt(remaining, project.currency)}</div>
+                <div className="text-xs text-muted-foreground">Remaining</div>
+              </div>
+            )}
             <div>
               <div className={`text-lg font-bold ${netCost < 0 ? 'text-green-600' : ''}`}>{fmt(netCost, project.currency)}</div>
               <div className="text-xs text-muted-foreground">Net Cost</div>
             </div>
-            {totalCredits > 0 && (
-              <div>
-                <div className="text-lg font-bold text-green-600">{fmt(totalCredits, project.currency)}</div>
-                <div className="text-xs text-muted-foreground">Credits / Sponsorships</div>
-              </div>
-            )}
-            {eventCost > 0 && (
-              <div>
-                <div className="text-lg font-bold">{fmt(eventCost, project.currency)}</div>
-                <div className="text-xs text-muted-foreground">Event Costs</div>
-              </div>
-            )}
-            <div>
-              <div className={`text-lg font-bold ${execution > 90 ? 'text-red-500' : execution > 70 ? 'text-yellow-500' : ''}`}>{execution}%</div>
-              <div className="text-xs text-muted-foreground">Execution</div>
-            </div>
           </div>
           {/* Execution progress bar */}
-          <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
-            <div
-              className={`h-full rounded-full ${execution > 90 ? 'bg-red-500' : execution > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
-              style={{ width: `${Math.min(execution, 100)}%` }}
-            />
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+              <div
+                className={`h-full rounded-full ${execution > 100 ? 'bg-red-500' : execution > 90 ? 'bg-yellow-500' : 'bg-blue-500'}`}
+                style={{ width: `${Math.min(execution, 100)}%` }}
+              />
+            </div>
+            <span className={`text-sm font-semibold tabular-nums ${execution > 100 ? 'text-red-600' : execution > 90 ? 'text-yellow-600' : 'text-muted-foreground'}`}>{execution}%</span>
           </div>
 
-          {/* Budget Execution breakdown */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-md bg-muted/40 p-3">
-            <div className="space-y-0.5">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Gross Spending</div>
-              <div className="text-sm font-semibold tabular-nums">{fmt(grossSpent, project.currency)}</div>
-            </div>
-            {totalCredits > 0 && (
-              <div className="space-y-0.5">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Credits / Sponsorships</div>
-                <div className="text-sm font-semibold tabular-nums text-green-600">{fmt(totalCredits, project.currency)}</div>
-              </div>
-            )}
-            <div className="space-y-0.5">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Net Cost</div>
-              <div className={`text-sm font-semibold tabular-nums ${netCost < 0 ? 'text-green-600' : ''}`}>
-                {netCost < 0 ? `${fmt(Math.abs(netCost), project.currency)} surplus` : fmt(netCost, project.currency)}
-              </div>
-            </div>
-            <div className="space-y-0.5">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Remaining</div>
-              <div className={`text-sm font-semibold tabular-nums ${remaining > budget ? 'text-green-600' : remaining < 0 ? 'text-red-600' : ''}`}>
-                {fmt(remaining, project.currency)}
-              </div>
-            </div>
-          </div>
-
-          {/* Budget Alerts — based on net cost (after credits) */}
-          {budget > 0 && execution >= 100 && (
+          {/* Budget Alerts */}
+          {planned > 0 && execution >= 100 && (
             <div className="flex items-center gap-2 rounded-md border border-red-300 bg-red-50 dark:bg-red-950/20 dark:border-red-700 p-2.5 text-sm">
               <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
-              <span className="text-red-800 dark:text-red-200 font-medium">Budget exceeded — net cost {fmt(netCost, project.currency)} of {fmt(budget, project.currency)} ({execution}%)</span>
+              <span className="text-red-800 dark:text-red-200 font-medium">Budget exceeded — {fmt(netCost, project.currency)} of {fmt(planned, project.currency)} ({execution}%)</span>
             </div>
           )}
-          {budget > 0 && execution >= 90 && execution < 100 && (
+          {planned > 0 && execution >= 90 && execution < 100 && (
             <div className="flex items-center gap-2 rounded-md border border-orange-300 bg-orange-50 dark:bg-orange-950/20 dark:border-orange-700 p-2.5 text-sm">
               <AlertTriangle className="h-4 w-4 text-orange-600 shrink-0" />
-              <span className="text-orange-800 dark:text-orange-200">Budget nearly exhausted — {fmt(remaining, project.currency)} remaining ({execution}%)</span>
-            </div>
-          )}
-          {budget > 0 && execution >= 70 && execution < 90 && (
-            <div className="flex items-center gap-2 rounded-md border border-yellow-300 bg-yellow-50 dark:bg-yellow-950/20 dark:border-yellow-700 p-2.5 text-sm">
-              <TrendingUp className="h-4 w-4 text-yellow-600 shrink-0" />
-              <span className="text-yellow-800 dark:text-yellow-200">High spend rate — {fmt(remaining, project.currency)} remaining ({execution}%)</span>
+              <span className="text-orange-800 dark:text-orange-200">{fmt(remaining, project.currency)} remaining ({execution}%)</span>
             </div>
           )}
 
-          {/* Per-channel alerts — based on net cost per channel */}
+          {/* Per-channel alerts */}
           {budgetLines.filter((l) => l.planned > 0 && (l.spent / l.planned) >= 0.9).length > 0 && (
             <div className="space-y-1.5">
               {budgetLines.filter((l) => l.planned > 0 && (l.spent / l.planned) >= 0.9).map((l) => {
                 const chExec = Math.round((l.spent / l.planned) * 100)
                 return (
-                  <div key={l.channel} className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div key={l.label} className="flex items-center gap-2 text-xs text-muted-foreground">
                     {chExec >= 100 ? (
                       <AlertCircle className="h-3 w-3 text-red-500 shrink-0" />
                     ) : (
                       <AlertTriangle className="h-3 w-3 text-orange-500 shrink-0" />
                     )}
                     <span>
-                      <span className="font-medium capitalize">{l.channel.replace('_', ' ')}</span>: {chExec}% net cost
+                      <span className="font-medium capitalize">{l.label}</span>: {chExec}%
                       ({fmt(l.spent, project.currency)} / {fmt(l.planned, project.currency)})
                     </span>
                   </div>
@@ -363,11 +183,6 @@ export function OverviewTab({ project }: { project: MktProject }) {
             </div>
           )}
         </div>
-
-        {/* Budget Donut Chart */}
-        {budgetLines.length > 0 && (
-          <BudgetDonutChart lines={budgetLines} currency={project.currency} />
-        )}
 
         {/* KPI Overview — only KPIs marked show_on_overview */}
         {overviewKpis.length > 0 && (
