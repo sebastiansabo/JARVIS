@@ -63,7 +63,7 @@ function InlineEditCell({ value, currency: cur, onSave }: {
   )
 }
 
-export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId: number; currency: string; totalBudget?: number }) {
+export function BudgetTab({ projectId, currency }: { projectId: number; currency: string }) {
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [addForm, setAddForm] = useState({ channel: '', planned_amount: '', description: '', period_type: 'campaign' })
@@ -281,21 +281,21 @@ export function BudgetTab({ projectId, currency, totalBudget = 0 }: { projectId:
   }
 
   const totalPlanned = lines.reduce((s, l) => s + (Number(l.planned_amount) || 0), 0)
-  const totalApproved = lines.reduce((s, l) => s + (Number(l.approved_amount) || 0), 0)
   const totalCredits = lines.reduce((s, l) => s + (Number(l.credit_amount) || 0), 0)
   const totalNet = lines.reduce((s, l) => s + (Number(l.spent_amount) || 0), 0)
-  const totalGross = totalNet + totalCredits
+  const totalSpent = totalNet + totalCredits
+  const netCost = totalSpent - totalCredits
+  const execution = totalPlanned > 0 ? Math.round((netCost / totalPlanned) * 100) : 0
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-          <span>Total Planned: <strong>{fmt(totalBudget, currency)}</strong></span>
-          <span>Channel Split: <strong className={totalPlanned !== totalBudget ? 'text-red-500' : ''}>{fmt(totalPlanned, currency)}</strong></span>
-          <span>Approved: <strong>{fmt(totalApproved, currency)}</strong></span>
-          <span>Net Cost: <strong>{fmt(totalNet, currency)}</strong></span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <span>Planned: <strong>{fmt(totalPlanned, currency)}</strong></span>
+          <span>Spent: <strong>{fmt(totalSpent, currency)}</strong></span>
           {totalCredits > 0 && <span>Credits: <strong className="text-green-600">{fmt(totalCredits, currency)}</strong></span>}
-          {totalGross !== totalNet && <span>Gross: <strong className="text-muted-foreground">{fmt(totalGross, currency)}</strong></span>}
+          <span>Net Cost: <strong>{fmt(netCost, currency)}</strong></span>
+          <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${execution > 100 ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400' : execution > 90 ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400'}`}>{execution}%</span>
         </div>
         <Button size="sm" onClick={() => setShowAdd(true)}>
           <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Line
