@@ -158,24 +158,45 @@ def api_create_transaction(line_id):
     if amount is None or not transaction_date:
         return jsonify({'success': False, 'error': 'amount and transaction_date are required'}), 400
 
+    # Currency conversion: if invoice currency differs from budget line currency
+    invoice_currency = data.get('invoice_currency')
+    line = _budget_repo.get_line_by_id(line_id)
+    if not line:
+        return jsonify({'success': False, 'error': 'Budget line not found'}), 404
+
+    budget_currency = line.get('currency', 'EUR')
+    original_amount = float(amount)
+    converted_amount = original_amount
+    description = data.get('description', '')
+
+    if invoice_currency and invoice_currency != budget_currency:
+        try:
+            converted_amount, rate = convert_currency(
+                original_amount, invoice_currency, budget_currency, transaction_date,
+            )
+            description = f"{description} (converted {original_amount:,.2f} {invoice_currency} @ {rate:.4f} BNR)"
+            logger.info('Invoice currency conversion: %.2f %s → %.2f %s @ %.4f',
+                        original_amount, invoice_currency, converted_amount, budget_currency, rate)
+        except Exception as e:
+            logger.warning('Currency conversion failed, using original amount: %s', e)
+
     try:
         tx_id = _budget_repo.create_transaction(
             budget_line_id=line_id,
-            amount=amount,
+            amount=converted_amount,
             transaction_date=transaction_date,
             recorded_by=current_user.id,
             direction=data.get('direction', 'debit'),
             source=data.get('source', 'manual'),
             reference_id=data.get('reference_id'),
             invoice_id=data.get('invoice_id'),
-            description=data.get('description'),
+            description=description,
         )
 
         # Log activity on parent project
-        line = _budget_repo.get_line_by_id(line_id)
         if line:
             _activity_repo.log(line['project_id'], 'spend_recorded', actor_id=current_user.id,
-                               details={'channel': line['channel'], 'amount': float(amount)})
+                               details={'channel': line['channel'], 'amount': float(converted_amount)})
 
         return jsonify({'success': True, 'id': tx_id}), 201
     except Exception as e:
