@@ -158,51 +158,45 @@ def api_create_transaction(line_id):
     if amount is None or not transaction_date:
         return jsonify({'success': False, 'error': 'amount and transaction_date are required'}), 400
 
-    try:
-        # Auto-convert currency when invoice currency differs from budget line currency
-        invoice_id = data.get('invoice_id')
-        description = data.get('description')
-        converted_from = None
-        if invoice_id and data.get('source') == 'invoice':
-            line_info = _budget_repo.get_line_by_id(line_id)
-            inv_info = _budget_repo.get_invoice_info(invoice_id)
-            if line_info and inv_info:
-                line_currency = (line_info.get('currency') or 'RON').upper()
-                inv_currency = (inv_info.get('currency') or 'RON').upper()
-                if inv_currency != line_currency:
-                    converted_amount, rate = convert_currency(
-                        float(amount), inv_currency, line_currency, transaction_date
-                    )
-                    if converted_amount is not None:
-                        original_amount = float(amount)
-                        amount = converted_amount
-                        # Append conversion details to description
-                        rate_info = f"{original_amount:,.2f} {inv_currency} @ {rate} = {converted_amount:,.2f} {line_currency}"
-                        description = f"{description} ({rate_info})" if description else rate_info
-                        converted_from = inv_currency
-                    else:
-                        logger.warning(f"BNR rate not found for {inv_currency}->{line_currency} on {transaction_date}")
+    # Currency conversion: if invoice currency differs from budget line currency
+    invoice_currency = data.get('invoice_currency')
+    line = _budget_repo.get_line_by_id(line_id)
+    if not line:
+        return jsonify({'success': False, 'error': 'Budget line not found'}), 404
 
+    budget_currency = (line.get('currency') or 'EUR').upper()
+    original_amount = float(amount)
+    converted_amount = original_amount
+    description = data.get('description', '')
+
+    if invoice_currency and invoice_currency.upper() != budget_currency:
+        try:
+            converted_amount, rate = convert_currency(
+                original_amount, invoice_currency, budget_currency, transaction_date,
+            )
+            description = f"{description} (converted {original_amount:,.2f} {invoice_currency} @ {rate:.4f} BNR)"
+            logger.info('Invoice currency conversion: %.2f %s → %.2f %s @ %.4f',
+                        original_amount, invoice_currency, converted_amount, budget_currency, rate)
+        except Exception as e:
+            logger.warning('Currency conversion failed, using original amount: %s', e)
+
+    try:
         tx_id = _budget_repo.create_transaction(
             budget_line_id=line_id,
-            amount=amount,
+            amount=converted_amount,
             transaction_date=transaction_date,
             recorded_by=current_user.id,
             direction=data.get('direction', 'debit'),
             source=data.get('source', 'manual'),
             reference_id=data.get('reference_id'),
-            invoice_id=invoice_id,
+            invoice_id=data.get('invoice_id'),
             description=description,
         )
 
         # Log activity on parent project
-        line = _budget_repo.get_line_by_id(line_id)
         if line:
-            log_details = {'channel': line['channel'], 'amount': float(amount)}
-            if converted_from:
-                log_details['converted_from'] = converted_from
             _activity_repo.log(line['project_id'], 'spend_recorded', actor_id=current_user.id,
-                               details=log_details)
+                               details={'channel': line['channel'], 'amount': float(converted_amount)})
 
         return jsonify({'success': True, 'id': tx_id}), 201
     except Exception as e:
