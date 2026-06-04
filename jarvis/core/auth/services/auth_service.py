@@ -401,6 +401,8 @@ If you didn't request this, you can safely ignore this email.
 
         now = datetime.now(timezone.utc)
         expires_at = otp['expires_at']
+        if isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at)
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
 

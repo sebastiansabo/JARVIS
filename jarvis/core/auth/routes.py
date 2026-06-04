@@ -208,6 +208,8 @@ def _render_verify_page(pending: dict):
     if otp and not otp.get('used_at'):
         from datetime import datetime, timezone
         expires = otp['expires_at']
+        if isinstance(expires, str):
+            expires = datetime.fromisoformat(expires)
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=timezone.utc)
         diff = (expires - datetime.now(timezone.utc)).total_seconds()
