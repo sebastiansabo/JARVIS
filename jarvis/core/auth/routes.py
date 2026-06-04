@@ -4,8 +4,9 @@ All authentication, user management, employee management, password management,
 and event log routes.
 """
 import os
+import time
 import threading
-from flask import jsonify, request, render_template, redirect, url_for, flash
+from flask import jsonify, request, render_template, redirect, url_for, flash, session, current_app, make_response
 from flask_login import login_required, login_user, logout_user, current_user
 
 from . import auth_bp
@@ -83,19 +84,164 @@ def login():
         if user_data:
             user = User(user_data)
             remember = request.form.get('remember') == 'on'
-            login_user(user, remember=remember)
-            _user_repo.update_last_login(user.id)
-            _log_event('login', f'User {email} logged in')
-
             next_page = request.args.get('next')
             if next_page and (not next_page.startswith('/') or next_page.startswith('//')):
                 next_page = None
-            return redirect(next_page or url_for('index'))
+
+            # Check trusted device cookie
+            auth_svc = _get_auth_service()
+            cookie = request.cookies.get(auth_svc.TRUSTED_COOKIE_NAME)
+            if auth_svc.validate_trusted_device_cookie(
+                cookie, user.id,
+                request.headers.get('User-Agent', ''),
+                request.remote_addr,
+                current_app.secret_key
+            ):
+                # Trusted device — skip OTP
+                login_user(user, remember=remember)
+                _user_repo.update_last_login(user.id)
+                _log_event('login', f'User {email} logged in (trusted device)')
+                return redirect(next_page or url_for('index'))
+
+            # Not trusted — generate and send OTP
+            otp_id, email_sent, error = auth_svc.generate_and_send_otp(
+                user.id, user.email, user.name)
+
+            if not otp_id:
+                flash('An error occurred. Please try again.', 'error')
+                return render_template('core/login.html')
+
+            # Store pending OTP state in session
+            session['otp_pending'] = {
+                'user_id': user.id,
+                'otp_id': otp_id,
+                'remember': remember,
+                'next_page': next_page,
+                'created_at': time.time(),
+            }
+
+            if not email_sent:
+                flash('Failed to send verification code. You can retry on the next page.', 'error')
+
+            return redirect(url_for('auth.verify_otp'))
         else:
             _log_event('login_failed', f'Failed login attempt for {email}')
             flash('Invalid email or password.', 'error')
 
     return render_template('core/login.html')
+
+
+@auth_bp.route('/login/verify', methods=['GET', 'POST'])
+def verify_otp():
+    """OTP verification page and handler."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    pending = session.get('otp_pending')
+    if not pending:
+        flash('Please log in first.', 'error')
+        return redirect(url_for('auth.login'))
+
+    # Session timeout (10 minutes)
+    if time.time() - pending.get('created_at', 0) > 600:
+        session.pop('otp_pending', None)
+        flash('Verification session expired. Please log in again.', 'error')
+        return redirect(url_for('auth.login'))
+
+    if request.method == 'POST':
+        submitted_code = request.form.get('otp_code', '').strip()
+        if not submitted_code:
+            flash('Please enter the verification code.', 'error')
+            return _render_verify_page(pending)
+
+        auth_svc = _get_auth_service()
+        success, error = auth_svc.verify_otp(pending['otp_id'], submitted_code)
+
+        if success:
+            # OTP verified — complete login
+            user_data = _user_repo.get_by_id(pending['user_id'])
+            if not user_data:
+                session.pop('otp_pending', None)
+                flash('User not found. Please log in again.', 'error')
+                return redirect(url_for('auth.login'))
+
+            user = User(user_data)
+            login_user(user, remember=pending.get('remember', False))
+            _user_repo.update_last_login(user.id)
+            _log_event('login', f'User {user.email} logged in (OTP verified)')
+
+            next_page = pending.get('next_page')
+            session.pop('otp_pending', None)
+
+            # Set trusted device cookie
+            resp = make_response(redirect(next_page or url_for('index')))
+            cookie_value = auth_svc.create_trusted_device_cookie(
+                user.id,
+                request.headers.get('User-Agent', ''),
+                request.remote_addr,
+                current_app.secret_key
+            )
+            resp.set_cookie(
+                auth_svc.TRUSTED_COOKIE_NAME,
+                cookie_value,
+                max_age=auth_svc.TRUSTED_DEVICE_MAX_AGE,
+                httponly=True,
+                secure=not current_app.debug,
+                samesite='Lax',
+            )
+            return resp
+        else:
+            flash(error, 'error')
+
+    return _render_verify_page(pending)
+
+
+def _render_verify_page(pending: dict):
+    """Render the OTP verify page with countdown seconds."""
+    otp = _user_repo.get_otp(pending['otp_id'])
+    seconds_remaining = 0
+    if otp and not otp.get('used_at'):
+        from datetime import datetime, timezone
+        expires = otp['expires_at']
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        diff = (expires - datetime.now(timezone.utc)).total_seconds()
+        seconds_remaining = max(0, int(diff))
+    return render_template('core/verify_otp.html', seconds_remaining=seconds_remaining)
+
+
+@auth_bp.route('/login/resend-otp', methods=['POST'])
+def resend_otp():
+    """Resend OTP code."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    pending = session.get('otp_pending')
+    if not pending:
+        flash('Please log in first.', 'error')
+        return redirect(url_for('auth.login'))
+
+    user_data = _user_repo.get_by_id(pending['user_id'])
+    if not user_data:
+        session.pop('otp_pending', None)
+        flash('Session invalid. Please log in again.', 'error')
+        return redirect(url_for('auth.login'))
+
+    auth_svc = _get_auth_service()
+    success, error, blocked = auth_svc.resend_otp(
+        pending['otp_id'], user_data['email'], user_data['name'])
+
+    if blocked:
+        session.pop('otp_pending', None)
+        flash(error, 'error')
+        return redirect(url_for('auth.login'))
+
+    if success:
+        flash('New verification code sent to your email.', 'info')
+    else:
+        flash(error or 'Failed to send code. Please try again.', 'error')
+
+    return redirect(url_for('auth.verify_otp'))
 
 
 @auth_bp.route('/logout')
@@ -105,7 +251,9 @@ def logout():
     _log_event('logout', f'User {current_user.email} logged out')
     logout_user()
     flash('You have been logged out.', 'info')
-    return redirect(url_for('auth.login'))
+    resp = make_response(redirect(url_for('auth.login')))
+    resp.delete_cookie('jarvis_trusted_device')
+    return resp
 
 
 @auth_bp.route('/forgot-password', methods=['GET', 'POST'])
