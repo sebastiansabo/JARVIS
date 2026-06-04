@@ -8,6 +8,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from werkzeug.security import check_password_hash
 from dataclasses import dataclass
+import hmac
+import hashlib
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from core.utils.logging_config import get_logger
 
@@ -312,3 +315,172 @@ If you didn't request this, you can safely ignore this email.
             logger.error(f"Failed to send reset email to {email}: {error}")
         else:
             logger.info(f"Password reset email sent to {email}")
+
+    # --- OTP Two-Factor Authentication Methods ---
+
+    OTP_EXPIRY_MINUTES = 5
+    OTP_MAX_ATTEMPTS = 5
+    OTP_MAX_SENDS = 3
+    TRUSTED_DEVICE_MAX_AGE = 30 * 24 * 3600  # 30 days in seconds
+    TRUSTED_COOKIE_NAME = 'jarvis_trusted_device'
+
+    def _generate_otp_code(self) -> str:
+        """Generate a cryptographically random 6-digit OTP code."""
+        return f'{secrets.randbelow(1000000):06d}'
+
+    def _compare_otp(self, submitted: str, stored: str) -> bool:
+        """Compare OTP codes using timing-safe comparison."""
+        return hmac.compare_digest(submitted, stored)
+
+    def _compute_device_hash(self, user_agent: str, ip_address: str) -> str:
+        """Compute a device fingerprint hash from User-Agent and IP /24 prefix."""
+        ip_parts = ip_address.split('.')
+        ip_prefix = '.'.join(ip_parts[:3]) if len(ip_parts) == 4 else ip_address
+        raw = f'{user_agent}|{ip_prefix}'
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    def generate_and_send_otp(self, user_id: int, user_email: str, user_name: str) -> tuple:
+        """Generate OTP, store in DB, send via email.
+
+        Returns:
+            (otp_id, success, error_message)
+        """
+        code = self._generate_otp_code()
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=self.OTP_EXPIRY_MINUTES)
+
+        otp_id = self.user_repo.create_otp(user_id, code, expires_at)
+        if not otp_id:
+            logger.error(f"Failed to create OTP for user {user_id}")
+            return None, False, "Failed to generate verification code"
+
+        success, error = self._send_otp_email(user_name, user_email, code)
+        return otp_id, success, error
+
+    def resend_otp(self, otp_id: int, user_email: str, user_name: str) -> tuple:
+        """Regenerate code for existing OTP row and resend email.
+
+        Returns:
+            (success, error_message, blocked)
+            blocked: True if max sends reached
+        """
+        otp = self.user_repo.get_otp(otp_id)
+        if not otp or otp['used_at']:
+            return False, "Invalid verification session", True
+
+        if otp['send_count'] >= self.OTP_MAX_SENDS:
+            return False, "Maximum resend attempts reached. Please log in again.", True
+
+        new_code = self._generate_otp_code()
+        new_expires = datetime.now(timezone.utc) + timedelta(minutes=self.OTP_EXPIRY_MINUTES)
+
+        if not self.user_repo.update_otp_for_resend(otp_id, new_code, new_expires):
+            return False, "Failed to regenerate code", False
+
+        success, error = self._send_otp_email(user_name, user_email, new_code)
+        if not success:
+            updated_otp = self.user_repo.get_otp(otp_id)
+            if updated_otp and updated_otp['send_count'] >= self.OTP_MAX_SENDS:
+                return False, "Unable to send verification code. Please try again later.", True
+        return success, error, False
+
+    def verify_otp(self, otp_id: int, submitted_code: str) -> tuple:
+        """Verify a submitted OTP code.
+
+        Returns:
+            (success, error_message)
+        """
+        otp = self.user_repo.get_otp(otp_id)
+        if not otp or otp['used_at']:
+            return False, "Invalid verification session. Please log in again."
+
+        now = datetime.now(timezone.utc)
+        expires_at = otp['expires_at']
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+        if now > expires_at:
+            return False, "Code expired. Please request a new one."
+
+        if otp['attempts'] >= self.OTP_MAX_ATTEMPTS:
+            return False, "Too many wrong attempts. Please request a new code."
+
+        if not self._compare_otp(submitted_code.strip(), otp['code']):
+            self.user_repo.increment_otp_attempts(otp_id)
+            remaining = self.OTP_MAX_ATTEMPTS - otp['attempts'] - 1
+            if remaining <= 0:
+                return False, "Too many wrong attempts. Please request a new code."
+            return False, f"Invalid code. {remaining} attempt{'s' if remaining != 1 else ''} remaining."
+
+        self.user_repo.mark_otp_used(otp_id)
+        return True, ""
+
+    def create_trusted_device_cookie(self, user_id: int, user_agent: str, ip_address: str, secret_key: str) -> str:
+        """Create a signed trusted device cookie value."""
+        s = URLSafeTimedSerializer(secret_key)
+        device_hash = self._compute_device_hash(user_agent, ip_address)
+        return s.dumps({'uid': user_id, 'dh': device_hash})
+
+    def validate_trusted_device_cookie(self, cookie_value: str, user_id: int, user_agent: str, ip_address: str, secret_key: str) -> bool:
+        """Validate a trusted device cookie."""
+        if not cookie_value:
+            return False
+        s = URLSafeTimedSerializer(secret_key)
+        try:
+            data = s.loads(cookie_value, max_age=self.TRUSTED_DEVICE_MAX_AGE)
+        except (BadSignature, SignatureExpired):
+            return False
+
+        if data.get('uid') != user_id:
+            return False
+
+        expected_hash = self._compute_device_hash(user_agent, ip_address)
+        return hmac.compare_digest(data.get('dh', ''), expected_hash)
+
+    def _send_otp_email(self, name: str, email: str, code: str) -> tuple:
+        """Send OTP verification email. Returns (success, error_message)."""
+        from core.services.notification_service import send_email, is_smtp_configured
+
+        if not is_smtp_configured():
+            logger.warning("SMTP not configured - cannot send OTP email")
+            return False, "Email service not configured"
+
+        subject = "J.A.R.V.I.S. \u2014 Your login verification code"
+
+        html_body = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #333; font-size: 24px; margin: 0;">J.A.R.V.I.S.</h1>
+                <p style="color: #666; margin: 5px 0 0;">Login Verification</p>
+            </div>
+            <div style="background: #f8f9fa; border-radius: 8px; padding: 24px; margin-bottom: 20px;">
+                <p style="margin: 0 0 15px; color: #333;">Hi {name},</p>
+                <p style="margin: 0 0 20px; color: #333;">Your verification code is:</p>
+                <div style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #333; background: #fff; padding: 20px; text-align: center; border-radius: 8px; border: 2px solid #e9ecef; margin: 0 0 20px;">
+                    {code}
+                </div>
+                <p style="margin: 0 0 10px; color: #666; font-size: 14px;">This code expires in <strong>5 minutes</strong>.</p>
+                <p style="margin: 0; color: #666; font-size: 14px;">If you did not attempt to log in, please ignore this email and consider changing your password.</p>
+            </div>
+            <div style="text-align: center; color: #999; font-size: 12px;">
+                <p style="margin: 0;">This is an automated message from J.A.R.V.I.S.</p>
+            </div>
+        </div>
+        """
+
+        text_body = f"""J.A.R.V.I.S. \u2014 Login Verification
+
+Hi {name},
+
+Your verification code is: {code}
+
+This code expires in 5 minutes.
+
+If you did not attempt to log in, please ignore this email and consider changing your password.
+"""
+
+        success, error = send_email(email, subject, html_body, text_body, skip_global_cc=True)
+        if not success:
+            logger.error(f"Failed to send OTP email to {email}: {error}")
+        else:
+            logger.info(f"OTP email sent to {email}")
+        return success, error
