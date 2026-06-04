@@ -443,6 +443,16 @@ def api_download_generation(gen_id: int, file_type: str):
             reader = PdfReader(BytesIO(pdf_data))
             start_no = row.get("start_no", 1)
             job_id = row.get("job_id") or row.get("gen_type", "facturare")
+            customer = row.get("customer_name", "")
+            inv_date = row.get("invoice_date", "")
+            if inv_date:
+                try:
+                    from datetime import datetime as _dt
+                    inv_date = _dt.strptime(str(inv_date), "%Y-%m-%d").strftime("%d.%m.%Y")
+                except Exception:
+                    pass
+            gen_type = row.get("gen_type", "invoice")
+            inv_type = "avans" if "avans" in (job_id or "").lower() else gen_type
 
             buf = BytesIO()
             with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -452,7 +462,9 @@ def api_download_generation(gen_id: int, file_type: str):
                     page_buf = BytesIO()
                     writer.write(page_buf)
                     inv_no = start_no + i
-                    zf.writestr(f"{inv_no}.pdf", page_buf.getvalue())
+                    name = f"invoice {customer} {inv_no} {inv_date} {inv_type}".strip()
+                    name = "".join(c for c in name if c.isalnum() or c in " ._-+").strip()
+                    zf.writestr(f"{name}.pdf", page_buf.getvalue())
 
             return send_file(BytesIO(buf.getvalue()), mimetype="application/zip",
                              as_attachment=True, download_name=f"{job_id}_invoices.zip")
