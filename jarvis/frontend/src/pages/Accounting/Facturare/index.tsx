@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { FileSpreadsheet, Download, CheckCircle2, AlertCircle, Upload, FileText, Loader2, Building2, Search, Trash2, History } from 'lucide-react'
+import { FileSpreadsheet, Download, CheckCircle2, AlertCircle, Upload, FileText, Loader2, Building2, Search, Trash2, History, Archive } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -314,6 +314,13 @@ function ResultsPanel({ report, generateResult, jobId, label, showKurs, showXlsx
                   onClick={() => handleDownload(generateResult.pdf_url!, `${jobId || 'facturare'}_${label.toLowerCase()}.pdf`)}>
                   <FileText className="h-4 w-4 mr-2 text-red-500" />
                   Download {label} PDF
+                </Button>
+              )}
+              {generateResult.zip_url && (
+                <Button variant="outline" className="w-full justify-start"
+                  onClick={() => handleDownload(generateResult.zip_url!, `${jobId || 'facturare'}_invoices.zip`)}>
+                  <Archive className="h-4 w-4 mr-2 text-amber-500" />
+                  Download Individual PDFs (ZIP)
                 </Button>
               )}
               {showXlsx && generateResult.xlsx_url && (

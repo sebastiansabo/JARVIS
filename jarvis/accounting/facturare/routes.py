@@ -163,7 +163,8 @@ def api_generate():
     gen_xlsx = output_type in ("all", "xlsx")
     collapse = bool(json.loads(config_json).get("collapse", False))
 
-    result = _service.generate(cfg, anexa_file.read(),
+    anexa_file_bytes = anexa_file.read()
+    result = _service.generate(cfg, anexa_file_bytes,
                                generate_pdf=gen_pdf, generate_xlsx=gen_xlsx,
                                collapse=collapse)
     if not result.success:
@@ -200,6 +201,9 @@ def api_generate():
         "pdf": result.invoices_pdf,
         "xlsx": result.eurofib_xlsx,
         "job_id": cfg.job_id,
+        "cfg": cfg,
+        "anexa_bytes": anexa_file_bytes,
+        "collapse": collapse,
     }
 
     response = {
@@ -211,6 +215,7 @@ def api_generate():
     }
     if gen_pdf:
         response["pdf_url"] = f"/facturare/api/generations/{gen_id}/pdf" if gen_id else f"/facturare/api/download/{download_id}/pdf"
+        response["zip_url"] = f"/facturare/api/download/{download_id}/zip"
     if gen_xlsx:
         response["xlsx_url"] = f"/facturare/api/generations/{gen_id}/xlsx" if gen_id else f"/facturare/api/download/{download_id}/xlsx"
 
@@ -220,9 +225,9 @@ def api_generate():
 @facturare_bp.route("/facturare/api/download/<download_id>/<file_type>")
 @login_required
 def api_download(download_id: str, file_type: str):
-    """Download a previously generated PDF or xlsx."""
-    if file_type not in ("pdf", "xlsx"):
-        return error_response("file_type must be 'pdf' or 'xlsx'", 400)
+    """Download a previously generated PDF, xlsx, or ZIP of individual invoices."""
+    if file_type not in ("pdf", "xlsx", "zip"):
+        return error_response("file_type must be 'pdf', 'xlsx', or 'zip'", 400)
 
     from flask import current_app
     downloads = getattr(current_app, "_facturare_downloads", {})
@@ -230,11 +235,33 @@ def api_download(download_id: str, file_type: str):
     if not entry:
         return error_response("Download expired or not found", 404)
 
+    job_id = entry.get("job_id", "facturare")
+
+    if file_type == "zip":
+        # Generate individual PDFs on-the-fly, return as ZIP
+        cfg = entry.get("cfg")
+        anexa_bytes = entry.get("anexa_bytes")
+        if not cfg or not anexa_bytes:
+            return error_response("ZIP generation data not available", 404)
+        try:
+            from ..facturare.loaders.anexa import load_anexa
+            from ..facturare.generators.invoice_pdf import InvoicePdfRenderer
+            lines = load_anexa(anexa_bytes, sheet_name=cfg.input.sheet)
+            renderer = InvoicePdfRenderer(cfg)
+            zip_bytes = renderer.render_individual_zip(lines)
+            return send_file(
+                BytesIO(zip_bytes),
+                mimetype="application/zip",
+                as_attachment=True,
+                download_name=f"{job_id}_invoices.zip",
+            )
+        except Exception as e:
+            return error_response(f"ZIP generation failed: {e}", 500)
+
     data = entry.get(file_type)
     if not data:
         return error_response(f"No {file_type} in this generation", 404)
 
-    job_id = entry.get("job_id", "facturare")
     if file_type == "pdf":
         filename = f"{job_id}_invoices.pdf"
         mimetype = "application/pdf"
