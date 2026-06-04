@@ -431,10 +431,34 @@ class InvoicePdfRenderer:
         c.save()
         return buf.getvalue()
 
+    def _invoice_filename(self, inv_no: int, line: OrderLine, is_storno: bool = False) -> str:
+        """Build descriptive filename for an individual invoice PDF.
+
+        Format: invoice {Customer} {Model} {Comanda} {InvNo} {Date} {Type}.pdf
+        """
+        customer = self.cfg.customer.name
+        model = str(line.model).strip()
+        comanda = line.comanda
+        date_str = self.cfg.invoice.date.strftime("%d.%m.%Y")
+
+        if is_storno:
+            inv_type = "storno avans"
+        elif self.cfg.invoice.kind == "proforma":
+            inv_type = "proforma"
+        elif self.cfg.invoice.description_prefix and "ADVANCE" in self.cfg.invoice.description_prefix.upper():
+            inv_type = "avans"
+        else:
+            inv_type = "finala"
+
+        # Sanitize for filesystem
+        name = f"invoice {customer} {model} {comanda} {inv_no} {date_str} {inv_type}"
+        name = "".join(c for c in name if c.isalnum() or c in " ._-+").strip()
+        return f"{name}.pdf"
+
     def render_individual_zip(self, lines: list[OrderLine]) -> bytes:
         """Render each invoice as a separate PDF, return as ZIP bytes.
 
-        Files are named by comanda number (e.g. 150815.pdf).
+        Files named: invoice {Customer} {Model} {Comanda} {InvNo} {Date} {Type}.pdf
         Storno groups with same comanda are combined into one PDF.
         """
         import io
@@ -444,7 +468,8 @@ class InvoicePdfRenderer:
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
             for i, group in enumerate(self._group_storno_lines(lines)):
                 inv_no = self._resolve_inv_no(i, group[0])
-                comanda = group[0].comanda
+                is_storno = group[0].qty < 0
+                filename = self._invoice_filename(inv_no, group[0], is_storno)
                 pdf_buf = io.BytesIO()
                 c = canvas.Canvas(pdf_buf, pagesize=A4)
                 if len(group) > 1:
@@ -453,7 +478,7 @@ class InvoicePdfRenderer:
                     self.render_one(c, inv_no, group[0])
                 c.showPage()
                 c.save()
-                zf.writestr(f"{comanda}.pdf", pdf_buf.getvalue())
+                zf.writestr(filename, pdf_buf.getvalue())
 
         return buf.getvalue()
 
