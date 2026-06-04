@@ -431,6 +431,32 @@ class InvoicePdfRenderer:
         c.save()
         return buf.getvalue()
 
+    def render_individual_zip(self, lines: list[OrderLine]) -> bytes:
+        """Render each invoice as a separate PDF, return as ZIP bytes.
+
+        Files are named by comanda number (e.g. 150815.pdf).
+        Storno groups with same comanda are combined into one PDF.
+        """
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for i, group in enumerate(self._group_storno_lines(lines)):
+                inv_no = self._resolve_inv_no(i, group[0])
+                comanda = group[0].comanda
+                pdf_buf = io.BytesIO()
+                c = canvas.Canvas(pdf_buf, pagesize=A4)
+                if len(group) > 1:
+                    self.render_storno_group(c, inv_no, group)
+                else:
+                    self.render_one(c, inv_no, group[0])
+                c.showPage()
+                c.save()
+                zf.writestr(f"{comanda}.pdf", pdf_buf.getvalue())
+
+        return buf.getvalue()
+
     def render_single(self, line: OrderLine, inv_no: int, out_path: Path) -> Path:
         """Render a single invoice PDF."""
         out_path.parent.mkdir(parents=True, exist_ok=True)
