@@ -328,9 +328,13 @@ If you didn't request this, you can safely ignore this email.
         """Generate a cryptographically random 6-digit OTP code."""
         return f'{secrets.randbelow(1000000):06d}'
 
-    def _compare_otp(self, submitted: str, stored: str) -> bool:
-        """Compare OTP codes using timing-safe comparison."""
-        return hmac.compare_digest(submitted, stored)
+    def _hash_otp(self, code: str, secret_key: str) -> str:
+        """HMAC-hash an OTP code so only the hash is stored in DB."""
+        return hmac.new(secret_key.encode(), code.encode(), 'sha256').hexdigest()
+
+    def _compare_otp(self, submitted_hash: str, stored_hash: str) -> bool:
+        """Compare OTP hashes using timing-safe comparison."""
+        return hmac.compare_digest(submitted_hash, stored_hash)
 
     def _compute_device_hash(self, user_agent: str, ip_address: str) -> str:
         """Compute a device fingerprint hash from User-Agent and IP /24 prefix."""
@@ -339,16 +343,17 @@ If you didn't request this, you can safely ignore this email.
         raw = f'{user_agent}|{ip_prefix}'
         return hashlib.sha256(raw.encode()).hexdigest()
 
-    def generate_and_send_otp(self, user_id: int, user_email: str, user_name: str) -> tuple:
-        """Generate OTP, store in DB, send via email.
+    def generate_and_send_otp(self, user_id: int, user_email: str, user_name: str, secret_key: str) -> tuple:
+        """Generate OTP, store hash in DB, send plaintext via email.
 
         Returns:
             (otp_id, success, error_message)
         """
         code = self._generate_otp_code()
+        code_hash = self._hash_otp(code, secret_key)
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=self.OTP_EXPIRY_MINUTES)
 
-        otp_id = self.user_repo.create_otp(user_id, code, expires_at)
+        otp_id = self.user_repo.create_otp(user_id, code_hash, expires_at)
         if not otp_id:
             logger.error(f"Failed to create OTP for user {user_id}")
             return None, False, "Failed to generate verification code"
@@ -356,7 +361,7 @@ If you didn't request this, you can safely ignore this email.
         success, error = self._send_otp_email(user_name, user_email, code)
         return otp_id, success, error
 
-    def resend_otp(self, otp_id: int, user_email: str, user_name: str) -> tuple:
+    def resend_otp(self, otp_id: int, user_email: str, user_name: str, secret_key: str) -> tuple:
         """Regenerate code for existing OTP row and resend email.
 
         Returns:
@@ -371,9 +376,10 @@ If you didn't request this, you can safely ignore this email.
             return False, "Maximum resend attempts reached. Please log in again.", True
 
         new_code = self._generate_otp_code()
+        new_code_hash = self._hash_otp(new_code, secret_key)
         new_expires = datetime.now(timezone.utc) + timedelta(minutes=self.OTP_EXPIRY_MINUTES)
 
-        if not self.user_repo.update_otp_for_resend(otp_id, new_code, new_expires):
+        if not self.user_repo.update_otp_for_resend(otp_id, new_code_hash, new_expires):
             return False, "Failed to regenerate code", False
 
         success, error = self._send_otp_email(user_name, user_email, new_code)
@@ -383,7 +389,7 @@ If you didn't request this, you can safely ignore this email.
                 return False, "Unable to send verification code. Please try again later.", True
         return success, error, False
 
-    def verify_otp(self, otp_id: int, submitted_code: str) -> tuple:
+    def verify_otp(self, otp_id: int, submitted_code: str, secret_key: str) -> tuple:
         """Verify a submitted OTP code.
 
         Returns:
@@ -404,7 +410,8 @@ If you didn't request this, you can safely ignore this email.
         if otp['attempts'] >= self.OTP_MAX_ATTEMPTS:
             return False, "Too many wrong attempts. Please request a new code."
 
-        if not self._compare_otp(submitted_code.strip(), otp['code']):
+        submitted_hash = self._hash_otp(submitted_code.strip(), secret_key)
+        if not self._compare_otp(submitted_hash, otp['code']):
             self.user_repo.increment_otp_attempts(otp_id)
             remaining = self.OTP_MAX_ATTEMPTS - otp['attempts'] - 1
             if remaining <= 0:
