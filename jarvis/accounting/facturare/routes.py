@@ -420,13 +420,44 @@ def api_list_generations():
 @facturare_bp.route("/facturare/api/generations/<int:gen_id>/<file_type>")
 @login_required
 def api_download_generation(gen_id: int, file_type: str):
-    """Download PDF or xlsx from a stored generation."""
-    if file_type not in ("pdf", "xlsx"):
-        return error_response("file_type must be 'pdf' or 'xlsx'", 400)
+    """Download PDF, xlsx, or ZIP of individual invoices from a stored generation."""
+    if file_type not in ("pdf", "xlsx", "zip"):
+        return error_response("file_type must be 'pdf', 'xlsx', or 'zip'", 400)
 
     row = _gen_repo.get_generation(gen_id)
     if not row:
         return error_response("Generation not found", 404)
+
+    if file_type == "zip":
+        # Split stored multi-page PDF into individual pages, ZIP them
+        pdf_data = row.get("pdf_data")
+        if not pdf_data:
+            return error_response("No PDF stored for this generation", 404)
+        if isinstance(pdf_data, memoryview):
+            pdf_data = bytes(pdf_data)
+
+        try:
+            import zipfile
+            from PyPDF2 import PdfReader, PdfWriter
+
+            reader = PdfReader(BytesIO(pdf_data))
+            start_no = row.get("start_no", 1)
+            job_id = row.get("job_id") or row.get("gen_type", "facturare")
+
+            buf = BytesIO()
+            with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for i, page in enumerate(reader.pages):
+                    writer = PdfWriter()
+                    writer.add_page(page)
+                    page_buf = BytesIO()
+                    writer.write(page_buf)
+                    inv_no = start_no + i
+                    zf.writestr(f"{inv_no}.pdf", page_buf.getvalue())
+
+            return send_file(BytesIO(buf.getvalue()), mimetype="application/zip",
+                             as_attachment=True, download_name=f"{job_id}_invoices.zip")
+        except Exception as e:
+            return error_response(f"ZIP generation failed: {e}", 500)
 
     col = "pdf_data" if file_type == "pdf" else "xlsx_data"
     data = row.get(col)
