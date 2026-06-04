@@ -191,6 +191,11 @@ def verify_otp():
             )
             return resp
         else:
+            # Errors that indicate the OTP session is invalid — redirect to login
+            if 'Please log in again' in error or 'Please request a new' in error:
+                session.pop('otp_pending', None)
+                flash(error, 'error')
+                return redirect(url_for('auth.login'))
             flash(error, 'error')
 
     return _render_verify_page(pending)
