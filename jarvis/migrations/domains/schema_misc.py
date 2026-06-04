@@ -630,3 +630,20 @@ def create_schema_misc(conn, cursor):
     conn.commit()
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_observers_user ON invoice_observers(user_id)')
     conn.commit()
+
+    # OTP codes for two-factor authentication
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS otp_codes (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            code VARCHAR(6) NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            send_count INTEGER NOT NULL DEFAULT 1,
+            used_at TIMESTAMP,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_otp_codes_user_id ON otp_codes(user_id)
+    ''')
