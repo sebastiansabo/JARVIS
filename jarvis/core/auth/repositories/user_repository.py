@@ -153,6 +153,64 @@ class UserRepository(BaseRepository):
                OR expires_at < CURRENT_TIMESTAMP
         ''')
 
+    # --- OTP Methods ---
+
+    def create_otp(self, user_id: int, code: str, expires_at: datetime) -> Optional[int]:
+        """Create an OTP code for a user. Cleans up old OTPs first."""
+        def _work(cursor):
+            # Cleanup expired/used OTPs for this user
+            cursor.execute('''
+                DELETE FROM otp_codes
+                WHERE user_id = %s AND (used_at IS NOT NULL OR expires_at < CURRENT_TIMESTAMP)
+            ''', (user_id,))
+            # Also invalidate any active unused OTPs
+            cursor.execute('''
+                UPDATE otp_codes SET used_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s AND used_at IS NULL
+            ''', (user_id,))
+            # Insert new OTP
+            cursor.execute('''
+                INSERT INTO otp_codes (user_id, code, expires_at)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            ''', (user_id, code, expires_at))
+            row = cursor.fetchone()
+            return row['id'] if row else None
+
+        return self.execute_many(_work)
+
+    def get_otp(self, otp_id: int) -> Optional[Dict[str, Any]]:
+        """Get an OTP by ID."""
+        return self.query_one('''
+            SELECT id, user_id, code, expires_at, attempts, send_count, used_at, created_at
+            FROM otp_codes
+            WHERE id = %s
+        ''', (otp_id,))
+
+    def increment_otp_attempts(self, otp_id: int) -> int:
+        """Increment wrong-attempt counter. Returns new attempt count."""
+        row = self.query_one('''
+            UPDATE otp_codes SET attempts = attempts + 1
+            WHERE id = %s
+            RETURNING attempts
+        ''', (otp_id,))
+        return row['attempts'] if row else 0
+
+    def mark_otp_used(self, otp_id: int) -> bool:
+        """Mark OTP as used."""
+        return self.execute('''
+            UPDATE otp_codes SET used_at = CURRENT_TIMESTAMP
+            WHERE id = %s AND used_at IS NULL
+        ''', (otp_id,)) > 0
+
+    def update_otp_for_resend(self, otp_id: int, new_code: str, new_expires_at: datetime) -> bool:
+        """Update OTP code and expiry for a resend, increment send_count, reset attempts."""
+        return self.execute('''
+            UPDATE otp_codes
+            SET code = %s, expires_at = %s, attempts = 0, send_count = send_count + 1, used_at = NULL
+            WHERE id = %s AND used_at IS NULL
+        ''', (new_code, new_expires_at, otp_id)) > 0
+
     # --- User CRUD Methods ---
 
     def get_all(self) -> list[dict]:
