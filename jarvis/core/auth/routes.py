@@ -105,7 +105,7 @@ def login():
 
             # Not trusted — generate and send OTP
             otp_id, email_sent, error = auth_svc.generate_and_send_otp(
-                user.id, user.email, user.name)
+                user.id, user.email, user.name, current_app.secret_key)
 
             if not otp_id:
                 flash('An error occurred. Please try again.', 'error')
@@ -155,7 +155,7 @@ def verify_otp():
             return _render_verify_page(pending)
 
         auth_svc = _get_auth_service()
-        success, error = auth_svc.verify_otp(pending['otp_id'], submitted_code)
+        success, error = auth_svc.verify_otp(pending['otp_id'], submitted_code, current_app.secret_key)
 
         if success:
             # OTP verified — complete login
@@ -234,7 +234,7 @@ def resend_otp():
 
     auth_svc = _get_auth_service()
     success, error, blocked = auth_svc.resend_otp(
-        pending['otp_id'], user_data['email'], user_data['name'])
+        pending['otp_id'], user_data['email'], user_data['name'], current_app.secret_key)
 
     if blocked:
         session.pop('otp_pending', None)

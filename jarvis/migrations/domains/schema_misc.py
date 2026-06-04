@@ -636,7 +636,7 @@ def create_schema_misc(conn, cursor):
         CREATE TABLE IF NOT EXISTS otp_codes (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            code VARCHAR(6) NOT NULL,
+            code CHAR(64) NOT NULL,
             expires_at TIMESTAMP NOT NULL,
             attempts INTEGER NOT NULL DEFAULT 0,
             send_count INTEGER NOT NULL DEFAULT 1,
