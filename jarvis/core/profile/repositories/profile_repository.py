@@ -85,9 +85,11 @@ class ProfileRepository(BaseRepository):
         department: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
+        archive_view: str = 'active',
     ) -> list[dict]:
         """Get invoices visible to the user based on L0-L5 org scope.
         Fallback: if no org assignments, show only directly-responsible invoices.
+        archive_view: 'active' (default), 'archived', or 'all'.
         """
         def _work(cursor):
             cursor.execute('SELECT id FROM users WHERE LOWER(email) = LOWER(%s)', [user_email])
@@ -101,6 +103,12 @@ class ProfileRepository(BaseRepository):
             # Build optional filter clauses
             extra_where = ''
             params = list(scope_params)
+
+            # Archive view filtering
+            if archive_view == 'active':
+                extra_where += ' AND i.archived_at IS NULL'
+            elif archive_view == 'archived':
+                extra_where += ' AND i.archived_at IS NOT NULL'
 
             if status:
                 extra_where += ' AND i.status = %s'
@@ -135,7 +143,7 @@ class ProfileRepository(BaseRepository):
                     i.id, i.invoice_number, i.invoice_date, i.invoice_value,
                     i.currency, i.supplier, i.status, i.drive_link, i.comment,
                     i.created_at, i.updated_at, i.payment_status, i.allocation_mode,
-                    i.line_items,
+                    i.line_items, i.archived_at, i.archive_after,
                     COALESCE(
                         json_agg(
                             json_build_object(
@@ -223,6 +231,7 @@ class ProfileRepository(BaseRepository):
         end_date: Optional[str] = None,
         search: Optional[str] = None,
         department: Optional[str] = None,
+        archive_view: str = 'active',
     ) -> int:
         """Count invoices visible via L0-L5 org scope (fallback: own)."""
         def _work(cursor):
@@ -242,6 +251,12 @@ class ProfileRepository(BaseRepository):
                 AND i.deleted_at IS NULL
             '''
             params = list(scope_params)
+
+            # Archive view filtering
+            if archive_view == 'active':
+                query += ' AND i.archived_at IS NULL'
+            elif archive_view == 'archived':
+                query += ' AND i.archived_at IS NOT NULL'
 
             if status:
                 query += ' AND i.status = %s'

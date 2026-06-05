@@ -15,7 +15,7 @@ export const profileApi = {
 
   updateProfile: (data: ProfileUpdatePayload) => api.put<{ success: boolean }>('/profile/api/update', data),
 
-  getInvoices: (params?: { status?: string; start_date?: string; end_date?: string; search?: string; department?: string; page?: number; per_page?: number }) => {
+  getInvoices: (params?: { status?: string; start_date?: string; end_date?: string; search?: string; department?: string; page?: number; per_page?: number; archive_view?: string }) => {
     const sp = new URLSearchParams()
     if (params?.status) sp.set('status', params.status)
     if (params?.start_date) sp.set('start_date', params.start_date)
@@ -24,6 +24,7 @@ export const profileApi = {
     if (params?.department) sp.set('department', params.department)
     if (params?.page) sp.set('page', String(params.page))
     if (params?.per_page) sp.set('per_page', String(params.per_page))
+    if (params?.archive_view) sp.set('archive_view', params.archive_view)
     const qs = sp.toString()
     return api.get<{ invoices: ProfileInvoice[]; total: number; page: number; per_page: number }>(
       `/profile/api/invoices${qs ? `?${qs}` : ''}`,

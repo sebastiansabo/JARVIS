@@ -134,6 +134,9 @@ def api_profile_invoices():
         department = request.args.get('department', '')
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 50, type=int)
+        archive_view = request.args.get('archive_view', 'active')
+        if archive_view not in ('active', 'archived', 'all'):
+            archive_view = 'active'
 
         # Validate
         if page < 1:
@@ -153,6 +156,7 @@ def api_profile_invoices():
             department=department if department else None,
             limit=per_page,
             offset=offset,
+            archive_view=archive_view,
         )
 
         total = _profile_repo.get_user_invoices_count(
@@ -162,6 +166,7 @@ def api_profile_invoices():
             end_date=end_date if end_date else None,
             search=search if search else None,
             department=department if department else None,
+            archive_view=archive_view,
         )
 
         return jsonify({
