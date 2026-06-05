@@ -504,13 +504,22 @@ function TransactionsPanel({ search }: { search: string }) {
   const [page, setPage] = useState(0)
   const pageSize = 50
 
+  // Default: month-to-date
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+  })
+  const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10))
+
   const { data, isLoading } = useQuery({
-    queryKey: ['time-bank', 'all-transactions', txType, statusFilter, page],
+    queryKey: ['time-bank', 'all-transactions', txType, statusFilter, page, dateFrom, dateTo],
     queryFn: () => timeBankApi.getTransactions({
       limit: pageSize,
       offset: page * pageSize,
       tx_type: txType !== 'all' ? txType : undefined,
       status: statusFilter !== 'all' ? statusFilter : undefined,
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
     }),
   })
 
@@ -570,6 +579,11 @@ function TransactionsPanel({ search }: { search: string }) {
               <SelectItem value="rejected">Rejected</SelectItem>
             </SelectContent>
           </Select>
+          <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0) }}
+            className="w-[140px] h-8 text-xs" />
+          <span className="text-xs text-muted-foreground">→</span>
+          <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0) }}
+            className="w-[140px] h-8 text-xs" />
         </div>
         <span className="text-xs text-muted-foreground">{total} transaction{total !== 1 ? 's' : ''}</span>
       </div>

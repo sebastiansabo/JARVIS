@@ -61,7 +61,7 @@ export const timeBankApi = {
     return res.data
   },
 
-  getTransactions: async (params?: { limit?: number; offset?: number; tx_type?: string; user_id?: number; status?: string }) => {
+  getTransactions: async (params?: { limit?: number; offset?: number; tx_type?: string; user_id?: number; status?: string; date_from?: string; date_to?: string }) => {
     const res = await api.get<{ success: boolean; data: TimeBankTransaction[]; total: number }>(
       `${BASE}/transactions${qs(params ?? {})}`,
     )

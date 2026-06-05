@@ -154,7 +154,8 @@ class TimeBankRepository(BaseRepository):
             tuple(params),
         )
 
-    def get_all_transactions(self, limit=100, offset=0, tx_type=None, user_id=None, status=None):
+    def get_all_transactions(self, limit=100, offset=0, tx_type=None, user_id=None, status=None,
+                             date_from=None, date_to=None):
         """Get all transactions (admin view), newest first."""
         conditions = []
         params = []
@@ -167,6 +168,12 @@ class TimeBankRepository(BaseRepository):
         if status:
             conditions.append('t.status = %s')
             params.append(status)
+        if date_from:
+            conditions.append('t.created_at >= %s::date')
+            params.append(date_from)
+        if date_to:
+            conditions.append('t.created_at < (%s::date + 1)')
+            params.append(date_to)
         where = ('WHERE ' + ' AND '.join(conditions)) if conditions else ''
         params.extend([limit, offset])
         return self.query_all(
@@ -184,7 +191,7 @@ class TimeBankRepository(BaseRepository):
             tuple(params),
         )
 
-    def count_transactions(self, user_id=None, tx_type=None, status=None):
+    def count_transactions(self, user_id=None, tx_type=None, status=None, date_from=None, date_to=None):
         """Count transactions (for pagination)."""
         conditions = []
         params = []
@@ -197,6 +204,12 @@ class TimeBankRepository(BaseRepository):
         if status:
             conditions.append('status = %s')
             params.append(status)
+        if date_from:
+            conditions.append('created_at >= %s::date')
+            params.append(date_from)
+        if date_to:
+            conditions.append("created_at < (%s::date + 1)")
+            params.append(date_to)
         where = ('WHERE ' + ' AND '.join(conditions)) if conditions else ''
         row = self.query_one(
             f"SELECT COUNT(*) AS n FROM hr.time_bank_transactions {where}",

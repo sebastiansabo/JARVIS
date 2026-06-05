@@ -88,8 +88,9 @@ def time_bank_transactions():
         tx_type = request.args.get('tx_type') or None
         filter_user = request.args.get('user_id')
         filter_user = int(filter_user) if filter_user else None
-
         status = request.args.get('status') or None
+        date_from = request.args.get('date_from') or None
+        date_to = request.args.get('date_to') or None
 
         svc = TimeBankService()
         managed = _get_managed_ids()
@@ -99,11 +100,13 @@ def time_bank_transactions():
                 return jsonify({'success': False, 'error': 'Access denied'}), 403
             rows = svc.get_transactions(filter_user, limit=limit, offset=offset, tx_type=tx_type)
         else:
-            rows = svc.get_all_transactions(limit=limit, offset=offset, tx_type=tx_type, status=status)
+            rows = svc.get_all_transactions(limit=limit, offset=offset, tx_type=tx_type, status=status,
+                                            date_from=date_from, date_to=date_to)
             if managed is not None:
                 rows = [r for r in rows if r.get('jarvis_user_id') in managed]
 
-        total = svc.count_transactions(user_id=filter_user, tx_type=tx_type, status=status)
+        total = svc.count_transactions(user_id=filter_user, tx_type=tx_type, status=status,
+                                       date_from=date_from, date_to=date_to)
         return jsonify({'success': True, 'data': rows, 'total': total})
     except Exception as e:  # noqa: BLE001
         return safe_error_response(e)

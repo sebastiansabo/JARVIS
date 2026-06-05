@@ -8,7 +8,7 @@ from .repository import TimeBankRepository
 logger = logging.getLogger('jarvis.hr.time_bank.service')
 
 # tx_types that are auto-approved (no manual approval needed)
-AUTO_APPROVED_TYPES = ('T0', 'marketing_event', 'co_conversion', 'connecteam')
+AUTO_APPROVED_TYPES = ('T0', 'marketing_event', 'co_conversion', 'connecteam', 'leave_permit')
 
 
 class TimeBankService:
@@ -64,7 +64,8 @@ class TimeBankService:
         status = 'approved' if tx_type in AUTO_APPROVED_TYPES else 'pending'
 
         # Only check balance for auto-approved debits (pending ones don't affect balance yet)
-        if status == 'approved':
+        # Skip balance check for system imports (connecteam) — T0 may not be set yet
+        if status == 'approved' and tx_type not in ('connecteam', 'leave_permit'):
             balance = self.repo.get_balance(user_id)
             if balance < amount:
                 raise ValueError(
@@ -153,18 +154,21 @@ class TimeBankService:
             r['amount'] = float(r['amount'])
         return rows
 
-    def get_all_transactions(self, limit=100, offset=0, tx_type=None, user_id=None, status=None):
+    def get_all_transactions(self, limit=100, offset=0, tx_type=None, user_id=None, status=None,
+                             date_from=None, date_to=None):
         """Get all transactions (admin view)."""
         rows = self.repo.get_all_transactions(
             limit=limit, offset=offset, tx_type=tx_type, user_id=user_id, status=status,
+            date_from=date_from, date_to=date_to,
         )
         for r in rows:
             r['amount'] = float(r['amount'])
         return rows
 
-    def count_transactions(self, user_id=None, tx_type=None, status=None):
+    def count_transactions(self, user_id=None, tx_type=None, status=None, date_from=None, date_to=None):
         """Count transactions."""
-        return self.repo.count_transactions(user_id=user_id, tx_type=tx_type, status=status)
+        return self.repo.count_transactions(user_id=user_id, tx_type=tx_type, status=status,
+                                            date_from=date_from, date_to=date_to)
 
     def set_t0(self, user_id, amount, created_by=None):
         """Set T0 (starting balance) for an employee.
