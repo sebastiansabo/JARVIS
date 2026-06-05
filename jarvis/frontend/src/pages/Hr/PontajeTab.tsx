@@ -114,6 +114,14 @@ function timeDiffSec(a: string, b: string): number {
   return Math.max(0, (new Date(b).getTime() - new Date(a).getTime()) / 1000)
 }
 
+/** Format seconds as H:MM for export */
+function fmtDurationHM(totalSec: number): string {
+  if (!totalSec || totalSec <= 0 || !isFinite(totalSec)) return ''
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.round((totalSec % 3600) / 60)
+  return `${h}:${String(m).padStart(2, '0')}`
+}
+
 /** Compute effective duration: use adjusted times if available, else raw duration_seconds */
 function effectiveSec(d: BioStarDayHistory, lunchMin: number): number {
   if (d.adjusted_first_punch && d.adjusted_last_punch) {
@@ -477,7 +485,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       }
 
       // Build CSV: Group before Name, with Company column
-      const headers = ['Week', 'Date', 'Day', 'Group', 'Name', 'Company', 'Checked In', 'Checked Out', 'Duration (h)', 'Schedule', 'Sincron Status', 'Status']
+      const headers = ['Week', 'Date', 'Day', 'Group', 'Name', 'Company', 'Checked In', 'Checked Out', 'Lunch Break', 'Duration', 'Schedule', 'Sincron Status', 'Status']
       const csvRows: string[][] = [headers]
 
       const sortedEmployees = Array.from(employeeMap.entries())
@@ -513,10 +521,11 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               const effectiveOut = raw ? iv.last_punch : (iv.adjusted_last_punch ?? iv.last_punch)
               const pIn = effectiveIn ?? null
               const pOut = effectiveOut && effectiveOut !== effectiveIn ? effectiveOut : null
+              const lunchMin = dd.summaries.find(x => emp.biostarIds.has(x.biostar_user_id))?.lunch_break_minutes ?? 60
               let duration = ''
               if (pIn && pOut) {
-                const secs = timeDiffSec(pIn, pOut)
-                if (secs > 0) duration = (secs / 3600).toFixed(2)
+                const secs = netSec(timeDiffSec(pIn, pOut), lunchMin)
+                if (secs > 0) duration = fmtDurationHM(secs)
               }
               const companyShort = iv.group_name || iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
               csvRows.push([
@@ -528,6 +537,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 companyShort,
                 pIn ? fmtTime(pIn) : '',
                 pOut ? fmtTime(pOut) : '',
+                `${lunchMin} min`,
                 duration,
                 `${iv.start || ''}–${iv.end || ''}`,
                 sincronCode,
@@ -545,10 +555,11 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               const effectiveOut = raw ? companyIv.last_punch : (companyIv.adjusted_last_punch ?? companyIv.last_punch)
               const pIn = effectiveIn ?? null
               const pOut = effectiveOut && effectiveOut !== effectiveIn ? effectiveOut : null
+              const lunchMin = dd.summaries.find(x => emp.biostarIds.has(x.biostar_user_id))?.lunch_break_minutes ?? 60
               let duration = ''
               if (pIn && pOut) {
-                const secs = timeDiffSec(pIn, pOut)
-                if (secs > 0) duration = (secs / 3600).toFixed(2)
+                const secs = netSec(timeDiffSec(pIn, pOut), lunchMin)
+                if (secs > 0) duration = fmtDurationHM(secs)
               }
               csvRows.push([
                 `W${dd.weekNum}`,
@@ -559,6 +570,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 emp.company,
                 pIn ? fmtTime(pIn) : '',
                 pOut ? fmtTime(pOut) : '',
+                `${lunchMin} min`,
                 duration,
                 `${companyIv.start || ''}–${companyIv.end || ''}`,
                 sincronCode,
@@ -576,7 +588,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               let duration = ''
               if (officialIn && officialOut) {
                 const secs = netSec(s?.duration_seconds ?? timeDiffSec(officialIn, officialOut), lunchMin)
-                if (secs > 0) duration = (secs / 3600).toFixed(2)
+                if (secs > 0) duration = fmtDurationHM(secs)
               }
               csvRows.push([
                 `W${dd.weekNum}`,
@@ -587,6 +599,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 emp.company,
                 officialIn ? fmtTime(officialIn) : '',
                 officialOut ? fmtTime(officialOut) : '',
+                `${lunchMin} min`,
                 duration,
                 emp.schedule,
                 sincronCode,
@@ -605,12 +618,13 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             const lunchMin = s?.lunch_break_minutes ?? 60
             let duration = ''
             if (officialIn && officialOut) {
-              const secs = raw
+              const grossSecs = raw
                 ? (s?.duration_seconds ?? timeDiffSec(officialIn, officialOut))
                 : (s?.adjusted_first_punch && s?.adjusted_last_punch
-                    ? netSec(timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch), lunchMin)
-                    : netSec(s?.duration_seconds ?? null, lunchMin))
-              if (secs > 0) duration = (secs / 3600).toFixed(2)
+                    ? timeDiffSec(s.adjusted_first_punch, s.adjusted_last_punch)
+                    : (s?.duration_seconds ?? timeDiffSec(officialIn, officialOut)))
+              const secs = netSec(grossSecs, lunchMin)
+              if (secs > 0) duration = fmtDurationHM(secs)
             }
 
             csvRows.push([
@@ -622,6 +636,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               emp.company,
               officialIn ? fmtTime(officialIn) : '',
               officialOut ? fmtTime(officialOut) : '',
+              `${lunchMin} min`,
               duration,
               emp.schedule,
               sincronCode,
@@ -643,7 +658,8 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         { wch: 20 }, // Company
         { wch: 10 }, // Checked In
         { wch: 10 }, // Checked Out
-        { wch: 12 }, // Duration
+        { wch: 12 }, // Lunch Break
+        { wch: 10 }, // Duration
         { wch: 14 }, // Schedule
         { wch: 14 }, // Sincron Status
         { wch: 10 }, // Status
