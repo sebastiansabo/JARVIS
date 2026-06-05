@@ -20,6 +20,9 @@ def api_db_invoices():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     include_allocations = request.args.get('include_allocations', 'false').lower() == 'true'
+    archive_view = request.args.get('archive_view', 'active')
+    if archive_view not in ('active', 'archived', 'all'):
+        archive_view = 'active'
 
     # Scope-based filtering
     scope = _get_invoice_scope('view')
@@ -33,7 +36,8 @@ def api_db_invoices():
             department=department, subdepartment=subdepartment, brand=brand,
             status=status, payment_status=payment_status,
             responsible_user_id=responsible_user_id,
-            org_filter=org_filter
+            org_filter=org_filter,
+            archive_view=archive_view,
         )
     else:
         invoices = _invoice_repo.get_all(
@@ -42,7 +46,8 @@ def api_db_invoices():
             department=department, subdepartment=subdepartment, brand=brand,
             status=status, payment_status=payment_status,
             responsible_user_id=responsible_user_id,
-            org_filter=org_filter
+            org_filter=org_filter,
+            archive_view=archive_view,
         )
     return jsonify(invoices)
 
@@ -71,6 +76,16 @@ def api_db_invoice_detail(invoice_id):
             return error_response('Invoice not found', 404)
 
     return jsonify(invoice)
+
+
+@invoices_bp.route('/api/db/invoices/archive-counts')
+@login_required
+def api_db_archive_counts():
+    """Get counts for active and archived invoices."""
+    if not _check_invoice_perm('view'):
+        return error_response('Permission denied', 403)
+    counts = _invoice_repo.get_archive_counts()
+    return jsonify({'success': True, **counts})
 
 
 @invoices_bp.route('/api/db/invoices/<int:invoice_id>', methods=['DELETE'])

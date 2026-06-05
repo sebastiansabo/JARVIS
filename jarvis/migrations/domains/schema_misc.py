@@ -647,3 +647,52 @@ def create_schema_misc(conn, cursor):
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_otp_codes_user_id ON otp_codes(user_id)
     ''')
+
+    # --- Invoice Auto-Archive columns ---
+    try:
+        cursor.execute('ALTER TABLE invoices ADD COLUMN archived_at TIMESTAMP DEFAULT NULL')
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
+
+    try:
+        cursor.execute('ALTER TABLE invoices ADD COLUMN archive_after TIMESTAMP DEFAULT NULL')
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
+
+    # Archive indexes: fast active queries, archived queries, and scheduler lookup
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_invoices_active_noarchive
+        ON invoices(invoice_date DESC)
+        WHERE archived_at IS NULL AND deleted_at IS NULL
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_invoices_archived
+        ON invoices(archived_at DESC)
+        WHERE archived_at IS NOT NULL AND deleted_at IS NULL
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_invoices_pending_archive
+        ON invoices(archive_after)
+        WHERE archive_after IS NOT NULL AND archived_at IS NULL
+    ''')
+    conn.commit()
+
+    # Seed default archive settings (idempotent — only inserts if key doesn't exist)
+    for key, value in [
+        ('archive_enabled', 'true'),
+        ('archive_delay_hours', '24'),
+        ('archive_trigger_status', 'processed'),
+        ('archive_job_interval_minutes', '15'),
+    ]:
+        cursor.execute('''
+            INSERT INTO notification_settings (setting_key, setting_value)
+            VALUES (%s, %s)
+            ON CONFLICT (setting_key) DO NOTHING
+        ''', (key, value))
+    conn.commit()

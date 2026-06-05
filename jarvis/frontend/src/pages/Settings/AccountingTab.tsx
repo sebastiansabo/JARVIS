@@ -1,11 +1,18 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Pencil } from 'lucide-react'
+import { Plus, Trash2, Pencil, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -13,14 +20,148 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { settingsApi } from '@/api/settings'
 import { toast } from 'sonner'
 import type { VatRate, DropdownOption } from '@/types/settings'
+import type { ArchiveSettings } from '@/types/invoices'
 
 export default function AccountingTab() {
   return (
     <div className="space-y-6">
+      <ArchiveSettingsSection />
       <VatRatesSection />
       <DropdownSection type="invoice_status" title="Invoice Status Options" />
       <DropdownSection type="payment_status" title="Payment Status Options" />
     </div>
+  )
+}
+
+function ArchiveSettingsSection() {
+  const queryClient = useQueryClient()
+
+  const { data: archiveSettings, isLoading } = useQuery({
+    queryKey: ['settings', 'archive'],
+    queryFn: () => settingsApi.getArchiveSettings(),
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: statusOptions = [] } = useQuery({
+    queryKey: ['settings', 'dropdownOptions', 'invoice_status'],
+    queryFn: () => settingsApi.getDropdownOptions('invoice_status'),
+    staleTime: 5 * 60_000,
+  })
+
+  const [form, setForm] = useState<ArchiveSettings>({
+    archive_enabled: true,
+    archive_delay_hours: 24,
+    archive_trigger_status: 'processed',
+    archive_job_interval_minutes: 15,
+  })
+
+  useEffect(() => {
+    if (archiveSettings) setForm(archiveSettings)
+  }, [archiveSettings])
+
+  const saveMutation = useMutation({
+    mutationFn: (data: Partial<ArchiveSettings>) => settingsApi.updateArchiveSettings(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'archive'] })
+      toast.success('Archive settings saved')
+    },
+    onError: () => toast.error('Failed to save archive settings'),
+  })
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-8">
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-10 animate-pulse rounded bg-muted" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Invoice Archiving</CardTitle>
+        <CardDescription>
+          Configure automatic archiving of processed invoices. Archived invoices are read-only and move out of the active view.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Label htmlFor="archive-enabled">Enable Auto-Archive</Label>
+          <Switch
+            id="archive-enabled"
+            checked={form.archive_enabled}
+            onCheckedChange={(v) => setForm((f) => ({ ...f, archive_enabled: v }))}
+          />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="space-y-2">
+            <Label>Trigger Status</Label>
+            <Select
+              value={form.archive_trigger_status}
+              onValueChange={(v) => setForm((f) => ({ ...f, archive_trigger_status: v }))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {statusOptions.filter((o: DropdownOption) => o.is_active).map((o: DropdownOption) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    <span className="flex items-center gap-1.5">
+                      {o.color && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: o.color }} />}
+                      {o.label}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Archive Delay (hours)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={720}
+              value={form.archive_delay_hours}
+              onChange={(e) => setForm((f) => ({ ...f, archive_delay_hours: Number(e.target.value) }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Job Interval (minutes)</Label>
+            <Input
+              type="number"
+              min={5}
+              max={60}
+              value={form.archive_job_interval_minutes}
+              onChange={(e) => setForm((f) => ({ ...f, archive_job_interval_minutes: Number(e.target.value) }))}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-start gap-2 rounded-md border bg-muted/50 p-3 text-sm text-muted-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Invoices with the trigger status will show an &quot;Archivation in {form.archive_delay_hours}h&quot; badge
+            and be automatically archived after the delay. Only Admin and Contabilitate can edit archived invoices.
+          </span>
+        </div>
+
+        <div className="flex justify-end">
+          <Button
+            onClick={() => saveMutation.mutate(form)}
+            disabled={saveMutation.isPending}
+          >
+            {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

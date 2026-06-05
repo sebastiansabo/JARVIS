@@ -7,7 +7,7 @@ import {
   Building2,
   FolderTree,
   FolderArchive,
-
+  Archive,
   Trash2,
   Plus,
   Pencil,
@@ -106,6 +106,7 @@ export default function Accounting() {
   const isNarrow = useIsNarrow()  // < 1280px — hides wide toolbar elements
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('accounting_invoices')
   const [showBin, setShowBin] = useState(false)
+  const [archiveView, setArchiveView] = useState<'active' | 'archived' | 'all'>('active')
   const [search, setSearch] = useState('')
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
@@ -143,14 +144,21 @@ export default function Accounting() {
   const setVisibleColumns = useAccountingStore((s) => s.setVisibleColumns)
 
   // Data queries
-  const apiFilters: InvoiceFilters & { include_allocations?: boolean } = {
+  const apiFilters: InvoiceFilters & { include_allocations?: boolean; archive_view?: string } = {
     ...filters,
     include_allocations: true,
+    archive_view: archiveView,
   }
 
   const { data: invoices = [], isLoading, isError: invoicesError, error: invoicesErrorObj, refetch: refetchInvoices } = useQuery({
-    queryKey: ['invoices', filters],
+    queryKey: ['invoices', filters, archiveView],
     queryFn: () => invoicesApi.getInvoices(apiFilters),
+  })
+
+  const { data: archiveCounts } = useQuery({
+    queryKey: ['invoices', 'archive-counts'],
+    queryFn: () => invoicesApi.getArchiveCounts(),
+    staleTime: 60_000,
   })
 
   const { data: binInvoices = [], isLoading: binLoading, isError: binError, refetch: refetchBin } = useQuery({
@@ -348,9 +356,41 @@ export default function Accounting() {
       )
     }
 
+    const userRole = user?.role_name ?? ''
+    const canEditArchived = userRole === 'Admin' || userRole === 'Dep Contabilitate'
+
     const overrides: Record<string, (inv: Invoice) => React.ReactNode> = {
-      status: buildDropdown(statusOptions, 'status'),
-      payment_status: buildDropdown(paymentOptions, 'payment_status'),
+      status: (inv: Invoice) => {
+        const isArchived = !!inv.archived_at
+        const isPending = !!inv.archive_after && !inv.archived_at
+
+        return (
+          <div className="flex items-center gap-1">
+            {isArchived && !canEditArchived ? (
+              <StatusBadge status={inv.status} />
+            ) : (
+              buildDropdown(statusOptions, 'status')(inv)
+            )}
+            {isPending && (
+              <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200 whitespace-nowrap">
+                Archivation in {Math.max(1, Math.ceil((new Date(inv.archive_after!).getTime() - Date.now()) / 3600000))}h
+              </span>
+            )}
+            {isArchived && (
+              <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                Archived
+              </span>
+            )}
+          </div>
+        )
+      },
+      payment_status: (inv: Invoice) => {
+        const isArchived = !!inv.archived_at
+        if (isArchived && !canEditArchived) {
+          return <StatusBadge status={inv.payment_status} />
+        }
+        return buildDropdown(paymentOptions, 'payment_status')(inv)
+      },
       tags: (inv: Invoice) => {
         const invTags = entityTagsMap[String(inv.id)] ?? []
         return (
@@ -490,6 +530,37 @@ export default function Accounting() {
             <Button variant="ghost" size="icon" className={showFilters ? 'bg-muted' : ''} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
+            {/* Archive view toggle */}
+            <div className="hidden md:inline-flex items-center rounded-md border bg-muted/50 p-0.5 gap-0.5">
+              <Button
+                variant={archiveView === 'active' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+                onClick={() => { setArchiveView('active'); clearSelected() }}
+              >
+                Active
+              </Button>
+              <Button
+                variant={archiveView === 'archived' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2.5 text-xs relative"
+                onClick={() => { setArchiveView('archived'); clearSelected() }}
+              >
+                <Archive className="mr-1 h-3 w-3" />
+                Archived
+                {(archiveCounts?.archived_count ?? 0) > 0 && (
+                  <span className="ml-1 rounded-full bg-muted-foreground/20 px-1.5 text-[9px]">{archiveCounts?.archived_count}</span>
+                )}
+              </Button>
+              <Button
+                variant={archiveView === 'all' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+                onClick={() => { setArchiveView('all'); clearSelected() }}
+              >
+                All
+              </Button>
+            </div>
             {canDelete && (
               <Button variant="ghost" size="icon" className={cn('hidden md:inline-flex relative', showBin ? 'bg-destructive/15 text-destructive' : '')} onClick={() => { setShowBin(s => !s); clearSelected(); setSelectMode(false) }} title="Bin">
                 <Trash2 className="h-4 w-4" />
@@ -1219,6 +1290,10 @@ const InvoiceRow = memo(function InvoiceRow({
   canDelete?: boolean
 }) {
   const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.user)
+  const isArchived = !!inv.archived_at
+  const canEditArchived = user?.role_name === 'Admin' || user?.role_name === 'Dep Contabilitate'
+  const archiveBlocked = isArchived && !canEditArchived
   const hasAllocations = inv.allocations && inv.allocations.length > 0
   const [editingAllocations, setEditingAllocations] = useState(false)
 
@@ -1340,12 +1415,12 @@ const InvoiceRow = memo(function InvoiceRow({
               </>
             ) : (
               <>
-                {canEdit && (
+                {canEdit && !archiveBlocked && (
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(inv)} title="Edit">
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                 )}
-                {canEdit && (
+                {canEdit && !archiveBlocked && (
                   <Button
                     variant="ghost" size="icon" className="h-7 w-7"
                     onClick={() => storeToDmsMut.mutate()}
@@ -1355,7 +1430,7 @@ const InvoiceRow = memo(function InvoiceRow({
                     <FolderArchive className="h-3.5 w-3.5" />
                   </Button>
                 )}
-                {canDelete && (
+                {canDelete && !isArchived && (
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(inv.id)} title="Delete">
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>

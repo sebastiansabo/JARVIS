@@ -19,6 +19,7 @@ export const invoicesApi = {
   bulkPermanentDelete: (ids: number[]) =>
     api.post<{ success: boolean }>('/api/db/invoices/bulk-permanent-delete', { invoice_ids: ids }),
   getDeletedInvoices: () => api.get<Invoice[]>('/api/db/invoices/bin'),
+  getArchiveCounts: () => api.get<{ success: boolean; active_count: number; archived_count: number }>('/api/db/invoices/archive-counts'),
 
   // Allocations
   updateAllocations: (invoiceId: number, data: { allocations: Record<string, unknown>[]; send_notification?: boolean }) =>
