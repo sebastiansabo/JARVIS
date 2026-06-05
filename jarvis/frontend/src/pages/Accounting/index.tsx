@@ -116,7 +116,7 @@ export default function Accounting() {
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
   const [showStats, setShowStats] = useState(false)
   const [totalCurrency, setTotalCurrency] = useState<'RON' | 'EUR'>('RON')
-  const [showFilters, setShowFilters] = useState(false)
+  const [showFilters, setShowFilters] = useState(true)
   const [selectMode, setSelectMode] = useState(false)
   const [brandFilterKey, setBrandFilterKey] = useState<string | null>(null)
   const [binSelectedIds, setBinSelectedIds] = useState<number[]>([])
