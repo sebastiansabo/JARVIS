@@ -712,9 +712,8 @@ def compute_hr_weekly_report_data(reference_date=None, period=None):
     else:  # ytd (default, also used by email digest)
         period_start = jan1
         period_end = today
-        # For YTD, punch data uses last full week
-        punch_start = today - timedelta(days=today.weekday() + 7)
-        punch_end = punch_start + timedelta(days=4)
+        punch_start = jan1
+        punch_end = today
 
     working_days = get_working_days_range(punch_start, punch_end)
 
@@ -727,9 +726,11 @@ def compute_hr_weekly_report_data(reference_date=None, period=None):
         'ytd': f"YTD {year}",
     }
     period_label = _period_labels.get(period, f"YTD {year}")
-    # Week label for backward compat with email digest
-    week_num = punch_start.isocalendar()[1]
-    week_label = f"W{week_num} ({punch_start.strftime('%d %b')} – {punch_end.strftime('%d %b %Y')})"
+    # Week label for backward compat with email digest (always shows last full week)
+    _last_mon = today - timedelta(days=today.weekday() + 7)
+    _last_fri = _last_mon + timedelta(days=4)
+    week_num = _last_mon.isocalendar()[1]
+    week_label = f"W{week_num} ({_last_mon.strftime('%d %b')} – {_last_fri.strftime('%d %b %Y')})"
 
     _base = BaseRepository()
     sincron_repo = SincronRepository()
