@@ -387,3 +387,61 @@ def api_holidays_populate():
         repo.ensure_year_populated(yr)
         populated.append(yr)
     return jsonify({'success': True, 'populated_years': populated})
+
+
+# ============== ARCHIVE SETTINGS ENDPOINTS ==============
+
+@settings_bp.route('/api/settings/archive', methods=['GET'])
+@login_required
+def api_get_archive_settings():
+    """Get current archive settings."""
+    from core.notifications.repositories import NotificationRepository
+    all_settings = NotificationRepository().get_settings()
+    return jsonify({
+        'success': True,
+        'settings': {
+            'archive_enabled': all_settings.get('archive_enabled', 'true') == 'true',
+            'archive_delay_hours': int(all_settings.get('archive_delay_hours', '24')),
+            'archive_trigger_status': all_settings.get('archive_trigger_status', 'processed'),
+            'archive_job_interval_minutes': int(all_settings.get('archive_job_interval_minutes', '15')),
+        }
+    })
+
+
+@settings_bp.route('/api/settings/archive', methods=['PUT'])
+@login_required
+@admin_required
+def api_update_archive_settings():
+    """Update archive settings (Admin only)."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'No data provided'}), 400
+
+    from core.notifications.repositories import NotificationRepository
+    repo = NotificationRepository()
+
+    if 'archive_enabled' in data:
+        repo.save_setting('archive_enabled', 'true' if data['archive_enabled'] else 'false')
+
+    if 'archive_delay_hours' in data:
+        hours = data['archive_delay_hours']
+        if not isinstance(hours, (int, float)) or hours < 1 or hours > 720:
+            return jsonify({'success': False, 'error': 'Archive delay must be between 1 and 720 hours'}), 400
+        repo.save_setting('archive_delay_hours', str(int(hours)))
+
+    if 'archive_trigger_status' in data:
+        trigger = data['archive_trigger_status']
+        # Validate trigger status exists in dropdown options
+        options = _dropdown_repo.get_options('invoice_status', active_only=True)
+        valid_values = [opt['value'] for opt in options]
+        if trigger not in valid_values:
+            return jsonify({'success': False, 'error': f'Invalid trigger status: {trigger}'}), 400
+        repo.save_setting('archive_trigger_status', trigger)
+
+    if 'archive_job_interval_minutes' in data:
+        minutes = data['archive_job_interval_minutes']
+        if not isinstance(minutes, (int, float)) or minutes < 5 or minutes > 60:
+            return jsonify({'success': False, 'error': 'Job interval must be between 5 and 60 minutes'}), 400
+        repo.save_setting('archive_job_interval_minutes', str(int(minutes)))
+
+    return jsonify({'success': True, 'message': 'Archive settings updated'})

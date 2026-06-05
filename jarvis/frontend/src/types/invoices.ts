@@ -22,6 +22,8 @@ export interface Invoice {
   net_value: number | null
   invoice_template: string | null
   deleted_at: string | null
+  archived_at: string | null
+  archive_after: string | null
   created_at: string
   updated_at: string | null
   allocation_mode?: 'whole' | 'per_line'
@@ -142,6 +144,14 @@ export interface InvoiceFilters {
   start_date?: string
   end_date?: string
   search?: string
+  archive_view?: 'active' | 'archived' | 'all'
+}
+
+export interface ArchiveSettings {
+  archive_enabled: boolean
+  archive_delay_hours: number
+  archive_trigger_status: string
+  archive_job_interval_minutes: number
 }
 
 // ── Invoice-DMS Document Links ──

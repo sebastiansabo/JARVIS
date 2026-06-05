@@ -111,6 +111,14 @@ export const settingsApi = {
     api.get<PushStats>('/api/push-manager/stats'),
   testPush: () =>
     api.post<{ success: boolean; message: string }>('/api/push-manager/test', {}),
+
+  // Archive Settings
+  getArchiveSettings: async () => {
+    const res = await api.get<{ success: boolean; settings: import('@/types/invoices').ArchiveSettings }>('/api/settings/archive')
+    return res.settings
+  },
+  updateArchiveSettings: (data: Partial<import('@/types/invoices').ArchiveSettings>) =>
+    api.put<{ success: boolean }>('/api/settings/archive', data),
 }
 
 export interface PushCategory {

@@ -195,6 +195,15 @@ class InvoiceService:
             if not current_invoice:
                 return ServiceResult(success=False, error='Invoice not found', status_code=404)
 
+            # Archive permission guard: only Admin/Dep Contabilitate can edit archived invoices
+            if current_invoice.get('archived_at'):
+                if user.role_name not in ('Admin', 'Dep Contabilitate'):
+                    return ServiceResult(
+                        success=False,
+                        error='Archived invoices are read-only. Only Admin or Contabilitate can edit.',
+                        status_code=403,
+                    )
+
             old_status = current_invoice.get('status')
             old_payment_status = current_invoice.get('payment_status')
             new_status = data.get('status')
@@ -251,6 +260,10 @@ class InvoiceService:
                     details={'old_status': old_status, 'new_status': new_status},
                 )
                 self._notify_on_status_change(new_status, current_invoice)
+
+                # Archive hook: schedule or cancel archiving based on status change
+                self._handle_archive_on_status_change(
+                    invoice_id, old_status, new_status, current_invoice)
 
             if new_payment_status is not None and old_payment_status != new_payment_status:
                 self._log_event(
@@ -350,8 +363,35 @@ class InvoiceService:
             logger.error(f"Allocation update failed: {e}", exc_info=True)
             return ServiceResult(success=False, error=str(e), status_code=500)
 
+    def soft_delete(self, invoice_id: int, user: UserContext) -> ServiceResult:
+        """Soft delete an invoice (move to bin). Blocked for archived invoices."""
+        invoice = self.invoice_repo.get_with_allocations(invoice_id)
+        if not invoice:
+            return ServiceResult(success=False, error='Invoice not found', status_code=404)
+        if invoice.get('archived_at'):
+            return ServiceResult(
+                success=False,
+                error='Archived invoices cannot be deleted.',
+                status_code=403,
+            )
+        deleted = self.invoice_repo.delete(invoice_id)
+        if not deleted:
+            return ServiceResult(success=False, error='Invoice not found or already deleted', status_code=404)
+        self._log_event(user, 'invoice_deleted',
+                        f'Soft deleted invoice ID {invoice_id}',
+                        entity_type='invoice', entity_id=invoice_id)
+        return ServiceResult(success=True, data={'success': True})
+
     def permanently_delete(self, invoice_id: int, user: UserContext) -> ServiceResult:
         """Permanently delete invoice and its Google Drive file."""
+        # Block deletion of archived invoices
+        invoice = self.invoice_repo.get_with_allocations(invoice_id)
+        if invoice and invoice.get('archived_at'):
+            return ServiceResult(
+                success=False,
+                error='Archived invoices cannot be deleted.',
+                status_code=403,
+            )
         drive_link = self.invoice_repo.get_drive_link(invoice_id)
 
         if not self.invoice_repo.permanently_delete(invoice_id):
@@ -391,6 +431,46 @@ class InvoiceService:
             'success': True, 'deleted_count': count,
             'drive_deleted_count': drive_deleted_count,
         })
+
+    # ============== Archive Helpers ==============
+
+    def _get_archive_settings(self) -> Dict[str, Any]:
+        """Read archive settings from notification_settings table."""
+        try:
+            from core.notifications.repositories import NotificationRepository
+            all_settings = NotificationRepository().get_settings()
+            return {
+                'archive_enabled': all_settings.get('archive_enabled', 'true') == 'true',
+                'archive_delay_hours': int(all_settings.get('archive_delay_hours', '24')),
+                'archive_trigger_status': all_settings.get('archive_trigger_status', 'processed'),
+                'archive_job_interval_minutes': int(all_settings.get('archive_job_interval_minutes', '15')),
+            }
+        except Exception:
+            return {
+                'archive_enabled': True,
+                'archive_delay_hours': 24,
+                'archive_trigger_status': 'processed',
+                'archive_job_interval_minutes': 15,
+            }
+
+    def _handle_archive_on_status_change(self, invoice_id: int, old_status: str,
+                                          new_status: str, invoice: Dict):
+        """Schedule or cancel archiving when invoice status changes."""
+        settings = self._get_archive_settings()
+        if not settings['archive_enabled']:
+            return
+
+        trigger = settings['archive_trigger_status']
+        delay = settings['archive_delay_hours']
+
+        if new_status == trigger and old_status != trigger:
+            # Status changed TO trigger → schedule archive
+            self.invoice_repo.set_archive_after(invoice_id, delay)
+            logger.info(f'Invoice {invoice_id} scheduled for archive in {delay}h')
+        elif old_status == trigger and new_status != trigger:
+            # Status changed AWAY from trigger → cancel archive / unarchive
+            self.invoice_repo.clear_archive_fields(invoice_id)
+            logger.info(f'Invoice {invoice_id} archive cancelled (status changed from {trigger})')
 
     # ============== Private Helpers ==============
 

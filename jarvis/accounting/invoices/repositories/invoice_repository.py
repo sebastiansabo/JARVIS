@@ -168,11 +168,12 @@ class InvoiceRepository(BaseRepository):
                 end_date=None, department=None, subdepartment=None,
                 brand=None, status=None, payment_status=None,
                 include_deleted=False, responsible_user_id=None,
-                org_filter=None):
+                org_filter=None, archive_view='active'):
         """Get all invoices with pagination and optional filtering.
 
         org_filter: optional (sql_fragment, params) tuple from build_allocation_org_filter
                     for department-scoped visibility.
+        archive_view: 'active' (default, non-archived), 'archived', or 'all'.
         """
         org_sql, org_params = org_filter if org_filter else ('', [])
         needs_alloc_join = bool(company or department or subdepartment or brand or responsible_user_id or org_sql)
@@ -205,6 +206,13 @@ class InvoiceRepository(BaseRepository):
             conditions.append('i.deleted_at IS NOT NULL')
         else:
             conditions.append('i.deleted_at IS NULL')
+
+        # Archive view filtering
+        if not include_deleted:
+            if archive_view == 'active':
+                conditions.append('i.archived_at IS NULL')
+            elif archive_view == 'archived':
+                conditions.append('i.archived_at IS NOT NULL')
 
         if start_date:
             conditions.append('i.invoice_date >= %s')
@@ -283,15 +291,17 @@ class InvoiceRepository(BaseRepository):
                                   department=None, subdepartment=None,
                                   brand=None, status=None,
                                   payment_status=None, include_deleted=False,
-                                  responsible_user_id=None, org_filter=None):
+                                  responsible_user_id=None, org_filter=None,
+                                  archive_view='active'):
         """Get all invoices with their allocations in a single optimized query.
 
         org_filter: optional (sql_fragment, params) tuple from build_allocation_org_filter.
+        archive_view: 'active' (default, non-archived), 'archived', or 'all'.
         """
         global _invoices_cache
 
         org_sql, org_params = org_filter if org_filter else ('', [])
-        cache_key = f"{limit}:{offset}:{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{status}:{payment_status}:{include_deleted}:{responsible_user_id}:{hash(org_sql)}"
+        cache_key = f"{limit}:{offset}:{company}:{start_date}:{end_date}:{department}:{subdepartment}:{brand}:{status}:{payment_status}:{include_deleted}:{responsible_user_id}:{hash(org_sql)}:{archive_view}"
 
         if _is_cache_valid(_invoices_cache) and _invoices_cache.get('key') == cache_key:
             return _invoices_cache['data']
@@ -303,6 +313,13 @@ class InvoiceRepository(BaseRepository):
             conditions.append('i.deleted_at IS NOT NULL')
         else:
             conditions.append('i.deleted_at IS NULL')
+
+        # Archive view filtering
+        if not include_deleted:
+            if archive_view == 'active':
+                conditions.append('i.archived_at IS NULL')
+            elif archive_view == 'archived':
+                conditions.append('i.archived_at IS NOT NULL')
 
         if start_date:
             conditions.append('i.invoice_date >= %s')
@@ -449,7 +466,8 @@ class InvoiceRepository(BaseRepository):
                      pi.invoice_value, pi.currency, pi.value_ron, pi.value_eur, pi.exchange_rate,
                      pi.drive_link, pi.comment, pi.status, pi.payment_status, pi.deleted_at,
                      pi.created_at, pi.updated_at, pi.subtract_vat, pi.vat_rate, pi.net_value,
-                     pi.line_items, pi.invoice_type, pi.allocation_mode
+                     pi.line_items, pi.invoice_type, pi.allocation_mode,
+                     pi.archived_at, pi.archive_after
             ORDER BY pi.created_at DESC
             '''
 
@@ -580,6 +598,50 @@ class InvoiceRepository(BaseRepository):
             AND deleted_at < CURRENT_TIMESTAMP - INTERVAL '%s days'
         ''', (days,))
         return deleted_count
+
+    # ============== Archive Operations ==============
+
+    def archive_pending_invoices(self):
+        """Archive invoices whose archive_after has passed. Returns count archived."""
+        count = self.execute('''
+            UPDATE invoices
+            SET archived_at = CURRENT_TIMESTAMP
+            WHERE archive_after IS NOT NULL
+              AND archive_after <= CURRENT_TIMESTAMP
+              AND archived_at IS NULL
+              AND deleted_at IS NULL
+        ''')
+        if count > 0:
+            clear_invoices_cache()
+        return count
+
+    def set_archive_after(self, invoice_id, delay_hours):
+        """Set archive_after timestamp for an invoice (delay_hours from now)."""
+        updated = self.execute(
+            "UPDATE invoices SET archive_after = CURRENT_TIMESTAMP + INTERVAL '%s hours' WHERE id = %s",
+            (delay_hours, invoice_id)) > 0
+        if updated:
+            clear_invoices_cache()
+        return updated
+
+    def clear_archive_fields(self, invoice_id):
+        """Clear archive_after and archived_at for an invoice (cancel/undo archive)."""
+        updated = self.execute(
+            'UPDATE invoices SET archive_after = NULL, archived_at = NULL WHERE id = %s',
+            (invoice_id,)) > 0
+        if updated:
+            clear_invoices_cache()
+        return updated
+
+    def get_archive_counts(self):
+        """Return counts for active and archived invoices."""
+        result = self.query_one('''
+            SELECT
+                COUNT(*) FILTER (WHERE archived_at IS NULL AND deleted_at IS NULL) AS active_count,
+                COUNT(*) FILTER (WHERE archived_at IS NOT NULL AND deleted_at IS NULL) AS archived_count
+            FROM invoices
+        ''')
+        return result if result else {'active_count': 0, 'archived_count': 0}
 
     def update(self, invoice_id, supplier=None, invoice_number=None,
                invoice_date=None, invoice_value=None, currency=None,
@@ -740,10 +802,11 @@ class InvoiceRepository(BaseRepository):
             return {'exists': True, 'invoice': row}
         return {'exists': False, 'invoice': None}
 
-    def search(self, query, filters=None, responsible_user_id=None, org_filter=None):
+    def search(self, query, filters=None, responsible_user_id=None, org_filter=None, archive_view='active'):
         """Search invoices by supplier, invoice number, or value.
 
         org_filter: optional (sql_fragment, params) tuple from build_allocation_org_filter.
+        archive_view: 'active' (default, non-archived), 'archived', or 'all'.
         """
         filters = filters or {}
         org_sql, org_params = org_filter if org_filter else ('', [])
@@ -783,6 +846,12 @@ class InvoiceRepository(BaseRepository):
             base_query = 'SELECT DISTINCT i.* FROM invoices i'
 
         filter_conditions = ['i.deleted_at IS NULL']
+
+        # Archive view filtering
+        if archive_view == 'active':
+            filter_conditions.append('i.archived_at IS NULL')
+        elif archive_view == 'archived':
+            filter_conditions.append('i.archived_at IS NOT NULL')
 
         if company:
             filter_conditions.append('a.company = %s')

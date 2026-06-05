@@ -25,10 +25,17 @@ def api_db_search():
     }
     filters = {k: v for k, v in filters.items() if v}
 
+    archive_view = request.args.get('archive_view', 'active')
+    if archive_view not in ('active', 'archived', 'all'):
+        archive_view = 'active'
+
     scope = _get_invoice_scope('view')
     responsible_user_id = current_user.id if scope == 'own' else None
     org_filter = _get_org_filter_for_scope(scope)
-    results = _invoice_repo.search(query, filters, responsible_user_id=responsible_user_id, org_filter=org_filter)
+    results = _invoice_repo.search(
+        query, filters, responsible_user_id=responsible_user_id,
+        org_filter=org_filter, archive_view=archive_view,
+    )
     return jsonify(results)
 
 
