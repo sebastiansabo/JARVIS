@@ -25,10 +25,13 @@ def _require_hr():
 
 
 def _get_managed_ids():
-    """Return set of user IDs the current user manages (None = admin sees all)."""
+    """Return set of user IDs the current user manages (None = sees all).
+
+    HR users see all employees (they already passed _require_hr check).
+    """
+    if getattr(current_user, 'can_access_hr', False):
+        return None  # HR users see all
     from hr.events.database import get_managed_employee_ids, is_manager
-    if getattr(current_user, 'is_admin', False):
-        return None  # admin sees all
     if is_manager(current_user.id):
         return set(get_managed_employee_ids(current_user.id))
     return {current_user.id}  # regular user sees only self
