@@ -429,6 +429,17 @@ def api_update_archive_settings():
             return jsonify({'success': False, 'error': 'Archive delay must be between 1 and 720 hours'}), 400
         repo.save_setting('archive_delay_hours', str(int(hours)))
 
+        # Recalculate archive_after for all pending invoices
+        from accounting.invoices.repositories.invoice_repository import InvoiceRepository, clear_invoices_cache
+        inv_repo = InvoiceRepository()
+        trigger_status = data.get('archive_trigger_status') or repo.get_settings().get('archive_trigger_status', 'processed')
+        recalculated = inv_repo.execute(
+            "UPDATE invoices SET archive_after = updated_at + INTERVAL '%s hours' "
+            "WHERE status = %s AND archived_at IS NULL AND deleted_at IS NULL AND archive_after IS NOT NULL",
+            (int(hours), trigger_status))
+        if recalculated:
+            clear_invoices_cache()
+
     if 'archive_trigger_status' in data:
         trigger = data['archive_trigger_status']
         # Validate trigger status exists in dropdown options
