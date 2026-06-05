@@ -1605,13 +1605,15 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [showFilters, setShowFilters] = useState(false)
+  const [archiveView, setArchiveView] = useState<'active' | 'archived'>('active')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = usePersistedState('profile-invoices-page-size', 25)
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
 
-  const canEdit = user?.can_edit_invoices || (user?.permissions?.['invoices.records.edit'] ?? false) || isOrgResponsable
+  const isArchivedView = archiveView === 'archived'
+  const canEdit = isArchivedView ? false : (user?.can_edit_invoices || (user?.permissions?.['invoices.records.edit'] ?? false) || isOrgResponsable)
 
   const handleDownloadPdf = async (inv: ProfileInvoice) => {
     const url = inv.drive_link?.startsWith('/efactura/')
@@ -1663,8 +1665,8 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
   const uniqueDepts = useMemo(() => [...new Set(orgDepartments)], [orgDepartments])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['profile', 'invoices', { search, department, status, startDate, endDate, page, perPage }],
-    queryFn: () => profileApi.getInvoices({ search: search || undefined, department: department || undefined, status: status || undefined, start_date: startDate || undefined, end_date: endDate || undefined, page, per_page: perPage }),
+    queryKey: ['profile', 'invoices', { search, department, status, startDate, endDate, page, perPage, archiveView }],
+    queryFn: () => profileApi.getInvoices({ search: search || undefined, department: department || undefined, status: status || undefined, start_date: startDate || undefined, end_date: endDate || undefined, page, per_page: perPage, archive_view: archiveView }),
   })
 
   // Fetch full invoice data when a row is expanded (via profile endpoint — no accounting perm needed)
@@ -1721,10 +1723,30 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
     <Card>
       <CardHeader>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-base">
-            My Invoices
-            <span className="ml-2 text-sm font-normal text-muted-foreground">({total})</span>
-          </CardTitle>
+          <div className="flex items-center gap-3">
+            <CardTitle className="text-base">
+              My Invoices
+              <span className="ml-2 text-sm font-normal text-muted-foreground">({total})</span>
+            </CardTitle>
+            <div className="flex items-center rounded-md border bg-muted/50 p-0.5 gap-0.5">
+              <Button
+                variant={archiveView === 'active' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => { setArchiveView('active'); setPage(1) }}
+              >
+                Active
+              </Button>
+              <Button
+                variant={archiveView === 'archived' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => { setArchiveView('archived'); setPage(1) }}
+              >
+                Archived
+              </Button>
+            </div>
+          </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <Button variant="ghost" size="icon" className={cn('h-8 w-8', showFilters && 'bg-muted')} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
               <SlidersHorizontal className="h-4 w-4" />
