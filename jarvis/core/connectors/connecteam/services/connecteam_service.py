@@ -225,11 +225,12 @@ class ConnecteamService:
                 ))
                 stats['inserted'] += 1
 
-                # Credit leave hours to Time Bank (auto-approved)
-                if jarvis_uid and hours and hours > 0:
+                # Debit leave hours from Time Bank (auto-approved)
+                # Only personal leave counts — lunch breaks don't affect Time Bank
+                if jarvis_uid and hours and hours > 0 and str(reason or '').strip().lower() != 'pauza de masa':
                     try:
                         from hr.time_bank.service import TimeBankService
-                        TimeBankService().credit(
+                        TimeBankService().debit(
                             user_id=jarvis_uid,
                             amount=hours,
                             tx_type='connecteam',

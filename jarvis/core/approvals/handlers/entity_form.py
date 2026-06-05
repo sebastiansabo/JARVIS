@@ -18,8 +18,12 @@ def handle_approved(entity_id, ctx):
     """Set form_submission to approved and send notifications."""
     try:
         from forms.repositories import SubmissionRepository
-        SubmissionRepository().update_status(entity_id, 'approved')
+        sub_repo = SubmissionRepository()
+        sub_repo.update_status(entity_id, 'approved')
         logger.info(f'Form submission #{entity_id} status set to approved via approval hook')
+
+        # Debit Time Bank for approved bilet-de-invoire submissions
+        _debit_leave_permit_hours(entity_id, sub_repo)
     except Exception as e:
         logger.error(f'Failed to update form_submission status on approval: {e}')
     project_title = ctx.get('title') or f'form_submission #{entity_id}'
@@ -59,3 +63,39 @@ def handle_rejected(entity_id, ctx, note=''):
                 'View Form',
             ),
         )
+
+
+def _debit_leave_permit_hours(submission_id, sub_repo):
+    """Debit Time Bank hours when a bilet-de-invoire form is approved."""
+    try:
+        from core.connectors.connecteam.config import JARVIS_LEAVE_FORM_SLUG
+        from forms.repositories import FormRepository
+
+        sub = sub_repo.get_by_id(submission_id)
+        if not sub:
+            return
+        form = FormRepository().get_by_id(sub['form_id'])
+        if not form or form.get('slug') != JARVIS_LEAVE_FORM_SLUG:
+            return
+
+        answers = sub.get('answers') or {}
+        hours = float(answers.get('f_bi_hours') or 0)
+        leave_date = answers.get('f_bi_leave_date', '')
+        user_id = sub.get('respondent_user_id')
+
+        if not user_id or hours <= 0:
+            return
+
+        from hr.time_bank.service import TimeBankService
+        TimeBankService().debit(
+            user_id=user_id,
+            amount=hours,
+            tx_type='leave_permit',
+            description=f'Bilet de invoire: {hours}h on {leave_date or "N/A"}',
+            reference_type='form_submission',
+            reference_id=submission_id,
+            created_by=None,
+        )
+        logger.info(f'Time Bank debit {hours}h for form_submission #{submission_id}')
+    except Exception as e:
+        logger.error(f'Time Bank debit failed for form_submission #{submission_id}: {e}')
