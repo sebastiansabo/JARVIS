@@ -88,8 +88,8 @@ export const invoicesApi = {
     api.get<{ suggestions: DeptSuggestion[] }>(`/api/suggest-department?supplier=${encodeURIComponent(supplier)}`),
 
   // Search
-  searchInvoices: (query: string, limit = 20) =>
-    api.get<Invoice[]>(`/api/db/search?q=${encodeURIComponent(query)}&limit=${limit}`),
+  searchInvoices: (query: string, limit = 20, archiveView = 'all') =>
+    api.get<Invoice[]>(`/api/db/search?q=${encodeURIComponent(query)}&limit=${limit}&archive_view=${archiveView}`),
   checkInvoiceNumber: (number: string, excludeId?: number) =>
     api.get<{ exists: boolean }>(
       `/api/db/check-invoice-number?invoice_number=${encodeURIComponent(number)}${excludeId ? `&exclude_id=${excludeId}` : ''}`,
