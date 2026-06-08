@@ -391,6 +391,29 @@ class SincronRepository(BaseRepository):
             ORDER BY day, short_code
         ''', (sincron_employee_id, company_name, year, month))
 
+    def get_day_codes_for_users(self, jarvis_user_ids, year, month):
+        """Get leave day codes for multiple JARVIS users at once.
+
+        Returns rows of (mapped_jarvis_user_id, day, short_code) for all active leave codes.
+        """
+        if not jarvis_user_ids:
+            return []
+        leave_codes = ('CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV', 'OZ', 'OS')
+        return self.query_all(
+            f"""
+            SELECT se.mapped_jarvis_user_id, st.day, st.short_code
+            FROM sincron_timesheets st
+            JOIN sincron_employees se
+              ON se.sincron_employee_id = st.sincron_employee_id
+              AND se.company_name = st.company_name
+            WHERE se.mapped_jarvis_user_id IN %s
+              AND st.year = %s AND st.month = %s
+              AND st.short_code IN %s
+            ORDER BY se.mapped_jarvis_user_id, st.day
+            """,
+            (tuple(jarvis_user_ids), year, month, leave_codes),
+        )
+
     def get_timesheet_by_jarvis_user(self, jarvis_user_id, year, month):
         """Get monthly timesheet for a JARVIS user (via mapping)."""
         return self.query_all('''

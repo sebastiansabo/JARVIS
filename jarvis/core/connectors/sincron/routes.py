@@ -373,6 +373,52 @@ def get_employee_timesheet(user_id):
         return safe_error_response(e)
 
 
+@sincron_bp.route('/api/timesheets/bulk-day-codes', methods=['GET'])
+@api_login_required
+def get_bulk_day_codes():
+    """Bulk Sincron leave day codes for multiple users — HR export use.
+
+    Query params: user_ids (comma-separated), year, month.
+    Returns { data: { user_id: { "YYYY-MM-DD": "CO", ... }, ... } }
+    """
+    if not getattr(current_user, 'can_access_hr', False):
+        return jsonify({'success': False, 'error': 'HR access required'}), 403
+
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+    user_ids_raw = request.args.get('user_ids', '')
+
+    if not year or not month or not user_ids_raw:
+        return jsonify({'success': False, 'error': 'year, month, user_ids required'}), 400
+
+    try:
+        user_ids = [int(x) for x in user_ids_raw.split(',') if x.strip()]
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Invalid user_ids'}), 400
+
+    year, month, err = _validate_year_month(year, month)
+    if err:
+        return err
+
+    try:
+        from .repositories.sincron_repository import SincronRepository
+        repo = SincronRepository()
+        rows = repo.get_day_codes_for_users(user_ids, year, month)
+
+        result: dict = {}
+        for row in rows:
+            uid = row['mapped_jarvis_user_id']
+            day_str = str(row['day'])
+            if uid not in result:
+                result[uid] = {}
+            if day_str not in result[uid]:
+                result[uid][day_str] = row['short_code']  # first code wins per day
+
+        return jsonify({'success': True, 'data': result})
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @sincron_bp.route('/api/timesheets/tree', methods=['GET'])
 @api_login_required
 @v2_permission_required('hr', 'timesheets', 'view')

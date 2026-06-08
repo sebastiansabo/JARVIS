@@ -239,6 +239,13 @@ export const sincronApi = {
     return res
   },
 
+  getBulkDayCodes: async (userIds: number[], year: number, month: number) => {
+    const res = await api.get<{ success: boolean; data: Record<number, Record<string, string>> }>(
+      `${BASE}/timesheets/bulk-day-codes${qs({ user_ids: userIds.join(','), year, month })}`,
+    )
+    return res
+  },
+
   getTeamTimesheet: async (year: number, month: number, nodeId?: number) => {
     const res = await api.get<{
       success: boolean; is_manager: boolean; data: SincronTeamMember[]

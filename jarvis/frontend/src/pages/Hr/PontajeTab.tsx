@@ -455,30 +455,20 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         }
       }
 
-      // Fetch Sincron day-level codes for all mapped employees
+      // Fetch Sincron day-level codes for all mapped employees (single bulk call)
       const sincronDayCodes = new Map<number, Map<string, string>>()
       const jarvisIds = [...new Set(
         Array.from(employeeMap.values()).map(e => e.jarvisUserId).filter((id): id is number => id != null),
       )]
 
-      // Batch fetch Sincron timesheets (5 concurrent)
-      const BATCH = 5
-      for (let i = 0; i < jarvisIds.length; i += BATCH) {
-        const batch = jarvisIds.slice(i, i + BATCH)
-        const results = await Promise.allSettled(
-          batch.map(uid => sincronApi.getEmployeeTimesheet(uid, y, m)),
-        )
-        for (let j = 0; j < batch.length; j++) {
-          const r = results[j]
-          if (r.status !== 'fulfilled' || !r.value?.data?.days) continue
-          const dayMap = new Map<string, string>()
-          for (const [dayKey, codes] of Object.entries(r.value.data.days)) {
-            const leave = codes.find(c => ['CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV', 'OZ', 'OS'].includes(c.short_code))
-            if (leave) dayMap.set(dayKey, leave.short_code)
+      try {
+        const bulk = await sincronApi.getBulkDayCodes(jarvisIds, y, m)
+        if (bulk?.data) {
+          for (const [uidStr, dayMap] of Object.entries(bulk.data)) {
+            sincronDayCodes.set(Number(uidStr), new Map(Object.entries(dayMap)))
           }
-          sincronDayCodes.set(batch[j], dayMap)
         }
-      }
+      } catch { /* Sincron unavailable — export without leave codes */ }
 
       // Batch-fetch per-company intervals for each working day (multi-contract employees)
       const allBiostarIds = [...new Set(Array.from(employeeMap.values()).flatMap(e => [...e.biostarIds]))]
