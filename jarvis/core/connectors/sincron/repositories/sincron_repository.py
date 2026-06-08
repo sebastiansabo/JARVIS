@@ -398,7 +398,7 @@ class SincronRepository(BaseRepository):
         """
         if not jarvis_user_ids:
             return []
-        leave_codes = ('CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV', 'OZ', 'OS')
+        leave_codes = ('CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV', 'OZ', 'OS', 'X')
         return self.query_all(
             f"""
             SELECT se.mapped_jarvis_user_id, st.day, st.short_code

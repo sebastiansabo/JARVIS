@@ -1366,7 +1366,7 @@ function MonthHistory({
     if (!sincronData?.data?.days) return map
     for (const [dayKey, codes] of Object.entries(sincronData.data.days)) {
       // dayKey is a full date string like "2026-04-06"
-      const leave = codes.find(c => ['CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV'].includes(c.short_code))
+      const leave = codes.find(c => ['CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV', 'OZ', 'OS', 'X'].includes(c.short_code))
       if (leave) {
         map.set(dayKey, leave.short_code)
       }
