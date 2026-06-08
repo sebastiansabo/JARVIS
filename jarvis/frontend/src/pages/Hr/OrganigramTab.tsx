@@ -216,21 +216,6 @@ export default function OrganigramTab({ search = '' }: { search?: string }) {
     setCompanyResponsablesMut.mutate({ companyId, userIds })
   }
 
-  // Auto-expand on first load
-  useMemo(() => {
-    if (flatCompanies.length > 0 && expandedNodes.size === 0) {
-      const keys = new Set<string>()
-      for (const c of flatCompanies) keys.add(`c-${c.id}`)
-      function collectNodeKeys(nodes: TreeNode[]) {
-        for (const n of nodes) {
-          keys.add(`n-${n.id}`)
-          collectNodeKeys(n.children)
-        }
-      }
-      for (const [, nodes] of nodeTreeByCompany) collectNodeKeys(nodes)
-      setExpandedNodes(keys)
-    }
-  }, [flatCompanies, nodeTreeByCompany])
 
   const toggleExpand = (key: string) => {
     setExpandedNodes(prev => {
