@@ -68,9 +68,12 @@ class VerificationService:
     def _compare(self, year: int, month: int, run_id: str) -> list:
         discrepancies = []
 
-        # Load Sincron timesheets for this month (all companies)
+        # Load Sincron timesheets for this month — deduplicated by CNP.
+        # Employees with multiple contracts across companies produce duplicate
+        # rows; we pick the base contract (is_base_contract) or first active one.
         sincron_rows = self._repo.query_all('''
-            SELECT se.mapped_jarvis_user_id, se.company_name,
+            SELECT DISTINCT ON (se.cnp, st.day, st.short_code)
+                   se.mapped_jarvis_user_id, se.company_name, se.cnp,
                    se.nume || ' ' || se.prenume AS employee_name,
                    st.day, st.short_code, st.value
             FROM sincron_timesheets st
@@ -80,6 +83,10 @@ class VerificationService:
             WHERE st.year = %s AND st.month = %s
               AND se.mapped_jarvis_user_id IS NOT NULL
               AND COALESCE(se.is_active, TRUE) = TRUE
+              AND se.cnp IS NOT NULL AND se.cnp != ''
+            ORDER BY se.cnp, st.day, st.short_code,
+                     se.is_base_contract DESC NULLS LAST,
+                     se.id
         ''', (year, month))
 
         # Group Sincron data by (user_id, day)
@@ -259,17 +266,20 @@ class VerificationService:
                     'severity': 'error' if delta > 8 else 'warning',
                 })
 
-        # ── Check 4: Employees in Sincron with no BioStar mapping ──
+        # ── Check 4: Employees in Sincron with no BioStar mapping (deduplicated by CNP) ──
         unmapped = self._repo.query_all('''
-            SELECT se.mapped_jarvis_user_id, se.company_name,
+            SELECT DISTINCT ON (se.cnp)
+                   se.mapped_jarvis_user_id, se.company_name,
                    se.nume || ' ' || se.prenume AS employee_name
             FROM sincron_employees se
             WHERE se.mapped_jarvis_user_id IS NOT NULL
               AND COALESCE(se.is_active, TRUE) = TRUE
+              AND se.cnp IS NOT NULL AND se.cnp != ''
               AND NOT EXISTS (
                   SELECT 1 FROM biostar_employees be
                   WHERE be.mapped_jarvis_user_id = se.mapped_jarvis_user_id
               )
+            ORDER BY se.cnp, se.is_base_contract DESC NULLS LAST, se.id
         ''', ())
         for row in unmapped:
             discrepancies.append({
