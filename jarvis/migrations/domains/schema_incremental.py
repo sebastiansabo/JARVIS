@@ -1784,4 +1784,44 @@ def _create_schema_incremental_continued(conn, cursor):
         AND NOT EXISTS (SELECT 1 FROM approval_steps s WHERE s.flow_id = f.id)
     ''')
 
+    # ── Verification tables — cross-source data consistency checks ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS verification_runs (
+            id SERIAL PRIMARY KEY,
+            run_id VARCHAR(36) NOT NULL UNIQUE,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'running',
+            triggered_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            finished_at TIMESTAMP WITH TIME ZONE,
+            summary JSONB DEFAULT '{}'
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_verification_runs_ym ON verification_runs(year, month)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS verification_discrepancies (
+            id SERIAL PRIMARY KEY,
+            run_id VARCHAR(36) NOT NULL,
+            jarvis_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            company_name VARCHAR(255),
+            employee_name VARCHAR(255),
+            discrepancy_type VARCHAR(50) NOT NULL,
+            day DATE,
+            sincron_value JSONB,
+            biostar_value JSONB,
+            jarvis_value JSONB,
+            severity VARCHAR(10) NOT NULL DEFAULT 'warning',
+            is_resolved BOOLEAN NOT NULL DEFAULT FALSE,
+            resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            resolved_at TIMESTAMP WITH TIME ZONE,
+            notes TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_verif_disc_run ON verification_discrepancies(run_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_verif_disc_user ON verification_discrepancies(jarvis_user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_verif_disc_resolved ON verification_discrepancies(is_resolved)')
+
     conn.commit()

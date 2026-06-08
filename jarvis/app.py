@@ -149,6 +149,9 @@ def _register_blueprints(flask_app: Flask):
     from core.connectors.connecteam import connecteam_bp
     flask_app.register_blueprint(connecteam_bp)
 
+    from core.connectors.verification import verification_bp
+    flask_app.register_blueprint(verification_bp)
+
     from core.identity import identity_bp
     flask_app.register_blueprint(identity_bp)
 

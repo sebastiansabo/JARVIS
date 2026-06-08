@@ -542,6 +542,26 @@ def get_last_sync_run():
     return jsonify({'success': True, 'data': dict(run) if run else None})
 
 
+@sincron_bp.route('/api/sync/status-per-company', methods=['GET'])
+@api_login_required
+def get_sync_status_per_company():
+    """Get the last sync run per company for a given year/month (HR-accessible)."""
+    if not getattr(current_user, 'can_access_hr', False) and not getattr(current_user, 'can_access_settings', False):
+        return jsonify({'success': False, 'error': 'HR access required'}), 403
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+    if not year or not month:
+        from datetime import datetime
+        now = datetime.now()
+        year = year or now.year
+        month = month or now.month
+    year, month, err = _validate_year_month(year, month)
+    if err:
+        return err
+    runs = service.sync_repo.get_last_run_per_company(year, month)
+    return jsonify({'success': True, 'data': [dict(r) for r in runs]})
+
+
 # ── Org Nodes (hierarchical organigram) ──
 
 from .repositories.sincron_org_node_repository import SincronOrgNodeRepository

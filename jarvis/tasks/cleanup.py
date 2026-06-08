@@ -21,6 +21,7 @@ from tasks.marketing import sync_marketing_kpis
 from tasks.field_sales import field_sales_follow_up_reminders, field_sales_overdue_visit_alerts
 from tasks.biostar import sync_biostar_events, sync_biostar_users, auto_adjust_biostar_schedules
 from tasks.sincron import sync_sincron_timesheets
+from tasks.verification import run_end_of_month_verification
 from tasks.hr_attendance import check_missing_punches, send_pontaje_digest, send_monthly_pontaje_summary, send_hr_weekly_digest
 from tasks.hr_courses import check_course_cert_expiry
 from tasks.carpark import cleanup_vin_cache
@@ -384,6 +385,19 @@ def start_scheduler():
         id='telemetry_cleanup_old_data',
         replace_existing=True,
         misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    # End-of-month verification — runs at 20:30 on the last day of each month
+    scheduler.add_job(
+        run_end_of_month_verification,
+        'cron',
+        day='last',
+        hour=20,
+        minute=30,
+        id='end_of_month_verification',
+        replace_existing=True,
+        misfire_grace_time=3600,
         coalesce=True,
     )
 
