@@ -55,6 +55,17 @@ class SincronSyncRepository(BaseRepository):
             ORDER BY started_at DESC LIMIT 1
         ''', (year, month))
 
+    def get_last_run_per_company(self, year, month):
+        """Get the most recent sync run per company for a given year/month."""
+        return self.query_all('''
+            SELECT DISTINCT ON (company_name)
+                company_name, status, employees_synced, records_created,
+                error_message, started_at, finished_at
+            FROM sincron_sync_runs
+            WHERE year = %s AND month = %s AND company_name IS NOT NULL
+            ORDER BY company_name, started_at DESC
+        ''', (year, month))
+
     def get_last_successful_run(self, sync_type=None, company_name=None):
         """Get the most recent successful run."""
         query = "SELECT * FROM sincron_sync_runs WHERE status = 'completed'"
