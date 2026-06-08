@@ -37,12 +37,14 @@ def get_status():
 # ── Excel Import (admin) ──
 
 @connecteam_bp.route('/api/import-excel', methods=['POST'])
-@admin_required
+@api_login_required
 def import_excel():
     """Import Connecteam form submissions from Excel export.
 
     Expects multipart/form-data with 'file' field containing .xlsx file.
     """
+    if not getattr(current_user, 'can_access_hr', False) and not getattr(current_user, 'can_access_settings', False):
+        return jsonify({'success': False, 'error': 'HR access required'}), 403
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file uploaded'}), 400
 
