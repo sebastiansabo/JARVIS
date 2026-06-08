@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, Info, Play, RefreshCw, ShieldCheck, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Info, Play, RefreshCw, ShieldCheck, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -271,7 +271,7 @@ export default function VerificationTab() {
         </div>
       )}
 
-      {/* Main table */}
+      {/* Main table — grouped by employee */}
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
@@ -290,64 +290,10 @@ export default function VerificationTab() {
           <p className="text-sm">No discrepancies{typeFilter !== 'all' ? ' for this filter' : ''}.</p>
         </div>
       ) : (
-        <div className="rounded-md border overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-40">Employee</TableHead>
-                <TableHead className="w-36">Company</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead className="w-24">Day</TableHead>
-                <TableHead>Sincron</TableHead>
-                <TableHead>BioStar</TableHead>
-                <TableHead className="w-20">Severity</TableHead>
-                <TableHead className="w-20">Status</TableHead>
-                <TableHead className="w-20" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {displayed.map((d) => (
-                <TableRow key={d.id} className={cn(d.is_resolved && 'opacity-50')}>
-                  <TableCell className="font-medium text-sm">{d.employee_name ?? '—'}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {d.company_name?.replace('AUTOWORLD ', 'AW ') ?? '—'}
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-xs" title={TYPE_DESC[d.discrepancy_type]}>
-                      {TYPE_LABELS[d.discrepancy_type] ?? d.discrepancy_type}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-xs">{d.day ?? '—'}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    <DiscrepancyValue val={d.sincron_value} type={d.discrepancy_type} side="sincron" />
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    <DiscrepancyValue val={d.biostar_value} type={d.discrepancy_type} side="biostar" />
-                  </TableCell>
-                  <TableCell><SeverityBadge discrepancy={d} /></TableCell>
-                  <TableCell>
-                    {d.is_resolved
-                      ? <Badge variant="secondary" className="text-green-600 gap-1"><CheckCircle2 className="h-3 w-3" />Fixed</Badge>
-                      : <Badge variant="outline" className="text-muted-foreground">Open</Badge>
-                    }
-                  </TableCell>
-                  <TableCell>
-                    {!d.is_resolved && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => { setResolveTarget(d); setResolveNotes('') }}
-                      >
-                        Resolve
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <GroupedTable
+          discrepancies={displayed}
+          onResolve={(d) => { setResolveTarget(d); setResolveNotes('') }}
+        />
       )}
 
       {/* Resolve dialog */}
@@ -382,6 +328,154 @@ export default function VerificationTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function GroupedTable({
+  discrepancies,
+  onResolve,
+}: {
+  discrepancies: VerificationDiscrepancy[]
+  onResolve: (d: VerificationDiscrepancy) => void
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  // Group by employee key (user_id + name)
+  const groups = useMemo(() => {
+    const map = new Map<string, { key: string; name: string; company: string; items: VerificationDiscrepancy[] }>()
+    for (const d of discrepancies) {
+      const key = `${d.jarvis_user_id ?? d.employee_name}`
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          name: d.employee_name ?? '—',
+          company: d.company_name?.replace('AUTOWORLD ', 'AW ') ?? '—',
+          items: [],
+        })
+      }
+      map.get(key)!.items.push(d)
+    }
+    // Sort by worst severity then name
+    return Array.from(map.values()).sort((a, b) => {
+      const sev = (items: VerificationDiscrepancy[]) =>
+        items.some(i => i.severity === 'error') ? 0 : items.some(i => i.severity === 'warning') ? 1 : 2
+      return sev(a.items) - sev(b.items) || a.name.localeCompare(b.name)
+    })
+  }, [discrepancies])
+
+  const toggle = (key: string) =>
+    setExpanded(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+
+  return (
+    <div className="rounded-md border overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-8" />
+            <TableHead>Employee</TableHead>
+            <TableHead className="w-36">Company</TableHead>
+            <TableHead className="w-24">Issues</TableHead>
+            <TableHead>Types</TableHead>
+            <TableHead className="w-24">Worst</TableHead>
+            <TableHead className="w-20">Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {groups.map(({ key, name, company, items }) => {
+            const isOpen = expanded.has(key)
+            const worstSeverity = items.some(i => i.severity === 'error') ? 'error'
+              : items.some(i => i.severity === 'warning') ? 'warning' : 'info'
+            const openCount = items.filter(i => !i.is_resolved).length
+            const typeCounts = items.reduce<Record<string, number>>((acc, i) => {
+              acc[i.discrepancy_type] = (acc[i.discrepancy_type] ?? 0) + 1
+              return acc
+            }, {})
+
+            return [
+              // ── Employee summary row ──
+              <TableRow
+                key={key}
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => toggle(key)}
+              >
+                <TableCell className="text-muted-foreground">
+                  {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                </TableCell>
+                <TableCell className="font-medium">{name}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{company}</TableCell>
+                <TableCell>
+                  <span className={cn(
+                    'text-sm font-semibold',
+                    worstSeverity === 'error' ? 'text-red-600' : 'text-yellow-600',
+                  )}>
+                    {openCount}
+                  </span>
+                  {openCount !== items.length && (
+                    <span className="text-xs text-muted-foreground ml-1">/{items.length}</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(typeCounts).map(([type, count]) => (
+                      <span key={type} className="text-xs text-muted-foreground">
+                        {TYPE_LABELS[type] ?? type}{count > 1 ? ` ×${count}` : ''}
+                      </span>
+                    ))}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  {worstSeverity === 'error'
+                    ? <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" />Error</Badge>
+                    : worstSeverity === 'warning'
+                    ? <Badge variant="outline" className="gap-1 text-yellow-600 border-yellow-400"><AlertTriangle className="h-3 w-3" />Warning</Badge>
+                    : <Badge variant="secondary" className="gap-1"><Info className="h-3 w-3" />Info</Badge>
+                  }
+                </TableCell>
+                <TableCell>
+                  {openCount === 0
+                    ? <Badge variant="secondary" className="text-green-600 gap-1"><CheckCircle2 className="h-3 w-3" />All fixed</Badge>
+                    : <Badge variant="outline" className="text-muted-foreground">{openCount} open</Badge>
+                  }
+                </TableCell>
+              </TableRow>,
+
+              // ── Detail rows (expanded) ──
+              ...(isOpen ? items.map(d => (
+                <TableRow key={d.id} className={cn('bg-muted/30', d.is_resolved && 'opacity-50')}>
+                  <TableCell />
+                  <TableCell className="text-xs text-muted-foreground pl-6">{d.day ?? '—'}</TableCell>
+                  <TableCell />
+                  <TableCell colSpan={2}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs" title={TYPE_DESC[d.discrepancy_type]}>
+                        {TYPE_LABELS[d.discrepancy_type] ?? d.discrepancy_type}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        <DiscrepancyValue val={d.sincron_value} type={d.discrepancy_type} side="sincron" />
+                        {' → '}
+                        <DiscrepancyValue val={d.biostar_value} type={d.discrepancy_type} side="biostar" />
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell><SeverityBadge discrepancy={d} /></TableCell>
+                  <TableCell>
+                    {d.is_resolved
+                      ? <Badge variant="secondary" className="text-green-600 gap-1 text-xs"><CheckCircle2 className="h-3 w-3" />Fixed</Badge>
+                      : (
+                        <Button variant="ghost" size="sm" className="h-6 text-xs px-2"
+                          onClick={(e) => { e.stopPropagation(); onResolve(d) }}>
+                          Resolve
+                        </Button>
+                      )
+                    }
+                  </TableCell>
+                </TableRow>
+              )) : []),
+            ]
+          })}
+        </TableBody>
+      </Table>
     </div>
   )
 }
