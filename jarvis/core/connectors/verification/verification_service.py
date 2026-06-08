@@ -105,52 +105,34 @@ class VerificationService:
         if not sincron_by_user:
             return []
 
-        # Load BioStar adjusted summary for this month
+        # Load BioStar raw punch logs for this month (first/last punch per employee per day)
         first_day = date(year, month, 1)
         last_day = date(year, month, monthrange(year, month)[1])
 
-        biostar_rows = self._repo.query_all('''
+        raw_punch_rows = self._repo.query_all('''
             SELECT
                 be.mapped_jarvis_user_id,
-                bda.date,
-                bda.adjusted_duration_seconds,
-                bda.adjusted_first_punch,
-                bda.adjusted_last_punch
-            FROM biostar_daily_adjustments bda
-            JOIN biostar_employees be ON be.biostar_user_id = bda.biostar_user_id
-            WHERE bda.date BETWEEN %s AND %s
-              AND be.mapped_jarvis_user_id IS NOT NULL
-        ''', (first_day, last_day))
-
-        biostar_by_user: dict[int, dict[date, dict]] = {}
-        biostar_hours_by_user: dict[int, float] = {}
-        for row in biostar_rows:
-            uid = row['mapped_jarvis_user_id']
-            day = row['date'] if isinstance(row['date'], date) else date.fromisoformat(str(row['date']))
-            biostar_by_user.setdefault(uid, {})[day] = dict(row)
-            if row['adjusted_duration_seconds']:
-                biostar_hours_by_user[uid] = (
-                    biostar_hours_by_user.get(uid, 0.0)
-                    + row['adjusted_duration_seconds'] / 3600.0
-                )
-
-        # Also load raw punch log presence as fallback — employees without adjustments
-        # still have raw punches; we shouldn't flag them as "no punch"
-        raw_punch_rows = self._repo.query_all('''
-            SELECT DISTINCT be.mapped_jarvis_user_id, pl.event_datetime::date AS day
+                pl.event_datetime::date AS day,
+                MIN(pl.event_datetime) AS first_punch,
+                MAX(pl.event_datetime) AS last_punch,
+                COUNT(*) AS punch_count,
+                EXTRACT(EPOCH FROM (MAX(pl.event_datetime) - MIN(pl.event_datetime))) AS duration_seconds
             FROM biostar_punch_logs pl
             JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
             WHERE pl.event_datetime::date BETWEEN %s AND %s
               AND be.mapped_jarvis_user_id IS NOT NULL
+            GROUP BY be.mapped_jarvis_user_id, pl.event_datetime::date
         ''', (first_day, last_day))
 
-        raw_punch_days: dict[int, set[date]] = {}
+        # biostar_by_user[uid][day] = {duration_seconds, first_punch, last_punch}
+        biostar_by_user: dict[int, dict[date, dict]] = {}
+        biostar_hours_by_user: dict[int, float] = {}
         for row in raw_punch_rows:
             uid = row['mapped_jarvis_user_id']
             day = row['day'] if isinstance(row['day'], date) else date.fromisoformat(str(row['day']))
-            raw_punch_days.setdefault(uid, set()).add(day)
-            # Also accumulate raw hours for biostar_hours if no adjustment exists
-            biostar_by_user.setdefault(uid, {}).setdefault(day, {})
+            biostar_by_user.setdefault(uid, {})[day] = dict(row)
+            dur = row['duration_seconds'] or 0
+            biostar_hours_by_user[uid] = biostar_hours_by_user.get(uid, 0.0) + dur / 3600.0
 
         # Load JARVIS hr.events (approved leaves) for this month
         jarvis_leaves: dict[int, list[dict]] = {}
@@ -175,7 +157,7 @@ class VerificationService:
                 if not is_leave:
                     continue
                 biostar_day = biostar_by_user.get(uid, {}).get(day)
-                if biostar_day and biostar_day.get('adjusted_duration_seconds', 0) > 1800:
+                if biostar_day and (biostar_day.get('duration_seconds') or 0) > 1800:
                     discrepancies.append({
                         'run_id': run_id,
                         'jarvis_user_id': uid,
@@ -185,9 +167,9 @@ class VerificationService:
                         'day': day,
                         'sincron_value': {'codes': codes},
                         'biostar_value': {
-                            'duration_seconds': biostar_day['adjusted_duration_seconds'],
-                            'first_punch': str(biostar_day.get('adjusted_first_punch', '')),
-                            'last_punch': str(biostar_day.get('adjusted_last_punch', '')),
+                            'duration_seconds': biostar_day['duration_seconds'],
+                            'first_punch': str(biostar_day.get('first_punch', '')),
+                            'last_punch': str(biostar_day.get('last_punch', '')),
                         },
                         'jarvis_value': None,
                         'severity': 'warning',
@@ -204,11 +186,8 @@ class VerificationService:
                 # Skip weekends
                 if day.weekday() >= 5:
                     continue
-                # Has punch if: adjustment record with duration, OR any raw punch log entry
                 biostar_day = biostar_by_user.get(uid, {}).get(day)
-                has_adjustment = biostar_day and biostar_day.get('adjusted_duration_seconds')
-                has_raw_punch = day in raw_punch_days.get(uid, set())
-                if not has_adjustment and not has_raw_punch:
+                if not biostar_day:
                     discrepancies.append({
                         'run_id': run_id,
                         'jarvis_user_id': uid,
