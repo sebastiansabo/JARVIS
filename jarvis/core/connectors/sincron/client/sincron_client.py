@@ -85,12 +85,21 @@ class SincronClient:
         """Fetch all pages of timesheet data for a given month/year.
 
         Returns combined list of all employee records.
+        Retries each page up to 3 times on transient errors.
         """
         all_data = []
         page = 1
 
         while True:
-            result = self.get_timesheet(month, year, page=page)
+            for attempt in range(MAX_RETRIES):
+                try:
+                    result = self.get_timesheet(month, year, page=page)
+                    break
+                except APIError:
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(RETRY_BASE_DELAY * (attempt + 1))
+                    else:
+                        raise
             data = result.get('data', [])
             all_data.extend(data)
 
