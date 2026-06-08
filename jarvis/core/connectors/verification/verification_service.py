@@ -134,20 +134,53 @@ class VerificationService:
             dur = row['duration_seconds'] or 0
             biostar_hours_by_user[uid] = biostar_hours_by_user.get(uid, 0.0) + dur / 3600.0
 
-        # Load JARVIS hr.events (approved leaves) for this month
-        jarvis_leaves: dict[int, list[dict]] = {}
+        # Load JARVIS hr_events (all statuses) for this month — per user, per day
+        # jarvis_events_by_user[uid][day] = list of {event_type, status, start_date, end_date}
+        jarvis_events_by_user: dict[int, dict[date, list[dict]]] = {}
         try:
             leave_rows = self._repo.query_all('''
-                SELECT e.user_id, e.start_date, e.end_date, e.event_type
+                SELECT e.user_id, e.start_date, e.end_date,
+                       e.event_type, e.status
                 FROM hr_events e
                 WHERE e.start_date <= %s AND e.end_date >= %s
-                  AND e.status = 'approved'
-                  AND e.event_type IN ('co', 'cm', 'ces', 'cic')
             ''', (last_day, first_day))
             for row in leave_rows:
-                jarvis_leaves.setdefault(row['user_id'], []).append(dict(row))
+                uid = row['user_id']
+                s = row['start_date'] if isinstance(row['start_date'], date) else date.fromisoformat(str(row['start_date']))
+                e = row['end_date'] if isinstance(row['end_date'], date) else date.fromisoformat(str(row['end_date']))
+                entry = {
+                    'event_type': row['event_type'],
+                    'status': row['status'],
+                    'start_date': str(s),
+                    'end_date': str(e),
+                }
+                d = s
+                while d <= e:
+                    if first_day <= d <= last_day:
+                        jarvis_events_by_user.setdefault(uid, {}).setdefault(d, []).append(entry)
+                    d = date.fromordinal(d.toordinal() + 1)
         except Exception:
-            pass  # hr_events may have different schema — skip JARVIS leave comparison
+            pass  # hr_events may not exist in all envs
+
+        def _jarvis_day(uid: int, day: date) -> dict:
+            """Return JARVIS events for a user on a given day, or {'events': []}."""
+            events = jarvis_events_by_user.get(uid, {}).get(day, [])
+            return {'events': events}
+
+        def _jarvis_month(uid: int) -> dict:
+            """Return JARVIS event summary for the whole month."""
+            all_events = []
+            for day_events in jarvis_events_by_user.get(uid, {}).values():
+                all_events.extend(day_events)
+            # Deduplicate by (event_type, status, start_date)
+            seen = set()
+            unique = []
+            for ev in all_events:
+                key = (ev['event_type'], ev['status'], ev['start_date'])
+                if key not in seen:
+                    seen.add(key)
+                    unique.append(ev)
+            return {'events': unique}
 
         # ── Check 1: Sincron leave day but employee punched in BioStar ──
         for uid, day_codes in sincron_by_user.items():
@@ -171,7 +204,7 @@ class VerificationService:
                             'first_punch': str(biostar_day.get('first_punch', '')),
                             'last_punch': str(biostar_day.get('last_punch', '')),
                         },
-                        'jarvis_value': None,
+                        'jarvis_value': _jarvis_day(uid, day),
                         'severity': 'warning',
                     })
 
@@ -197,7 +230,7 @@ class VerificationService:
                         'day': day,
                         'sincron_value': {'codes': codes},
                         'biostar_value': None,
-                        'jarvis_value': None,
+                        'jarvis_value': _jarvis_day(uid, day),
                         'severity': 'warning',
                     })
 
@@ -211,6 +244,8 @@ class VerificationService:
             delta = abs(sincron_h - biostar_h)
             if delta > HOURS_MISMATCH_THRESHOLD:
                 name, company = employee_meta.get(uid, ('Unknown', ''))
+                jv = _jarvis_month(uid)
+                jv['delta'] = round(delta, 2)
                 discrepancies.append({
                     'run_id': run_id,
                     'jarvis_user_id': uid,
@@ -220,7 +255,7 @@ class VerificationService:
                     'day': None,
                     'sincron_value': {'hours': round(sincron_h, 2)},
                     'biostar_value': {'hours': round(biostar_h, 2)},
-                    'jarvis_value': {'delta': round(delta, 2)},
+                    'jarvis_value': jv,
                     'severity': 'error' if delta > 8 else 'warning',
                 })
 

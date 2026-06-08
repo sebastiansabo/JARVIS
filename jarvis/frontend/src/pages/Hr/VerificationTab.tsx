@@ -379,6 +379,7 @@ function GroupedTable({
             <TableHead>Types</TableHead>
             <TableHead className="w-24">Worst</TableHead>
             <TableHead className="w-20">Status</TableHead>
+            <TableHead className="w-4" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -440,38 +441,50 @@ function GroupedTable({
                 </TableCell>
               </TableRow>,
 
-              // ── Detail rows (expanded) ──
-              ...(isOpen ? items.map(d => (
-                <TableRow key={d.id} className={cn('bg-muted/30', d.is_resolved && 'opacity-50')}>
+              // ── Detail rows (expanded) — one row per discrepancy ──
+              ...(isOpen ? [
+                // Sub-header
+                <TableRow key={`${key}-subhdr`} className="bg-muted/20 border-t">
                   <TableCell />
-                  <TableCell className="text-xs text-muted-foreground pl-6">{d.day ?? '—'}</TableCell>
+                  <TableCell className="text-xs font-medium text-muted-foreground py-1 pl-6">Day</TableCell>
+                  <TableCell className="text-xs font-medium text-muted-foreground py-1">Type</TableCell>
+                  <TableCell className="text-xs font-medium text-muted-foreground py-1">Sincron</TableCell>
+                  <TableCell className="text-xs font-medium text-muted-foreground py-1">BioStar</TableCell>
+                  <TableCell className="text-xs font-medium text-muted-foreground py-1">JARVIS DB</TableCell>
+                  <TableCell className="text-xs font-medium text-muted-foreground py-1">Issue</TableCell>
                   <TableCell />
-                  <TableCell colSpan={2}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs" title={TYPE_DESC[d.discrepancy_type]}>
-                        {TYPE_LABELS[d.discrepancy_type] ?? d.discrepancy_type}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        <DiscrepancyValue val={d.sincron_value} type={d.discrepancy_type} side="sincron" />
-                        {' → '}
-                        <DiscrepancyValue val={d.biostar_value} type={d.discrepancy_type} side="biostar" />
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell><SeverityBadge discrepancy={d} /></TableCell>
-                  <TableCell>
-                    {d.is_resolved
-                      ? <Badge variant="secondary" className="text-green-600 gap-1 text-xs"><CheckCircle2 className="h-3 w-3" />Fixed</Badge>
-                      : (
-                        <Button variant="ghost" size="sm" className="h-6 text-xs px-2"
-                          onClick={(e) => { e.stopPropagation(); onResolve(d) }}>
-                          Resolve
-                        </Button>
-                      )
-                    }
-                  </TableCell>
-                </TableRow>
-              )) : []),
+                </TableRow>,
+                ...items.map(d => (
+                  <TableRow key={d.id} className={cn('bg-muted/10', d.is_resolved && 'opacity-50')}>
+                    <TableCell />
+                    <TableCell className="text-xs text-muted-foreground pl-6">{d.day ?? '—'}</TableCell>
+                    <TableCell className="text-xs" title={TYPE_DESC[d.discrepancy_type]}>
+                      {TYPE_LABELS[d.discrepancy_type] ?? d.discrepancy_type}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      <DiscrepancyValue val={d.sincron_value} type={d.discrepancy_type} side="sincron" />
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      <DiscrepancyValue val={d.biostar_value} type={d.discrepancy_type} side="biostar" />
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      <JarvisValue val={d.jarvis_value} type={d.discrepancy_type} />
+                    </TableCell>
+                    <TableCell><SeverityBadge discrepancy={d} /></TableCell>
+                    <TableCell>
+                      {d.is_resolved
+                        ? <Badge variant="secondary" className="text-green-600 gap-1 text-xs"><CheckCircle2 className="h-3 w-3" />Fixed</Badge>
+                        : (
+                          <Button variant="ghost" size="sm" className="h-6 text-xs px-2"
+                            onClick={(e) => { e.stopPropagation(); onResolve(d) }}>
+                            Resolve
+                          </Button>
+                        )
+                      }
+                    </TableCell>
+                  </TableRow>
+                )),
+              ] : []),
             ]
           })}
         </TableBody>
@@ -507,4 +520,45 @@ function DiscrepancyValue({
   }
 
   return <span>—</span>
+}
+
+function JarvisValue({ val, type }: { val: Record<string, unknown> | null; type: string }) {
+  if (!val) return <span>—</span>
+
+  const events = (val.events as Array<{ event_type: string; status: string; start_date?: string; end_date?: string }>) ?? []
+
+  if (type === 'no_biostar_mapping') return <span>—</span>
+
+  if (type === 'hours_mismatch') {
+    if (!events.length) return <span className="text-muted-foreground">No leaves</span>
+    return (
+      <div className="flex flex-col gap-0.5">
+        {events.map((ev, i) => (
+          <span key={i} className="whitespace-nowrap">
+            {ev.event_type} <span className={cn(
+              'font-medium',
+              ev.status === 'approved' ? 'text-green-600' : ev.status === 'rejected' ? 'text-red-500' : 'text-yellow-600',
+            )}>{ev.status}</span>
+            {ev.start_date && ev.end_date && <span className="text-muted-foreground ml-1">({ev.start_date} → {ev.end_date})</span>}
+          </span>
+        ))}
+      </div>
+    )
+  }
+
+  // leave_but_punched / work_day_no_punch — day-level events
+  if (!events.length) return <span className="text-muted-foreground italic">None</span>
+  return (
+    <div className="flex flex-col gap-0.5">
+      {events.map((ev, i) => (
+        <span key={i} className="whitespace-nowrap">
+          {ev.event_type}{' '}
+          <span className={cn(
+            'font-medium',
+            ev.status === 'approved' ? 'text-green-600' : ev.status === 'rejected' ? 'text-red-500' : 'text-yellow-600',
+          )}>{ev.status}</span>
+        </span>
+      ))}
+    </div>
+  )
 }
