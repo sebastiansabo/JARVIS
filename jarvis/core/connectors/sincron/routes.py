@@ -86,9 +86,11 @@ def get_status():
 # ── Timesheet Sync (admin only) ──
 
 @sincron_bp.route('/api/sync/timesheets', methods=['POST'])
-@admin_required
+@api_login_required
 def sync_timesheets():
     """Trigger timesheet sync (runs in background)."""
+    if not getattr(current_user, 'can_access_hr', False) and not getattr(current_user, 'can_access_settings', False):
+        return jsonify({'success': False, 'error': 'HR access required'}), 403
     data = request.get_json(silent=True) or {}
     year = data.get('year')
     month = data.get('month')
