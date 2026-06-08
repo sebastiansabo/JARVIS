@@ -33,10 +33,30 @@ const TYPE_DESC: Record<string, string> = {
   no_biostar_mapping: 'Employee is in Sincron but has no BioStar mapping',
 }
 
-function SeverityBadge({ severity }: { severity: string }) {
-  if (severity === 'error') return <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" />Error</Badge>
-  if (severity === 'warning') return <Badge variant="outline" className="gap-1 text-yellow-600 border-yellow-400"><AlertTriangle className="h-3 w-3" />Warning</Badge>
-  return <Badge variant="secondary" className="gap-1"><Info className="h-3 w-3" />Info</Badge>
+function SeverityBadge({ discrepancy }: { discrepancy: VerificationDiscrepancy }) {
+  const { severity, discrepancy_type, sincron_value, biostar_value, jarvis_value } = discrepancy
+
+  let label = ''
+  if (discrepancy_type === 'hours_mismatch') {
+    const delta = (jarvis_value as Record<string, number> | null)?.delta
+    const sincronH = (sincron_value as Record<string, number> | null)?.hours ?? 0
+    const biostarH = (biostar_value as Record<string, number> | null)?.hours ?? 0
+    const dir = sincronH > biostarH ? 'Sincron +' : 'BioStar +'
+    label = delta != null ? `${dir}${delta}h` : 'Hours diff'
+  } else if (discrepancy_type === 'work_day_no_punch') {
+    label = 'No punch'
+  } else if (discrepancy_type === 'leave_but_punched') {
+    const dur = (biostar_value as Record<string, number> | null)?.duration_seconds
+    label = dur ? `Punched ${Math.round(dur / 3600 * 10) / 10}h` : 'Punched on leave'
+  } else if (discrepancy_type === 'no_biostar_mapping') {
+    label = 'Not linked'
+  } else {
+    label = severity
+  }
+
+  if (severity === 'error') return <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" />{label}</Badge>
+  if (severity === 'warning') return <Badge variant="outline" className="gap-1 text-yellow-600 border-yellow-400"><AlertTriangle className="h-3 w-3" />{label}</Badge>
+  return <Badge variant="secondary" className="gap-1"><Info className="h-3 w-3" />{label}</Badge>
 }
 
 function SyncStatusPanel({ year, month }: { year: number; month: number }) {
@@ -304,7 +324,7 @@ export default function VerificationTab() {
                   <TableCell className="text-xs text-muted-foreground">
                     <DiscrepancyValue val={d.biostar_value} type={d.discrepancy_type} side="biostar" />
                   </TableCell>
-                  <TableCell><SeverityBadge severity={d.severity} /></TableCell>
+                  <TableCell><SeverityBadge discrepancy={d} /></TableCell>
                   <TableCell>
                     {d.is_resolved
                       ? <Badge variant="secondary" className="text-green-600 gap-1"><CheckCircle2 className="h-3 w-3" />Fixed</Badge>
