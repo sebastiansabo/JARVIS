@@ -71,7 +71,7 @@ class ProformaService:
     def generate(self, supplier: dict, customer: dict, start_no: int,
                  invoice_date: str, intocmit_de: str,
                  anexa_bytes: bytes, sheet_name: str = "Sheet1",
-                 collapse: bool = False) -> ProformaResult:
+                 collapse: bool = False, note: str = "") -> ProformaResult:
         """Load Anexa → generate proforma PDF bytes."""
         try:
             lines = load_anexa(anexa_bytes, sheet_name=sheet_name)
@@ -84,6 +84,7 @@ class ProformaService:
                 customer=customer,
                 invoice_date=invoice_date,
                 intocmit_de=intocmit_de,
+                note=note,
             )
 
             if collapse:

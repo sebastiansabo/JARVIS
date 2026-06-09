@@ -355,6 +355,7 @@ def api_proforma_generate():
         anexa_bytes=anexa_file.read(),
         sheet_name=cfg.get("sheet", "Sheet1"),
         collapse=bool(cfg.get("collapse", False)),
+        note=cfg.get("note", ""),
     )
     if not result.success:
         return error_response(result.error, 400)

@@ -594,6 +594,8 @@ function ProformaTab({ companies }: { companies: Company[] }) {
   const [customerAddress, setCustomerAddress] = useState('')
   const [customerVat, setCustomerVat] = useState('')
 
+  const [note, setNote] = useState('')
+
   const preset = SUPPLIER_PRESETS[PRO_DEFAULTS.supplier]
   const [supplierName, setSupplierName] = useState(PRO_DEFAULTS.supplier)
   const [supplierAddress, setSupplierAddress] = useState(preset?.address_lines.join('\n') || '')
@@ -609,11 +611,12 @@ function ProformaTab({ companies }: { companies: Company[] }) {
     invoice_date: invoiceDate,
     intocmit_de: intocmitDe,
     collapse,
+    note: note || undefined,
     sheet: 'Sheet1',
     fx: kurs ? { currency: 'EUR', kurs: parseFloat(kurs) || 0, kurs_date: kursDate || invoiceDate } : undefined,
     supplier: { name: supplierName, address_lines: supplierAddress.split('\n').filter(Boolean), reg_no: supplierRegNo, vat: supplierVat, iban: supplierIban, bank: supplierBank, swift: supplierSwift },
     customer: { name: customerName, address_lines: customerAddress.split('\n').filter(Boolean), vat: customerVat },
-  }), [jobId, startNo, invoiceDate, intocmitDe, kurs, kursDate, collapse, supplierName, supplierAddress, supplierVat, supplierRegNo, supplierIban, supplierBank, supplierSwift, customerName, customerAddress, customerVat])
+  }), [jobId, startNo, invoiceDate, intocmitDe, kurs, kursDate, collapse, note, supplierName, supplierAddress, supplierVat, supplierRegNo, supplierIban, supplierBank, supplierSwift, customerName, customerAddress, customerVat])
 
   const buildFormData = useCallback(() => {
     if (!anexaFile) throw new Error('No Anexa file selected')
@@ -712,6 +715,10 @@ function ProformaTab({ companies }: { companies: Company[] }) {
             <div className="flex items-center gap-3 pt-1">
               <Switch id="collapse-toggle" checked={collapse} onCheckedChange={setCollapse} />
               <Label htmlFor="collapse-toggle" className="text-sm cursor-pointer">Single invoice (collapse all positions)</Label>
+            </div>
+            <div>
+              <Label>Note (appears on PDF below product list)</Label>
+              <textarea className="flex min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" placeholder="Optional note..." value={note} onChange={e => setNote(e.target.value)} rows={2} />
             </div>
           </CardContent>
         </Card>
