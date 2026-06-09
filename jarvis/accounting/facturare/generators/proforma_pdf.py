@@ -62,12 +62,14 @@ class ProformaPdfRenderer:
 
     def __init__(self, supplier: dict, customer: dict, invoice_date: str,
                  intocmit_de: str = "Gabriela Oltean",
-                 description_prefix: str = "1. ADVANCE PAYMENT"):
+                 description_prefix: str = "1. ADVANCE PAYMENT",
+                 note: str = ""):
         self.supplier = supplier
         self.customer = customer
         self.invoice_date = invoice_date
         self.intocmit_de = intocmit_de
         self.description_prefix = description_prefix
+        self.note = note
         self.logo_path = DEFAULT_LOGO if DEFAULT_LOGO.exists() else None
 
     def render_one(self, c: canvas.Canvas, inv_no: int, line: OrderLine):
@@ -230,6 +232,14 @@ class ProformaPdfRenderer:
         y -= 4.7 * mm
         c.drawString(LM, y, "Livrare Ex Works")
 
+        # ── Note ──
+        if self.note:
+            y -= 8 * mm
+            c.setFont("Helvetica", 9)
+            for note_line in self.note.split("\n"):
+                c.drawString(LM, y, note_line)
+                y -= 4.5 * mm
+
         # ── Total ──
         y -= 12 * mm
         c.line(LM, y + 6 * mm, RM, y + 6 * mm)
@@ -387,6 +397,11 @@ class ProformaPdfRenderer:
                 c.drawString(LM, y, "Scutire conform art. 138 din Directiva 2006/112/CE")
                 y -= 4.5 * mm
                 c.drawString(LM, y, "Livrare Ex Works")
+                if self.note:
+                    y -= 6 * mm
+                    for note_line in self.note.split("\n"):
+                        c.drawString(LM, y, note_line)
+                        y -= 4.5 * mm
                 y -= 10 * mm
                 c.drawString(LM, y, f"Intocmit de {self.intocmit_de}")
 
