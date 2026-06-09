@@ -216,6 +216,8 @@ class VerificationService:
                     })
 
         # ── Check 2: Sincron work day but no BioStar punches ──
+        # Only flag days up to today — future work days can't have punches yet
+        today = date.today()
         working_codes = {'OZ', 'OS'}
         for uid, day_codes in sincron_by_user.items():
             name, company = employee_meta.get(uid, ('Unknown', ''))
@@ -223,8 +225,10 @@ class VerificationService:
                 has_work = any(c in working_codes for c in codes)
                 if not has_work:
                     continue
-                # Skip weekends
+                # Skip weekends and future days
                 if day.weekday() >= 5:
+                    continue
+                if day >= today:
                     continue
                 biostar_day = biostar_by_user.get(uid, {}).get(day)
                 if not biostar_day:
