@@ -29,6 +29,12 @@ def create_schema_facturare(conn, cursor):
         )
     """)
 
+    # Add note column (idempotent)
+    cursor.execute("""
+        ALTER TABLE facturare_generations
+        ADD COLUMN IF NOT EXISTS note TEXT
+    """)
+
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_facturare_gen_type
         ON facturare_generations(gen_type)

@@ -378,6 +378,7 @@ def api_proforma_generate():
             intocmit_de=cfg.get("intocmit_de", "Gabriela Oltean"),
             pdf_data=result.proforma_pdf,
             generated_by=getattr(current_user, "id", None),
+            note=cfg.get("note") or None,
         )
         gen_id = record['id'] if record else None
     except Exception:

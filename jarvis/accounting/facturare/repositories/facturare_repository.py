@@ -8,17 +8,18 @@ class FacturareRepository(BaseRepository):
     def save_generation(self, gen_type, job_id, start_no, end_no, line_count,
                         total_amount, currency, invoice_date, supplier_name,
                         customer_name, customer_vat, intocmit_de,
-                        pdf_data=None, xlsx_data=None, generated_by=None):
+                        pdf_data=None, xlsx_data=None, generated_by=None,
+                        note=None):
         return self.execute(
             """INSERT INTO facturare_generations
                (gen_type, job_id, start_no, end_no, line_count, total_amount,
                 currency, invoice_date, supplier_name, customer_name,
-                customer_vat, intocmit_de, pdf_data, xlsx_data, generated_by)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                customer_vat, intocmit_de, pdf_data, xlsx_data, generated_by, note)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                RETURNING id""",
             (gen_type, job_id, start_no, end_no, line_count, total_amount,
              currency, invoice_date, supplier_name, customer_name,
-             customer_vat, intocmit_de, pdf_data, xlsx_data, generated_by),
+             customer_vat, intocmit_de, pdf_data, xlsx_data, generated_by, note),
             returning=True,
         )
 
