@@ -106,7 +106,8 @@ class VerificationService:
             sincron_by_user.setdefault(uid, {}).setdefault(day, []).append(code)
 
             # Accumulate work hours (OZ = ore zilnice, OS = ore suplimentare)
-            if code in ('OZ', 'OS') and row['value']:
+            # Only count days up to yesterday — future scheduled hours can't be compared
+            if code in ('OZ', 'OS') and row['value'] and day < date.today():
                 sincron_hours_by_user[uid] = sincron_hours_by_user.get(uid, 0.0) + float(row['value'])
 
         if not sincron_by_user:
@@ -294,7 +295,7 @@ class VerificationService:
                     'sincron_value': {'hours': round(sincron_h, 2)},
                     'biostar_value': {'hours': round(biostar_h, 2)},
                     'jarvis_value': jv,
-                    'severity': 'warning',
+                    'severity': 'info',
                 })
 
         # ── Check 4: Employees in Sincron with no BioStar mapping (deduplicated by CNP) ──
