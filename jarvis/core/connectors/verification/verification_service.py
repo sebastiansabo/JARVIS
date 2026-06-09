@@ -212,7 +212,7 @@ class VerificationService:
                             'last_punch': str(biostar_day.get('last_punch', '')),
                         },
                         'jarvis_value': _jarvis_day(uid, day),
-                        'severity': 'warning',
+                        'severity': 'error',
                     })
 
         # ── Check 2: Sincron work day but no BioStar punches ──
@@ -267,7 +267,7 @@ class VerificationService:
                     'sincron_value': {'hours': round(sincron_h, 2)},
                     'biostar_value': {'hours': round(biostar_h, 2)},
                     'jarvis_value': jv,
-                    'severity': 'error' if delta > 8 else 'warning',
+                    'severity': 'warning',
                 })
 
         # ── Check 4: Employees in Sincron with no BioStar mapping (deduplicated by CNP) ──
