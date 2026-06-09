@@ -112,11 +112,33 @@ class VerificationService:
         if not sincron_by_user:
             return []
 
-        # Load BioStar raw punch logs for this month (first/last punch per employee per day)
+        # Load BioStar raw punch logs for this month (first/last punch per employee per day).
+        # Exclude system-test events: if a user has 5+ distinct devices in the same
+        # second, it's a BioStar system test, not a real punch.
         first_day = date(year, month, 1)
         last_day = date(year, month, monthrange(year, month)[1])
 
         raw_punch_rows = self._repo.query_all('''
+            WITH per_5s AS (
+                -- Count distinct devices per user per 5-second bucket
+                SELECT pl.biostar_user_id,
+                       pl.event_datetime::date AS day,
+                       -- 5-second buckets: truncate to nearest 5s
+                       to_timestamp(FLOOR(EXTRACT(EPOCH FROM pl.event_datetime) / 5) * 5) AS bucket,
+                       COUNT(DISTINCT pl.device_name) AS dev_count
+                FROM biostar_punch_logs pl
+                JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
+                WHERE pl.event_datetime::date BETWEEN %s AND %s
+                  AND be.mapped_jarvis_user_id IS NOT NULL
+                GROUP BY pl.biostar_user_id, pl.event_datetime::date,
+                         to_timestamp(FLOOR(EXTRACT(EPOCH FROM pl.event_datetime) / 5) * 5)
+            ),
+            -- Days with system-test bursts (5+ distinct devices in 5 seconds)
+            burst_days AS (
+                SELECT DISTINCT biostar_user_id, day
+                FROM per_5s
+                WHERE dev_count >= 5
+            )
             SELECT
                 be.mapped_jarvis_user_id,
                 pl.event_datetime::date AS day,
@@ -128,8 +150,13 @@ class VerificationService:
             JOIN biostar_employees be ON be.biostar_user_id = pl.biostar_user_id
             WHERE pl.event_datetime::date BETWEEN %s AND %s
               AND be.mapped_jarvis_user_id IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM burst_days bd
+                  WHERE bd.biostar_user_id = pl.biostar_user_id
+                    AND bd.day = pl.event_datetime::date
+              )
             GROUP BY be.mapped_jarvis_user_id, pl.event_datetime::date
-        ''', (first_day, last_day))
+        ''', (first_day, last_day, first_day, last_day))
 
         # biostar_by_user[uid][day] = {duration_seconds, first_punch, last_punch}
         biostar_by_user: dict[int, dict[date, dict]] = {}
