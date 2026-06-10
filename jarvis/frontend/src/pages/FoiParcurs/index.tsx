@@ -786,6 +786,7 @@ function AllocateClientDialog({
 // ── Stock Tab (Vehicle CRUD) ──
 const STOCK_COLUMNS = [
   { key: 'vin', label: 'VIN', default: true },
+  { key: 'reg_number', label: 'Reg. No.', default: true },
   { key: 'mark', label: 'Mark', default: true },
   { key: 'model', label: 'Model', default: true },
   { key: 'fuel_type', label: 'Fuel Type', default: true },
@@ -806,6 +807,7 @@ function StockTab() {
   const [showColMenu, setShowColMenu] = useState(false)
   const [newVehicle, setNewVehicle] = useState({
     vin: '',
+    registration_number: '',
     mark: '',
     model: '',
     fuel_type: 'Diesel' as string,
@@ -830,6 +832,7 @@ function StockTab() {
     mutationFn: () =>
       foiParcursApi.createVehicle({
         vin: newVehicle.vin.toUpperCase().trim(),
+        registration_number: newVehicle.registration_number.trim() || undefined,
         mark: newVehicle.mark.trim(),
         model: newVehicle.model.trim(),
         fuel_type: newVehicle.fuel_type,
@@ -839,7 +842,7 @@ function StockTab() {
     onSuccess: () => {
       setError('')
       setShowAdd(false)
-      setNewVehicle({ vin: '', mark: '', model: '', fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, company_id: '' })
+      setNewVehicle({ vin: '', registration_number: '', mark: '', model: '', fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, company_id: '' })
       queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
     },
     onError: (err: any) => {
@@ -878,6 +881,7 @@ function StockTab() {
     setEditId(v.id)
     setEditData({
       vin: v.vin,
+      registration_number: v.registration_number || '',
       mark: v.mark,
       model: v.model,
       fuel_type: v.fuel_type || 'Diesel',
@@ -892,6 +896,7 @@ function StockTab() {
       id: editId,
       data: {
         vin: String(editData.vin).toUpperCase().trim(),
+        registration_number: String(editData.registration_number).trim() || null,
         mark: String(editData.mark).trim(),
         model: String(editData.model).trim(),
         fuel_type: String(editData.fuel_type),
@@ -960,6 +965,14 @@ function StockTab() {
                   onChange={(e) => setNewVehicle((p) => ({ ...p, vin: e.target.value.toUpperCase() }))}
                   placeholder="e.g., YV1TFEVB1SG004808"
                   required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Reg. No.</Label>
+                <Input
+                  value={newVehicle.registration_number}
+                  onChange={(e) => setNewVehicle((p) => ({ ...p, registration_number: e.target.value.toUpperCase() }))}
+                  placeholder="e.g., CJ-01-ABC"
                 />
               </div>
               <div className="space-y-1.5">
@@ -1041,6 +1054,7 @@ function StockTab() {
             <TableHeader>
               <TableRow>
                 {show('vin') && <TableHead>VIN</TableHead>}
+                {show('reg_number') && <TableHead>Reg. No.</TableHead>}
                 {show('mark') && <TableHead>Mark</TableHead>}
                 {show('model') && <TableHead>Model</TableHead>}
                 {show('fuel_type') && <TableHead>Fuel Type</TableHead>}
@@ -1059,6 +1073,16 @@ function StockTab() {
                           className="h-8 text-xs font-mono"
                           value={editData.vin}
                           onChange={(e) => setEditData((p) => ({ ...p, vin: e.target.value.toUpperCase() }))}
+                        />
+                      </TableCell>
+                    )}
+                    {show('reg_number') && (
+                      <TableCell>
+                        <Input
+                          className="h-8 text-xs"
+                          value={editData.registration_number}
+                          onChange={(e) => setEditData((p) => ({ ...p, registration_number: e.target.value.toUpperCase() }))}
+                          placeholder="CJ-01-ABC"
                         />
                       </TableCell>
                     )}
@@ -1121,6 +1145,7 @@ function StockTab() {
                 ) : (
                   <TableRow key={v.id}>
                     {show('vin') && <TableCell className="font-mono text-xs">{v.vin}</TableCell>}
+                    {show('reg_number') && <TableCell className="text-sm">{v.registration_number || '—'}</TableCell>}
                     {show('mark') && <TableCell>{v.mark}</TableCell>}
                     {show('model') && <TableCell>{v.model}</TableCell>}
                     {show('fuel_type') && (
