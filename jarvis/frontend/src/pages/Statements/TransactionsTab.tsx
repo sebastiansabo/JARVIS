@@ -606,7 +606,20 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
       ) : (
         <Card>
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="min-w-[1400px]" style={{ tableLayout: 'fixed' }}>
+              <colgroup>
+                <col className="w-[40px]" />
+                <col className="w-[95px]" />
+                <col className="w-[130px]" />
+                <col className="w-[90px]" />
+                <col className="w-[90px]" />
+                <col className="w-[300px]" />
+                <col className="w-[115px]" />
+                <col className="w-[85px]" />
+                <col className="w-[65px]" />
+                <col className="w-[170px]" />
+                <col className="w-[120px]" />
+              </colgroup>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">
@@ -619,7 +632,7 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
                   <TableHead>Company</TableHead>
                   <TableHead>Vendor</TableHead>
                   <TableHead>Supplier</TableHead>
-                  <TableHead className="max-w-[200px]">Description</TableHead>
+                  <TableHead>Description</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Tags</TableHead>
@@ -769,7 +782,7 @@ const TransactionRow = memo(function TransactionRow({
         </TableCell>
         <TableCell className="text-sm">{txn.vendor_name ?? '—'}</TableCell>
         <TableCell className="text-sm font-medium">{txn.matched_supplier ?? '—'}</TableCell>
-        <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={txn.description}>
+        <TableCell className="text-xs text-muted-foreground whitespace-normal" style={{ width: 300, maxWidth: 300, wordBreak: 'break-word' }}>
           {txn.description}
         </TableCell>
         <TableCell className={cn('text-right text-sm font-medium whitespace-nowrap', txn.amount < 0 ? 'text-red-500' : 'text-green-500')}>
@@ -849,7 +862,7 @@ const TransactionRow = memo(function TransactionRow({
           <TableCell className="text-xs text-muted-foreground">{src.company_name ?? '—'}</TableCell>
           <TableCell className="text-xs text-muted-foreground">{src.vendor_name ?? '—'}</TableCell>
           <TableCell className="text-xs text-muted-foreground">{src.matched_supplier ?? '—'}</TableCell>
-          <TableCell className="text-xs text-muted-foreground truncate max-w-[200px]">{src.description}</TableCell>
+          <TableCell className="text-xs text-muted-foreground">{src.description}</TableCell>
           <TableCell className={cn('text-right text-xs', src.amount < 0 ? 'text-red-400' : 'text-green-400')}>
             {formatAmount(src.amount, src.currency)}
           </TableCell>
