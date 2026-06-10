@@ -57,6 +57,21 @@ def api_submit_test_drive():
         }
 
         contract = _fp_repo.create_from_td_form(contract_data)
+
+        # Generate PDFs
+        try:
+            from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
+            legal_path = generate_legal_pdf(contract)
+            custom_path = generate_custom_pdf(contract)
+            _fp_repo.execute(
+                'UPDATE foi_de_parcurs SET pdf_legal_path = %s, pdf_custom_path = %s WHERE id = %s',
+                (legal_path, custom_path, contract['id']),
+            )
+            contract['pdf_legal_path'] = legal_path
+            contract['pdf_custom_path'] = custom_path
+        except Exception:
+            logger.exception('PDF generation failed for contract %s', contract.get('contract_id'))
+
         return jsonify({'success': True, 'contract': contract})
 
     except Exception as e:
