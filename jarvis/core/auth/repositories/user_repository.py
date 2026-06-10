@@ -34,6 +34,12 @@ class UserRepository(BaseRepository):
             WHERE u.id = %s
         ''', (user_id,))
 
+    def get_by_cnp(self, cnp: str) -> Optional[Dict[str, Any]]:
+        """Get a user by CNP."""
+        return self.query_one(
+            'SELECT id, name, email, company, cnp FROM users WHERE cnp = %s',
+            (cnp,))
+
     def get_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         """Get a user by email address with role information."""
         return self.query_one('''
