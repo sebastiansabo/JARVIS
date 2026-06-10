@@ -103,6 +103,17 @@ class FoiParcursRepository(BaseRepository):
         )
         return self.query_all(sql, (batch_id,))
 
+    def create_from_td_form(self, data: dict) -> dict:
+        """Create a FILLED contract from test drive form data."""
+        cols = list(data.keys())
+        placeholders = ', '.join(['%s'] * len(cols))
+        col_names = ', '.join(cols)
+        sql = f'INSERT INTO foi_de_parcurs ({col_names}) VALUES ({placeholders}) RETURNING *'
+        row = self.execute(sql, tuple(data[c] for c in cols), returning=True)
+        if row and row.get('id'):
+            return self.get_contract_by_id(row['id']) or row
+        return row
+
     def allocate_client(self, contract_id: int, data: dict) -> dict:
         """Update a PENDING contract with client allocation data."""
         sets = ', '.join(f'{k} = %s' for k in data.keys())

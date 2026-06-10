@@ -5,3 +5,4 @@ from . import clients           # noqa: F401
 from . import vehicles          # noqa: F401
 from . import settings          # noqa: F401
 from . import inspections       # noqa: F401
+from . import test_drive        # noqa: F401
