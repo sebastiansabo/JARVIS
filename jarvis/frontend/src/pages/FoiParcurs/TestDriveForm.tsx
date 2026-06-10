@@ -40,6 +40,7 @@ import {
   ClipboardCheck,
   Loader2,
   X,
+  FileText,
 } from 'lucide-react'
 
 const SignatureCanvas = lazy(() => import('@/components/shared/SignatureCanvas'))
@@ -240,6 +241,20 @@ export default function TestDriveForm() {
               {submittedContract.client_name && (
                 <p>Client: <span className="font-medium text-foreground">{submittedContract.client_name}</span></p>
               )}
+            </div>
+            <div className="flex gap-2 justify-center flex-wrap">
+              <a href={foiParcursApi.getContractPdfUrl(submittedContract.id, 'legal')} target="_blank" rel="noopener">
+                <Button variant="outline" size="sm">
+                  <FileText className="mr-1.5 h-3.5 w-3.5" />
+                  Download Legal PDF
+                </Button>
+              </a>
+              <a href={foiParcursApi.getContractPdfUrl(submittedContract.id, 'custom')} target="_blank" rel="noopener">
+                <Button variant="outline" size="sm">
+                  <FileText className="mr-1.5 h-3.5 w-3.5" />
+                  Download Custom PDF
+                </Button>
+              </a>
             </div>
             <div className="flex gap-3 justify-center pt-2">
               <Button variant="outline" onClick={resetForm}>

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
@@ -73,20 +74,27 @@ import {
 
 // ── Main Page ──
 export default function FoiParcurs() {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'contracts' | 'parcurs' | 'stock' | 'settings'>('contracts')
 
   return (
     <div className="space-y-6">
       <PageHeader title="Foi de Parcurs" breadcrumbs={[{ label: 'Foi de Parcurs' }]} />
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'settings')}>
-        <TabsList>
-          <TabsTrigger value="contracts">Contracts</TabsTrigger>
-          <TabsTrigger value="parcurs">Parcurs</TabsTrigger>
-          <TabsTrigger value="stock">Stock</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex items-center justify-between">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'settings')}>
+          <TabsList>
+            <TabsTrigger value="contracts">Contracts</TabsTrigger>
+            <TabsTrigger value="parcurs">Parcurs</TabsTrigger>
+            <TabsTrigger value="stock">Stock</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <Button onClick={() => navigate('/app/foi-parcurs/test-drive')}>
+          <FileText className="mr-1.5 h-4 w-4" />
+          New Test Drive
+        </Button>
+      </div>
 
       {activeTab === 'contracts' && <ContractsTab />}
       {activeTab === 'parcurs' && <ParcursTab />}
@@ -622,6 +630,23 @@ function ParcursTab() {
                               </div>
                             </div>
                           </div>
+                          {/* PDF Downloads */}
+                          {c.status === 'FILLED' && (
+                            <div className="flex gap-2 mt-3 pt-3 border-t">
+                              <a href={foiParcursApi.getContractPdfUrl(c.id, 'legal')} target="_blank" rel="noopener">
+                                <Button variant="outline" size="sm">
+                                  <FileText className="mr-1.5 h-3.5 w-3.5" />
+                                  Legal PDF
+                                </Button>
+                              </a>
+                              <a href={foiParcursApi.getContractPdfUrl(c.id, 'custom')} target="_blank" rel="noopener">
+                                <Button variant="outline" size="sm">
+                                  <FileText className="mr-1.5 h-3.5 w-3.5" />
+                                  Custom PDF
+                                </Button>
+                              </a>
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                     )}
