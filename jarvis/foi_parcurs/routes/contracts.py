@@ -1,0 +1,340 @@
+"""Routes for foi de parcurs contract generation workflow."""
+
+import re
+import time
+import uuid
+from ._shared import (
+    foi_parcurs_bp, jsonify, request, login_required, current_user,
+    logger, _fp_repo, _client_repo,
+)
+from ..services.fuel_service import calculate_fuel_distribution
+from ..services.route_service import calculate_route_assignments
+from ..services.signature_service import generate_ai_signature
+
+
+# ════════════════════════════════════════════════════════════════
+# Preview — route assignments + fuel distribution
+# ════════════════════════════════════════════════════════════════
+
+@foi_parcurs_bp.route('/api/foi-parcurs/preview', methods=['POST'])
+@login_required
+def api_preview():
+    """Takes batch config, returns route assignments + fuel distribution preview."""
+    data = request.get_json(silent=True) or {}
+
+    required = [
+        'vin', 'odometer_start', 'odometer_end', 'num_td', 'num_comodat',
+        'fuel_tank_capacity_liters',
+        'fuel_gauge_start_level', 'fuel_gauge_end_level',
+        'total_consumption_period_liters',
+    ]
+    missing = [f for f in required if f not in data]
+    if missing:
+        return jsonify({'success': False, 'error': f'Missing fields: {", ".join(missing)}'}), 400
+
+    try:
+        num_td = int(data['num_td'])
+        num_comodat = int(data['num_comodat'])
+        odometer_start = int(data['odometer_start'])
+        odometer_end = int(data['odometer_end'])
+        fuel_tank = int(data['fuel_tank_capacity_liters'])
+        total_consumption = float(data['total_consumption_period_liters'])
+    except (ValueError, TypeError) as e:
+        return jsonify({'success': False, 'error': f'Invalid numeric value: {e}'}), 400
+
+    try:
+        assignments = calculate_route_assignments(
+            num_td=num_td,
+            num_comodat=num_comodat,
+            odometer_start=odometer_start,
+            odometer_end=odometer_end,
+        )
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+    try:
+        fuel_distribution = calculate_fuel_distribution(
+            fuel_tank_capacity_liters=fuel_tank,
+            fuel_gauge_start_level=data['fuel_gauge_start_level'],
+            fuel_gauge_end_level=data['fuel_gauge_end_level'],
+            total_consumption_period_liters=total_consumption,
+            distances_per_client=assignments['distances'],
+        )
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+    return jsonify({
+        'success': True,
+        'assignments': assignments,
+        'fuel_distribution': fuel_distribution,
+    })
+
+
+# ════════════════════════════════════════════════════════════════
+# Create single contract (called iteratively per client)
+# ════════════════════════════════════════════════════════════════
+
+@foi_parcurs_bp.route('/api/foi-parcurs/contracts', methods=['POST'])
+@login_required
+def api_create_contract():
+    """Fill a single contract — called iteratively per client."""
+    data = request.get_json(silent=True) or {}
+
+    required = [
+        'vin', 'company_id', 'client_id', 'route_type', 'km_start', 'km_end',
+        'distance_km', 'fuel_tank_capacity_liters', 'fuel_gauge_start_level',
+        'fuel_gauge_end_level', 'fuel_start_liters', 'fuel_end_liters',
+        'fuel_consumed_liters', 'advisor_name', 'slot_number',
+    ]
+    missing = [f for f in required if f not in data]
+    if missing:
+        return jsonify({'success': False, 'error': f'Missing fields: {", ".join(missing)}'}), 400
+
+    # Validate route_type
+    route_type = data['route_type']
+    if route_type not in ('TD', 'Comodat'):
+        return jsonify({'success': False, 'error': 'route_type must be TD or Comodat'}), 400
+
+    # Generate contract_id: {VIN}_{unix_timestamp}_{slot_number}
+    contract_id = f"{data['vin']}_{int(time.time())}_{data['slot_number']}"
+
+    try:
+        contract_data = {
+            'contract_id': contract_id,
+            'vin': data['vin'],
+            'company_id': int(data['company_id']),
+            'client_id': int(data['client_id']),
+            'route_type': route_type,
+            'km_start': int(data['km_start']),
+            'km_end': int(data['km_end']),
+            'distance_km': int(data['distance_km']),
+            'fuel_tank_capacity_liters': int(data['fuel_tank_capacity_liters']),
+            'fuel_gauge_start_level': data['fuel_gauge_start_level'],
+            'fuel_gauge_end_level': data['fuel_gauge_end_level'],
+            'fuel_start_liters': float(data['fuel_start_liters']),
+            'fuel_end_liters': float(data['fuel_end_liters']),
+            'fuel_consumed_liters': float(data['fuel_consumed_liters']),
+            'itinerary': data.get('itinerary', ''),
+            'advisor_name': data['advisor_name'],
+            'signature_ai_generated': data.get('signature_svg', ''),
+            'status': 'FILLED',
+        }
+
+        contract = _fp_repo.create_contract(contract_data)
+
+        # Create audit entry (immutable log matching foi_de_parcurs_audit schema)
+        assignment_rule = data.get('assignment_rule', '')
+        total_consumption = float(data.get('total_consumption_period_liters', 0))
+        audit_data = {
+            'contract_id': contract_id,
+            'vin': data['vin'],
+            'client_id': int(data['client_id']),
+            'company_id': int(data['company_id']),
+            'assigned_route_type': route_type,
+            'assignment_rule': assignment_rule,
+            'fuel_allocation_method': 'PROPORTIONAL_DISTANCE',
+            'fuel_start_liters': float(data['fuel_start_liters']),
+            'fuel_end_liters': float(data['fuel_end_liters']),
+            'fuel_consumed_liters': float(data['fuel_consumed_liters']),
+            'total_consumption_period_liters': total_consumption,
+            'reasoning': (
+                f"Slot {data['slot_number']}: {route_type} assignment via {assignment_rule}, "
+                f"km {data['km_start']}-{data['km_end']}, "
+                f"fuel {data['fuel_start_liters']}L->{data['fuel_end_liters']}L"
+            ),
+            'status': 'FILLED',
+        }
+        try:
+            _fp_repo.create_audit_entry(audit_data)
+        except Exception:
+            logger.exception('Failed to create audit entry for contract %s', contract_id)
+
+        # Update client counters
+        try:
+            _client_repo.update_client_counters(int(data['client_id']), route_type)
+        except Exception:
+            logger.exception('Failed to update counters for client %s', data['client_id'])
+
+        return jsonify({'success': True, 'contract': contract})
+
+    except Exception as e:
+        logger.exception('Failed to create contract')
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+
+# ════════════════════════════════════════════════════════════════
+# List contracts (paginated)
+# ════════════════════════════════════════════════════════════════
+
+@foi_parcurs_bp.route('/api/foi-parcurs/contracts', methods=['GET'])
+@login_required
+def api_list_contracts():
+    """List contracts with pagination and filters."""
+    vin = request.args.get('vin')
+    company_id = request.args.get('company_id', type=int)
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 25, type=int)
+    sort_by = request.args.get('sort_by', 'created_at')
+    sort_dir = request.args.get('sort_dir', 'DESC')
+
+    per_page = min(per_page, 100)  # cap
+
+    contracts, total = _fp_repo.get_contracts(
+        vin=vin, company_id=company_id,
+        page=page, per_page=per_page,
+        sort_by=sort_by, sort_dir=sort_dir,
+    )
+
+    return jsonify({
+        'contracts': contracts,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+    })
+
+
+# ════════════════════════════════════════════════════════════════
+# Single contract detail
+# ════════════════════════════════════════════════════════════════
+
+@foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>', methods=['GET'])
+@login_required
+def api_contract_detail(id):
+    """Single contract detail."""
+    contract = _fp_repo.get_contract_by_id(id)
+    if not contract:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    return jsonify({'success': True, 'contract': contract})
+
+
+# ════════════════════════════════════════════════════════════════
+# Save Batch — persist preview as PENDING contracts
+# ════════════════════════════════════════════════════════════════
+
+@foi_parcurs_bp.route('/api/foi-parcurs/batches', methods=['POST'])
+@login_required
+def api_save_batch():
+    """Save a previewed batch as PENDING contracts (no clients yet)."""
+    data = request.get_json(silent=True) or {}
+    config = data.get('config', {})
+    preview = data.get('preview', {})
+
+    if not config or not preview:
+        return jsonify({'success': False, 'error': 'config and preview are required'}), 400
+
+    vin = config.get('vin', '')
+    company_id = int(config.get('company_id', 0))
+    year = config.get('year')
+    month = config.get('month')
+    fuel_tank = int(config.get('fuel_tank_capacity_liters', 0))
+    fuel_start_level = config.get('fuel_gauge_start_level', '1')
+    fuel_end_level = config.get('fuel_gauge_end_level', '1/2')
+    total_consumption = float(config.get('total_consumption_period_liters', 0))
+
+    assignments = preview.get('assignments', {})
+    fuel_dist = preview.get('fuel_distribution', {})
+    clients = assignments.get('clients', [])
+    per_client_fuel = fuel_dist.get('per_client', [])
+
+    if not clients:
+        return jsonify({'success': False, 'error': 'No contracts in preview'}), 400
+
+    batch_id = f"B-{vin}-{int(time.time())}-{uuid.uuid4().hex[:6]}"
+    created = 0
+
+    try:
+        for i, slot in enumerate(clients):
+            fuel = per_client_fuel[i] if i < len(per_client_fuel) else {}
+            contract_id = f"{vin}_{int(time.time())}_{slot.get('slot', i)}"
+            contract_data = {
+                'contract_id': contract_id,
+                'batch_id': batch_id,
+                'vin': vin,
+                'company_id': company_id,
+                'year': year,
+                'month': month,
+                'route_type': slot.get('route_type', 'TD'),
+                'slot_number': slot.get('slot', i),
+                'km_start': int(slot.get('km_start', 0)),
+                'km_end': int(slot.get('km_end', 0)),
+                'distance_km': int(slot.get('distance_km', 0)),
+                'fuel_tank_capacity_liters': fuel_tank,
+                'fuel_gauge_start_level': fuel_start_level,
+                'fuel_gauge_end_level': fuel_end_level,
+                'fuel_start_liters': float(fuel.get('fuel_start_liters', 0)),
+                'fuel_end_liters': float(fuel.get('fuel_end_liters', 0)),
+                'fuel_consumed_liters': float(fuel.get('fuel_consumed_liters', 0)),
+                'status': 'PENDING',
+            }
+            _fp_repo.create_contract(contract_data)
+            created += 1
+
+        return jsonify({'success': True, 'batch_id': batch_id, 'count': created})
+
+    except Exception as e:
+        logger.exception('Failed to save batch %s', batch_id)
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+
+# ════════════════════════════════════════════════════════════════
+# Allocate client to a PENDING contract
+# ════════════════════════════════════════════════════════════════
+
+@foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/allocate', methods=['PUT'])
+@login_required
+def api_allocate_client(id):
+    """Allocate a client + itinerary + advisor to a PENDING contract."""
+    data = request.get_json(silent=True) or {}
+    client_id = data.get('client_id')
+    itinerary = data.get('itinerary', '')
+    advisor_name = data.get('advisor_name', '')
+    signature_svg = data.get('signature_svg', '')
+
+    if not client_id:
+        return jsonify({'success': False, 'error': 'client_id is required'}), 400
+
+    contract = _fp_repo.get_contract_by_id(id)
+    if not contract:
+        return jsonify({'success': False, 'error': 'Contract not found'}), 404
+
+    try:
+        update_data: dict = {
+            'client_id': int(client_id),
+            'status': 'FILLED',
+        }
+        # Only overwrite if provided (don't blank out existing values)
+        if itinerary:
+            update_data['itinerary'] = itinerary
+        if advisor_name:
+            update_data['advisor_name'] = advisor_name
+        if signature_svg:
+            update_data['signature_ai_generated'] = signature_svg
+
+        updated = _fp_repo.allocate_client(id, update_data)
+        return jsonify({'success': True, 'contract': updated})
+    except Exception as e:
+        logger.exception('Failed to allocate client to contract %s', id)
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+
+# ════════════════════════════════════════════════════════════════
+# AI Signature generation
+# ════════════════════════════════════════════════════════════════
+
+@foi_parcurs_bp.route('/api/foi-parcurs/signature', methods=['POST'])
+@login_required
+def api_generate_signature():
+    """Generate AI signature SVG."""
+    data = request.get_json(silent=True) or {}
+    advisor_name = (data.get('advisor_name') or '').strip()
+    if not advisor_name:
+        return jsonify({'success': False, 'error': 'advisor_name is required'}), 400
+
+    variant = data.get('variant', 1)
+    try:
+        variant = int(variant)
+    except (ValueError, TypeError):
+        variant = 1
+
+    svg = generate_ai_signature(advisor_name, variant)
+    return jsonify({'success': True, 'svg': svg})

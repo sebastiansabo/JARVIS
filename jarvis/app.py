@@ -243,6 +243,9 @@ def _register_blueprints(flask_app: Flask):
     from ticketing import ticketing_bp
     flask_app.register_blueprint(ticketing_bp, url_prefix='/ticketing')
 
+    from foi_parcurs import foi_parcurs_bp
+    flask_app.register_blueprint(foi_parcurs_bp)
+
 
 def _register_hooks(flask_app: Flask):
     """Register before/after request hooks and approval notification handlers."""

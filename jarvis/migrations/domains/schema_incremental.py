@@ -1824,4 +1824,183 @@ def _create_schema_incremental_continued(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_verif_disc_user ON verification_discrepancies(jarvis_user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_verif_disc_resolved ON verification_discrepancies(is_resolved)')
 
+    # ── Foi de Parcurs — route sheet contracts and person clients ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_clients (
+            id BIGSERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            phone VARCHAR(50) NOT NULL,
+            email VARCHAR(255),
+            date_of_birth DATE,
+            id_document_type VARCHAR(20) NOT NULL DEFAULT 'ID_CARD',
+            id_document_no VARCHAR(100) NOT NULL,
+            driver_license_combined VARCHAR(100),
+            address TEXT,
+            previous_test_drives INTEGER NOT NULL DEFAULT 0,
+            previous_comadats INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_clients_phone ON fp_clients(phone)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_clients_doc_no ON fp_clients(id_document_no)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_clients_license ON fp_clients(driver_license_combined)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS foi_de_parcurs (
+            id BIGSERIAL PRIMARY KEY,
+            contract_id VARCHAR(255) NOT NULL UNIQUE,
+            vin VARCHAR(50) NOT NULL,
+            batch_id VARCHAR(100),
+            client_id BIGINT,
+            company_id BIGINT NOT NULL,
+            year INTEGER,
+            month INTEGER,
+            route_type VARCHAR(10) NOT NULL,
+            slot_number INTEGER NOT NULL DEFAULT 0,
+            km_start INTEGER NOT NULL,
+            km_end INTEGER NOT NULL,
+            distance_km INTEGER NOT NULL,
+            fuel_tank_capacity_liters INTEGER NOT NULL,
+            fuel_gauge_start_level VARCHAR(10) NOT NULL,
+            fuel_gauge_end_level VARCHAR(10) NOT NULL,
+            fuel_start_liters NUMERIC(10,2) NOT NULL,
+            fuel_end_liters NUMERIC(10,2) NOT NULL,
+            fuel_consumed_liters NUMERIC(10,2) NOT NULL,
+            itinerary TEXT,
+            advisor_name VARCHAR(255),
+            signature_ai_generated TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_vin ON foi_de_parcurs(vin)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_contract ON foi_de_parcurs(contract_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_client ON foi_de_parcurs(client_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_status ON foi_de_parcurs(status)')
+    # Migrate: drop FK on client_id if exists, make nullable, add new columns
+    cursor.execute('''
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.table_constraints
+                       WHERE constraint_name = 'foi_de_parcurs_client_id_fkey') THEN
+                ALTER TABLE foi_de_parcurs DROP CONSTRAINT foi_de_parcurs_client_id_fkey;
+            END IF;
+            ALTER TABLE foi_de_parcurs ALTER COLUMN client_id DROP NOT NULL;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END $$;
+    ''')
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='batch_id') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN batch_id VARCHAR(100);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='year') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN year INTEGER;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='month') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN month INTEGER;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='slot_number') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN slot_number INTEGER NOT NULL DEFAULT 0;
+            END IF;
+        END $$;
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_batch ON foi_de_parcurs(batch_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS foi_de_parcurs_audit (
+            id BIGSERIAL PRIMARY KEY,
+            contract_id VARCHAR(255) NOT NULL,
+            vin VARCHAR(50) NOT NULL,
+            client_id BIGINT NOT NULL,
+            company_id BIGINT NOT NULL,
+            assigned_route_type VARCHAR(10) NOT NULL,
+            assignment_rule VARCHAR(100),
+            fuel_allocation_method VARCHAR(100),
+            fuel_start_liters NUMERIC(10,2),
+            fuel_end_liters NUMERIC(10,2),
+            fuel_consumed_liters NUMERIC(10,2),
+            total_consumption_period_liters NUMERIC(10,2),
+            reasoning TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'FILLED',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_audit_contract ON foi_de_parcurs_audit(contract_id)')
+
+    # ── Foi de Parcurs — vehicle stock ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_vehicles (
+            id BIGSERIAL PRIMARY KEY,
+            vin VARCHAR(50) NOT NULL UNIQUE,
+            mark VARCHAR(100) NOT NULL,
+            model VARCHAR(100) NOT NULL,
+            fuel_type VARCHAR(20) NOT NULL DEFAULT 'Diesel',
+            fuel_tank_capacity_liters INTEGER NOT NULL DEFAULT 50,
+            company_id BIGINT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_vehicles_vin ON fp_vehicles(vin)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_vehicles_active ON fp_vehicles(is_active)')
+    # Add fuel_type column if table already existed without it
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'fp_vehicles' AND column_name = 'fuel_type') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN fuel_type VARCHAR(20) NOT NULL DEFAULT 'Diesel';
+            END IF;
+        END $$;
+    ''')
+
+    # ── Foi de Parcurs — KM configs per company ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_km_configs (
+            company_id BIGINT PRIMARY KEY,
+            td_km_min INTEGER NOT NULL DEFAULT 5,
+            td_km_max INTEGER NOT NULL DEFAULT 50,
+            comodat_km_min INTEGER NOT NULL DEFAULT 10,
+            comodat_km_max INTEGER NOT NULL DEFAULT 200,
+            km_gap INTEGER NOT NULL DEFAULT 20,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'fp_km_configs' AND column_name = 'km_gap') THEN
+                ALTER TABLE fp_km_configs ADD COLUMN km_gap INTEGER NOT NULL DEFAULT 20;
+            END IF;
+        END $$;
+    ''')
+
+    # ── Foi de Parcurs — company config (base location, radius) ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_company_config (
+            company_id BIGINT PRIMARY KEY,
+            base_location VARCHAR(255) NOT NULL DEFAULT '',
+            td_radius_km INTEGER NOT NULL DEFAULT 50,
+            comodat_avg_km INTEGER NOT NULL DEFAULT 150,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+
+    # ── Foi de Parcurs — itinerary routes per company ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_routes (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            route_type VARCHAR(10) NOT NULL DEFAULT 'Comodat',
+            itinerary TEXT NOT NULL,
+            estimated_km INTEGER,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_routes_company ON fp_routes(company_id)')
+
     conn.commit()
