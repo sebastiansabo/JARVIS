@@ -606,13 +606,13 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
       ) : (
         <Card>
           <div className="overflow-x-auto">
-            <Table className="min-w-[1400px]" style={{ tableLayout: 'fixed' }}>
+            <Table className="min-w-[1600px]" style={{ tableLayout: 'fixed' }}>
               <colgroup>
                 <col className="w-[40px]" />
                 <col className="w-[95px]" />
+                <col className="w-[150px]" />
+                <col className="w-[140px]" />
                 <col className="w-[130px]" />
-                <col className="w-[90px]" />
-                <col className="w-[90px]" />
                 <col className="w-[300px]" />
                 <col className="w-[115px]" />
                 <col className="w-[85px]" />
