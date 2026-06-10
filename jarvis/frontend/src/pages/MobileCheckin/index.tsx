@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   MapPin, LogIn, LogOut, Loader2, CheckCircle2, XCircle,
-  Navigation, Clock, Smartphone, Zap, Wifi, QrCode, Camera,
+  Navigation, Clock, Smartphone, Zap, Wifi, QrCode, Camera, Monitor,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -134,7 +134,7 @@ function useQRScanner(onScan: (token: string) => void) {
 
 // ── Desktop message ──
 
-function DesktopMessage() {
+export function DesktopMessage() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center px-4">
       <Smartphone className="h-16 w-16 text-muted-foreground" />
@@ -211,14 +211,14 @@ export default function MobileCheckin() {
     punchMutation.mutate({ qr_token: token })
   })
 
-  // Auto-request GPS on mount (mobile only)
+  // Auto-request GPS on mount
   const autoGpsRequested = useRef(false)
   useEffect(() => {
-    if (isMobile && !autoGpsRequested.current) {
+    if (!autoGpsRequested.current) {
       autoGpsRequested.current = true
       gps.requestPosition()
     }
-  }, [isMobile]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Geofence exit → auto check-out ──
   const autoCheckoutFired = useRef(false)
@@ -282,8 +282,6 @@ export default function MobileCheckin() {
     }
   }
 
-  if (!isMobile) return <DesktopMessage />
-
   const nextDir = status?.next_direction || 'IN'
   const isCheckIn = nextDir === 'IN'
   const isPending = gps.loading || punchMutation.isPending
@@ -302,7 +300,7 @@ export default function MobileCheckin() {
   }
 
   return (
-    <div className="flex flex-col gap-4 pb-8">
+    <div className={`flex flex-col gap-4 pb-8 ${!isMobile ? 'max-w-md mx-auto w-full' : ''}`}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -459,6 +457,14 @@ export default function MobileCheckin() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Desktop GPS accuracy note */}
+      {!isMobile && gps.position && !gps.error && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted rounded-lg px-3 py-2">
+          <Monitor className="h-3.5 w-3.5 shrink-0" />
+          <span>Desktop GPS uses WiFi/IP and may be less accurate. Use WiFi or QR for best results.</span>
+        </div>
       )}
 
       {/* Big punch button */}

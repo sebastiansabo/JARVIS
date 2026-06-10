@@ -49,6 +49,7 @@ const CarParkPromotions = lazy(() => import('./pages/CarPark/Promotions'))
 const CarParkDashboard = lazy(() => import('./pages/CarPark/Dashboard'))
 const Ticketing = lazy(() => import('./pages/Ticketing'))
 const TicketDetail = lazy(() => import('./pages/Ticketing/TicketDetail'))
+const FoiParcurs = lazy(() => import('./pages/FoiParcurs'))
 
 function PageLoader() {
   return (
@@ -201,6 +202,9 @@ export default function App() {
         <Route path="carpark/pricing-rules" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkPricingRules /></SuspensePage></Guard>} />
         <Route path="carpark/promotions" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkPromotions /></SuspensePage></Guard>} />
         <Route path="carpark/dashboard" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkDashboard /></SuspensePage></Guard>} />
+
+        {/* Foi de Parcurs — requires can_access_carpark */}
+        <Route path="foi-parcurs" element={<Guard flag="can_access_carpark"><SuspensePage><FoiParcurs /></SuspensePage></Guard>} />
 
         {/* AI Agent — requires can_access_ai_agent */}
         <Route path="ai-agent" element={<Guard flag="can_access_ai_agent"><SuspensePage><AiAgent /></SuspensePage></Guard>} />

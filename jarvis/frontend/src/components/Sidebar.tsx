@@ -94,6 +94,7 @@ const navItemsDef: NavItem[] = [
       { path: '/app/carpark/promotions', label: 'Promoții', icon: Tag, moduleKey: 'carpark_promotions' },
     ],
   },
+  { path: '/app/foi-parcurs', label: 'Foi de Parcurs', icon: FileText, permission: 'can_access_carpark' },
   { path: '/app/settings', label: 'Settings', icon: Settings, moduleKey: 'settings', permission: 'can_access_settings' },
 ]
 
