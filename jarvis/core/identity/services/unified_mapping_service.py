@@ -184,6 +184,19 @@ class UnifiedMappingService:
         if not name:
             raise ValueError('Sincron employee has no name')
 
+        # Try to find existing JARVIS user by CNP first (avoids unique constraint clash)
+        cnp = emp.get('cnp')
+        if cnp:
+            existing_by_cnp = self.user_repo.get_by_cnp(cnp)
+            if existing_by_cnp:
+                user_id = existing_by_cnp['id']
+                logger.info(f'Found existing JARVIS user #{user_id} by CNP '
+                            f'for Sincron {sincron_employee_id}@{company_name}')
+                self.sincron_repo.update_mapping(
+                    sincron_employee_id, company_name, user_id, method='auto_created')
+                return {'user_id': user_id, 'name': existing_by_cnp['name'],
+                        'company': company_name}
+
         # Generate placeholder email (users.email is NOT NULL)
         import re
         slug = re.sub(r'[^a-z0-9]+', '.', name.lower()).strip('.')
@@ -202,8 +215,8 @@ class UnifiedMappingService:
 
         # Set CNP and contract start date if available
         update_kwargs = {}
-        if emp.get('cnp'):
-            update_kwargs['cnp'] = emp['cnp']
+        if cnp:
+            update_kwargs['cnp'] = cnp
         if emp.get('data_incepere_contract'):
             update_kwargs['contract_work_date'] = emp['data_incepere_contract']
         if update_kwargs:
