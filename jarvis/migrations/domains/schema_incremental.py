@@ -2003,4 +2003,63 @@ def _create_schema_incremental_continued(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_routes_company ON fp_routes(company_id)')
 
+    # ── Foi de Parcurs Phase 2 — TD form fields ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='registration_number') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN registration_number VARCHAR(20);
+            END IF;
+        END $$;
+    ''')
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='registration_number') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN registration_number VARCHAR(20);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='departure_datetime') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN departure_datetime TIMESTAMP WITH TIME ZONE;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='return_datetime') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN return_datetime TIMESTAMP WITH TIME ZONE;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='client_signature') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN client_signature TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='gdpr_consent') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN gdpr_consent BOOLEAN DEFAULT FALSE;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='inspection_acceptance') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN inspection_acceptance BOOLEAN DEFAULT FALSE;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='inspection_id') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN inspection_id BIGINT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='pdf_legal_path') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN pdf_legal_path TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='pdf_custom_path') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN pdf_custom_path TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='source') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN source VARCHAR(20) DEFAULT 'batch';
+            END IF;
+        END $$;
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_vehicle_inspections (
+            id BIGSERIAL PRIMARY KEY,
+            vehicle_id BIGINT NOT NULL,
+            vin VARCHAR(50) NOT NULL,
+            inspection_date DATE NOT NULL,
+            condition_notes TEXT,
+            photos JSONB DEFAULT '[]',
+            inspector_name VARCHAR(255),
+            inspector_signature TEXT,
+            created_by INTEGER,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_inspections_vehicle ON fp_vehicle_inspections(vehicle_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_inspections_date ON fp_vehicle_inspections(inspection_date DESC)')
+
     conn.commit()
