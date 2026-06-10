@@ -50,6 +50,7 @@ const CarParkDashboard = lazy(() => import('./pages/CarPark/Dashboard'))
 const Ticketing = lazy(() => import('./pages/Ticketing'))
 const TicketDetail = lazy(() => import('./pages/Ticketing/TicketDetail'))
 const FoiParcurs = lazy(() => import('./pages/FoiParcurs'))
+const TestDriveForm = lazy(() => import('./pages/FoiParcurs/TestDriveForm'))
 
 function PageLoader() {
   return (
@@ -205,6 +206,7 @@ export default function App() {
 
         {/* Foi de Parcurs — requires can_access_carpark */}
         <Route path="foi-parcurs" element={<Guard flag="can_access_carpark"><SuspensePage><FoiParcurs /></SuspensePage></Guard>} />
+        <Route path="foi-parcurs/test-drive" element={<Guard flag="can_access_carpark"><SuspensePage><TestDriveForm /></SuspensePage></Guard>} />
 
         {/* AI Agent — requires can_access_ai_agent */}
         <Route path="ai-agent" element={<Guard flag="can_access_ai_agent"><SuspensePage><AiAgent /></SuspensePage></Guard>} />
