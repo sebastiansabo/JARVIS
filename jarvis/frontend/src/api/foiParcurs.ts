@@ -7,6 +7,8 @@ import type {
   FoiContract,
   CreateClientPayload,
   FpVehicle,
+  FpVehicleInspection,
+  TestDriveFormPayload,
 } from '../types/foiParcurs'
 
 function qs(params: Record<string, unknown>): string {
@@ -64,7 +66,7 @@ export const foiParcursApi = {
   getVehicles: (activeOnly = true) =>
     api.get<{ vehicles: FpVehicle[] }>(`${BASE}/vehicles`, { active_only: String(activeOnly) }),
 
-  createVehicle: (data: { vin: string; mark: string; model: string; fuel_type: string; fuel_tank_capacity_liters: number; company_id?: number }) =>
+  createVehicle: (data: { vin: string; registration_number?: string; mark: string; model: string; fuel_type: string; fuel_tank_capacity_liters: number; company_id?: number }) =>
     api.post<{ success: boolean; vehicle: FpVehicle }>(`${BASE}/vehicles`, data),
 
   updateVehicle: (id: number, data: Partial<FpVehicle>) =>
@@ -110,4 +112,28 @@ export const foiParcursApi = {
 
   updateCompanyConfig: (companyId: number, data: { base_location: string; td_radius_km: number; comodat_avg_km: number }) =>
     api.put<{ success: boolean }>(`${BASE}/company-config/${companyId}`, data),
+
+  // ── Test Drive Form ──
+  submitTestDrive: (data: TestDriveFormPayload) =>
+    api.post<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive`, data),
+
+  getTestDrive: (id: number) =>
+    api.get<{ success: boolean; contract: FoiContract; inspection: FpVehicleInspection | null }>(`${BASE}/test-drive/${id}`),
+
+  // ── Vehicle Inspections ──
+  getInspections: (vehicleId: number) =>
+    api.get<{ inspections: FpVehicleInspection[] }>(`${BASE}/vehicles/${vehicleId}/inspections`),
+
+  createInspection: (vehicleId: number, data: Partial<FpVehicleInspection>) =>
+    api.post<{ success: boolean; inspection: FpVehicleInspection }>(`${BASE}/vehicles/${vehicleId}/inspections`, data),
+
+  getLatestInspection: (vehicleId: number) =>
+    api.get<{ inspection: FpVehicleInspection | null }>(`${BASE}/vehicles/${vehicleId}/inspections/latest`),
+
+  deleteInspection: (inspectionId: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/inspections/${inspectionId}`),
+
+  // ── PDF Downloads ──
+  getContractPdfUrl: (contractId: number, type: 'legal' | 'custom') =>
+    `${BASE}/contracts/${contractId}/pdf/${type}`,
 }
