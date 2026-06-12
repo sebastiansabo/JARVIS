@@ -40,7 +40,7 @@ const navItemsDef: NavItem[] = [
       { path: '/app/statements', label: 'Statements', icon: Landmark, moduleKey: 'accounting_statements', permission: 'can_access_statements' },
       { path: '/app/efactura', label: 'e-Factura', icon: FileText, moduleKey: 'accounting_efactura', permission: 'can_access_efactura' },
       { path: '/app/accounting/bilant', label: 'Bilant', icon: Scale, moduleKey: 'accounting_bilant', v2Permission: 'bilant.templates.view' },
-      { path: '/app/accounting/facturare', label: 'Facturare', icon: Receipt, moduleKey: 'accounting_facturare' },
+      { path: '/app/accounting/facturare', label: 'Comenzi Externe', icon: Receipt, moduleKey: 'accounting_facturare' },
     ],
   },
   {
