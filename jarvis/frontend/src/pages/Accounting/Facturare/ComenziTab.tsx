@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import {
   Plus, FileText, Loader2, ChevronRight, ChevronDown, Copy,
@@ -28,6 +28,7 @@ interface ContractSummary {
   supplier_name: string; customer_name: string; contract_date: string | null
   responsible: string | null; anexa_count: number; notes: string | null
   total_value: number; invoiced_total: number
+  created_at: string | null
 }
 
 interface AnexaSummary {
@@ -357,9 +358,14 @@ function CreateAnexaDialog({ open, onOpenChange, contractId, onCreated }: {
               <div className="text-xs text-muted-foreground">
                 Expected columns: Nr. Comanda, Model, Culoare, VIN, List Price, Selling Price, Qty
               </div>
-              <a href="/facturare/api/template/proforma" download className="text-sm text-blue-600 hover:underline inline-flex items-center gap-1">
-                <Download className="h-3 w-3" /> Download template
-              </a>
+              <div className="flex gap-3">
+                <a href="/facturare/api/template/proforma" download className="text-sm text-blue-600 hover:underline inline-flex items-center gap-1">
+                  <Download className="h-3 w-3" /> Proforma template
+                </a>
+                <a href="/facturare/api/template/invoice" download className="text-sm text-blue-600 hover:underline inline-flex items-center gap-1">
+                  <Download className="h-3 w-3" /> Invoice template
+                </a>
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1084,6 +1090,13 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
       .catch(() => {})
   }
 
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const toggleGroup = (key: string) => setExpandedGroups(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
+
   const uniqueCompanies = [...new Set(contracts.map(c => c.supplier_name))].sort()
   const uniqueClients = [...new Set(contracts.map(c => c.customer_name))].sort()
 
@@ -1097,6 +1110,19 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
       if (!c.contract_ref.toLowerCase().includes(q) && !c.customer_name.toLowerCase().includes(q) && !c.supplier_name.toLowerCase().includes(q)) return false
     }
     return true
+  })
+
+  // Group by Company + Client
+  const grouped = filtered.reduce<Record<string, { supplier: string; client: string; contracts: ContractSummary[] }>>((acc, c) => {
+    const key = `${c.supplier_name}|||${c.customer_name}`
+    if (!acc[key]) acc[key] = { supplier: c.supplier_name, client: c.customer_name, contracts: [] }
+    acc[key].contracts.push(c)
+    return acc
+  }, {})
+  const groups = Object.entries(grouped).sort(([, a], [, b]) => {
+    const latestA = Math.max(...a.contracts.map(c => c.created_at ? new Date(c.created_at).getTime() : 0))
+    const latestB = Math.max(...b.contracts.map(c => c.created_at ? new Date(c.created_at).getTime() : 0))
+    return latestB - latestA
   })
 
   return (
@@ -1383,37 +1409,83 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/50">
+                      <th className="w-8"></th>
                       <th className="text-left px-3 py-2.5 font-medium">Company</th>
                       <th className="text-left px-3 py-2.5 font-medium">Client</th>
-                      <th className="text-left px-3 py-2.5 font-medium">Contract</th>
-                      <th className="text-left px-3 py-2.5 font-medium">Date</th>
-                      <th className="text-left px-3 py-2.5 font-medium">Responsible</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Contracts</th>
                       <th className="text-center px-3 py-2.5 font-medium">Anexe</th>
                       <th className="text-right px-3 py-2.5 font-medium">Total EUR</th>
                       <th className="text-right px-3 py-2.5 font-medium">Invoiced</th>
                       <th className="text-right px-3 py-2.5 font-medium">Remaining</th>
+                      <th className="text-center px-3 py-2.5 font-medium">%</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loading && <tr><td colSpan={9} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></td></tr>}
-                    {!loading && filtered.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">No contracts yet</td></tr>}
-                    {filtered.map(c => (
-                      <tr key={c.id} className="border-b hover:bg-muted/30 cursor-pointer" onClick={() => loadAnexas(c)}>
-                        <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[160px] truncate">{c.supplier_name}</td>
-                        <td className="px-3 py-2.5 font-medium max-w-[180px] truncate">{c.customer_name}</td>
-                        <td className="px-3 py-2.5">{c.contract_ref}</td>
-                        <td className="px-3 py-2.5 text-xs text-muted-foreground">{c.contract_date ? new Date(c.contract_date).toLocaleDateString('ro-RO') : '—'}</td>
-                        <td className="px-3 py-2.5 text-xs">{c.responsible || '—'}</td>
-                        <td className="px-3 py-2.5 text-center"><Badge variant="outline" className="text-xs">{c.anexa_count}</Badge></td>
-                        <td className="px-3 py-2.5 text-right font-mono text-xs">{fmtEur(c.total_value)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-xs text-emerald-600">{c.invoiced_total > 0 ? fmtEur(c.invoiced_total) : '—'}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-xs">
-                          {c.total_value - c.invoiced_total > 0
-                            ? <span className="text-amber-600">{fmtEur(c.total_value - c.invoiced_total)}</span>
-                            : <span className="text-emerald-600">0,00</span>}
-                        </td>
-                      </tr>
-                    ))}
+                    {!loading && groups.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">No contracts yet</td></tr>}
+                    {groups.map(([key, g]) => {
+                      const expanded = expandedGroups.has(key)
+                      const totalVal = g.contracts.reduce((s, c) => s + c.total_value, 0)
+                      const totalInv = g.contracts.reduce((s, c) => s + c.invoiced_total, 0)
+                      const totalAnexe = g.contracts.reduce((s, c) => s + c.anexa_count, 0)
+                      const remaining = totalVal - totalInv
+                      return (
+                        <React.Fragment key={key}>
+                          {/* Group header row */}
+                          <tr className="border-b hover:bg-muted/30 cursor-pointer" onClick={() => toggleGroup(key)}>
+                            <td className="px-2 py-2.5 text-center">
+                              {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                            </td>
+                            <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[160px] truncate">{g.supplier}</td>
+                            <td className="px-3 py-2.5 font-medium max-w-[180px] truncate">{g.client}</td>
+                            <td className="px-3 py-2.5">
+                              <Badge variant="outline" className="text-xs">{g.contracts.length}</Badge>
+                            </td>
+                            <td className="px-3 py-2.5 text-center"><Badge variant="outline" className="text-xs">{totalAnexe}</Badge></td>
+                            <td className="px-3 py-2.5 text-right font-mono text-xs">{fmtEur(totalVal)}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-xs text-emerald-600">{totalInv > 0 ? fmtEur(totalInv) : '—'}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-xs">
+                              {remaining > 0
+                                ? <span className="text-amber-600">{fmtEur(remaining)}</span>
+                                : <span className="text-emerald-600">0,00</span>}
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              {totalVal > 0 && (
+                                <div className="flex items-center gap-1 justify-center">
+                                  <div className="w-12 h-2 bg-muted rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full ${totalInv >= totalVal ? 'bg-emerald-500' : totalInv >= totalVal * 0.5 ? 'bg-amber-400' : 'bg-blue-400'}`}
+                                      style={{ width: `${Math.min(Math.round(totalInv / totalVal * 100), 100)}%` }} />
+                                  </div>
+                                  <span className="text-xs text-muted-foreground">{Math.round(totalInv / totalVal * 100)}%</span>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                          {/* Expanded contract rows */}
+                          {expanded && g.contracts.map(c => (
+                            <tr key={c.id} className="border-b hover:bg-primary/5 cursor-pointer bg-muted/40" onClick={() => loadAnexas(c)}>
+                              <td></td>
+                              <td className="px-3 py-2 text-xs text-muted-foreground" colSpan={3}>
+                                <span className="font-medium text-foreground">{c.contract_ref}</span>
+                                <span className="ml-2 text-muted-foreground">{c.contract_date ? new Date(c.contract_date).toLocaleDateString('ro-RO') : ''}</span>
+                                {c.responsible && <span className="ml-2 text-muted-foreground">· {c.responsible}</span>}
+                              </td>
+                              <td className="px-3 py-2 text-center"><Badge variant="outline" className="text-xs">{c.anexa_count}</Badge></td>
+                              <td className="px-3 py-2 text-right font-mono text-xs">{fmtEur(c.total_value)}</td>
+                              <td className="px-3 py-2 text-right font-mono text-xs text-emerald-600">{c.invoiced_total > 0 ? fmtEur(c.invoiced_total) : '—'}</td>
+                              <td className="px-3 py-2 text-right font-mono text-xs">
+                                {c.total_value - c.invoiced_total > 0
+                                  ? <span className="text-amber-600">{fmtEur(c.total_value - c.invoiced_total)}</span>
+                                  : <span className="text-emerald-600">0,00</span>}
+                              </td>
+                              <td className="px-3 py-2 text-center text-xs text-muted-foreground">
+                                {c.total_value > 0 ? `${Math.round(c.invoiced_total / c.total_value * 100)}%` : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      )
+                    })}
                   </tbody>
                 </table>
               </CardContent>
