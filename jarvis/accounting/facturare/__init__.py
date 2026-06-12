@@ -8,3 +8,4 @@ from flask import Blueprint
 facturare_bp = Blueprint('facturare', __name__)
 
 from . import routes  # noqa: E402, F401
+from . import routes_orders  # noqa: E402, F401

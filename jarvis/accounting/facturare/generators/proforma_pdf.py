@@ -33,10 +33,11 @@ BODY_TYPES = {"sportback", "allstreet", "avant"}
 
 
 def split_model_lines(model: str) -> list[str]:
-    """Split model name into 1-3 display lines.
+    """Split model name into 1-2 display lines.
 
     Examples:
-        'Audi Q5 Sportback 40 TDI quattro' → ['AUDI Q5', 'SPORTBACK', '40 TDI QUATTRO']
+        'Audi Q5 Sportback 40 TDI quattro' → ['AUDI Q5 SPORTBACK', '40 TDI QUATTRO']
+        'Audi A6 Avant 40 TDI'             → ['AUDI A6 AVANT', '40 TDI']
         'VW MULTIVAN LIFE 2.0 TDI'         → ['VW MULTIVAN', 'LIFE 2.0 TDI']
         'MG ZS EV Standard'                → ['MG ZS', 'EV STANDARD']
     """
@@ -46,10 +47,10 @@ def split_model_lines(model: str) -> list[str]:
         return [s.upper()]
     line1 = f"{parts[0]} {parts[1]}".upper()
     rest = parts[2:]
-    out = [line1]
     if rest and rest[0].lower() in BODY_TYPES:
-        out.append(rest[0].upper())
+        line1 += f" {rest[0].upper()}"
         rest = rest[1:]
+    out = [line1]
     if rest:
         out.append(" ".join(w.upper() for w in rest))
     return out
@@ -63,13 +64,15 @@ class ProformaPdfRenderer:
     def __init__(self, supplier: dict, customer: dict, invoice_date: str,
                  intocmit_de: str = "Gabriela Oltean",
                  description_prefix: str = "1. ADVANCE PAYMENT",
-                 note: str = ""):
+                 note: str = "",
+                 title_lines: list[str] | None = None):
         self.supplier = supplier
         self.customer = customer
         self.invoice_date = invoice_date
         self.intocmit_de = intocmit_de
         self.description_prefix = description_prefix
         self.note = note
+        self.title_lines = title_lines or ["FACTURA PROFORMA", "PROFORMA INVOICE"]
         self.logo_path = DEFAULT_LOGO if DEFAULT_LOGO.exists() else None
 
     def render_one(self, c: canvas.Canvas, inv_no: int, line: OrderLine):
@@ -100,10 +103,9 @@ class ProformaPdfRenderer:
         # ── Title ──
         y -= 18 * mm
         c.setFont("Helvetica-Bold", 13)
-        c.drawCentredString(W / 2, y, "FACTURA PROFORMA")
-        y -= 5 * mm
-        c.drawCentredString(W / 2, y, "PROFORMA INVOICE")
-        y -= 5 * mm
+        for title_line in self.title_lines:
+            c.drawCentredString(W / 2, y, title_line)
+            y -= 5 * mm
         c.drawCentredString(W / 2, y, f"No:{inv_no}")
         y -= 5 * mm
 
@@ -203,9 +205,11 @@ class ProformaPdfRenderer:
         y -= 24 * mm
         c.setFont("Helvetica", 9.5)
 
-        # Description: prefix + model lines + chassis + engine + culoare + comanda
-        desc_lines = [self.description_prefix]
-        desc_lines.extend(split_model_lines(line.model))
+        # Description: prefix + optional storno ref + model lines + chassis + culoare + comanda
+        desc_lines = [self.description_prefix] if self.description_prefix else []
+        if line.storno_description:
+            desc_lines.append(line.storno_description)
+        desc_lines.append((line.model or "").upper())
         desc_lines.append("Chassis number:")
         desc_lines.append(line.vin or "")
         desc_lines.append(f"Culoare: {line.culoare}")
@@ -217,8 +221,9 @@ class ProformaPdfRenderer:
         desc_lines.append(comanda_text)
 
         # Numeric columns on first desc line
+        qty_display = str(line.qty) if line.qty != 1 else ("1" if line.advance >= 0 else "-1")
         c.drawString(LM + 78 * mm, y, "buc")
-        c.drawRightString(LM + 105 * mm, y, "1")
+        c.drawRightString(LM + 105 * mm, y, qty_display)
         c.drawRightString(LM + 138 * mm, y, fmt_us(line.advance))
         c.drawRightString(LM + 158 * mm, y, fmt_us(line.advance))
 
@@ -248,6 +253,150 @@ class ProformaPdfRenderer:
         c.drawRightString(RM, y, f"{fmt_us(line.advance)} EUR")
 
         # ── Footer ──
+        y -= 18 * mm
+        c.setFont("Helvetica", 9.5)
+        c.drawString(LM, y, f"Intocmit de {self.intocmit_de}")
+
+    def render_storno_multipage(self, groups: list[list[OrderLine]], start_no: int) -> bytes:
+        """Render storno: one page per car, each listing all reversed invoices for that car."""
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf, pagesize=A4)
+        for page_idx, car_items in enumerate(groups):
+            inv_no = start_no + page_idx
+            self._render_storno_page(c, inv_no, car_items)
+            c.showPage()
+        c.save()
+        return buf.getvalue()
+
+    def _render_storno_page(self, c: canvas.Canvas, inv_no: int, items: list[OrderLine]):
+        """Draw one storno page with multiple reversed invoice item blocks."""
+        W, H = A4
+        LM = 18 * mm
+        RM = W - 18 * mm
+
+        # ── Header (logo + rule) ──
+        if self.logo_path:
+            img = ImageReader(str(self.logo_path))
+            iw, ih = img.getSize()
+            tw = 55 * mm
+            th = tw * ih / iw
+            c.drawImage(img, (W - tw) / 2, H - 22 * mm - th, tw, th, mask='auto')
+            y = H - 24 * mm - th
+        else:
+            c.setFont("Helvetica-Bold", 22)
+            c.drawCentredString(W / 2, H - 25 * mm, self.supplier.get("name", "").split()[0])
+            y = H - 32 * mm
+
+        c.setStrokeColorRGB(0.65, 0.78, 0.30)
+        c.setLineWidth(0.6)
+        c.line(LM, y, RM, y)
+        c.setStrokeColorRGB(0, 0, 0)
+
+        # ── Title ──
+        y -= 18 * mm
+        c.setFont("Helvetica-Bold", 13)
+        for tl in self.title_lines:
+            c.drawCentredString(W / 2, y, tl)
+            y -= 5 * mm
+        c.drawCentredString(W / 2, y, f"No:{inv_no}")
+        y -= 5 * mm
+        date_str = self.invoice_date
+        if date_str and "-" in date_str:
+            p = date_str.split("-")
+            date_str = f"{p[2]}.{p[1]}.{p[0]}"
+        c.drawCentredString(W / 2, y, f"Data/ Date: {date_str}")
+
+        # ── Supplier / Customer ──
+        y -= 14 * mm
+        col_l, col_r = LM, LM + 95 * mm
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(col_l, y, "Furnizor/ Supplier:")
+        c.drawString(col_r, y, "Cumparator/ Customer:")
+        y -= 7 * mm
+        c.drawString(col_l, y, self.supplier.get("name", ""))
+        c.drawString(col_r, y, self.customer.get("name", ""))
+        c.setFont("Helvetica", 9.5)
+        sup_lines = list(self.supplier.get("address_lines", []))
+        if self.supplier.get("reg_no"): sup_lines.append(self.supplier["reg_no"])
+        if self.supplier.get("vat"):    sup_lines.append(f"VAT-nr: {self.supplier['vat']}")
+        if self.supplier.get("iban"):   sup_lines += ["Cont/ Account no.:", self.supplier["iban"]]
+        if self.supplier.get("bank"):   sup_lines.append(self.supplier["bank"])
+        if self.supplier.get("swift"):  sup_lines.append(f"SWIFT/BIC: {self.supplier['swift']}")
+        cust_lines = list(self.customer.get("address_lines", []))
+        if self.customer.get("vat"):    cust_lines += ["", self.customer["vat"]]
+        yl = y - 5 * mm
+        for ln in sup_lines:  c.drawString(col_l, yl, ln); yl -= 4.5 * mm
+        yr = y - 5 * mm
+        for ln in cust_lines: c.drawString(col_r, yr, ln); yr -= 4.5 * mm
+        y = min(yl, yr) - 4 * mm
+
+        # ── Table header ──
+        c.setFont("Helvetica-Bold", 9.5)
+        c.setLineWidth(0.4)
+        c.line(LM, y + 1, RM, y + 1)
+        for txt, x in [("Denumirea produselor", LM), ("U.m.", LM + 78*mm), ("Cantitatea", LM + 92*mm),
+                       ("Pret unitar", LM + 115*mm), ("Valoarea", LM + 140*mm), ("Valoarea TVA", LM + 160*mm)]:
+            c.drawString(x, y - 4*mm, txt)
+        c.drawString(LM, y - 8*mm, "sau a serviciilor")
+        for txt, x in [("Description", LM), ("Quantity", LM + 92*mm), ("Unit price", LM + 115*mm),
+                       ("Price", LM + 140*mm), ("TVA/ VAT", LM + 160*mm)]:
+            c.drawString(x, y - 12.5*mm, txt)
+        for txt, x in [("EUR", LM + 115*mm), ("EUR", LM + 140*mm), ("EUR", LM + 160*mm)]:
+            c.drawString(x, y - 17*mm, txt)
+        c.line(LM, y - 19*mm, RM, y - 19*mm)
+        y -= 24 * mm
+
+        # ── One item block per reversed invoice ──
+        c.setFont("Helvetica", 9.5)
+        total = 0.0
+        for i, line in enumerate(items):
+            if i > 0:
+                y -= 3 * mm
+            item_y = y
+            desc = ["STORNO ADVANCE"]
+            if line.storno_description:
+                desc.append(line.storno_description)
+            desc.append((line.model or "").upper())
+            desc.append(f"Culoare: {line.culoare}")
+            if line.vin:
+                desc.append(f"VIN: {line.vin}")
+            comanda_text = f"Comanda: {line.comanda}"
+            if line.anexa_ref:
+                comanda_text += f" / {line.anexa_ref}"
+            desc.append(comanda_text)
+
+            c.drawString(LM + 78*mm, item_y, "buc")
+            c.drawRightString(LM + 105*mm, item_y, "-1")
+            c.drawRightString(LM + 138*mm, item_y, fmt_us(abs(line.advance)))
+            c.drawRightString(LM + 158*mm, item_y, fmt_us(line.advance))
+            total += line.advance
+
+            yl = item_y
+            for ln in desc:
+                c.drawString(LM, yl, ln)
+                yl -= 4.7 * mm
+            y = yl
+
+        # ── Footer text ──
+        y -= 5 * mm
+        c.drawString(LM, y, "Scutire conform art. 138 din Directiva 2006/112/CE")
+        y -= 4.7 * mm
+        c.drawString(LM, y, "Livrare Ex Works")
+
+        if self.note:
+            y -= 8 * mm
+            c.setFont("Helvetica", 9)
+            for note_line in self.note.split("\n"):
+                c.drawString(LM, y, note_line)
+                y -= 4.5 * mm
+
+        # ── Total ──
+        y -= 12 * mm
+        c.line(LM, y + 6*mm, RM, y + 6*mm)
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(LM, y, "PRICE")
+        c.drawRightString(RM, y, f"{fmt_us(total)} EUR")
+
         y -= 18 * mm
         c.setFont("Helvetica", 9.5)
         c.drawString(LM, y, f"Intocmit de {self.intocmit_de}")
@@ -341,7 +490,7 @@ class ProformaPdfRenderer:
                 # Continuation page — minimal header
                 y = H - 20 * mm
                 c.setFont("Helvetica-Bold", 10)
-                c.drawString(LM, y, f"PROFORMA INVOICE No:{inv_no} (continued)")
+                c.drawString(LM, y, f"{self.title_lines[-1]} No:{inv_no} (continued)")
                 y -= 10 * mm
                 y = self._draw_table_header(c, y, LM, RM, cols)
                 max_rows = MAX_ROWS_CONT_PAGE
@@ -434,10 +583,9 @@ class ProformaPdfRenderer:
         # ── Title ──
         y -= 14 * mm
         c.setFont("Helvetica-Bold", 13)
-        c.drawCentredString(W / 2, y, "FACTURA PROFORMA")
-        y -= 5 * mm
-        c.drawCentredString(W / 2, y, "PROFORMA INVOICE")
-        y -= 5 * mm
+        for tl in self.title_lines:
+            c.drawCentredString(W / 2, y, tl)
+            y -= 5 * mm
         c.drawCentredString(W / 2, y, f"No:{inv_no}")
         y -= 5 * mm
 
