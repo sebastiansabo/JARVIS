@@ -147,6 +147,25 @@ class InvoiceStorageRepository(BaseRepository):
     def delete_invoice(self, invoice_id):
         self.execute("DELETE FROM facturare_invoices WHERE id = %s", (invoice_id,))
 
+    # ── Konto Config ────────────────────────────────────────────
+
+    def get_konto_config(self):
+        return self.query_all(
+            """SELECT kc.*, comp.company AS supplier_name
+               FROM facturare_konto_config kc
+               JOIN companies comp ON comp.id = kc.supplier_id
+               ORDER BY kc.supplier_id, kc.invoice_type""")
+
+    def upsert_konto_config(self, supplier_id, invoice_type, konto_debit, konto_credit, centru_gestiune, updated_by=None):
+        return self.execute(
+            """INSERT INTO facturare_konto_config (supplier_id, invoice_type, konto_debit, konto_credit, centru_gestiune, updated_by)
+               VALUES (%s,%s,%s,%s,%s,%s)
+               ON CONFLICT (supplier_id, invoice_type) DO UPDATE SET
+                 konto_debit = EXCLUDED.konto_debit, konto_credit = EXCLUDED.konto_credit,
+                 centru_gestiune = EXCLUDED.centru_gestiune, updated_at = now(), updated_by = EXCLUDED.updated_by
+               RETURNING *""",
+            (supplier_id, invoice_type, konto_debit, konto_credit, centru_gestiune, updated_by), returning=True)
+
     # ── Invoice Links ────────────────────────────────────────────
 
     def create_link(self, source_invoice_id, target_invoice_id, link_type):

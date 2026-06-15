@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import {
   Plus, FileText, Loader2, ChevronRight, ChevronDown, Copy,
   Search, CheckCircle2, Circle, Ban, ArrowRight,
-  Trash2, Download, Archive,
+  Trash2, Download, Archive, FileSpreadsheet,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -34,7 +34,7 @@ interface ContractSummary {
 interface AnexaSummary {
   id: number; anexa_number: number; line_count: number; total_value: number
   proformas_total: number; invoiced_total: number; pct_proforma: number; pct_invoiced: number
-  invoice_count: number; stage: string; types: string[]; notes: string | null; created_at: string | null
+  invoice_count: number; stage: string; status: string; types: string[]; notes: string | null; created_at: string | null
 }
 
 interface AnexaLine {
@@ -90,6 +90,14 @@ const STAGE_CONFIG: Record<string, { label: string; color: string }> = {
   STORNO: { label: 'Storno', color: 'bg-red-100 text-red-800' },
   COMPLETE: { label: 'Finalizat', color: 'bg-emerald-100 text-emerald-800' },
 }
+
+const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  NEW: { label: 'New', color: 'bg-gray-100 text-gray-800' },
+  IN_PROGRESS: { label: 'In Progress', color: 'bg-blue-100 text-blue-800' },
+  PAID: { label: 'Paid', color: 'bg-emerald-100 text-emerald-800' },
+  PROCESSED: { label: 'Processed', color: 'bg-purple-100 text-purple-800' },
+}
+const STATUS_KEYS = Object.keys(STATUS_CONFIG)
 const TYPE_LABELS: Record<string, string> = { PROFORMA: 'Proforma', INVOICE: 'Factura', STORNO: 'Storno', FINAL: 'Final' }
 const TYPE_COLORS: Record<string, string> = {
   PROFORMA: 'bg-blue-100 text-blue-800',
@@ -961,6 +969,12 @@ function AnexaDetailPanel({ anexaId, defaultIntocmit, onAction, onClose }: {
                             <Archive className="h-3 w-3 text-amber-500" />
                           </Button>
                         )}
+                        {inv.invoice_type !== 'PROFORMA' && (
+                          <Button variant="ghost" size="icon" className="h-5 w-5" title="Download EuroFib XLSX"
+                            onClick={(e) => { e.stopPropagation(); window.open(`/facturare/api/invoices/${inv.id}/eurofib`, '_blank') }}>
+                            <FileSpreadsheet className="h-3 w-3 text-emerald-500" />
+                          </Button>
+                        )}
                         {idx === detail.invoices.length - 1 && (
                           <Button variant="ghost" size="icon" className="h-5 w-5" title="Delete"
                             onClick={async (e) => {
@@ -1151,6 +1165,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                       <th className="text-left px-3 py-2.5 font-medium">Anexa</th>
                       <th className="text-center px-3 py-2.5 font-medium">Cars</th>
                       <th className="text-left px-3 py-2.5 font-medium">Stage</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Status</th>
                       <th className="text-right px-3 py-2.5 font-medium">Value EUR</th>
                       {!selectedAnexaId && <th className="text-right px-3 py-2.5 font-medium">Invoiced</th>}
                       {!selectedAnexaId && <th className="text-center px-3 py-2.5 font-medium">%</th>}
@@ -1158,8 +1173,8 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {anexasLoading && <tr><td colSpan={selectedAnexaId ? 5 : 7} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></td></tr>}
-                    {!anexasLoading && anexas.length === 0 && <tr><td colSpan={selectedAnexaId ? 5 : 7} className="text-center py-8 text-muted-foreground">No anexas yet</td></tr>}
+                    {anexasLoading && <tr><td colSpan={selectedAnexaId ? 6 : 8} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></td></tr>}
+                    {!anexasLoading && anexas.length === 0 && <tr><td colSpan={selectedAnexaId ? 6 : 8} className="text-center py-8 text-muted-foreground">No anexas yet</td></tr>}
                     {anexas.map(a => {
                       const cfg = STAGE_CONFIG[a.stage] || STAGE_CONFIG.NEW
                       const isSelected = selectedAnexaId === a.id
@@ -1169,6 +1184,29 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                           <td className="px-3 py-2.5 font-medium">Anexa {a.anexa_number}</td>
                           <td className="px-3 py-2.5 text-center"><Badge variant="outline" className="text-xs">{a.line_count}</Badge></td>
                           <td className="px-3 py-2.5"><Badge className={`${cfg.color} text-xs`}>{cfg.label}</Badge></td>
+                          <td className="px-3 py-1" onClick={e => e.stopPropagation()}>
+                            <Select value={a.status} onValueChange={async (v) => {
+                              try {
+                                const res = await fetch(`/facturare/api/anexas/${a.id}/status`, {
+                                  method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ status: v }),
+                                })
+                                if (!res.ok) throw new Error('Failed')
+                                refreshAnexas()
+                              } catch { toast.error('Failed to update status') }
+                            }}>
+                              <SelectTrigger className="h-7 w-[130px] text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {STATUS_KEYS.map(s => (
+                                  <SelectItem key={s} value={s}>
+                                    <span className={`inline-block px-1 py-0.5 rounded text-xs ${STATUS_CONFIG[s].color}`}>{STATUS_CONFIG[s].label}</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </td>
                           <td className="px-3 py-2.5 text-right font-mono">{fmtEur(a.total_value)}</td>
                           {!selectedAnexaId && <td className="px-3 py-2.5 text-right font-mono text-xs">{a.invoiced_total > 0 ? fmtEur(a.invoiced_total) : '—'}</td>}
                           {!selectedAnexaId && (
@@ -1405,8 +1443,8 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
             </div>
 
             <Card>
-              <CardContent className="p-0">
-                <table className="w-full text-sm">
+              <CardContent className="p-0 overflow-x-auto">
+                <table className="w-full text-sm min-w-[900px]">
                   <thead>
                     <tr className="border-b bg-muted/50">
                       <th className="w-8"></th>
@@ -1414,10 +1452,10 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                       <th className="text-left px-3 py-2.5 font-medium">Client</th>
                       <th className="text-left px-3 py-2.5 font-medium">Contracts</th>
                       <th className="text-center px-3 py-2.5 font-medium">Anexe</th>
-                      <th className="text-right px-3 py-2.5 font-medium">Total EUR</th>
-                      <th className="text-right px-3 py-2.5 font-medium">Invoiced</th>
-                      <th className="text-right px-3 py-2.5 font-medium">Remaining</th>
-                      <th className="text-center px-3 py-2.5 font-medium">%</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">Total EUR</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">Invoiced</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">Remaining</th>
+                      <th className="text-center px-3 py-2.5 font-medium w-24">%</th>
                     </tr>
                   </thead>
                   <tbody>
