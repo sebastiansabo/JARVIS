@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, ClipboardList, Newspaper, Car, DollarSign, Tag, BarChart3, Receipt, Headset } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, ClipboardList, Newspaper, Car, DollarSign, Tag, BarChart3, Receipt, Headset, MoreHorizontal, GraduationCap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -28,7 +28,6 @@ interface NavItem {
 
 const navItemsDef: NavItem[] = [
   { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'can_access_dashboard' },
-  { path: '/app/ai-agent', label: 'AI Agent', icon: Bot, moduleKey: 'ai_agent', permission: 'can_access_ai_agent' },
   {
     path: '/app/accounting',
     label: 'Accounting',
@@ -41,6 +40,7 @@ const navItemsDef: NavItem[] = [
       { path: '/app/efactura', label: 'e-Factura', icon: FileText, moduleKey: 'accounting_efactura', permission: 'can_access_efactura' },
       { path: '/app/accounting/bilant', label: 'Bilant', icon: Scale, moduleKey: 'accounting_bilant', v2Permission: 'bilant.templates.view' },
       { path: '/app/accounting/facturare', label: 'Comenzi Externe', icon: Receipt, moduleKey: 'accounting_facturare' },
+      { path: '/app/dms/suppliers', label: 'Suppliers', icon: Building2, moduleKey: 'dms_suppliers', permission: 'can_access_dms' },
     ],
   },
   {
@@ -53,9 +53,9 @@ const navItemsDef: NavItem[] = [
       { path: '/app/hr/employees', label: 'Employees', icon: Users, moduleKey: 'hr_employees', v2Permission: 'hr.employees.view' },
       { path: '/app/hr/bonuses', label: 'Bonuses', icon: Award, moduleKey: 'hr_bonuses', v2Permission: 'hr.bonuses.view' },
       { path: '/app/hr/organigram', label: 'Organigram', icon: Network, moduleKey: 'hr_organigram', v2Permission: 'hr.structure.view' },
+      { path: '/app/hr/courses', label: 'Cursuri', icon: GraduationCap, moduleKey: 'hr_courses' },
     ],
   },
-  { path: '/app/approvals', label: 'Approvals', icon: ClipboardCheck, moduleKey: 'approvals', permission: 'can_access_approvals', badge: ApprovalBadge },
   {
     path: '/app/marketing',
     label: 'Marketing',
@@ -70,10 +70,6 @@ const navItemsDef: NavItem[] = [
       { path: '/app/marketing/simulator', label: 'Simulator', icon: Calculator, moduleKey: 'marketing_simulator', v2Permission: 'marketing.simulator.view' },
     ],
   },
-  { path: '/app/digest', label: 'Digest', icon: Newspaper, moduleKey: 'digest' },
-  { path: '/app/forms', label: 'Forms', icon: ClipboardList, moduleKey: 'forms', permission: 'can_access_forms' },
-  { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms', permission: 'can_access_dms' },
-  { path: '/app/dms/suppliers', label: 'Suppliers', icon: Building2, moduleKey: 'dms_suppliers', permission: 'can_access_dms' },
   {
     path: '/app/sales',
     label: 'Sales',
@@ -92,10 +88,21 @@ const navItemsDef: NavItem[] = [
       { path: '/app/carpark', label: 'Vehicule', icon: Car, moduleKey: 'carpark_vehicles' },
       { path: '/app/carpark/pricing-rules', label: 'Reguli preț', icon: DollarSign, moduleKey: 'carpark_pricing' },
       { path: '/app/carpark/promotions', label: 'Promoții', icon: Tag, moduleKey: 'carpark_promotions' },
+      { path: '/app/foi-parcurs', label: 'Foi de Parcurs', icon: FileText, moduleKey: 'foi_parcurs', permission: 'can_access_carpark' },
     ],
   },
-  { path: '/app/foi-parcurs', label: 'Foi de Parcurs', icon: FileText, permission: 'can_access_carpark' },
-  { path: '/app/settings', label: 'Settings', icon: Settings, moduleKey: 'settings', permission: 'can_access_settings' },
+  {
+    path: '/app/others',
+    label: 'Others',
+    icon: MoreHorizontal,
+    moduleKey: 'others',
+    children: [
+      { path: '/app/ai-agent', label: 'AI Agent', icon: Bot, moduleKey: 'ai_agent' },
+      { path: '/app/forms', label: 'Forms', icon: ClipboardList, moduleKey: 'forms' },
+      { path: '/app/digest', label: 'Digest', icon: Newspaper, moduleKey: 'digest' },
+      { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms' },
+    ],
+  },
 ]
 
 interface SidebarProps {
@@ -209,10 +216,12 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
 
   const toggleGroup = (label: string) => {
     setOpenGroups((prev) => {
-      const next = new Set(prev)
-      if (next.has(label)) next.delete(label)
-      else next.add(label)
-      return next
+      if (prev.has(label)) {
+        const next = new Set(prev)
+        next.delete(label)
+        return next
+      }
+      return new Set([label])
     })
   }
 
@@ -459,6 +468,38 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link
+                    to="/app/approvals"
+                    className={cn(
+                      'flex items-center justify-center rounded-md p-2 transition-colors',
+                      location.pathname.startsWith('/app/approvals')
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-accent',
+                    )}
+                  >
+                      <ClipboardCheck className="h-5 w-5 shrink-0" />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="right">Approvals</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    to="/app/settings"
+                    className={cn(
+                      'flex items-center justify-center rounded-md p-2 transition-colors',
+                      location.pathname.startsWith('/app/settings')
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-accent',
+                    )}
+                  >
+                    <Settings className="h-5 w-5 shrink-0" />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="right">Settings</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
                     to="/app/ticketing"
                     className={cn(
                       'flex items-center justify-center rounded-md p-2 transition-colors',
@@ -523,6 +564,31 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
             </>
           ) : (
             <>
+              <Link
+                to="/app/approvals"
+                className={cn(
+                  'flex items-center gap-3 rounded-md px-3 py-2 transition-colors',
+                  location.pathname.startsWith('/app/approvals')
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-accent',
+                )}
+              >
+                <ClipboardCheck className="h-5 w-5 shrink-0" />
+                <span className="flex-1 text-sm font-medium">Approvals</span>
+                <ApprovalBadge />
+              </Link>
+              <Link
+                to="/app/settings"
+                className={cn(
+                  'flex items-center gap-3 rounded-md px-3 py-2 transition-colors',
+                  location.pathname.startsWith('/app/settings')
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-accent',
+                )}
+              >
+                <Settings className="h-5 w-5 shrink-0" />
+                <span className="text-sm font-medium">Settings</span>
+              </Link>
               <Link
                 to="/app/ticketing"
                 className={cn(

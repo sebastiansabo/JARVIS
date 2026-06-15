@@ -24,6 +24,8 @@ import type { Course, CourseStatus } from '@/types/courses'
 
 interface Props {
   search: string
+  hideToolbar?: boolean
+  activeTab?: 'overview' | 'list'
 }
 
 const MONTHS = [
@@ -82,12 +84,13 @@ const LOCKED_COLUMNS = new Set(['name'])
 
 type PageTab = 'overview' | 'list'
 
-export default function CoursesTab({ search }: Props) {
+export default function CoursesTab({ search, hideToolbar, activeTab }: Props) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
   // Page-level tabs: Overview | List
-  const [pageTab, setPageTab] = useTabParam<PageTab>('overview', 'view')
+  const [_pageTab, setPageTab] = useTabParam<PageTab>('overview', 'view')
+  const pageTab = activeTab ?? _pageTab
 
   // Year for overview
   const [overviewYear, setOverviewYear] = useState(new Date().getFullYear())
@@ -221,22 +224,30 @@ export default function CoursesTab({ search }: Props) {
   return (
     <div className="space-y-4">
       {/* Page-level tabs + Add button */}
-      <div className="flex items-center justify-between">
-        <Tabs value={pageTab} onValueChange={(v) => setPageTab(v as PageTab)}>
-          <TabsList>
-            <TabsTrigger value="overview">
-              <BarChart3 className="h-3.5 w-3.5 mr-1.5" />Overview
-            </TabsTrigger>
-            <TabsTrigger value="list">
-              <List className="h-3.5 w-3.5 mr-1.5" />List
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+      {hideToolbar ? (
+        <div className="flex justify-end">
+          <Button size="sm" onClick={() => setShowCreateDialog(true)}>
+            <Plus className="mr-1.5 h-4 w-4" /> Add Course
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between">
+          <Tabs value={pageTab} onValueChange={(v) => setPageTab(v as PageTab)}>
+            <TabsList>
+              <TabsTrigger value="overview">
+                <BarChart3 className="h-3.5 w-3.5 mr-1.5" />Overview
+              </TabsTrigger>
+              <TabsTrigger value="list">
+                <List className="h-3.5 w-3.5 mr-1.5" />List
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-        <Button size="sm" onClick={() => setShowCreateDialog(true)}>
-          <Plus className="mr-1.5 h-4 w-4" /> Add Course
-        </Button>
-      </div>
+          <Button size="sm" onClick={() => setShowCreateDialog(true)}>
+            <Plus className="mr-1.5 h-4 w-4" /> Add Course
+          </Button>
+        </div>
+      )}
 
       {/* Overview Tab */}
       {pageTab === 'overview' && (

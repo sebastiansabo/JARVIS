@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { BarChart3, Download, FileCheck, FileSpreadsheet, Fingerprint, GraduationCap, LayoutDashboard, Pencil, Plus, Users, CalendarClock, Wallet, ShieldCheck } from 'lucide-react'
+import { BarChart3, Clock, Download, FileCheck, FileSpreadsheet, Fingerprint, GraduationCap, LayoutDashboard, List, Pencil, Plus, Users, CalendarClock, Wallet, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -12,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
+import { useTabParam } from '@/hooks/useTabParam'
 
 const BonusesTab = lazy(() => import('./BonusesTab'))
 const PontajeTab = lazy(() => import('./PontajeTab'))
@@ -37,6 +38,40 @@ function TabLoader() {
       <Skeleton className="h-10 w-full" />
       <Skeleton className="h-10 w-full" />
       <Skeleton className="h-10 w-full" />
+    </div>
+  )
+}
+
+function CoursesStandalone({ search }: { search: string }) {
+  const [pageTab, setPageTab] = useTabParam<'overview' | 'list'>('overview', 'view')
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <PageHeader
+        title="Cursuri"
+        breadcrumbs={[
+          { label: 'HR', href: '/app/hr/employees' },
+          { label: 'Cursuri' },
+        ]}
+        actions={
+          <Tabs value={pageTab} onValueChange={(v) => setPageTab(v as 'overview' | 'list')}>
+            <TabsList>
+              <TabsTrigger value="overview">
+                <BarChart3 className="h-3.5 w-3.5 mr-1.5" />Overview
+              </TabsTrigger>
+              <TabsTrigger value="list">
+                <List className="h-3.5 w-3.5 mr-1.5" />List
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        }
+      />
+      <Suspense fallback={<TabLoader />}>
+        <Routes>
+          <Route path="courses" element={<CoursesTab search={search} hideToolbar activeTab={pageTab} />} />
+          <Route path="courses/:courseId" element={<CourseDetail />} />
+        </Routes>
+      </Suspense>
     </div>
   )
 }
@@ -107,16 +142,13 @@ export default function Hr() {
     }
 
     if (canViewLeavePermits) {
-      t.push({ to: '/app/hr/leave-permits', label: 'Bilete Invoire', icon: FileCheck })
+      t.push({ to: '/app/hr/leave-permits', label: 'Bilete', icon: FileCheck })
     }
     if (canViewLeaves) {
       t.push({ to: '/app/hr/leaves', label: 'Leaves', icon: CalendarClock })
     }
     if (canViewTimeBank) {
-      t.push({ to: '/app/hr/time-bank', label: 'Time Bank', icon: Wallet })
-    }
-    if (canViewCourses) {
-      t.push({ to: '/app/hr/courses', label: 'Cursuri', icon: GraduationCap })
+      t.push({ to: '/app/hr/time-bank', label: 'Bank', icon: Clock })
     }
     if (canViewReports) {
       t.push({ to: '/app/hr/reports', label: 'Reports', icon: BarChart3 })
@@ -128,16 +160,6 @@ export default function Hr() {
   }, [canViewTimesheets, canViewEmployees, canViewLeavePermits, canViewLeaves, canViewTimeBank, canViewCourses, canViewReports, canViewVerification])
 
   // Standalone pages — no tabs/stats
-  if (isCourseDetailPage) {
-    return (
-      <Suspense fallback={<TabLoader />}>
-        <Routes>
-          <Route path="courses/:courseId" element={<CourseDetail />} />
-        </Routes>
-      </Suspense>
-    )
-  }
-
   if (isEmployee360Page) {
     return (
       <Suspense fallback={<TabLoader />}>
@@ -156,6 +178,10 @@ export default function Hr() {
         </Routes>
       </Suspense>
     )
+  }
+
+  if (isCoursesPage || isCourseDetailPage) {
+    return <CoursesStandalone search={search} />
   }
 
   if (isOrganigramPage) {
@@ -215,11 +241,11 @@ export default function Hr() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title={
-          isBonusesPage ? 'Bonuses' : isTimesheetsPage ? 'Timesheets' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete de Invoire' : isLeavesPage ? 'Leaves (CO Balance)' : isTimeBankPage ? 'Time Bank' : isCoursesPage ? 'Cursuri' : isReportsPage ? 'Reports' : isVerificationPage ? 'Verification' : 'Pontaje'
+          isBonusesPage ? 'Bonuses' : isTimesheetsPage ? 'Timesheets' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete' : isLeavesPage ? 'Leaves (CO Balance)' : isTimeBankPage ? 'Bank' : isCoursesPage ? 'Cursuri' : isReportsPage ? 'Reports' : isVerificationPage ? 'Verification' : 'Pontaje'
         }
         breadcrumbs={[
           { label: 'HR', href: '/app/hr/employees' },
-          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete de Invoire' }] : isLeavesPage ? [{ label: 'Leaves' }] : isTimeBankPage ? [{ label: 'Time Bank' }] : isCoursesPage ? [{ label: 'Cursuri' }] : isReportsPage ? [{ label: 'Reports' }] : isVerificationPage ? [{ label: 'Verification' }] : [{ label: 'Pontaje' }]),
+          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete' }] : isLeavesPage ? [{ label: 'Leaves' }] : isTimeBankPage ? [{ label: 'Bank' }] : isCoursesPage ? [{ label: 'Cursuri' }] : isReportsPage ? [{ label: 'Reports' }] : isVerificationPage ? [{ label: 'Verification' }] : [{ label: 'Pontaje' }]),
         ]}
         search={
           <SearchInput
@@ -248,7 +274,7 @@ export default function Hr() {
               </Button>
             )}
             {!isMobile && !isBonusesPage && tabs.length > 1 && (
-              <Tabs value={isVerificationPage ? 'verification' : isReportsPage ? 'reports' : isCoursesPage ? 'courses' : isTimeBankPage ? 'time-bank' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+              <Tabs value={isVerificationPage ? 'verification' : isReportsPage ? 'reports' : isTimeBankPage ? 'time-bank' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
                 <TabsList className="w-auto">
                   {tabs.map((t) => {
                     const val = t.to.split('/').pop()!
@@ -268,7 +294,7 @@ export default function Hr() {
 
       {/* Mobile tab nav */}
       {!isBonusesPage && isMobile && tabs.length > 1 && (
-        <Tabs value={isVerificationPage ? 'verification' : isReportsPage ? 'reports' : isCoursesPage ? 'courses' : isTimeBankPage ? 'time-bank' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+        <Tabs value={isVerificationPage ? 'verification' : isReportsPage ? 'reports' : isTimeBankPage ? 'time-bank' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
               {tabs.map((t) => {

@@ -58,7 +58,7 @@ export function PageHeader({ title, description, breadcrumbs, actions, search }:
 
   /* ── Desktop: inline layout ── */
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="min-w-0">
         {breadcrumbs && breadcrumbs.length > 0 ? (
           <h1 className="flex items-center gap-1.5 flex-wrap">
