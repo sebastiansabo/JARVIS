@@ -983,6 +983,14 @@ function KanbanBoard({ projects, onSelect, onStatusChange: _onStatusChange }: {
                     <div className="text-xs text-muted-foreground truncate">
                       {p.company_name}{p.brand_name ? ` / ${p.brand_name}` : ''}
                     </div>
+                    {p.status === 'completed' && p.updated_at && (() => {
+                      const hoursLeft = Math.max(0, Math.ceil((new Date(p.updated_at).getTime() + 24 * 3600000 - Date.now()) / 3600000))
+                      return (
+                        <span className="inline-block rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+                          {hoursLeft > 0 ? `Auto-archive in ${hoursLeft}h` : 'Archiving soon'}
+                        </span>
+                      )
+                    })()}
                     {/* Budget mini-bar */}
                     {budget > 0 && (
                       <div className="space-y-1">
@@ -1100,9 +1108,23 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, co
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[p.status] ?? ''}`}>
-                    {(p.status ?? '').replace('_', ' ')}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[p.status] ?? ''}`}>
+                      {(p.status ?? '').replace('_', ' ')}
+                    </span>
+                    {p.status === 'completed' && p.updated_at && (() => {
+                      const hoursLeft = Math.max(0, Math.ceil((new Date(p.updated_at).getTime() + 24 * 3600000 - Date.now()) / 3600000))
+                      return hoursLeft > 0 ? (
+                        <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200 whitespace-nowrap">
+                          Auto-archive in {hoursLeft}h
+                        </span>
+                      ) : (
+                        <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200 whitespace-nowrap">
+                          Archiving soon
+                        </span>
+                      )
+                    })()}
+                  </div>
                 </TableCell>
                 <TableCell className="text-center">
                   <HealthBadge project={p} />
