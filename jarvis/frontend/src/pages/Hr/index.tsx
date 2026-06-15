@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { BarChart3, Clock, Download, FileCheck, FileSpreadsheet, Fingerprint, GraduationCap, LayoutDashboard, List, Pencil, Plus, Users, CalendarClock, Wallet, ShieldCheck } from 'lucide-react'
+import { BarChart3, Clock, Download, FileCheck, FileSpreadsheet, Fingerprint, LayoutDashboard, List, Pencil, Plus, Users, CalendarClock, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
