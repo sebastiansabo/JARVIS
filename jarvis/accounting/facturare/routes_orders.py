@@ -359,19 +359,36 @@ def api_import_anexa(contract_id):
         parsed_lines = []
         for r in range(header_row + 1, ws.max_row + 1):
             row = [c.value for c in ws[r]]
-            model = str(row[col_map["model"]] or "").strip() if "model" in col_map else ""
+            # Pad row to avoid index errors
+            while len(row) < len(headers):
+                row.append(None)
+            model_val = row[col_map["model"]] if "model" in col_map else None
+            model = str(model_val or "").strip()
             if not model:
                 continue
+
+            def _get(key):
+                if key not in col_map: return None
+                v = row[col_map[key]]
+                return str(v).strip() if v is not None else None
+
+            def _getf(key):
+                if key not in col_map: return 0
+                v = row[col_map[key]]
+                try: return float(v) if v else 0
+                except (ValueError, TypeError): return 0
+
             parsed_lines.append({
-                "nr_comanda": str(row[col_map.get("comanda", 0)] or "").strip() if "comanda" in col_map else None,
+                "nr_comanda": _get("comanda"),
                 "model": model,
-                "culoare": str(row[col_map.get("culoare", 0)] or "").strip() if "culoare" in col_map else None,
-                "vin": str(row[col_map.get("vin", 0)] or "").strip() if "vin" in col_map and row[col_map["vin"]] else None,
-                "list_price": float(row[col_map["list_price"]] or 0) if "list_price" in col_map and row[col_map["list_price"]] else 0,
-                "selling_price": float(row[col_map["selling_price"]] or 0) if "selling_price" in col_map and row[col_map["selling_price"]] else 0,
+                "culoare": _get("culoare"),
+                "vin": _get("vin") or None,
+                "list_price": _getf("list_price"),
+                "selling_price": _getf("selling_price"),
             })
         wb.close()
     except Exception as e:
+        logger.exception("Anexa import parse error")
         return error_response(f"Parse error: {e}")
 
     if not parsed_lines:
