@@ -176,6 +176,8 @@ def api_list_anexas(contract_id):
         else:
             stage = "NEW"
 
+        status = a.get("status") or "NEW"
+
         proformas_total = sum(float(inv["total_amount_eur"]) for inv in invoices if inv["invoice_type"] == "PROFORMA")
         invoiced_total = sum(float(inv["total_amount_eur"]) for inv in invoices if inv["invoice_type"] == "INVOICE")
         pct_proforma = round((proformas_total / total_value * 100), 1) if total_value else 0
@@ -187,13 +189,29 @@ def api_list_anexas(contract_id):
             "line_count": len(lines), "total_value": total_value,
             "proformas_total": proformas_total, "invoiced_total": invoiced_total,
             "pct_proforma": pct_proforma, "pct_invoiced": pct_invoiced,
-            "invoice_count": len(invoices), "stage": stage, "types": types,
+            "invoice_count": len(invoices), "stage": stage, "status": status, "types": types,
             "created_at": str(a["created_at"]) if a.get("created_at") else None,
         })
     return jsonify({"anexas": result, "contract": {
         "id": contract["id"], "contract_ref": contract["contract_ref"],
         "supplier_id": contract["supplier_id"], "customer_id": contract["customer_id"],
     }})
+
+
+ANEXA_STATUSES = ['NEW', 'IN_PROGRESS', 'PAID', 'PROCESSED']
+
+@facturare_bp.route("/facturare/api/anexas/<int:anexa_id>/status", methods=["PATCH"])
+@login_required
+@handle_api_errors
+def api_update_anexa_status(anexa_id):
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+    data = request.get_json(force=True)
+    status = data.get("status", "").upper()
+    if status not in ANEXA_STATUSES:
+        return error_response(f"Invalid status. Must be one of: {', '.join(ANEXA_STATUSES)}")
+    _repo.execute("UPDATE facturare_anexas SET status = %s, updated_at = now() WHERE id = %s", (status, anexa_id))
+    return jsonify({"success": True, "status": status})
 
 
 @facturare_bp.route("/facturare/api/contracts/<int:contract_id>/anexas", methods=["POST"])
@@ -534,6 +552,23 @@ def api_issue_final():
     return jsonify({"success": True, "invoice": _inv_to_dict(_repo.get_invoice_by_id(inv.id))}), 201
 
 
+PAYMENT_STATUSES = ['UNPAID', 'PAID', 'PARTIAL']
+
+@facturare_bp.route("/facturare/api/invoices/<int:invoice_id>/payment-status", methods=["PATCH"])
+@login_required
+@handle_api_errors
+def api_update_payment_status(invoice_id):
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+    data = request.get_json(force=True)
+    status = data.get("payment_status", "").upper()
+    if status not in PAYMENT_STATUSES:
+        return error_response(f"Invalid status. Must be one of: {', '.join(PAYMENT_STATUSES)}")
+    _repo.execute("UPDATE facturare_invoices SET payment_status = %s, updated_at = now() WHERE id = %s", (status, invoice_id))
+    _invalidate_doc_items_cache()
+    return jsonify({"success": True, "payment_status": status})
+
+
 # ── Delete invoice (last only) ───────────────────────────────────
 
 @facturare_bp.route("/facturare/api/invoices/<int:invoice_id>", methods=["DELETE"])
@@ -576,6 +611,41 @@ def api_search_users():
     return jsonify({"users": [{"id": r["id"], "name": r["name"]} for r in rows]})
 
 
+# ── Konto configuration ─────────────────────────────────────────
+
+@facturare_bp.route("/facturare/api/konto-config")
+@login_required
+@handle_api_errors
+def api_get_konto_config():
+    if not _check_perm("view"):
+        return error_response("Permission denied", 403)
+    rows = _repo.get_konto_config()
+    return jsonify({"configs": [
+        {"supplier_id": r["supplier_id"], "supplier_name": r.get("supplier_name", ""),
+         "invoice_type": r["invoice_type"], "konto_debit": r.get("konto_debit") or "",
+         "konto_credit": r.get("konto_credit") or "", "centru_gestiune": r.get("centru_gestiune") or ""}
+        for r in rows
+    ]})
+
+
+@facturare_bp.route("/facturare/api/konto-config", methods=["PUT"])
+@login_required
+@handle_api_errors
+def api_put_konto_config():
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+    data = request.get_json(force=True)
+    items = data.get("items", [])
+    for item in items:
+        _repo.upsert_konto_config(
+            supplier_id=item["supplier_id"], invoice_type=item["invoice_type"],
+            konto_debit=item.get("konto_debit") or None, konto_credit=item.get("konto_credit") or None,
+            centru_gestiune=item.get("centru_gestiune") or None,
+            updated_by=current_user.id,
+        )
+    return jsonify({"success": True, "count": len(items)})
+
+
 # ── Individual document items (per car) ──────────────────────────
 
 @facturare_bp.route("/facturare/api/document-items")
@@ -607,7 +677,7 @@ def api_document_items():
     rows = _repo.query_all(
         f"""SELECT i.id AS invoice_id, i.invoice_type, i.sequence_number,
                   i.invoice_number, i.issued_date, i.total_amount_eur,
-                  i.kurs_applied, i.intocmit_de, i.split_mode, i.notes,
+                  i.kurs_applied, i.intocmit_de, i.split_mode, i.notes, i.payment_status,
                   a.id AS anexa_id, a.anexa_number,
                   c.id AS contract_id, c.contract_ref,
                   c.supplier_id, c.customer_id,
@@ -658,6 +728,7 @@ def api_document_items():
                 "unit_price": selling,
                 "doc_amount": round(car_amount, 2),
                 "notes": inv.get("notes"),
+                "payment_status": inv.get("payment_status") or "UNPAID",
             })
 
     _doc_items_cache[cache_key] = (time.time(), items)
@@ -858,3 +929,116 @@ def api_generate_pdf(invoice_id):
     else:
         pdf_bytes = renderer.render_all_to_bytes(order_lines, start_no)
         return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
+
+
+# ── EuroFib XLSX export ──────────────────────────────────────────
+
+@facturare_bp.route("/facturare/api/invoices/<int:invoice_id>/eurofib")
+@login_required
+@handle_api_errors
+def api_generate_eurofib(invoice_id):
+    """Generate EuroFib import XLSX for a non-proforma invoice."""
+    from flask import send_file
+    from .generators.eurofib_xlsx import EurofibXlsxRenderer
+    from .config import JobConfig, InvoiceConfig, FxConfig, EurofibConfig, ContractConfig, InputConfig, PartyConfig
+    from .models import OrderLine
+    from datetime import date as date_type
+    import io
+
+    if not _check_perm("view"):
+        return error_response("Permission denied", 403)
+
+    inv_row = _repo.get_invoice_by_id(invoice_id)
+    if not inv_row:
+        return error_response("Invoice not found", 404)
+    if inv_row["invoice_type"] == "PROFORMA":
+        return error_response("EuroFib export not available for proformas", 400)
+
+    anexa = _repo.get_anexa_by_id(inv_row["anexa_id"])
+    contract = _repo.get_contract_by_id(anexa["contract_id"])
+    lines = _repo.get_lines_by_anexa(anexa["id"])
+
+    # Get Konto config for this supplier + invoice type
+    konto_row = _repo.query_one(
+        "SELECT * FROM facturare_konto_config WHERE supplier_id = %s AND invoice_type = %s",
+        (contract["supplier_id"], inv_row["invoice_type"]))
+    if not konto_row or not konto_row.get("konto_debit") or not konto_row.get("konto_credit"):
+        return error_response("Konto config not set for this supplier/type. Go to Settings tab.", 400)
+
+    # Build per-car order lines
+    inv_type_str = inv_row["invoice_type"]
+    total_amount = float(inv_row["total_amount_eur"])
+    split_mode = inv_row.get("split_mode", "equal")
+    total_selling = sum(float(l["selling_price_eur"]) for l in lines) or 1
+    start_no = inv_row.get("invoice_number") or inv_row["id"]
+    issued_date = inv_row.get("issued_date") or date_type.today()
+    kurs = float(inv_row["kurs_applied"]) if inv_row.get("kurs_applied") else 1.0
+
+    # For storno: build lines per reversed invoice (negative amounts)
+    if inv_type_str == "STORNO":
+        reversed_invoices = _repo.query_all(
+            "SELECT invoice_number, total_amount_eur, split_mode FROM facturare_invoices "
+            "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number",
+            (anexa["id"],))
+        order_lines = []
+        for ri in reversed_invoices:
+            ri_total = float(ri["total_amount_eur"])
+            ri_split = ri.get("split_mode") or "equal"
+            for car in lines:
+                selling = float(car["selling_price_eur"])
+                if ri_split == "proportional" and total_selling > 0:
+                    car_amount = ri_total * (selling / total_selling)
+                else:
+                    car_amount = ri_total / max(len(lines), 1)
+                order_lines.append(OrderLine(
+                    comanda=int(car["nr_comanda"]) if car.get("nr_comanda") and str(car["nr_comanda"]).isdigit() else 0,
+                    model=car.get("model", ""), culoare=car.get("culoare") or "",
+                    list_price=float(car["list_price_eur"]), selling_price=selling,
+                    advance=-car_amount, rest=None,
+                    start_no=start_no,
+                ))
+    else:
+        order_lines = []
+        for l in lines:
+            selling = float(l["selling_price_eur"])
+            if split_mode == "proportional" and total_selling > 0:
+                car_advance = total_amount * (selling / total_selling)
+            else:
+                car_advance = total_amount / max(len(lines), 1)
+            order_lines.append(OrderLine(
+                comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
+                model=l["model"], culoare=l.get("culoare") or "",
+                list_price=float(l["list_price_eur"]), selling_price=selling,
+                advance=car_advance, rest=selling,
+            ))
+
+    # Compute kurs_date (day before issued_date)
+    from datetime import timedelta
+    kurs_date = issued_date - timedelta(days=1) if isinstance(issued_date, date_type) else date_type.today()
+
+    # Build JobConfig for the renderer
+    cfg = JobConfig(
+        job_id=f"inv-{invoice_id}",
+        contract=ContractConfig(ref=contract["contract_ref"], anexa_ref=f"Anexa {anexa['anexa_number']}"),
+        input=InputConfig(anexa="n/a"),
+        invoice=InvoiceConfig(kind="invoice", start_no=start_no, date=issued_date if isinstance(issued_date, date_type) else date_type.today()),
+        fx=FxConfig(currency="EUR", kurs=kurs, kurs_date=kurs_date),
+        supplier=PartyConfig(name="", address_lines=[]),
+        customer=PartyConfig(name="", address_lines=[]),
+        eurofib=EurofibConfig(
+            klient=0,
+            konto_debit=int(konto_row["konto_debit"]),
+            konto_credit=int(konto_row["konto_credit"]),
+        ),
+    )
+
+    renderer = EurofibXlsxRenderer(cfg)
+    xlsx_bytes = renderer.render_to_bytes(order_lines)
+
+    cust_row = _repo.query_one("SELECT display_name FROM crm_clients WHERE id = %s", (contract["customer_id"],))
+    cust_name = (cust_row["display_name"] if cust_row else "").replace(" ", "_")
+    type_label = {"INVOICE": "advance", "STORNO": "storno", "FINAL": "final"}.get(inv_type_str, "")
+    dl_name = f"EuroFib_{cust_name}_{start_no}_{type_label}.xlsx"
+
+    return send_file(io.BytesIO(xlsx_bytes), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True, download_name=dl_name)

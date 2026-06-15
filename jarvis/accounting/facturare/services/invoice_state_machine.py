@@ -178,6 +178,16 @@ class InvoiceStateMachine:
         if self.repo.get_invoice_by_anexa_and_type(anexa_id, InvoiceTypeEnum.STORNO):
             raise InvoiceStateMachineError("Storno already exists")
 
+        # Verify full anexa amount is invoiced
+        lines = self.repo.get_lines_by_anexa(anexa_id)
+        anexa_total = sum(Decimal(str(l["selling_price_eur"])) for l in lines)
+        invoiced_total = sum(Decimal(str(r["total_amount_eur"])) for r in invoices)
+        if anexa_total > 0 and invoiced_total < anexa_total:
+            remaining = anexa_total - invoiced_total
+            raise InvoiceStateMachineError(
+                f"Cannot issue Storno — only {invoiced_total} of {anexa_total} EUR invoiced. "
+                f"Remaining {remaining} EUR must be invoiced first.")
+
         storno_total = sum(Decimal(str(r["total_amount_eur"])) for r in invoices)
 
         # Weighted average kurs

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, Download, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { toast } from 'sonner'
+import { Loader2, Download, FileSpreadsheet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -7,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 
 interface DocItem {
   invoice_id: number
@@ -28,6 +30,7 @@ interface DocItem {
   unit_price: number
   doc_amount: number
   notes: string | null
+  payment_status: string
 }
 
 function fmtEur(n: number) {
@@ -47,6 +50,57 @@ function setParam(key: string, value: string) {
   window.history.replaceState({}, '', url.toString())
 }
 
+// ── Column definitions ──────────────────────────────────────────
+
+const TYPE_BADGES: Record<string, { label: string; color: string }> = {
+  PROFORMA: { label: 'Proforma', color: 'bg-blue-100 text-blue-800' },
+  INVOICE: { label: 'Factura', color: 'bg-amber-100 text-amber-800' },
+  STORNO: { label: 'Storno', color: 'bg-red-100 text-red-800' },
+  FINAL: { label: 'Final', color: 'bg-emerald-100 text-emerald-800' },
+}
+
+const ALL_COLUMNS: ColumnDef<DocItem>[] = [
+  { key: 'type', label: 'Type', render: (item) => {
+    const b = TYPE_BADGES[item.invoice_type]
+    return b ? <span className={`inline-block px-1.5 py-0.5 rounded font-medium ${b.color}`}>{b.label} #{item.sequence_number}</span> : item.invoice_type
+  }},
+  { key: 'doc_number', label: 'No.', render: (item) => <span className="font-mono">{item.doc_number || '—'}</span> },
+  { key: 'date', label: 'Date', render: (item) => (
+    <span className="text-muted-foreground">{item.issued_date ? new Date(item.issued_date).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}</span>
+  )},
+  { key: 'company', label: 'Company', render: (item) => <span className="text-muted-foreground max-w-[120px] truncate block">{item.supplier_name}</span> },
+  { key: 'client', label: 'Client', render: (item) => <span className="font-medium max-w-[140px] truncate block">{item.customer_name}</span> },
+  { key: 'contract', label: 'Contract', render: (item) => item.contract_ref },
+  { key: 'anexa', label: 'Anexa', className: 'text-center', render: (item) => item.anexa_number },
+  { key: 'nr_comanda', label: 'Nr. Cmd', render: (item) => <span className="font-mono text-muted-foreground">{item.nr_comanda || '—'}</span> },
+  { key: 'vehicle', label: 'Vehicle', render: (item) => (
+    <span className="max-w-[180px] truncate block">{item.model}{item.culoare && ` (${item.culoare})`}</span>
+  )},
+  { key: 'vin', label: 'VIN', render: (item) => (
+    <span className="text-muted-foreground max-w-[140px] truncate block">{item.vin || <span className="text-amber-500 italic">no VIN</span>}</span>
+  )},
+  { key: 'unit_price', label: 'Unit Price', className: 'text-right', render: (item) => <span className="font-mono">{fmtEur(item.unit_price)}</span> },
+  { key: 'amount', label: 'Invoice EUR', className: 'text-right', render: (item) => <span className="font-mono font-medium">{fmtEur(item.doc_amount)}</span> },
+  { key: 'kurs', label: 'Kurs', render: (item) => <span className="text-muted-foreground">{item.kurs_applied || '—'}</span> },
+  { key: 'intocmit', label: 'Intocmit', render: (item) => <span className="text-muted-foreground italic max-w-[100px] truncate block">{item.intocmit_de || '—'}</span> },
+  { key: 'payment', label: 'Payment', render: () => null },  // rendered manually with dropdown
+]
+
+const PAYMENT_CONFIG: Record<string, { label: string; color: string }> = {
+  UNPAID: { label: 'Unpaid', color: 'bg-red-100 text-red-800' },
+  PARTIAL: { label: 'Partial', color: 'bg-amber-100 text-amber-800' },
+  PAID: { label: 'Paid', color: 'bg-emerald-100 text-emerald-800' },
+}
+
+const DEFAULT_VISIBLE = ['type', 'doc_number', 'date', 'client', 'contract', 'nr_comanda', 'vehicle', 'vin', 'amount', 'kurs', 'intocmit', 'payment']
+const LOCKED_COLUMNS = new Set(['type', 'amount'])
+
+const SORT_FIELD_MAP: Record<string, SortField> = {
+  doc_number: 'doc_number', date: 'date', client: 'customer', contract: 'contract', vehicle: 'model', amount: 'amount',
+}
+
+// ── Component ───────────────────────────────────────────────────
+
 export default function DocumentItemsTab({ docType }: { docType: string }) {
   const [items, setItems] = useState<DocItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -58,6 +112,9 @@ export default function DocumentItemsTab({ docType }: { docType: string }) {
   const [datePeriod, setDatePeriod] = useState(() => getParam('period', 'all'))
   const [sortField, setSortField] = useState<SortField>(() => getParam('sort', 'doc_number') as SortField)
   const [sortDir, setSortDir] = useState<SortDir>(() => getParam('dir', 'desc') as SortDir)
+
+  const { visibleColumns, setVisibleColumns, defaultColumns } = useColumnState(
+    'facturare-invoices-columns', DEFAULT_VISIBLE, ALL_COLUMNS.map(c => c.key))
 
   useEffect(() => { setParam('q', searchQuery) }, [searchQuery])
   useEffect(() => { setParam('company', filterCompany) }, [filterCompany])
@@ -133,19 +190,26 @@ export default function DocumentItemsTab({ docType }: { docType: string }) {
     return sortDir === 'asc' ? cmp : -cmp
   })
 
-  const toggleSort = (field: SortField) => {
-    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortField(field); setSortDir('desc') }
+  const toggleSort = (colKey: string) => {
+    const sf = SORT_FIELD_MAP[colKey]
+    if (!sf) return
+    if (sortField === sf) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortField(sf); setSortDir('desc') }
   }
 
-  const SortIcon = ({ field }: { field: SortField }) => (
-    <span className="inline-flex ml-0.5">{sortField === field
-      ? (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)
-      : <ArrowUpDown className="h-3 w-3 opacity-30" />}</span>
-  )
+  const SortIcon = ({ colKey }: { colKey: string }) => {
+    const sf = SORT_FIELD_MAP[colKey]
+    if (!sf) return null
+    return (
+      <span className="inline-flex ml-0.5">{sortField === sf
+        ? (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)
+        : <ArrowUpDown className="h-3 w-3 opacity-30" />}</span>
+    )
+  }
 
   const totalAmount = sorted.reduce((s, i) => s + i.doc_amount, 0)
-  const label = 'Invoice'
+  const activeColumns = ALL_COLUMNS.filter(c => visibleColumns.includes(c.key))
+  const colCount = activeColumns.length + 1 // +1 for actions column
 
   return (
     <div className="space-y-3">
@@ -180,23 +244,22 @@ export default function DocumentItemsTab({ docType }: { docType: string }) {
               {datePeriod === 'custom' && <SelectItem value="custom">Custom</SelectItem>}
             </SelectContent>
           </Select>
-          {datePeriod === 'custom' && (
-            <>
-              <Input type="date" className="w-32" value={dateFrom}
-                onChange={e => { setDateFrom(e.target.value); setDatePeriod('custom') }} />
-              <Input type="date" className="w-32" value={dateTo}
-                onChange={e => { setDateTo(e.target.value); setDatePeriod('custom') }} />
-            </>
-          )}
           {(filterCompany !== 'all' || filterClient !== 'all' || searchQuery || dateFrom || dateTo) && (
             <Button variant="ghost" size="sm" className="text-xs" onClick={() => { setFilterCompany('all'); setFilterClient('all'); setSearchQuery(''); applyPeriod('all') }}>
               Clear
             </Button>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">{sorted.length} items</span>
           <span className="text-sm font-mono font-medium">{fmtEur(totalAmount)} EUR</span>
+          <ColumnToggle
+            visibleColumns={visibleColumns}
+            defaultColumns={defaultColumns}
+            columnDefs={ALL_COLUMNS as ColumnDef<never>[]}
+            lockedColumns={LOCKED_COLUMNS}
+            onChange={setVisibleColumns}
+          />
         </div>
       </div>
 
@@ -207,75 +270,72 @@ export default function DocumentItemsTab({ docType }: { docType: string }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="text-left px-3 py-2.5 font-medium">Type</th>
-                  <th className="text-left px-3 py-2.5 font-medium cursor-pointer select-none hover:bg-muted/80" onClick={() => toggleSort('doc_number')}>
-                    No. <SortIcon field="doc_number" />
-                  </th>
-                  <th className="text-left px-3 py-2.5 font-medium cursor-pointer select-none hover:bg-muted/80" onClick={() => toggleSort('date')}>
-                    Date <SortIcon field="date" />
-                  </th>
-                  <th className="text-left px-3 py-2.5 font-medium">Company</th>
-                  <th className="text-left px-3 py-2.5 font-medium cursor-pointer select-none hover:bg-muted/80" onClick={() => toggleSort('customer')}>
-                    Client <SortIcon field="customer" />
-                  </th>
-                  <th className="text-left px-3 py-2.5 font-medium cursor-pointer select-none hover:bg-muted/80" onClick={() => toggleSort('contract')}>
-                    Contract <SortIcon field="contract" />
-                  </th>
-                  <th className="text-center px-3 py-2.5 font-medium">Anexa</th>
-                  <th className="text-left px-3 py-2.5 font-medium">Nr. Cmd</th>
-                  <th className="text-left px-3 py-2.5 font-medium cursor-pointer select-none hover:bg-muted/80" onClick={() => toggleSort('model')}>
-                    Vehicle <SortIcon field="model" />
-                  </th>
-                  <th className="text-left px-3 py-2.5 font-medium">VIN</th>
-                  <th className="text-right px-3 py-2.5 font-medium">Unit Price</th>
-                  <th className="text-right px-3 py-2.5 font-medium cursor-pointer select-none hover:bg-muted/80" onClick={() => toggleSort('amount')}>
-                    {label} EUR <SortIcon field="amount" />
-                  </th>
-                  <th className="text-left px-3 py-2.5 font-medium">Kurs</th>
-                  <th className="text-left px-3 py-2.5 font-medium">Intocmit</th>
-                  <th className="w-10"></th>
+                  {activeColumns.map(col => {
+                    const sortable = !!SORT_FIELD_MAP[col.key]
+                    return (
+                      <th key={col.key}
+                        className={`px-3 py-2.5 font-medium text-xs ${col.className || 'text-left'} ${sortable ? 'cursor-pointer select-none hover:bg-muted/80' : ''}`}
+                        onClick={sortable ? () => toggleSort(col.key) : undefined}>
+                        {col.label} {sortable && <SortIcon colKey={col.key} />}
+                      </th>
+                    )
+                  })}
+                  <th className="w-16"></th>
                 </tr>
               </thead>
               <tbody>
                 {loading && (
-                  <tr><td colSpan={15} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></td></tr>
+                  <tr><td colSpan={colCount} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></td></tr>
                 )}
                 {!loading && sorted.length === 0 && (
-                  <tr><td colSpan={15} className="text-center py-8 text-muted-foreground">No {label.toLowerCase()}s found</td></tr>
+                  <tr><td colSpan={colCount} className="text-center py-8 text-muted-foreground">No invoices found</td></tr>
                 )}
                 {sorted.map((item, idx) => (
-                  <tr key={`${item.invoice_id}-${item.nr_comanda}-${idx}`}
-                    className="border-b hover:bg-muted/30">
-                    <td className="px-3 py-2 text-xs">
-                      {item.invoice_type === 'PROFORMA' && <span className="inline-block px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-medium">Proforma #{item.sequence_number}</span>}
-                      {item.invoice_type === 'INVOICE' && <span className="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">Factura #{item.sequence_number}</span>}
-                      {item.invoice_type === 'STORNO' && <span className="inline-block px-1.5 py-0.5 rounded bg-red-100 text-red-800 font-medium">Storno #{item.sequence_number}</span>}
-                      {item.invoice_type === 'FINAL' && <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium">Final #{item.sequence_number}</span>}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs">{item.doc_number || '—'}</td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {item.issued_date ? new Date(item.issued_date).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground max-w-[120px] truncate">{item.supplier_name}</td>
-                    <td className="px-3 py-2 text-xs font-medium max-w-[140px] truncate">{item.customer_name}</td>
-                    <td className="px-3 py-2 text-xs">{item.contract_ref}</td>
-                    <td className="px-3 py-2 text-xs text-center">{item.anexa_number}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{item.nr_comanda || '—'}</td>
-                    <td className="px-3 py-2 text-xs max-w-[180px] truncate">
-                      {item.model}{item.culoare && ` (${item.culoare})`}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground max-w-[140px] truncate">
-                      {item.vin || <span className="text-amber-500 italic">no VIN</span>}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-xs">{fmtEur(item.unit_price)}</td>
-                    <td className="px-3 py-2 text-right font-mono text-xs font-medium">{fmtEur(item.doc_amount)}</td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">{item.kurs_applied || '—'}</td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground italic max-w-[100px] truncate">{item.intocmit_de || '—'}</td>
+                  <tr key={`${item.invoice_id}-${item.nr_comanda}-${idx}`} className="border-b hover:bg-muted/30">
+                    {activeColumns.map(col => (
+                      <td key={col.key} className={`px-3 py-2 text-xs ${col.className || ''}`}>
+                        {col.key === 'payment' ? (() => {
+                          if (item.invoice_type === 'PROFORMA') return <span className="text-muted-foreground">—</span>
+                          const ps = PAYMENT_CONFIG[item.payment_status] || PAYMENT_CONFIG.UNPAID
+                          return (
+                            <Select value={item.payment_status || 'UNPAID'} onValueChange={async (v) => {
+                              try {
+                                const res = await fetch(`/facturare/api/invoices/${item.invoice_id}/payment-status`, {
+                                  method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ payment_status: v }),
+                                })
+                                if (!res.ok) throw new Error('Failed')
+                                load()
+                              } catch { toast.error('Failed to update') }
+                            }}>
+                              <SelectTrigger className="h-6 w-[90px] text-xs border-0 p-0">
+                                <span className={`inline-block px-1.5 py-0.5 rounded text-xs ${ps.color}`}>{ps.label}</span>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(PAYMENT_CONFIG).map(([k, v]) => (
+                                  <SelectItem key={k} value={k}>
+                                    <span className={`inline-block px-1 py-0.5 rounded text-xs ${v.color}`}>{v.label}</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )
+                        })() : col.render(item)}
+                      </td>
+                    ))}
                     <td className="px-3 py-2">
-                      <Button variant="ghost" size="icon" className="h-6 w-6" title="Download PDF"
-                        onClick={() => window.open(`/facturare/api/invoices/${item.invoice_id}/pdf?mode=individual&car=${item.car_index}`, '_blank')}>
-                        <Download className="h-3 w-3 text-red-500" />
-                      </Button>
+                      <div className="flex items-center gap-0.5">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" title="Download PDF"
+                          onClick={() => window.open(`/facturare/api/invoices/${item.invoice_id}/pdf?mode=individual&car=${item.car_index}`, '_blank')}>
+                          <Download className="h-3 w-3 text-red-500" />
+                        </Button>
+                        {item.invoice_type !== 'PROFORMA' && (
+                          <Button variant="ghost" size="icon" className="h-6 w-6" title="Download EuroFib XLSX"
+                            onClick={() => window.open(`/facturare/api/invoices/${item.invoice_id}/eurofib`, '_blank')}>
+                            <FileSpreadsheet className="h-3 w-3 text-emerald-500" />
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -283,9 +343,11 @@ export default function DocumentItemsTab({ docType }: { docType: string }) {
               {sorted.length > 0 && (
                 <tfoot>
                   <tr className="border-t bg-muted/30 font-medium">
-                    <td colSpan={10} className="px-3 py-2 text-right text-xs">Total ({sorted.length} items):</td>
+                    <td colSpan={activeColumns.findIndex(c => c.key === 'amount') + 1} className="px-3 py-2 text-right text-xs">
+                      Total ({sorted.length} items):
+                    </td>
                     <td className="px-3 py-2 text-right font-mono text-xs">{fmtEur(totalAmount)}</td>
-                    <td colSpan={4}></td>
+                    <td colSpan={colCount - activeColumns.findIndex(c => c.key === 'amount') - 2}></td>
                   </tr>
                 </tfoot>
               )}
