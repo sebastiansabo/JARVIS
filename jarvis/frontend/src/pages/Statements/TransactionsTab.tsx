@@ -777,11 +777,11 @@ const TransactionRow = memo(function TransactionRow({
             {formatDate(txn.transaction_date)}
           </span>
         </TableCell>
-        <TableCell className="text-xs text-muted-foreground truncate max-w-[100px]">
+        <TableCell className="text-xs text-muted-foreground whitespace-normal break-words">
           {txn.company_name ?? txn.company_cui ?? '—'}
         </TableCell>
-        <TableCell className="text-sm">{txn.vendor_name ?? '—'}</TableCell>
-        <TableCell className="text-sm font-medium">{txn.matched_supplier ?? '—'}</TableCell>
+        <TableCell className="text-sm whitespace-normal break-words">{txn.vendor_name ?? '—'}</TableCell>
+        <TableCell className="text-sm font-medium whitespace-normal break-words">{txn.matched_supplier ?? '—'}</TableCell>
         <TableCell className="text-xs text-muted-foreground whitespace-normal" style={{ width: 300, maxWidth: 300, wordBreak: 'break-word' }}>
           {txn.description}
         </TableCell>
