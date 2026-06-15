@@ -350,8 +350,8 @@ def api_import_anexa(contract_id):
             elif "model" in h: col_map["model"] = i
             elif "cul" in h or "color" in h: col_map["culoare"] = i
             elif "vin" in h: col_map["vin"] = i
-            elif "pret" in h and "lista" in h or "list" in h and "price" in h: col_map["list_price"] = i
-            elif "pret" in h and "vanz" in h or "sell" in h and "price" in h: col_map["selling_price"] = i
+            elif ("pret" in h and "lista" in h) or ("list" in h and "price" in h): col_map["list_price"] = i
+            elif ("pret" in h and "vanz" in h) or ("sell" in h and "price" in h) or h == "pret vanzare": col_map["selling_price"] = i
 
         if "model" not in col_map:
             return error_response("Missing 'Model' column in header")
