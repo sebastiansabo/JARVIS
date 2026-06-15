@@ -1452,11 +1452,12 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                       <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">Invoiced</th>
                       <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">Remaining</th>
                       <th className="text-center px-3 py-2.5 font-medium w-24">%</th>
+                      <th className="w-8"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {loading && <tr><td colSpan={9} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></td></tr>}
-                    {!loading && groups.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">No contracts yet</td></tr>}
+                    {loading && <tr><td colSpan={10} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></td></tr>}
+                    {!loading && groups.length === 0 && <tr><td colSpan={10} className="text-center py-8 text-muted-foreground">No contracts yet</td></tr>}
                     {groups.map(([key, g]) => {
                       const expanded = expandedGroups.has(key)
                       const totalVal = g.contracts.reduce((s, c) => s + c.total_value, 0)
@@ -1494,6 +1495,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                                 </div>
                               )}
                             </td>
+                            <td></td>
                           </tr>
                           {/* Expanded contract rows */}
                           {expanded && g.contracts.map(c => (
@@ -1514,6 +1516,21 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                               </td>
                               <td className="px-3 py-2 text-center text-xs text-muted-foreground">
                                 {c.total_value > 0 ? `${Math.round(c.invoiced_total / c.total_value * 100)}%` : '—'}
+                              </td>
+                              <td className="px-1 py-2" onClick={e => e.stopPropagation()}>
+                                {c.anexa_count === 0 && (
+                                  <Button variant="ghost" size="icon" className="h-6 w-6" title="Delete contract"
+                                    onClick={async () => {
+                                      if (!confirm(`Delete contract ${c.contract_ref}?`)) return
+                                      try {
+                                        const res = await fetch(`/facturare/api/contracts/${c.id}`, { method: 'DELETE' })
+                                        if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed') }
+                                        toast.success('Contract deleted'); loadContracts()
+                                      } catch (err: any) { toast.error(err.message) }
+                                    }}>
+                                    <Trash2 className="h-3 w-3 text-muted-foreground hover:text-red-500" />
+                                  </Button>
+                                )}
                               </td>
                             </tr>
                           ))}
