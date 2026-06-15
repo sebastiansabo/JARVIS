@@ -190,6 +190,7 @@ def api_list_anexas(contract_id):
             "proformas_total": proformas_total, "invoiced_total": invoiced_total,
             "pct_proforma": pct_proforma, "pct_invoiced": pct_invoiced,
             "invoice_count": len(invoices), "stage": stage, "status": status, "types": types,
+            "archived": bool(a.get("archived")),
             "created_at": str(a["created_at"]) if a.get("created_at") else None,
         })
     return jsonify({"anexas": result, "contract": {
@@ -211,7 +212,31 @@ def api_update_anexa_status(anexa_id):
     if status not in ANEXA_STATUSES:
         return error_response(f"Invalid status. Must be one of: {', '.join(ANEXA_STATUSES)}")
     _repo.execute("UPDATE facturare_anexas SET status = %s, updated_at = now() WHERE id = %s", (status, anexa_id))
+
+    # Auto-archive when status is PROCESSED and final invoice exists
+    if status == "PROCESSED":
+        has_final = _repo.query_one(
+            "SELECT id FROM facturare_invoices WHERE anexa_id = %s AND invoice_type = 'FINAL'", (anexa_id,))
+        if has_final:
+            _repo.execute("UPDATE facturare_anexas SET archived = TRUE WHERE id = %s", (anexa_id,))
+            _repo.execute("UPDATE facturare_invoices SET archived = TRUE WHERE anexa_id = %s", (anexa_id,))
+            _invalidate_doc_items_cache()
+
     return jsonify({"success": True, "status": status})
+
+
+@facturare_bp.route("/facturare/api/anexas/<int:anexa_id>/archive", methods=["PATCH"])
+@login_required
+@handle_api_errors
+def api_toggle_archive(anexa_id):
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+    data = request.get_json(force=True)
+    archived = bool(data.get("archived", True))
+    _repo.execute("UPDATE facturare_anexas SET archived = %s WHERE id = %s", (archived, anexa_id))
+    _repo.execute("UPDATE facturare_invoices SET archived = %s WHERE anexa_id = %s", (archived, anexa_id))
+    _invalidate_doc_items_cache()
+    return jsonify({"success": True, "archived": archived})
 
 
 @facturare_bp.route("/facturare/api/contracts/<int:contract_id>/anexas", methods=["POST"])
@@ -689,6 +714,7 @@ def api_document_items():
            JOIN companies comp ON comp.id = c.supplier_id
            JOIN crm_clients cl ON cl.id = c.customer_id
            WHERE i.invoice_type IN ({placeholders})
+             AND i.archived = {'TRUE' if request.args.get('archived') == 'true' else 'FALSE'}
            ORDER BY i.issued_date DESC, i.id DESC""",
         tuple(doc_types),
     )

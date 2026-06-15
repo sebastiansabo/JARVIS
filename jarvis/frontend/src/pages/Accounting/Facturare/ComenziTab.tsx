@@ -34,7 +34,7 @@ interface ContractSummary {
 interface AnexaSummary {
   id: number; anexa_number: number; line_count: number; total_value: number
   proformas_total: number; invoiced_total: number; pct_proforma: number; pct_invoiced: number
-  invoice_count: number; stage: string; status: string; types: string[]; notes: string | null; created_at: string | null
+  invoice_count: number; stage: string; status: string; archived: boolean; types: string[]; notes: string | null; created_at: string | null
 }
 
 interface AnexaLine {
@@ -348,11 +348,15 @@ function CreateAnexaDialog({ open, onOpenChange, contractId, onCreated }: {
             <div className="col-span-2"><Label>Notes</Label><Input placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} /></div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Button variant={mode === 'manual' ? 'default' : 'outline'} size="sm" onClick={() => setMode('manual')}>Manual Entry</Button>
             <Button variant={mode === 'import' ? 'default' : 'outline'} size="sm" onClick={() => setMode('import')}>
               <FileText className="h-4 w-4 mr-1" /> Import Excel
             </Button>
+            <span className="text-muted-foreground text-xs mx-1">|</span>
+            <a href="/facturare/api/template/anexa" download className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1">
+              <Download className="h-3 w-3" /> Download Template
+            </a>
           </div>
 
           <Separator />
@@ -365,14 +369,6 @@ function CreateAnexaDialog({ open, onOpenChange, contractId, onCreated }: {
               </div>
               <div className="text-xs text-muted-foreground">
                 Expected columns: Nr. Comanda, Model, Culoare, VIN, List Price, Selling Price, Qty
-              </div>
-              <div className="flex gap-3">
-                <a href="/facturare/api/template/proforma" download className="text-sm text-blue-600 hover:underline inline-flex items-center gap-1">
-                  <Download className="h-3 w-3" /> Proforma template
-                </a>
-                <a href="/facturare/api/template/invoice" download className="text-sm text-blue-600 hover:underline inline-flex items-center gap-1">
-                  <Download className="h-3 w-3" /> Invoice template
-                </a>
               </div>
             </div>
           ) : (

@@ -181,27 +181,32 @@ export default function Facturare() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Comenzi Externe"
-        description="Manage contracts, anexas, and invoices"
-      />
-
       <Tabs defaultValue={new URLSearchParams(window.location.search).get('tab') || 'comenzi'} className="w-full"
         onValueChange={(v) => {
           const url = new URL(window.location.href)
           url.searchParams.set('tab', v)
           window.history.replaceState({}, '', url.toString())
         }}>
-        <TabsList>
-          <TabsTrigger value="comenzi">Comenzi</TabsTrigger>
-          <TabsTrigger value="invoices">Invoices</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
+        <div className="flex items-center justify-between">
+          <PageHeader
+            title="Comenzi Externe"
+            description="Manage contracts, anexas, and invoices"
+          />
+          <TabsList>
+            <TabsTrigger value="comenzi">Comenzi</TabsTrigger>
+            <TabsTrigger value="invoices">Invoices</TabsTrigger>
+            <TabsTrigger value="archive">Archive</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+          </TabsList>
+        </div>
         <TabsContent value="comenzi" className="mt-4">
           <ComenziTab companies={companies} />
         </TabsContent>
         <TabsContent value="invoices" className="mt-4">
           <DocumentItemsTab docType="PROFORMA,INVOICE,STORNO,FINAL" />
+        </TabsContent>
+        <TabsContent value="archive" className="mt-4">
+          <DocumentItemsTab docType="PROFORMA,INVOICE,STORNO,FINAL" archived />
         </TabsContent>
         <TabsContent value="settings" className="mt-4">
           <KontoSettingsTab companies={companies} />

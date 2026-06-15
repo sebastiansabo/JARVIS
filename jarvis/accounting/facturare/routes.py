@@ -515,9 +515,10 @@ def api_download_template(kind: str):
     templates = {
         "invoice": ("Anexa_Invoice_Template.xlsx", "Anexa_Invoice_Template.xlsx"),
         "proforma": ("Anexa_Proforma_Template.xlsx", "Anexa_Proforma_Template.xlsx"),
+        "anexa": ("Anexa_Template.xlsx", "Anexa_Template.xlsx"),
     }
     if kind not in templates:
-        return error_response("kind must be 'invoice' or 'proforma'", 400)
+        return error_response("kind must be 'invoice', 'proforma' or 'anexa'", 400)
 
     filename, download_name = templates[kind]
     template_path = _ASSETS_DIR / filename

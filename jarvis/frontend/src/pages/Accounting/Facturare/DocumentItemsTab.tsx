@@ -101,7 +101,7 @@ const SORT_FIELD_MAP: Record<string, SortField> = {
 
 // ── Component ───────────────────────────────────────────────────
 
-export default function DocumentItemsTab({ docType }: { docType: string }) {
+export default function DocumentItemsTab({ docType, archived = false }: { docType: string; archived?: boolean }) {
   const [items, setItems] = useState<DocItem[]>([])
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState(() => getParam('q', ''))
@@ -146,12 +146,12 @@ export default function DocumentItemsTab({ docType }: { docType: string }) {
 
   const load = useCallback(() => {
     setLoading(true)
-    fetch(`/facturare/api/document-items?type=${docType}`)
+    fetch(`/facturare/api/document-items?type=${docType}${archived ? '&archived=true' : ''}`)
       .then(r => r.ok ? r.json() : { items: [] })
       .then(data => setItems(data.items || []))
       .catch(() => setItems([]))
       .finally(() => setLoading(false))
-  }, [docType])
+  }, [docType, archived])
 
   useEffect(() => { load() }, [load])
 
