@@ -52,8 +52,9 @@ class InvoiceStateMachine:
                        split_mode: str = "equal",
                        invoice_number: int | None = None, issued_date=None,
                        intocmit_de: str | None = None, notes: str | None = None,
+                       line_ids: list[int] | None = None,
                        created_by_user_id: int = 0) -> StoredInvoice:
-        """Issue a Proforma for an Anexa."""
+        """Issue a Proforma for an Anexa (optionally for selected lines only)."""
         # Check no STORNO yet
         existing_storno = self.repo.get_invoice_by_anexa_and_type(anexa_id, InvoiceTypeEnum.STORNO)
         if existing_storno:
@@ -61,6 +62,14 @@ class InvoiceStateMachine:
 
         # Check amount doesn't exceed anexa total value
         anexa_lines = self.repo.get_lines_by_anexa(anexa_id)
+
+        # If line_ids provided, validate they belong to this anexa
+        if line_ids:
+            valid_ids = {l["id"] for l in anexa_lines}
+            invalid = set(line_ids) - valid_ids
+            if invalid:
+                raise InvoiceStateMachineError(f"Line IDs {invalid} not found in this anexa")
+
         anexa_total = sum(Decimal(str(l["selling_price_eur"])) for l in anexa_lines)
         existing_proformas = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.PROFORMA)
         proformas_total = sum(Decimal(str(p["total_amount_eur"])) for p in existing_proformas)
@@ -103,8 +112,9 @@ class InvoiceStateMachine:
             split_mode=split_mode,
             notes=notes,
             created_by=created_by_user_id,
+            line_ids=line_ids,
         )
-        logger.info("Proforma #%d created: anexa=%s amount=%s EUR", seq, anexa_id, amount_eur)
+        logger.info("Proforma #%d created: anexa=%s amount=%s EUR lines=%s", seq, anexa_id, amount_eur, line_ids or "all")
         return StoredInvoice.from_row(inv_row)
 
     # ── Issue Invoice ────────────────────────────────────────────

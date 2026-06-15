@@ -46,7 +46,7 @@ interface InvoiceDetail {
   id: number; anexa_id: number; invoice_type: string; invoice_state: string
   sequence_number: number; invoice_number: number | null
   total_amount_eur: number; total_amount_ron: number; kurs_applied: number | null
-  intocmit_de: string | null; notes: string | null; issued_date: string | null; created_at: string | null
+  intocmit_de: string | null; notes: string | null; line_ids: number[] | null; issued_date: string | null; created_at: string | null
 }
 
 interface AnexaDetail {
@@ -551,13 +551,13 @@ function AddVehicleInline({ anexaId, nextLineNumber, nextNrComanda, onAdded }: {
   )
 }
 
-// ── Proforma Dialog (lightweight — just amount + number) ────────
+// ── Proforma Dialog (with line selection) ───────────────────────
 
-function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalEur, carPrices, defaultIntocmit, onCreated }: {
+function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalEur, lines, defaultIntocmit, onCreated }: {
   open: boolean; onOpenChange: (v: boolean) => void; anexaId: number
-  remainingEur: number; anexaTotalEur: number; carPrices: number[]; defaultIntocmit?: string; onCreated: () => void
+  remainingEur: number; anexaTotalEur: number; lines: AnexaLine[]; defaultIntocmit?: string; onCreated: () => void
 }) {
-  const carCount = carPrices.length
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set(lines.map(l => l.id)))
   const [amount, setAmount] = useState('')
   const [percent, setPercent] = useState('')
   const [splitMode, setSplitMode] = useState<'equal' | 'proportional'>('equal')
@@ -569,6 +569,39 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  // Reset selection when lines change (dialog opens)
+  useEffect(() => { setSelectedIds(new Set(lines.map(l => l.id))) }, [lines])
+
+  const selectedLines = lines.filter(l => selectedIds.has(l.id))
+  const selectedPrices = selectedLines.map(l => l.selling_price_eur)
+  const selectedTotal = selectedPrices.reduce((s, p) => s + p, 0)
+  const carCount = selectedLines.length
+  const allSelected = selectedIds.size === lines.length
+
+  const toggleLine = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  const toggleAll = () => {
+    if (allSelected) setSelectedIds(new Set())
+    else setSelectedIds(new Set(lines.map(l => l.id)))
+  }
+
+  // Recalculate amount when selection or percent changes
+  const recalcAmount = (pct: string, prices: number[], total: number, mode: string) => {
+    if (!pct) return
+    const p = parseFloat(pct) / 100
+    if (mode === 'proportional') setAmount(prices.reduce((s, cp) => s + cp * p, 0).toFixed(2))
+    else if (total > 0) setAmount((p * total).toFixed(2))
+  }
+
+  useEffect(() => {
+    if (percent) recalcAmount(percent, selectedPrices, selectedTotal, splitMode)
+  }, [selectedIds.size]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!issuedDate) return
     fetch(`/facturare/api/bnr-rate?date=${issuedDate}`)
@@ -578,6 +611,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
   }, [issuedDate])
 
   const handleSubmit = async () => {
+    if (carCount === 0) { toast.error('Select at least one vehicle'); return }
     if (!amount || parseFloat(amount) <= 0) { toast.error('Amount required'); return }
     if (!startNo) { toast.error('Invoice No. required'); return }
     setSubmitting(true)
@@ -587,6 +621,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
         body: JSON.stringify({
           anexa_id: anexaId, amount_eur: parseFloat(amount),
           split_mode: splitMode,
+          line_ids: allSelected ? undefined : Array.from(selectedIds),
           invoice_number: startNo ? parseInt(startNo) : undefined,
           issued_date: issuedDate || undefined, intocmit_de: intocmitDe || undefined, notes: notes || undefined,
         }),
@@ -600,14 +635,34 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>Issue Proforma</DialogTitle>
           <DialogDescription>
             Anexa total: {fmtEur(anexaTotalEur)} EUR — Remaining: <span className="font-mono font-semibold">{fmtEur(remainingEur)} EUR</span>
+            {!allSelected && <span className="ml-2 text-blue-600">Selected: {fmtEur(selectedTotal)} EUR ({carCount}/{lines.length})</span>}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+          {/* Vehicle selection */}
+          {lines.length > 1 && (
+            <div className="border rounded-md">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/40 border-b">
+                <input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" />
+                <span className="text-xs font-medium text-muted-foreground">Select vehicles ({selectedIds.size}/{lines.length})</span>
+              </div>
+              <div className="max-h-[200px] overflow-y-auto">
+                {lines.map(l => (
+                  <label key={l.id} className={`flex items-center gap-2 px-3 py-1 text-xs hover:bg-muted/20 cursor-pointer ${selectedIds.has(l.id) ? '' : 'opacity-50'}`}>
+                    <input type="checkbox" checked={selectedIds.has(l.id)} onChange={() => toggleLine(l.id)} className="rounded" />
+                    <span className="font-mono text-muted-foreground w-12 shrink-0">{l.nr_comanda || '—'}</span>
+                    <span className="flex-1 truncate">{l.model}</span>
+                    <span className="font-mono text-muted-foreground">{fmtEur(l.selling_price_eur)}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-[70px_1fr_1fr_1fr] gap-3">
             <div>
               <Label>%</Label>
@@ -616,15 +671,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
                 onChange={e => {
                   const p = e.target.value
                   setPercent(p)
-                  if (p) {
-                    const pct = parseFloat(p) / 100
-                    if (splitMode === 'proportional') {
-                      // Sum of X% of each car's price
-                      setAmount(carPrices.reduce((s, cp) => s + cp * pct, 0).toFixed(2))
-                    } else if (anexaTotalEur > 0) {
-                      setAmount((pct * anexaTotalEur).toFixed(2))
-                    }
-                  }
+                  recalcAmount(p, selectedPrices, selectedTotal, splitMode)
                 }} />
             </div>
             <div>
@@ -634,8 +681,8 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
                 onChange={e => {
                   const a = e.target.value
                   setAmount(a)
-                  if (a && anexaTotalEur > 0) {
-                    setPercent(((parseFloat(a) / anexaTotalEur) * 100).toFixed(1))
+                  if (a && selectedTotal > 0) {
+                    setPercent(((parseFloat(a) / selectedTotal) * 100).toFixed(1))
                   }
                 }} />
             </div>
@@ -650,12 +697,12 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
                 <button className={`px-2 py-0.5 rounded ${splitMode === 'equal' ? 'bg-foreground text-background' : 'bg-muted'}`}
                   onClick={() => {
                     setSplitMode('equal')
-                    if (percent) setAmount(((parseFloat(percent) / 100) * anexaTotalEur).toFixed(2))
+                    if (percent) setAmount(((parseFloat(percent) / 100) * selectedTotal).toFixed(2))
                   }}>Equal per car</button>
                 <button className={`px-2 py-0.5 rounded ${splitMode === 'proportional' ? 'bg-foreground text-background' : 'bg-muted'}`}
                   onClick={() => {
                     setSplitMode('proportional')
-                    if (percent) setAmount(carPrices.reduce((s, cp) => s + cp * (parseFloat(percent) / 100), 0).toFixed(2))
+                    if (percent) setAmount(selectedPrices.reduce((s, cp) => s + cp * (parseFloat(percent) / 100), 0).toFixed(2))
                   }}>% of each car price</button>
               </div>
               {amount && (
@@ -668,9 +715,9 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
                     )}
                     {startNo && <span className="font-mono">No: {startNo}–{parseInt(startNo) + carCount - 1}</span>}
                   </div>
-                  {splitMode === 'proportional' && percent && carPrices.some((p, i) => i > 0 && p !== carPrices[0]) && (
+                  {splitMode === 'proportional' && percent && selectedPrices.some((p, i) => i > 0 && p !== selectedPrices[0]) && (
                     <div className="text-[10px] text-muted-foreground/70">
-                      {carPrices.map((cp, i) => (
+                      {selectedPrices.map((cp, i) => (
                         <span key={i} className="mr-2">{fmtEur(cp * parseFloat(percent) / 100)}</span>
                       ))}
                     </div>
@@ -690,7 +737,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
             <div><Label>Notes</Label><Input placeholder="10% advance" value={notes} onChange={e => setNotes(e.target.value)} /></div>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="flex-shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={submitting}>{submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Issue Proforma</Button>
         </DialogFooter>
@@ -997,7 +1044,7 @@ function AnexaDetailPanel({ anexaId, defaultIntocmit, onAction, onClose }: {
       {/* Dialogs */}
       <ProformaDialog open={proformaOpen} onOpenChange={setProformaOpen} anexaId={anexaId}
         remainingEur={detail?.remaining_eur ?? 0} anexaTotalEur={detail?.anexa_total_eur ?? 0}
-        carPrices={detail?.lines.map(l => l.selling_price_eur) ?? []} defaultIntocmit={defaultIntocmit} onCreated={handleCreated} />
+        lines={detail?.lines ?? []} defaultIntocmit={defaultIntocmit} onCreated={handleCreated} />
       <InvoiceDialog open={invoiceOpen} onOpenChange={setInvoiceOpen} anexaId={anexaId}
         unpairedProformas={detail.unpaired_proformas} defaultIntocmit={defaultIntocmit} onCreated={handleCreated} />
       <ActionDialog open={stornoOpen} onOpenChange={setStornoOpen} anexaId={anexaId} action="storno"

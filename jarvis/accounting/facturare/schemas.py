@@ -64,6 +64,7 @@ class ProformaCreateRequest(BaseModel):
     issued_date: Optional[date] = None
     intocmit_de: Optional[str] = None
     notes: Optional[str] = None
+    line_ids: Optional[list[int]] = None  # selected anexa line IDs (None = all lines)
 
 
 class InvoiceCreateRequest(BaseModel):

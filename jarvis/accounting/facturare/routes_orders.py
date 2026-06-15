@@ -59,6 +59,10 @@ def _check_perm(action: str) -> bool:
 
 
 def _inv_to_dict(row):
+    import json as _json
+    raw_line_ids = row.get("line_ids")
+    if isinstance(raw_line_ids, str):
+        raw_line_ids = _json.loads(raw_line_ids)
     return {
         "id": row["id"], "anexa_id": row["anexa_id"],
         "invoice_type": row["invoice_type"], "invoice_state": row["invoice_state"],
@@ -71,6 +75,7 @@ def _inv_to_dict(row):
         "currency": row["currency"],
         "intocmit_de": row.get("intocmit_de"),
         "notes": row.get("notes"),
+        "line_ids": raw_line_ids,
         "created_at": str(row["created_at"]) if row.get("created_at") else None,
     }
 
@@ -582,6 +587,7 @@ def api_issue_proforma():
             split_mode=req.split_mode,
             invoice_number=req.invoice_number, issued_date=req.issued_date,
             intocmit_de=req.intocmit_de, notes=req.notes,
+            line_ids=req.line_ids,
             created_by_user_id=current_user.id,
         )
     except InvoiceStateMachineError as e:
@@ -865,7 +871,17 @@ def api_generate_pdf(invoice_id):
 
     anexa = _repo.get_anexa_by_id(inv_row["anexa_id"])
     contract = _repo.get_contract_by_id(anexa["contract_id"])
-    lines = _repo.get_lines_by_anexa(anexa["id"])
+    all_lines = _repo.get_lines_by_anexa(anexa["id"])
+    # Filter to selected lines if line_ids is set on this invoice
+    inv_line_ids = inv_row.get("line_ids")
+    if inv_line_ids:
+        import json as _json
+        if isinstance(inv_line_ids, str):
+            inv_line_ids = _json.loads(inv_line_ids)
+        _lid_set = set(inv_line_ids)
+        lines = [l for l in all_lines if l["id"] in _lid_set]
+    else:
+        lines = all_lines
 
     # Build supplier/customer dicts
     sup_row = _repo.query_one(
@@ -1065,7 +1081,17 @@ def api_generate_eurofib(invoice_id):
 
     anexa = _repo.get_anexa_by_id(inv_row["anexa_id"])
     contract = _repo.get_contract_by_id(anexa["contract_id"])
-    lines = _repo.get_lines_by_anexa(anexa["id"])
+    all_lines = _repo.get_lines_by_anexa(anexa["id"])
+    # Filter to selected lines if line_ids is set
+    inv_line_ids = inv_row.get("line_ids")
+    if inv_line_ids:
+        import json as _json
+        if isinstance(inv_line_ids, str):
+            inv_line_ids = _json.loads(inv_line_ids)
+        _lid_set = set(inv_line_ids)
+        lines = [l for l in all_lines if l["id"] in _lid_set]
+    else:
+        lines = all_lines
 
     # Get Konto config for this supplier + invoice type
     konto_row = _repo.query_one(
