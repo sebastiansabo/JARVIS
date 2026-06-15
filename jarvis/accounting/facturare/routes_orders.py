@@ -132,6 +132,26 @@ def api_create_contract():
     return jsonify({"success": True, "contract": {"id": row["id"], "contract_ref": row["contract_ref"]}}), 201
 
 
+@facturare_bp.route("/facturare/api/contracts/<int:contract_id>", methods=["PATCH"])
+@login_required
+@handle_api_errors
+def api_update_contract(contract_id):
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+    contract = _repo.get_contract_by_id(contract_id)
+    if not contract:
+        return error_response("Contract not found", 404)
+    data = request.get_json(force=True)
+    allowed = {"contract_ref", "contract_date", "responsible", "notes"}
+    sets = ", ".join(f"{k} = %s" for k in data if k in allowed)
+    vals = [data[k] for k in data if k in allowed]
+    if not sets:
+        return error_response("No valid fields to update")
+    vals.append(contract_id)
+    _repo.execute(f"UPDATE facturare_contracts SET {sets}, updated_at = now() WHERE id = %s", tuple(vals))
+    return jsonify({"success": True})
+
+
 @facturare_bp.route("/facturare/api/contracts/<int:contract_id>", methods=["DELETE"])
 @login_required
 @handle_api_errors
@@ -307,24 +327,70 @@ def api_import_anexa(contract_id):
     if existing:
         return error_response(f"Anexa {anexa_number} already exists for this contract", 409)
 
+    import openpyxl, io as _io
     try:
-        order_lines = load_anexa(anexa_file.read())
-    except ValueError as e:
+        wb = openpyxl.load_workbook(_io.BytesIO(anexa_file.read()), data_only=True)
+        ws = wb.active
+        # Find header row
+        headers = []
+        header_row = 1
+        for r in range(1, min(ws.max_row + 1, 10)):
+            row_vals = [str(c.value or "").strip().lower() for c in ws[r]]
+            if any(h in " ".join(row_vals) for h in ["comanda", "model", "nr."]):
+                headers = row_vals
+                header_row = r
+                break
+        if not headers:
+            return error_response("Could not find header row with Nr. Comanda / Model columns")
+
+        # Map columns
+        col_map = {}
+        for i, h in enumerate(headers):
+            if "comanda" in h or "nr." in h: col_map["comanda"] = i
+            elif "model" in h: col_map["model"] = i
+            elif "cul" in h or "color" in h: col_map["culoare"] = i
+            elif "vin" in h: col_map["vin"] = i
+            elif "pret" in h and "lista" in h or "list" in h and "price" in h: col_map["list_price"] = i
+            elif "pret" in h and "vanz" in h or "sell" in h and "price" in h: col_map["selling_price"] = i
+
+        if "model" not in col_map:
+            return error_response("Missing 'Model' column in header")
+
+        parsed_lines = []
+        for r in range(header_row + 1, ws.max_row + 1):
+            row = [c.value for c in ws[r]]
+            model = str(row[col_map["model"]] or "").strip() if "model" in col_map else ""
+            if not model:
+                continue
+            parsed_lines.append({
+                "nr_comanda": str(row[col_map.get("comanda", 0)] or "").strip() if "comanda" in col_map else None,
+                "model": model,
+                "culoare": str(row[col_map.get("culoare", 0)] or "").strip() if "culoare" in col_map else None,
+                "vin": str(row[col_map.get("vin", 0)] or "").strip() if "vin" in col_map and row[col_map["vin"]] else None,
+                "list_price": float(row[col_map["list_price"]] or 0) if "list_price" in col_map and row[col_map["list_price"]] else 0,
+                "selling_price": float(row[col_map["selling_price"]] or 0) if "selling_price" in col_map and row[col_map["selling_price"]] else 0,
+            })
+        wb.close()
+    except Exception as e:
         return error_response(f"Parse error: {e}")
+
+    if not parsed_lines:
+        return error_response("No vehicles found in file")
 
     anexa_row = _repo.create_anexa(
         contract_id=contract_id, anexa_number=int(anexa_number),
         notes=notes, created_by=current_user.id,
     )
 
-    for idx, ol in enumerate(order_lines, start=1):
+    for idx, pl in enumerate(parsed_lines, start=1):
         _repo.create_anexa_line(
             anexa_id=anexa_row["id"], line_number=idx,
-            model=ol.model, list_price_eur=Decimal(str(ol.list_price or 0)),
-            selling_price_eur=Decimal(str(ol.selling_price or 0)),
-            qty=ol.qty,
-            nr_comanda=str(ol.comanda) if ol.comanda else None,
-            vin=ol.vin, culoare=ol.culoare,
+            model=pl["model"],
+            list_price_eur=Decimal(str(pl["list_price"])),
+            selling_price_eur=Decimal(str(pl["selling_price"] or pl["list_price"])),
+            qty=1,
+            nr_comanda=pl["nr_comanda"],
+            vin=pl["vin"], culoare=pl["culoare"],
         )
 
     return jsonify({
