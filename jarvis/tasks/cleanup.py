@@ -17,7 +17,7 @@ from tasks.efactura import cleanup_old_unallocated_invoices
 from tasks.ai_tasks import reindex_rag_documents, extract_ai_knowledge, run_daily_digest
 from tasks.approvals import process_approval_tasks
 from tasks.notifications import cleanup_old_notifications, run_smart_notifications, cleanup_push_rate_limit_log
-from tasks.marketing import sync_marketing_kpis
+from tasks.marketing import sync_marketing_kpis, auto_archive_completed_projects
 from tasks.field_sales import field_sales_follow_up_reminders, field_sales_overdue_visit_alerts
 from tasks.biostar import sync_biostar_events, sync_biostar_users, auto_adjust_biostar_schedules
 from tasks.sincron import sync_sincron_timesheets
@@ -155,6 +155,16 @@ def start_scheduler():
         hour=6,
         minute=0,
         id='sync_marketing_kpis',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        auto_archive_completed_projects,
+        'interval',
+        hours=1,
+        id='auto_archive_completed_projects',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,
