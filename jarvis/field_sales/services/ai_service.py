@@ -1,6 +1,6 @@
 """AI services for Field Sales — note structuring and visit briefing.
 
-Uses Anthropic API (claude-sonnet-4-5-20250514) for:
+Uses Anthropic API (claude-sonnet-4-6-20250514) for:
   - Structuring raw visit notes into JSON
   - Generating pre-visit briefings from client 360 context
 """
@@ -17,7 +17,7 @@ except ImportError:
 
 logger = logging.getLogger('jarvis.field_sales.ai')
 
-_MODEL = 'claude-sonnet-4-5-20250514'
+_MODEL = 'claude-sonnet-4-6-20250514'
 
 
 def structure_visit_note(raw_note, client_context=None):

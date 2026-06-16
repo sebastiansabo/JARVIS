@@ -208,7 +208,7 @@ ADVERTISING INVOICE LINE ITEMS:
     # Parse the response
     response_text = _llm_call(
         [{"role": "user", "content": content}],
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6-20250514",
         max_tokens=4096,
         api_key=api_key,
     )
@@ -332,7 +332,7 @@ IMPORTANT:
     # Parse the response
     response_text = _llm_call(
         [{"role": "user", "content": content}],
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6-20250514",
         max_tokens=512,
         api_key=api_key,
     )
@@ -498,7 +498,7 @@ IMPORTANT:
     try:
         response_text = _llm_call(
             [{"role": "user", "content": content}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6-20250514",
             max_tokens=4096,
             api_key=api_key,
         )
@@ -1201,7 +1201,7 @@ Return ONLY the JSON, no other text."""
         # Parse the response
         response_text = _llm_call(
             [{"role": "user", "content": content}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6-20250514",
             max_tokens=2048,
             api_key=api_key,
         )
@@ -1377,7 +1377,7 @@ IMPORTANT: Return ONLY the JSON object, no explanation or additional text."""
 
     try:
         # Extract JSON from response
-        response_text = _llm_ask(prompt, model="claude-sonnet-4-20250514", max_tokens=1024, api_key=api_key)
+        response_text = _llm_ask(prompt, model="claude-sonnet-4-6-20250514", max_tokens=1024, api_key=api_key)
 
         try:
             result = BaseProvider._extract_json(response_text)

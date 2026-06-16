@@ -37,7 +37,7 @@ class ClaudeProvider(BaseProvider):
         Generate a response using Claude.
 
         Args:
-            model_name: Claude model identifier (e.g., 'claude-sonnet-4-20250514')
+            model_name: Claude model identifier (e.g., 'claude-sonnet-4-6-20250514')
             messages: List of message dicts with 'role' and 'content'
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature (0.0-1.0 for Claude)

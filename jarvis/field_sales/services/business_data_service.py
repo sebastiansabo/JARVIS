@@ -412,13 +412,13 @@ Furnizeaza analiza ta in urmatoarea structura JSON (raspunde DOAR cu JSON valid,
 }}"""
 
     try:
-        content = ask(prompt, model='claude-sonnet-4-20250514', max_tokens=3000, api_key=api_key).strip()
+        content = ask(prompt, model='claude-sonnet-4-6-20250514', max_tokens=3000, api_key=api_key).strip()
         # Parse JSON response
         if content.startswith('```'):
             content = content.split('\n', 1)[1].rsplit('```', 1)[0].strip()
         result = json.loads(content)
         result['_generated_at'] = datetime.now().isoformat()
-        result['_model'] = 'claude-sonnet-4-20250514'
+        result['_model'] = 'claude-sonnet-4-6-20250514'
         return result
     except json.JSONDecodeError:
         return {'summary': content, '_generated_at': datetime.now().isoformat(), '_raw': True}

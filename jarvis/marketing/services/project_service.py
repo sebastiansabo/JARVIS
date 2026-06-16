@@ -222,7 +222,7 @@ class ProjectService:
             api_key = os.environ.get('ANTHROPIC_API_KEY')
 
             result = provider.generate_structured(
-                model_name='claude-sonnet-4-20250514',
+                model_name='claude-sonnet-4-6-20250514',
                 messages=[{'role': 'user', 'content': 'Distribute the budget optimally.'}],
                 max_tokens=2048,
                 temperature=0.3,
