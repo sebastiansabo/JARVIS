@@ -753,7 +753,7 @@ IMPORTANT: Return ONLY valid JSON, no explanations.
 Invoice text:
 {text[:8000]}"""  # Limit text to avoid token limits
 
-        response_text = _llm_ask(prompt, model="claude-sonnet-4-6-20250514", max_tokens=2048, api_key=api_key)
+        response_text = _llm_ask(prompt, model="claude-sonnet-4-6", max_tokens=2048, api_key=api_key)
         result = BaseProvider._extract_json(response_text)
 
         # Ensure items dict exists

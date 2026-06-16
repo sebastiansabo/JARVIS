@@ -37,7 +37,7 @@ class BaseProvider(ABC):
         Generate a response from the LLM.
 
         Args:
-            model_name: Model identifier (e.g., 'claude-sonnet-4-6-20250514')
+            model_name: Model identifier (e.g., 'claude-sonnet-4-6')
             messages: List of message dicts with 'role' and 'content'
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature (0.0-2.0)
