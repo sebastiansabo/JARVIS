@@ -54,7 +54,7 @@ class GroqProvider(BaseProvider):
         try:
             from groq import Groq
         except ImportError:
-            raise LLMProviderError("groq package not installed. Run: pip install groq")
+            raise LLMProviderError("groq", "groq package not installed")
 
         # Get API key
         key = api_key or os.environ.get('GROQ_API_KEY')
@@ -135,7 +135,7 @@ class GroqProvider(BaseProvider):
                 raise LLMAuthenticationError(f"Authentication failed: {e}")
             else:
                 logger.error(f"Groq API error: {e}")
-                raise LLMProviderError(f"Groq API error: {e}")
+                raise LLMProviderError("groq", f"Groq API error: {e}")
 
     def generate_structured(
         self,
@@ -152,7 +152,7 @@ class GroqProvider(BaseProvider):
         try:
             from groq import Groq
         except ImportError:
-            raise LLMProviderError("groq package not installed. Run: pip install groq")
+            raise LLMProviderError("groq", "groq package not installed")
 
         key = api_key or os.environ.get('GROQ_API_KEY')
         if not key:
@@ -239,7 +239,7 @@ class GroqProvider(BaseProvider):
         try:
             from groq import Groq
         except ImportError:
-            raise LLMProviderError("groq package not installed. Run: pip install groq")
+            raise LLMProviderError("groq", "groq package not installed")
 
         key = api_key or os.environ.get('GROQ_API_KEY')
         if not key:
@@ -304,4 +304,4 @@ class GroqProvider(BaseProvider):
             elif 'auth' in error_str or 'key' in error_str or 'unauthorized' in error_str:
                 raise LLMAuthenticationError(f"Authentication failed: {e}")
             else:
-                raise LLMProviderError(f"Groq streaming error: {e}")
+                raise LLMProviderError("groq", f"Groq streaming error: {e}")

@@ -53,15 +53,15 @@ class ModelConfigNotFoundError(AIAgentError):
 
 class LLMProviderError(AIAgentError):
     """Base exception for LLM provider errors."""
-    def __init__(self, provider: str, message: str):
+    def __init__(self, provider: str, message: str = ''):
         self.provider = provider
-        super().__init__(f"[{provider}] {message}")
+        super().__init__(f"[{provider}] {message}" if message else provider)
 
 
 class LLMAuthenticationError(LLMProviderError):
     """Raised when LLM provider authentication fails."""
-    def __init__(self, provider: str):
-        super().__init__(provider, "Authentication failed - check API key")
+    def __init__(self, provider: str, message: str = ''):
+        super().__init__(provider, message or "Authentication failed - check API key")
 
 
 class LLMRateLimitError(LLMProviderError):
