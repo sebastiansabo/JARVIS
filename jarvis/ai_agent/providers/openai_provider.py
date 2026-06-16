@@ -132,11 +132,11 @@ class OpenAIProvider(BaseProvider):
 
         except openai.APIError as e:
             logger.error(f"OpenAI API error: {e}")
-            raise LLMProviderError(f"OpenAI API error: {e}")
+            raise LLMProviderError("openai", f"OpenAI API error: {e}")
 
         except Exception as e:
             logger.error(f"Unexpected error calling OpenAI: {e}")
-            raise LLMProviderError(f"Failed to call OpenAI API: {e}")
+            raise LLMProviderError("openai", f"Failed to call OpenAI API: {e}")
 
     def generate_structured(
         self,
@@ -288,6 +288,6 @@ class OpenAIProvider(BaseProvider):
         except openai.AuthenticationError as e:
             raise LLMAuthenticationError(f"Authentication failed: {e}")
         except openai.APIError as e:
-            raise LLMProviderError(f"OpenAI API error: {e}")
+            raise LLMProviderError("openai", f"OpenAI API error: {e}")
         except Exception as e:
-            raise LLMProviderError(f"Failed to stream OpenAI API: {e}")
+            raise LLMProviderError("openai", f"Failed to stream OpenAI API: {e}")

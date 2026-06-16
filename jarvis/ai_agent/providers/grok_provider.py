@@ -110,10 +110,10 @@ class GrokProvider(BaseProvider):
             raise LLMAuthenticationError(f"Authentication failed: {e}")
         except openai.APIError as e:
             logger.error(f"Grok API error: {e}")
-            raise LLMProviderError(f"Grok API error: {e}")
+            raise LLMProviderError("grok", f"Grok API error: {e}")
         except Exception as e:
             logger.error(f"Unexpected error calling Grok: {e}")
-            raise LLMProviderError(f"Failed to call Grok API: {e}")
+            raise LLMProviderError("grok", f"Failed to call Grok API: {e}")
 
     def generate_structured(
         self,
@@ -253,6 +253,6 @@ class GrokProvider(BaseProvider):
         except openai.AuthenticationError as e:
             raise LLMAuthenticationError(f"Authentication failed: {e}")
         except openai.APIError as e:
-            raise LLMProviderError(f"Grok API error: {e}")
+            raise LLMProviderError("grok", f"Grok API error: {e}")
         except Exception as e:
-            raise LLMProviderError(f"Failed to stream Grok API: {e}")
+            raise LLMProviderError("grok", f"Failed to stream Grok API: {e}")

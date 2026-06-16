@@ -54,7 +54,7 @@ class GeminiProvider(BaseProvider):
         try:
             import google.generativeai as genai
         except ImportError:
-            raise LLMProviderError("google-generativeai package not installed. Run: pip install google-generativeai")
+            raise LLMProviderError("gemini", "google-generativeai package not installed")
 
         # Get API key
         key = api_key or os.environ.get('GOOGLE_AI_API_KEY')
@@ -142,7 +142,7 @@ class GeminiProvider(BaseProvider):
                 raise LLMAuthenticationError(f"Authentication failed: {e}")
             else:
                 logger.error(f"Gemini API error: {e}")
-                raise LLMProviderError(f"Gemini API error: {e}")
+                raise LLMProviderError("gemini", f"Gemini API error: {e}")
 
     def generate_structured(
         self,
@@ -159,7 +159,7 @@ class GeminiProvider(BaseProvider):
         try:
             import google.generativeai as genai
         except ImportError:
-            raise LLMProviderError("google-generativeai package not installed")
+            raise LLMProviderError("gemini", "google-generativeai package not installed")
 
         key = api_key or os.environ.get('GOOGLE_AI_API_KEY')
         if not key:
@@ -321,7 +321,7 @@ class GeminiProvider(BaseProvider):
         try:
             import google.generativeai as genai
         except ImportError:
-            raise LLMProviderError("google-generativeai package not installed")
+            raise LLMProviderError("gemini", "google-generativeai package not installed")
 
         key = api_key or os.environ.get('GOOGLE_AI_API_KEY')
         if not key:
@@ -379,4 +379,4 @@ class GeminiProvider(BaseProvider):
             elif 'api key' in error_str or 'auth' in error_str:
                 raise LLMAuthenticationError(f"Authentication failed: {e}")
             else:
-                raise LLMProviderError(f"Gemini streaming error: {e}")
+                raise LLMProviderError("gemini", f"Gemini streaming error: {e}")

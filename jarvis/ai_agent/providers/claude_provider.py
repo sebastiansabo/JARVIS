@@ -132,11 +132,11 @@ class ClaudeProvider(BaseProvider):
 
         except anthropic.APIError as e:
             logger.error(f"Claude API error: {e}")
-            raise LLMProviderError(f"Claude API error: {e}")
+            raise LLMProviderError("claude", f"Claude API error: {e}")
 
         except Exception as e:
             logger.error(f"Unexpected error calling Claude: {e}")
-            raise LLMProviderError(f"Failed to call Claude API: {e}")
+            raise LLMProviderError("claude", f"Failed to call Claude API: {e}")
 
     def generate_structured(
         self,
@@ -351,6 +351,6 @@ class ClaudeProvider(BaseProvider):
         except anthropic.AuthenticationError as e:
             raise LLMAuthenticationError(f"Authentication failed: {e}")
         except anthropic.APIError as e:
-            raise LLMProviderError(f"Claude API error: {e}")
+            raise LLMProviderError("claude", f"Claude API error: {e}")
         except Exception as e:
-            raise LLMProviderError(f"Failed to stream Claude API: {e}")
+            raise LLMProviderError("claude", f"Failed to stream Claude API: {e}")
