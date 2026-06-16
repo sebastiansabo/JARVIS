@@ -267,7 +267,7 @@ Consider:
 Only mark as duplicate if you're confident (>0.7) it's the same invoice."""
 
                     try:
-                        response_text = ask(prompt, model="claude-sonnet-4-20250514",
+                        response_text = ask(prompt, model="claude-sonnet-4-6-20250514",
                                             max_tokens=256, api_key=api_key)
                         result = BaseProvider._extract_json(response_text)
 

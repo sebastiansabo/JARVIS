@@ -70,7 +70,7 @@ class ModelConfig:
     """LLM Model configuration."""
     id: Optional[int] = None
     provider: LLMProvider = LLMProvider.CLAUDE
-    model_name: str = "claude-sonnet-4-20250514"
+    model_name: str = "claude-sonnet-4-6-20250514"
     display_name: Optional[str] = None
     api_key_encrypted: Optional[str] = None
     base_url: Optional[str] = None

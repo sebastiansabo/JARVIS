@@ -358,7 +358,7 @@ Consider:
 Return ONLY valid JSON, no other text."""
 
     try:
-        response_text = ask(prompt, model="claude-sonnet-4-20250514", max_tokens=1024, api_key=api_key)
+        response_text = ask(prompt, model="claude-sonnet-4-6-20250514", max_tokens=1024, api_key=api_key)
         result = BaseProvider._extract_json(response_text)
 
         return {
