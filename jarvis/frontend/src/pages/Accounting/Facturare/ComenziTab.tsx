@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import {
   Plus, FileText, Loader2, ChevronRight, ChevronDown, Copy,
-  Search, CheckCircle2, Circle, Ban, ArrowRight,
+  Search, CheckCircle2, Ban,
   Trash2, Download, Archive, FileSpreadsheet,
 } from 'lucide-react'
 
@@ -34,12 +34,17 @@ interface ContractSummary {
 interface AnexaSummary {
   id: number; anexa_number: number; line_count: number; total_value: number
   proformas_total: number; invoiced_total: number; pct_proforma: number; pct_invoiced: number
-  invoice_count: number; stage: string; status: string; archived: boolean; types: string[]; notes: string | null; created_at: string | null
+  invoice_count: number; stage: string; status: string; archived: boolean; types: string[]; notes: string | null
+  lines_with_proforma: number; lines_invoiced: number; created_at: string | null
 }
+
+interface LineCoverage { invoice_id: number; invoice_type: string; sequence_number: number; amount_eur?: number; invoice_number?: number | null }
 
 interface AnexaLine {
   id: number; line_number: number; nr_comanda: string | null; vin: string | null
   model: string; culoare: string | null; list_price_eur: number; selling_price_eur: number; qty: number
+  status?: 'NONE' | 'PROFORMA' | 'INVOICED'; covered_by?: LineCoverage[]
+  proforma_eur?: number; invoiced_eur?: number
 }
 
 interface InvoiceDetail {
@@ -53,8 +58,9 @@ interface AnexaDetail {
   anexa_id: number; anexa_number: number; contract_ref: string
   supplier_name: string; customer_name: string
   lines: AnexaLine[]; invoices: InvoiceDetail[]
-  next_actions: string[]; unpaired_proformas: { sequence_number: number; total_amount_eur: number; invoice_number: number | null }[]
+  next_actions: string[]; unpaired_proformas: { sequence_number: number; total_amount_eur: number; invoice_number: number | null; line_ids: number[] | null }[]
   anexa_total_eur: number; proformas_total_eur: number; remaining_eur: number
+  lines_with_proforma: number; lines_invoiced: number; lines_total: number
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -105,8 +111,6 @@ const TYPE_COLORS: Record<string, string> = {
   STORNO: 'bg-red-100 text-red-800',
   FINAL: 'bg-emerald-100 text-emerald-800',
 }
-
-const LIFECYCLE_STEPS = ['PROFORMA', 'INVOICE', 'STORNO', 'FINAL'] as const
 
 // ── User Search ─────────────────────────────────────────────────
 
@@ -465,6 +469,8 @@ function EditableAnexaLine({ line, canDelete, onUpdated }: { line: AnexaLine; ca
           <span className="text-amber-500 ml-1 italic cursor-pointer hover:underline" onClick={() => setEditing(true)}>+ add VIN</span>
         )}
       </span>
+      {line.status === 'INVOICED' && <Badge className="bg-emerald-100 text-emerald-800 text-[9px] px-1 py-0 shrink-0">Invoiced</Badge>}
+      {line.status === 'PROFORMA' && <Badge className="bg-blue-100 text-blue-800 text-[9px] px-1 py-0 shrink-0">Proforma</Badge>}
       <span className="font-mono shrink-0 text-right ml-auto">{fmtEur(line.selling_price_eur)} EUR</span>
       {canDelete && (
         <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" title="Remove vehicle"
@@ -551,13 +557,353 @@ function AddVehicleInline({ anexaId, nextLineNumber, nextNrComanda, onAdded }: {
   )
 }
 
+// ── Vehicle Table (per-car invoicing overview) ─────────────────
+
+/** Compute per-car next action from its coverage history.
+ *  Flow: Proforma N → Factura Avans N → … (repeat) → Storno → Final → Complete
+ *  Number of rounds is NOT fixed — depends on amounts. */
+type CarNextAction = 'PROFORMA' | 'INVOICE' | 'STORNO' | 'FINAL' | 'COMPLETE'
+
+function getCarNextAction(line: AnexaLine): CarNextAction {
+  const cov = line.covered_by || []
+  const proformaCount = cov.filter(c => c.invoice_type === 'PROFORMA').length
+  const invoiceCount = cov.filter(c => c.invoice_type === 'INVOICE').length
+  const hasStorno = cov.some(c => c.invoice_type === 'STORNO')
+  const hasFinal = cov.some(c => c.invoice_type === 'FINAL')
+  if (hasFinal) return 'COMPLETE'
+  if (hasStorno) return 'FINAL'
+  // Unmatched proforma → need invoice to confirm it
+  if (proformaCount > invoiceCount) return 'INVOICE'
+  // All matched — check if fully covered by amount (proforma sum ≈ selling price)
+  const proformaEur = line.proforma_eur || 0
+  if (proformaCount > 0 && proformaEur >= line.selling_price_eur * 0.999) return 'STORNO'
+  // Need more proformas
+  return 'PROFORMA'
+}
+
+/** Returns a unique stage key including the round number, e.g. "PROFORMA-3", "INVOICE-2" */
+function getCarStageKey(line: AnexaLine): string {
+  const cov = line.covered_by || []
+  const pCount = cov.filter(c => c.invoice_type === 'PROFORMA').length
+  const action = getCarNextAction(line)
+  if (action === 'PROFORMA') return `PROFORMA-${pCount + 1}`
+  if (action === 'INVOICE') return `INVOICE-${pCount}`
+  return action
+}
+
+const CAR_ACTION_LABELS: Record<CarNextAction, string> = {
+  PROFORMA: 'Proforma', INVOICE: 'Factura Avans', STORNO: 'Storno', FINAL: 'Final', COMPLETE: 'Complet',
+}
+const CAR_ACTION_COLORS: Record<CarNextAction, string> = {
+  PROFORMA: 'bg-blue-100 text-blue-800', INVOICE: 'bg-amber-100 text-amber-800',
+  STORNO: 'bg-red-100 text-red-800', FINAL: 'bg-emerald-100 text-emerald-800',
+  COMPLETE: 'bg-emerald-50 text-emerald-600',
+}
+
+function VehicleTable({ detail, defaultIntocmit, onCreated }: {
+  detail: AnexaDetail; defaultIntocmit?: string; onCreated: () => void
+}) {
+  const { lines, invoices: detailInvoices, unpaired_proformas: unpairedProformas } = detail
+
+  // Build lookup: invoice_id → ordered line_ids (for per-car PDF download)
+  const invoiceLineIds = new Map<number, number[]>()
+  for (const inv of detailInvoices) {
+    invoiceLineIds.set(inv.id, inv.line_ids || lines.map(l => l.id))
+  }
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [proformaOpen, setProformaOpen] = useState(false)
+  const [invoiceOpen, setInvoiceOpen] = useState(false)
+  const [stornoOpen, setStornoOpen] = useState(false)
+  const [finalOpen, setFinalOpen] = useState(false)
+
+  // Per-line next actions
+  const lineActions = new Map<number, CarNextAction>()
+  for (const l of lines) lineActions.set(l.id, getCarNextAction(l))
+
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
+  const toggleExpand = (id: number) => {
+    setExpandedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  }
+
+  const totalSelling = lines.reduce((s, l) => s + l.selling_price_eur, 0)
+  const totalProforma = lines.reduce((s, l) => s + (l.proforma_eur || 0), 0)
+  const totalInvoiced = lines.reduce((s, l) => s + (l.invoiced_eur || 0), 0)
+  const totalRemaining = totalSelling - totalInvoiced
+
+  // Sort coverage entries for expanded rows: P1, F1, P2, F2, ..., Storno, Final
+  const sortCoverage = (a: LineCoverage, b: LineCoverage) => {
+    const groupOrder: Record<string, number> = { PROFORMA: 0, INVOICE: 0, STORNO: 1, FINAL: 2 }
+    const aGroup = groupOrder[a.invoice_type] ?? 0; const bGroup = groupOrder[b.invoice_type] ?? 0
+    if (aGroup !== bGroup) return aGroup - bGroup
+    if (a.sequence_number !== b.sequence_number) return a.sequence_number - b.sequence_number
+    const typeOrder = ['PROFORMA', 'INVOICE', 'STORNO', 'FINAL']
+    return typeOrder.indexOf(a.invoice_type) - typeOrder.indexOf(b.invoice_type)
+  }
+  const carPdfUrl = (invoiceId: number, lineId: number) => {
+    const ids = invoiceLineIds.get(invoiceId)
+    const idx = ids ? ids.indexOf(lineId) : -1
+    if (idx >= 0 && ids && ids.length > 1) return `/facturare/api/invoices/${invoiceId}/pdf?car=${idx}`
+    return `/facturare/api/invoices/${invoiceId}/pdf?mode=merged`
+  }
+
+  const covLabel = (c: LineCoverage, sellingPrice: number) => {
+    const pct = sellingPrice > 0 && c.amount_eur ? Math.round(Math.abs(c.amount_eur) / sellingPrice * 100) : 0
+    const pctStr = pct > 0 ? ` (${pct}%)` : ''
+    if (c.invoice_type === 'PROFORMA') return `Proforma${pctStr}`
+    if (c.invoice_type === 'INVOICE') return `Factura Avans${pctStr}`
+    if (c.invoice_type === 'STORNO') return `Storno${pctStr}`
+    if (c.invoice_type === 'FINAL') return `Final${pctStr}`
+    return c.invoice_type
+  }
+  const covColor = (c: LineCoverage) => {
+    if (c.invoice_type === 'PROFORMA') return 'text-blue-600'
+    if (c.invoice_type === 'INVOICE') return 'text-emerald-600'
+    if (c.invoice_type === 'STORNO') return 'text-red-600'
+    if (c.invoice_type === 'FINAL') return 'text-emerald-700'
+    return ''
+  }
+
+  // Selection: any non-complete car is selectable
+  const selectableLines = lines.filter(l => lineActions.get(l.id) !== 'COMPLETE')
+  const allSelectableSelected = selectableLines.length > 0 && selectableLines.every(l => selectedIds.has(l.id))
+
+  const toggleLine = (id: number) => {
+    setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  }
+  const toggleAll = () => {
+    if (allSelectableSelected) setSelectedIds(new Set())
+    else setSelectedIds(new Set(selectableLines.map(l => l.id)))
+  }
+
+  // Compute which actions are valid for the current selection
+  const selectedLines = lines.filter(l => selectedIds.has(l.id))
+  const selectedActions = new Set(selectedLines.map(l => lineActions.get(l.id)))
+  const selectedStageKeys = new Set(selectedLines.map(l => getCarStageKey(l)))
+  const selectedCount = selectedIds.size
+  const selectedTotal = selectedLines.reduce((s, l) => s + l.selling_price_eur, 0)
+
+  // An action button is enabled if ALL selected cars are at the EXACT same stage (action + round)
+  const sameStage = selectedCount > 0 && selectedStageKeys.size === 1
+  const canProforma = sameStage && selectedActions.has('PROFORMA')
+  const canInvoice = sameStage && selectedActions.has('INVOICE')
+  const canStorno = sameStage && selectedActions.has('STORNO')
+  const canFinal = sameStage && selectedActions.has('FINAL')
+
+  return (
+    <>
+    <Card>
+      <CardContent className="p-0">
+        {/* Action bar */}
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30 flex-wrap gap-2">
+          <div className="flex items-center gap-3 text-xs">
+            <span className="font-medium text-muted-foreground">{lines.length} vehicle(s)</span>
+            {selectedCount > 0 && (
+              <span className="text-blue-600 font-medium">{selectedCount} selected — {fmtEur(selectedTotal)} EUR</span>
+            )}
+            {selectedCount > 0 && sameStage && (
+              <span className="text-muted-foreground">→ {CAR_ACTION_LABELS[[...selectedActions][0]!]}</span>
+            )}
+            {selectedCount > 0 && !sameStage && (
+              <span className="text-amber-600">Mixed stages — select cars at the same stage</span>
+            )}
+          </div>
+          <div className="flex gap-1.5">
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!canProforma}
+              onClick={() => setProformaOpen(true)}>
+              <Plus className="h-3 w-3 mr-1" /> Proforma
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!canInvoice}
+              onClick={() => setInvoiceOpen(true)}>
+              <FileText className="h-3 w-3 mr-1" /> Factura Avans
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs text-red-600" disabled={!canStorno}
+              onClick={() => setStornoOpen(true)}>
+              <Ban className="h-3 w-3 mr-1" /> Storno
+            </Button>
+            <Button size="sm" className="h-7 text-xs" disabled={!canFinal}
+              onClick={() => setFinalOpen(true)}>
+              <CheckCircle2 className="h-3 w-3 mr-1" /> Final
+            </Button>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                <th className="w-8 px-2 py-1.5">
+                  <input type="checkbox" checked={allSelectableSelected} onChange={toggleAll} className="rounded" />
+                </th>
+                <th className="w-6 px-1 py-1.5"></th>
+                <th className="text-left px-2 py-1.5 font-medium">Comanda</th>
+                <th className="text-left px-2 py-1.5 font-medium">Model</th>
+                <th className="text-left px-2 py-1.5 font-medium">Culoare</th>
+                <th className="text-left px-2 py-1.5 font-medium">VIN</th>
+                <th className="text-right px-2 py-1.5 font-medium">Pret Vanzare</th>
+                <th className="text-right px-2 py-1.5 font-medium text-blue-600">Proforma</th>
+                <th className="text-right px-2 py-1.5 font-medium text-emerald-600">Facturat</th>
+                <th className="text-right px-2 py-1.5 font-medium">Rest</th>
+                <th className="text-center px-2 py-1.5 font-medium w-24">Progres</th>
+                <th className="text-center px-2 py-1.5 font-medium">Urmatorul Pas</th>
+                <th className="text-center px-2 py-1.5 font-medium w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map(l => {
+                const proforma = l.proforma_eur || 0
+                const invoiced = l.invoiced_eur || 0
+                const rest = l.selling_price_eur - invoiced
+                const nextAction = lineActions.get(l.id) || 'PROFORMA'
+                const isComplete = nextAction === 'COMPLETE'
+                const covEntries = [...(l.covered_by || [])].sort(sortCoverage)
+                const hasCov = covEntries.length > 0
+                const isExpanded = expandedIds.has(l.id)
+                return (
+                  <React.Fragment key={l.id}>
+                  <tr className={`border-b hover:bg-muted/20 ${selectedIds.has(l.id) ? 'bg-blue-50 dark:bg-blue-950/20' : ''} ${isComplete ? 'opacity-50' : ''} ${hasCov ? 'cursor-pointer' : ''}`}
+                    onClick={() => hasCov && toggleExpand(l.id)}>
+                    <td className="w-8 px-2 py-1.5 text-center" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={selectedIds.has(l.id)} disabled={isComplete}
+                        onChange={() => toggleLine(l.id)} className="rounded" />
+                    </td>
+                    <td className="w-6 px-1 py-1.5 text-center text-muted-foreground">
+                      {hasCov && <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />}
+                    </td>
+                    <td className="px-2 py-1.5 font-mono text-muted-foreground">{l.nr_comanda || '—'}</td>
+                    <td className="px-2 py-1.5">{l.model}</td>
+                    <td className="px-2 py-1.5 text-muted-foreground">{l.culoare || '—'}</td>
+                    <td className="px-2 py-1.5 font-mono text-muted-foreground text-[11px]">{l.vin || <span className="text-amber-500 italic">—</span>}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{fmtEur(l.selling_price_eur)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-blue-600">{proforma > 0 ? fmtEur(proforma) : '—'}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-emerald-600">{invoiced > 0 ? fmtEur(invoiced) : '—'}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-amber-600">{rest > 0 ? fmtEur(rest) : fmtEur(0)}</td>
+                    <td className="px-2 py-1.5">
+                      {(() => {
+                        const pct = l.selling_price_eur > 0 ? Math.round((proforma / l.selling_price_eur) * 100) : 0
+                        return (
+                          <div className="flex items-center gap-1">
+                            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${pct >= 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-blue-400' : 'bg-muted'}`}
+                                style={{ width: `${Math.min(pct, 100)}%` }} />
+                            </div>
+                            <span className="text-[10px] font-mono text-muted-foreground w-7 text-right">{pct}%</span>
+                          </div>
+                        )
+                      })()}
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      <Badge className={`text-[9px] px-1.5 py-0 ${CAR_ACTION_COLORS[nextAction]}`}>
+                        {CAR_ACTION_LABELS[nextAction]}
+                      </Badge>
+                    </td>
+                    <td className="px-2 py-1.5 text-center" onClick={e => e.stopPropagation()}>
+                      {hasCov && (
+                        <Download className="h-3.5 w-3.5 text-muted-foreground cursor-pointer hover:text-blue-600 inline"
+                          onClick={() => covEntries.forEach(c => window.open(carPdfUrl(c.invoice_id, l.id), '_blank'))} />
+                      )}
+                    </td>
+                  </tr>
+                  {isExpanded && (() => {
+                    let cumInvoiced = 0
+                    const lastIdx = covEntries.length - 1
+                    return covEntries.map((c, ci) => {
+                    const isProf = c.invoice_type === 'PROFORMA'
+                    if (c.invoice_type === 'INVOICE') cumInvoiced += (c.amount_eur || 0)
+                    // Rest: after invoice = selling - cumInvoiced, after storno = full (reverses all), after final = 0
+                    const restAfter = c.invoice_type === 'INVOICE' ? l.selling_price_eur - cumInvoiced
+                      : c.invoice_type === 'STORNO' ? l.selling_price_eur
+                      : c.invoice_type === 'FINAL' ? 0
+                      : null
+                    return (
+                    <tr key={`${l.id}-${c.invoice_type}-${c.sequence_number}`} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-blue-100 dark:border-blue-900/30 last:border-b-2">
+                      <td></td>
+                      <td></td>
+                      <td className="px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                        {c.invoice_number != null ? String(c.invoice_number) : ''}
+                      </td>
+                      <td colSpan={4} className="px-2 py-1">
+                        <span className={`text-[11px] font-medium ${covColor(c)}`}>{covLabel(c, l.selling_price_eur)}</span>
+                      </td>
+                      <td className={`px-2 py-1 text-right font-mono text-[11px] ${isProf ? covColor(c) : ''}`}>
+                        {isProf ? fmtEur(c.amount_eur || 0) : ''}
+                      </td>
+                      <td className={`px-2 py-1 text-right font-mono text-[11px] ${!isProf ? covColor(c) : ''}`}>
+                        {!isProf ? fmtEur(c.amount_eur || 0) : ''}
+                      </td>
+                      <td className="px-2 py-1 text-right font-mono text-[11px] text-amber-600">
+                        {restAfter != null ? fmtEur(restAfter) : ''}
+                      </td>
+                      <td colSpan={2}></td>
+                      <td className="px-2 py-1 text-center">
+                        <span className="inline-flex gap-1">
+                          <Download className="h-3.5 w-3.5 text-muted-foreground cursor-pointer hover:text-blue-600"
+                            onClick={() => window.open(carPdfUrl(c.invoice_id, l.id), '_blank')} />
+                          {ci === lastIdx && (
+                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground cursor-pointer hover:text-red-500"
+                            onClick={async () => {
+                              if (!confirm(`Delete this ${covLabel(c, l.selling_price_eur)}?`)) return
+                              const res = await fetch(`/facturare/api/invoices/${c.invoice_id}`, { method: 'DELETE' })
+                              if (res.ok) { toast.success('Deleted'); onCreated() }
+                              else { const d = await res.json().catch(() => null); toast.error(d?.error || 'Delete failed') }
+                            }} />
+                          )}
+                        </span>
+                      </td>
+                    </tr>
+                    )
+                  })
+                  })()}
+                  </React.Fragment>
+                )
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t bg-muted/30 font-medium">
+                <td colSpan={2}></td>
+                <td className="px-2 py-1.5" colSpan={4}>Total</td>
+                <td className="px-2 py-1.5 text-right font-mono">{fmtEur(totalSelling)}</td>
+                <td className="px-2 py-1.5 text-right font-mono text-blue-600">{totalProforma > 0 ? fmtEur(totalProforma) : '—'}</td>
+                <td className="px-2 py-1.5 text-right font-mono text-emerald-600">{totalInvoiced > 0 ? fmtEur(totalInvoiced) : '—'}</td>
+                <td className="px-2 py-1.5 text-right font-mono text-amber-600">{totalRemaining > 0 ? fmtEur(totalRemaining) : '—'}</td>
+                <td colSpan={3}></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+
+    {/* Dialogs */}
+    <ProformaDialog open={proformaOpen} onOpenChange={setProformaOpen} anexaId={detail.anexa_id}
+      remainingEur={detail.remaining_eur} anexaTotalEur={detail.anexa_total_eur}
+      lines={lines} invoices={detail.invoices} defaultIntocmit={defaultIntocmit} onCreated={onCreated}
+      preSelectedIds={selectedIds} />
+    <InvoiceDialog open={invoiceOpen} onOpenChange={setInvoiceOpen} anexaId={detail.anexa_id}
+      unpairedProformas={unpairedProformas} defaultIntocmit={defaultIntocmit} onCreated={onCreated}
+      preSelectedLineIds={selectedIds} />
+    <ActionDialog open={stornoOpen} onOpenChange={setStornoOpen} anexaId={detail.anexa_id} action="storno"
+      defaultIntocmit={defaultIntocmit} onCreated={onCreated} lineIds={[...selectedIds]} lines={lines} />
+    <ActionDialog open={finalOpen} onOpenChange={setFinalOpen} anexaId={detail.anexa_id} action="final"
+      defaultIntocmit={defaultIntocmit} onCreated={onCreated} lineIds={[...selectedIds]} lines={lines} />
+    </>
+  )
+}
+
 // ── Proforma Dialog (with line selection) ───────────────────────
 
-function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalEur, lines, defaultIntocmit, onCreated }: {
+function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalEur, lines, invoices, defaultIntocmit, onCreated, preSelectedIds }: {
   open: boolean; onOpenChange: (v: boolean) => void; anexaId: number
-  remainingEur: number; anexaTotalEur: number; lines: AnexaLine[]; defaultIntocmit?: string; onCreated: () => void
+  remainingEur: number; anexaTotalEur: number; lines: AnexaLine[]; invoices?: InvoiceDetail[]; defaultIntocmit?: string; onCreated: () => void
+  preSelectedIds?: Set<number>
 }) {
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set(lines.map(l => l.id)))
+  // A car is "covered" (unselectable) only if its next action is NOT proforma
+  const coveredIds = new Set(lines.filter(l => getCarNextAction(l) !== 'PROFORMA').map(l => l.id))
+  const uncoveredLines = lines.filter(l => !coveredIds.has(l.id))
+  const defaultSelection = preSelectedIds && preSelectedIds.size > 0
+    ? new Set([...preSelectedIds].filter(id => !coveredIds.has(id)))
+    : new Set(uncoveredLines.map(l => l.id))
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(defaultSelection)
   const [amount, setAmount] = useState('')
   const [percent, setPercent] = useState('')
   const [splitMode, setSplitMode] = useState<'equal' | 'proportional'>('proportional')
@@ -569,14 +915,25 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  // Reset selection when lines change (dialog opens)
-  useEffect(() => { setSelectedIds(new Set(lines.map(l => l.id))) }, [lines])
+  // Reset selection and start number when dialog opens
+  useEffect(() => {
+    if (!open) return
+    const covered = new Set(lines.filter(l => getCarNextAction(l) !== 'PROFORMA').map(l => l.id))
+    if (preSelectedIds && preSelectedIds.size > 0) {
+      setSelectedIds(new Set([...preSelectedIds].filter(id => !covered.has(id))))
+    } else {
+      setSelectedIds(new Set(lines.filter(l => !covered.has(l.id)).map(l => l.id)))
+    }
+    // Auto-suggest next invoice number based on existing invoices on this anexa
+    const maxNo = (invoices || []).reduce((m, i) => Math.max(m, i.invoice_number || 0), 0)
+    setStartNo(maxNo > 0 ? String(maxNo + 1) : '')
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedLines = lines.filter(l => selectedIds.has(l.id))
   const selectedPrices = selectedLines.map(l => l.selling_price_eur)
   const selectedTotal = selectedPrices.reduce((s, p) => s + p, 0)
   const carCount = selectedLines.length
-  const allSelected = selectedIds.size === lines.length
+  const allSelected = uncoveredLines.length > 0 && uncoveredLines.every(l => selectedIds.has(l.id))
 
   const toggleLine = (id: number) => {
     setSelectedIds(prev => {
@@ -587,7 +944,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
   }
   const toggleAll = () => {
     if (allSelected) setSelectedIds(new Set())
-    else setSelectedIds(new Set(lines.map(l => l.id)))
+    else setSelectedIds(new Set(uncoveredLines.map(l => l.id)))
   }
 
   // Recalculate amount when selection or percent changes
@@ -621,7 +978,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
         body: JSON.stringify({
           anexa_id: anexaId, amount_eur: parseFloat(amount),
           split_mode: splitMode,
-          line_ids: allSelected ? undefined : Array.from(selectedIds),
+          line_ids: Array.from(selectedIds),
           invoice_number: startNo ? parseInt(startNo) : undefined,
           issued_date: issuedDate || undefined, intocmit_de: intocmitDe || undefined, notes: notes || undefined,
         }),
@@ -639,20 +996,25 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
         <DialogHeader className="flex-shrink-0">
           <DialogTitle>Issue Proforma</DialogTitle>
           <DialogDescription>
-            Anexa total: {fmtEur(anexaTotalEur)} EUR — Remaining: <span className="font-mono font-semibold">{fmtEur(remainingEur)} EUR</span>
-            {!allSelected && <span className="ml-2 text-blue-600">Selected: {fmtEur(selectedTotal)} EUR ({carCount}/{lines.length})</span>}
+            {carCount === 1 ? (
+              <>{selectedLines[0].model} — Remaining: <span className="font-mono font-semibold">{fmtEur(selectedLines.reduce((s, l) => s + l.selling_price_eur - (l.proforma_eur || 0), 0))} EUR</span></>
+            ) : carCount > 1 ? (
+              <>{carCount} vehicles — Remaining: <span className="font-mono font-semibold">{fmtEur(selectedLines.reduce((s, l) => s + l.selling_price_eur - (l.proforma_eur || 0), 0))} EUR</span></>
+            ) : (
+              <>Anexa total: {fmtEur(anexaTotalEur)} EUR — Remaining: <span className="font-mono font-semibold">{fmtEur(remainingEur)} EUR</span></>
+            )}
           </DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-          {/* Vehicle selection */}
-          {lines.length > 1 && (
+          {/* Vehicle selection — only show if multiple cars and not pre-selected from VehicleTable */}
+          {uncoveredLines.length > 1 && selectedIds.size !== 1 && (
             <div className="border rounded-md">
               <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/40 border-b">
                 <input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" />
-                <span className="text-xs font-medium text-muted-foreground">Select vehicles ({selectedIds.size}/{lines.length})</span>
+                <span className="text-xs font-medium text-muted-foreground">Select vehicles ({selectedIds.size}/{uncoveredLines.length})</span>
               </div>
               <div className="max-h-[200px] overflow-y-auto">
-                {lines.map(l => (
+                {uncoveredLines.map(l => (
                   <label key={l.id} className={`flex items-center gap-2 px-3 py-1 text-xs hover:bg-muted/20 cursor-pointer ${selectedIds.has(l.id) ? '' : 'opacity-50'}`}>
                     <input type="checkbox" checked={selectedIds.has(l.id)} onChange={() => toggleLine(l.id)} className="rounded" />
                     <span className="font-mono text-muted-foreground w-12 shrink-0">{l.nr_comanda || '—'}</span>
@@ -748,10 +1110,10 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
 
 // ── Invoice Dialog ──────────────────────────────────────────────
 
-function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, defaultIntocmit, onCreated }: {
+function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, defaultIntocmit, onCreated, preSelectedLineIds }: {
   open: boolean; onOpenChange: (v: boolean) => void; anexaId: number
-  unpairedProformas: { sequence_number: number; total_amount_eur: number; invoice_number: number | null }[]
-  defaultIntocmit?: string; onCreated: () => void
+  unpairedProformas: { sequence_number: number; total_amount_eur: number; invoice_number: number | null; line_ids: number[] | null }[]
+  defaultIntocmit?: string; onCreated: () => void; preSelectedLineIds?: Set<number>
 }) {
   const [selectedSeq, setSelectedSeq] = useState('')
   const [invoiceNumber, setInvoiceNumber] = useState('')
@@ -760,7 +1122,18 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  useEffect(() => { if (unpairedProformas.length > 0 && !selectedSeq) setSelectedSeq(String(unpairedProformas[0].sequence_number)) }, [unpairedProformas, selectedSeq])
+  // Auto-select the proforma matching the selected cars when dialog opens
+  useEffect(() => {
+    if (!open) return
+    if (preSelectedLineIds && preSelectedLineIds.size > 0) {
+      const match = unpairedProformas.find(p => {
+        if (!p.line_ids) return true // null = all lines
+        return p.line_ids.some(id => preSelectedLineIds.has(id))
+      })
+      if (match) { setSelectedSeq(String(match.sequence_number)); return }
+    }
+    if (unpairedProformas.length > 0) setSelectedSeq(String(unpairedProformas[0].sequence_number))
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = async () => {
     if (!selectedSeq) { toast.error('Select a proforma'); return }
@@ -795,7 +1168,7 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
               <SelectContent>
                 {unpairedProformas.map(p => (
                   <SelectItem key={p.sequence_number} value={String(p.sequence_number)}>
-                    Proforma #{p.sequence_number} {p.invoice_number && `(No: ${p.invoice_number})`} — {fmtEur(p.total_amount_eur)} EUR
+                    Proforma #{p.sequence_number} — {fmtEur(p.total_amount_eur)} EUR ({p.line_ids?.length || 'all'} cars)
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -819,15 +1192,18 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
 
 // ── Action Dialog (Storno / Final) ──────────────────────────────
 
-function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, onCreated }: {
+function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, onCreated, lineIds, lines }: {
   open: boolean; onOpenChange: (v: boolean) => void; anexaId: number; action: 'storno' | 'final'
-  defaultIntocmit?: string; onCreated: () => void
+  defaultIntocmit?: string; onCreated: () => void; lineIds?: number[]; lines?: AnexaLine[]
 }) {
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [issuedDate, setIssuedDate] = useState(new Date().toISOString().split('T')[0])
   const [intocmitDe, setIntocmitDe] = useState(defaultIntocmit || '')
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  const selectedLines = (lines || []).filter(l => lineIds?.includes(l.id))
+  const selectedTotal = selectedLines.reduce((s, l) => s + l.selling_price_eur, 0)
 
   const handleSubmit = async () => {
     if (!invoiceNumber) { toast.error('Invoice No. required'); return }
@@ -840,6 +1216,7 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
           invoice_number: invoiceNumber ? parseInt(invoiceNumber) : undefined,
           issued_date: issuedDate || undefined, intocmit_de: intocmitDe || undefined,
           notes: notes || undefined,
+          line_ids: lineIds && lineIds.length > 0 ? lineIds : undefined,
         }),
       })
       const data = await res.json()
@@ -852,8 +1229,25 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Issue {action === 'storno' ? 'Storno' : 'Final'}</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Issue {action === 'storno' ? 'Storno' : 'Final'}</DialogTitle>
+          {selectedLines.length === 1 && (
+            <DialogDescription>{selectedLines[0].model} — {fmtEur(selectedTotal)} EUR</DialogDescription>
+          )}
+        </DialogHeader>
         <div className="space-y-4">
+          {selectedLines.length > 1 && (
+            <div className="rounded border bg-muted/30 p-2 text-xs space-y-1">
+              <div className="font-medium text-muted-foreground">{selectedLines.length} vehicles — {fmtEur(selectedTotal)} EUR</div>
+              {selectedLines.map(l => (
+                <div key={l.id} className="flex gap-2">
+                  <span className="font-mono text-muted-foreground w-12">{l.nr_comanda || '—'}</span>
+                  <span className="flex-1 truncate">{l.model}</span>
+                  <span className="font-mono">{fmtEur(l.selling_price_eur)}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-3">
             <div><Label>Invoice No.</Label><Input type="number" placeholder="9102842" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} /></div>
             <div><Label>Date</Label><Input type="date" value={issuedDate} onChange={e => setIssuedDate(e.target.value)} /></div>
@@ -874,22 +1268,22 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
 
 // ── Anexa Detail Panel ──────────────────────────────────────────
 
-function AnexaDetailPanel({ anexaId, defaultIntocmit, onAction, onClose }: {
-  anexaId: number; defaultIntocmit?: string; onAction: () => void; onClose: () => void
+function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded }: {
+  anexaId: number; onAction: () => void;
+  onDetailLoaded?: (detail: AnexaDetail | null) => void
 }) {
   const [detail, setDetail] = useState<AnexaDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [proformaOpen, setProformaOpen] = useState(false)
-  const [invoiceOpen, setInvoiceOpen] = useState(false)
-  const [stornoOpen, setStornoOpen] = useState(false)
-  const [finalOpen, setFinalOpen] = useState(false)
   const [linesExpanded, setLinesExpanded] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
     fetch(`/facturare/api/anexas/${anexaId}`)
-      .then(r => r.ok ? r.json() : null).then(setDetail).catch(() => setDetail(null)).finally(() => setLoading(false))
-  }, [anexaId])
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { setDetail(d); onDetailLoaded?.(d) })
+      .catch(() => { setDetail(null); onDetailLoaded?.(null) })
+      .finally(() => setLoading(false))
+  }, [anexaId]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [load])
 
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
@@ -898,99 +1292,64 @@ function AnexaDetailPanel({ anexaId, defaultIntocmit, onAction, onClose }: {
   const handleCreated = () => { load(); onAction() }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold">Anexa {detail.anexa_number}</h3>
-        <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
-      </div>
-
-      {/* Vehicle lines (collapsible) */}
-      <Card>
-        <CardContent className="py-2 px-3">
+    <div className="bg-blue-50/30 dark:bg-blue-950/10 border-t border-blue-100 dark:border-blue-900/30">
+      {/* Vehicle lines (edit only when no invoices) */}
+      {detail.invoices.length === 0 && (
+        <div className="px-3 py-2 border-b border-blue-100 dark:border-blue-900/30">
           <button className="flex items-center justify-between text-xs text-muted-foreground hover:text-foreground w-full"
             onClick={() => setLinesExpanded(!linesExpanded)}>
             <span className="flex items-center gap-1">
               {linesExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              {detail.lines.length} vehicle(s)
+              {detail.lines.length} vehicle(s) — edit lines
             </span>
-            <span className="font-mono font-medium">{fmtEur(detail.lines.reduce((s, l) => s + l.selling_price_eur, 0))} EUR</span>
           </button>
           {linesExpanded && (
             <div className="text-xs space-y-1 mt-2">
               {detail.lines.map(l => (
                 <EditableAnexaLine key={l.id} line={l} canDelete={detail.invoices.length === 0} onUpdated={load} />
               ))}
-              {detail.invoices.length === 0 && (
-                <AddVehicleInline anexaId={anexaId} nextLineNumber={detail.lines.length + 1}
-                  nextNrComanda={detail.lines.length > 0 ? String((parseInt(detail.lines[detail.lines.length - 1].nr_comanda || '0') || 0) + 1) : ''}
-                  onAdded={load} />
-              )}
+              <AddVehicleInline anexaId={anexaId} nextLineNumber={detail.lines.length + 1}
+                nextNrComanda={detail.lines.length > 0 ? String((parseInt(detail.lines[detail.lines.length - 1].nr_comanda || '0') || 0) + 1) : ''}
+                onAdded={load} />
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Lifecycle progress */}
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-4">
-            {LIFECYCLE_STEPS.map((step, i) => {
-              const invs = detail.invoices.filter(inv => inv.invoice_type === step)
-              const done = invs.length > 0
-              const Icon = done ? CheckCircle2 : Circle
-              return (
-                <div key={step} className="flex items-center gap-2">
-                  <div className="flex flex-col items-center gap-1">
-                    <Icon className={`h-5 w-5 ${done ? 'text-emerald-500' : 'text-muted-foreground/30'}`} />
-                    <span className={`text-xs font-medium ${done ? '' : 'text-muted-foreground/50'}`}>{TYPE_LABELS[step]}</span>
-                    {invs.map(inv => <span key={inv.id} className="text-xs text-muted-foreground font-mono">{fmtEur(inv.total_amount_eur)} EUR</span>)}
-                  </div>
-                  {i < LIFECYCLE_STEPS.length - 1 && <ArrowRight className={`h-4 w-4 ${done ? 'text-emerald-500' : 'text-muted-foreground/20'}`} />}
-                </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Actions */}
-      {detail.next_actions.length > 0 && (
-        <div className="flex gap-2">
-          {detail.next_actions.includes('PROFORMA') && <Button size="sm" variant="outline" onClick={() => setProformaOpen(true)}><Plus className="h-4 w-4 mr-1" /> Proforma</Button>}
-          {detail.next_actions.includes('INVOICE') && <Button size="sm" variant="outline" onClick={() => setInvoiceOpen(true)}><FileText className="h-4 w-4 mr-1" /> Invoice</Button>}
-          {detail.next_actions.includes('STORNO') && <Button size="sm" variant="outline" className="text-red-600" onClick={() => setStornoOpen(true)}><Ban className="h-4 w-4 mr-1" /> Storno</Button>}
-          {detail.next_actions.includes('FINAL') && <Button size="sm" onClick={() => setFinalOpen(true)}><CheckCircle2 className="h-4 w-4 mr-1" /> Final</Button>}
         </div>
       )}
 
       {/* Invoice table */}
       {detail.invoices.length > 0 && (
-        <Card>
-          <CardContent className="p-0">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b bg-muted/40">
-                  <th className="text-left px-3 py-1.5 font-medium">Type</th>
-                  <th className="text-left px-2 py-1.5 font-medium">No.</th>
-                  <th className="text-left px-2 py-1.5 font-medium">Date</th>
-                  <th className="text-left px-2 py-1.5 font-medium">By</th>
-                  <th className="text-right px-2 py-1.5 font-medium">EUR</th>
-                  <th className="text-right px-2 py-1.5 font-medium">RON</th>
-                  <th className="w-16"></th>
-                </tr>
-              </thead>
-              <tbody>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b bg-blue-50/50 dark:bg-blue-950/20">
+                <th className="text-left px-3 py-1 font-medium">Type</th>
+                <th className="text-left px-2 py-1 font-medium">No.</th>
+                <th className="text-center px-2 py-1 font-medium">Cars</th>
+                <th className="text-left px-2 py-1 font-medium">Date</th>
+                <th className="text-left px-2 py-1 font-medium">By</th>
+                <th className="text-right px-2 py-1 font-medium">EUR</th>
+                <th className="text-right px-2 py-1 font-medium">RON</th>
+                <th className="w-16"></th>
+              </tr>
+            </thead>
+            <tbody>
                 {detail.invoices.map((inv, idx) => (
-                  <tr key={inv.id} className="border-b last:border-0 hover:bg-muted/20">
+                  <tr key={inv.id} className="border-b border-blue-100 dark:border-blue-900/30 last:border-0 hover:bg-blue-50/50">
                     <td className="px-3 py-1.5">
                       <Badge className={`text-xs ${TYPE_COLORS[inv.invoice_type] || ''}`}>
                         {TYPE_LABELS[inv.invoice_type]} #{inv.sequence_number}
                       </Badge>
                     </td>
                     <td className="px-2 py-1.5 font-mono text-muted-foreground">
-                      {inv.invoice_number
-                        ? `${inv.invoice_number}${detail.lines.length > 1 ? `–${inv.invoice_number + detail.lines.length - 1}` : ''}`
-                        : '—'}
+                      {(() => {
+                        const covCount = inv.line_ids?.length || detail.lines.length
+                        const noStr = inv.invoice_number
+                          ? `${inv.invoice_number}${covCount > 1 ? `–${inv.invoice_number + covCount - 1}` : ''}`
+                          : '—'
+                        return noStr
+                      })()}
+                    </td>
+                    <td className="px-2 py-1.5 text-center font-mono text-muted-foreground">
+                      {inv.line_ids?.length || detail.lines.length}/{detail.lines.length}
                     </td>
                     <td className="px-2 py-1.5 text-muted-foreground">
                       {inv.issued_date ? new Date(inv.issued_date).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
@@ -1036,21 +1395,10 @@ function AnexaDetailPanel({ anexaId, defaultIntocmit, onAction, onClose }: {
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </CardContent>
-        </Card>
+          </table>
       )}
 
-      {/* Dialogs */}
-      <ProformaDialog open={proformaOpen} onOpenChange={setProformaOpen} anexaId={anexaId}
-        remainingEur={detail?.remaining_eur ?? 0} anexaTotalEur={detail?.anexa_total_eur ?? 0}
-        lines={detail?.lines ?? []} defaultIntocmit={defaultIntocmit} onCreated={handleCreated} />
-      <InvoiceDialog open={invoiceOpen} onOpenChange={setInvoiceOpen} anexaId={anexaId}
-        unpairedProformas={detail.unpaired_proformas} defaultIntocmit={defaultIntocmit} onCreated={handleCreated} />
-      <ActionDialog open={stornoOpen} onOpenChange={setStornoOpen} anexaId={anexaId} action="storno"
-        defaultIntocmit={defaultIntocmit} onCreated={handleCreated} />
-      <ActionDialog open={finalOpen} onOpenChange={setFinalOpen} anexaId={anexaId} action="final"
-        defaultIntocmit={defaultIntocmit} onCreated={handleCreated} />
+      {/* Dialogs removed — handled by VehicleTable */}
     </div>
   )
 }
@@ -1072,13 +1420,18 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
   }, [])
 
   // Drill-down into a contract
+  const initialContractId = React.useRef(new URLSearchParams(window.location.search).get('ccontract'))
   const [drillContract, setDrillContract] = useState<ContractSummary | null>(null)
   const [anexas, setAnexas] = useState<AnexaSummary[]>([])
   const [anexasLoading, setAnexasLoading] = useState(false)
   const [createAnexaOpen, setCreateAnexaOpen] = useState(false)
 
-  // Detail panel for an anexa
-  const [selectedAnexaId, setSelectedAnexaId] = useState<number | null>(null)
+  // Detail panel for an anexa (persisted in URL)
+  const [selectedAnexaId, setSelectedAnexaId] = useState<number | null>(() => {
+    const v = new URLSearchParams(window.location.search).get('canexa')
+    return v ? parseInt(v) : null
+  })
+  const [anexaDetail, setAnexaDetail] = useState<AnexaDetail | null>(null)
 
   // Filters (persisted in URL)
   const [searchQuery, setSearchQuery] = useState(() => new URLSearchParams(window.location.search).get('cq') || '')
@@ -1116,8 +1469,16 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
     datePeriod !== 'all' ? url.searchParams.set('cperiod', datePeriod) : url.searchParams.delete('cperiod')
     dateFrom ? url.searchParams.set('cfrom', dateFrom) : url.searchParams.delete('cfrom')
     dateTo ? url.searchParams.set('cto', dateTo) : url.searchParams.delete('cto')
+    selectedAnexaId ? url.searchParams.set('canexa', String(selectedAnexaId)) : url.searchParams.delete('canexa')
+    // Preserve ccontract during initial restore (before contracts load)
+    if (drillContract) {
+      url.searchParams.set('ccontract', String(drillContract.id))
+      initialContractId.current = null // restore complete
+    } else if (!initialContractId.current) {
+      url.searchParams.delete('ccontract')
+    }
     window.history.replaceState({}, '', url.toString())
-  }, [searchQuery, filterCompany, filterClient, datePeriod, dateFrom, dateTo])
+  }, [searchQuery, filterCompany, filterClient, datePeriod, dateFrom, dateTo, selectedAnexaId, drillContract])
 
   const loadContracts = useCallback(() => {
     setLoading(true)
@@ -1128,6 +1489,22 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
       .finally(() => setLoading(false))
   }, [])
   useEffect(() => { loadContracts() }, [loadContracts])
+
+  // Restore drill-down from URL on initial load
+  useEffect(() => {
+    if (contracts.length === 0 || drillContract) return
+    const contractId = initialContractId.current
+    if (!contractId) return
+    const c = contracts.find(x => x.id === parseInt(contractId))
+    if (c) {
+      setDrillContract(c); setAnexasLoading(true)
+      fetch(`/facturare/api/contracts/${c.id}/anexas`)
+        .then(r => r.ok ? r.json() : { anexas: [] })
+        .then(data => setAnexas(data.anexas || []))
+        .catch(() => setAnexas([]))
+        .finally(() => setAnexasLoading(false))
+    }
+  }, [contracts]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadAnexas = (contract: ContractSummary) => {
     setDrillContract(contract); setSelectedAnexaId(null); setAnexasLoading(true)
@@ -1183,8 +1560,9 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
   })
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <div className={`${selectedAnexaId ? 'lg:col-span-2' : 'lg:col-span-5'} space-y-3`}>
+    <>
+    <div className="space-y-3">
+      <div className="space-y-3">
 
         {drillContract ? (
           /* ── Drill-down: Anexas for a contract ── */
@@ -1210,21 +1588,27 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                       <th className="text-left px-3 py-2.5 font-medium">Stage</th>
                       <th className="text-left px-3 py-2.5 font-medium">Status</th>
                       <th className="text-right px-3 py-2.5 font-medium">Value EUR</th>
-                      {!selectedAnexaId && <th className="text-right px-3 py-2.5 font-medium">Invoiced</th>}
-                      {!selectedAnexaId && <th className="text-center px-3 py-2.5 font-medium">%</th>}
+                      <th className="text-right px-3 py-2.5 font-medium">Invoiced</th>
+                      <th className="text-center px-3 py-2.5 font-medium">%</th>
                       <th className="w-10"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {anexasLoading && <tr><td colSpan={selectedAnexaId ? 6 : 8} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></td></tr>}
-                    {!anexasLoading && anexas.length === 0 && <tr><td colSpan={selectedAnexaId ? 6 : 8} className="text-center py-8 text-muted-foreground">No anexas yet</td></tr>}
+                    {anexasLoading && <tr><td colSpan={8} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></td></tr>}
+                    {!anexasLoading && anexas.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No anexas yet</td></tr>}
                     {anexas.map(a => {
                       const cfg = STAGE_CONFIG[a.stage] || STAGE_CONFIG.NEW
                       const isSelected = selectedAnexaId === a.id
                       return (
-                        <tr key={a.id} className={`border-b hover:bg-muted/30 cursor-pointer ${isSelected ? 'bg-primary/5' : ''}`}
+                        <React.Fragment key={a.id}>
+                        <tr className={`border-b hover:bg-muted/30 cursor-pointer ${isSelected ? 'bg-primary/5' : ''}`}
                           onClick={() => setSelectedAnexaId(isSelected ? null : a.id)}>
-                          <td className="px-3 py-2.5 font-medium">Anexa {a.anexa_number}</td>
+                          <td className="px-3 py-2.5 font-medium">
+                            <span className="flex items-center gap-1">
+                              <ChevronRight className={`h-3.5 w-3.5 transition-transform text-muted-foreground ${isSelected ? 'rotate-90' : ''}`} />
+                              Anexa {a.anexa_number}
+                            </span>
+                          </td>
                           <td className="px-3 py-2.5 text-center"><Badge variant="outline" className="text-xs">{a.line_count}</Badge></td>
                           <td className="px-3 py-2.5"><Badge className={`${cfg.color} text-xs`}>{cfg.label}</Badge></td>
                           <td className="px-3 py-1" onClick={e => e.stopPropagation()}>
@@ -1251,17 +1635,15 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                             </Select>
                           </td>
                           <td className="px-3 py-2.5 text-right font-mono">{fmtEur(a.total_value)}</td>
-                          {!selectedAnexaId && <td className="px-3 py-2.5 text-right font-mono text-xs">{a.invoiced_total > 0 ? fmtEur(a.invoiced_total) : '—'}</td>}
-                          {!selectedAnexaId && (
-                            <td className="px-3 py-2.5 text-center">
-                              <div className="flex items-center gap-1 justify-center" title={`Proforma: ${a.pct_proforma}% | Invoiced: ${a.pct_invoiced}%`}>
-                                <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">
-                                  <div className={`h-full rounded-full ${a.pct_invoiced >= 100 ? 'bg-emerald-500' : a.pct_invoiced >= 50 ? 'bg-amber-400' : 'bg-blue-400'}`} style={{ width: `${Math.min(a.pct_invoiced, 100)}%` }} />
-                                </div>
-                                <span className="text-xs text-muted-foreground">{a.pct_invoiced}%</span>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs">{a.invoiced_total > 0 ? fmtEur(a.invoiced_total) : '—'}</td>
+                          <td className="px-3 py-2.5 text-center">
+                            <div className="flex items-center gap-1 justify-center" title={`Proforma: ${a.pct_proforma}% | Invoiced: ${a.pct_invoiced}%`}>
+                              <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${a.pct_invoiced >= 100 ? 'bg-emerald-500' : a.pct_invoiced >= 50 ? 'bg-amber-400' : 'bg-blue-400'}`} style={{ width: `${Math.min(a.pct_invoiced, 100)}%` }} />
                               </div>
-                            </td>
-                          )}
+                              <span className="text-xs text-muted-foreground">{a.pct_invoiced}%</span>
+                            </div>
+                          </td>
                           <td className="px-3 py-2.5 text-right">
                             {a.stage === 'NEW' && (
                               <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete anexa (no invoices yet)"
@@ -1282,6 +1664,16 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                             )}
                           </td>
                         </tr>
+                        {isSelected && (
+                          <tr>
+                            <td colSpan={8} className="p-0">
+                              <AnexaDetailPanel key={a.id} anexaId={a.id}
+                                onAction={refreshAnexas}
+                                onDetailLoaded={setAnexaDetail} />
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
                       )
                     })}
                   </tbody>
@@ -1289,161 +1681,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
               </CardContent>
             </Card>
 
-            {/* Contract statistics card — only shown when an anexa is selected */}
-            {!anexasLoading && !!selectedAnexaId && anexas.length > 0 && (() => {
-              const statsAnexas   = selectedAnexaId ? anexas.filter(a => a.id === selectedAnexaId) : anexas
-              const totalValue    = statsAnexas.reduce((s, a) => s + a.total_value, 0)
-              const totalInvoiced = statsAnexas.reduce((s, a) => s + a.invoiced_total, 0)
-              const totalProforma = statsAnexas.reduce((s, a) => s + a.proformas_total, 0)
-              const totalCars     = statsAnexas.reduce((s, a) => s + a.line_count, 0)
-              const pctInvoiced   = totalValue > 0 ? Math.round(totalInvoiced / totalValue * 100) : 0
-              const pctProforma   = totalValue > 0 ? Math.round(totalProforma / totalValue * 100) : 0
-              const remaining     = totalValue - totalInvoiced
-              const stageCount    = Object.fromEntries(
-                Object.keys(STAGE_CONFIG).map(s => [s, statsAnexas.filter(a => a.stage === s).length])
-              )
-
-              // Time-based metrics
-              const now = new Date()
-              const startRef = selectedAnexaId
-                ? statsAnexas[0]?.created_at ? new Date(statsAnexas[0].created_at) : null
-                : drillContract?.contract_date
-                  ? new Date(drillContract.contract_date)
-                  : anexas.reduce<Date | null>((min, a) => {
-                      if (!a.created_at) return min
-                      const d = new Date(a.created_at)
-                      return !min || d < min ? d : min
-                    }, null)
-              const daysActive = startRef ? Math.max(1, Math.round((now.getTime() - startRef.getTime()) / 86400000)) : null
-              const invoiceSpeedPerDay = (daysActive && totalInvoiced > 0) ? totalInvoiced / daysActive : null
-              const daysToComplete = (invoiceSpeedPerDay && remaining > 0) ? Math.ceil(remaining / invoiceSpeedPerDay) : null
-              const projectedDate = daysToComplete ? new Date(now.getTime() + daysToComplete * 86400000) : null
-              const avgEurPerCar  = totalCars > 0 ? totalValue / totalCars : 0
-
-              return (
-                <Card className="bg-muted/20">
-                  <CardContent className="pt-4 pb-4 space-y-4">
-                    {/* Row 0: lifecycle breakdown per step */}
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3">
-                        {LIFECYCLE_STEPS.map((step, i) => {
-                          const count = statsAnexas.filter(a => a.types.includes(step)).length
-                          const pct   = Math.round(count / statsAnexas.length * 100)
-                          const done  = count === statsAnexas.length
-                          return (
-                            <div key={step} className="flex items-center gap-2 flex-1">
-                              <div className="flex flex-col items-center gap-1 min-w-[52px]">
-                                <div className="flex items-center gap-1">
-                                  <div className={`h-2.5 w-2.5 rounded-full ${count > 0 ? 'bg-emerald-500' : 'bg-muted'}`} />
-                                  <span className={`text-xs font-medium ${count > 0 ? '' : 'text-muted-foreground/50'}`}>{TYPE_LABELS[step]}</span>
-                                </div>
-                                <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                                  <div className={`h-full rounded-full ${done ? 'bg-emerald-500' : count > 0 ? 'bg-emerald-400' : 'bg-muted'}`}
-                                    style={{ width: `${pct}%` }} />
-                                </div>
-                                <span className="text-[10px] text-muted-foreground">{count}/{statsAnexas.length}</span>
-                              </div>
-                              {i < LIFECYCLE_STEPS.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground/30 shrink-0" />}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Row 1: financials */}
-                    <div className="border-t pt-3 grid grid-cols-2 gap-x-6 text-sm">
-                      <div className="space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Contract value</span>
-                          <span className="font-mono font-medium">{fmtEur(totalValue)} EUR</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Invoiced</span>
-                          <span className="font-mono text-emerald-600">{fmtEur(totalInvoiced)} EUR</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Proforma</span>
-                          <span className="font-mono text-blue-600">{fmtEur(totalProforma)} EUR</span>
-                        </div>
-                        <div className="flex justify-between border-t pt-1 mt-1">
-                          <span className="text-muted-foreground">Remaining</span>
-                          <span className={`font-mono font-medium ${remaining > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{fmtEur(remaining)} EUR</span>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground text-xs w-20">Invoiced</span>
-                          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${pctInvoiced >= 100 ? 'bg-emerald-500' : pctInvoiced >= 50 ? 'bg-amber-400' : 'bg-blue-400'}`} style={{ width: `${Math.min(pctInvoiced, 100)}%` }} />
-                          </div>
-                          <span className="text-xs font-mono w-8 text-right">{pctInvoiced}%</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground text-xs w-20">Proforma</span>
-                          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                            <div className="h-full rounded-full bg-blue-300" style={{ width: `${Math.min(pctProforma, 100)}%` }} />
-                          </div>
-                          <span className="text-xs font-mono w-8 text-right">{pctProforma}%</span>
-                        </div>
-                        <div className="flex flex-wrap gap-1 pt-1">
-                          {Object.entries(stageCount).filter(([, n]) => n > 0).map(([stage, n]) => (
-                            <Badge key={stage} className={`${STAGE_CONFIG[stage]?.color} text-xs`}>{n}× {STAGE_CONFIG[stage]?.label}</Badge>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Row 2: velocity & completion */}
-                    <div className="border-t pt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                      <div className="space-y-1">
-                        {daysActive !== null && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Contract age</span>
-                            <span className="font-mono">{daysActive}d</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Avg per car</span>
-                          <span className="font-mono">{fmtEur(avgEurPerCar)} EUR</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Total cars</span>
-                          <span className="font-mono">{totalCars}</span>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        {daysToComplete !== null && remaining > 0 ? (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Est. to complete</span>
-                              <span className="font-mono">{daysToComplete}d</span>
-                            </div>
-                            {projectedDate && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Projected date</span>
-                                <span className="font-mono">{projectedDate.toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
-                              </div>
-                            )}
-                          </>
-                        ) : remaining <= 0 ? (
-                          <div className="flex items-center gap-1 text-emerald-600">
-                            <CheckCircle2 className="h-4 w-4" />
-                            <span className="text-sm font-medium">Fully invoiced</span>
-                          </div>
-                        ) : (
-                          <div className="text-xs text-muted-foreground italic">No invoices yet — speed N/A</div>
-                        )}
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Anexe complete</span>
-                          <span className="font-mono">{stageCount['COMPLETE'] || 0} / {statsAnexas.length}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                  </CardContent>
-                </Card>
-              )
-            })()}
+            {/* Statistics card removed */}
 
             <CreateAnexaDialog open={createAnexaOpen} onOpenChange={setCreateAnexaOpen} contractId={drillContract.id}
               onCreated={() => loadAnexas(drillContract)} />
@@ -1594,14 +1832,21 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
         )}
       </div>
 
-      {/* Right: Anexa detail panel */}
-      {selectedAnexaId && (
-        <div className="lg:col-span-3">
-          <AnexaDetailPanel key={selectedAnexaId} anexaId={selectedAnexaId} defaultIntocmit={currentUserName}
-            onAction={refreshAnexas}
-            onClose={() => setSelectedAnexaId(null)} />
-        </div>
-      )}
+      {/* Detail panel integrated inline in anexa table rows */}
     </div>
+
+    {/* Vehicle table — full width below the grid */}
+    {anexaDetail && selectedAnexaId && (
+      <div className="mt-4">
+        <VehicleTable detail={anexaDetail} defaultIntocmit={currentUserName}
+          onCreated={() => {
+            refreshAnexas()
+            // Reload detail
+            fetch(`/facturare/api/anexas/${selectedAnexaId}`)
+              .then(r => r.ok ? r.json() : null).then(d => setAnexaDetail(d)).catch(() => {})
+          }} />
+      </div>
+    )}
+    </>
   )
 }

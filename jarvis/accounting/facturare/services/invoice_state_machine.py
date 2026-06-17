@@ -46,6 +46,26 @@ class InvoiceStateMachine:
             logger.warning("Failed to fetch BNR rate: %s", e)
         return None
 
+    def _check_invoice_number_unique(self, anexa_id: int, invoice_number: int | None, invoice_type: str | None = None):
+        """Ensure invoice_number is not already used on this anexa for the same document type."""
+        if invoice_number is None:
+            return
+        if invoice_type:
+            existing = self.repo.query_all(
+                "SELECT id, invoice_type, sequence_number FROM facturare_invoices "
+                "WHERE anexa_id = %s AND invoice_number = %s AND invoice_type = %s",
+                (anexa_id, invoice_number, invoice_type))
+        else:
+            existing = self.repo.query_all(
+                "SELECT id, invoice_type, sequence_number FROM facturare_invoices "
+                "WHERE anexa_id = %s AND invoice_number = %s",
+                (anexa_id, invoice_number))
+        if existing:
+            row = existing[0]
+            raise InvoiceStateMachineError(
+                f"Invoice number {invoice_number} already used on this anexa "
+                f"({row['invoice_type']} #{row['sequence_number']})")
+
     # ── Issue Proforma ───────────────────────────────────────────
 
     def issue_proforma(self, anexa_id: int, amount_eur: Decimal,
@@ -84,15 +104,26 @@ class InvoiceStateMachine:
                 f"Amount {amount_eur} EUR exceeds remaining {remaining} EUR "
                 f"(anexa: {anexa_total}, proformas: {proformas_total})")
 
-        # All previous proformas must have their paired invoice before issuing a new one
+        # Proformas covering the SAME cars must be paired before issuing a new one
+        import json as _json
         existing_invoices = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.INVOICE)
-        proforma_seqs = {p["sequence_number"] for p in existing_proformas}
         invoice_seqs = {i["sequence_number"] for i in existing_invoices}
-        unpaired = proforma_seqs - invoice_seqs
-        if unpaired:
-            raise InvoiceStateMachineError(
-                f"Proforma #{min(unpaired)} not yet invoiced — close existing proformas before issuing a new one")
+        all_line_id_set = {l["id"] for l in anexa_lines}
+        new_line_set = set(line_ids) if line_ids else all_line_id_set
+        for p in existing_proformas:
+            if p["sequence_number"] in invoice_seqs:
+                continue  # already paired
+            # Unpaired proforma — check if it overlaps with the new one
+            raw = p.get("line_ids")
+            if isinstance(raw, str):
+                raw = _json.loads(raw)
+            p_lines = set(raw) if raw else all_line_id_set
+            overlap = new_line_set & p_lines
+            if overlap:
+                raise InvoiceStateMachineError(
+                    f"Proforma #{p['sequence_number']} not yet invoiced — it covers some of the same vehicles")
 
+        self._check_invoice_number_unique(anexa_id, invoice_number, "PROFORMA")
         seq = len(existing_proformas) + 1
         kurs = self._fetch_kurs(issued_date)
         total_ron = (amount_eur * kurs) if kurs else Decimal("0")
@@ -135,10 +166,17 @@ class InvoiceStateMachine:
         if existing:
             raise InvoiceStateMachineError(f"Invoice #{sequence_number} already exists")
 
+        self._check_invoice_number_unique(anexa_id, invoice_number, "INVOICE")
         proforma_amount = Decimal(str(proforma_row["total_amount_eur"]))
         proforma_kurs = Decimal(str(proforma_row["kurs_applied"])) if proforma_row.get("kurs_applied") else None
         total_ron = (proforma_amount * proforma_kurs) if proforma_kurs else Decimal("0")
         intocmit = self._resolve_intocmit(intocmit_de, created_by_user_id)
+
+        # Inherit line_ids from the proforma being confirmed
+        import json as _json
+        proforma_line_ids = proforma_row.get("line_ids")
+        if isinstance(proforma_line_ids, str):
+            proforma_line_ids = _json.loads(proforma_line_ids)
 
         inv_row = self.repo.create_invoice(
             anexa_id=anexa_id,
@@ -154,6 +192,7 @@ class InvoiceStateMachine:
             notes=notes or f"Confirms Proforma #{sequence_number} (No: {proforma_row.get('invoice_number') or 'N/A'})",
             split_mode=proforma_row.get("split_mode", "equal"),
             created_by=created_by_user_id,
+            line_ids=proforma_line_ids,
         )
 
         self.repo.create_link(
@@ -171,39 +210,72 @@ class InvoiceStateMachine:
                      invoice_number: int | None = None, issued_date=None,
                      intocmit_de: str | None = None,
                      notes: str | None = None,
+                     line_ids: list[int] | None = None,
                      created_by_user_id: int = 0) -> StoredInvoice:
-        """Issue a Storno reversing all INVOICES. All proformas must be invoiced first."""
-        proformas = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.PROFORMA)
-        if not proformas:
-            raise InvoiceStateMachineError("No proformas found")
+        """Issue a Storno reversing INVOICES for selected cars (or all if no line_ids)."""
+        import json as _json
 
+        all_lines = self.repo.get_lines_by_anexa(anexa_id)
+        all_line_id_set = {l["id"] for l in all_lines}
+        target_lines = set(line_ids) if line_ids else all_line_id_set
+
+        if line_ids:
+            invalid = target_lines - all_line_id_set
+            if invalid:
+                raise InvoiceStateMachineError(f"Line IDs {invalid} not found in this anexa")
+
+        proformas = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.PROFORMA)
         invoices = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.INVOICE)
-        proforma_seqs = {r["sequence_number"] for r in proformas}
-        invoice_seqs = {r["sequence_number"] for r in invoices}
+
+        # Filter to invoices that cover the target cars
+        def covers_target(inv):
+            raw = inv.get("line_ids")
+            if isinstance(raw, str):
+                raw = _json.loads(raw)
+            inv_lines = set(raw) if raw else all_line_id_set
+            return bool(inv_lines & target_lines)
+
+        relevant_proformas = [p for p in proformas if covers_target(p)]
+        relevant_invoices = [i for i in invoices if covers_target(i)]
+
+        if not relevant_proformas:
+            raise InvoiceStateMachineError("No proformas found for selected vehicles")
+
+        # Check all relevant proformas are paired
+        proforma_seqs = {r["sequence_number"] for r in relevant_proformas}
+        invoice_seqs = {r["sequence_number"] for r in relevant_invoices}
         unpaired = proforma_seqs - invoice_seqs
         if unpaired:
             raise InvoiceStateMachineError(
                 f"Proforma(s) #{', '.join(str(s) for s in sorted(unpaired))} not yet invoiced")
 
-        if self.repo.get_invoice_by_anexa_and_type(anexa_id, InvoiceTypeEnum.STORNO):
-            raise InvoiceStateMachineError("Storno already exists")
+        # Verify selected cars are fully invoiced
+        line_prices = {l["id"]: Decimal(str(l["selling_price_eur"])) for l in all_lines}
+        target_total = sum(line_prices.get(lid, Decimal("0")) for lid in target_lines)
+        # Sum proportional share of each invoice for the target cars
+        invoiced_for_target = Decimal("0")
+        for inv in relevant_invoices:
+            raw = inv.get("line_ids")
+            if isinstance(raw, str):
+                raw = _json.loads(raw)
+            inv_lines = set(raw) if raw else all_line_id_set
+            covered_total = sum(line_prices.get(lid, Decimal("0")) for lid in inv_lines)
+            for lid in (inv_lines & target_lines):
+                share = (line_prices.get(lid, Decimal("0")) / covered_total * Decimal(str(inv["total_amount_eur"]))) if covered_total else Decimal("0")
+                invoiced_for_target += share
 
-        # Verify full anexa amount is invoiced
-        lines = self.repo.get_lines_by_anexa(anexa_id)
-        anexa_total = sum(Decimal(str(l["selling_price_eur"])) for l in lines)
-        invoiced_total = sum(Decimal(str(r["total_amount_eur"])) for r in invoices)
-        if anexa_total > 0 and invoiced_total < anexa_total:
-            remaining = anexa_total - invoiced_total
+        if target_total > 0 and invoiced_for_target < target_total * Decimal("0.999"):
+            remaining = target_total - invoiced_for_target
             raise InvoiceStateMachineError(
-                f"Cannot issue Storno — only {invoiced_total} of {anexa_total} EUR invoiced. "
-                f"Remaining {remaining} EUR must be invoiced first.")
+                f"Cannot issue Storno — only {invoiced_for_target:.2f} of {target_total:.2f} EUR invoiced "
+                f"for selected vehicles. Remaining {remaining:.2f} EUR must be invoiced first.")
 
-        storno_total = sum(Decimal(str(r["total_amount_eur"])) for r in invoices)
+        storno_total = invoiced_for_target
 
-        # Weighted average kurs
+        # Weighted average kurs from relevant invoices
         weighted_sum = Decimal("0")
         amount_sum = Decimal("0")
-        for inv in invoices:
+        for inv in relevant_invoices:
             amt = Decimal(str(inv["total_amount_eur"]))
             k = Decimal(str(inv["kurs_applied"])) if inv.get("kurs_applied") else None
             if k and amt:
@@ -212,31 +284,35 @@ class InvoiceStateMachine:
         storno_kurs = (weighted_sum / amount_sum).quantize(Decimal("0.0001")) if amount_sum else None
         storno_ron = (storno_total * storno_kurs) if storno_kurs else Decimal("0")
 
+        self._check_invoice_number_unique(anexa_id, invoice_number, "STORNO")
         intocmit = self._resolve_intocmit(intocmit_de, created_by_user_id)
+        existing_stornos = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.STORNO)
+        seq = len(existing_stornos) + 1
 
         inv_row = self.repo.create_invoice(
             anexa_id=anexa_id,
             invoice_type=InvoiceTypeEnum.STORNO,
             invoice_state=InvoiceStateEnum.DRAFT,
-            sequence_number=1,
+            sequence_number=seq,
             total_amount_eur=-storno_total,
             total_amount_ron=-storno_ron,
             kurs_applied=storno_kurs,
             invoice_number=invoice_number,
             issued_date=issued_date,
             intocmit_de=intocmit,
-            notes=notes or f"Reverses {len(invoices)} invoice(s)",
+            notes=notes or f"Reverses invoices for {len(target_lines)} vehicle(s)",
             created_by=created_by_user_id,
+            line_ids=list(target_lines) if line_ids else None,
         )
 
-        for inv in invoices:
+        for inv in relevant_invoices:
             self.repo.create_link(
                 source_invoice_id=inv["id"],
                 target_invoice_id=inv_row["id"],
                 link_type=InvoiceLinkTypeEnum.REVERSES,
             )
 
-        logger.info("Storno created: anexa=%s amount=%s EUR", anexa_id, -storno_total)
+        logger.info("Storno #%d created: anexa=%s amount=%s EUR lines=%s", seq, anexa_id, -storno_total, line_ids or "all")
         return StoredInvoice.from_row(inv_row)
 
     # ── Issue Final ──────────────────────────────────────────────
@@ -245,24 +321,52 @@ class InvoiceStateMachine:
                     invoice_number: int | None = None, issued_date=None,
                     intocmit_de: str | None = None,
                     notes: str | None = None,
+                    line_ids: list[int] | None = None,
                     created_by_user_id: int = 0) -> StoredInvoice:
-        """Issue the Final invoice after Storno."""
-        storno_row = self.repo.get_invoice_by_anexa_and_type(anexa_id, InvoiceTypeEnum.STORNO)
-        if not storno_row:
-            raise InvoiceStateMachineError("Storno required before Final")
-        if self.repo.get_invoice_by_anexa_and_type(anexa_id, InvoiceTypeEnum.FINAL):
-            raise InvoiceStateMachineError("Final already exists")
+        """Issue the Final invoice after Storno (for selected cars or all)."""
+        import json as _json
 
-        final_total = abs(Decimal(str(storno_row["total_amount_eur"])))
-        storno_kurs = Decimal(str(storno_row["kurs_applied"])) if storno_row.get("kurs_applied") else None
+        all_lines = self.repo.get_lines_by_anexa(anexa_id)
+        all_line_id_set = {l["id"] for l in all_lines}
+        target_lines = set(line_ids) if line_ids else all_line_id_set
+
+        # Find storno(s) covering the target cars
+        stornos = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.STORNO)
+        matching_storno = None
+        for s in stornos:
+            raw = s.get("line_ids")
+            if isinstance(raw, str):
+                raw = _json.loads(raw)
+            s_lines = set(raw) if raw else all_line_id_set
+            if target_lines <= s_lines:
+                matching_storno = s
+                break
+        if not matching_storno:
+            raise InvoiceStateMachineError("Storno required before Final for the selected vehicles")
+
+        # Compute final amount as proportional share of the storno for target cars
+        line_prices = {l["id"]: Decimal(str(l["selling_price_eur"])) for l in all_lines}
+        raw = matching_storno.get("line_ids")
+        if isinstance(raw, str):
+            raw = _json.loads(raw)
+        storno_lines = set(raw) if raw else all_line_id_set
+        storno_lines_total = sum(line_prices.get(lid, Decimal("0")) for lid in storno_lines)
+        target_total = sum(line_prices.get(lid, Decimal("0")) for lid in target_lines)
+        storno_amount = abs(Decimal(str(matching_storno["total_amount_eur"])))
+        final_total = (target_total / storno_lines_total * storno_amount) if storno_lines_total else storno_amount
+
+        storno_kurs = Decimal(str(matching_storno["kurs_applied"])) if matching_storno.get("kurs_applied") else None
         final_ron = (final_total * storno_kurs) if storno_kurs else Decimal("0")
+        self._check_invoice_number_unique(anexa_id, invoice_number, "FINAL")
         intocmit = self._resolve_intocmit(intocmit_de, created_by_user_id)
+        existing_finals = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.FINAL)
+        seq = len(existing_finals) + 1
 
         inv_row = self.repo.create_invoice(
             anexa_id=anexa_id,
             invoice_type=InvoiceTypeEnum.FINAL,
             invoice_state=InvoiceStateEnum.DRAFT,
-            sequence_number=1,
+            sequence_number=seq,
             total_amount_eur=final_total,
             total_amount_ron=final_ron,
             kurs_applied=storno_kurs,
@@ -271,15 +375,16 @@ class InvoiceStateMachine:
             intocmit_de=intocmit,
             notes=notes,
             created_by=created_by_user_id,
+            line_ids=list(target_lines) if line_ids else None,
         )
 
         self.repo.create_link(
-            source_invoice_id=storno_row["id"],
+            source_invoice_id=matching_storno["id"],
             target_invoice_id=inv_row["id"],
             link_type=InvoiceLinkTypeEnum.REPLACES,
         )
 
-        logger.info("Final created: anexa=%s amount=%s EUR", anexa_id, final_total)
+        logger.info("Final #%d created: anexa=%s amount=%s EUR lines=%s", seq, anexa_id, final_total, line_ids or "all")
         return StoredInvoice.from_row(inv_row)
 
     # ── Query helpers ────────────────────────────────────────────
