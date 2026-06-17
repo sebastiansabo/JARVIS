@@ -560,7 +560,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set(lines.map(l => l.id)))
   const [amount, setAmount] = useState('')
   const [percent, setPercent] = useState('')
-  const [splitMode, setSplitMode] = useState<'equal' | 'proportional'>('equal')
+  const [splitMode, setSplitMode] = useState<'equal' | 'proportional'>('proportional')
   const [startNo, setStartNo] = useState('')
   const [issuedDate, setIssuedDate] = useState(new Date().toISOString().split('T')[0])
   const [kurs, setKurs] = useState<string | null>(null)
