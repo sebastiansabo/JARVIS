@@ -65,7 +65,9 @@ class ProformaPdfRenderer:
                  intocmit_de: str = "Gabriela Oltean",
                  description_prefix: str = "1. ADVANCE PAYMENT",
                  note: str = "",
-                 title_lines: list[str] | None = None):
+                 title_lines: list[str] | None = None,
+                 kurs_applied: float | None = None,
+                 total_amount_ron: float | None = None):
         self.supplier = supplier
         self.customer = customer
         self.invoice_date = invoice_date
@@ -74,6 +76,8 @@ class ProformaPdfRenderer:
         self.note = note
         self.title_lines = title_lines or ["FACTURA PROFORMA", "PROFORMA INVOICE"]
         self.logo_path = DEFAULT_LOGO if DEFAULT_LOGO.exists() else None
+        self.kurs_applied = kurs_applied
+        self.total_amount_ron = total_amount_ron
 
     def render_one(self, c: canvas.Canvas, inv_no: int, line: OrderLine):
         """Draw a single proforma page."""
@@ -251,6 +255,12 @@ class ProformaPdfRenderer:
         c.setFont("Helvetica-Bold", 11)
         c.drawString(LM, y, "PRICE")
         c.drawRightString(RM, y, f"{fmt_us(line.advance)} EUR")
+
+        # Exchange rate
+        if self.kurs_applied:
+            y -= 6 * mm
+            c.setFont("Helvetica", 9.5)
+            c.drawString(LM, y, f"Curs BNR / Exchange rate: {self.kurs_applied:.4f} RON/EUR")
 
         # ── Footer ──
         y -= 18 * mm
