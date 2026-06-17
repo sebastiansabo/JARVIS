@@ -597,6 +597,7 @@ def api_get_anexa_detail(anexa_id):
                 "amount_ron": round(share_ron, 2),
                 "invoice_number": inv.get("invoice_number"),
                 "kurs_applied": float(inv["kurs_applied"]) if inv.get("kurs_applied") else None,
+                "issued_date": str(inv["issued_date"]) if inv.get("issued_date") else None,
             })
             if inv["invoice_type"] == "PROFORMA":
                 line_proforma_eur[lid] = line_proforma_eur.get(lid, 0) + share
@@ -1063,6 +1064,7 @@ def api_generate_pdf(invoice_id):
         title_lines=title_map.get(inv_type_str, ["FACTURA", "INVOICE"]),
         description_prefix=desc_map.get(inv_type_str, "1."),
         note=inv_row.get("notes") or "",
+        kurs_applied=float(inv_row["kurs_applied"]) if inv_row.get("kurs_applied") else None,
     )
 
     mode = request.args.get("mode", "merged")

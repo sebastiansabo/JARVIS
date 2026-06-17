@@ -38,7 +38,7 @@ interface AnexaSummary {
   lines_with_proforma: number; lines_invoiced: number; created_at: string | null
 }
 
-interface LineCoverage { invoice_id: number; invoice_type: string; sequence_number: number; amount_eur?: number; amount_ron?: number; invoice_number?: number | null; kurs_applied?: number | null }
+interface LineCoverage { invoice_id: number; invoice_type: string; sequence_number: number; amount_eur?: number; amount_ron?: number; invoice_number?: number | null; kurs_applied?: number | null; issued_date?: string | null }
 
 interface AnexaLine {
   id: number; line_number: number; nr_comanda: string | null; vin: string | null
@@ -650,12 +650,11 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
 
   // Sort coverage entries for expanded rows: P1, F1, P2, F2, ..., Storno, Final
   const sortCoverage = (a: LineCoverage, b: LineCoverage) => {
-    const groupOrder: Record<string, number> = { PROFORMA: 0, INVOICE: 0, STORNO: 1, FINAL: 2 }
-    const aGroup = groupOrder[a.invoice_type] ?? 0; const bGroup = groupOrder[b.invoice_type] ?? 0
-    if (aGroup !== bGroup) return aGroup - bGroup
-    if (a.sequence_number !== b.sequence_number) return a.sequence_number - b.sequence_number
-    const typeOrder = ['PROFORMA', 'INVOICE', 'STORNO', 'FINAL']
-    return typeOrder.indexOf(a.invoice_type) - typeOrder.indexOf(b.invoice_type)
+    // Sort chronologically by date, then proforma before invoice on same date
+    const dateA = a.issued_date || ''; const dateB = b.issued_date || ''
+    if (dateA !== dateB) return dateA.localeCompare(dateB)
+    const typeOrder: Record<string, number> = { PROFORMA: 0, INVOICE: 1, STORNO: 2, FINAL: 3 }
+    return (typeOrder[a.invoice_type] ?? 9) - (typeOrder[b.invoice_type] ?? 9)
   }
   const carPdfUrl = (invoiceId: number, lineId: number) => {
     const ids = invoiceLineIds.get(invoiceId)
@@ -859,8 +858,11 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
                       <td className="px-2 py-1 font-mono text-[11px] text-muted-foreground">
                         {c.invoice_number != null ? String(c.invoice_number) : ''}
                       </td>
-                      <td colSpan={3} className="px-2 py-1">
+                      <td colSpan={2} className="px-2 py-1">
                         <span className={`text-[11px] font-medium ${covColor(c)}`}>{covLabel(c, l.selling_price_eur)}</span>
+                      </td>
+                      <td className="px-2 py-1 text-[10px] text-muted-foreground">
+                        {c.issued_date ? new Date(c.issued_date).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: '2-digit' }) : ''}
                       </td>
                       <td className="px-2 py-1 text-right font-mono text-[10px] text-muted-foreground">
                         {c.kurs_applied ? c.kurs_applied.toFixed(4) : ''}
