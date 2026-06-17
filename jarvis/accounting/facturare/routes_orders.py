@@ -588,12 +588,15 @@ def api_get_anexa_detail(anexa_id):
                 line_coverage[lid] = []
             # Proportional share
             share = (line_prices.get(lid, 0) / covered_total * inv["total_amount_eur"]) if covered_total else 0
+            share_ron = (line_prices.get(lid, 0) / covered_total * float(inv.get("total_amount_ron") or 0)) if covered_total else 0
             line_coverage[lid].append({
                 "invoice_id": inv["id"],
                 "invoice_type": inv["invoice_type"],
                 "sequence_number": inv.get("sequence_number", 1),
                 "amount_eur": round(share, 2),
+                "amount_ron": round(share_ron, 2),
                 "invoice_number": inv.get("invoice_number"),
+                "kurs_applied": float(inv["kurs_applied"]) if inv.get("kurs_applied") else None,
             })
             if inv["invoice_type"] == "PROFORMA":
                 line_proforma_eur[lid] = line_proforma_eur.get(lid, 0) + share

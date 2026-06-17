@@ -38,7 +38,7 @@ interface AnexaSummary {
   lines_with_proforma: number; lines_invoiced: number; created_at: string | null
 }
 
-interface LineCoverage { invoice_id: number; invoice_type: string; sequence_number: number; amount_eur?: number; invoice_number?: number | null }
+interface LineCoverage { invoice_id: number; invoice_type: string; sequence_number: number; amount_eur?: number; amount_ron?: number; invoice_number?: number | null; kurs_applied?: number | null }
 
 interface AnexaLine {
   id: number; line_number: number; nr_comanda: string | null; vin: string | null
@@ -859,8 +859,11 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
                       <td className="px-2 py-1 font-mono text-[11px] text-muted-foreground">
                         {c.invoice_number != null ? String(c.invoice_number) : ''}
                       </td>
-                      <td colSpan={4} className="px-2 py-1">
+                      <td colSpan={3} className="px-2 py-1">
                         <span className={`text-[11px] font-medium ${covColor(c)}`}>{covLabel(c, l.selling_price_eur)}</span>
+                      </td>
+                      <td className="px-2 py-1 text-right font-mono text-[10px] text-muted-foreground">
+                        {c.kurs_applied ? c.kurs_applied.toFixed(4) : ''}
                       </td>
                       <td className={`px-2 py-1 text-right font-mono text-[11px] ${isProf ? covColor(c) : ''}`}>
                         {isProf ? fmtEur(c.amount_eur || 0) : ''}
@@ -871,7 +874,10 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
                       <td className="px-2 py-1 text-right font-mono text-[11px] text-amber-600">
                         {restAfter != null ? fmtEur(restAfter) : ''}
                       </td>
-                      <td colSpan={2}></td>
+                      <td className="px-2 py-1 text-right font-mono text-[10px] text-muted-foreground">
+                        {c.amount_ron ? fmtEur(c.amount_ron) : ''}
+                      </td>
+                      <td></td>
                       <td className="px-2 py-1 text-center">
                         <span className="inline-flex gap-1">
                           <Download className="h-3.5 w-3.5 text-muted-foreground cursor-pointer hover:text-blue-600"
