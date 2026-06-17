@@ -987,44 +987,26 @@ def api_generate_pdf(invoice_id):
     inv_type_str = inv_row["invoice_type"]
 
     if inv_type_str == "STORNO":
-        # Build per-car groups: each car gets a list of its reversed invoice items
-        reversed_invoices = _repo.query_all(
-            "SELECT invoice_number, issued_date, total_amount_eur, sequence_number, split_mode "
-            "FROM facturare_invoices WHERE anexa_id = %s AND invoice_type = 'INVOICE' "
-            "ORDER BY sequence_number",
-            (anexa["id"],))
+        # One line per car — total storno amount = car's selling price (sum of all reversed invoices)
+        total_amount = float(inv_row["total_amount_eur"])
+        split_mode = inv_row.get("split_mode", "equal")
         total_selling = sum(float(l["selling_price_eur"]) for l in lines) or 1
-        # storno_groups[car_idx] = list of OrderLine (one per reversed invoice)
-        storno_groups = []
-        for car in lines:
-            selling = float(car["selling_price_eur"])
-            car_items = []
-            for ri in reversed_invoices:
-                ri_total = float(ri["total_amount_eur"])
-                ri_split = ri.get("split_mode") or "equal"
-                ri_no = ri.get("invoice_number")
-                ri_date = ri.get("issued_date")
-                date_fmt = ri_date.strftime("%d.%m.%Y") if hasattr(ri_date, "strftime") else str(ri_date or "")
-                storno_ref = f"INVOICE {ri_no}/{date_fmt}" if ri_no else f"Invoice seq.{ri['sequence_number']}"
-                if ri_split == "proportional" and total_selling > 0:
-                    car_amount = ri_total * (selling / total_selling)
-                else:
-                    car_amount = ri_total / max(len(lines), 1)
-                car_items.append(OrderLine(
-                    comanda=int(car["nr_comanda"]) if car.get("nr_comanda") and str(car["nr_comanda"]).isdigit() else 0,
-                    model=car.get("model", ""),
-                    culoare=car.get("culoare") or "",
-                    list_price=float(car["list_price_eur"]) if car.get("list_price_eur") else None,
-                    selling_price=selling,
-                    advance=-car_amount,
-                    rest=None,
-                    vin=car.get("vin"),
-                    qty=1,
-                    storno_description=storno_ref,
-                    anexa_ref=f"Anexa {anexa['anexa_number']} / Contract {contract['contract_ref']}",
-                ))
-            storno_groups.append(car_items)
-        order_lines = []  # not used for storno, kept for variable scope
+        order_lines = []
+        for l in lines:
+            selling = float(l["selling_price_eur"])
+            if split_mode == "proportional" and total_selling > 0:
+                car_amount = total_amount * (selling / total_selling)
+            else:
+                car_amount = total_amount / max(len(lines), 1)
+            order_lines.append(OrderLine(
+                comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
+                model=l["model"], culoare=l.get("culoare") or "",
+                list_price=float(l["list_price_eur"]), selling_price=selling,
+                advance=-car_amount,
+                rest=None, vin=l.get("vin"), qty=l.get("qty", 1),
+                anexa_ref=f"Anexa {anexa['anexa_number']} / Contract {contract['contract_ref']}",
+            ))
+        storno_groups = None  # not used anymore
     else:
         # Per-car order lines
         total_amount = float(inv_row["total_amount_eur"])
@@ -1082,17 +1064,6 @@ def api_generate_pdf(invoice_id):
 
     mode = request.args.get("mode", "merged")
 
-
-    # STORNO: one page per car, each page lists all reversed invoices for that car
-    if inv_type_str == "STORNO":
-        car_idx = request.args.get("car")
-        if car_idx is not None and car_idx.isdigit():
-            idx = int(car_idx)
-            if 0 <= idx < len(storno_groups):
-                pdf_bytes = renderer.render_storno_multipage([storno_groups[idx]], start_no + idx)
-                return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}_{start_no + idx}.pdf")
-        pdf_bytes = renderer.render_storno_multipage(storno_groups, start_no)
-        return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
 
     # Single car PDF via ?car=N
     car_idx = request.args.get("car")

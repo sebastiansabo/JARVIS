@@ -611,6 +611,24 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
     invoiceLineIds.set(inv.id, inv.line_ids || lines.map(l => l.id))
   }
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [editingVinId, setEditingVinId] = useState<number | null>(null)
+  const [editingVinValue, setEditingVinValue] = useState('')
+  const saveVinInline = async (lineId: number) => {
+    const trimmed = editingVinValue.trim().toUpperCase()
+    if (trimmed) {
+      const err = validateVin(trimmed)
+      if (err) { toast.error(err); return }
+    }
+    try {
+      const res = await fetch(`/facturare/api/anexa-lines/${lineId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vin: trimmed }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed') }
+      toast.success('VIN updated')
+      setEditingVinId(null); onCreated()
+    } catch (err: any) { toast.error(err.message) }
+  }
   const [proformaOpen, setProformaOpen] = useState(false)
   const [invoiceOpen, setInvoiceOpen] = useState(false)
   const [stornoOpen, setStornoOpen] = useState(false)
@@ -773,7 +791,26 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
                     <td className="px-2 py-1.5 font-mono text-muted-foreground">{l.nr_comanda || '—'}</td>
                     <td className="px-2 py-1.5">{l.model}</td>
                     <td className="px-2 py-1.5 text-muted-foreground">{l.culoare || '—'}</td>
-                    <td className="px-2 py-1.5 font-mono text-muted-foreground text-[11px]">{l.vin || <span className="text-amber-500 italic">—</span>}</td>
+                    <td className="px-2 py-1.5 font-mono text-muted-foreground text-[11px]" onClick={e => e.stopPropagation()}>
+                      {editingVinId === l.id ? (
+                        <span className="flex items-center gap-1">
+                          <Input className="h-6 w-40 text-xs font-mono" placeholder="WAUZZZ8V..." value={editingVinValue}
+                            onChange={e => setEditingVinValue(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') saveVinInline(l.id); if (e.key === 'Escape') setEditingVinId(null) }}
+                            autoFocus />
+                          <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => saveVinInline(l.id)}>
+                            <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setEditingVinId(null)}>
+                            <Ban className="h-3 w-3 text-muted-foreground" />
+                          </Button>
+                        </span>
+                      ) : l.vin ? (
+                        <span className="cursor-pointer hover:underline" onClick={() => { setEditingVinId(l.id); setEditingVinValue(l.vin || '') }}>{l.vin}</span>
+                      ) : (
+                        <span className="text-amber-500 italic cursor-pointer hover:underline" onClick={() => { setEditingVinId(l.id); setEditingVinValue('') }}>+ VIN</span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 text-right font-mono">{fmtEur(l.selling_price_eur)}</td>
                     <td className="px-2 py-1.5 text-right font-mono text-blue-600">{proforma > 0 ? fmtEur(proforma) : '—'}</td>
                     <td className="px-2 py-1.5 text-right font-mono text-emerald-600">{invoiced > 0 ? fmtEur(invoiced) : '—'}</td>
@@ -1275,6 +1312,10 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded }: {
   const [detail, setDetail] = useState<AnexaDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [linesExpanded, setLinesExpanded] = useState(false)
+  const [collapsedCycles, setCollapsedCycles] = useState<Set<string>>(new Set())
+  const toggleCycle = (key: string) => setCollapsedCycles(prev => {
+    const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next
+  })
 
   const load = useCallback(() => {
     setLoading(true)
@@ -1316,15 +1357,33 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded }: {
         </div>
       )}
 
-      {/* Invoice table */}
-      {detail.invoices.length > 0 && (
+      {/* Invoice table — grouped by date, collapsible */}
+      {detail.invoices.length > 0 && (() => {
+        const typeOrder: Record<string, number> = { PROFORMA: 0, INVOICE: 1, STORNO: 2, FINAL: 3 }
+        // Group by issued_date
+        const dateMap = new Map<string, InvoiceDetail[]>()
+        for (const inv of detail.invoices) {
+          const key = inv.issued_date || 'no-date'
+          if (!dateMap.has(key)) dateMap.set(key, [])
+          dateMap.get(key)!.push(inv)
+        }
+        const groups: { key: string; label: string; invoices: InvoiceDetail[]; totalEur: number }[] = []
+        for (const [key, invs] of dateMap) {
+          const label = key !== 'no-date'
+            ? new Date(key).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric', weekday: 'short' })
+            : 'No date'
+          invs.sort((a, b) => (typeOrder[a.invoice_type] ?? 9) - (typeOrder[b.invoice_type] ?? 9) || a.sequence_number - b.sequence_number)
+          const totalEur = invs.reduce((s, i) => s + i.total_amount_eur, 0)
+          groups.push({ key, label, invoices: invs, totalEur })
+        }
+        groups.sort((a, b) => a.key.localeCompare(b.key))
+        return (
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b bg-blue-50/50 dark:bg-blue-950/20">
                 <th className="text-left px-3 py-1 font-medium">Type</th>
                 <th className="text-left px-2 py-1 font-medium">No.</th>
                 <th className="text-center px-2 py-1 font-medium">Cars</th>
-                <th className="text-left px-2 py-1 font-medium">Date</th>
                 <th className="text-left px-2 py-1 font-medium">By</th>
                 <th className="text-right px-2 py-1 font-medium">EUR</th>
                 <th className="text-right px-2 py-1 font-medium">RON</th>
@@ -1332,71 +1391,83 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded }: {
               </tr>
             </thead>
             <tbody>
-                {detail.invoices.map((inv, idx) => (
-                  <tr key={inv.id} className="border-b border-blue-100 dark:border-blue-900/30 last:border-0 hover:bg-blue-50/50">
-                    <td className="px-3 py-1.5">
-                      <Badge className={`text-xs ${TYPE_COLORS[inv.invoice_type] || ''}`}>
-                        {TYPE_LABELS[inv.invoice_type]} #{inv.sequence_number}
-                      </Badge>
-                    </td>
-                    <td className="px-2 py-1.5 font-mono text-muted-foreground">
-                      {(() => {
-                        const covCount = inv.line_ids?.length || detail.lines.length
-                        const noStr = inv.invoice_number
-                          ? `${inv.invoice_number}${covCount > 1 ? `–${inv.invoice_number + covCount - 1}` : ''}`
-                          : '—'
-                        return noStr
-                      })()}
-                    </td>
-                    <td className="px-2 py-1.5 text-center font-mono text-muted-foreground">
-                      {inv.line_ids?.length || detail.lines.length}/{detail.lines.length}
-                    </td>
-                    <td className="px-2 py-1.5 text-muted-foreground">
-                      {inv.issued_date ? new Date(inv.issued_date).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
-                    </td>
-                    <td className="px-2 py-1.5 text-muted-foreground max-w-[80px] truncate">{inv.intocmit_de || '—'}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{fmtEur(inv.total_amount_eur)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono text-muted-foreground">
-                      {inv.total_amount_ron !== 0 ? fmtEur(inv.total_amount_ron) : '—'}
-                    </td>
-                    <td className="px-2 py-1.5 text-right">
-                      <div className="flex items-center justify-end gap-0.5">
-                        <Button variant="ghost" size="icon" className="h-5 w-5" title="Download merged PDF"
-                          onClick={(e) => { e.stopPropagation(); window.open(`/facturare/api/invoices/${inv.id}/pdf?mode=merged`, '_blank') }}>
-                          <Download className="h-3 w-3 text-red-500" />
-                        </Button>
-                        {detail.lines.length > 1 && (
-                          <Button variant="ghost" size="icon" className="h-5 w-5" title="Download individual PDFs (ZIP)"
-                            onClick={(e) => { e.stopPropagation(); window.open(`/facturare/api/invoices/${inv.id}/pdf?mode=individual`, '_blank') }}>
-                            <Archive className="h-3 w-3 text-amber-500" />
-                          </Button>
-                        )}
-                        {inv.invoice_type !== 'PROFORMA' && (
-                          <Button variant="ghost" size="icon" className="h-5 w-5" title="Download EuroFib XLSX"
-                            onClick={(e) => { e.stopPropagation(); window.open(`/facturare/api/invoices/${inv.id}/eurofib`, '_blank') }}>
-                            <FileSpreadsheet className="h-3 w-3 text-emerald-500" />
-                          </Button>
-                        )}
-                        {idx === detail.invoices.length - 1 && (
-                          <Button variant="ghost" size="icon" className="h-5 w-5" title="Delete"
-                            onClick={async (e) => {
-                              e.stopPropagation()
-                              if (!confirm(`Delete ${TYPE_LABELS[inv.invoice_type]} #${inv.sequence_number}?`)) return
-                              try {
-                                const res = await fetch(`/facturare/api/invoices/${inv.id}`, { method: 'DELETE' })
-                                const data = await res.json()
-                                if (!res.ok) throw new Error(data.error || 'Failed')
-                                toast.success('Deleted'); handleCreated()
-                              } catch (err: any) { toast.error(err.message) }
-                            }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-red-500" /></Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+              {groups.map(group => {
+                const isCollapsed = collapsedCycles.has(group.key)
+                return (
+                  <React.Fragment key={group.key}>
+                    <tr className="bg-muted/30 cursor-pointer hover:bg-muted/50"
+                      onClick={() => toggleCycle(group.key)}>
+                      <td colSpan={4} className="px-3 py-1.5 text-[11px]">
+                        <span className="flex items-center gap-1.5">
+                          {isCollapsed ? <ChevronRight className="h-3 w-3 shrink-0" /> : <ChevronDown className="h-3 w-3 shrink-0" />}
+                          <span className="font-medium">{group.label}</span>
+                          <span className="text-muted-foreground/60 shrink-0">{group.invoices.length} docs</span>
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono text-[11px] text-muted-foreground">{fmtEur(group.totalEur)}</td>
+                      <td></td>
+                      <td></td>
+                    </tr>
+                    {!isCollapsed && group.invoices.map((inv, idx) => (
+                      <tr key={inv.id} className="border-b border-blue-100 dark:border-blue-900/30 last:border-0 hover:bg-blue-50/50">
+                        <td className="px-3 py-1.5 pl-8">
+                          <Badge className={`text-xs ${TYPE_COLORS[inv.invoice_type] || ''}`}>
+                            {TYPE_LABELS[inv.invoice_type]}
+                          </Badge>
+                        </td>
+                        <td className="px-2 py-1.5 font-mono text-muted-foreground">
+                          {inv.invoice_number || '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-muted-foreground">
+                          {inv.line_ids?.length || detail.lines.length}/{detail.lines.length} cars
+                        </td>
+                        <td className="px-2 py-1.5 text-muted-foreground max-w-[80px] truncate">{inv.intocmit_de || '—'}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{fmtEur(inv.total_amount_eur)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-muted-foreground">
+                          {inv.total_amount_ron !== 0 ? fmtEur(inv.total_amount_ron) : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          <div className="flex items-center justify-end gap-0.5">
+                            <Button variant="ghost" size="icon" className="h-5 w-5" title="Download merged PDF"
+                              onClick={(e) => { e.stopPropagation(); window.open(`/facturare/api/invoices/${inv.id}/pdf?mode=merged`, '_blank') }}>
+                              <Download className="h-3 w-3 text-red-500" />
+                            </Button>
+                            {(inv.line_ids?.length || detail.lines.length) > 1 && (
+                              <Button variant="ghost" size="icon" className="h-5 w-5" title="Download individual PDFs (ZIP)"
+                                onClick={(e) => { e.stopPropagation(); window.open(`/facturare/api/invoices/${inv.id}/pdf?mode=individual`, '_blank') }}>
+                                <Archive className="h-3 w-3 text-amber-500" />
+                              </Button>
+                            )}
+                            {inv.invoice_type !== 'PROFORMA' && (
+                              <Button variant="ghost" size="icon" className="h-5 w-5" title="Download EuroFib XLSX"
+                                onClick={(e) => { e.stopPropagation(); window.open(`/facturare/api/invoices/${inv.id}/eurofib`, '_blank') }}>
+                                <FileSpreadsheet className="h-3 w-3 text-emerald-500" />
+                              </Button>
+                            )}
+                            {idx === group.invoices.length - 1 && (
+                              <Button variant="ghost" size="icon" className="h-5 w-5" title="Delete"
+                                onClick={async (e) => {
+                                  e.stopPropagation()
+                                  if (!confirm(`Delete ${TYPE_LABELS[inv.invoice_type]} #${inv.sequence_number}?`)) return
+                                  try {
+                                    const res = await fetch(`/facturare/api/invoices/${inv.id}`, { method: 'DELETE' })
+                                    const data = await res.json()
+                                    if (!res.ok) throw new Error(data.error || 'Failed')
+                                    toast.success('Deleted'); handleCreated()
+                                  } catch (err: any) { toast.error(err.message) }
+                                }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-red-500" /></Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                )
+              })}
+            </tbody>
           </table>
-      )}
+        )
+      })()}
 
       {/* Dialogs removed — handled by VehicleTable */}
     </div>
