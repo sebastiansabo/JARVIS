@@ -1320,8 +1320,8 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded }: {
   const [detail, setDetail] = useState<AnexaDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [linesExpanded, setLinesExpanded] = useState(false)
-  const [collapsedCycles, setCollapsedCycles] = useState<Set<string>>(new Set())
-  const toggleCycle = (key: string) => setCollapsedCycles(prev => {
+  const [expandedCycles, setExpandedCycles] = useState<Set<string>>(new Set())
+  const toggleCycle = (key: string) => setExpandedCycles(prev => {
     const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next
   })
 
@@ -1385,6 +1385,8 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded }: {
           groups.push({ key, label, invoices: invs, totalEur })
         }
         groups.sort((a, b) => a.key.localeCompare(b.key))
+        const allKeys = groups.map(g => g.key)
+        const allExpanded = allKeys.length > 0 && allKeys.every(k => expandedCycles.has(k))
         return (
           <table className="w-full text-xs">
             <thead>
@@ -1395,12 +1397,18 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded }: {
                 <th className="text-left px-2 py-1 font-medium">By</th>
                 <th className="text-right px-2 py-1 font-medium">EUR</th>
                 <th className="text-right px-2 py-1 font-medium">RON</th>
-                <th className="w-16"></th>
+                <th className="w-16 px-2 py-1 text-right">
+                  <button className="text-[10px] text-muted-foreground hover:text-foreground"
+                    onClick={() => setExpandedCycles(allExpanded ? new Set() : new Set(allKeys))}
+                    title={allExpanded ? 'Collapse all' : 'Expand all'}>
+                    {allExpanded ? <ChevronDown className="h-3.5 w-3.5 inline" /> : <ChevronRight className="h-3.5 w-3.5 inline" />}
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody>
               {groups.map(group => {
-                const isCollapsed = collapsedCycles.has(group.key)
+                const isCollapsed = !expandedCycles.has(group.key)
                 return (
                   <React.Fragment key={group.key}>
                     <tr className="bg-muted/30 cursor-pointer hover:bg-muted/50"
