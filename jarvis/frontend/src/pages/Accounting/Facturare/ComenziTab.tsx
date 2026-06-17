@@ -1313,10 +1313,11 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
 
 // ── Anexa Detail Panel ──────────────────────────────────────────
 
-function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = true }: {
+function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = true, expandAllDocs = false }: {
   anexaId: number; onAction: () => void;
   onDetailLoaded?: (detail: AnexaDetail | null) => void;
-  showInvoices?: boolean
+  showInvoices?: boolean;
+  expandAllDocs?: boolean;
 }) {
   const [detail, setDetail] = useState<AnexaDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1325,6 +1326,18 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
   const toggleCycle = (key: string) => setExpandedCycles(prev => {
     const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next
   })
+
+  // Sync expanded state with cascade level
+  useEffect(() => {
+    if (!detail) return
+    if (expandAllDocs) {
+      const keys = new Set<string>()
+      for (const inv of detail.invoices) keys.add(inv.issued_date || 'no-date')
+      setExpandedCycles(keys)
+    } else {
+      setExpandedCycles(new Set())
+    }
+  }, [expandAllDocs]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(() => {
     setLoading(true)
@@ -1520,7 +1533,27 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
     return v ? parseInt(v) : null
   })
   const [anexaDetail, setAnexaDetail] = useState<AnexaDetail | null>(null)
-  const [showInvoiceList, setShowInvoiceList] = useState(false)
+  const [expandLevel, setExpandLevel] = useState(() => {
+    const v = new URLSearchParams(window.location.search).get('canexa')
+    return v ? 1 : 0
+  }) // 0=closed, 1=cars, 2=doc headers, 3=docs expanded
+  const [expandDir, setExpandDir] = useState<'up' | 'down'>('up')
+
+  const handleAnexaClick = (anexaId: number) => {
+    if (selectedAnexaId !== anexaId) {
+      setSelectedAnexaId(anexaId)
+      setExpandLevel(1)
+      setExpandDir('up')
+      return
+    }
+    if (expandDir === 'up') {
+      if (expandLevel < 3) setExpandLevel(expandLevel + 1)
+      else { setExpandDir('down'); setExpandLevel(2) }
+    } else {
+      if (expandLevel > 1) setExpandLevel(expandLevel - 1)
+      else { setSelectedAnexaId(null); setExpandLevel(0); setExpandDir('up') }
+    }
+  }
 
   // Filters (persisted in URL)
   const [searchQuery, setSearchQuery] = useState(() => new URLSearchParams(window.location.search).get('cq') || '')
@@ -1596,7 +1629,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
   }, [contracts]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadAnexas = (contract: ContractSummary) => {
-    setDrillContract(contract); setSelectedAnexaId(null); setAnexasLoading(true)
+    setDrillContract(contract); setSelectedAnexaId(null); setExpandLevel(0); setExpandDir('up'); setAnexasLoading(true)
     fetch(`/facturare/api/contracts/${contract.id}/anexas`)
       .then(r => r.ok ? r.json() : { anexas: [] })
       .then(data => setAnexas(data.anexas || []))
@@ -1658,7 +1691,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
           <>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Button variant="outline" size="sm" onClick={() => { setDrillContract(null); setSelectedAnexaId(null) }}>← Back</Button>
+                <Button variant="outline" size="sm" onClick={() => { setDrillContract(null); setSelectedAnexaId(null); setExpandLevel(0); setExpandDir('up') }}>← Back</Button>
                 <div>
                   <h3 className="font-semibold text-sm">{drillContract.contract_ref}</h3>
                   <p className="text-xs text-muted-foreground">{drillContract.customer_name} — {drillContract.supplier_name}</p>
@@ -1691,18 +1724,10 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                       return (
                         <React.Fragment key={a.id}>
                         <tr className={`border-b hover:bg-muted/30 cursor-pointer ${isSelected ? 'bg-primary/5' : ''}`}
-                          onClick={() => {
-                            if (isSelected) { setSelectedAnexaId(null); setShowInvoiceList(false) }
-                            else { setSelectedAnexaId(a.id); setShowInvoiceList(false) }
-                          }}>
+                          onClick={() => handleAnexaClick(a.id)}>
                           <td className="px-3 py-2.5 font-medium">
                             <span className="flex items-center gap-1">
-                              <ChevronRight className={`h-3.5 w-3.5 transition-transform text-muted-foreground ${isSelected && showInvoiceList ? 'rotate-90' : isSelected ? 'rotate-45' : ''}`}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  if (!isSelected) { setSelectedAnexaId(a.id); setShowInvoiceList(true) }
-                                  else { setShowInvoiceList(!showInvoiceList) }
-                                }} />
+                              <ChevronRight className={`h-3.5 w-3.5 transition-transform text-muted-foreground ${isSelected ? 'rotate-90' : ''}`} />
                               Anexa {a.anexa_number}
                             </span>
                           </td>
@@ -1752,7 +1777,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                                     const data = await res.json()
                                     if (!res.ok) throw new Error(data.error || 'Failed')
                                     toast.success('Anexa deleted')
-                                    if (selectedAnexaId === a.id) setSelectedAnexaId(null)
+                                    if (selectedAnexaId === a.id) { setSelectedAnexaId(null); setExpandLevel(0); setExpandDir('up') }
                                     if (drillContract) loadAnexas(drillContract)
                                   } catch (err: any) { toast.error(err.message) }
                                 }}>
@@ -1767,7 +1792,8 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                               <AnexaDetailPanel key={a.id} anexaId={a.id}
                                 onAction={refreshAnexas}
                                 onDetailLoaded={setAnexaDetail}
-                                showInvoices={showInvoiceList} />
+                                showInvoices={expandLevel >= 2}
+                                expandAllDocs={expandLevel >= 3} />
                             </td>
                           </tr>
                         )}
