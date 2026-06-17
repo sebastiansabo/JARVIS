@@ -355,8 +355,29 @@ class InvoiceStateMachine:
         storno_amount = abs(Decimal(str(matching_storno["total_amount_eur"])))
         final_total = (target_total / storno_lines_total * storno_amount) if storno_lines_total else storno_amount
 
-        storno_kurs = Decimal(str(matching_storno["kurs_applied"])) if matching_storno.get("kurs_applied") else None
-        final_ron = (final_total * storno_kurs) if storno_kurs else Decimal("0")
+        # Weighted average kurs from all prior invoices covering target cars
+        all_invoices = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.INVOICE)
+        sum_eur_x_kurs = Decimal("0")
+        sum_eur = Decimal("0")
+        for inv in all_invoices:
+            inv_kurs = Decimal(str(inv["kurs_applied"])) if inv.get("kurs_applied") else None
+            if not inv_kurs:
+                continue
+            inv_raw = inv.get("line_ids")
+            if isinstance(inv_raw, str):
+                inv_raw = _json.loads(inv_raw)
+            inv_lids = set(inv_raw) if inv_raw else all_line_id_set
+            overlap = target_lines & inv_lids
+            if not overlap:
+                continue
+            inv_total = Decimal(str(inv["total_amount_eur"]))
+            inv_covered_total = sum(line_prices.get(lid, Decimal("0")) for lid in inv_lids)
+            for lid in overlap:
+                share = (line_prices.get(lid, Decimal("0")) / inv_covered_total * inv_total) if inv_covered_total else Decimal("0")
+                sum_eur_x_kurs += share * inv_kurs
+                sum_eur += share
+        final_kurs = (sum_eur_x_kurs / sum_eur).quantize(Decimal("0.0001")) if sum_eur else None
+        final_ron = (final_total * final_kurs) if final_kurs else Decimal("0")
         self._check_invoice_number_unique(anexa_id, invoice_number, "FINAL")
         intocmit = self._resolve_intocmit(intocmit_de, created_by_user_id)
         existing_finals = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.FINAL)
@@ -369,7 +390,7 @@ class InvoiceStateMachine:
             sequence_number=seq,
             total_amount_eur=final_total,
             total_amount_ron=final_ron,
-            kurs_applied=storno_kurs,
+            kurs_applied=final_kurs,
             invoice_number=invoice_number,
             issued_date=issued_date,
             intocmit_de=intocmit,
