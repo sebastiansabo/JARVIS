@@ -1313,9 +1313,10 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
 
 // ── Anexa Detail Panel ──────────────────────────────────────────
 
-function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded }: {
+function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = true }: {
   anexaId: number; onAction: () => void;
-  onDetailLoaded?: (detail: AnexaDetail | null) => void
+  onDetailLoaded?: (detail: AnexaDetail | null) => void;
+  showInvoices?: boolean
 }) {
   const [detail, setDetail] = useState<AnexaDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1366,7 +1367,7 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded }: {
       )}
 
       {/* Invoice table — grouped by date, collapsible */}
-      {detail.invoices.length > 0 && (() => {
+      {showInvoices && detail.invoices.length > 0 && (() => {
         const typeOrder: Record<string, number> = { PROFORMA: 0, INVOICE: 1, STORNO: 2, FINAL: 3 }
         // Group by issued_date
         const dateMap = new Map<string, InvoiceDetail[]>()
@@ -1519,6 +1520,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
     return v ? parseInt(v) : null
   })
   const [anexaDetail, setAnexaDetail] = useState<AnexaDetail | null>(null)
+  const [showInvoiceList, setShowInvoiceList] = useState(false)
 
   // Filters (persisted in URL)
   const [searchQuery, setSearchQuery] = useState(() => new URLSearchParams(window.location.search).get('cq') || '')
@@ -1689,10 +1691,18 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                       return (
                         <React.Fragment key={a.id}>
                         <tr className={`border-b hover:bg-muted/30 cursor-pointer ${isSelected ? 'bg-primary/5' : ''}`}
-                          onClick={() => setSelectedAnexaId(isSelected ? null : a.id)}>
+                          onClick={() => {
+                            if (isSelected) { setSelectedAnexaId(null); setShowInvoiceList(false) }
+                            else { setSelectedAnexaId(a.id); setShowInvoiceList(false) }
+                          }}>
                           <td className="px-3 py-2.5 font-medium">
                             <span className="flex items-center gap-1">
-                              <ChevronRight className={`h-3.5 w-3.5 transition-transform text-muted-foreground ${isSelected ? 'rotate-90' : ''}`} />
+                              <ChevronRight className={`h-3.5 w-3.5 transition-transform text-muted-foreground ${isSelected && showInvoiceList ? 'rotate-90' : isSelected ? 'rotate-45' : ''}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (!isSelected) { setSelectedAnexaId(a.id); setShowInvoiceList(true) }
+                                  else { setShowInvoiceList(!showInvoiceList) }
+                                }} />
                               Anexa {a.anexa_number}
                             </span>
                           </td>
@@ -1756,7 +1766,8 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                             <td colSpan={8} className="p-0">
                               <AnexaDetailPanel key={a.id} anexaId={a.id}
                                 onAction={refreshAnexas}
-                                onDetailLoaded={setAnexaDetail} />
+                                onDetailLoaded={setAnexaDetail}
+                                showInvoices={showInvoiceList} />
                             </td>
                           </tr>
                         )}
