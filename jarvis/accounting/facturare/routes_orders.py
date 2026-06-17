@@ -208,6 +208,21 @@ def api_list_anexas(contract_id):
         pct_proforma = round((proformas_total / total_value * 100), 1) if total_value else 0
         pct_invoiced = round((invoiced_total / total_value * 100), 1) if total_value else 0
 
+        # Per-line coverage stats
+        import json as _json
+        all_line_ids = {l["id"] for l in lines}
+        proforma_line_ids = set()
+        invoiced_line_ids = set()
+        for inv in invoices:
+            raw_lids = inv.get("line_ids")
+            if isinstance(raw_lids, str):
+                raw_lids = _json.loads(raw_lids)
+            covered = set(raw_lids) if raw_lids else all_line_ids
+            if inv["invoice_type"] == "PROFORMA":
+                proforma_line_ids |= covered
+            elif inv["invoice_type"] == "INVOICE":
+                invoiced_line_ids |= covered
+
         result.append({
             "id": a["id"], "anexa_number": a["anexa_number"],
             "notes": a.get("notes"),
@@ -216,6 +231,8 @@ def api_list_anexas(contract_id):
             "pct_proforma": pct_proforma, "pct_invoiced": pct_invoiced,
             "invoice_count": len(invoices), "stage": stage, "status": status, "types": types,
             "archived": bool(a.get("archived")),
+            "lines_with_proforma": len(proforma_line_ids | invoiced_line_ids),
+            "lines_invoiced": len(invoiced_line_ids),
             "created_at": str(a["created_at"]) if a.get("created_at") else None,
         })
     return jsonify({"anexas": result, "contract": {
@@ -533,24 +550,79 @@ def api_get_anexa_detail(anexa_id):
         return error_response("Anexa not found", 404)
 
     contract = _repo.get_contract_by_id(anexa["contract_id"])
-    lines = [_line_to_dict(l) for l in _repo.get_lines_by_anexa(anexa_id)]
+    raw_lines = _repo.get_lines_by_anexa(anexa_id)
+    lines = [_line_to_dict(l) for l in raw_lines]
+    all_line_ids = {l["id"] for l in lines}
     invoices = [_inv_to_dict(inv) for inv in _repo.get_invoices_by_anexa(anexa_id)]
     next_actions = _sm.get_next_actions(anexa_id)
-    unpaired = [
-        {"sequence_number": r["sequence_number"], "total_amount_eur": float(r["total_amount_eur"]),
-         "invoice_number": r.get("invoice_number")}
-        for r in _sm.get_unpaired_proformas(anexa_id)
-    ]
+    unpaired_raw = _sm.get_unpaired_proformas(anexa_id)
+    unpaired = []
+    for r in unpaired_raw:
+        import json as _json
+        raw_lids = r.get("line_ids")
+        if isinstance(raw_lids, str):
+            raw_lids = _json.loads(raw_lids)
+        unpaired.append({
+            "sequence_number": r["sequence_number"],
+            "total_amount_eur": float(r["total_amount_eur"]),
+            "invoice_number": r.get("invoice_number"),
+            "line_ids": raw_lids,
+        })
 
     # Get names
     sup = _repo.query_one("SELECT company FROM companies WHERE id = %s", (contract["supplier_id"],))
     cust = _repo.query_one("SELECT display_name FROM crm_clients WHERE id = %s", (contract["customer_id"],))
 
+    # Compute per-line invoicing coverage + per-line EUR amounts
+    # line_ids=null means ALL lines are covered by that invoice
+    line_prices = {l["id"]: l["selling_price_eur"] for l in lines}
+    line_coverage = {}  # line_id -> list of {invoice_id, invoice_type, sequence_number}
+    line_proforma_eur = {l["id"]: 0.0 for l in lines}
+    line_invoiced_eur = {l["id"]: 0.0 for l in lines}
+    for inv in invoices:
+        covered = inv.get("line_ids") or list(all_line_ids)  # null = all
+        # Distribute invoice total proportionally by selling price
+        covered_total = sum(line_prices.get(lid, 0) for lid in covered)
+        for lid in covered:
+            if lid not in line_coverage:
+                line_coverage[lid] = []
+            # Proportional share
+            share = (line_prices.get(lid, 0) / covered_total * inv["total_amount_eur"]) if covered_total else 0
+            line_coverage[lid].append({
+                "invoice_id": inv["id"],
+                "invoice_type": inv["invoice_type"],
+                "sequence_number": inv.get("sequence_number", 1),
+                "amount_eur": round(share, 2),
+                "invoice_number": inv.get("invoice_number"),
+            })
+            if inv["invoice_type"] == "PROFORMA":
+                line_proforma_eur[lid] = line_proforma_eur.get(lid, 0) + share
+            elif inv["invoice_type"] == "INVOICE":
+                line_invoiced_eur[lid] = line_invoiced_eur.get(lid, 0) + share
+
+    # Enrich lines with coverage info + per-line amounts
+    for line in lines:
+        cov = line_coverage.get(line["id"], [])
+        proformas = [c for c in cov if c["invoice_type"] == "PROFORMA"]
+        inv_covers = [c for c in cov if c["invoice_type"] == "INVOICE"]
+        if inv_covers:
+            line["status"] = "INVOICED"
+        elif proformas:
+            line["status"] = "PROFORMA"
+        else:
+            line["status"] = "NONE"
+        line["covered_by"] = cov
+        line["proforma_eur"] = round(line_proforma_eur.get(line["id"], 0), 2)
+        line["invoiced_eur"] = round(line_invoiced_eur.get(line["id"], 0), 2)
+
     # Compute remaining proforma capacity
-    raw_lines = _repo.get_lines_by_anexa(anexa_id)
     anexa_total = sum(float(l["selling_price_eur"]) for l in raw_lines)
-    proformas_total = sum(inv["total_amount_eur"] for inv in _repo.get_invoices_by_anexa(anexa_id) if inv["invoice_type"] == "PROFORMA")
+    proformas_total = sum(inv["total_amount_eur"] for inv in invoices if inv["invoice_type"] == "PROFORMA")
     remaining_eur = anexa_total - float(proformas_total)
+
+    # Line-level stats
+    lines_with_proforma = sum(1 for l in lines if l["status"] in ("PROFORMA", "INVOICED"))
+    lines_invoiced = sum(1 for l in lines if l["status"] == "INVOICED")
 
     return jsonify({
         "anexa_id": anexa_id,
@@ -565,6 +637,9 @@ def api_get_anexa_detail(anexa_id):
         "anexa_total_eur": anexa_total,
         "proformas_total_eur": float(proformas_total),
         "remaining_eur": remaining_eur,
+        "lines_with_proforma": lines_with_proforma,
+        "lines_invoiced": lines_invoiced,
+        "lines_total": len(lines),
     })
 
 
@@ -635,7 +710,8 @@ def api_issue_storno():
         inv = _sm.issue_storno(
             anexa_id=req.anexa_id, invoice_number=req.invoice_number,
             issued_date=req.issued_date, intocmit_de=req.intocmit_de,
-            notes=req.notes, created_by_user_id=current_user.id,
+            notes=req.notes, line_ids=req.line_ids,
+            created_by_user_id=current_user.id,
         )
     except InvoiceStateMachineError as e:
         return error_response(str(e), 409)
@@ -658,7 +734,8 @@ def api_issue_final():
         inv = _sm.issue_final(
             anexa_id=req.anexa_id, invoice_number=req.invoice_number,
             issued_date=req.issued_date, intocmit_de=req.intocmit_de,
-            notes=req.notes, created_by_user_id=current_user.id,
+            notes=req.notes, line_ids=req.line_ids,
+            created_by_user_id=current_user.id,
         )
     except InvoiceStateMachineError as e:
         return error_response(str(e), 409)
@@ -983,9 +1060,9 @@ def api_generate_pdf(invoice_id):
 
     title_map = {
         "PROFORMA": ["FACTURA PROFORMA", "PROFORMA INVOICE"],
-        "INVOICE":  ["FACTURA", "INVOICE"],
+        "INVOICE":  ["FACTURA AVANS", "ADVANCE INVOICE"],
         "STORNO":   ["FACTURA STORNO", "STORNO INVOICE"],
-        "FINAL":    ["FACTURA", "INVOICE"],
+        "FINAL":    ["FACTURA FINALA", "FINAL INVOICE"],
     }
     desc_map = {
         "PROFORMA": "1. ADVANCE PAYMENT",

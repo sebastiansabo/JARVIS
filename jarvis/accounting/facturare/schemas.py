@@ -82,6 +82,7 @@ class StornoCreateRequest(BaseModel):
     issued_date: Optional[date] = None
     intocmit_de: Optional[str] = None
     notes: Optional[str] = None
+    line_ids: Optional[list[int]] = None
 
 
 class FinalCreateRequest(BaseModel):
@@ -90,3 +91,4 @@ class FinalCreateRequest(BaseModel):
     issued_date: Optional[date] = None
     intocmit_de: Optional[str] = None
     notes: Optional[str] = None
+    line_ids: Optional[list[int]] = None
