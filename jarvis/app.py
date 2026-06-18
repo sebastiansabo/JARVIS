@@ -201,6 +201,9 @@ def _register_blueprints(flask_app: Flask):
     from accounting.facturare import facturare_bp
     flask_app.register_blueprint(facturare_bp)
 
+    from accounting.controlling_bab import controlling_bab_bp
+    flask_app.register_blueprint(controlling_bab_bp)
+
     from core.drive import drive_bp
     flask_app.register_blueprint(drive_bp)
 
