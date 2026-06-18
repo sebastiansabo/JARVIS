@@ -65,6 +65,7 @@ class ProformaCreateRequest(BaseModel):
     intocmit_de: Optional[str] = None
     notes: Optional[str] = None
     line_ids: Optional[list[int]] = None  # selected anexa line IDs (None = all lines)
+    doc_mode: str = "per_car"  # "per_car" or "single_doc"
 
 
 class InvoiceCreateRequest(BaseModel):
@@ -74,6 +75,7 @@ class InvoiceCreateRequest(BaseModel):
     issued_date: Optional[date] = None
     intocmit_de: Optional[str] = None
     notes: Optional[str] = None
+    doc_mode: str = "per_car"  # "per_car" or "single_doc"
 
 
 class StornoCreateRequest(BaseModel):

@@ -926,7 +926,7 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
       preSelectedIds={selectedIds} />
     <InvoiceDialog open={invoiceOpen} onOpenChange={setInvoiceOpen} anexaId={detail.anexa_id}
       unpairedProformas={unpairedProformas} defaultIntocmit={defaultIntocmit} onCreated={onCreated}
-      preSelectedLineIds={selectedIds} />
+      preSelectedLineIds={selectedIds} invoiceDetails={detailInvoices} />
     <ActionDialog open={stornoOpen} onOpenChange={setStornoOpen} anexaId={detail.anexa_id} action="storno"
       defaultIntocmit={defaultIntocmit} onCreated={onCreated} lineIds={[...selectedIds]} lines={lines} />
     <ActionDialog open={finalOpen} onOpenChange={setFinalOpen} anexaId={detail.anexa_id} action="final"
@@ -952,6 +952,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
   const [amount, setAmount] = useState('')
   const [percent, setPercent] = useState('')
   const [splitMode, setSplitMode] = useState<'equal' | 'proportional'>('proportional')
+  const [docMode, setDocMode] = useState<'per_car' | 'single_doc'>('per_car')
   const [startNo, setStartNo] = useState('')
   const [issuedDate, setIssuedDate] = useState(new Date().toISOString().split('T')[0])
   const [kurs, setKurs] = useState<string | null>(null)
@@ -1022,7 +1023,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           anexa_id: anexaId, amount_eur: parseFloat(amount),
-          split_mode: splitMode,
+          split_mode: splitMode, doc_mode: docMode,
           line_ids: Array.from(selectedIds),
           invoice_number: startNo ? parseInt(startNo) : undefined,
           issued_date: issuedDate || undefined, intocmit_de: intocmitDe || undefined, notes: notes || undefined,
@@ -1096,9 +1097,9 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
             <div><Label>Start No.</Label><Input type="number" placeholder="9102842" value={startNo} onChange={e => setStartNo(e.target.value)} /></div>
             <div><Label>Date</Label><Input type="date" value={issuedDate} onChange={e => setIssuedDate(e.target.value)} /></div>
           </div>
-          {/* Split mode + per-car breakdown */}
+          {/* Split mode + doc mode + breakdown */}
           {carCount > 0 && (
-            <div className="text-xs bg-muted/30 rounded-md px-3 py-2 space-y-1">
+            <div className="text-xs bg-muted/30 rounded-md px-3 py-2 space-y-2">
               <div className="flex items-center gap-3">
                 <span className="text-muted-foreground">Split:</span>
                 <button className={`px-2 py-0.5 rounded ${splitMode === 'equal' ? 'bg-foreground text-background' : 'bg-muted'}`}
@@ -1112,6 +1113,15 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
                     if (percent) setAmount(selectedPrices.reduce((s, cp) => s + cp * (parseFloat(percent) / 100), 0).toFixed(2))
                   }}>% of each car price</button>
               </div>
+              {carCount > 1 && (
+                <div className="flex items-center gap-3">
+                  <span className="text-muted-foreground">Doc:</span>
+                  <button className={`px-2 py-0.5 rounded ${docMode === 'per_car' ? 'bg-foreground text-background' : 'bg-muted'}`}
+                    onClick={() => setDocMode('per_car')}>Per car ({carCount} docs)</button>
+                  <button className={`px-2 py-0.5 rounded ${docMode === 'single_doc' ? 'bg-foreground text-background' : 'bg-muted'}`}
+                    onClick={() => setDocMode('single_doc')}>Single document</button>
+                </div>
+              )}
               {amount && (
                 <div className="text-muted-foreground pt-1 space-y-0.5">
                   <div className="flex justify-between">
@@ -1120,7 +1130,8 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
                     ) : (
                       <span>{carCount} vehicle(s) × <span className="font-mono">{percent || '?'}%</span> of unit price</span>
                     )}
-                    {startNo && <span className="font-mono">No: {startNo}–{parseInt(startNo) + carCount - 1}</span>}
+                    {startNo && docMode === 'per_car' && <span className="font-mono">No: {startNo}–{parseInt(startNo) + carCount - 1}</span>}
+                    {startNo && docMode === 'single_doc' && <span className="font-mono">No: {startNo}</span>}
                   </div>
                   {splitMode === 'proportional' && percent && selectedPrices.some((p, i) => i > 0 && p !== selectedPrices[0]) && (
                     <div className="text-[10px] text-muted-foreground/70">
@@ -1155,17 +1166,26 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
 
 // ── Invoice Dialog ──────────────────────────────────────────────
 
-function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, defaultIntocmit, onCreated, preSelectedLineIds }: {
+function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, defaultIntocmit, onCreated, preSelectedLineIds, invoiceDetails }: {
   open: boolean; onOpenChange: (v: boolean) => void; anexaId: number
   unpairedProformas: { sequence_number: number; total_amount_eur: number; invoice_number: number | null; line_ids: number[] | null }[]
   defaultIntocmit?: string; onCreated: () => void; preSelectedLineIds?: Set<number>
+  invoiceDetails?: InvoiceDetail[]
 }) {
   const [selectedSeq, setSelectedSeq] = useState('')
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [issuedDate, setIssuedDate] = useState(new Date().toISOString().split('T')[0])
   const [intocmitDe, setIntocmitDe] = useState(defaultIntocmit || '')
   const [notes, setNotes] = useState('')
+  const [docMode, setDocMode] = useState<'per_car' | 'single_doc'>('per_car')
   const [submitting, setSubmitting] = useState(false)
+
+  // Inherit doc_mode from selected proforma
+  useEffect(() => {
+    if (!selectedSeq || !invoiceDetails) return
+    const proforma = invoiceDetails.find(i => i.invoice_type === 'PROFORMA' && i.sequence_number === parseInt(selectedSeq))
+    if (proforma) setDocMode(((proforma as any).doc_mode || 'per_car') as 'per_car' | 'single_doc')
+  }, [selectedSeq, invoiceDetails])
 
   // Auto-select the proforma matching the selected cars when dialog opens
   useEffect(() => {
@@ -1191,7 +1211,7 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
           anexa_id: anexaId, sequence_number: parseInt(selectedSeq),
           invoice_number: invoiceNumber ? parseInt(invoiceNumber) : undefined,
           issued_date: issuedDate || undefined, intocmit_de: intocmitDe || undefined,
-          notes: notes || undefined,
+          notes: notes || undefined, doc_mode: docMode,
         }),
       })
       const data = await res.json()
@@ -1223,6 +1243,13 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
             <div><Label>Invoice No.</Label><Input type="number" placeholder="9102842" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} /></div>
             <div><Label>Date</Label><Input type="date" value={issuedDate} onChange={e => setIssuedDate(e.target.value)} /></div>
             <div><Label>Intocmit de</Label><UserSearchInput value={intocmitDe} onChange={setIntocmitDe} /></div>
+          </div>
+          <div className="flex items-center gap-3 text-xs bg-muted/30 rounded-md px-3 py-2">
+            <span className="text-muted-foreground">Doc:</span>
+            <button className={`px-2 py-0.5 rounded ${docMode === 'per_car' ? 'bg-foreground text-background' : 'bg-muted'}`}
+              onClick={() => setDocMode('per_car')}>Per car</button>
+            <button className={`px-2 py-0.5 rounded ${docMode === 'single_doc' ? 'bg-foreground text-background' : 'bg-muted'}`}
+              onClick={() => setDocMode('single_doc')}>Single document</button>
           </div>
           <div><Label>Notes</Label><Input placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} /></div>
         </div>

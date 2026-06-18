@@ -411,6 +411,203 @@ class ProformaPdfRenderer:
         c.setFont("Helvetica", 9.5)
         c.drawString(LM, y, f"Intocmit de {self.intocmit_de}")
 
+    def _draw_header(self, c: canvas.Canvas, inv_no: int, date_str: str | None = None):
+        """Draw shared header block: logo, title, No:, date, supplier/customer. Returns y position."""
+        W, H = A4
+        LM = 18 * mm
+        RM = W - 18 * mm
+
+        # Logo
+        if self.logo_path:
+            img = ImageReader(str(self.logo_path))
+            iw, ih = img.getSize()
+            tw = 55 * mm
+            th = tw * ih / iw
+            c.drawImage(img, (W - tw) / 2, H - 22 * mm - th, tw, th, mask='auto')
+            y = H - 24 * mm - th
+        else:
+            c.setFont("Helvetica-Bold", 22)
+            c.drawCentredString(W / 2, H - 25 * mm, self.supplier.get("name", "").split()[0])
+            y = H - 32 * mm
+
+        c.setStrokeColorRGB(0.65, 0.78, 0.30)
+        c.setLineWidth(0.6)
+        c.line(LM, y, RM, y)
+        c.setStrokeColorRGB(0, 0, 0)
+
+        # Title
+        y -= 18 * mm
+        c.setFont("Helvetica-Bold", 13)
+        for tl in self.title_lines:
+            c.drawCentredString(W / 2, y, tl)
+            y -= 5 * mm
+        c.drawCentredString(W / 2, y, f"No:{inv_no}")
+        y -= 5 * mm
+        ds = date_str or self.invoice_date
+        if ds and "-" in ds:
+            p = ds.split("-")
+            ds = f"{p[2]}.{p[1]}.{p[0]}"
+        c.drawCentredString(W / 2, y, f"Data/ Date: {ds}")
+
+        # Supplier / Customer
+        y -= 14 * mm
+        col_l, col_r = LM, LM + 95 * mm
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(col_l, y, "Furnizor/ Supplier:")
+        c.drawString(col_r, y, "Cumparator/ Customer:")
+        y -= 7 * mm
+        c.drawString(col_l, y, self.supplier.get("name", ""))
+        c.drawString(col_r, y, self.customer.get("name", ""))
+        c.setFont("Helvetica", 9.5)
+        sup_lines = list(self.supplier.get("address_lines", []))
+        if self.supplier.get("reg_no"): sup_lines.append(self.supplier["reg_no"])
+        if self.supplier.get("vat"):    sup_lines.append(f"VAT-nr: {self.supplier['vat']}")
+        if self.supplier.get("iban"):   sup_lines += ["Cont/ Account no.:", self.supplier["iban"]]
+        if self.supplier.get("bank"):   sup_lines.append(self.supplier["bank"])
+        if self.supplier.get("swift"):  sup_lines.append(f"SWIFT/BIC: {self.supplier['swift']}")
+        cust_lines = list(self.customer.get("address_lines", []))
+        if self.customer.get("vat"):    cust_lines += ["", self.customer["vat"]]
+        yl = y - 5 * mm
+        for ln in sup_lines:  c.drawString(col_l, yl, ln); yl -= 4.5 * mm
+        yr = y - 5 * mm
+        for ln in cust_lines: c.drawString(col_r, yr, ln); yr -= 4.5 * mm
+        return min(yl, yr) - 4 * mm
+
+    def _draw_single_doc_table_header(self, c: canvas.Canvas, y: float) -> float:
+        """Draw compact table header for single-doc mode. Returns y after header."""
+        LM = 18 * mm
+        RM = A4[0] - 18 * mm
+        c.setFont("Helvetica-Bold", 8)
+        c.setLineWidth(0.4)
+        c.line(LM, y + 1, RM, y + 1)
+
+        cols = [
+            ("Nr.", LM + 1 * mm),
+            ("Comanda", LM + 9 * mm),
+            ("Denumire / Description", LM + 28 * mm),
+            ("VIN / Chassis", LM + 85 * mm),
+            ("Cant.", LM + 120 * mm),
+            ("Pret unitar EUR", LM + 132 * mm),
+            ("Valoare EUR", LM + 157 * mm),
+        ]
+        for txt, x in cols:
+            c.drawString(x, y - 3.5 * mm, txt)
+        c.line(LM, y - 5.5 * mm, RM, y - 5.5 * mm)
+        return y - 8 * mm
+
+    def render_single_doc(self, c: canvas.Canvas, inv_no: int, lines: list[OrderLine]):
+        """Render a single document with all cars as compact table rows."""
+        W, H = A4
+        LM = 18 * mm
+        RM = W - 18 * mm
+        ROW_H = 4.5 * mm
+        FOOTER_SPACE = 55 * mm  # reserve for total + footer
+
+        # Header
+        y = self._draw_header(c, inv_no)
+
+        # Description prefix
+        if self.description_prefix:
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(LM, y, self.description_prefix)
+            y -= 6 * mm
+
+        # Table header
+        y = self._draw_single_doc_table_header(c, y)
+
+        # Table rows
+        c.setFont("Helvetica", 7.5)
+        grand_total = 0.0
+        for i, line in enumerate(lines):
+            # Page overflow: start new page with continuation header
+            if y < FOOTER_SPACE:
+                c.showPage()
+                y = H - 20 * mm
+                c.setFont("Helvetica", 8)
+                c.drawString(LM, y, f"No:{inv_no} (cont.)")
+                y -= 6 * mm
+                y = self._draw_single_doc_table_header(c, y)
+                c.setFont("Helvetica", 7.5)
+
+            # Nr.
+            c.drawRightString(LM + 7 * mm, y, str(i + 1))
+            # Comanda
+            c.drawString(LM + 9 * mm, y, str(line.comanda) if line.comanda else "—")
+            # Model (truncate to ~22 chars)
+            model_str = (line.model or "").upper()
+            if len(model_str) > 28:
+                model_str = model_str[:27] + "…"
+            c.drawString(LM + 28 * mm, y, model_str)
+            # VIN
+            c.drawString(LM + 85 * mm, y, line.vin or "—")
+            # Qty
+            c.drawCentredString(LM + 123 * mm, y, "1")
+            # Unit price (= advance per car)
+            c.drawRightString(LM + 153 * mm, y, fmt_us(line.advance))
+            # Amount
+            c.drawRightString(RM - 1 * mm, y, fmt_us(line.advance))
+
+            grand_total += line.advance
+            y -= ROW_H
+
+            # Light separator every row
+            c.setStrokeColorRGB(0.85, 0.85, 0.85)
+            c.setLineWidth(0.2)
+            c.line(LM, y + 1.5 * mm, RM, y + 1.5 * mm)
+            c.setStrokeColorRGB(0, 0, 0)
+
+        # Annexa ref (from first line)
+        if lines and lines[0].anexa_ref:
+            y -= 3 * mm
+            c.setFont("Helvetica", 8)
+            c.drawString(LM, y, lines[0].anexa_ref)
+            y -= 4 * mm
+
+        # Scutire / Livrare
+        y -= 2 * mm
+        c.setFont("Helvetica", 8.5)
+        c.drawString(LM, y, "Scutire conform art. 138 din Directiva 2006/112/CE")
+        y -= 4 * mm
+        c.drawString(LM, y, "Livrare Ex Works")
+
+        # Note
+        if self.note:
+            y -= 6 * mm
+            c.setFont("Helvetica", 8.5)
+            for note_line in self.note.split("\n"):
+                c.drawString(LM, y, note_line)
+                y -= 4 * mm
+
+        # Total
+        y -= 8 * mm
+        c.setLineWidth(0.4)
+        c.line(LM, y + 5 * mm, RM, y + 5 * mm)
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(LM, y, "PRICE")
+        c.drawRightString(RM, y, f"{fmt_us(grand_total)} EUR")
+
+        # Exchange rate
+        if self.kurs_applied:
+            y -= 6 * mm
+            c.setFont("Helvetica", 9.5)
+            ron_total = grand_total * self.kurs_applied
+            c.drawString(LM, y, f"Curs BNR / Exchange rate: {self.kurs_applied:.4f} RON/EUR")
+            c.drawRightString(RM, y, f"{fmt_us(ron_total)} RON")
+
+        # Intocmit de
+        y -= 14 * mm
+        c.setFont("Helvetica", 9.5)
+        c.drawString(LM, y, f"Intocmit de {self.intocmit_de}")
+
+    def render_single_doc_to_bytes(self, lines: list[OrderLine], inv_no: int) -> bytes:
+        """Render single-doc mode and return PDF bytes."""
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf, pagesize=A4)
+        self.render_single_doc(c, inv_no, lines)
+        c.showPage()
+        c.save()
+        return buf.getvalue()
+
     def render_all_to_bytes(self, lines: list[OrderLine], start_no: int) -> bytes:
         """Render all proformas and return PDF as bytes."""
         buf = io.BytesIO()
