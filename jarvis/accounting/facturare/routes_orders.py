@@ -582,14 +582,17 @@ def api_get_anexa_detail(anexa_id):
     line_invoiced_eur = {l["id"]: 0.0 for l in lines}
     for inv in invoices:
         covered = inv.get("line_ids") or list(all_line_ids)  # null = all
-        # Distribute invoice total proportionally by selling price
+        # Per-car share: car_price × rounded_pct (detect nearest whole % from total)
         covered_total = sum(line_prices.get(lid, 0) for lid in covered)
+        raw_pct = (inv["total_amount_eur"] / covered_total) if covered_total else 0
+        # Snap to nearest whole percentage (10%, 90%, 100%, etc.) if within 0.5%
+        rounded_pct = round(raw_pct * 100) / 100
+        pct = rounded_pct if abs(raw_pct - rounded_pct) < 0.005 else raw_pct
         for lid in covered:
             if lid not in line_coverage:
                 line_coverage[lid] = []
-            # Proportional share
-            share = (line_prices.get(lid, 0) / covered_total * inv["total_amount_eur"]) if covered_total else 0
-            share_ron = (line_prices.get(lid, 0) / covered_total * float(inv.get("total_amount_ron") or 0)) if covered_total else 0
+            share = line_prices.get(lid, 0) * pct
+            share_ron = 0
             line_coverage[lid].append({
                 "invoice_id": inv["id"],
                 "invoice_type": inv["invoice_type"],
@@ -994,27 +997,60 @@ def api_generate_pdf(invoice_id):
     inv_type_str = inv_row["invoice_type"]
 
     if inv_type_str == "STORNO":
-        # One line per car — total storno amount = car's selling price (sum of all reversed invoices)
-        total_amount = float(inv_row["total_amount_eur"])
-        split_mode = inv_row.get("split_mode", "equal")
-        total_selling = sum(float(l["selling_price_eur"]) for l in lines) or 1
-        order_lines = []
+        # Build storno groups: per car, one line per reversed invoice (10%, 90%, etc.)
+        import json as _json
+        all_invoices = _repo.query_all(
+            "SELECT * FROM facturare_invoices WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number",
+            (anexa["id"],))
+        storno_line_set = set(inv_line_ids) if inv_line_ids else {l["id"] for l in all_lines}
+        line_map = {l["id"]: l for l in all_lines}
+
+        # Per car: collect reversed invoices and their per-car share
+        storno_groups = []  # list of list[OrderLine] — one group per car
         for l in lines:
+            lid = l["id"]
+            car_items = []
             selling = float(l["selling_price_eur"])
-            if split_mode == "proportional" and total_selling > 0:
-                car_amount = total_amount * (selling / total_selling)
-            else:
-                car_amount = total_amount / max(len(lines), 1)
-            order_lines.append(OrderLine(
-                comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
-                model=l["model"], culoare=l.get("culoare") or "",
-                list_price=float(l["list_price_eur"]), selling_price=selling,
-                advance=-car_amount,
-                rest=None, vin=l.get("vin"), qty=l.get("qty", 1),
-                anexa_ref=f"Anexa {anexa['anexa_number']} / Contract {contract['contract_ref']}",
-            ))
-        storno_groups = None  # not used anymore
+            for inv in all_invoices:
+                raw = inv.get("line_ids")
+                if isinstance(raw, str):
+                    raw = _json.loads(raw)
+                inv_lines = set(raw) if raw else {x["id"] for x in all_lines}
+                if lid not in inv_lines:
+                    continue
+                # Per-car share of this invoice
+                inv_total = float(inv["total_amount_eur"])
+                inv_selling_sum = sum(float(line_map[x]["selling_price_eur"]) for x in inv_lines if x in line_map) or 1
+                car_share = inv_total * (selling / inv_selling_sum)
+                inv_no = inv.get("invoice_number") or inv["id"]
+                inv_date = inv.get("issued_date")
+                date_fmt = ""
+                if inv_date:
+                    ds = str(inv_date)
+                    if "-" in ds:
+                        p = ds.split("-")
+                        date_fmt = f"{p[2]}.{p[1]}.{p[0]}"
+                    else:
+                        date_fmt = ds
+                pct = round(car_share / selling * 100) if selling else 0
+                inv_kurs = float(inv["kurs_applied"]) if inv.get("kurs_applied") else None
+                car_items.append(OrderLine(
+                    comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
+                    model=l["model"], culoare=l.get("culoare") or "",
+                    list_price=float(l["list_price_eur"]), selling_price=selling,
+                    advance=-car_share,
+                    rest=None, vin=l.get("vin"), qty=l.get("qty", 1),
+                    anexa_ref=f"Anexa {anexa['anexa_number']} / Contract {contract['contract_ref']}",
+                    storno_description=f"Ref: Factura Nr. {inv_no} / {date_fmt} ({pct}%)",
+                    kurs=inv_kurs,
+                ))
+            if car_items:
+                storno_groups.append(car_items)
+
+        # Flat order_lines for fallback (single-doc mode etc.)
+        order_lines = [item for group in storno_groups for item in group]
     else:
+        storno_groups = None
         # Per-car order lines
         total_amount = float(inv_row["total_amount_eur"])
         split_mode = inv_row.get("split_mode", "equal")
@@ -1072,6 +1108,11 @@ def api_generate_pdf(invoice_id):
 
     doc_mode = inv_row.get("doc_mode", "per_car")
     mode = request.args.get("mode", "merged")
+
+    # Storno: use multipage renderer with per-invoice line items
+    if inv_type_str == "STORNO" and storno_groups:
+        pdf_bytes = renderer.render_storno_multipage(storno_groups, start_no)
+        return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
 
     # Single-document mode: all cars as line items in one PDF
     if doc_mode == "single_doc":
