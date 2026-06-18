@@ -865,7 +865,7 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
                         {c.issued_date ? new Date(c.issued_date).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: '2-digit' }) : ''}
                       </td>
                       <td className="px-2 py-1 text-right font-mono text-[10px] text-muted-foreground">
-                        {c.kurs_applied ? c.kurs_applied.toFixed(4) : ''}
+                        {!isProf && c.kurs_applied ? c.kurs_applied.toFixed(4) : ''}
                       </td>
                       <td className={`px-2 py-1 text-right font-mono text-[11px] ${isProf ? covColor(c) : ''}`}>
                         {isProf ? fmtEur(c.amount_eur || 0) : ''}
@@ -955,8 +955,6 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
   const [docMode, setDocMode] = useState<'per_car' | 'single_doc'>('per_car')
   const [startNo, setStartNo] = useState('')
   const [issuedDate, setIssuedDate] = useState(new Date().toISOString().split('T')[0])
-  const [kurs, setKurs] = useState<string | null>(null)
-  const [kursDate, setKursDate] = useState('')
   const [intocmitDe, setIntocmitDe] = useState(defaultIntocmit || '')
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -1004,14 +1002,6 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
   useEffect(() => {
     if (percent) recalcAmount(percent, selectedPrices, selectedTotal, splitMode)
   }, [selectedIds.size]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!issuedDate) return
-    fetch(`/facturare/api/bnr-rate?date=${issuedDate}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.success) { setKurs(String(data.kurs)); setKursDate(data.kurs_date) } })
-      .catch(() => {})
-  }, [issuedDate])
 
   const handleSubmit = async () => {
     if (carCount === 0) { toast.error('Select at least one vehicle'); return }
@@ -1142,12 +1132,6 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
                   )}
                 </div>
               )}
-            </div>
-          )}
-          {kurs && (
-            <div className="text-sm bg-muted/50 rounded-md px-3 py-2">
-              BNR Kurs ({kursDate}): <span className="font-mono font-medium">{kurs}</span>
-              {amount && <span className="ml-2 text-muted-foreground">= {fmtEur(parseFloat(amount) * parseFloat(kurs))} RON</span>}
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
