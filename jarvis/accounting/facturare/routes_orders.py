@@ -879,6 +879,7 @@ def api_document_items():
         f"""SELECT i.id AS invoice_id, i.invoice_type, i.sequence_number,
                   i.invoice_number, i.issued_date, i.total_amount_eur,
                   i.kurs_applied, i.intocmit_de, i.split_mode, i.notes, i.payment_status,
+                  i.line_ids,
                   a.id AS anexa_id, a.anexa_number,
                   c.id AS contract_id, c.contract_ref,
                   c.supplier_id, c.customer_id,
@@ -895,20 +896,41 @@ def api_document_items():
         tuple(doc_types),
     )
 
+    # Pre-fetch all lines for all referenced anexas in one query (avoid N+1)
+    anexa_ids = list({inv["anexa_id"] for inv in rows})
+    lines_cache = {}
+    if anexa_ids:
+        ph = ",".join(["%s"] * len(anexa_ids))
+        all_lines = _repo.query_all(
+            f"SELECT * FROM facturare_anexa_lines WHERE anexa_id IN ({ph}) ORDER BY anexa_id, line_number",
+            tuple(anexa_ids))
+        for l in all_lines:
+            lines_cache.setdefault(l["anexa_id"], []).append(l)
+
     items = []
     for inv in rows:
-        lines = _repo.get_lines_by_anexa(inv["anexa_id"])
-        total_selling = sum(float(l["selling_price_eur"]) for l in lines) or 1
+        import json as _json
+        lines = lines_cache.get(inv["anexa_id"], [])
+        # Filter to invoice's line_ids if set
+        raw_lids = inv.get("line_ids")
+        if raw_lids:
+            if isinstance(raw_lids, str):
+                raw_lids = _json.loads(raw_lids)
+            lid_set = set(raw_lids)
+            inv_lines = [l for l in lines if l["id"] in lid_set]
+        else:
+            inv_lines = lines
+        total_selling = sum(float(l["selling_price_eur"]) for l in inv_lines) or 1
         total_amount = float(inv["total_amount_eur"])
         split_mode = inv.get("split_mode", "equal")
         start_no = inv.get("invoice_number") or inv["invoice_id"]
+        raw_pct = (total_amount / total_selling) if total_selling else 0
+        rounded_pct = round(raw_pct * 100) / 100
+        pct = rounded_pct if abs(raw_pct - rounded_pct) < 0.005 else raw_pct
 
-        for idx, l in enumerate(lines):
+        for idx, l in enumerate(inv_lines):
             selling = float(l["selling_price_eur"])
-            if split_mode == "proportional" and total_selling > 0:
-                car_amount = total_amount * (selling / total_selling)
-            else:
-                car_amount = total_amount / max(len(lines), 1)
+            car_amount = selling * pct
 
             items.append({
                 "invoice_id": inv["invoice_id"],
