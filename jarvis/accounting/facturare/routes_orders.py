@@ -76,6 +76,7 @@ def _inv_to_dict(row):
         "intocmit_de": row.get("intocmit_de"),
         "notes": row.get("notes"),
         "line_ids": raw_line_ids,
+        "doc_mode": row.get("doc_mode", "per_car"),
         "created_at": str(row["created_at"]) if row.get("created_at") else None,
     }
 
@@ -668,6 +669,7 @@ def api_issue_proforma():
             intocmit_de=req.intocmit_de, notes=req.notes,
             line_ids=req.line_ids,
             created_by_user_id=current_user.id,
+            doc_mode=req.doc_mode,
         )
     except InvoiceStateMachineError as e:
         return error_response(str(e), 409)
@@ -692,6 +694,7 @@ def api_issue_invoice():
             invoice_number=req.invoice_number, issued_date=req.issued_date,
             intocmit_de=req.intocmit_de, notes=req.notes,
             created_by_user_id=current_user.id,
+            doc_mode=req.doc_mode if req.doc_mode != "per_car" else None,
         )
     except InvoiceStateMachineError as e:
         return error_response(str(e), 409)
@@ -1067,8 +1070,13 @@ def api_generate_pdf(invoice_id):
         kurs_applied=float(inv_row["kurs_applied"]) if inv_row.get("kurs_applied") else None,
     )
 
+    doc_mode = inv_row.get("doc_mode", "per_car")
     mode = request.args.get("mode", "merged")
 
+    # Single-document mode: all cars as line items in one PDF
+    if doc_mode == "single_doc":
+        pdf_bytes = renderer.render_single_doc_to_bytes(order_lines, start_no)
+        return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
 
     # Single car PDF via ?car=N
     car_idx = request.args.get("car")

@@ -73,7 +73,8 @@ class InvoiceStateMachine:
                        invoice_number: int | None = None, issued_date=None,
                        intocmit_de: str | None = None, notes: str | None = None,
                        line_ids: list[int] | None = None,
-                       created_by_user_id: int = 0) -> StoredInvoice:
+                       created_by_user_id: int = 0,
+                       doc_mode: str = "per_car") -> StoredInvoice:
         """Issue a Proforma for an Anexa (optionally for selected lines only)."""
         # Check no STORNO yet
         existing_storno = self.repo.get_invoice_by_anexa_and_type(anexa_id, InvoiceTypeEnum.STORNO)
@@ -144,8 +145,9 @@ class InvoiceStateMachine:
             notes=notes,
             created_by=created_by_user_id,
             line_ids=line_ids,
+            doc_mode=doc_mode,
         )
-        logger.info("Proforma #%d created: anexa=%s amount=%s EUR lines=%s", seq, anexa_id, amount_eur, line_ids or "all")
+        logger.info("Proforma #%d created: anexa=%s amount=%s EUR lines=%s mode=%s", seq, anexa_id, amount_eur, line_ids or "all", doc_mode)
         return StoredInvoice.from_row(inv_row)
 
     # ── Issue Invoice ────────────────────────────────────────────
@@ -154,7 +156,8 @@ class InvoiceStateMachine:
                       invoice_number: int | None = None, issued_date=None,
                       intocmit_de: str | None = None,
                       notes: str | None = None,
-                      created_by_user_id: int = 0) -> StoredInvoice:
+                      created_by_user_id: int = 0,
+                      doc_mode: str | None = None) -> StoredInvoice:
         """Issue an Invoice confirming payment of a specific Proforma."""
         proforma_row = self.repo.get_invoice_by_anexa_type_and_seq(
             anexa_id, InvoiceTypeEnum.PROFORMA, sequence_number)
@@ -178,6 +181,7 @@ class InvoiceStateMachine:
         if isinstance(proforma_line_ids, str):
             proforma_line_ids = _json.loads(proforma_line_ids)
 
+        effective_doc_mode = doc_mode or proforma_row.get("doc_mode", "per_car")
         inv_row = self.repo.create_invoice(
             anexa_id=anexa_id,
             invoice_type=InvoiceTypeEnum.INVOICE,
@@ -193,6 +197,7 @@ class InvoiceStateMachine:
             split_mode=proforma_row.get("split_mode", "equal"),
             created_by=created_by_user_id,
             line_ids=proforma_line_ids,
+            doc_mode=effective_doc_mode,
         )
 
         self.repo.create_link(
