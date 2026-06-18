@@ -30,19 +30,30 @@ class InvoiceStorageRepository(BaseRepository):
 
     def list_contracts(self):
         return self.query_all(
-            """SELECT c.*, comp.company AS supplier_name, cl.display_name AS customer_name,
-                      (SELECT COUNT(*) FROM facturare_anexas a WHERE a.contract_id = c.id) AS anexa_count,
-                      COALESCE((SELECT SUM(al.selling_price_eur)
-                         FROM facturare_anexa_lines al
-                         JOIN facturare_anexas a2 ON a2.id = al.anexa_id
-                         WHERE a2.contract_id = c.id), 0) AS total_value,
-                      COALESCE((SELECT SUM(i.total_amount_eur)
-                         FROM facturare_invoices i
-                         JOIN facturare_anexas a3 ON a3.id = i.anexa_id
-                         WHERE a3.contract_id = c.id AND i.invoice_type = 'INVOICE'), 0) AS invoiced_total
+            """WITH anexa_stats AS (
+                   SELECT a.contract_id,
+                          COUNT(DISTINCT a.id) AS anexa_count,
+                          COALESCE(SUM(al.selling_price_eur), 0) AS total_value
+                   FROM facturare_anexas a
+                   LEFT JOIN facturare_anexa_lines al ON al.anexa_id = a.id
+                   GROUP BY a.contract_id
+               ), invoice_stats AS (
+                   SELECT a.contract_id,
+                          COALESCE(SUM(i.total_amount_eur), 0) AS invoiced_total
+                   FROM facturare_invoices i
+                   JOIN facturare_anexas a ON a.id = i.anexa_id
+                   WHERE i.invoice_type = 'INVOICE'
+                   GROUP BY a.contract_id
+               )
+               SELECT c.*, comp.company AS supplier_name, cl.display_name AS customer_name,
+                      COALESCE(ast.anexa_count, 0) AS anexa_count,
+                      COALESCE(ast.total_value, 0) AS total_value,
+                      COALESCE(ist.invoiced_total, 0) AS invoiced_total
                FROM facturare_contracts c
                JOIN companies comp ON comp.id = c.supplier_id
                JOIN crm_clients cl ON cl.id = c.customer_id
+               LEFT JOIN anexa_stats ast ON ast.contract_id = c.id
+               LEFT JOIN invoice_stats ist ON ist.contract_id = c.id
                ORDER BY c.created_at DESC""")
 
     def delete_contract(self, contract_id):
