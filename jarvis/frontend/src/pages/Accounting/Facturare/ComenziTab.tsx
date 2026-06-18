@@ -778,7 +778,7 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
                 const isExpanded = expandedIds.has(l.id)
                 return (
                   <React.Fragment key={l.id}>
-                  <tr className={`border-b hover:bg-muted/20 ${selectedIds.has(l.id) ? 'bg-blue-50 dark:bg-blue-950/20' : ''} ${isComplete ? 'opacity-50' : ''} ${hasCov ? 'cursor-pointer' : ''}`}
+                  <tr className={`border-b hover:bg-muted/20 ${selectedIds.has(l.id) ? 'bg-blue-50 dark:bg-blue-950/20' : !isComplete ? 'bg-red-100/70 dark:bg-red-950/30' : ''} ${isComplete ? 'opacity-50' : ''} ${hasCov ? 'cursor-pointer' : ''}`}
                     onClick={() => hasCov && toggleExpand(l.id)}>
                     <td className="w-8 px-2 py-1.5 text-center" onClick={e => e.stopPropagation()}>
                       <input type="checkbox" checked={selectedIds.has(l.id)} disabled={isComplete}
@@ -847,7 +847,8 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
                     const isProf = c.invoice_type === 'PROFORMA'
                     if (c.invoice_type === 'INVOICE') cumInvoiced += (c.amount_eur || 0)
                     // Rest: after invoice = selling - cumInvoiced, after storno = full (reverses all), after final = 0
-                    const restAfter = c.invoice_type === 'INVOICE' ? l.selling_price_eur - cumInvoiced
+                    const rawRest = l.selling_price_eur - cumInvoiced
+                    const restAfter = c.invoice_type === 'INVOICE' ? (Math.abs(rawRest) < 1 ? 0 : rawRest)
                       : c.invoice_type === 'STORNO' ? l.selling_price_eur
                       : c.invoice_type === 'FINAL' ? 0
                       : null
@@ -864,8 +865,8 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
                       <td className="px-2 py-1 text-[10px] text-muted-foreground">
                         {c.issued_date ? new Date(c.issued_date).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: '2-digit' }) : ''}
                       </td>
-                      <td className="px-2 py-1 text-right font-mono text-[10px] text-muted-foreground">
-                        {!isProf && c.kurs_applied ? c.kurs_applied.toFixed(4) : ''}
+                      <td className="px-2 py-1 text-right font-mono text-[10px] text-muted-foreground whitespace-nowrap">
+                        {!isProf && c.invoice_type !== 'STORNO' && c.kurs_applied ? <>{c.kurs_applied.toFixed(4)}{c.issued_date && <span className="text-muted-foreground/50 ml-0.5">/ {new Date(new Date(c.issued_date).getTime() - 86400000).toLocaleDateString('ro-RO', { day: 'numeric', month: '2-digit' })}</span>}</> : ''}
                       </td>
                       <td className={`px-2 py-1 text-right font-mono text-[11px] ${isProf ? covColor(c) : ''}`}>
                         {isProf ? fmtEur(c.amount_eur || 0) : ''}
@@ -875,9 +876,6 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
                       </td>
                       <td className="px-2 py-1 text-right font-mono text-[11px] text-amber-600">
                         {restAfter != null ? fmtEur(restAfter) : ''}
-                      </td>
-                      <td className="px-2 py-1 text-right font-mono text-[10px] text-muted-foreground">
-                        {c.amount_ron ? fmtEur(c.amount_ron) : ''}
                       </td>
                       <td></td>
                       <td className="px-2 py-1 text-center">
@@ -1421,7 +1419,7 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
                 <th className="text-center px-2 py-1 font-medium">Cars</th>
                 <th className="text-left px-2 py-1 font-medium">By</th>
                 <th className="text-right px-2 py-1 font-medium">EUR</th>
-                <th className="text-right px-2 py-1 font-medium">RON</th>
+                <th className="text-right px-2 py-1 font-medium">Kurs</th>
                 <th className="w-16 px-2 py-1 text-right">
                   <button className="text-[10px] text-muted-foreground hover:text-foreground"
                     onClick={() => setExpandedCycles(allExpanded ? new Set() : new Set(allKeys))}
@@ -1464,8 +1462,10 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
                         </td>
                         <td className="px-2 py-1.5 text-muted-foreground max-w-[80px] truncate">{inv.intocmit_de || '—'}</td>
                         <td className="px-2 py-1.5 text-right font-mono">{fmtEur(inv.total_amount_eur)}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-muted-foreground">
-                          {inv.total_amount_ron !== 0 ? fmtEur(inv.total_amount_ron) : '—'}
+                        <td className="px-2 py-1.5 text-right font-mono text-[10px] text-muted-foreground whitespace-nowrap">
+                          {inv.invoice_type !== 'PROFORMA' && inv.kurs_applied ? (
+                            <>{inv.kurs_applied.toFixed(4)}{inv.issued_date && <span className="text-muted-foreground/60 ml-0.5">/ {new Date(new Date(inv.issued_date).getTime() - 86400000).toLocaleDateString('ro-RO', { day: 'numeric', month: '2-digit' })}</span>}</>
+                          ) : ''}
                         </td>
                         <td className="px-2 py-1.5 text-right">
                           <div className="flex items-center justify-end gap-0.5">

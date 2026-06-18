@@ -260,7 +260,7 @@ class ProformaPdfRenderer:
         if self.kurs_applied:
             y -= 6 * mm
             c.setFont("Helvetica", 9.5)
-            c.drawString(LM, y, f"Curs BNR / Exchange rate: {self.kurs_applied:.4f} RON/EUR")
+            c.drawString(LM, y, f"Curs BNR / Exchange rate: {self.kurs_applied:.4f}")
 
         # ── Footer ──
         y -= 18 * mm
@@ -358,7 +358,7 @@ class ProformaPdfRenderer:
 
         # ── One item block per reversed invoice ──
         c.setFont("Helvetica", 9.5)
-        total = 0.0
+        total_eur = 0.0
         for i, line in enumerate(items):
             if i > 0:
                 y -= 3 * mm
@@ -379,12 +379,20 @@ class ProformaPdfRenderer:
             c.drawRightString(LM + 105*mm, item_y, "-1")
             c.drawRightString(LM + 138*mm, item_y, fmt_us(abs(line.advance)))
             c.drawRightString(LM + 158*mm, item_y, fmt_us(line.advance))
-            total += line.advance
+            total_eur += line.advance
 
             yl = item_y
             for ln in desc:
                 c.drawString(LM, yl, ln)
                 yl -= 4.7 * mm
+
+            # Kurs reference below item
+            if line.kurs:
+                c.setFont("Helvetica", 8.5)
+                c.drawString(LM + 78*mm, yl, f"Kurs: {line.kurs:.4f}")
+                yl -= 4.7 * mm
+                c.setFont("Helvetica", 9.5)
+
             y = yl
 
         # ── Footer text ──
@@ -405,9 +413,9 @@ class ProformaPdfRenderer:
         c.line(LM, y + 6*mm, RM, y + 6*mm)
         c.setFont("Helvetica-Bold", 11)
         c.drawString(LM, y, "PRICE")
-        c.drawRightString(RM, y, f"{fmt_us(total)} EUR")
+        c.drawRightString(RM, y, f"{fmt_us(total_eur)} EUR")
 
-        y -= 18 * mm
+        y -= 14 * mm
         c.setFont("Helvetica", 9.5)
         c.drawString(LM, y, f"Intocmit de {self.intocmit_de}")
 
@@ -590,9 +598,7 @@ class ProformaPdfRenderer:
         if self.kurs_applied:
             y -= 6 * mm
             c.setFont("Helvetica", 9.5)
-            ron_total = grand_total * self.kurs_applied
-            c.drawString(LM, y, f"Curs BNR / Exchange rate: {self.kurs_applied:.4f} RON/EUR")
-            c.drawRightString(RM, y, f"{fmt_us(ron_total)} RON")
+            c.drawString(LM, y, f"Curs BNR / Exchange rate: {self.kurs_applied:.4f}")
 
         # Intocmit de
         y -= 14 * mm
