@@ -38,8 +38,9 @@ MODULES = [
             {'module_key': 'accounting_efactura', 'name': 'e-Factura', 'description': 'ANAF e-Factura sync', 'icon': 'bi-file-earmark-text', 'url': '/efactura', 'sort_order': 3},
             {'module_key': 'accounting_bilant', 'name': 'Bilant', 'description': 'Balance sheet generator', 'icon': 'bi-clipboard-data', 'url': '/accounting/bilant', 'sort_order': 4},
             {'module_key': 'accounting_facturare', 'name': 'Comenzi Externe', 'description': 'Manage contracts, anexas, and invoices', 'icon': 'bi-receipt', 'url': '/accounting/facturare', 'sort_order': 5},
-            {'module_key': 'accounting_add', 'name': 'Add Invoice', 'description': 'Create new invoice', 'icon': 'bi-plus-circle', 'url': '/add-invoice', 'sort_order': 6},
-            {'module_key': 'accounting_templates', 'name': 'Templates', 'description': 'Manage parsing templates', 'icon': 'bi-file-earmark-code', 'url': '/templates', 'sort_order': 7},
+            {'module_key': 'accounting_controlling', 'name': 'Controlling', 'description': 'BAB import and margin reports', 'icon': 'bi-bar-chart', 'url': '/accounting/controlling', 'sort_order': 6},
+            {'module_key': 'accounting_add', 'name': 'Add Invoice', 'description': 'Create new invoice', 'icon': 'bi-plus-circle', 'url': '/add-invoice', 'sort_order': 7},
+            {'module_key': 'accounting_templates', 'name': 'Templates', 'description': 'Manage parsing templates', 'icon': 'bi-file-earmark-code', 'url': '/templates', 'sort_order': 8},
         ],
     },
     {
