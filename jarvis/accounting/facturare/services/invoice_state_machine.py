@@ -126,8 +126,6 @@ class InvoiceStateMachine:
 
         self._check_invoice_number_unique(anexa_id, invoice_number, "PROFORMA")
         seq = len(existing_proformas) + 1
-        kurs = self._fetch_kurs(issued_date)
-        total_ron = (amount_eur * kurs) if kurs else Decimal("0")
         intocmit = self._resolve_intocmit(intocmit_de, created_by_user_id)
 
         inv_row = self.repo.create_invoice(
@@ -136,8 +134,8 @@ class InvoiceStateMachine:
             invoice_state=InvoiceStateEnum.DRAFT,
             sequence_number=seq,
             total_amount_eur=amount_eur,
-            total_amount_ron=total_ron,
-            kurs_applied=kurs,
+            total_amount_ron=Decimal("0"),
+            kurs_applied=None,
             invoice_number=invoice_number,
             issued_date=issued_date,
             intocmit_de=intocmit,
