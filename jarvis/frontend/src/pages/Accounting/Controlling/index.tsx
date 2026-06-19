@@ -570,12 +570,12 @@ function VerificationTable({ accounts, totalEntries }: { accounts: BabAccountGro
       {/* KST filter */}
       <div className="flex items-center gap-3 mb-3">
         <Label className="text-sm shrink-0">Centru de cost (KST):</Label>
-        <Select value={kstFilter} onValueChange={setKstFilter}>
+        <Select value={kstFilter || 'all'} onValueChange={(v) => setKstFilter(v === 'all' ? '' : v)}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Toate" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Toate</SelectItem>
+            <SelectItem value="all">Toate</SelectItem>
             {allKst.map(k => (
               <SelectItem key={k} value={String(k)}>{k}</SelectItem>
             ))}
