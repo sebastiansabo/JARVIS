@@ -614,12 +614,14 @@ class ProformaPdfRenderer:
         c.save()
         return buf.getvalue()
 
-    def render_all_to_bytes(self, lines: list[OrderLine], start_no: int) -> bytes:
-        """Render all proformas and return PDF as bytes."""
+    def render_all_to_bytes(self, lines: list[OrderLine], start_no: int, same_number: bool = False) -> bytes:
+        """Render all proformas and return PDF as bytes.
+        If same_number=True, all pages use the same invoice number (single invoice covering multiple cars).
+        """
         buf = io.BytesIO()
         c = canvas.Canvas(buf, pagesize=A4)
         for i, line in enumerate(lines):
-            inv_no = (line.start_no if line.start_no is not None else start_no) + i
+            inv_no = (line.start_no if line.start_no is not None else start_no) + (0 if same_number else i)
             self.render_one(c, inv_no, line)
             c.showPage()
         c.save()
