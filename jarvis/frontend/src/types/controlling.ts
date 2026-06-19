@@ -6,6 +6,7 @@ export interface BabPeriod {
   import_count?: number
   filename?: string
   uploaded_at?: string
+  marja_finala_lei?: number
   marja_finala_eur?: number
 }
 
@@ -33,6 +34,7 @@ export interface MarjaLine {
   eur: number
   accounts: number[]
   kst: number
+  row_type?: string
 }
 
 export interface MarjaSection {
@@ -45,6 +47,32 @@ export interface MarjaReportData {
   marja_finala_lei: number
   marja_finala_eur: number
   eur_rate: number
+}
+
+export interface BabAccountLine {
+  kostenstelle: number
+  kst_bez1: string
+  saldo1: number
+}
+
+export interface BabAccountGroup {
+  konto: number
+  konto_bez: string
+  lines: BabAccountLine[]
+  total: number
+}
+
+export interface BabConfigRow {
+  id?: number
+  company_id: number
+  sort_order: number
+  kst: number
+  group_name: string
+  item_label: string
+  konto_list: string
+  row_type: 'sum' | 'subtotal'
+  subtotal_of?: string | null
+  is_main_total?: boolean
 }
 
 export interface BabEurRate {

@@ -63,6 +63,60 @@ def create_schema_controlling_bab(conn, cursor):
         )
     ''')
 
+    # ── bab_report_config — configurable report row definitions ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bab_report_config (
+            id              SERIAL PRIMARY KEY,
+            company_id      INTEGER NOT NULL REFERENCES companies(id),
+            sort_order      INTEGER NOT NULL DEFAULT 0,
+            kst             INTEGER NOT NULL,
+            group_name      TEXT NOT NULL,
+            item_label      TEXT NOT NULL,
+            konto_list      TEXT NOT NULL,
+            row_type        TEXT NOT NULL DEFAULT 'sum'
+                              CHECK (row_type IN ('sum', 'subtotal')),
+            subtotal_of     TEXT,
+            created_at      TIMESTAMPTZ DEFAULT NOW(),
+            updated_at      TIMESTAMPTZ DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bab_config_company ON bab_report_config(company_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bab_config_sort ON bab_report_config(company_id, sort_order)')
+
+    # Add is_main_total column (idempotent)
+    cursor.execute("ALTER TABLE bab_report_config ADD COLUMN IF NOT EXISTS is_main_total BOOLEAN NOT NULL DEFAULT FALSE")
+
+    # Seed default config if empty
+    cursor.execute('SELECT COUNT(*) as cnt FROM bab_report_config')
+    if cursor.fetchone()['cnt'] == 0:
+        default_rows = [
+            # sort, kst, group, label, kontos, type, subtotal_of
+            (10,  211, 'VW PKW INTERN (retail)',  'Venit Sales realizat',           '707111,707116',           'sum',      None),
+            (20,  211, 'VW PKW INTERN (retail)',  'Marjă Brută realizată',          '707111,707116,607111',    'sum',      None),
+            (30,  211, 'VW PKW INTERN (retail)',  'Bonus trimestrial (importator)', '609010',                  'sum',      None),
+            (40,  211, 'VW PKW INTERN (retail)',  'Venit Test Drive',               '707112',                  'sum',      None),
+            (50,  211, 'VW PKW INTERN (retail)',  'Marjă Test Drive',               '707112,607112',           'sum',      None),
+            (60,  211, 'VW PKW INTERN (flote)',   'Venit Sales realizat',           '707110,707115',           'sum',      None),
+            (70,  211, 'VW PKW INTERN (flote)',   'Marjă Brută realizată',          '707110,707115,607110',    'sum',      None),
+            (80,  211, 'VW PKW INTERN (flote)',   'Bonus trimestrial (importator)', '609011',                  'sum',      None),
+            (90,  211, 'Bonus & Discount',        'Bonus PFG',                      '708001',                  'sum',      None),
+            (100, 211, 'Bonus & Discount',        'Discount accesorii',             '704315,902700',           'sum',      None),
+            (110, 211, 'MARJA FINALĂ PKW',        'MARJA FINALĂ',                   '',                        'subtotal', 'Marjă Brută realizată,Bonus trimestrial (importator),Marjă Test Drive,Marjă Brută realizată,Bonus trimestrial (importator),Bonus PFG,Discount accesorii'),
+            (120, 215, 'VW PKW EXTERN',           'Venit Sales realizat',           '707127',                  'sum',      None),
+            (130, 215, 'VW PKW EXTERN',           'Marjă Brută realizată',          '707127,607127',           'sum',      None),
+            (140, 215, 'VW PKW EXTERN',           'Bonus trimestrial (importator)', '609012',                  'sum',      None),
+            (150, 215, 'VW PKW EXTERN',           'Marjă Totală Extern',            '',                        'subtotal', 'Marjă Brută realizată,Bonus trimestrial (importator)'),
+        ]
+        # Insert for all companies
+        cursor.execute('SELECT id FROM companies')
+        company_ids = [r['id'] for r in cursor.fetchall()]
+        for cid in company_ids:
+            for (sort, kst, group, label, kontos, rtype, sub_of) in default_rows:
+                cursor.execute('''
+                    INSERT INTO bab_report_config (company_id, sort_order, kst, group_name, item_label, konto_list, row_type, subtotal_of)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (cid, sort, kst, group, label, kontos, rtype, sub_of))
+
     # ── Permissions V2 ──
     cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'controlling'")
     if cursor.fetchone()['cnt'] == 0:

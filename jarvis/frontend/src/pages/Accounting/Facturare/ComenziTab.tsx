@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import {
   Plus, FileText, Loader2, ChevronRight, ChevronDown, Copy,
-  Search, CheckCircle2, Ban,
+  Search, CheckCircle2, Ban, Pencil, Check, X,
   Trash2, Download, Archive, FileSpreadsheet,
 } from 'lucide-react'
 
@@ -1657,6 +1657,26 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
       .catch(() => {})
   }
 
+  const [editingContractId, setEditingContractId] = useState<number | null>(null)
+  const [editRef, setEditRef] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [editResponsible, setEditResponsible] = useState('')
+  const startEditContract = (c: ContractSummary) => {
+    setEditingContractId(c.id); setEditRef(c.contract_ref)
+    setEditDate(c.contract_date || ''); setEditResponsible(c.responsible || '')
+  }
+  const saveContract = async () => {
+    if (!editingContractId) return
+    try {
+      const res = await fetch(`/facturare/api/contracts/${editingContractId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contract_ref: editRef, contract_date: editDate || null, responsible: editResponsible || null }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed') }
+      toast.success('Updated'); setEditingContractId(null); loadContracts()
+    } catch (err: any) { toast.error(err.message) }
+  }
+
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const toggleGroup = (key: string) => setExpandedGroups(prev => {
     const next = new Set(prev)
@@ -1918,14 +1938,28 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                             <td></td>
                           </tr>
                           {/* Expanded contract rows */}
-                          {expanded && g.contracts.map(c => (
-                            <tr key={c.id} className="border-b hover:bg-primary/5 cursor-pointer bg-muted/40" onClick={() => loadAnexas(c)}>
+                          {expanded && g.contracts.map(c => {
+                            const isEditing = editingContractId === c.id
+                            return (
+                            <tr key={c.id} className="border-b hover:bg-primary/5 cursor-pointer bg-muted/40" onClick={() => !isEditing && loadAnexas(c)}>
                               <td></td>
-                              <td className="px-3 py-2 text-xs text-muted-foreground" colSpan={3}>
-                                <span className="font-medium text-foreground">{c.contract_ref}</span>
-                                <span className="ml-2 text-muted-foreground">{c.contract_date ? new Date(c.contract_date).toLocaleDateString('ro-RO') : ''}</span>
-                                {c.responsible && <span className="ml-2 text-muted-foreground">· {c.responsible}</span>}
-                              </td>
+                              {isEditing ? (
+                                <td className="px-3 py-1.5 text-xs" colSpan={3} onClick={e => e.stopPropagation()}>
+                                  <div className="flex items-center gap-2">
+                                    <Input className="h-7 w-28 text-xs font-medium" value={editRef} onChange={e => setEditRef(e.target.value)} placeholder="CTR-..." />
+                                    <Input type="date" className="h-7 w-32 text-xs" value={editDate} onChange={e => setEditDate(e.target.value)} />
+                                    <Input className="h-7 w-36 text-xs" value={editResponsible} onChange={e => setEditResponsible(e.target.value)} placeholder="Responsible" />
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={saveContract}><Check className="h-3.5 w-3.5 text-emerald-600" /></Button>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setEditingContractId(null)}><X className="h-3.5 w-3.5 text-muted-foreground" /></Button>
+                                  </div>
+                                </td>
+                              ) : (
+                                <td className="px-3 py-2 text-xs text-muted-foreground" colSpan={3}>
+                                  <span className="font-medium text-foreground">{c.contract_ref}</span>
+                                  <span className="ml-2 text-muted-foreground">{c.contract_date ? new Date(c.contract_date).toLocaleDateString('ro-RO') : ''}</span>
+                                  {c.responsible && <span className="ml-2 text-muted-foreground">· {c.responsible}</span>}
+                                </td>
+                              )}
                               <td className="px-3 py-2 text-center"><Badge variant="outline" className="text-xs">{c.anexa_count}</Badge></td>
                               <td className="px-3 py-2 text-right font-mono text-xs">{fmtEur(c.total_value)}</td>
                               <td className="px-3 py-2 text-right font-mono text-xs text-emerald-600">{c.invoiced_total > 0 ? fmtEur(c.invoiced_total) : '—'}</td>
@@ -1938,22 +1972,31 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                                 {c.total_value > 0 ? `${Math.round(c.invoiced_total / c.total_value * 100)}%` : '—'}
                               </td>
                               <td className="px-1 py-2" onClick={e => e.stopPropagation()}>
-                                {c.anexa_count === 0 && (
-                                  <Button variant="ghost" size="icon" className="h-6 w-6" title="Delete contract"
-                                    onClick={async () => {
-                                      if (!confirm(`Delete contract ${c.contract_ref}?`)) return
-                                      try {
-                                        const res = await fetch(`/facturare/api/contracts/${c.id}`, { method: 'DELETE' })
-                                        if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed') }
-                                        toast.success('Contract deleted'); loadContracts()
-                                      } catch (err: any) { toast.error(err.message) }
-                                    }}>
-                                    <Trash2 className="h-3 w-3 text-muted-foreground hover:text-red-500" />
-                                  </Button>
+                                {!isEditing && (
+                                  <div className="flex items-center gap-0.5">
+                                    <Button variant="ghost" size="icon" className="h-6 w-6" title="Edit contract"
+                                      onClick={() => startEditContract(c)}>
+                                      <Pencil className="h-3 w-3 text-muted-foreground hover:text-blue-500" />
+                                    </Button>
+                                    {c.anexa_count === 0 && (
+                                      <Button variant="ghost" size="icon" className="h-6 w-6" title="Delete contract"
+                                        onClick={async () => {
+                                          if (!confirm(`Delete contract ${c.contract_ref}?`)) return
+                                          try {
+                                            const res = await fetch(`/facturare/api/contracts/${c.id}`, { method: 'DELETE' })
+                                            if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed') }
+                                            toast.success('Contract deleted'); loadContracts()
+                                          } catch (err: any) { toast.error(err.message) }
+                                        }}>
+                                        <Trash2 className="h-3 w-3 text-muted-foreground hover:text-red-500" />
+                                      </Button>
+                                    )}
+                                  </div>
                                 )}
                               </td>
                             </tr>
-                          ))}
+                            )
+                          })}
                         </React.Fragment>
                       )
                     })}
