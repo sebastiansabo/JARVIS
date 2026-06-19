@@ -110,3 +110,43 @@ class BabRepository(BaseRepository):
                RETURNING *''',
             (company_id, year, month, rate, user_id),
             returning=True)
+
+    # ── Report Config ──
+
+    def get_config(self, company_id):
+        return self.query_all(
+            'SELECT * FROM bab_report_config WHERE company_id = %s ORDER BY sort_order',
+            (company_id,))
+
+    def save_config_row(self, company_id, sort_order, kst, group_name, item_label, konto_list, row_type='sum', subtotal_of=None, is_main_total=False):
+        return self.execute(
+            '''INSERT INTO bab_report_config (company_id, sort_order, kst, group_name, item_label, konto_list, row_type, subtotal_of, is_main_total)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+               RETURNING *''',
+            (company_id, sort_order, kst, group_name, item_label, konto_list, row_type, subtotal_of, is_main_total),
+            returning=True)
+
+    def update_config_row(self, row_id, sort_order, kst, group_name, item_label, konto_list, row_type='sum', subtotal_of=None, is_main_total=False):
+        return self.execute(
+            '''UPDATE bab_report_config
+               SET sort_order = %s, kst = %s, group_name = %s, item_label = %s,
+                   konto_list = %s, row_type = %s, subtotal_of = %s, is_main_total = %s, updated_at = NOW()
+               WHERE id = %s RETURNING *''',
+            (sort_order, kst, group_name, item_label, konto_list, row_type, subtotal_of, is_main_total, row_id),
+            returning=True)
+
+    def delete_config_row(self, row_id):
+        return self.execute('DELETE FROM bab_report_config WHERE id = %s', (row_id,))
+
+    def replace_config(self, company_id, rows):
+        """Replace all config rows for a company in one transaction."""
+        def _work(cursor):
+            cursor.execute('DELETE FROM bab_report_config WHERE company_id = %s', (company_id,))
+            for r in rows:
+                cursor.execute(
+                    '''INSERT INTO bab_report_config (company_id, sort_order, kst, group_name, item_label, konto_list, row_type, subtotal_of)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''',
+                    (company_id, r['sort_order'], r['kst'], r['group_name'], r['item_label'],
+                     r['konto_list'], r.get('row_type', 'sum'), r.get('subtotal_of')))
+            return len(rows)
+        return self.execute_many(_work)

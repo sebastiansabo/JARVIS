@@ -1,6 +1,6 @@
 import { api } from './client'
 import { buildQs } from './utils'
-import type { BabPeriod, BabUpload, MarjaReportData, BabEurRate } from '@/types/controlling'
+import type { BabPeriod, BabUpload, MarjaReportData, BabEurRate, BabAccountGroup, BabConfigRow } from '@/types/controlling'
 
 const BASE = '/controlling/bab/api'
 
@@ -55,4 +55,30 @@ export const controllingApi = {
   setEurRate: (year: number, month: number, companyId: number, eurRate: number) =>
     api.put<{ success: boolean; rate: BabEurRate }>(
       `${BASE}/eur-rate/${year}/${month}`, { company_id: companyId, eur_rate: eurRate }),
+
+  // Verification (raw entries by account)
+  getVerification: (uploadId: number) =>
+    api.get<{ success: boolean; accounts: BabAccountGroup[]; total_entries: number; upload: BabUpload }>(
+      `${BASE}/verification/${uploadId}`),
+
+  // Report Config
+  getConfig: (companyId: number) =>
+    api.get<{ success: boolean; config: BabConfigRow[] }>(`${BASE}/config${buildQs({ company_id: companyId })}`),
+
+  addConfigRow: (row: Partial<BabConfigRow>) =>
+    api.post<{ success: boolean; row: BabConfigRow }>(`${BASE}/config`, row),
+
+  updateConfigRow: (rowId: number, row: Partial<BabConfigRow>) =>
+    api.put<{ success: boolean; row: BabConfigRow }>(`${BASE}/config/${rowId}`, row),
+
+  deleteConfigRow: (rowId: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/config/${rowId}`),
+
+  replaceConfig: (companyId: number, rows: Partial<BabConfigRow>[]) =>
+    api.put<{ success: boolean; count: number }>(`${BASE}/config/bulk`, { company_id: companyId, rows }),
+
+  // BNR rate auto-fetch
+  getBnrRate: (year: number, month: number) =>
+    api.get<{ success: boolean; eur_rate: number; rate_date: string }>(
+      `${BASE}/bnr-rate${buildQs({ year, month })}`),
 }
