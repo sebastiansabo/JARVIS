@@ -494,7 +494,7 @@ function ExpandedReport({ report }: { report: MarjaReportData }) {
             if (isSubtotal) {
               // Subtotal at top level — same as period row
               return (
-                <div key={ri} className="flex items-center justify-between border-b border-border/30 bg-primary/10 font-semibold">
+                <div key={ri} className="flex items-center justify-between border-b border-border/30 font-semibold" style={{ backgroundColor: 'hsl(0 0% 90%)' }}>
                   <div className="py-2 pl-4 text-sm font-bold">{row.label}</div>
                   <div className="flex shrink-0">
                     <div className="w-44 text-right px-4 py-2 font-mono tabular-nums text-sm">{fmtNum(row.lei)}</div>

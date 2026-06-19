@@ -560,6 +560,7 @@ def _serialize_report(report):
                 'eur': float(row['eur']),
                 'accounts': row['accounts'],
                 'kst': row['kst'],
+                'row_type': row.get('row_type', 'sum'),
             })
         serialized['sections'].append(s)
     return serialized
