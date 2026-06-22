@@ -663,18 +663,18 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
   const [addingSum, setAddingSum] = useState(false)
   const [addingTotal, setAddingTotal] = useState(false)
   const [newSumRow, setNewSumRow] = useState<Partial<BabConfigRow>>({ kst: 0, row_type: 'sum', sort_order: 0, konto_list: '', group_name: '', item_label: '' })
-  const [newTotalRow, setNewTotalRow] = useState<Partial<BabConfigRow>>({ kst: 0, row_type: 'subtotal', sort_order: 0, group_name: '', item_label: '', subtotal_of: '', is_main_total: false })
+  const [newTotalRow, setNewTotalRow] = useState<Partial<BabConfigRow>>({ kst: 0, row_type: 'subtotal', sort_order: 0, group_name: '', item_label: '', indicator_ids: [], is_main_total: false })
 
   const sorted = useMemo(() => [...configRows].sort((a, b) => a.sort_order - b.sort_order), [configRows])
   const sumRows = useMemo(() => sorted.filter(r => r.row_type === 'sum'), [sorted])
   const totalRows = useMemo(() => sorted.filter(r => r.row_type === 'subtotal'), [sorted])
 
-  // Available indicators for subtotal picker (only sum rows), qualified with group
+  // Available indicators for subtotal picker (only sum rows), keyed by id
   const availableIndicators = useMemo(() => {
     return sumRows.map(r => ({
+      id: r.id!,
       label: r.item_label,
       group: r.group_name,
-      qualified: `${r.group_name} → ${r.item_label}`,
     }))
   }, [sumRows])
 
@@ -682,7 +682,7 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
 
   const addMutation = useMutation({
     mutationFn: (row: Partial<BabConfigRow>) => controllingApi.addConfigRow({ ...row, company_id: companyId }),
-    onSuccess: (_d, vars) => { invalidateAll(); if (vars.row_type === 'subtotal') { setAddingTotal(false); setNewTotalRow({ kst: 0, row_type: 'subtotal', sort_order: 0, group_name: '', item_label: '', subtotal_of: '', is_main_total: false }) } else { setAddingSum(false); setNewSumRow({ kst: 0, row_type: 'sum', sort_order: 0, konto_list: '', group_name: '', item_label: '' }) }; toast.success('Rând adăugat') },
+    onSuccess: (_d, vars) => { invalidateAll(); if (vars.row_type === 'subtotal') { setAddingTotal(false); setNewTotalRow({ kst: 0, row_type: 'subtotal', sort_order: 0, group_name: '', item_label: '', indicator_ids: [], is_main_total: false }) } else { setAddingSum(false); setNewSumRow({ kst: 0, row_type: 'sum', sort_order: 0, konto_list: '', group_name: '', item_label: '' }) }; toast.success('Rând adăugat') },
     onError: (e: Error) => toast.error(e.message),
   })
 
@@ -700,10 +700,9 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
 
   const startEdit = (row: BabConfigRow) => { setEditingId(row.id!); setEditRow({ ...row }) }
 
-  const toggleSubtotalOf = (prev: string | null | undefined, qualified: string) => {
-    const set = new Set((prev || '').split(',').map(s => s.trim()).filter(Boolean))
-    set.has(qualified) ? set.delete(qualified) : set.add(qualified)
-    return Array.from(set).join(',')
+  const toggleIndicatorId = (prev: number[] | undefined, id: number): number[] => {
+    const arr = prev || []
+    return arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id]
   }
 
   return (
@@ -842,8 +841,8 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
               <TableCell>
                 <SubtotalPicker
                   indicators={availableIndicators}
-                  selected={newTotalRow.subtotal_of || ''}
-                  onToggle={qualified => setNewTotalRow(prev => ({ ...prev, subtotal_of: toggleSubtotalOf(prev.subtotal_of, qualified) }))}
+                  selectedIds={newTotalRow.indicator_ids || []}
+                  onToggle={id => setNewTotalRow(prev => ({ ...prev, indicator_ids: toggleIndicatorId(prev.indicator_ids, id) }))}
                 />
               </TableCell>
               <TableCell>
@@ -875,8 +874,8 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
                     <TableCell>
                       <SubtotalPicker
                         indicators={availableIndicators}
-                        selected={editRow.subtotal_of || ''}
-                        onToggle={qualified => setEditRow(prev => ({ ...prev, subtotal_of: toggleSubtotalOf(prev.subtotal_of, qualified) }))}
+                        selectedIds={editRow.indicator_ids || []}
+                        onToggle={id => setEditRow(prev => ({ ...prev, indicator_ids: toggleIndicatorId(prev.indicator_ids, id) }))}
                       />
                     </TableCell>
                     <TableCell>
@@ -898,11 +897,13 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
                       </span>
                     </TableCell>
                     <TableCell className="text-xs">
-                      {row.subtotal_of ? (
+                      {(row.indicator_ids && row.indicator_ids.length > 0) ? (
                         <div className="flex flex-wrap gap-1">
-                          {row.subtotal_of.split(',').filter(Boolean).map((ref, i) => {
-                            const short = ref.includes('→') ? ref.split('→').pop()!.trim() : ref.trim()
-                            return <span key={i} className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary font-medium" title={ref.trim()}>{short}</span>
+                          {row.indicator_ids.map(indicatorId => {
+                            const sumRow = sumRows.find(r => r.id === indicatorId)
+                            const label = sumRow ? sumRow.item_label : String(indicatorId)
+                            const title = sumRow ? `${sumRow.group_name} → ${sumRow.item_label}` : String(indicatorId)
+                            return <span key={indicatorId} className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary font-medium" title={title}>{label}</span>
                           })}
                         </div>
                       ) : '—'}
@@ -932,29 +933,29 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
    SubtotalPicker — select indicators
    ═══════════════════════════════════ */
 
-function SubtotalPicker({ indicators, selected, onToggle }: {
-  indicators: { label: string; group: string; qualified: string }[]
-  selected: string
-  onToggle: (qualified: string) => void
+function SubtotalPicker({ indicators, selectedIds, onToggle }: {
+  indicators: { id: number; label: string; group: string }[]
+  selectedIds: number[]
+  onToggle: (id: number) => void
 }) {
-  const selectedSet = new Set(selected.split(',').map(s => s.trim()).filter(Boolean))
-  const selectedCount = selectedSet.size
+  // Computed directly (no useMemo) so every render gets the latest selectedIds
+  const selectedCount = selectedIds.length
 
   // Group indicators by group_name
   const grouped = useMemo(() => {
-    const map = new Map<string, { label: string; qualified: string }[]>()
+    const map = new Map<string, { id: number; label: string }[]>()
     for (const ind of indicators) {
       if (!map.has(ind.group)) map.set(ind.group, [])
-      map.get(ind.group)!.push({ label: ind.label, qualified: ind.qualified })
+      map.get(ind.group)!.push({ id: ind.id, label: ind.label })
     }
     return map
   }, [indicators])
 
-  const toggleGroup = (items: { qualified: string }[]) => {
-    const allSelected = items.every(i => selectedSet.has(i.qualified))
+  const toggleGroup = (items: { id: number }[]) => {
+    const allSelected = items.every(i => selectedIds.includes(i.id))
     for (const item of items) {
-      if (allSelected) { if (selectedSet.has(item.qualified)) onToggle(item.qualified) }
-      else { if (!selectedSet.has(item.qualified)) onToggle(item.qualified) }
+      if (allSelected) { if (selectedIds.includes(item.id)) onToggle(item.id) }
+      else { if (!selectedIds.includes(item.id)) onToggle(item.id) }
     }
   }
 
@@ -970,7 +971,7 @@ function SubtotalPicker({ indicators, selected, onToggle }: {
       {/* Grouped chips */}
       <div className="space-y-2">
         {[...grouped.entries()].map(([group, items]) => {
-          const groupAllSelected = items.every(i => selectedSet.has(i.qualified))
+          const groupAllSelected = items.every(i => selectedIds.includes(i.id))
           return (
             <div key={group} className="space-y-1">
               <div className="flex items-center justify-between">
@@ -988,13 +989,13 @@ function SubtotalPicker({ indicators, selected, onToggle }: {
               </div>
               <div className="flex flex-wrap gap-1">
                 {items.map(item => {
-                  const isSelected = selectedSet.has(item.qualified)
+                  const isSelected = selectedIds.includes(item.id)
                   return (
                     <button
-                      key={item.qualified}
+                      key={item.id}
                       type="button"
                       onPointerDown={e => e.stopPropagation()}
-                      onClick={e => { e.stopPropagation(); onToggle(item.qualified) }}
+                      onClick={e => { e.stopPropagation(); onToggle(item.id) }}
                       className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${
                         isSelected
                           ? 'border-primary bg-primary/10 text-primary'

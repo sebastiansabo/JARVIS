@@ -71,7 +71,8 @@ export interface BabConfigRow {
   item_label: string
   konto_list: string
   row_type: 'sum' | 'subtotal'
-  subtotal_of?: string | null
+  subtotal_of?: string | null  // kept for backward compat — Task 5 removes this
+  indicator_ids?: number[]     // NEW: array of indicator row IDs
   is_main_total?: boolean
 }
 
