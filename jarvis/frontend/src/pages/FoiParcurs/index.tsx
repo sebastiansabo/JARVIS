@@ -24,7 +24,6 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Button } from '@/components/ui/button'
@@ -76,29 +75,56 @@ import {
 export default function FoiParcurs() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'contracts' | 'parcurs' | 'stock' | 'settings'>('contracts')
+  const [companyId, setCompanyId] = useState<number>(0)
+
+  const { data: companiesData } = useQuery({
+    queryKey: ['fp-companies'],
+    queryFn: () => foiParcursApi.getCompanies(),
+    staleTime: 60_000,
+  })
+
+  // Auto-select first company
+  const companies = companiesData?.companies ?? []
+  if (companyId === 0 && companies.length > 0) {
+    setCompanyId(companies[0].id)
+  }
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Foi de Parcurs" breadcrumbs={[{ label: 'Foi de Parcurs' }]} />
-
       <div className="flex items-center justify-between">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'settings')}>
-          <TabsList>
-            <TabsTrigger value="contracts">Contracts</TabsTrigger>
-            <TabsTrigger value="parcurs">Parcurs</TabsTrigger>
-            <TabsTrigger value="stock">Stock</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <Button onClick={() => navigate('/app/foi-parcurs/test-drive')}>
-          <FileText className="mr-1.5 h-4 w-4" />
-          New Test Drive
-        </Button>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Foi de Parcurs</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => navigate('/app/foi-parcurs/test-drive')}>
+            <FileText className="mr-1.5 h-4 w-4" />
+            New Test Drive
+          </Button>
+          <Select value={String(companyId)} onValueChange={(v) => setCompanyId(Number(v))}>
+            <SelectTrigger className="w-56">
+              <SelectValue placeholder="Selectează compania" />
+            </SelectTrigger>
+            <SelectContent>
+              {companies.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {activeTab === 'contracts' && <ContractsTab />}
-      {activeTab === 'parcurs' && <ParcursTab />}
-      {activeTab === 'stock' && <StockTab />}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'settings')}>
+        <TabsList>
+          <TabsTrigger value="contracts">Contracts</TabsTrigger>
+          <TabsTrigger value="parcurs">Parcurs</TabsTrigger>
+          <TabsTrigger value="stock">Stock</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {activeTab === 'contracts' && <ContractsTab companyId={companyId} />}
+      {activeTab === 'parcurs' && <ParcursTab companyId={companyId} />}
+      {activeTab === 'stock' && <StockTab companyId={companyId} />}
       {activeTab === 'settings' && <SettingsTab />}
     </div>
   )
@@ -107,7 +133,7 @@ export default function FoiParcurs() {
 // ── Contracts Tab — Form → Preview → Save Batch ──
 type ContractStep = 'form' | 'preview' | 'saved'
 
-function ContractsTab() {
+function ContractsTab({ companyId }: { companyId: number }) {
   const queryClient = useQueryClient()
   const [step, setStep] = useState<ContractStep>('form')
   const [batchConfig, setBatchConfig] = useState<BatchConfig | null>(null)
@@ -159,7 +185,7 @@ function ContractsTab() {
       )}
 
       {/* Step 1: Batch Config Form */}
-      {step === 'form' && <BatchConfigForm onPreview={handlePreviewReady} />}
+      {step === 'form' && <BatchConfigForm companyId={companyId} onPreview={handlePreviewReady} />}
 
       {/* Step 2: Preview — Save or Regenerate */}
       {step === 'preview' && preview && batchConfig && (
@@ -341,14 +367,13 @@ const STATUS_ROW_BG: Record<string, string> = {
   filled: 'bg-green-500/5 border-l-4 border-l-green-500/50',
 }
 
-function ParcursTab() {
+function ParcursTab({ companyId }: { companyId: number }) {
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const now = new Date()
   const [allocatingContract, setAllocatingContract] = useState<FoiContract | null>(null)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
   const [search, setSearch] = useState('')
-  const [filterCompany, setFilterCompany] = useState<string>('all')
   const [filterVin, setFilterVin] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterMonth, setFilterMonth] = useState<string>(String(now.getMonth() + 1))
@@ -357,23 +382,16 @@ function ParcursTab() {
   const [sortDir, setSortDir] = useState('ASC')
 
   const { data, isLoading } = useQuery({
-    queryKey: ['foi-contracts-all'],
+    queryKey: ['foi-contracts-all', companyId],
     queryFn: () =>
-      foiParcursApi.getContracts({ per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC' }),
+      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC' }),
     staleTime: 30_000,
-  })
-
-  const { data: companiesData } = useQuery({
-    queryKey: ['fp-companies'],
-    queryFn: () => foiParcursApi.getCompanies(),
-    staleTime: 60_000,
   })
 
   const allContracts = data?.contracts ?? []
 
   // Apply filters
   const filtered = allContracts.filter((c) => {
-    if (filterCompany !== 'all' && String(c.company_id) !== filterCompany) return false
     if (filterVin !== 'all' && c.vin !== filterVin) return false
     if (filterStatus !== 'all' && c.status !== filterStatus) return false
     if (filterMonth !== 'all' && c.month != null && String(c.month) !== filterMonth) return false
@@ -411,20 +429,6 @@ function ParcursTab() {
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[200px] max-w-sm">
           <SearchInput value={search} onChange={setSearch} placeholder="Search VIN, client, itinerary..." />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Company</Label>
-          <Select value={filterCompany} onValueChange={setFilterCompany}>
-            <SelectTrigger className="h-8 min-w-[160px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Companies</SelectItem>
-              {companiesData?.companies?.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">Vehicle</Label>
@@ -821,7 +825,7 @@ const STOCK_COLUMNS = [
 
 type StockColumnKey = (typeof STOCK_COLUMNS)[number]['key']
 
-function StockTab() {
+function StockTab({ companyId }: { companyId: number }) {
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -837,15 +841,20 @@ function StockTab() {
     model: '',
     fuel_type: 'Diesel' as string,
     fuel_tank_capacity_liters: 50,
-    company_id: '' as string,
+    company_id: companyId ? String(companyId) : '' as string,
   })
   const [error, setError] = useState('')
 
   const { data: vehiclesData, isLoading } = useQuery({
-    queryKey: ['fp-vehicles'],
+    queryKey: ['fp-vehicles', companyId],
     queryFn: () => foiParcursApi.getVehicles(),
     staleTime: 30_000,
   })
+
+  // Filter vehicles by selected company
+  const filteredVehicles = vehiclesData?.vehicles?.filter(
+    (v) => !companyId || v.company_id === companyId
+  ) ?? []
 
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
@@ -1067,7 +1076,7 @@ function StockTab() {
       {/* Vehicles Table */}
       {isLoading ? (
         <TableSkeleton rows={4} columns={7} />
-      ) : !vehiclesData?.vehicles?.length ? (
+      ) : !filteredVehicles.length ? (
         <EmptyState
           icon={<Car className="h-10 w-10" />}
           title="No vehicles in stock"
@@ -1089,7 +1098,7 @@ function StockTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {vehiclesData.vehicles.map((v) =>
+              {filteredVehicles.map((v) =>
                 editId === v.id ? (
                   <TableRow key={v.id} className="bg-muted/30">
                     {show('vin') && (
@@ -1241,15 +1250,17 @@ function SortableHeader({
 
 // ── Batch Config Form ──
 function BatchConfigForm({
+  companyId: defaultCompanyId,
   onPreview,
 }: {
+  companyId: number
   onPreview: (config: BatchConfig, preview: PreviewResponse) => void
 }) {
   const now = new Date()
   const [form, setForm] = useState({
     year: String(now.getFullYear()),
     month: String(now.getMonth() + 1),
-    company_id: '',
+    company_id: defaultCompanyId ? String(defaultCompanyId) : '',
     vin: '',
     odometer_start: '',
     odometer_end: '',
