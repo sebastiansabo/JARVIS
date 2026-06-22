@@ -654,13 +654,9 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
   const totalInvoiced = lines.reduce((s, l) => s + (l.invoiced_eur || 0), 0)
   const totalRemaining = totalSelling - totalInvoiced
 
-  // Sort coverage entries for expanded rows: P1, F1, P2, F2, ..., Storno, Final
+  // Sort coverage entries chronologically by invoice_id (insertion order)
   const sortCoverage = (a: LineCoverage, b: LineCoverage) => {
-    // Sort chronologically by date, then proforma before invoice on same date
-    const dateA = a.issued_date || ''; const dateB = b.issued_date || ''
-    if (dateA !== dateB) return dateA.localeCompare(dateB)
-    const typeOrder: Record<string, number> = { PROFORMA: 0, INVOICE: 1, STORNO: 2, FINAL: 3 }
-    return (typeOrder[a.invoice_type] ?? 9) - (typeOrder[b.invoice_type] ?? 9)
+    return a.invoice_id - b.invoice_id
   }
   const carPdfUrl = (invoiceId: number, lineId: number) => {
     const ids = invoiceLineIds.get(invoiceId)
@@ -711,6 +707,18 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
   const canInvoice = sameStage && selectedActions.has('INVOICE')
   const canStorno = sameStage && selectedActions.has('STORNO')
   const canFinal = sameStage && selectedActions.has('FINAL')
+  // After partial storno: allow both Proforma and Storno for the same selection
+  const canAlsoStorno = selectedCount > 0 && !canStorno && selectedLines.every(l => {
+    const cov = l.covered_by || []
+    const inv = cov.filter(c => c.invoice_type === 'INVOICE').length
+    const sto = cov.filter(c => c.invoice_type === 'STORNO').length
+    return inv > 0 && inv > sto  // has un-stornoed invoices
+  })
+  const canAlsoProforma = selectedCount > 0 && !canProforma && selectedLines.every(l => {
+    const cov = l.covered_by || []
+    const sto = cov.filter(c => c.invoice_type === 'STORNO').length
+    return sto > 0  // has storno → can start new cycle
+  })
 
   return (
     <>
@@ -731,7 +739,7 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
             )}
           </div>
           <div className="flex gap-1.5">
-            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!canProforma}
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!canProforma && !canAlsoProforma}
               onClick={() => setProformaOpen(true)}>
               <Plus className="h-3 w-3 mr-1" /> Proforma
             </Button>
@@ -739,7 +747,7 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
               onClick={() => setInvoiceOpen(true)}>
               <FileText className="h-3 w-3 mr-1" /> Factura Avans
             </Button>
-            <Button size="sm" variant="outline" className="h-7 text-xs text-red-600" disabled={!canStorno}
+            <Button size="sm" variant="outline" className="h-7 text-xs text-red-600" disabled={!canStorno && !canAlsoStorno}
               onClick={() => setStornoOpen(true)}>
               <Ban className="h-3 w-3 mr-1" /> Storno
             </Button>
