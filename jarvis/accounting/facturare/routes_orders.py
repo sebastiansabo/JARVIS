@@ -1130,9 +1130,6 @@ def api_generate_pdf(invoice_id):
 
     doc_mode = inv_row.get("doc_mode", "per_car")
     mode = request.args.get("mode", "merged")
-    import logging as _log
-    _log.getLogger("facturare.pdf").warning("PDF gen: inv=%s type=%s doc_mode=%s mode=%s lines=%d", invoice_id, inv_type_str, doc_mode, mode, len(order_lines))
-
     # Storno: use multipage renderer with per-invoice line items
     if inv_type_str == "STORNO" and storno_groups:
         pdf_bytes = renderer.render_storno_multipage(storno_groups, start_no)
