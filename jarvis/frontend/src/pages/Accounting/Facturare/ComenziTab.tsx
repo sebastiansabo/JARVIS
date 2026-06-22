@@ -571,10 +571,14 @@ function getCarNextAction(line: AnexaLine): CarNextAction {
   const stornoCount = cov.filter(c => c.invoice_type === 'STORNO').length
   const hasFinal = cov.some(c => c.invoice_type === 'FINAL')
   if (hasFinal) return 'COMPLETE'
-  // Full storno (storno count matches or exceeds invoice count) → ready for FINAL
-  if (stornoCount > 0 && stornoCount >= invoiceCount) return 'FINAL'
-  // Partial storno (some invoices reversed but not all) → need new proforma cycle
-  if (stornoCount > 0 && stornoCount < invoiceCount) return 'PROFORMA'
+  if (stornoCount > 0) {
+    // Check net invoiced: invoices - stornos. If rest ≈ 0 → FINAL, otherwise → PROFORMA
+    const invoicedEur = cov.filter(c => c.invoice_type === 'INVOICE').reduce((s, c) => s + (c.amount_eur || 0), 0)
+    const stornoEur = cov.filter(c => c.invoice_type === 'STORNO').reduce((s, c) => s + Math.abs(c.amount_eur || 0), 0)
+    const netRemaining = line.selling_price_eur - invoicedEur + stornoEur
+    if (Math.abs(netRemaining) < 1) return 'FINAL'
+    return 'PROFORMA'
+  }
   // Unmatched proforma → need invoice to confirm it
   if (proformaCount > invoiceCount) return 'INVOICE'
   // All proformas paired — storno available when at least one invoice exists
