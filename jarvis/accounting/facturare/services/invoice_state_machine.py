@@ -89,7 +89,10 @@ class InvoiceStateMachine:
         anexa_total = sum(Decimal(str(l["selling_price_eur"])) for l in anexa_lines)
         existing_proformas = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.PROFORMA)
         proformas_total = sum(Decimal(str(p["total_amount_eur"])) for p in existing_proformas)
-        remaining = anexa_total - proformas_total
+        # Stornos free up capacity — add back stornoed amounts
+        existing_stornos = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.STORNO)
+        storno_freed = sum(abs(Decimal(str(s["total_amount_eur"]))) for s in existing_stornos)
+        remaining = anexa_total - proformas_total + storno_freed
 
         if remaining <= 0:
             raise InvoiceStateMachineError(
@@ -317,7 +320,7 @@ class InvoiceStateMachine:
         all_line_id_set = {l["id"] for l in all_lines}
         target_lines = set(line_ids) if line_ids else all_line_id_set
 
-        # Find storno(s) covering the target cars
+        # Verify at least one storno covers the target cars
         stornos = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.STORNO)
         matching_storno = None
         for s in stornos:
@@ -325,25 +328,41 @@ class InvoiceStateMachine:
             if isinstance(raw, str):
                 raw = _json.loads(raw)
             s_lines = set(raw) if raw else all_line_id_set
-            if target_lines <= s_lines:
+            if target_lines & s_lines:
                 matching_storno = s
                 break
         if not matching_storno:
             raise InvoiceStateMachineError("Storno required before Final for the selected vehicles")
 
-        # Compute final amount as proportional share of the storno for target cars
+        # Final is for the amount left to invoice (selling price - net invoiced after stornos)
         line_prices = {l["id"]: Decimal(str(l["selling_price_eur"])) for l in all_lines}
-        raw = matching_storno.get("line_ids")
-        if isinstance(raw, str):
-            raw = _json.loads(raw)
-        storno_lines = set(raw) if raw else all_line_id_set
-        storno_lines_total = sum(line_prices.get(lid, Decimal("0")) for lid in storno_lines)
         target_total = sum(line_prices.get(lid, Decimal("0")) for lid in target_lines)
-        storno_amount = abs(Decimal(str(matching_storno["total_amount_eur"])))
-        final_total = (target_total / storno_lines_total * storno_amount) if storno_lines_total else storno_amount
+
+        # Compute net invoiced per target car: invoices minus stornos
+        all_invoices = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.INVOICE)
+        all_stornos = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.STORNO)
+        net_invoiced = Decimal("0")
+        for inv in all_invoices:
+            raw = inv.get("line_ids")
+            if isinstance(raw, str):
+                raw = _json.loads(raw)
+            inv_lines = set(raw) if raw else all_line_id_set
+            covered_total = sum(line_prices.get(lid, Decimal("0")) for lid in inv_lines)
+            for lid in (inv_lines & target_lines):
+                share = (line_prices.get(lid, Decimal("0")) / covered_total * Decimal(str(inv["total_amount_eur"]))) if covered_total else Decimal("0")
+                net_invoiced += share
+        for s in all_stornos:
+            raw = s.get("line_ids")
+            if isinstance(raw, str):
+                raw = _json.loads(raw)
+            s_lines = set(raw) if raw else all_line_id_set
+            covered_total = sum(line_prices.get(lid, Decimal("0")) for lid in s_lines)
+            for lid in (s_lines & target_lines):
+                share = (line_prices.get(lid, Decimal("0")) / covered_total * abs(Decimal(str(s["total_amount_eur"])))) if covered_total else Decimal("0")
+                net_invoiced -= share
+        final_total = target_total - net_invoiced
 
         # Weighted average kurs from all prior invoices covering target cars
-        all_invoices = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.INVOICE)
         sum_eur_x_kurs = Decimal("0")
         sum_eur = Decimal("0")
         for inv in all_invoices:
@@ -364,6 +383,8 @@ class InvoiceStateMachine:
                 sum_eur_x_kurs += share * inv_kurs
                 sum_eur += share
         final_kurs = (sum_eur_x_kurs / sum_eur).quantize(Decimal("0.0001")) if sum_eur else None
+        if not final_kurs:
+            final_kurs = self._fetch_kurs(issued_date)
         final_ron = (final_total * final_kurs) if final_kurs else Decimal("0")
         self._check_invoice_number_unique(anexa_id, invoice_number, "FINAL")
         intocmit = self._resolve_intocmit(intocmit_de, created_by_user_id)
@@ -405,9 +426,6 @@ class InvoiceStateMachine:
 
         if "FINAL" in types:
             return []
-        if "STORNO" in types:
-            return ["FINAL"]
-
         actions = []
         proforma_seqs = {r["sequence_number"] for r in types.get("PROFORMA", [])}
         invoice_seqs = {r["sequence_number"] for r in types.get("INVOICE", [])}
@@ -418,7 +436,8 @@ class InvoiceStateMachine:
             anexa_lines = self.repo.get_lines_by_anexa(anexa_id)
             anexa_total = sum(Decimal(str(l["selling_price_eur"])) for l in anexa_lines)
             proformas_total = sum(Decimal(str(r["total_amount_eur"])) for r in types.get("PROFORMA", []))
-            if proformas_total < anexa_total:
+            storno_freed = sum(abs(Decimal(str(r["total_amount_eur"]))) for r in types.get("STORNO", []))
+            if proformas_total - storno_freed < anexa_total:
                 actions.append("PROFORMA")
 
         # Can issue invoice for unpaired proformas
@@ -428,6 +447,10 @@ class InvoiceStateMachine:
         # Can storno only if all proformas invoiced
         if proforma_seqs and proforma_seqs == invoice_seqs:
             actions.append("STORNO")
+
+        # After storno, FINAL is always available
+        if "STORNO" in types and "FINAL" not in actions:
+            actions.append("FINAL")
 
         return actions
 

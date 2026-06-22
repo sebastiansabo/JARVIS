@@ -52,6 +52,7 @@ interface InvoiceDetail {
   sequence_number: number; invoice_number: number | null
   total_amount_eur: number; total_amount_ron: number; kurs_applied: number | null
   intocmit_de: string | null; notes: string | null; line_ids: number[] | null; issued_date: string | null; created_at: string | null
+  reversed_invoice_ids?: number[]
 }
 
 interface AnexaDetail {
@@ -572,12 +573,11 @@ function getCarNextAction(line: AnexaLine): CarNextAction {
   const hasFinal = cov.some(c => c.invoice_type === 'FINAL')
   if (hasFinal) return 'COMPLETE'
   if (stornoCount > 0) {
-    // Check net invoiced: invoices - stornos. If rest ≈ 0 → FINAL, otherwise → PROFORMA
-    const invoicedEur = cov.filter(c => c.invoice_type === 'INVOICE').reduce((s, c) => s + (c.amount_eur || 0), 0)
-    const stornoEur = cov.filter(c => c.invoice_type === 'STORNO').reduce((s, c) => s + Math.abs(c.amount_eur || 0), 0)
-    const netRemaining = line.selling_price_eur - invoicedEur + stornoEur
-    if (Math.abs(netRemaining) < 1) return 'FINAL'
-    return 'PROFORMA'
+    // After storno, unpaired proformas need invoicing first
+    if (proformaCount > invoiceCount) return 'INVOICE'
+    // Storno exists and all proformas paired → FINAL is the next step
+    // (user can still choose Proforma via the secondary action button if needed)
+    return 'FINAL'
   }
   // Unmatched proforma → need invoice to confirm it
   if (proformaCount > invoiceCount) return 'INVOICE'
@@ -1286,8 +1286,21 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
   const lidSet = new Set(lineIds || [])
 
   // For storno: find invoices covering the selected cars that haven't been stornoed yet
+  // Build set of invoice IDs already reversed by stornos covering the selected cars
+  const alreadyStornoed = new Set<number>()
+  if (action === 'storno') {
+    for (const inv of (invoices || [])) {
+      if (inv.invoice_type !== 'STORNO' || !inv.reversed_invoice_ids?.length) continue
+      const stornoLids = inv.line_ids || (lines || []).map(l => l.id)
+      // If this storno covers any of the selected cars, its reversed invoices are excluded
+      if (stornoLids.some(id => lidSet.has(id))) {
+        for (const rid of inv.reversed_invoice_ids) alreadyStornoed.add(rid)
+      }
+    }
+  }
   const relevantInvoices = action === 'storno' ? (invoices || []).filter(inv => {
     if (inv.invoice_type !== 'INVOICE') return false
+    if (alreadyStornoed.has(inv.id)) return false
     const invLids = inv.line_ids || (lines || []).map(l => l.id)
     return invLids.some(id => lidSet.has(id))
   }) : []
@@ -1302,8 +1315,19 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
   })
 
+  // Compute per-invoice proportional share for selected cars only
+  const allLineIds = (lines || []).map(l => l.id)
+  const linePriceMap = new Map((lines || []).map(l => [l.id, l.selling_price_eur]))
+  const invoiceShare = (inv: InvoiceDetail) => {
+    const invLids = inv.line_ids || allLineIds
+    const coveredTotal = invLids.reduce((s, id) => s + (linePriceMap.get(id) || 0), 0)
+    if (!coveredTotal) return 0
+    const selectedShare = invLids.filter(id => lidSet.has(id)).reduce((s, id) => s + (linePriceMap.get(id) || 0), 0)
+    return inv.total_amount_eur * (selectedShare / coveredTotal)
+  }
+
   const stornoTotal = action === 'storno'
-    ? relevantInvoices.filter(i => selectedInvIds.has(i.id)).reduce((s, i) => s + i.total_amount_eur, 0)
+    ? relevantInvoices.filter(i => selectedInvIds.has(i.id)).reduce((s, i) => s + invoiceShare(i), 0)
     : selectedTotal
 
   const handleSubmit = async () => {
@@ -1360,7 +1384,7 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
                   <span className="font-mono text-muted-foreground">{inv.invoice_number || '—'}</span>
                   <span className="text-muted-foreground">{inv.issued_date ? new Date(inv.issued_date).toLocaleDateString('ro-RO') : ''}</span>
                   <span className="flex-1"></span>
-                  <span className="font-mono">{fmtEur(inv.total_amount_eur)} EUR</span>
+                  <span className="font-mono">{fmtEur(invoiceShare(inv))} EUR</span>
                 </label>
               ))}
               <div className="pt-1 border-t font-medium flex justify-between">

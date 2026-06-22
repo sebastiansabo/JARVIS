@@ -555,6 +555,22 @@ def api_get_anexa_detail(anexa_id):
     lines = [_line_to_dict(l) for l in raw_lines]
     all_line_ids = {l["id"] for l in lines}
     invoices = [_inv_to_dict(inv) for inv in _repo.get_invoices_by_anexa(anexa_id)]
+
+    # Enrich storno invoices with the IDs of invoices they reverse
+    storno_ids = [inv["id"] for inv in invoices if inv["invoice_type"] == "STORNO"]
+    if storno_ids:
+        ph = ",".join(["%s"] * len(storno_ids))
+        links = _repo.query_all(
+            f"SELECT source_invoice_id, target_invoice_id FROM facturare_invoice_links "
+            f"WHERE target_invoice_id IN ({ph}) AND link_type = 'REVERSES'",
+            tuple(storno_ids))
+        storno_reversal_map = {}  # storno_id -> [reversed_invoice_id, ...]
+        for lnk in links:
+            storno_reversal_map.setdefault(lnk["target_invoice_id"], []).append(lnk["source_invoice_id"])
+        for inv in invoices:
+            if inv["invoice_type"] == "STORNO":
+                inv["reversed_invoice_ids"] = storno_reversal_map.get(inv["id"], [])
+
     next_actions = _sm.get_next_actions(anexa_id)
     unpaired_raw = _sm.get_unpaired_proformas(anexa_id)
     unpaired = []
@@ -627,10 +643,11 @@ def api_get_anexa_detail(anexa_id):
         line["proforma_eur"] = round(max(line_proforma_eur.get(line["id"], 0), 0), 2)
         line["invoiced_eur"] = round(max(line_invoiced_eur.get(line["id"], 0), 0), 2)
 
-    # Compute remaining proforma capacity
+    # Compute remaining proforma capacity (stornos free up capacity)
     anexa_total = sum(float(l["selling_price_eur"]) for l in raw_lines)
     proformas_total = sum(inv["total_amount_eur"] for inv in invoices if inv["invoice_type"] == "PROFORMA")
-    remaining_eur = anexa_total - float(proformas_total)
+    storno_freed = sum(abs(inv["total_amount_eur"]) for inv in invoices if inv["invoice_type"] == "STORNO")
+    remaining_eur = anexa_total - float(proformas_total) + float(storno_freed)
 
     # Line-level stats
     lines_with_proforma = sum(1 for l in lines if l["status"] in ("PROFORMA", "INVOICED"))
