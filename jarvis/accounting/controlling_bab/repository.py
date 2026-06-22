@@ -114,9 +114,15 @@ class BabRepository(BaseRepository):
     # ── Report Config ──
 
     def get_config(self, company_id):
-        return self.query_all(
+        rows = self.query_all(
             'SELECT * FROM bab_report_config WHERE company_id = %s ORDER BY sort_order',
             (company_id,))
+        for row in rows:
+            if row.get('row_type') == 'subtotal':
+                row['indicator_ids'] = self.get_subtotal_refs(row['id'])
+            else:
+                row['indicator_ids'] = []
+        return rows
 
     def save_config_row(self, company_id, sort_order, kst, group_name, item_label, konto_list, row_type='sum', subtotal_of=None, is_main_total=False):
         return self.execute(
