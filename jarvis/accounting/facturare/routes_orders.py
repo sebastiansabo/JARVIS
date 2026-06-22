@@ -725,6 +725,7 @@ def api_issue_storno():
             anexa_id=req.anexa_id, invoice_number=req.invoice_number,
             issued_date=req.issued_date, intocmit_de=req.intocmit_de,
             notes=req.notes, line_ids=req.line_ids,
+            target_invoice_ids=req.target_invoice_ids,
             created_by_user_id=current_user.id,
         )
     except InvoiceStateMachineError as e:

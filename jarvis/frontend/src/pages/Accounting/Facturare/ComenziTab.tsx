@@ -940,7 +940,7 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
       unpairedProformas={unpairedProformas} defaultIntocmit={defaultIntocmit} onCreated={onCreated}
       preSelectedLineIds={selectedIds} invoiceDetails={detailInvoices} />
     <ActionDialog open={stornoOpen} onOpenChange={setStornoOpen} anexaId={detail.anexa_id} action="storno"
-      defaultIntocmit={defaultIntocmit} onCreated={onCreated} lineIds={[...selectedIds]} lines={lines} />
+      defaultIntocmit={defaultIntocmit} onCreated={onCreated} lineIds={[...selectedIds]} lines={lines} invoices={detailInvoices} />
     <ActionDialog open={finalOpen} onOpenChange={setFinalOpen} anexaId={detail.anexa_id} action="final"
       defaultIntocmit={defaultIntocmit} onCreated={onCreated} lineIds={[...selectedIds]} lines={lines} />
     </>
@@ -954,8 +954,13 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
   remainingEur: number; anexaTotalEur: number; lines: AnexaLine[]; invoices?: InvoiceDetail[]; defaultIntocmit?: string; onCreated: () => void
   preSelectedIds?: Set<number>
 }) {
-  // A car is "covered" (unselectable) only if its next action is NOT proforma
-  const coveredIds = new Set(lines.filter(l => getCarNextAction(l) !== 'PROFORMA').map(l => l.id))
+  // A car is selectable for proforma if next action is PROFORMA, or if it has remaining balance
+  const coveredIds = new Set(lines.filter(l => {
+    if (getCarNextAction(l) === 'PROFORMA') return false
+    const invoiced = l.invoiced_eur || 0
+    if (l.selling_price_eur - invoiced > 1) return false  // has rest → can issue proforma
+    return true
+  }).map(l => l.id))
   const uncoveredLines = lines.filter(l => !coveredIds.has(l.id))
   const defaultSelection = preSelectedIds && preSelectedIds.size > 0
     ? new Set([...preSelectedIds].filter(id => !coveredIds.has(id)))
@@ -974,7 +979,12 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
   // Reset selection and start number when dialog opens
   useEffect(() => {
     if (!open) return
-    const covered = new Set(lines.filter(l => getCarNextAction(l) !== 'PROFORMA').map(l => l.id))
+    const covered = new Set(lines.filter(l => {
+      if (getCarNextAction(l) === 'PROFORMA') return false
+      const invoiced = l.invoiced_eur || 0
+      if (l.selling_price_eur - invoiced > 1) return false
+      return true
+    }).map(l => l.id))
     if (preSelectedIds && preSelectedIds.size > 0) {
       setSelectedIds(new Set([...preSelectedIds].filter(id => !covered.has(id))))
     } else {
@@ -1260,21 +1270,45 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
 
 // ── Action Dialog (Storno / Final) ──────────────────────────────
 
-function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, onCreated, lineIds, lines }: {
+function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, onCreated, lineIds, lines, invoices }: {
   open: boolean; onOpenChange: (v: boolean) => void; anexaId: number; action: 'storno' | 'final'
-  defaultIntocmit?: string; onCreated: () => void; lineIds?: number[]; lines?: AnexaLine[]
+  defaultIntocmit?: string; onCreated: () => void; lineIds?: number[]; lines?: AnexaLine[]; invoices?: InvoiceDetail[]
 }) {
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [issuedDate, setIssuedDate] = useState(new Date().toISOString().split('T')[0])
   const [intocmitDe, setIntocmitDe] = useState(defaultIntocmit || '')
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [selectedInvIds, setSelectedInvIds] = useState<Set<number>>(new Set())
 
   const selectedLines = (lines || []).filter(l => lineIds?.includes(l.id))
   const selectedTotal = selectedLines.reduce((s, l) => s + l.selling_price_eur, 0)
+  const lidSet = new Set(lineIds || [])
+
+  // For storno: find invoices covering the selected cars that haven't been stornoed yet
+  const relevantInvoices = action === 'storno' ? (invoices || []).filter(inv => {
+    if (inv.invoice_type !== 'INVOICE') return false
+    const invLids = inv.line_ids || (lines || []).map(l => l.id)
+    return invLids.some(id => lidSet.has(id))
+  }) : []
+
+  // Pre-select all relevant invoices when dialog opens
+  useEffect(() => {
+    if (!open || action !== 'storno') return
+    setSelectedInvIds(new Set(relevantInvoices.map(i => i.id)))
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleInv = (id: number) => setSelectedInvIds(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
+  })
+
+  const stornoTotal = action === 'storno'
+    ? relevantInvoices.filter(i => selectedInvIds.has(i.id)).reduce((s, i) => s + i.total_amount_eur, 0)
+    : selectedTotal
 
   const handleSubmit = async () => {
     if (!invoiceNumber) { toast.error('Invoice No. required'); return }
+    if (action === 'storno' && selectedInvIds.size === 0) { toast.error('Select at least one invoice to reverse'); return }
     setSubmitting(true)
     try {
       const res = await fetch(`/facturare/api/invoices/${action}`, {
@@ -1285,6 +1319,7 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
           issued_date: issuedDate || undefined, intocmit_de: intocmitDe || undefined,
           notes: notes || undefined,
           line_ids: lineIds && lineIds.length > 0 ? lineIds : undefined,
+          ...(action === 'storno' ? { target_invoice_ids: [...selectedInvIds] } : {}),
         }),
       })
       const data = await res.json()
@@ -1314,6 +1349,24 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
                   <span className="font-mono">{fmtEur(l.selling_price_eur)}</span>
                 </div>
               ))}
+            </div>
+          )}
+          {action === 'storno' && relevantInvoices.length > 0 && (
+            <div className="rounded border p-2 text-xs space-y-1">
+              <div className="font-medium text-muted-foreground mb-1">Select invoices to reverse:</div>
+              {relevantInvoices.map(inv => (
+                <label key={inv.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded">
+                  <input type="checkbox" checked={selectedInvIds.has(inv.id)} onChange={() => toggleInv(inv.id)} className="rounded" />
+                  <span className="font-mono text-muted-foreground">{inv.invoice_number || '—'}</span>
+                  <span className="text-muted-foreground">{inv.issued_date ? new Date(inv.issued_date).toLocaleDateString('ro-RO') : ''}</span>
+                  <span className="flex-1"></span>
+                  <span className="font-mono">{fmtEur(inv.total_amount_eur)} EUR</span>
+                </label>
+              ))}
+              <div className="pt-1 border-t font-medium flex justify-between">
+                <span>Storno total:</span>
+                <span className="font-mono text-red-600">-{fmtEur(stornoTotal)} EUR</span>
+              </div>
             </div>
           )}
           <div className="grid grid-cols-3 gap-3">

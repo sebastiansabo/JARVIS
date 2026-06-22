@@ -85,6 +85,7 @@ class StornoCreateRequest(BaseModel):
     intocmit_de: Optional[str] = None
     notes: Optional[str] = None
     line_ids: Optional[list[int]] = None
+    target_invoice_ids: Optional[list[int]] = None  # specific invoices to reverse
 
 
 class FinalCreateRequest(BaseModel):
