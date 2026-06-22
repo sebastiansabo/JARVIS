@@ -758,7 +758,7 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
                   <SubtotalPicker
                     indicators={availableIndicators}
                     selected={newRow.subtotal_of || ''}
-                    onChange={v => setNewRow({ ...newRow, subtotal_of: v })}
+                    onChange={v => setNewRow(prev => ({ ...prev, subtotal_of: v }))}
                   />
                 ) : (
                   <Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={newRow.konto_list} onChange={e => setNewRow({ ...newRow, konto_list: e.target.value })} />
@@ -803,7 +803,7 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
                         <SubtotalPicker
                           indicators={availableIndicators}
                           selected={editRow.subtotal_of || ''}
-                          onChange={v => setEditRow({ ...editRow, subtotal_of: v })}
+                          onChange={v => setEditRow(prev => ({ ...prev, subtotal_of: v }))}
                         />
                       ) : (
                         <Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={editRow.konto_list} onChange={e => setEditRow({ ...editRow, konto_list: e.target.value })} />
