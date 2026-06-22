@@ -1147,34 +1147,36 @@ def api_generate_pdf(invoice_id):
         idx = int(car_idx)
         if 0 <= idx < len(order_lines):
             line = order_lines[idx]
+            inv_no = start_no if doc_mode == 'single_doc' else start_no + idx
             single_buf = io.BytesIO()
             from reportlab.lib.pagesizes import A4
             from reportlab.pdfgen import canvas as rc
             c = rc.Canvas(single_buf, pagesize=A4)
-            renderer.render_one(c, start_no, line)
+            renderer.render_one(c, inv_no, line)
             c.showPage()
             c.save()
             return send_file(io.BytesIO(single_buf.getvalue()), mimetype="application/pdf", as_attachment=True,
-                             download_name=f"{filename}_{start_no}.pdf")
+                             download_name=f"{filename}_{inv_no}.pdf")
 
     if mode == "individual" and len(order_lines) > 1:
         import zipfile
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for i, line in enumerate(order_lines):
+                inv_no = start_no if doc_mode == 'single_doc' else start_no + i
                 single_buf = io.BytesIO()
                 from reportlab.lib.pagesizes import A4
                 from reportlab.pdfgen import canvas as rc
                 c = rc.Canvas(single_buf, pagesize=A4)
-                renderer.render_one(c, start_no, line)
+                renderer.render_one(c, inv_no, line)
                 c.showPage()
                 c.save()
-                fname = f"{filename}_{start_no}_{line.model.replace(' ', '_')}_{i+1}.pdf"
+                fname = f"{filename}_{inv_no}_{line.model.replace(' ', '_')}_{i+1}.pdf"
                 zf.writestr(fname, single_buf.getvalue())
         zip_buf.seek(0)
         return send_file(zip_buf, mimetype="application/zip", as_attachment=True, download_name=f"{filename}.zip")
     else:
-        pdf_bytes = renderer.render_all_to_bytes(order_lines, start_no, same_number=True)
+        pdf_bytes = renderer.render_all_to_bytes(order_lines, start_no, same_number=(doc_mode == 'single_doc'))
         return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
 
 
