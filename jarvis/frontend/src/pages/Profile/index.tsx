@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTabParam } from '@/hooks/useTabParam'
 import {
@@ -35,6 +35,7 @@ import {
   ChevronUp,
   ClipboardList,
   Plus,
+  Ticket,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -76,7 +77,9 @@ import type { Invoice } from '@/types/invoices'
 import type { ProfileInvoice, ProfileActivity, ProfileBonus, OrgTreeNode } from '@/types/profile'
 import type { BioStarDayHistory, BioStarPunchLog, BioStarDailySummary, BioStarRangeSummary } from '@/types/biostar'
 
-type Tab = 'invoices' | 'hr-events' | 'pontaje' | 'team-pontaje' | 'sincron' | 'leave-permits' | 'activity'
+const VouchersPanel = lazy(() => import('./VouchersPanel'))
+
+type Tab = 'invoices' | 'hr-events' | 'pontaje' | 'team-pontaje' | 'sincron' | 'leave-permits' | 'activity' | 'vouchers'
 
 const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'invoices', label: 'My Invoices', icon: FileText },
@@ -86,6 +89,7 @@ const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'sincron', label: 'Sincron', icon: FileSpreadsheet },
   { key: 'leave-permits', label: 'Leave Permits', icon: ClipboardList },
   { key: 'activity', label: 'Activity Log', icon: Activity },
+  { key: 'vouchers', label: 'Vouchers', icon: Ticket },
 ]
 
 export default function Profile() {
@@ -234,6 +238,7 @@ export default function Profile() {
       {activeTab === 'sincron' && <SincronPanel />}
       {activeTab === 'leave-permits' && user && <LeavePermitsPanel userId={user.id} />}
       {activeTab === 'activity' && <ActivityPanel />}
+      {activeTab === 'vouchers' && <Suspense fallback={<div className="py-8 text-center text-muted-foreground">Loading...</div>}><VouchersPanel /></Suspense>}
     </div>
   )
 }

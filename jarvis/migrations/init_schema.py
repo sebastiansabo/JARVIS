@@ -28,6 +28,7 @@ from .domains.schema_facturare import create_schema_facturare
 from .domains.schema_time_bank import create_schema_time_bank
 from .domains.schema_ticketing import create_schema_ticketing
 from .domains.schema_controlling_bab import create_schema_controlling_bab
+from .domains.schema_vouchers import create_schema_vouchers
 from .version_manager import run_pending_migrations
 
 
@@ -62,6 +63,14 @@ def create_schema(conn, cursor):
     create_schema_time_bank(conn, cursor)
     create_schema_ticketing(conn, cursor)
     create_schema_controlling_bab(conn, cursor)
+    create_schema_vouchers(conn, cursor)
     create_schema_incremental(conn, cursor)
     run_pending_migrations(conn, cursor)
     conn.commit()
+
+    # Seed voucher issuance form (idempotent, needs forms table to exist)
+    try:
+        from accounting.vouchers.form_seed import ensure_voucher_form
+        ensure_voucher_form()
+    except Exception:
+        pass  # May fail during initial import chain; app.py will retry

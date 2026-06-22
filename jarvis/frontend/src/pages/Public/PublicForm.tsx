@@ -1,15 +1,23 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, lazy, Suspense } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { formsApi } from '@/api/forms'
 import { FormRenderer } from '@/components/forms/FormRenderer'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Ticket, ScanLine } from 'lucide-react'
+
+const VoucherRedeem = lazy(() => import('./VoucherRedeem'))
+
+const VOUCHER_SLUG = 'voucher-issuance'
 
 export default function PublicForm() {
   const { slug } = useParams<{ slug: string }>()
   const [searchParams] = useSearchParams()
   const [submitted, setSubmitted] = useState(false)
   const [thankYou, setThankYou] = useState('')
+  const [mode, setMode] = useState<'issue' | 'redeem'>('issue')
+
+  const isVoucherForm = slug === VOUCHER_SLUG
 
   const { data: form, isLoading, isError } = useQuery({
     queryKey: ['public-form', slug],
@@ -108,35 +116,69 @@ export default function PublicForm() {
       className="min-h-screen flex items-start justify-center p-4 pt-12"
       style={{ backgroundColor: branding.background_color || '#f9fafb' }}
     >
-      <div className="w-full max-w-xl">
-        <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
-          {branding.logo_url && (
-            <img src={branding.logo_url} alt="Logo" className="h-10 object-contain" />
-          )}
-          <div>
-            <h1
-              className="text-2xl font-bold"
-              style={{ color: branding.primary_color || undefined }}
+      <div className="w-full max-w-xl space-y-4">
+        {/* Issue / Redeem toggle — only for voucher form */}
+        {isVoucherForm && (
+          <div className="flex rounded-lg border bg-white p-1 gap-1">
+            <button
+              className={`flex-1 flex items-center justify-center gap-2 rounded-md py-2.5 text-sm font-medium transition-colors ${
+                mode === 'issue' ? 'bg-slate-800 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+              onClick={() => setMode('issue')}
             >
-              {form.name}
-            </h1>
-            {form.description && (
-              <p className="text-muted-foreground mt-1">{form.description}</p>
+              <Ticket className="h-4 w-4" />
+              Issue Voucher
+            </button>
+            <button
+              className={`flex-1 flex items-center justify-center gap-2 rounded-md py-2.5 text-sm font-medium transition-colors ${
+                mode === 'redeem' ? 'bg-slate-800 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+              onClick={() => setMode('redeem')}
+            >
+              <ScanLine className="h-4 w-4" />
+              Redeem Voucher
+            </button>
+          </div>
+        )}
+
+        {/* Issue form */}
+        {(!isVoucherForm || mode === 'issue') && (
+          <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+            {branding.logo_url && (
+              <img src={branding.logo_url} alt="Logo" className="h-10 object-contain" />
+            )}
+            <div>
+              <h1
+                className="text-2xl font-bold"
+                style={{ color: branding.primary_color || undefined }}
+              >
+                {form.name}
+              </h1>
+              {form.description && (
+                <p className="text-muted-foreground mt-1">{form.description}</p>
+              )}
+            </div>
+
+            <FormRenderer
+              schema={schema}
+              onSubmit={(answers) => submitMutation.mutate(answers)}
+              submitting={submitMutation.isPending}
+            />
+
+            {submitMutation.isError && (
+              <p className="text-sm text-destructive text-center">
+                {(submitMutation.error as any)?.error || 'Failed to submit. Please try again.'}
+              </p>
             )}
           </div>
+        )}
 
-          <FormRenderer
-            schema={schema}
-            onSubmit={(answers) => submitMutation.mutate(answers)}
-            submitting={submitMutation.isPending}
-          />
-
-          {submitMutation.isError && (
-            <p className="text-sm text-destructive text-center">
-              {(submitMutation.error as any)?.error || 'Failed to submit. Please try again.'}
-            </p>
-          )}
-        </div>
+        {/* Redeem view — only for voucher form */}
+        {isVoucherForm && mode === 'redeem' && (
+          <Suspense fallback={<div className="py-8 text-center text-muted-foreground">Loading...</div>}>
+            <VoucherRedeem />
+          </Suspense>
+        )}
 
         <p className="text-center text-xs text-muted-foreground mt-4">
           Powered by {form.company_name}

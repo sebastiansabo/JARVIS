@@ -83,16 +83,25 @@ export default function FormDetail() {
           actions={
             <div className="flex gap-2">
               {form.status === 'published' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    navigator.clipboard.writeText(`${window.location.origin}/forms/public/${form.slug}`)
-                    toast.success('Public link copied!')
-                  }}
-                >
-                  <ExternalLink className="h-4 w-4 mr-2" /> Copy Link
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open(`/f/${form.slug}`, '_blank')}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" /> Open Form
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/f/${form.slug}`)
+                      toast.success('Link copied!')
+                    }}
+                  >
+                    Copy Link
+                  </Button>
+                </>
               )}
               <Button variant="outline" size="sm" onClick={() => navigate(`/app/forms/builder/${form.id}`)}>
                 <Pencil className="h-4 w-4 mr-2" /> Edit
