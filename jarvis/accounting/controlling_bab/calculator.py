@@ -33,6 +33,12 @@ def compute_marja_report(entries, eur_rate, config=None):
     if config is None:
         config = _default_config()
 
+    # Build id → row_key map for ID-based subtotal resolution
+    id_to_key = {}
+    for row in sorted(config, key=lambda r: r.get('sort_order', 0)):
+        if row.get('id'):
+            id_to_key[row['id']] = f"{row['group_name']}|{row['item_label']}"
+
     # Compute each row value
     computed = OrderedDict()  # key = (group_name, item_label) → Decimal value
     for row in sorted(config, key=lambda r: r.get('sort_order', 0)):
@@ -41,25 +47,36 @@ def compute_marja_report(entries, eur_rate, config=None):
         group = row['group_name']
         row_key = f"{group}|{label}"
 
-        if row.get('row_type') == 'subtotal' and row.get('subtotal_of'):
-            # Subtotal: sum of referenced rows
-            # Supports both "Label" (legacy) and "Group → Label" (qualified) format
-            ref_labels = [s.strip() for s in row['subtotal_of'].split(',') if s.strip()]
-            total = Decimal('0')
-            for ref in ref_labels:
-                if '→' in ref:
-                    # Qualified: "Group → Label" → match "Group|Label"
-                    parts = ref.split('→', 1)
-                    ref_key = f"{parts[0].strip()}|{parts[1].strip()}"
-                    if ref_key in computed:
+        if row.get('row_type') == 'subtotal':
+            indicator_ids = row.get('indicator_ids') or []
+            if indicator_ids:
+                # New: resolve by row ID
+                total = Decimal('0')
+                for ind_id in indicator_ids:
+                    ref_key = id_to_key.get(ind_id)
+                    if ref_key and ref_key in computed:
                         total += computed[ref_key]
-                else:
-                    # Legacy: just label → match any row ending with |Label
-                    for ck, cv in computed.items():
-                        if ck.endswith(f'|{ref}'):
-                            total += cv
-                            break
-            computed[row_key] = total
+                computed[row_key] = total
+            elif row.get('subtotal_of'):
+                # Legacy fallback: string matching
+                ref_labels = [s.strip() for s in row['subtotal_of'].split(',') if s.strip()]
+                total = Decimal('0')
+                for ref in ref_labels:
+                    if '→' in ref:
+                        # Qualified: "Group → Label" → match "Group|Label"
+                        parts = ref.split('→', 1)
+                        ref_key = f"{parts[0].strip()}|{parts[1].strip()}"
+                        if ref_key in computed:
+                            total += computed[ref_key]
+                    else:
+                        # Legacy: just label → match any row ending with |Label
+                        for ck, cv in computed.items():
+                            if ck.endswith(f'|{ref}'):
+                                total += cv
+                                break
+                computed[row_key] = total
+            else:
+                computed[row_key] = Decimal('0')
         else:
             # Sum: aggregate from entries
             konto_str = row.get('konto_list', '')
