@@ -76,11 +76,6 @@ class InvoiceStateMachine:
                        created_by_user_id: int = 0,
                        doc_mode: str = "per_car") -> StoredInvoice:
         """Issue a Proforma for an Anexa (optionally for selected lines only)."""
-        # Check no STORNO yet
-        existing_storno = self.repo.get_invoice_by_anexa_and_type(anexa_id, InvoiceTypeEnum.STORNO)
-        if existing_storno:
-            raise InvoiceStateMachineError("Cannot add proforma after STORNO")
-
         # Check amount doesn't exceed anexa total value
         anexa_lines = self.repo.get_lines_by_anexa(anexa_id)
 
