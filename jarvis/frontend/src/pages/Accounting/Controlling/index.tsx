@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Upload, Lock, Unlock, FileSpreadsheet, AlertTriangle, Download, ChevronRight, ChevronDown, Plus, Trash2, Pencil, Save, X, Star } from 'lucide-react'
+import { Upload, Lock, Unlock, FileSpreadsheet, AlertTriangle, Download, ChevronRight, ChevronDown, Plus, Trash2, Pencil, Save, X, Star, Check } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { api } from '@/api/client'
@@ -747,8 +747,8 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
         <TableBody>
           {addingSum && (
             <TableRow className="bg-green-50/50">
-              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newSumRow.sort_order} onChange={e => setNewSumRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
-              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newSumRow.kst} onChange={e => setNewSumRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
+              <TableCell><Input type="number" className="h-7 w-20 text-xs" value={newSumRow.sort_order} onChange={e => setNewSumRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
+              <TableCell><Input type="number" className="h-7 w-20 text-xs" value={newSumRow.kst} onChange={e => setNewSumRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
               <TableCell><Input className="h-7 text-xs" placeholder="Grup" value={newSumRow.group_name} onChange={e => setNewSumRow(prev => ({ ...prev, group_name: e.target.value }))} /></TableCell>
               <TableCell><Input className="h-7 text-xs" placeholder="Indicator" value={newSumRow.item_label} onChange={e => setNewSumRow(prev => ({ ...prev, item_label: e.target.value }))} /></TableCell>
               <TableCell><Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={newSumRow.konto_list} onChange={e => setNewSumRow(prev => ({ ...prev, konto_list: e.target.value }))} /></TableCell>
@@ -766,8 +766,8 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
               <TableRow key={row.id}>
                 {isEditing ? (
                   <>
-                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.sort_order} onChange={e => setEditRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
-                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.kst} onChange={e => setEditRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
+                    <TableCell><Input type="number" className="h-7 w-20 text-xs" value={editRow.sort_order} onChange={e => setEditRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
+                    <TableCell><Input type="number" className="h-7 w-20 text-xs" value={editRow.kst} onChange={e => setEditRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
                     <TableCell><Input className="h-7 text-xs" value={editRow.group_name} onChange={e => setEditRow(prev => ({ ...prev, group_name: e.target.value }))} /></TableCell>
                     <TableCell><Input className="h-7 text-xs" value={editRow.item_label} onChange={e => setEditRow(prev => ({ ...prev, item_label: e.target.value }))} /></TableCell>
                     <TableCell><Input className="h-7 text-xs font-mono" value={editRow.konto_list} onChange={e => setEditRow(prev => ({ ...prev, konto_list: e.target.value }))} /></TableCell>
@@ -827,8 +827,8 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
         <TableBody>
           {addingTotal && (
             <TableRow className="bg-green-50/50">
-              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newTotalRow.sort_order} onChange={e => setNewTotalRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
-              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newTotalRow.kst} onChange={e => setNewTotalRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
+              <TableCell><Input type="number" className="h-7 w-20 text-xs" value={newTotalRow.sort_order} onChange={e => setNewTotalRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
+              <TableCell><Input type="number" className="h-7 w-20 text-xs" value={newTotalRow.kst} onChange={e => setNewTotalRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
               <TableCell><Input className="h-7 text-xs" placeholder="Grup" value={newTotalRow.group_name} onChange={e => setNewTotalRow(prev => ({ ...prev, group_name: e.target.value }))} /></TableCell>
               <TableCell>
                 <div className="space-y-1">
@@ -860,8 +860,8 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
               <TableRow key={row.id} className="bg-primary/5">
                 {isEditing ? (
                   <>
-                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.sort_order} onChange={e => setEditRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
-                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.kst} onChange={e => setEditRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
+                    <TableCell><Input type="number" className="h-7 w-20 text-xs" value={editRow.sort_order} onChange={e => setEditRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
+                    <TableCell><Input type="number" className="h-7 w-20 text-xs" value={editRow.kst} onChange={e => setEditRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
                     <TableCell><Input className="h-7 text-xs" value={editRow.group_name} onChange={e => setEditRow(prev => ({ ...prev, group_name: e.target.value }))} /></TableCell>
                     <TableCell>
                       <div className="space-y-1">
@@ -937,8 +937,8 @@ function SubtotalPicker({ indicators, selected, onToggle }: {
   selected: string
   onToggle: (qualified: string) => void
 }) {
-  // Compute directly — no useMemo to guarantee re-render reflects latest selected state
   const selectedSet = new Set(selected.split(',').map(s => s.trim()).filter(Boolean))
+  const selectedCount = selectedSet.size
 
   // Group indicators by group_name
   const grouped = useMemo(() => {
@@ -950,34 +950,68 @@ function SubtotalPicker({ indicators, selected, onToggle }: {
     return map
   }, [indicators])
 
+  const toggleGroup = (items: { qualified: string }[]) => {
+    const allSelected = items.every(i => selectedSet.has(i.qualified))
+    for (const item of items) {
+      if (allSelected) { if (selectedSet.has(item.qualified)) onToggle(item.qualified) }
+      else { if (!selectedSet.has(item.qualified)) onToggle(item.qualified) }
+    }
+  }
+
+  if (indicators.length === 0) return <span className="text-xs text-muted-foreground">Adaugă mai întâi rânduri de tip Sum</span>
+
   return (
-    <div className="space-y-1.5 py-0.5">
-      {[...grouped.entries()].map(([group, items]) => (
-        <div key={group}>
-          <div className="text-[10px] text-muted-foreground mb-0.5">{group}</div>
-          <div className="flex flex-wrap gap-1">
-            {items.map(item => {
-              const isSelected = selectedSet.has(item.qualified)
-              return (
+    <div className="space-y-2">
+      {/* Selected summary */}
+      {selectedCount > 0 && (
+        <div className="text-[11px] text-primary font-medium">{selectedCount} indicator{selectedCount !== 1 ? 'i' : ''} selecta{selectedCount !== 1 ? 'ți' : 't'}</div>
+      )}
+
+      {/* Grouped chips */}
+      <div className="space-y-2">
+        {[...grouped.entries()].map(([group, items]) => {
+          const groupAllSelected = items.every(i => selectedSet.has(i.qualified))
+          return (
+            <div key={group} className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{group}</span>
                 <button
-                  key={item.qualified}
                   type="button"
                   onPointerDown={e => e.stopPropagation()}
-                  onClick={e => { e.stopPropagation(); onToggle(item.qualified) }}
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors cursor-pointer ${
-                    isSelected
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  onClick={e => { e.stopPropagation(); toggleGroup(items) }}
+                  className={`text-[10px] px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                    groupAllSelected ? 'text-primary font-medium hover:text-primary/80' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  {item.label}
+                  {groupAllSelected ? 'Deselectează tot' : 'Selectează tot'}
                 </button>
-              )
-            })}
-          </div>
-        </div>
-      ))}
-      {indicators.length === 0 && <span className="text-xs text-muted-foreground">Adaugă mai întâi rânduri de tip Sum</span>}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {items.map(item => {
+                  const isSelected = selectedSet.has(item.qualified)
+                  return (
+                    <button
+                      key={item.qualified}
+                      type="button"
+                      onPointerDown={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); onToggle(item.qualified) }}
+                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${
+                        isSelected
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                      }`}
+                    >
+                      {isSelected && <Check className="h-3 w-3" />}
+                      {item.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
     </div>
   )
 }
