@@ -568,16 +568,18 @@ function getCarNextAction(line: AnexaLine): CarNextAction {
   const cov = line.covered_by || []
   const proformaCount = cov.filter(c => c.invoice_type === 'PROFORMA').length
   const invoiceCount = cov.filter(c => c.invoice_type === 'INVOICE').length
-  const hasStorno = cov.some(c => c.invoice_type === 'STORNO')
+  const stornoCount = cov.filter(c => c.invoice_type === 'STORNO').length
   const hasFinal = cov.some(c => c.invoice_type === 'FINAL')
   if (hasFinal) return 'COMPLETE'
-  if (hasStorno) return 'FINAL'
+  // Full storno (storno count matches or exceeds invoice count) → ready for FINAL
+  if (stornoCount > 0 && stornoCount >= invoiceCount) return 'FINAL'
+  // Partial storno (some invoices reversed but not all) → need new proforma cycle
+  if (stornoCount > 0 && stornoCount < invoiceCount) return 'PROFORMA'
   // Unmatched proforma → need invoice to confirm it
   if (proformaCount > invoiceCount) return 'INVOICE'
-  // All matched — check if fully covered by amount (proforma sum ≈ selling price)
-  const proformaEur = line.proforma_eur || 0
-  if (proformaCount > 0 && proformaEur >= line.selling_price_eur * 0.999) return 'STORNO'
-  // Need more proformas
+  // All proformas paired — storno available when at least one invoice exists
+  if (invoiceCount > 0) return 'STORNO'
+  // Need proformas
   return 'PROFORMA'
 }
 
