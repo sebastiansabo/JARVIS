@@ -209,6 +209,7 @@ class InvoiceStateMachine:
                      intocmit_de: str | None = None,
                      notes: str | None = None,
                      line_ids: list[int] | None = None,
+                     target_invoice_ids: list[int] | None = None,
                      created_by_user_id: int = 0) -> StoredInvoice:
         """Issue a Storno reversing INVOICES for selected cars (or all if no line_ids)."""
         import json as _json
@@ -233,20 +234,15 @@ class InvoiceStateMachine:
             inv_lines = set(raw) if raw else all_line_id_set
             return bool(inv_lines & target_lines)
 
-        relevant_invoices = [i for i in invoices if covers_target(i)]
+        # Filter to specific target invoices if provided, otherwise all covering target cars
+        if target_invoice_ids:
+            target_inv_set = set(target_invoice_ids)
+            relevant_invoices = [i for i in invoices if i["id"] in target_inv_set]
+        else:
+            relevant_invoices = [i for i in invoices if covers_target(i)]
 
         if not relevant_invoices:
             raise InvoiceStateMachineError("No invoices found for selected vehicles")
-
-        # Check that there are no unpaired proformas for the target cars
-        # (all issued proformas must have a matching invoice before storno)
-        relevant_proformas = [p for p in proformas if covers_target(p)]
-        proforma_seqs = {r["sequence_number"] for r in relevant_proformas}
-        invoice_seqs = {r["sequence_number"] for r in relevant_invoices}
-        unpaired = proforma_seqs - invoice_seqs
-        if unpaired:
-            raise InvoiceStateMachineError(
-                f"Proforma(s) #{', '.join(str(s) for s in sorted(unpaired))} not yet invoiced")
 
         # Sum proportional share of each invoice for the target cars
         line_prices = {l["id"]: Decimal(str(l["selling_price_eur"])) for l in all_lines}
