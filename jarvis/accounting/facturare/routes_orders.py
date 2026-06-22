@@ -607,21 +607,25 @@ def api_get_anexa_detail(anexa_id):
                 line_proforma_eur[lid] = line_proforma_eur.get(lid, 0) + share
             elif inv["invoice_type"] == "INVOICE":
                 line_invoiced_eur[lid] = line_invoiced_eur.get(lid, 0) + share
+            elif inv["invoice_type"] == "STORNO":
+                # Storno reverses: subtract from both proforma and invoiced
+                line_proforma_eur[lid] = line_proforma_eur.get(lid, 0) - abs(share)
+                line_invoiced_eur[lid] = line_invoiced_eur.get(lid, 0) - abs(share)
 
     # Enrich lines with coverage info + per-line amounts
     for line in lines:
         cov = line_coverage.get(line["id"], [])
-        proformas = [c for c in cov if c["invoice_type"] == "PROFORMA"]
-        inv_covers = [c for c in cov if c["invoice_type"] == "INVOICE"]
-        if inv_covers:
+        has_invoice = any(c["invoice_type"] == "INVOICE" for c in cov)
+        has_proforma = any(c["invoice_type"] == "PROFORMA" for c in cov)
+        if has_invoice:
             line["status"] = "INVOICED"
-        elif proformas:
+        elif has_proforma:
             line["status"] = "PROFORMA"
         else:
             line["status"] = "NONE"
         line["covered_by"] = cov
-        line["proforma_eur"] = round(line_proforma_eur.get(line["id"], 0), 2)
-        line["invoiced_eur"] = round(line_invoiced_eur.get(line["id"], 0), 2)
+        line["proforma_eur"] = round(max(line_proforma_eur.get(line["id"], 0), 0), 2)
+        line["invoiced_eur"] = round(max(line_invoiced_eur.get(line["id"], 0), 0), 2)
 
     # Compute remaining proforma capacity
     anexa_total = sum(float(l["selling_price_eur"]) for l in raw_lines)
