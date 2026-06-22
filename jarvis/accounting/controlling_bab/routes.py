@@ -415,6 +415,9 @@ def api_add_config_row():
         data['company_id'], data.get('sort_order', 0), data['kst'],
         data['group_name'], data['item_label'], data.get('konto_list', ''),
         data.get('row_type', 'sum'), data.get('subtotal_of'), data.get('is_main_total', False))
+    if data.get('row_type') == 'subtotal' and 'indicator_ids' in data:
+        _repo.set_subtotal_refs(row['id'], data['indicator_ids'])
+        row['indicator_ids'] = data['indicator_ids']
     return jsonify({'success': True, 'row': row})
 
 
@@ -432,6 +435,9 @@ def api_update_config_row(row_id):
         row_id, data.get('sort_order', 0), data['kst'],
         data['group_name'], data['item_label'], data.get('konto_list', ''),
         data.get('row_type', 'sum'), data.get('subtotal_of'), data.get('is_main_total', False))
+    if data.get('row_type') == 'subtotal' and 'indicator_ids' in data:
+        _repo.set_subtotal_refs(row['id'], data['indicator_ids'])
+        row['indicator_ids'] = data['indicator_ids']
     return jsonify({'success': True, 'row': row})
 
 
