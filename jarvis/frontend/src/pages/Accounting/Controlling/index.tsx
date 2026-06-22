@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Upload, Lock, Unlock, FileSpreadsheet, AlertTriangle, Download, ChevronRight, ChevronDown, Plus, Trash2, Pencil, Save, X, Star, Check } from 'lucide-react'
+import { Upload, Lock, Unlock, FileSpreadsheet, AlertTriangle, ChevronRight, ChevronDown, Plus, Trash2, Pencil, Save, X, Star, Check } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { api } from '@/api/client'
@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 // Tooltip removed — not used in current layout
 
 const MONTH_NAMES = ['', 'IAN', 'FEB', 'MAR', 'APR', 'MAI', 'IUN', 'IUL', 'AUG', 'SEP', 'OCT', 'NOI', 'DEC']
-const MONTH_NAMES_LONG = ['', 'Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie', 'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie']
+// MONTH_NAMES_LONG removed — cross-tab uses MONTH_NAMES (short)
 
 function fmtNum(value: number): string {
   return new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)
@@ -49,7 +49,7 @@ export default function Controlling() {
     window.history.replaceState({}, '', url.toString())
   }, [])
   const [showEur, setShowEur] = useState(false)
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  // expandedRows removed — Marja tab now uses cross-tab view
 
   // Import modal
   const [importModal, setImportModal] = useState<{ year: number; month: number; existing?: BabPeriod } | null>(null)
@@ -113,13 +113,6 @@ export default function Controlling() {
     enabled: !!verifyUploadId,
   })
 
-  const toggleRow = useCallback((key: string) => {
-    setExpandedRows(prev => {
-      const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
-      return next
-    })
-  }, [])
 
   // Import mutation
   const importMutation = useMutation({
@@ -225,92 +218,103 @@ export default function Controlling() {
             <div className="text-center py-12 text-muted-foreground">Se încarcă...</div>
           ) : importedPeriods.length === 0 ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground text-sm">Nicio perioadă importată. Folosește butonul "Import perioadă" pentru a începe.</CardContent></Card>
-          ) : (
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-6 px-1"></TableHead>
-                      <TableHead className="w-14">An</TableHead>
-                      <TableHead className="w-28">Perioadă</TableHead>
-                      <TableHead className="w-24">Status</TableHead>
-                      <TableHead className="text-right w-44">Marjă Finală (LEI)</TableHead>
-                      <TableHead className="text-right w-44">Marjă Finală (EUR)</TableHead>
-                      <TableHead className="w-28 text-right">Acțiuni</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {importedPeriods.map((p) => {
-                      const isExpanded = expandedRows.has(`period-${p.upload_id}`)
-                      const report = p.upload_id ? reports[p.upload_id] : null
-                      return (
-                        <Fragment key={p.upload_id}>
-                          <TableRow
-                            className="cursor-pointer"
-                            onClick={() => toggleRow(`period-${p.upload_id}`)}
-                          >
-                            <TableCell className="px-1 w-6">
-                              {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                            </TableCell>
-                            <TableCell className="font-medium">{p.year}</TableCell>
-                            <TableCell className="font-medium">{MONTH_NAMES_LONG[p.month]}</TableCell>
-                            <TableCell>
-                              {p.status === 'LOCKED' && (
-                                <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-100 rounded-full px-2 py-0.5">
-                                  <Lock className="h-2.5 w-2.5" /> Blocat
-                                </span>
-                              )}
-                              {p.status === 'IMPORTED' && (
-                                <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 rounded-full px-2 py-0.5">
-                                  ✓ Importat
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell className={`text-right font-mono tabular-nums ${p.marja_finala_lei != null && p.marja_finala_lei < 0 ? 'text-destructive' : ''}`}>
-                              {p.marja_finala_lei != null ? fmtNum(p.marja_finala_lei) : '—'}
-                            </TableCell>
-                            <TableCell className={`text-right font-mono tabular-nums ${p.marja_finala_eur != null && p.marja_finala_eur < 0 ? 'text-destructive' : ''}`}>
-                              {p.marja_finala_eur != null ? fmtNum(p.marja_finala_eur) : '—'}
-                            </TableCell>
-                            <TableCell className="text-right" onClick={e => e.stopPropagation()}>
-                              <div className="flex items-center justify-end gap-1">
-                                {p.status === 'IMPORTED' && (
-                                  <>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openImportModal(p.year, p.month, p)} title="Re-import"><Upload className="h-3.5 w-3.5" /></Button>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setLockConfirm(p)} title="Blochează"><Lock className="h-3.5 w-3.5" /></Button>
-                                  </>
-                                )}
-                                {p.status === 'LOCKED' && (
-                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => p.upload_id && unlockMutation.mutate(p.upload_id)} title="Deblochează"><Unlock className="h-3.5 w-3.5" /></Button>
-                                )}
-                                {p.upload_id && (
-                                  <a href={controllingApi.exportReport(p.upload_id)} target="_blank" rel="noreferrer">
-                                    <Button variant="ghost" size="icon" className="h-7 w-7" title="Export XLSX"><Download className="h-3.5 w-3.5" /></Button>
-                                  </a>
+          ) : (() => {
+            // Build cross-tab: rows = indicators, columns = months
+            const monthPeriods = importedPeriods.filter(p => p.upload_id && reports[p.upload_id!])
+            // Collect all unique rows across all reports (preserving order from first report)
+            const allRowKeys: { section: string; label: string; row_type: string }[] = []
+            const seenKeys = new Set<string>()
+            for (const p of monthPeriods) {
+              const r = reports[p.upload_id!]
+              if (!r) continue
+              for (const sec of r.sections) {
+                for (const row of sec.rows) {
+                  const key = `${sec.section}|${row.label}`
+                  if (!seenKeys.has(key)) { seenKeys.add(key); allRowKeys.push({ section: sec.section, label: row.label, row_type: row.row_type || 'sum' }) }
+                }
+              }
+            }
+            // Group rows by section
+            const sections: { section: string; rows: { label: string; row_type: string }[] }[] = []
+            let currentSection = ''
+            for (const rk of allRowKeys) {
+              if (rk.section !== currentSection) { currentSection = rk.section; sections.push({ section: rk.section, rows: [] }) }
+              sections[sections.length - 1].rows.push({ label: rk.label, row_type: rk.row_type })
+            }
+            // Helper to look up a value
+            const getValue = (uploadId: number, sectionName: string, label: string): { lei: number; eur: number } | null => {
+              const r = reports[uploadId]
+              if (!r) return null
+              for (const sec of r.sections) {
+                if (sec.section === sectionName) {
+                  for (const row of sec.rows) { if (row.label === label) return { lei: row.lei, eur: row.eur } }
+                }
+              }
+              return null
+            }
+            return (
+              <div className="border rounded-lg overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="text-left px-4 py-2.5 font-semibold text-xs min-w-[250px] sticky left-0 bg-muted/50 z-10">Indicator</th>
+                        {monthPeriods.map(p => (
+                          <th key={p.upload_id} className="text-right px-3 py-2.5 font-semibold text-xs min-w-[130px]">
+                            <div className="flex items-center justify-end gap-1">
+                              <div className="text-right">
+                                <div>{MONTH_NAMES[p.month]}</div>
+                                <div className="text-[10px] text-muted-foreground font-normal">{p.year}</div>
+                                {reports[p.upload_id!]?.eur_rate && (
+                                  <div className="text-[9px] text-muted-foreground font-normal">1 EUR = {reports[p.upload_id!].eur_rate} LEI</div>
                                 )}
                               </div>
-                            </TableCell>
-                          </TableRow>
-                          {/* Expanded: cascaded margin report breakdown */}
-                          {isExpanded && report && (
-                            <tr className="border-b">
-                              <td colSpan={7} className="p-0">
-                                <ExpandedReport report={report} />
-                              </td>
-                            </tr>
-                          )}
+                              <div className="flex gap-0.5" onClick={e => e.stopPropagation()}>
+                                {p.status === 'IMPORTED' && (
+                                  <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setLockConfirm(p)} title="Blochează"><Lock className="h-2.5 w-2.5" /></Button>
+                                )}
+                                {p.status === 'LOCKED' && (
+                                  <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => p.upload_id && unlockMutation.mutate(p.upload_id)} title="Deblochează"><Unlock className="h-2.5 w-2.5" /></Button>
+                                )}
+                              </div>
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sections.map(sec => (
+                        <Fragment key={sec.section}>
+                          <tr className="bg-muted/30">
+                            <td colSpan={monthPeriods.length + 1} className="px-4 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{sec.section}</td>
+                          </tr>
+                          {sec.rows.map(row => {
+                            const isSubtotal = row.row_type === 'subtotal'
+                            return (
+                              <tr key={`${sec.section}|${row.label}`} className={`border-b border-border/30 ${isSubtotal ? 'bg-primary/5 font-semibold' : 'hover:bg-muted/20'}`}>
+                                <td className={`px-4 py-1.5 sticky left-0 z-10 ${isSubtotal ? 'bg-primary/5 font-bold text-sm' : 'pl-8 bg-background'}`}>{row.label}</td>
+                                {monthPeriods.map(p => {
+                                  const val = getValue(p.upload_id!, sec.section, row.label)
+                                  if (!val) return <td key={p.upload_id} className="text-right px-3 py-1.5 text-muted-foreground">—</td>
+                                  return (
+                                    <td key={p.upload_id} className="text-right px-3 py-1.5">
+                                      <div className={`font-mono tabular-nums font-bold text-sm ${val.eur < 0 ? 'text-destructive' : ''}`}>{fmtNum(val.eur)} <span className="text-[9px] font-normal text-muted-foreground">EUR</span></div>
+                                      <div className={`font-mono tabular-nums text-[10px] text-muted-foreground ${val.lei < 0 ? 'text-destructive' : ''}`}>{fmtNum(val.lei)} <span className="text-[8px]">LEI</span></div>
+                                    </td>
+                                  )
+                                })}
+                              </tr>
+                            )
+                          })}
                         </Fragment>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-                <div className="border-t px-4 py-2 text-xs text-muted-foreground">
-                  {importedPeriods.length} perioad{importedPeriods.length !== 1 ? 'e' : 'ă'} importat{importedPeriods.length !== 1 ? 'e' : 'ă'}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="border-t px-4 py-2 text-xs text-muted-foreground">
+                    {monthPeriods.length} perioad{monthPeriods.length !== 1 ? 'e' : 'ă'} &middot; Valori: <span className="font-bold">EUR</span> / <span className="text-[10px]">LEI</span>
+                  </div>
+              </div>
+            )
+          })()}
         </TabsContent>
 
         {/* ═══ TAB: Verificare ═══ */}
@@ -479,58 +483,6 @@ export default function Controlling() {
    Expanded Report — cascaded section/row view
    ═══════════════════════════════════════════ */
 
-function ExpandedReport({ report }: { report: MarjaReportData }) {
-  return (
-    <div className="border-l-2 border-l-primary/30 shadow-[inset_0_1px_0_0_hsl(var(--border)),inset_0_-1px_0_0_hsl(var(--border))]">
-      {report.sections.map((section) => (
-        <Fragment key={section.section}>
-          {/* Section label */}
-          <div className="px-8 py-1 bg-muted/40 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-            {section.section}
-          </div>
-          {/* Rows */}
-          {section.rows.map((row, ri) => {
-            const isSubtotal = row.row_type === 'subtotal'
-            if (isSubtotal) {
-              // Subtotal at top level — same as period row
-              return (
-                <div key={ri} className="flex items-center justify-between border-b border-border/30 font-semibold" style={{ backgroundColor: 'hsl(0 0% 90%)' }}>
-                  <div className="py-2 pl-4 text-sm font-bold">{row.label}</div>
-                  <div className="flex shrink-0">
-                    <div className="w-44 text-right px-4 py-2 font-mono tabular-nums text-sm">{fmtNum(row.lei)}</div>
-                    <div className="w-44 text-right px-4 py-2 font-mono tabular-nums text-sm">{fmtNum(row.eur)}</div>
-                  </div>
-                </div>
-              )
-            }
-            return (
-              <div
-                key={ri}
-                className="flex items-center justify-between border-b border-border/30 hover:bg-muted/30"
-              >
-                <div className="py-1.5 text-sm pl-14">
-                  {row.label}
-                </div>
-                <div className="flex shrink-0">
-                  <div className={`w-44 text-right px-4 py-1.5 font-mono tabular-nums text-sm ${
-                    isSubtotal ? '' : row.lei < 0 ? 'text-destructive' : ''
-                  }`}>
-                    {fmtNum(row.lei)}
-                  </div>
-                  <div className={`w-44 text-right px-4 py-1.5 font-mono tabular-nums text-sm ${
-                    isSubtotal ? '' : row.eur < 0 ? 'text-destructive' : ''
-                  }`}>
-                    {fmtNum(row.eur)}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </Fragment>
-      ))}
-    </div>
-  )
-}
 
 
 function VerificationTable({ accounts, totalEntries }: { accounts: BabAccountGroup[]; totalEntries: number; allPeriods?: BabPeriod[] }) {
@@ -721,85 +673,143 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
         </Select>
       </div>
 
-      {/* ── Table 1: Indicatori (sum rows) ── */}
-      <div className="flex items-center justify-between mb-2">
+      {/* ── Indicatori (sum rows) — grouped by group_name+kst ── */}
+      <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="text-sm font-semibold">Indicatori</h3>
-          <p className="text-xs text-muted-foreground">Conturi și grupuri pentru raportul de marjă</p>
+          <p className="text-xs text-muted-foreground">Definește grupuri, apoi adaugă indicatori cu conturi contabile</p>
         </div>
-        <Button size="sm" variant="outline" onClick={() => setAddingSum(true)} disabled={addingSum}>
-          <Plus className="h-3.5 w-3.5 mr-1" /> Adaugă indicator
+        <Button size="sm" variant="outline" onClick={() => { setAddingSum(true); setNewSumRow({ kst: 0, row_type: 'sum', sort_order: 0, konto_list: '', group_name: '', item_label: '' }) }}>
+          <Plus className="h-3.5 w-3.5 mr-1" /> Adaugă grup nou
         </Button>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-14">Poziție</TableHead>
-            <TableHead className="w-16">KST</TableHead>
-            <TableHead>Grup</TableHead>
-            <TableHead>Indicator</TableHead>
-            <TableHead>Conturi</TableHead>
-            <TableHead className="w-20">Acțiuni</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {addingSum && (
-            <TableRow className="bg-green-50/50">
-              <TableCell><Input type="number" className="h-7 w-20 text-xs" value={newSumRow.sort_order} onChange={e => setNewSumRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
-              <TableCell><Input type="number" className="h-7 w-20 text-xs" value={newSumRow.kst} onChange={e => setNewSumRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
-              <TableCell><Input className="h-7 text-xs" placeholder="Grup" value={newSumRow.group_name} onChange={e => setNewSumRow(prev => ({ ...prev, group_name: e.target.value }))} /></TableCell>
-              <TableCell><Input className="h-7 text-xs" placeholder="Indicator" value={newSumRow.item_label} onChange={e => setNewSumRow(prev => ({ ...prev, item_label: e.target.value }))} /></TableCell>
-              <TableCell><Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={newSumRow.konto_list} onChange={e => setNewSumRow(prev => ({ ...prev, konto_list: e.target.value }))} /></TableCell>
-              <TableCell>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => addMutation.mutate(newSumRow)}><Save className="h-3 w-3" /></Button>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAddingSum(false)}><X className="h-3 w-3" /></Button>
+      {(() => {
+        // Group sum rows by "group_name|kst"
+        const groups = new Map<string, { group_name: string; kst: number; rows: BabConfigRow[] }>()
+        for (const r of sumRows) {
+          const key = `${r.group_name}|${r.kst}`
+          if (!groups.has(key)) groups.set(key, { group_name: r.group_name, kst: r.kst, rows: [] })
+          groups.get(key)!.rows.push(r)
+        }
+        const addingToGroup = addingSum && newSumRow.group_name && newSumRow.kst
+        return (
+          <div className="space-y-3 mb-6">
+            {[...groups.entries()].map(([key, { group_name, kst, rows: groupRows }]) => (
+              <div key={key} className="border rounded-lg overflow-hidden">
+                <div className="bg-muted/50 px-4 py-2 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold">{group_name}</span>
+                    <span className="text-xs font-mono text-muted-foreground bg-background px-1.5 py-0.5 rounded">KST {kst}</span>
+                    <span className="text-xs text-muted-foreground">{groupRows.length} indicator{groupRows.length !== 1 ? 'i' : ''}</span>
+                  </div>
+                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setAddingSum(true); setNewSumRow({ kst, row_type: 'sum', sort_order: Math.max(0, ...groupRows.map(r => r.sort_order)) + 5, konto_list: '', group_name, item_label: '' }) }}>
+                    <Plus className="h-3 w-3 mr-1" /> Indicator
+                  </Button>
                 </div>
-              </TableCell>
-            </TableRow>
-          )}
-          {sumRows.map((row) => {
-            const isEditing = editingId === row.id
-            return (
-              <TableRow key={row.id}>
-                {isEditing ? (
-                  <>
-                    <TableCell><Input type="number" className="h-7 w-20 text-xs" value={editRow.sort_order} onChange={e => setEditRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
-                    <TableCell><Input type="number" className="h-7 w-20 text-xs" value={editRow.kst} onChange={e => setEditRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
-                    <TableCell><Input className="h-7 text-xs" value={editRow.group_name} onChange={e => setEditRow(prev => ({ ...prev, group_name: e.target.value }))} /></TableCell>
-                    <TableCell><Input className="h-7 text-xs" value={editRow.item_label} onChange={e => setEditRow(prev => ({ ...prev, item_label: e.target.value }))} /></TableCell>
-                    <TableCell><Input className="h-7 text-xs font-mono" value={editRow.konto_list} onChange={e => setEditRow(prev => ({ ...prev, konto_list: e.target.value }))} /></TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateMutation.mutate({ id: row.id!, row: editRow })}><Save className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditingId(null)}><X className="h-3 w-3" /></Button>
-                      </div>
-                    </TableCell>
-                  </>
-                ) : (
-                  <>
-                    <TableCell className="text-xs text-muted-foreground">{row.sort_order}</TableCell>
-                    <TableCell className="font-mono text-xs">{row.kst}</TableCell>
-                    <TableCell className="text-xs">{row.group_name}</TableCell>
-                    <TableCell className="text-xs">{row.item_label}</TableCell>
-                    <TableCell className="text-xs font-mono text-muted-foreground">{row.konto_list || '—'}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => startEdit(row)}><Pencil className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => row.id && deleteMutation.mutate(row.id)}><Trash2 className="h-3 w-3" /></Button>
-                      </div>
-                    </TableCell>
-                  </>
-                )}
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
-      <div className="border-t px-4 py-2 text-xs text-muted-foreground mb-6">
-        {sumRows.length} indicatori configurați
-      </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-14">Poz.</TableHead>
+                      <TableHead>Indicator</TableHead>
+                      <TableHead>Conturi</TableHead>
+                      <TableHead className="w-20">Acțiuni</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groupRows.map(row => {
+                      const isEditing = editingId === row.id
+                      return (
+                        <TableRow key={row.id}>
+                          {isEditing ? (
+                            <>
+                              <TableCell><Input type="number" className="h-7 w-20 text-xs" value={editRow.sort_order} onChange={e => setEditRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
+                              <TableCell><Input className="h-7 text-xs" value={editRow.item_label} onChange={e => setEditRow(prev => ({ ...prev, item_label: e.target.value }))} /></TableCell>
+                              <TableCell><Input className="h-7 text-xs font-mono" value={editRow.konto_list} onChange={e => setEditRow(prev => ({ ...prev, konto_list: e.target.value }))} /></TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateMutation.mutate({ id: row.id!, row: editRow })}><Save className="h-3 w-3" /></Button>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditingId(null)}><X className="h-3 w-3" /></Button>
+                                </div>
+                              </TableCell>
+                            </>
+                          ) : (
+                            <>
+                              <TableCell className="text-xs text-muted-foreground">{row.sort_order}</TableCell>
+                              <TableCell className="text-xs">{row.item_label}</TableCell>
+                              <TableCell className="text-xs font-mono text-muted-foreground">{row.konto_list || '—'}</TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => startEdit(row)}><Pencil className="h-3 w-3" /></Button>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => row.id && deleteMutation.mutate(row.id)}><Trash2 className="h-3 w-3" /></Button>
+                                </div>
+                              </TableCell>
+                            </>
+                          )}
+                        </TableRow>
+                      )
+                    })}
+                    {addingSum && newSumRow.group_name === group_name && newSumRow.kst === kst && (
+                      <TableRow className="bg-green-50/50">
+                        <TableCell><Input type="number" className="h-7 w-20 text-xs" value={newSumRow.sort_order} onChange={e => setNewSumRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
+                        <TableCell><Input className="h-7 text-xs" placeholder="Indicator" value={newSumRow.item_label} onChange={e => setNewSumRow(prev => ({ ...prev, item_label: e.target.value }))} /></TableCell>
+                        <TableCell><Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={newSumRow.konto_list} onChange={e => setNewSumRow(prev => ({ ...prev, konto_list: e.target.value }))} /></TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => addMutation.mutate(newSumRow)}><Save className="h-3 w-3" /></Button>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAddingSum(false)}><X className="h-3 w-3" /></Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            ))}
+
+            {/* New group form */}
+            {addingSum && !addingToGroup && (
+              <div className="border rounded-lg border-dashed border-green-300 bg-green-50/30 p-4 space-y-3">
+                <div className="text-xs font-semibold text-muted-foreground">Grup nou</div>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <Label className="text-xs text-muted-foreground mb-1">Nume grup</Label>
+                    <Input className="h-8 text-xs" placeholder="ex: VW PKW INTERN (retail)" value={newSumRow.group_name} onChange={e => setNewSumRow(prev => ({ ...prev, group_name: e.target.value }))} />
+                  </div>
+                  <div className="w-24">
+                    <Label className="text-xs text-muted-foreground mb-1">KST</Label>
+                    <Input type="number" className="h-8 w-24 text-xs" placeholder="211" value={newSumRow.kst || ''} onChange={e => setNewSumRow(prev => ({ ...prev, kst: Number(e.target.value) }))} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <Label className="text-xs text-muted-foreground mb-1">Primul indicator</Label>
+                    <Input className="h-8 text-xs" placeholder="ex: Venit Sales realizat" value={newSumRow.item_label} onChange={e => setNewSumRow(prev => ({ ...prev, item_label: e.target.value }))} />
+                  </div>
+                  <div className="flex-1">
+                    <Label className="text-xs text-muted-foreground mb-1">Conturi</Label>
+                    <Input className="h-8 text-xs font-mono" placeholder="707111,707116" value={newSumRow.konto_list} onChange={e => setNewSumRow(prev => ({ ...prev, konto_list: e.target.value }))} />
+                  </div>
+                  <div className="w-20">
+                    <Label className="text-xs text-muted-foreground mb-1">Poz.</Label>
+                    <Input type="number" className="h-8 w-20 text-xs" value={newSumRow.sort_order} onChange={e => setNewSumRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => addMutation.mutate(newSumRow)}><Save className="h-3.5 w-3.5 mr-1" /> Salvează</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setAddingSum(false)}>Anulează</Button>
+                </div>
+              </div>
+            )}
+
+            {groups.size === 0 && !addingSum && (
+              <div className="text-center py-6 text-sm text-muted-foreground">Niciun indicator configurat. Adaugă un grup nou pentru a începe.</div>
+            )}
+
+            <div className="text-xs text-muted-foreground">{sumRows.length} indicatori în {groups.size} grupuri</div>
+          </div>
+        )
+      })()}
 
       {/* ── Table 2: Totaluri (subtotal rows) ── */}
       <div className="flex items-center justify-between mb-2">
@@ -938,10 +948,9 @@ function SubtotalPicker({ indicators, selectedIds, onToggle }: {
   selectedIds: number[]
   onToggle: (id: number) => void
 }) {
-  // Computed directly (no useMemo) so every render gets the latest selectedIds
+  const [open, setOpen] = useState(false)
   const selectedCount = selectedIds.length
 
-  // Group indicators by group_name
   const grouped = useMemo(() => {
     const map = new Map<string, { id: number; label: string }[]>()
     for (const ind of indicators) {
@@ -951,68 +960,63 @@ function SubtotalPicker({ indicators, selectedIds, onToggle }: {
     return map
   }, [indicators])
 
-  const toggleGroup = (items: { id: number }[]) => {
-    const allSelected = items.every(i => selectedIds.includes(i.id))
-    for (const item of items) {
-      if (allSelected) { if (selectedIds.includes(item.id)) onToggle(item.id) }
-      else { if (!selectedIds.includes(item.id)) onToggle(item.id) }
-    }
-  }
-
-  if (indicators.length === 0) return <span className="text-xs text-muted-foreground">Adaugă mai întâi rânduri de tip Sum</span>
+  if (indicators.length === 0) return <span className="text-xs text-muted-foreground">Adaugă mai întâi indicatori</span>
 
   return (
     <div className="space-y-2">
-      {/* Selected summary */}
-      {selectedCount > 0 && (
-        <div className="text-[11px] text-primary font-medium">{selectedCount} indicator{selectedCount !== 1 ? 'i' : ''} selecta{selectedCount !== 1 ? 'ți' : 't'}</div>
+      {/* Dropdown trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen(p => !p)}
+        className="flex items-center justify-between w-full h-8 px-3 rounded-md border border-input bg-transparent text-xs cursor-pointer hover:bg-accent/50 transition-colors"
+      >
+        <span className={selectedCount > 0 ? 'text-foreground' : 'text-muted-foreground'}>
+          {selectedCount > 0 ? `${selectedCount} indicator${selectedCount !== 1 ? 'i' : ''} selecta${selectedCount !== 1 ? 'ți' : 't'}` : 'Selectează indicatori...'}
+        </span>
+        <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* Dropdown panel */}
+      {open && (
+        <div className="border rounded-md bg-popover shadow-md max-h-60 overflow-y-auto">
+          {[...grouped.entries()].map(([group, items]) => (
+            <div key={group}>
+              <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide bg-muted/50 sticky top-0">{group}</div>
+              {items.map(item => {
+                const isSelected = selectedIds.includes(item.id)
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onToggle(item.id)}
+                    className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent/50 cursor-pointer transition-colors"
+                  >
+                    <div className={`flex items-center justify-center h-4 w-4 rounded border ${isSelected ? 'bg-primary border-primary' : 'border-input'}`}>
+                      {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                    </div>
+                    {item.label}
+                  </button>
+                )
+              })}
+            </div>
+          ))}
+        </div>
       )}
 
-      {/* Grouped chips */}
-      <div className="space-y-2">
-        {[...grouped.entries()].map(([group, items]) => {
-          const groupAllSelected = items.every(i => selectedIds.includes(i.id))
-          return (
-            <div key={group} className="space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{group}</span>
-                <button
-                  type="button"
-                  onPointerDown={e => e.stopPropagation()}
-                  onClick={e => { e.stopPropagation(); toggleGroup(items) }}
-                  className={`text-[10px] px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
-                    groupAllSelected ? 'text-primary font-medium hover:text-primary/80' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {groupAllSelected ? 'Deselectează tot' : 'Selectează tot'}
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {items.map(item => {
-                  const isSelected = selectedIds.includes(item.id)
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onPointerDown={e => e.stopPropagation()}
-                      onClick={e => { e.stopPropagation(); onToggle(item.id) }}
-                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${
-                        isSelected
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground'
-                      }`}
-                    >
-                      {isSelected && <Check className="h-3 w-3" />}
-                      {item.label}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
+      {/* Selected chips */}
+      {selectedCount > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {selectedIds.map(id => {
+            const ind = indicators.find(i => i.id === id)
+            return ind ? (
+              <span key={id} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary font-medium">
+                {ind.label}
+                <button type="button" onClick={() => onToggle(id)} className="hover:text-destructive cursor-pointer"><X className="h-3 w-3" /></button>
+              </span>
+            ) : null
+          })}
+        </div>
+      )}
     </div>
   )
 }
