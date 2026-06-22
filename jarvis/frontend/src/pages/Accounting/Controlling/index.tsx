@@ -882,7 +882,8 @@ function SubtotalPicker({ indicators, selected, onToggle }: {
   selected: string
   onToggle: (qualified: string) => void
 }) {
-  const selectedSet = useMemo(() => new Set(selected.split(',').map(s => s.trim()).filter(Boolean)), [selected])
+  // Compute directly — no useMemo to guarantee re-render reflects latest selected state
+  const selectedSet = new Set(selected.split(',').map(s => s.trim()).filter(Boolean))
 
   // Group indicators by group_name
   const grouped = useMemo(() => {
