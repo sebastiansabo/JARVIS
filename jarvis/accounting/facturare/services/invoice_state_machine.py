@@ -179,7 +179,7 @@ class InvoiceStateMachine:
         if isinstance(proforma_line_ids, str):
             proforma_line_ids = _json.loads(proforma_line_ids)
 
-        effective_doc_mode = doc_mode or proforma_row.get("doc_mode", "per_car")
+        effective_doc_mode = doc_mode if doc_mode else proforma_row.get("doc_mode", "per_car")
         inv_row = self.repo.create_invoice(
             anexa_id=anexa_id,
             invoice_type=InvoiceTypeEnum.INVOICE,

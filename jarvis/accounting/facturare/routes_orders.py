@@ -697,7 +697,7 @@ def api_issue_invoice():
             invoice_number=req.invoice_number, issued_date=req.issued_date,
             intocmit_de=req.intocmit_de, notes=req.notes,
             created_by_user_id=current_user.id,
-            doc_mode=req.doc_mode if req.doc_mode != "per_car" else None,
+            doc_mode=req.doc_mode,
         )
     except InvoiceStateMachineError as e:
         return error_response(str(e), 409)
