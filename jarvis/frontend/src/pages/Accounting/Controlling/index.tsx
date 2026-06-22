@@ -740,7 +740,7 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
               <TableCell><Input className="h-7 text-xs" placeholder="Grup" value={newRow.group_name} onChange={e => { const v = e.target.value; setNewRow(prev => ({ ...prev, group_name: v })) }} /></TableCell>
               <TableCell><Input className="h-7 text-xs" placeholder="Indicator" value={newRow.item_label} onChange={e => { const v = e.target.value; setNewRow(prev => ({ ...prev, item_label: v })) }} /></TableCell>
               <TableCell>
-                <div className="space-y-1">
+                <div className="space-y-1 overflow-hidden">
                   <Select value={newRow.row_type || 'sum'} onValueChange={v => setNewRow(prev => ({ ...prev, row_type: v as 'sum' | 'subtotal', konto_list: v === 'subtotal' ? '' : prev.konto_list, subtotal_of: v === 'subtotal' ? (prev.subtotal_of || '') : null, is_main_total: v === 'subtotal' ? prev.is_main_total : false }))}>
                     <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent><SelectItem value="sum">Sum</SelectItem><SelectItem value="subtotal">Subtotal</SelectItem></SelectContent>
@@ -789,7 +789,7 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
                     <TableCell><Input className="h-7 text-xs" value={editRow.group_name} onChange={e => { const v = e.target.value; setEditRow(prev => ({ ...prev, group_name: v })) }} /></TableCell>
                     <TableCell><Input className="h-7 text-xs" value={editRow.item_label} onChange={e => { const v = e.target.value; setEditRow(prev => ({ ...prev, item_label: v })) }} /></TableCell>
                     <TableCell>
-                      <div className="space-y-1">
+                      <div className="space-y-1 overflow-hidden">
                         <Select value={editRow.row_type || 'sum'} onValueChange={v => setEditRow(prev => ({ ...prev, row_type: v as 'sum' | 'subtotal', konto_list: v === 'subtotal' ? '' : prev.konto_list, subtotal_of: v === 'subtotal' ? (prev.subtotal_of || '') : null, is_main_total: v === 'subtotal' ? prev.is_main_total : false }))}>
                           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent><SelectItem value="sum">Sum</SelectItem><SelectItem value="subtotal">Subtotal</SelectItem></SelectContent>
@@ -906,7 +906,8 @@ function SubtotalPicker({ indicators, selected, onToggle }: {
                 <button
                   key={item.qualified}
                   type="button"
-                  onClick={() => onToggle(item.qualified)}
+                  onPointerDown={e => e.stopPropagation()}
+                  onClick={e => { e.stopPropagation(); onToggle(item.qualified) }}
                   className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors cursor-pointer ${
                     isSelected
                       ? 'bg-primary text-primary-foreground'
