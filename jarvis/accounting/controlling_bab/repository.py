@@ -138,6 +138,23 @@ class BabRepository(BaseRepository):
     def delete_config_row(self, row_id):
         return self.execute('DELETE FROM bab_report_config WHERE id = %s', (row_id,))
 
+    def get_subtotal_refs(self, subtotal_row_id):
+        """Get indicator IDs referenced by a subtotal row."""
+        return [r['indicator_row_id'] for r in self.query_all(
+            'SELECT indicator_row_id FROM bab_subtotal_refs WHERE subtotal_row_id = %s',
+            (subtotal_row_id,))]
+
+    def set_subtotal_refs(self, subtotal_row_id, indicator_ids):
+        """Replace all indicator refs for a subtotal row (transactional)."""
+        def _work(cursor):
+            cursor.execute('DELETE FROM bab_subtotal_refs WHERE subtotal_row_id = %s', (subtotal_row_id,))
+            for ind_id in indicator_ids:
+                cursor.execute(
+                    'INSERT INTO bab_subtotal_refs (subtotal_row_id, indicator_row_id) VALUES (%s, %s) ON CONFLICT DO NOTHING',
+                    (subtotal_row_id, ind_id))
+            return len(indicator_ids)
+        return self.execute_many(_work)
+
     def replace_config(self, company_id, rows):
         """Replace all config rows for a company in one transaction."""
         def _work(cursor):

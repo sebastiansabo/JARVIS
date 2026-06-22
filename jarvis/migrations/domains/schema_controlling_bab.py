@@ -1,6 +1,39 @@
 """Controlling BAB module — database schema."""
 
 
+def _migrate_subtotal_refs(cursor):
+    """Migrate subtotal_of strings to bab_subtotal_refs junction table (idempotent)."""
+    cursor.execute("""
+        SELECT id, company_id, subtotal_of FROM bab_report_config
+        WHERE row_type = 'subtotal' AND subtotal_of IS NOT NULL AND subtotal_of != ''
+    """)
+    subtotals = cursor.fetchall()
+    for sub in subtotals:
+        sub_id, company_id, refs_str = sub['id'], sub['company_id'], sub['subtotal_of']
+        refs = [r.strip() for r in refs_str.split(',') if r.strip()]
+        for ref in refs:
+            if '\u2192' in ref:
+                parts = ref.split('\u2192', 1)
+                group = parts[0].strip()
+                label = parts[1].strip()
+                cursor.execute("""
+                    INSERT INTO bab_subtotal_refs (subtotal_row_id, indicator_row_id)
+                    SELECT %s, id FROM bab_report_config
+                    WHERE company_id = %s AND group_name = %s AND item_label = %s AND row_type = 'sum'
+                    LIMIT 1
+                    ON CONFLICT DO NOTHING
+                """, (sub_id, company_id, group, label))
+            else:
+                # Legacy: match by label only
+                cursor.execute("""
+                    INSERT INTO bab_subtotal_refs (subtotal_row_id, indicator_row_id)
+                    SELECT %s, id FROM bab_report_config
+                    WHERE company_id = %s AND item_label = %s AND row_type = 'sum'
+                    LIMIT 1
+                    ON CONFLICT DO NOTHING
+                """, (sub_id, company_id, ref))
+
+
 def create_schema_controlling_bab(conn, cursor):
     """Create BAB tables, indexes, and seed permissions."""
 
@@ -85,6 +118,19 @@ def create_schema_controlling_bab(conn, cursor):
 
     # Add is_main_total column (idempotent)
     cursor.execute("ALTER TABLE bab_report_config ADD COLUMN IF NOT EXISTS is_main_total BOOLEAN NOT NULL DEFAULT FALSE")
+
+    # ── bab_subtotal_refs — junction table for subtotal → indicator FK refs ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bab_subtotal_refs (
+            subtotal_row_id  INTEGER NOT NULL REFERENCES bab_report_config(id) ON DELETE CASCADE,
+            indicator_row_id INTEGER NOT NULL REFERENCES bab_report_config(id) ON DELETE CASCADE,
+            PRIMARY KEY (subtotal_row_id, indicator_row_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bab_subtotal_refs_subtotal ON bab_subtotal_refs(subtotal_row_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bab_subtotal_refs_indicator ON bab_subtotal_refs(indicator_row_id)')
+
+    _migrate_subtotal_refs(cursor)
 
     # Seed default config if empty
     cursor.execute('SELECT COUNT(*) as cnt FROM bab_report_config')
