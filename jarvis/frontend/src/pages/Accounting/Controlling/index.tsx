@@ -758,7 +758,11 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
                   <SubtotalPicker
                     indicators={availableIndicators}
                     selected={newRow.subtotal_of || ''}
-                    onChange={v => setNewRow(prev => ({ ...prev, subtotal_of: v }))}
+                    onToggle={qualified => setNewRow(prev => {
+                      const set = new Set((prev.subtotal_of || '').split(',').map(s => s.trim()).filter(Boolean))
+                      set.has(qualified) ? set.delete(qualified) : set.add(qualified)
+                      return { ...prev, subtotal_of: Array.from(set).join(',') }
+                    })}
                   />
                 ) : (
                   <Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={newRow.konto_list} onChange={e => setNewRow({ ...newRow, konto_list: e.target.value })} />
@@ -803,7 +807,11 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
                         <SubtotalPicker
                           indicators={availableIndicators}
                           selected={editRow.subtotal_of || ''}
-                          onChange={v => setEditRow(prev => ({ ...prev, subtotal_of: v }))}
+                          onToggle={qualified => setEditRow(prev => {
+                            const set = new Set((prev.subtotal_of || '').split(',').map(s => s.trim()).filter(Boolean))
+                            set.has(qualified) ? set.delete(qualified) : set.add(qualified)
+                            return { ...prev, subtotal_of: Array.from(set).join(',') }
+                          })}
                         />
                       ) : (
                         <Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={editRow.konto_list} onChange={e => setEditRow({ ...editRow, konto_list: e.target.value })} />
@@ -869,18 +877,12 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
    SubtotalPicker — select indicators
    ═══════════════════════════════════ */
 
-function SubtotalPicker({ indicators, selected, onChange }: {
+function SubtotalPicker({ indicators, selected, onToggle }: {
   indicators: { label: string; group: string; qualified: string }[]
   selected: string
-  onChange: (value: string) => void
+  onToggle: (qualified: string) => void
 }) {
   const selectedSet = useMemo(() => new Set(selected.split(',').map(s => s.trim()).filter(Boolean)), [selected])
-
-  const toggle = (qualified: string) => {
-    const next = new Set(selectedSet)
-    next.has(qualified) ? next.delete(qualified) : next.add(qualified)
-    onChange(Array.from(next).join(','))
-  }
 
   // Group indicators by group_name
   const grouped = useMemo(() => {
@@ -904,7 +906,7 @@ function SubtotalPicker({ indicators, selected, onChange }: {
                 <button
                   key={item.qualified}
                   type="button"
-                  onClick={() => toggle(item.qualified)}
+                  onClick={() => onToggle(item.qualified)}
                   className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors cursor-pointer ${
                     isSelected
                       ? 'bg-primary text-primary-foreground'
