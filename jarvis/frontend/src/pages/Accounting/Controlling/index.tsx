@@ -1,6 +1,6 @@
-import { useState, useCallback, useMemo, Fragment } from 'react'
+import { useState, useCallback, useMemo, Fragment, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Upload, Lock, Unlock, FileSpreadsheet, AlertTriangle, ChevronRight, ChevronDown, Plus, Trash2, Pencil, Save, X, Star, Check } from 'lucide-react'
+import { Upload, Lock, Unlock, FileSpreadsheet, AlertTriangle, ChevronRight, ChevronDown, Plus, Trash2, Pencil, Save, X, Star, Check, Download } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { api } from '@/api/client'
@@ -48,7 +48,7 @@ export default function Controlling() {
     url.searchParams.set('tab', tab)
     window.history.replaceState({}, '', url.toString())
   }, [])
-  const [showEur, setShowEur] = useState(false)
+  const [showEur, setShowEur] = useState(true)
   // expandedRows removed — Marja tab now uses cross-tab view
 
   // Import modal
@@ -188,6 +188,27 @@ export default function Controlling() {
           <Button variant="outline" size="sm" onClick={() => openImportModal(new Date().getFullYear(), new Date().getMonth() + 1)}>
             <Upload className="h-3.5 w-3.5 mr-1.5" /> Import perioadă
           </Button>
+          <Button variant="outline" size="sm" disabled={importedPeriods.length === 0} onClick={async () => {
+            const mp = importedPeriods.filter(p => p.upload_id && reports[p.upload_id!])
+            if (mp.length === 0) return
+            const allSections: { section: string; rows: { label: string }[] }[] = []
+            const seenKeys = new Set<string>()
+            for (const p of mp) { const r = reports[p.upload_id!]; if (!r) continue; for (const sec of r.sections) { for (const row of sec.rows) { const key = `${sec.section}|${row.label}`; if (!seenKeys.has(key)) { seenKeys.add(key); let s = allSections.find(x => x.section === sec.section); if (!s) { s = { section: sec.section, rows: [] }; allSections.push(s) }; s.rows.push({ label: row.label }) } } } }
+            const gv = (uid: number, sn: string, lb: string) => { const r = reports[uid]; if (!r) return null; for (const s of r.sections) { if (s.section === sn) { for (const row of s.rows) { if (row.label === lb) return { lei: row.lei, eur: row.eur } } } }; return null }
+            const XLSX = await import('xlsx')
+            const header = ['Indicator', ...mp.map(p => `${MONTH_NAMES[p.month]} ${p.year}`)]
+            const eurRows: (string | number)[][] = [header]; const leiRows: (string | number)[][] = [header]
+            for (const sec of allSections) { eurRows.push([sec.section]); leiRows.push([sec.section]); for (const row of sec.rows) { eurRows.push([`  ${row.label}`, ...mp.map(p => { const v = gv(p.upload_id!, sec.section, row.label); return v ? v.eur : 0 })]); leiRows.push([`  ${row.label}`, ...mp.map(p => { const v = gv(p.upload_id!, sec.section, row.label); return v ? v.lei : 0 })]) } }
+            const wb = XLSX.utils.book_new()
+            const wsEur = XLSX.utils.aoa_to_sheet(eurRows); const wsLei = XLSX.utils.aoa_to_sheet(leiRows)
+            wsEur['!cols'] = [{ wch: 40 }, ...mp.map(() => ({ wch: 18 }))]; wsLei['!cols'] = [{ wch: 40 }, ...mp.map(() => ({ wch: 18 }))]
+            XLSX.utils.book_append_sheet(wb, wsEur, 'Marjă EUR'); XLSX.utils.book_append_sheet(wb, wsLei, 'Marjă LEI')
+            const company = companies.find(c => c.id === companyId)
+            XLSX.writeFile(wb, `Marja_${company?.company || companyId}_${new Date().toISOString().slice(0,10)}.xlsx`)
+            toast.success('Export XLSX descărcat')
+          }}>
+            <Download className="h-3.5 w-3.5 mr-1.5" /> Export XLSX
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowEur(!showEur)}>
             {showEur ? 'EUR → LEI' : 'LEI → EUR'}
           </Button>
@@ -253,6 +274,8 @@ export default function Controlling() {
               return null
             }
             return (
+              <>
+              {monthPeriods.length > 1 && <MarjaChart sections={sections} monthPeriods={monthPeriods} getValue={getValue} />}
               <div className="border rounded-lg overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -279,13 +302,14 @@ export default function Controlling() {
                             </div>
                           </th>
                         ))}
+                        {monthPeriods.length > 1 && <th className="text-right px-3 py-2.5 font-semibold text-xs min-w-[130px] bg-muted/80">TOTAL</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {sections.map(sec => (
                         <Fragment key={sec.section}>
                           <tr className="bg-muted/30">
-                            <td colSpan={monthPeriods.length + 1} className="px-4 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{sec.section}</td>
+                            <td colSpan={monthPeriods.length + (monthPeriods.length > 1 ? 2 : 1)} className="px-4 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{sec.section}</td>
                           </tr>
                           {sec.rows.map(row => {
                             const isSubtotal = row.row_type === 'subtotal'
@@ -297,11 +321,21 @@ export default function Controlling() {
                                   if (!val) return <td key={p.upload_id} className="text-right px-3 py-1.5 text-muted-foreground">—</td>
                                   return (
                                     <td key={p.upload_id} className="text-right px-3 py-1.5">
-                                      <div className={`font-mono tabular-nums font-bold text-sm ${val.eur < 0 ? 'text-destructive' : ''}`}>{fmtNum(val.eur)} <span className="text-[9px] font-normal text-muted-foreground">EUR</span></div>
-                                      <div className={`font-mono tabular-nums text-[10px] text-muted-foreground ${val.lei < 0 ? 'text-destructive' : ''}`}>{fmtNum(val.lei)} <span className="text-[8px]">LEI</span></div>
+                                      <div className={`font-mono tabular-nums text-sm ${(showEur ? val.eur : val.lei) < 0 ? 'text-destructive' : ''}`}>{fmtNum(showEur ? val.eur : val.lei)} <span className="text-[9px] font-normal text-muted-foreground">{showEur ? 'EUR' : 'LEI'}</span></div>
+                                      <div className={`font-mono tabular-nums text-[10px] text-muted-foreground ${(showEur ? val.lei : val.eur) < 0 ? 'text-destructive' : ''}`}>{fmtNum(showEur ? val.lei : val.eur)} <span className="text-[8px]">{showEur ? 'LEI' : 'EUR'}</span></div>
                                     </td>
                                   )
                                 })}
+                                {monthPeriods.length > 1 && (() => {
+                                  let totalEur = 0, totalLei = 0
+                                  for (const p of monthPeriods) { const v = getValue(p.upload_id!, sec.section, row.label); if (v) { totalEur += v.eur; totalLei += v.lei } }
+                                  return (
+                                    <td className="text-right px-3 py-1.5 bg-muted/30 border-l">
+                                      <div className={`font-mono tabular-nums text-sm ${(showEur ? totalEur : totalLei) < 0 ? 'text-destructive' : ''}`}>{fmtNum(showEur ? totalEur : totalLei)} <span className="text-[9px] font-normal text-muted-foreground">{showEur ? 'EUR' : 'LEI'}</span></div>
+                                      <div className={`font-mono tabular-nums text-[10px] text-muted-foreground ${(showEur ? totalLei : totalEur) < 0 ? 'text-destructive' : ''}`}>{fmtNum(showEur ? totalLei : totalEur)} <span className="text-[8px]">{showEur ? 'LEI' : 'EUR'}</span></div>
+                                    </td>
+                                  )
+                                })()}
                               </tr>
                             )
                           })}
@@ -310,9 +344,11 @@ export default function Controlling() {
                     </tbody>
                   </table>
                   <div className="border-t px-4 py-2 text-xs text-muted-foreground">
-                    {monthPeriods.length} perioad{monthPeriods.length !== 1 ? 'e' : 'ă'} &middot; Valori: <span className="font-bold">EUR</span> / <span className="text-[10px]">LEI</span>
+                    {monthPeriods.length} perioad{monthPeriods.length !== 1 ? 'e' : 'ă'} &middot; Valori: EUR / LEI
                   </div>
               </div>
+
+              </>
             )
           })()}
         </TabsContent>
@@ -935,6 +971,102 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
         {totalRows.length} totaluri configurate
       </div>
     </>
+  )
+}
+
+
+/* ═══════════════════════════════════
+   MarjaChart — evolution graph
+   ═══════════════════════════════════ */
+
+function MarjaChart({ sections, monthPeriods, getValue }: {
+  sections: { section: string; rows: { label: string; row_type: string }[] }[]
+  monthPeriods: { upload_id?: number; month: number; year: number }[]
+  getValue: (uploadId: number, section: string, label: string) => { lei: number; eur: number } | null
+}) {
+  // Collect all subtotal rows + all indicator rows for the selector
+  const allRows: { key: string; label: string; section: string; isSubtotal: boolean }[] = []
+  for (const sec of sections) {
+    for (const row of sec.rows) {
+      allRows.push({ key: `${sec.section}|${row.label}`, label: row.label, section: sec.section, isSubtotal: row.row_type === 'subtotal' })
+    }
+  }
+  const subtotalRows = allRows.filter(r => r.isSubtotal)
+  const [selectedKeys, setSelectedKeys] = useState<string[]>(() => subtotalRows.map(r => r.key))
+
+  // Build chart data
+  const chartData = monthPeriods.map(p => {
+    const point: Record<string, string | number> = { month: `${MONTH_NAMES[p.month]} ${p.year}` }
+    for (const key of selectedKeys) {
+      const [sec, label] = key.split('|')
+      const val = getValue(p.upload_id!, sec, label)
+      point[label] = val ? val.eur : 0
+    }
+    return point
+  })
+
+  const COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d']
+
+  return (
+    <div className="mt-4 border rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold">Evoluție lunară (EUR)</h3>
+        <div className="flex flex-wrap gap-1">
+          {allRows.map((row) => {
+            const isActive = selectedKeys.includes(row.key)
+            return (
+              <button
+                key={row.key}
+                type="button"
+                onClick={() => setSelectedKeys(prev => prev.includes(row.key) ? prev.filter(k => k !== row.key) : [...prev, row.key])}
+                className={`text-[10px] px-2 py-0.5 rounded-full border cursor-pointer transition-all ${
+                  isActive
+                    ? 'border-primary bg-primary/10 text-primary font-medium'
+                    : 'border-border text-muted-foreground hover:border-primary/40'
+                }`}
+              >
+                {row.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      {selectedKeys.length > 0 && chartData.length > 0 ? (
+        <Suspense fallback={<div className="text-center py-8 text-sm text-muted-foreground">Se încarcă graficul...</div>}>
+          <MarjaChartInner data={chartData} keys={selectedKeys.map(k => k.split('|')[1])} colors={COLORS} />
+        </Suspense>
+      ) : (
+        <div className="text-center py-8 text-sm text-muted-foreground">Selectează indicatori pentru a vedea graficul</div>
+      )}
+    </div>
+  )
+}
+
+const LazyRecharts = (() => {
+  let mod: typeof import('recharts') | null = null
+  let promise: Promise<typeof import('recharts')> | null = null
+  return () => {
+    if (mod) return mod
+    if (!promise) { promise = import('recharts').then(m => { mod = m; return m }) }
+    throw promise
+  }
+})()
+
+function MarjaChartInner({ data, keys, colors }: { data: Record<string, string | number>[]; keys: string[]; colors: string[] }) {
+  const { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } = LazyRecharts()
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+        <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+        <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => new Intl.NumberFormat('ro-RO', { notation: 'compact' }).format(v)} />
+        <Tooltip formatter={(v: unknown) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v)) + ' EUR'} />
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+        {keys.map((key, i) => (
+          <Line key={key} type="monotone" dataKey={key} stroke={colors[i % colors.length]} strokeWidth={2} dot={{ r: 3 }} />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
   )
 }
 
