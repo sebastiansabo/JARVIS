@@ -660,46 +660,55 @@ function VerificationTable({ accounts, totalEntries }: { accounts: BabAccountGro
 function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClient }: { companyId: number; setCompanyId: (id: number) => void; companies: { id: number; company: string }[]; configRows: BabConfigRow[]; queryClient: ReturnType<typeof useQueryClient> }) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editRow, setEditRow] = useState<Partial<BabConfigRow>>({})
-  const [addingNew, setAddingNew] = useState(false)
-  const [newRow, setNewRow] = useState<Partial<BabConfigRow>>({ kst: 211, row_type: 'sum', sort_order: 0, konto_list: '', group_name: '', item_label: '' })
+  const [addingSum, setAddingSum] = useState(false)
+  const [addingTotal, setAddingTotal] = useState(false)
+  const [newSumRow, setNewSumRow] = useState<Partial<BabConfigRow>>({ kst: 0, row_type: 'sum', sort_order: 0, konto_list: '', group_name: '', item_label: '' })
+  const [newTotalRow, setNewTotalRow] = useState<Partial<BabConfigRow>>({ kst: 0, row_type: 'subtotal', sort_order: 0, group_name: '', item_label: '', subtotal_of: '', is_main_total: false })
 
   const sorted = useMemo(() => [...configRows].sort((a, b) => a.sort_order - b.sort_order), [configRows])
+  const sumRows = useMemo(() => sorted.filter(r => r.row_type === 'sum'), [sorted])
+  const totalRows = useMemo(() => sorted.filter(r => r.row_type === 'subtotal'), [sorted])
 
   // Available indicators for subtotal picker (only sum rows), qualified with group
   const availableIndicators = useMemo(() => {
-    return sorted.filter(r => r.row_type === 'sum').map(r => ({
+    return sumRows.map(r => ({
       label: r.item_label,
       group: r.group_name,
       qualified: `${r.group_name} → ${r.item_label}`,
     }))
-  }, [sorted])
+  }, [sumRows])
+
+  const invalidateAll = () => { queryClient.invalidateQueries({ queryKey: ['bab-config'] }); queryClient.invalidateQueries({ queryKey: ['bab-all-reports'] }); queryClient.invalidateQueries({ queryKey: ['bab-periods'] }) }
 
   const addMutation = useMutation({
     mutationFn: (row: Partial<BabConfigRow>) => controllingApi.addConfigRow({ ...row, company_id: companyId }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['bab-config'] }); queryClient.invalidateQueries({ queryKey: ['bab-all-reports'] }); queryClient.invalidateQueries({ queryKey: ['bab-periods'] }); setAddingNew(false); setNewRow({ kst: 211, row_type: 'sum', sort_order: 0, konto_list: '', group_name: '', item_label: '' }); toast.success('Rând adăugat') },
+    onSuccess: (_d, vars) => { invalidateAll(); if (vars.row_type === 'subtotal') { setAddingTotal(false); setNewTotalRow({ kst: 0, row_type: 'subtotal', sort_order: 0, group_name: '', item_label: '', subtotal_of: '', is_main_total: false }) } else { setAddingSum(false); setNewSumRow({ kst: 0, row_type: 'sum', sort_order: 0, konto_list: '', group_name: '', item_label: '' }) }; toast.success('Rând adăugat') },
     onError: (e: Error) => toast.error(e.message),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, row }: { id: number; row: Partial<BabConfigRow> }) => controllingApi.updateConfigRow(id, row),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['bab-config'] }); queryClient.invalidateQueries({ queryKey: ['bab-all-reports'] }); queryClient.invalidateQueries({ queryKey: ['bab-periods'] }); setEditingId(null); toast.success('Rând actualizat') },
+    onSuccess: () => { invalidateAll(); setEditingId(null); toast.success('Rând actualizat') },
     onError: (e: Error) => toast.error(e.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => controllingApi.deleteConfigRow(id),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['bab-config'] }); queryClient.invalidateQueries({ queryKey: ['bab-all-reports'] }); queryClient.invalidateQueries({ queryKey: ['bab-periods'] }); toast.success('Rând șters') },
+    onSuccess: () => { invalidateAll(); toast.success('Rând șters') },
     onError: (e: Error) => toast.error(e.message),
   })
 
-  const startEdit = (row: BabConfigRow) => {
-    setEditingId(row.id!)
-    setEditRow({ ...row })
+  const startEdit = (row: BabConfigRow) => { setEditingId(row.id!); setEditRow({ ...row }) }
+
+  const toggleSubtotalOf = (prev: string | null | undefined, qualified: string) => {
+    const set = new Set((prev || '').split(',').map(s => s.trim()).filter(Boolean))
+    set.has(qualified) ? set.delete(qualified) : set.add(qualified)
+    return Array.from(set).join(',')
   }
 
   return (
     <>
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-6">
         <Label className="text-sm shrink-0 font-medium">Companie:</Label>
         <Select value={String(companyId)} onValueChange={(v) => setCompanyId(Number(v))}>
           <SelectTrigger className="w-72">
@@ -712,111 +721,56 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
           </SelectContent>
         </Select>
       </div>
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm text-muted-foreground">Definește centrele de cost, grupurile și conturile pentru raportul de marjă</p>
-        <Button size="sm" variant="outline" onClick={() => setAddingNew(true)} disabled={addingNew}>
-          <Plus className="h-3.5 w-3.5 mr-1" /> Adaugă rând
+
+      {/* ── Table 1: Indicatori (sum rows) ── */}
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <h3 className="text-sm font-semibold">Indicatori</h3>
+          <p className="text-xs text-muted-foreground">Conturi și grupuri pentru raportul de marjă</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => setAddingSum(true)} disabled={addingSum}>
+          <Plus className="h-3.5 w-3.5 mr-1" /> Adaugă indicator
         </Button>
       </div>
 
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-14">Ordine</TableHead>
+            <TableHead className="w-14">Poziție</TableHead>
             <TableHead className="w-16">KST</TableHead>
             <TableHead>Grup</TableHead>
             <TableHead>Indicator</TableHead>
-            <TableHead className="w-20">Tip</TableHead>
-            <TableHead>Conturi (suma) / Subtotal de</TableHead>
+            <TableHead>Conturi</TableHead>
             <TableHead className="w-20">Acțiuni</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {/* Add new row */}
-          {addingNew && (
+          {addingSum && (
             <TableRow className="bg-green-50/50">
-              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newRow.sort_order} onChange={e => { const v = Number(e.target.value); setNewRow(prev => ({ ...prev, sort_order: v })) }} /></TableCell>
-              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newRow.kst} onChange={e => { const v = Number(e.target.value); setNewRow(prev => ({ ...prev, kst: v })) }} /></TableCell>
-              <TableCell><Input className="h-7 text-xs" placeholder="Grup" value={newRow.group_name} onChange={e => { const v = e.target.value; setNewRow(prev => ({ ...prev, group_name: v })) }} /></TableCell>
-              <TableCell><Input className="h-7 text-xs" placeholder="Indicator" value={newRow.item_label} onChange={e => { const v = e.target.value; setNewRow(prev => ({ ...prev, item_label: v })) }} /></TableCell>
-              <TableCell>
-                <div className="space-y-1 overflow-hidden">
-                  <Select value={newRow.row_type || 'sum'} onValueChange={v => setNewRow(prev => ({ ...prev, row_type: v as 'sum' | 'subtotal', konto_list: v === 'subtotal' ? '' : prev.konto_list, subtotal_of: v === 'subtotal' ? (prev.subtotal_of || '') : null, is_main_total: v === 'subtotal' ? prev.is_main_total : false }))}>
-                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="sum">Sum</SelectItem><SelectItem value="subtotal">Subtotal</SelectItem></SelectContent>
-                  </Select>
-                  {newRow.row_type === 'subtotal' && (
-                    <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-muted-foreground">
-                      <input type="checkbox" className="rounded" checked={!!newRow.is_main_total} onChange={e => { const v = e.target.checked; setNewRow(prev => ({ ...prev, is_main_total: v })) }} />
-                      <Star className="h-3 w-3 text-amber-400" /> Total principal
-                    </label>
-                  )}
-                </div>
-              </TableCell>
-              <TableCell>
-                {newRow.row_type === 'subtotal' ? (
-                  <SubtotalPicker
-                    indicators={availableIndicators}
-                    selected={newRow.subtotal_of || ''}
-                    onToggle={qualified => setNewRow(prev => {
-                      const set = new Set((prev.subtotal_of || '').split(',').map(s => s.trim()).filter(Boolean))
-                      set.has(qualified) ? set.delete(qualified) : set.add(qualified)
-                      return { ...prev, subtotal_of: Array.from(set).join(',') }
-                    })}
-                  />
-                ) : (
-                  <Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={newRow.konto_list} onChange={e => { const v = e.target.value; setNewRow(prev => ({ ...prev, konto_list: v })) }} />
-                )}
-              </TableCell>
+              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newSumRow.sort_order} onChange={e => setNewSumRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
+              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newSumRow.kst} onChange={e => setNewSumRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
+              <TableCell><Input className="h-7 text-xs" placeholder="Grup" value={newSumRow.group_name} onChange={e => setNewSumRow(prev => ({ ...prev, group_name: e.target.value }))} /></TableCell>
+              <TableCell><Input className="h-7 text-xs" placeholder="Indicator" value={newSumRow.item_label} onChange={e => setNewSumRow(prev => ({ ...prev, item_label: e.target.value }))} /></TableCell>
+              <TableCell><Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={newSumRow.konto_list} onChange={e => setNewSumRow(prev => ({ ...prev, konto_list: e.target.value }))} /></TableCell>
               <TableCell>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => addMutation.mutate(newRow)}><Save className="h-3 w-3" /></Button>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAddingNew(false)}><X className="h-3 w-3" /></Button>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => addMutation.mutate(newSumRow)}><Save className="h-3 w-3" /></Button>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAddingSum(false)}><X className="h-3 w-3" /></Button>
                 </div>
               </TableCell>
             </TableRow>
           )}
-
-          {/* Existing rows */}
-          {sorted.map((row) => {
+          {sumRows.map((row) => {
             const isEditing = editingId === row.id
             return (
-              <TableRow key={row.id} className={row.row_type === 'subtotal' ? 'bg-primary/5 font-semibold' : ''}>
+              <TableRow key={row.id}>
                 {isEditing ? (
                   <>
-                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.sort_order} onChange={e => { const v = Number(e.target.value); setEditRow(prev => ({ ...prev, sort_order: v })) }} /></TableCell>
-                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.kst} onChange={e => { const v = Number(e.target.value); setEditRow(prev => ({ ...prev, kst: v })) }} /></TableCell>
-                    <TableCell><Input className="h-7 text-xs" value={editRow.group_name} onChange={e => { const v = e.target.value; setEditRow(prev => ({ ...prev, group_name: v })) }} /></TableCell>
-                    <TableCell><Input className="h-7 text-xs" value={editRow.item_label} onChange={e => { const v = e.target.value; setEditRow(prev => ({ ...prev, item_label: v })) }} /></TableCell>
-                    <TableCell>
-                      <div className="space-y-1 overflow-hidden">
-                        <Select value={editRow.row_type || 'sum'} onValueChange={v => setEditRow(prev => ({ ...prev, row_type: v as 'sum' | 'subtotal', konto_list: v === 'subtotal' ? '' : prev.konto_list, subtotal_of: v === 'subtotal' ? (prev.subtotal_of || '') : null, is_main_total: v === 'subtotal' ? prev.is_main_total : false }))}>
-                          <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                          <SelectContent><SelectItem value="sum">Sum</SelectItem><SelectItem value="subtotal">Subtotal</SelectItem></SelectContent>
-                        </Select>
-                        {editRow.row_type === 'subtotal' && (
-                          <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-muted-foreground">
-                            <input type="checkbox" className="rounded" checked={!!editRow.is_main_total} onChange={e => { const v = e.target.checked; setEditRow(prev => ({ ...prev, is_main_total: v })) }} />
-                            <Star className="h-3 w-3 text-amber-400" /> Total principal
-                          </label>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {editRow.row_type === 'subtotal' ? (
-                        <SubtotalPicker
-                          indicators={availableIndicators}
-                          selected={editRow.subtotal_of || ''}
-                          onToggle={qualified => setEditRow(prev => {
-                            const set = new Set((prev.subtotal_of || '').split(',').map(s => s.trim()).filter(Boolean))
-                            set.has(qualified) ? set.delete(qualified) : set.add(qualified)
-                            return { ...prev, subtotal_of: Array.from(set).join(',') }
-                          })}
-                        />
-                      ) : (
-                        <Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={editRow.konto_list} onChange={e => { const v = e.target.value; setEditRow(prev => ({ ...prev, konto_list: v })) }} />
-                      )}
-                    </TableCell>
+                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.sort_order} onChange={e => setEditRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
+                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.kst} onChange={e => setEditRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
+                    <TableCell><Input className="h-7 text-xs" value={editRow.group_name} onChange={e => setEditRow(prev => ({ ...prev, group_name: e.target.value }))} /></TableCell>
+                    <TableCell><Input className="h-7 text-xs" value={editRow.item_label} onChange={e => setEditRow(prev => ({ ...prev, item_label: e.target.value }))} /></TableCell>
+                    <TableCell><Input className="h-7 text-xs font-mono" value={editRow.konto_list} onChange={e => setEditRow(prev => ({ ...prev, konto_list: e.target.value }))} /></TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateMutation.mutate({ id: row.id!, row: editRow })}><Save className="h-3 w-3" /></Button>
@@ -830,27 +784,128 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
                     <TableCell className="font-mono text-xs">{row.kst}</TableCell>
                     <TableCell className="text-xs">{row.group_name}</TableCell>
                     <TableCell className="text-xs">{row.item_label}</TableCell>
-                    <TableCell className="text-xs">
-                      {row.row_type === 'subtotal' ? (
-                        <span className="inline-flex items-center gap-1">
-                          <span className="text-primary font-medium">Subtotal</span>
-                          {row.is_main_total && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
-                        </span>
-                      ) : 'Sum'}
+                    <TableCell className="text-xs font-mono text-muted-foreground">{row.konto_list || '—'}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => startEdit(row)}><Pencil className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => row.id && deleteMutation.mutate(row.id)}><Trash2 className="h-3 w-3" /></Button>
+                      </div>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {row.row_type === 'subtotal' ? (
-                        row.subtotal_of ? (
-                          <div className="flex flex-wrap gap-1">
-                            {row.subtotal_of.split(',').filter(Boolean).map((ref, i) => {
-                              const short = ref.includes('→') ? ref.split('→').pop()!.trim() : ref.trim()
-                              return <span key={i} className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary font-medium" title={ref.trim()}>{short}</span>
-                            })}
-                          </div>
-                        ) : '—'
-                      ) : (
-                        <span className="font-mono">{row.konto_list || '—'}</span>
-                      )}
+                  </>
+                )}
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+      <div className="border-t px-4 py-2 text-xs text-muted-foreground mb-6">
+        {sumRows.length} indicatori configurați
+      </div>
+
+      {/* ── Table 2: Totaluri (subtotal rows) ── */}
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <h3 className="text-sm font-semibold">Totaluri</h3>
+          <p className="text-xs text-muted-foreground">Subtotaluri și totaluri — selectează indicatorii de sumat. Poziția determină locul în raport.</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => setAddingTotal(true)} disabled={addingTotal || sumRows.length === 0}>
+          <Plus className="h-3.5 w-3.5 mr-1" /> Adaugă total
+        </Button>
+      </div>
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-14">Poziție</TableHead>
+            <TableHead className="w-16">KST</TableHead>
+            <TableHead>Grup</TableHead>
+            <TableHead>Denumire total</TableHead>
+            <TableHead>Indicatori incluși</TableHead>
+            <TableHead className="w-24">Acțiuni</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {addingTotal && (
+            <TableRow className="bg-green-50/50">
+              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newTotalRow.sort_order} onChange={e => setNewTotalRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
+              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newTotalRow.kst} onChange={e => setNewTotalRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
+              <TableCell><Input className="h-7 text-xs" placeholder="Grup" value={newTotalRow.group_name} onChange={e => setNewTotalRow(prev => ({ ...prev, group_name: e.target.value }))} /></TableCell>
+              <TableCell>
+                <div className="space-y-1">
+                  <Input className="h-7 text-xs" placeholder="Denumire total" value={newTotalRow.item_label} onChange={e => setNewTotalRow(prev => ({ ...prev, item_label: e.target.value }))} />
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-muted-foreground">
+                    <input type="checkbox" className="rounded" checked={!!newTotalRow.is_main_total} onChange={e => setNewTotalRow(prev => ({ ...prev, is_main_total: e.target.checked }))} />
+                    <Star className="h-3 w-3 text-amber-400" /> Total principal
+                  </label>
+                </div>
+              </TableCell>
+              <TableCell>
+                <SubtotalPicker
+                  indicators={availableIndicators}
+                  selected={newTotalRow.subtotal_of || ''}
+                  onToggle={qualified => setNewTotalRow(prev => ({ ...prev, subtotal_of: toggleSubtotalOf(prev.subtotal_of, qualified) }))}
+                />
+              </TableCell>
+              <TableCell>
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => addMutation.mutate(newTotalRow)}><Save className="h-3 w-3" /></Button>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAddingTotal(false)}><X className="h-3 w-3" /></Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          )}
+          {totalRows.map((row) => {
+            const isEditing = editingId === row.id
+            return (
+              <TableRow key={row.id} className="bg-primary/5">
+                {isEditing ? (
+                  <>
+                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.sort_order} onChange={e => setEditRow(prev => ({ ...prev, sort_order: Number(e.target.value) }))} /></TableCell>
+                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.kst} onChange={e => setEditRow(prev => ({ ...prev, kst: Number(e.target.value) }))} /></TableCell>
+                    <TableCell><Input className="h-7 text-xs" value={editRow.group_name} onChange={e => setEditRow(prev => ({ ...prev, group_name: e.target.value }))} /></TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <Input className="h-7 text-xs" value={editRow.item_label} onChange={e => setEditRow(prev => ({ ...prev, item_label: e.target.value }))} />
+                        <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-muted-foreground">
+                          <input type="checkbox" className="rounded" checked={!!editRow.is_main_total} onChange={e => setEditRow(prev => ({ ...prev, is_main_total: e.target.checked }))} />
+                          <Star className="h-3 w-3 text-amber-400" /> Total principal
+                        </label>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <SubtotalPicker
+                        indicators={availableIndicators}
+                        selected={editRow.subtotal_of || ''}
+                        onToggle={qualified => setEditRow(prev => ({ ...prev, subtotal_of: toggleSubtotalOf(prev.subtotal_of, qualified) }))}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => updateMutation.mutate({ id: row.id!, row: editRow })}><Save className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditingId(null)}><X className="h-3 w-3" /></Button>
+                      </div>
+                    </TableCell>
+                  </>
+                ) : (
+                  <>
+                    <TableCell className="text-xs text-muted-foreground">{row.sort_order}</TableCell>
+                    <TableCell className="font-mono text-xs">{row.kst}</TableCell>
+                    <TableCell className="text-xs font-semibold">{row.group_name}</TableCell>
+                    <TableCell className="text-xs">
+                      <span className="inline-flex items-center gap-1 font-semibold">
+                        {row.item_label}
+                        {row.is_main_total && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {row.subtotal_of ? (
+                        <div className="flex flex-wrap gap-1">
+                          {row.subtotal_of.split(',').filter(Boolean).map((ref, i) => {
+                            const short = ref.includes('→') ? ref.split('→').pop()!.trim() : ref.trim()
+                            return <span key={i} className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary font-medium" title={ref.trim()}>{short}</span>
+                          })}
+                        </div>
+                      ) : '—'}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
@@ -866,7 +921,7 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
         </TableBody>
       </Table>
       <div className="border-t px-4 py-2 text-xs text-muted-foreground">
-        {sorted.length} rânduri configurate
+        {totalRows.length} totaluri configurate
       </div>
     </>
   )
