@@ -238,13 +238,14 @@ class InvoiceStateMachine:
             inv_lines = set(raw) if raw else all_line_id_set
             return bool(inv_lines & target_lines)
 
-        relevant_proformas = [p for p in proformas if covers_target(p)]
         relevant_invoices = [i for i in invoices if covers_target(i)]
 
-        if not relevant_proformas:
-            raise InvoiceStateMachineError("No proformas found for selected vehicles")
+        if not relevant_invoices:
+            raise InvoiceStateMachineError("No invoices found for selected vehicles")
 
-        # Check all relevant proformas are paired
+        # Check that there are no unpaired proformas for the target cars
+        # (all issued proformas must have a matching invoice before storno)
+        relevant_proformas = [p for p in proformas if covers_target(p)]
         proforma_seqs = {r["sequence_number"] for r in relevant_proformas}
         invoice_seqs = {r["sequence_number"] for r in relevant_invoices}
         unpaired = proforma_seqs - invoice_seqs
@@ -252,10 +253,8 @@ class InvoiceStateMachine:
             raise InvoiceStateMachineError(
                 f"Proforma(s) #{', '.join(str(s) for s in sorted(unpaired))} not yet invoiced")
 
-        # Verify selected cars are fully invoiced
-        line_prices = {l["id"]: Decimal(str(l["selling_price_eur"])) for l in all_lines}
-        target_total = sum(line_prices.get(lid, Decimal("0")) for lid in target_lines)
         # Sum proportional share of each invoice for the target cars
+        line_prices = {l["id"]: Decimal(str(l["selling_price_eur"])) for l in all_lines}
         invoiced_for_target = Decimal("0")
         for inv in relevant_invoices:
             raw = inv.get("line_ids")
@@ -266,12 +265,6 @@ class InvoiceStateMachine:
             for lid in (inv_lines & target_lines):
                 share = (line_prices.get(lid, Decimal("0")) / covered_total * Decimal(str(inv["total_amount_eur"]))) if covered_total else Decimal("0")
                 invoiced_for_target += share
-
-        if target_total > 0 and invoiced_for_target < target_total * Decimal("0.999"):
-            remaining = target_total - invoiced_for_target
-            raise InvoiceStateMachineError(
-                f"Cannot issue Storno — only {invoiced_for_target:.2f} of {target_total:.2f} EUR invoiced "
-                f"for selected vehicles. Remaining {remaining:.2f} EUR must be invoiced first.")
 
         storno_total = invoiced_for_target
 
