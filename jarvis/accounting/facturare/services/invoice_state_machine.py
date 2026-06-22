@@ -168,6 +168,8 @@ class InvoiceStateMachine:
         self._check_invoice_number_unique(anexa_id, invoice_number, "INVOICE")
         proforma_amount = Decimal(str(proforma_row["total_amount_eur"]))
         proforma_kurs = Decimal(str(proforma_row["kurs_applied"])) if proforma_row.get("kurs_applied") else None
+        if not proforma_kurs:
+            proforma_kurs = self._fetch_kurs(issued_date)
         total_ron = (proforma_amount * proforma_kurs) if proforma_kurs else Decimal("0")
         intocmit = self._resolve_intocmit(intocmit_de, created_by_user_id)
 
@@ -272,6 +274,8 @@ class InvoiceStateMachine:
                 weighted_sum += amt * k
                 amount_sum += amt
         storno_kurs = (weighted_sum / amount_sum).quantize(Decimal("0.0001")) if amount_sum else None
+        if not storno_kurs:
+            storno_kurs = self._fetch_kurs(issued_date)
         storno_ron = (storno_total * storno_kurs) if storno_kurs else Decimal("0")
 
         self._check_invoice_number_unique(anexa_id, invoice_number, "STORNO")
