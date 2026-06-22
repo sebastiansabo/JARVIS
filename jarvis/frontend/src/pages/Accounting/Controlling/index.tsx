@@ -735,19 +735,19 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
           {/* Add new row */}
           {addingNew && (
             <TableRow className="bg-green-50/50">
-              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newRow.sort_order} onChange={e => setNewRow({ ...newRow, sort_order: Number(e.target.value) })} /></TableCell>
-              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newRow.kst} onChange={e => setNewRow({ ...newRow, kst: Number(e.target.value) })} /></TableCell>
-              <TableCell><Input className="h-7 text-xs" placeholder="Grup" value={newRow.group_name} onChange={e => setNewRow({ ...newRow, group_name: e.target.value })} /></TableCell>
-              <TableCell><Input className="h-7 text-xs" placeholder="Indicator" value={newRow.item_label} onChange={e => setNewRow({ ...newRow, item_label: e.target.value })} /></TableCell>
+              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newRow.sort_order} onChange={e => { const v = Number(e.target.value); setNewRow(prev => ({ ...prev, sort_order: v })) }} /></TableCell>
+              <TableCell><Input type="number" className="h-7 w-14 text-xs" value={newRow.kst} onChange={e => { const v = Number(e.target.value); setNewRow(prev => ({ ...prev, kst: v })) }} /></TableCell>
+              <TableCell><Input className="h-7 text-xs" placeholder="Grup" value={newRow.group_name} onChange={e => { const v = e.target.value; setNewRow(prev => ({ ...prev, group_name: v })) }} /></TableCell>
+              <TableCell><Input className="h-7 text-xs" placeholder="Indicator" value={newRow.item_label} onChange={e => { const v = e.target.value; setNewRow(prev => ({ ...prev, item_label: v })) }} /></TableCell>
               <TableCell>
                 <div className="space-y-1">
-                  <Select value={newRow.row_type || 'sum'} onValueChange={v => setNewRow({ ...newRow, row_type: v as 'sum' | 'subtotal', konto_list: v === 'subtotal' ? '' : newRow.konto_list, subtotal_of: v === 'subtotal' ? (newRow.subtotal_of || '') : null, is_main_total: v === 'subtotal' ? newRow.is_main_total : false })}>
+                  <Select value={newRow.row_type || 'sum'} onValueChange={v => setNewRow(prev => ({ ...prev, row_type: v as 'sum' | 'subtotal', konto_list: v === 'subtotal' ? '' : prev.konto_list, subtotal_of: v === 'subtotal' ? (prev.subtotal_of || '') : null, is_main_total: v === 'subtotal' ? prev.is_main_total : false }))}>
                     <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent><SelectItem value="sum">Sum</SelectItem><SelectItem value="subtotal">Subtotal</SelectItem></SelectContent>
                   </Select>
                   {newRow.row_type === 'subtotal' && (
                     <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-muted-foreground">
-                      <input type="checkbox" className="rounded" checked={!!newRow.is_main_total} onChange={e => setNewRow({ ...newRow, is_main_total: e.target.checked })} />
+                      <input type="checkbox" className="rounded" checked={!!newRow.is_main_total} onChange={e => { const v = e.target.checked; setNewRow(prev => ({ ...prev, is_main_total: v })) }} />
                       <Star className="h-3 w-3 text-amber-400" /> Total principal
                     </label>
                   )}
@@ -765,7 +765,7 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
                     })}
                   />
                 ) : (
-                  <Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={newRow.konto_list} onChange={e => setNewRow({ ...newRow, konto_list: e.target.value })} />
+                  <Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={newRow.konto_list} onChange={e => { const v = e.target.value; setNewRow(prev => ({ ...prev, konto_list: v })) }} />
                 )}
               </TableCell>
               <TableCell>
@@ -784,19 +784,19 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
               <TableRow key={row.id} className={row.row_type === 'subtotal' ? 'bg-primary/5 font-semibold' : ''}>
                 {isEditing ? (
                   <>
-                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.sort_order} onChange={e => setEditRow({ ...editRow, sort_order: Number(e.target.value) })} /></TableCell>
-                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.kst} onChange={e => setEditRow({ ...editRow, kst: Number(e.target.value) })} /></TableCell>
-                    <TableCell><Input className="h-7 text-xs" value={editRow.group_name} onChange={e => setEditRow({ ...editRow, group_name: e.target.value })} /></TableCell>
-                    <TableCell><Input className="h-7 text-xs" value={editRow.item_label} onChange={e => setEditRow({ ...editRow, item_label: e.target.value })} /></TableCell>
+                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.sort_order} onChange={e => { const v = Number(e.target.value); setEditRow(prev => ({ ...prev, sort_order: v })) }} /></TableCell>
+                    <TableCell><Input type="number" className="h-7 w-14 text-xs" value={editRow.kst} onChange={e => { const v = Number(e.target.value); setEditRow(prev => ({ ...prev, kst: v })) }} /></TableCell>
+                    <TableCell><Input className="h-7 text-xs" value={editRow.group_name} onChange={e => { const v = e.target.value; setEditRow(prev => ({ ...prev, group_name: v })) }} /></TableCell>
+                    <TableCell><Input className="h-7 text-xs" value={editRow.item_label} onChange={e => { const v = e.target.value; setEditRow(prev => ({ ...prev, item_label: v })) }} /></TableCell>
                     <TableCell>
                       <div className="space-y-1">
-                        <Select value={editRow.row_type || 'sum'} onValueChange={v => setEditRow({ ...editRow, row_type: v as 'sum' | 'subtotal', konto_list: v === 'subtotal' ? '' : editRow.konto_list, subtotal_of: v === 'subtotal' ? (editRow.subtotal_of || '') : null, is_main_total: v === 'subtotal' ? editRow.is_main_total : false })}>
+                        <Select value={editRow.row_type || 'sum'} onValueChange={v => setEditRow(prev => ({ ...prev, row_type: v as 'sum' | 'subtotal', konto_list: v === 'subtotal' ? '' : prev.konto_list, subtotal_of: v === 'subtotal' ? (prev.subtotal_of || '') : null, is_main_total: v === 'subtotal' ? prev.is_main_total : false }))}>
                           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent><SelectItem value="sum">Sum</SelectItem><SelectItem value="subtotal">Subtotal</SelectItem></SelectContent>
                         </Select>
                         {editRow.row_type === 'subtotal' && (
                           <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-muted-foreground">
-                            <input type="checkbox" className="rounded" checked={!!editRow.is_main_total} onChange={e => setEditRow({ ...editRow, is_main_total: e.target.checked })} />
+                            <input type="checkbox" className="rounded" checked={!!editRow.is_main_total} onChange={e => { const v = e.target.checked; setEditRow(prev => ({ ...prev, is_main_total: v })) }} />
                             <Star className="h-3 w-3 text-amber-400" /> Total principal
                           </label>
                         )}
@@ -814,7 +814,7 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
                           })}
                         />
                       ) : (
-                        <Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={editRow.konto_list} onChange={e => setEditRow({ ...editRow, konto_list: e.target.value })} />
+                        <Input className="h-7 text-xs font-mono" placeholder="707111,707116" value={editRow.konto_list} onChange={e => { const v = e.target.value; setEditRow(prev => ({ ...prev, konto_list: v })) }} />
                       )}
                     </TableCell>
                     <TableCell>
