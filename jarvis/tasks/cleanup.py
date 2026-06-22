@@ -411,6 +411,88 @@ def start_scheduler():
         coalesce=True,
     )
 
+    # ── Voucher jobs ──────────────────────────────────
+
+    def _expire_vouchers():
+        """Daily: expire active vouchers past their expiry date."""
+        try:
+            from accounting.vouchers.repositories import VoucherRepository
+            count = VoucherRepository().expire_active()
+            if count:
+                logger.info('Expired %d voucher(s)', count)
+        except Exception:
+            logger.exception('Failed to run voucher expiry job')
+
+    def _voucher_expiry_warnings():
+        """Daily: send 7-day expiry warnings to voucher issuers."""
+        try:
+            from datetime import date as _date, timedelta
+            from accounting.vouchers.repositories import VoucherRepository
+            from core.services.notification_service import send_email
+
+            target = _date.today() + timedelta(days=7)
+            vouchers = VoucherRepository().get_expiring_on(target)
+            for v in vouchers:
+                try:
+                    send_email(
+                        to_email=v['issued_by_email'],
+                        subject=f"Voucher {v['voucher_code']} expires in 7 days",
+                        html_body=f"<p>Your voucher <strong>{v['voucher_code']}</strong> for client {v['client_name']} expires on {v['expires_at']}.</p>",
+                    )
+                except Exception:
+                    logger.exception('Failed to send expiry warning for %s', v['voucher_code'])
+            if vouchers:
+                logger.info('Sent %d voucher expiry warning(s)', len(vouchers))
+        except Exception:
+            logger.exception('Failed to run voucher expiry warning job')
+
+    def _voucher_monthly_digest():
+        """1st business day: send monthly voucher digest."""
+        from datetime import date as _date
+        today = _date.today()
+        # Only run on first 3 days of month (covers weekends)
+        if today.day > 3:
+            return
+        # Only run on weekdays
+        if today.weekday() >= 5:
+            return
+        try:
+            from accounting.vouchers.digest import send_monthly_digest
+            send_monthly_digest()
+        except Exception:
+            logger.exception('Failed to run monthly voucher digest')
+
+    scheduler.add_job(
+        _expire_vouchers,
+        'cron',
+        hour=0, minute=30,
+        id='expire_vouchers',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        _voucher_expiry_warnings,
+        'cron',
+        hour=9, minute=0,
+        id='voucher_expiry_warnings',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        _voucher_monthly_digest,
+        'cron',
+        hour=9, minute=15,
+        day=1,
+        id='voucher_monthly_digest',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown(wait=False))
     logger.info(f"Background scheduler started (pid={os.getpid()})")

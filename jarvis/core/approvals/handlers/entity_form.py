@@ -24,6 +24,9 @@ def handle_approved(entity_id, ctx):
 
         # Debit Time Bank for approved bilet-de-invoire submissions
         _debit_leave_permit_hours(entity_id, sub_repo)
+
+        # Create voucher for approved voucher-issuance submissions
+        _create_voucher_from_submission(entity_id, sub_repo)
     except Exception as e:
         logger.error(f'Failed to update form_submission status on approval: {e}')
     project_title = ctx.get('title') or f'form_submission #{entity_id}'
@@ -99,3 +102,100 @@ def _debit_leave_permit_hours(submission_id, sub_repo):
         logger.info(f'Time Bank debit {hours}h for form_submission #{submission_id}')
     except Exception as e:
         logger.error(f'Time Bank debit failed for form_submission #{submission_id}: {e}')
+
+
+def _resolve_voucher_company(sub, form):
+    """Get company_id from the submitting user, falling back to form/submission."""
+    user_id = sub.get('respondent_user_id')
+    if user_id:
+        try:
+            from core.base_repository import BaseRepository
+            user = BaseRepository().query_one('SELECT company_id FROM users WHERE id = %s', (user_id,))
+            if user and user.get('company_id'):
+                return user['company_id']
+        except Exception:
+            pass
+    return sub.get('company_id') or form.get('company_id')
+
+
+def _create_voucher_from_submission(submission_id, sub_repo):
+    """Create a voucher when a voucher-issuance form submission is approved."""
+    try:
+        from accounting.vouchers.form_seed import VOUCHER_FORM_SLUG
+        from forms.repositories import FormRepository
+
+        sub = sub_repo.get_by_id(submission_id)
+        if not sub:
+            return
+        form = FormRepository().get_by_id(sub['form_id'])
+        if not form or form.get('slug') != VOUCHER_FORM_SLUG:
+            return
+
+        answers = sub.get('answers') or {}
+
+        # Parse validity months from dropdown label
+        validity_label = answers.get('f_validity_months', '12 months')
+        validity_months = int(str(validity_label).split()[0]) if validity_label else 12
+
+        # Map type label to enum
+        type_map = {
+            'Value (LEI)': 'value',
+            'Accessory Discount Code': 'accessory_discount_code',
+            'Accessory Percentage': 'accessory_percentage',
+            'Service Items': 'service_items',
+        }
+        voucher_type = type_map.get(answers.get('f_voucher_type', ''), 'value')
+
+        # Parse service items from multi-line text
+        service_items = None
+        if voucher_type == 'service_items':
+            raw = answers.get('f_service_items', '')
+            if isinstance(raw, list):
+                service_items = [s.strip() for s in raw if s.strip()]
+            else:
+                service_items = [s.strip() for s in str(raw).split('\n') if s.strip()]
+
+        # Parse numeric fields
+        value_lei = None
+        if voucher_type == 'value':
+            try:
+                value_lei = float(answers.get('f_value_lei', 0))
+            except (TypeError, ValueError):
+                value_lei = 0
+
+        discount_percentage = None
+        if voucher_type == 'accessory_percentage':
+            try:
+                discount_percentage = float(answers.get('f_discount_percentage', 0))
+            except (TypeError, ValueError):
+                discount_percentage = 0
+
+        discount_code = None
+        if voucher_type == 'accessory_discount_code':
+            discount_code = str(answers.get('f_discount_code', '')).strip()
+
+        from accounting.vouchers.repositories import VoucherRepository
+        repo = VoucherRepository()
+        voucher = repo.create(
+            company_id=_resolve_voucher_company(sub, form),
+            issued_by_user_id=sub.get('respondent_user_id') or form.get('owner_id'),
+            client_name=str(answers.get('f_client_name', '')).strip(),
+            contract_number=str(answers.get('f_contract_number', '')).strip(),
+            car_vin=str(answers.get('f_car_vin', '')).strip().upper(),
+            validity_months=validity_months,
+            voucher_type=voucher_type,
+            value_lei=value_lei,
+            discount_code=discount_code,
+            discount_percentage=discount_percentage,
+            service_items=service_items,
+            notes=str(answers.get('f_notes', '')).strip() or None,
+            client_email=str(answers.get('f_client_email', '')).strip() or None,
+        )
+
+        # Activate immediately since form approval already handled the approval step
+        from accounting.vouchers.services import VoucherService
+        VoucherService().activate_voucher(voucher['id'])
+
+        logger.info(f'Voucher {voucher["voucher_code"]} created from form_submission #{submission_id}')
+    except Exception as e:
+        logger.error(f'Voucher creation failed for form_submission #{submission_id}: {e}', exc_info=True)

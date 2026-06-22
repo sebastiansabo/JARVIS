@@ -27,6 +27,9 @@ const TemplateEditor = lazy(() => import('./pages/Accounting/Bilant/TemplateEdit
 const Facturare = lazy(() => import('./pages/Accounting/Facturare'))
 const Controlling = lazy(() => import('./pages/Accounting/Controlling'))
 const MarjaReport = lazy(() => import('./pages/Accounting/Controlling/MarjaReport'))
+const VoucherTracking = lazy(() => import('./pages/Accounting/Vouchers'))
+const VoucherNew = lazy(() => import('./pages/Accounting/Vouchers/NewVoucher'))
+const VoucherRedeem = lazy(() => import('./pages/Accounting/Vouchers/RedeemScan'))
 const AiAgent = lazy(() => import('./pages/AiAgent/AiAgent'))
 const Crm = lazy(() => import('./pages/Crm'))
 const CrmClientProfile = lazy(() => import('./pages/Crm/ClientProfile'))
@@ -36,6 +39,7 @@ const Forms = lazy(() => import('./pages/Forms'))
 const FormDetail = lazy(() => import('./pages/Forms/FormDetail'))
 const FormBuilder = lazy(() => import('./pages/Forms/FormBuilder'))
 const PublicForm = lazy(() => import('./pages/Public/PublicForm'))
+const VoucherPortal = lazy(() => import('./pages/Public/VoucherPortal'))
 const Dms = lazy(() => import('./pages/Dms'))
 const DmsDocumentDetail = lazy(() => import('./pages/Dms/DocumentDetail'))
 const SuppliersPage = lazy(() => import('./pages/Dms/SuppliersPage'))
@@ -141,6 +145,8 @@ export default function App() {
     <Routes>
       {/* Public form — no auth, no layout */}
       <Route path="/f/:slug" element={<SuspensePage><PublicForm /></SuspensePage>} />
+      <Route path="/voucher" element={<SuspensePage><VoucherPortal /></SuspensePage>} />
+      <Route path="/voucher/:code" element={<SuspensePage><VoucherPortal /></SuspensePage>} />
 
       <Route path="/app" element={<Layout />}>
         <Route index element={<DefaultRedirect />} />
@@ -157,6 +163,9 @@ export default function App() {
         <Route path="accounting/facturare" element={<Guard flag="can_access_accounting"><SuspensePage><Facturare /></SuspensePage></Guard>} />
         <Route path="accounting/controlling" element={<Guard flag="can_access_accounting"><V2Guard permKey="controlling.bab.view"><SuspensePage><Controlling /></SuspensePage></V2Guard></Guard>} />
         <Route path="accounting/controlling/:uploadId" element={<Guard flag="can_access_accounting"><V2Guard permKey="controlling.bab.view"><SuspensePage><MarjaReport /></SuspensePage></V2Guard></Guard>} />
+        <Route path="accounting/vouchers" element={<Guard flag="can_access_accounting"><SuspensePage><VoucherTracking /></SuspensePage></Guard>} />
+        <Route path="accounting/vouchers/new" element={<SuspensePage><VoucherNew /></SuspensePage>} />
+        <Route path="accounting/vouchers/redeem" element={<Guard flag="can_access_accounting"><SuspensePage><VoucherRedeem /></SuspensePage></Guard>} />
 
         {/* HR — requires can_access_hr */}
         <Route path="hr/*" element={<Guard flag="can_access_hr"><SuspensePage><Hr /></SuspensePage></Guard>} />

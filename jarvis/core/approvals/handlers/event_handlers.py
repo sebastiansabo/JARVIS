@@ -5,7 +5,7 @@ from ._shared import (
     _get_user_email, _get_users_email, _send_approval_email, _approval_email_base,
     _entity_link, _notify_form_submission_users, _APP_BASE_URL,
 )
-from . import entity_form, entity_marketing, entity_invoice, entity_carpark, entity_leave_permit_conversion
+from . import entity_form, entity_marketing, entity_invoice, entity_carpark, entity_leave_permit_conversion, entity_voucher
 from core.notifications.notify import notify_user, notify_users
 
 logger = logging.getLogger('jarvis.core.approvals.handlers')
@@ -132,6 +132,10 @@ def _on_approved(payload):
     if entity_type == 'leave_permit_conversion' and entity_id:
         entity_leave_permit_conversion.handle_approved(entity_id, request_id, requester_id)
 
+    # Activate voucher on approval
+    if entity_type == 'voucher' and entity_id:
+        entity_voucher.handle_approved(entity_id, request_id, requester_id)
+
     # Auto-create signature request if flow requires_signature
     try:
         from core.approvals.repositories import RequestRepository, FlowRepository
@@ -211,6 +215,10 @@ def _on_rejected(payload):
     # Reject leave permit conversion
     if entity_type == 'leave_permit_conversion' and entity_id:
         entity_leave_permit_conversion.handle_rejected(entity_id, request_id)
+
+    # Reject voucher
+    if entity_type == 'voucher' and entity_id:
+        entity_voucher.handle_rejected(entity_id, comment=note)
 
 
 def _on_returned(payload):

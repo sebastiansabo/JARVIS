@@ -155,13 +155,18 @@ export default function Forms() {
                               <Pencil className="h-4 w-4 mr-2" /> Edit
                             </DropdownMenuItem>
                             {form.status === 'published' && (
-                              <DropdownMenuItem onClick={(e) => {
-                                e.stopPropagation()
-                                navigator.clipboard.writeText(`${window.location.origin}/forms/public/${form.slug}`)
-                                toast.success('Public link copied!')
-                              }}>
-                                <ExternalLink className="h-4 w-4 mr-2" /> Copy Link
-                              </DropdownMenuItem>
+                              <>
+                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); window.open(`/f/${form.slug}`, '_blank') }}>
+                                  <ExternalLink className="h-4 w-4 mr-2" /> Open Form
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigator.clipboard.writeText(`${window.location.origin}/f/${form.slug}`)
+                                  toast.success('Link copied!')
+                                }}>
+                                  <Copy className="h-4 w-4 mr-2" /> Copy Link
+                                </DropdownMenuItem>
+                              </>
                             )}
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); duplicateMutation.mutate(form.id) }}>
                               <Copy className="h-4 w-4 mr-2" /> Duplicate

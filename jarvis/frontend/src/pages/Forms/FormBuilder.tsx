@@ -39,6 +39,7 @@ const FIELD_TYPES: { value: FieldType; label: string; group: string }[] = [
   { value: 'heading', label: 'Heading', group: 'Display' },
   { value: 'paragraph', label: 'Paragraph', group: 'Display' },
   { value: 'hidden', label: 'Hidden Field', group: 'Special' },
+  { value: 'crm_client', label: 'CRM Client', group: 'Special' },
 ]
 
 function generateId() {
@@ -341,6 +342,68 @@ export default function FormBuilder() {
                   </Button>
                 </div>
               )}
+              {/* Conditional visibility */}
+              {!['heading', 'paragraph'].includes(selectedField.type) && (() => {
+                const showWhen = (selectedField.config as Record<string, any> | undefined)?.showWhen as
+                  | { fieldId: string; operator: string; value: string }
+                  | undefined
+                const otherFields = fields.filter((f, i) => i !== selectedFieldIdx && ['dropdown', 'radio', 'checkbox', 'short_text', 'number'].includes(f.type))
+                const depField = otherFields.find((f) => f.id === showWhen?.fieldId)
+
+                const updateShowWhen = (updates: Record<string, string | undefined>) => {
+                  const current = (selectedField.config as Record<string, any> | undefined)?.showWhen || {}
+                  const next = { ...current, ...updates }
+                  if (!next.fieldId) {
+                    const { showWhen: _, ...rest } = (selectedField.config || {}) as Record<string, any>
+                    updateField(selectedFieldIdx, { config: Object.keys(rest).length ? rest : undefined })
+                  } else {
+                    updateField(selectedFieldIdx, { config: { ...(selectedField.config || {}), showWhen: next } })
+                  }
+                }
+
+                return (
+                  <div className="space-y-2 pt-2 border-t">
+                    <Label className="text-xs font-medium">Show when</Label>
+                    <Select value={showWhen?.fieldId || '__none__'} onValueChange={(v) => updateShowWhen({ fieldId: v === '__none__' ? undefined : v, operator: 'equals', value: '' })}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Always visible" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Always visible</SelectItem>
+                        {otherFields.map((f) => (
+                          <SelectItem key={f.id} value={f.id}>{f.label || f.id}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {showWhen?.fieldId && (
+                      <>
+                        <Select value={showWhen.operator || 'equals'} onValueChange={(v) => updateShowWhen({ operator: v })}>
+                          <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="equals">equals</SelectItem>
+                            <SelectItem value="not_equals">does not equal</SelectItem>
+                            <SelectItem value="contains">contains</SelectItem>
+                            <SelectItem value="is_not_empty">is not empty</SelectItem>
+                            <SelectItem value="is_empty">is empty</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {!['is_empty', 'is_not_empty'].includes(showWhen.operator) && (
+                          depField && ['dropdown', 'radio'].includes(depField.type) ? (
+                            <Select value={showWhen.value || ''} onValueChange={(v) => updateShowWhen({ value: v })}>
+                              <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Select value..." /></SelectTrigger>
+                              <SelectContent>
+                                {(depField.options || []).map((opt) => (
+                                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input className="h-7 text-xs" value={showWhen.value || ''} onChange={(e) => updateShowWhen({ value: e.target.value })} placeholder="Value..." />
+                          )
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           )}
 

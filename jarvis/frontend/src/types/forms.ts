@@ -17,6 +17,7 @@ export type FieldType =
   | 'paragraph'
   | 'hidden'
   | 'signature'
+  | 'crm_client'
 
 export interface ApprovalConfig {
   flow_id?: number
