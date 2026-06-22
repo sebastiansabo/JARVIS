@@ -707,7 +707,7 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
   const canInvoice = sameStage && selectedActions.has('INVOICE')
   const canStorno = sameStage && selectedActions.has('STORNO')
   const canFinal = sameStage && selectedActions.has('FINAL')
-  // After partial storno: allow both Proforma and Storno for the same selection
+  // Allow additional actions beyond the primary one
   const canAlsoStorno = selectedCount > 0 && !canStorno && selectedLines.every(l => {
     const cov = l.covered_by || []
     const inv = cov.filter(c => c.invoice_type === 'INVOICE').length
@@ -715,9 +715,9 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
     return inv > 0 && inv > sto  // has un-stornoed invoices
   })
   const canAlsoProforma = selectedCount > 0 && !canProforma && selectedLines.every(l => {
-    const cov = l.covered_by || []
-    const sto = cov.filter(c => c.invoice_type === 'STORNO').length
-    return sto > 0  // has storno → can start new cycle
+    // Proforma available when rest > 0 (car not fully covered)
+    const invoiced = l.invoiced_eur || 0
+    return l.selling_price_eur - invoiced > 1
   })
 
   return (
