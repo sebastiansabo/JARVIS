@@ -1404,7 +1404,6 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
 
       {/* Invoice table — grouped by date, collapsible */}
       {showInvoices && detail.invoices.length > 0 && (() => {
-        const typeOrder: Record<string, number> = { PROFORMA: 0, INVOICE: 1, STORNO: 2, FINAL: 3 }
         // Group by issued_date
         const dateMap = new Map<string, InvoiceDetail[]>()
         for (const inv of detail.invoices) {
@@ -1417,7 +1416,7 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
           const label = key !== 'no-date'
             ? new Date(key).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric', weekday: 'short' })
             : 'No date'
-          invs.sort((a, b) => (typeOrder[a.invoice_type] ?? 9) - (typeOrder[b.invoice_type] ?? 9) || a.sequence_number - b.sequence_number)
+          invs.sort((a, b) => a.id - b.id)
           const totalEur = invs.reduce((s, i) => s + i.total_amount_eur, 0)
           groups.push({ key, label, invoices: invs, totalEur })
         }
