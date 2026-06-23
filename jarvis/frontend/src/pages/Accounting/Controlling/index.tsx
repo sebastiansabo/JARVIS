@@ -728,7 +728,7 @@ function ConfigTable({ companyId, setCompanyId, companies, configRows, queryClie
           if (!groups.has(key)) groups.set(key, { group_name: r.group_name, kst: r.kst, rows: [] })
           groups.get(key)!.rows.push(r)
         }
-        const addingToGroup = addingSum && newSumRow.group_name && newSumRow.kst
+        const addingToGroup = addingSum && newSumRow.group_name && newSumRow.kst && groups.has(`${newSumRow.group_name}|${newSumRow.kst}`)
         return (
           <div className="space-y-3 mb-6">
             {[...groups.entries()].map(([key, { group_name, kst, rows: groupRows }]) => (
