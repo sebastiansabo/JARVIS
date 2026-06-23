@@ -10,7 +10,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { crmApi } from '@/api/crm'
+import { vouchersApi } from '@/api/vouchers'
 import type { FormField } from '@/types/forms'
+import type { ServiceCatalogItem } from '@/types/vouchers'
 
 const SignatureCanvas = lazy(() => import('@/components/shared/SignatureCanvas'))
 
@@ -230,6 +232,56 @@ function CrmClientField({ field, value, error, onChange, onSetField }: FieldProp
   )
 }
 
+function ServiceCatalogField({ field, value, error, onChange }: FieldProps) {
+  const { data: services = [] } = useQuery({
+    queryKey: ['voucher-service-catalog'],
+    queryFn: () => vouchersApi.getServiceCatalog(),
+    staleTime: 60_000,
+  })
+
+  // value is a JSON array of {id, name, price} objects
+  const selected: { id: number; name: string; price: number }[] = Array.isArray(value) ? value : []
+  const selectedIds = new Set(selected.map((s) => s.id))
+
+  const toggle = (svc: ServiceCatalogItem, checked: boolean) => {
+    if (checked) {
+      onChange([...selected, { id: svc.id, name: svc.name, price: svc.price }])
+    } else {
+      onChange(selected.filter((s) => s.id !== svc.id))
+    }
+  }
+
+  const total = selected.reduce((sum, s) => sum + s.price, 0)
+
+  return (
+    <div className="space-y-1">
+      <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+      <div className="space-y-1">
+        {services.map((svc) => (
+          <div key={svc.id} className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id={`${field.id}-svc-${svc.id}`}
+                checked={selectedIds.has(svc.id)}
+                onCheckedChange={(isChecked) => toggle(svc, !!isChecked)}
+              />
+              <Label htmlFor={`${field.id}-svc-${svc.id}`} className="font-normal">{svc.name}</Label>
+            </div>
+            <span className="text-sm text-muted-foreground">{svc.price} {svc.currency}</span>
+          </div>
+        ))}
+      </div>
+      {selected.length > 0 && (
+        <div className="pt-2 border-t flex justify-between font-medium text-sm">
+          <span>Total</span>
+          <span>{total.toLocaleString('ro-RO')} LEI</span>
+        </div>
+      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  )
+}
+
 function FieldComponent({ field, value, error, onChange, onSetField }: FieldProps) {
   switch (field.type) {
     case 'heading':
@@ -404,6 +456,9 @@ function FieldComponent({ field, value, error, onChange, onSetField }: FieldProp
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
       )
+
+    case 'service_catalog':
+      return <ServiceCatalogField field={field} value={value} error={error} onChange={onChange} />
 
     default:
       return null

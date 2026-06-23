@@ -78,10 +78,9 @@ VOUCHER_FORM_SCHEMA = [
     },
     {
         'id': 'f_service_items',
-        'type': 'checkbox',
+        'type': 'service_catalog',
         'label': 'Service Items',
         'required': False,
-        'options': ['Oil change', 'Tire rotation', 'Brake inspection', 'Air filter replacement', 'Coolant flush', 'Battery check', 'Wheel alignment', 'Interior cleaning'],
         'order': 9,
         'config': {'showWhen': {'fieldId': 'f_voucher_type', 'operator': 'equals', 'value': 'Service Items'}},
     },

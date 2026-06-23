@@ -3,6 +3,9 @@ from ._shared import *  # noqa: F401, F403
 from pydantic import ValidationError
 import io
 from accounting.vouchers.form_seed import VOUCHER_FORM_SLUG
+from core.base_repository import BaseRepository
+
+_base = BaseRepository()
 
 
 @vouchers_bp.route('/api/vouchers/signature-status', methods=['GET'])
@@ -172,3 +175,123 @@ def send_voucher_to_client(voucher_id):
         return jsonify({'success': False, 'error': f'Email failed: {err}'}), 500
 
     return jsonify({'success': True, 'message': f'Voucher sent to {to_email}'})
+
+
+# ── Service Catalog CRUD ──────────────────────────────
+
+@vouchers_bp.route('/api/vouchers/service-catalog', methods=['GET'])
+@login_required
+@handle_api_errors
+def list_service_catalog():
+    """List active service catalog items for the current user's company."""
+    rows = _base.query_all(
+        '''SELECT id, name, price, currency, category, is_active
+           FROM voucher_service_catalog
+           WHERE company_id = %s AND is_active = TRUE
+           ORDER BY sort_order, name''',
+        (current_user.company_id,)
+    )
+    return jsonify(rows)
+
+
+@vouchers_bp.route('/api/vouchers/service-catalog', methods=['POST'])
+@login_required
+@handle_api_errors
+def create_service_catalog_item():
+    """Add a new service catalog item (accounting role required)."""
+    if not _check_accounting_role():
+        return error_response('Forbidden', 403)
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    price = data.get('price')
+    currency = (data.get('currency') or 'LEI').strip().upper()
+    category = (data.get('category') or '').strip() or None
+    sort_order = int(data.get('sort_order', 0))
+
+    if not name:
+        return jsonify({'success': False, 'error': 'Name is required'}), 400
+    if price is None or float(price) < 0:
+        return jsonify({'success': False, 'error': 'Valid price is required'}), 400
+
+    row = _base.execute(
+        '''INSERT INTO voucher_service_catalog
+               (company_id, name, price, currency, category, sort_order)
+           VALUES (%s, %s, %s, %s, %s, %s)
+           RETURNING id, name, price, currency, category, is_active''',
+        (current_user.company_id, name, float(price), currency, category, sort_order),
+        returning=True,
+    )
+    return jsonify({'success': True, 'item': row}), 201
+
+
+@vouchers_bp.route('/api/vouchers/service-catalog/<int:item_id>', methods=['PUT'])
+@login_required
+@handle_api_errors
+def update_service_catalog_item(item_id):
+    """Update a service catalog item (accounting role required)."""
+    if not _check_accounting_role():
+        return error_response('Forbidden', 403)
+
+    existing = _base.query_one(
+        'SELECT id FROM voucher_service_catalog WHERE id = %s AND company_id = %s',
+        (item_id, current_user.company_id),
+    )
+    if not existing:
+        return error_response('Service not found', 404)
+
+    data = request.get_json(silent=True) or {}
+    sets, params = [], []
+    if 'name' in data:
+        sets.append('name = %s')
+        params.append(data['name'].strip())
+    if 'price' in data:
+        sets.append('price = %s')
+        params.append(float(data['price']))
+    if 'currency' in data:
+        sets.append('currency = %s')
+        params.append(data['currency'].strip().upper())
+    if 'category' in data:
+        sets.append('category = %s')
+        params.append(data['category'].strip() or None)
+    if 'sort_order' in data:
+        sets.append('sort_order = %s')
+        params.append(int(data['sort_order']))
+
+    if not sets:
+        return jsonify({'success': False, 'error': 'No fields to update'}), 400
+
+    sets.append('updated_at = CURRENT_TIMESTAMP')
+    params.append(item_id)
+
+    _base.execute(
+        f"UPDATE voucher_service_catalog SET {', '.join(sets)} WHERE id = %s",
+        tuple(params),
+    )
+    updated = _base.query_one(
+        'SELECT id, name, price, currency, category, is_active FROM voucher_service_catalog WHERE id = %s',
+        (item_id,),
+    )
+    return jsonify({'success': True, 'item': updated})
+
+
+@vouchers_bp.route('/api/vouchers/service-catalog/<int:item_id>', methods=['DELETE'])
+@login_required
+@handle_api_errors
+def delete_service_catalog_item(item_id):
+    """Soft-delete a service catalog item (set is_active=false)."""
+    if not _check_accounting_role():
+        return error_response('Forbidden', 403)
+
+    existing = _base.query_one(
+        'SELECT id FROM voucher_service_catalog WHERE id = %s AND company_id = %s',
+        (item_id, current_user.company_id),
+    )
+    if not existing:
+        return error_response('Service not found', 404)
+
+    _base.execute(
+        'UPDATE voucher_service_catalog SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s',
+        (item_id,),
+    )
+    return jsonify({'success': True})
