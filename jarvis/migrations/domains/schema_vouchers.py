@@ -89,6 +89,56 @@ def create_schema_vouchers(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_issued_by ON vouchers(issued_by_user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_expires_at ON vouchers(expires_at)')
 
+    # ── Service Catalog ─────────────────────────────────
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS voucher_service_catalog (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL REFERENCES companies(id),
+            name VARCHAR(255) NOT NULL,
+            price NUMERIC(12,2) NOT NULL,
+            currency VARCHAR(10) DEFAULT 'LEI',
+            category VARCHAR(100),
+            is_active BOOLEAN DEFAULT TRUE,
+            sort_order INT DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vsc_company_active ON voucher_service_catalog(company_id, is_active)')
+
+    # Seed default services for company 16 (AUTOWORLD S.R.L.)
+    cursor.execute('SELECT COUNT(*) AS cnt FROM voucher_service_catalog WHERE company_id = 16')
+    if cursor.fetchone()['cnt'] == 0:
+        seed_services = [
+            ('Oil change', 900),
+            ('Tire rotation', 200),
+            ('Brake inspection', 350),
+            ('Air filter replacement', 150),
+            ('Coolant flush', 400),
+            ('Battery check', 100),
+            ('Wheel alignment', 300),
+            ('Interior cleaning', 250),
+        ]
+        for idx, (name, price) in enumerate(seed_services):
+            cursor.execute('''
+                INSERT INTO voucher_service_catalog (company_id, name, price, currency, sort_order)
+                VALUES (16, %s, %s, 'LEI', %s)
+            ''', (name, price, idx))
+        logger.info('Seeded %d default service catalog items for company 16', len(seed_services))
+
+    # ── service_items_value column on vouchers ────────
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'vouchers' AND column_name = 'service_items_value'
+            ) THEN
+                ALTER TABLE vouchers ADD COLUMN service_items_value NUMERIC(12,2);
+            END IF;
+        END $$;
+    ''')
+
     # ── V2 Permissions ──────────────────────────────────
     cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'vouchers'")
     if cursor.fetchone()['cnt'] == 0:

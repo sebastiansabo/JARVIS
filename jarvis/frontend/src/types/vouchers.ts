@@ -56,3 +56,12 @@ export interface AccountingListResponse {
   vouchers: Voucher[]
   summary: VoucherSummary
 }
+
+export interface ServiceCatalogItem {
+  id: number
+  name: string
+  price: number
+  currency: string
+  category: string | null
+  is_active: boolean
+}

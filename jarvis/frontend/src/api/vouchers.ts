@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Voucher, VoucherCreatePayload, AccountingListResponse } from '@/types/vouchers'
+import type { Voucher, VoucherCreatePayload, AccountingListResponse, ServiceCatalogItem } from '@/types/vouchers'
 
 export const vouchersApi = {
   create: (data: VoucherCreatePayload) =>
@@ -31,4 +31,7 @@ export const vouchersApi = {
     const qs = params ? '?' + new URLSearchParams(params).toString() : ''
     return `/api/vouchers/export${qs}`
   },
+
+  getServiceCatalog: () =>
+    api.get<ServiceCatalogItem[]>('/api/vouchers/service-catalog'),
 }
