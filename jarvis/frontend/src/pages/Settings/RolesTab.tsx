@@ -262,6 +262,23 @@ function PermissionMatrixView({
     })
   }
 
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  const toggleModule = (key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
+  const allExpanded = collapsed.size === 0
+  const toggleAll = () => {
+    if (allExpanded) {
+      setCollapsed(new Set(modules.map((m) => m.key)))
+    } else {
+      setCollapsed(new Set())
+    }
+  }
+
   const pendingCount = pending.size
 
   return (
@@ -276,18 +293,23 @@ function PermissionMatrixView({
               </Badge>
             )}
           </div>
-          {pendingCount > 0 && (
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={onDiscard} disabled={isSaving}>
-                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                Discard
-              </Button>
-              <Button size="sm" onClick={onSave} disabled={isSaving}>
-                <Save className="mr-1.5 h-3.5 w-3.5" />
-                {isSaving ? 'Saving…' : `Save Changes (${pendingCount})`}
-              </Button>
-            </div>
-          )}
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={toggleAll} className="text-xs">
+              {allExpanded ? 'Collapse All' : 'Expand All'}
+            </Button>
+            {pendingCount > 0 && (
+              <>
+                <Button variant="outline" size="sm" onClick={onDiscard} disabled={isSaving}>
+                  <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                  Discard
+                </Button>
+                <Button size="sm" onClick={onSave} disabled={isSaving}>
+                  <Save className="mr-1.5 h-3.5 w-3.5" />
+                  {isSaving ? 'Saving…' : `Save Changes (${pendingCount})`}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -306,15 +328,19 @@ function PermissionMatrixView({
             <TableBody>
               {modules.map((mod) => (
                 <Fragment key={mod.key}>
-                  {/* Module header row — bulk scope selector */}
-                  <TableRow>
+                  {/* Module header row — clickable to collapse, bulk scope selector */}
+                  <TableRow className="cursor-pointer" onClick={() => toggleModule(mod.key)}>
                     <TableCell className="bg-muted/50 font-semibold sticky left-0 z-10">
-                      {mod.label}
+                      <span className="flex items-center gap-1.5">
+                        <span className={`inline-block transition-transform ${collapsed.has(mod.key) ? '' : 'rotate-90'}`}>▸</span>
+                        {mod.label}
+                        <span className="text-xs font-normal text-muted-foreground">({getModuleActions(mod).length})</span>
+                      </span>
                     </TableCell>
                     {roles.map((role) => {
                       const modScope = getModuleScope(mod, role.id)
                       return (
-                        <TableCell key={role.id} className="bg-muted/50 text-center">
+                        <TableCell key={role.id} className="bg-muted/50 text-center" onClick={(e) => e.stopPropagation()}>
                           <ModuleScopeSelect
                             value={modScope === 'mixed' ? 'deny' : modScope}
                             isMixed={modScope === 'mixed'}
@@ -324,8 +350,8 @@ function PermissionMatrixView({
                       )
                     })}
                   </TableRow>
-                  {/* Permission rows */}
-                  {mod.entities.flatMap((entity) =>
+                  {/* Permission rows — hidden when collapsed */}
+                  {!collapsed.has(mod.key) && mod.entities.flatMap((entity) =>
                     entity.actions.map((action) => (
                       <TableRow key={action.id}>
                         <TableCell className="sticky left-0 z-10 bg-card text-sm pl-6">
