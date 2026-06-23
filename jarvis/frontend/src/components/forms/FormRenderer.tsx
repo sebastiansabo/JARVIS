@@ -12,7 +12,7 @@ import {
 import { crmApi } from '@/api/crm'
 import { vouchersApi } from '@/api/vouchers'
 import type { FormField } from '@/types/forms'
-import type { ServiceCatalogItem } from '@/types/vouchers'
+import type { ServiceCatalogCompanyItem } from '@/types/vouchers'
 
 const SignatureCanvas = lazy(() => import('@/components/shared/SignatureCanvas'))
 
@@ -234,8 +234,8 @@ function CrmClientField({ field, value, error, onChange, onSetField }: FieldProp
 
 function ServiceCatalogField({ field, value, error, onChange }: FieldProps) {
   const { data: services = [] } = useQuery({
-    queryKey: ['voucher-service-catalog'],
-    queryFn: () => vouchersApi.getServiceCatalog(),
+    queryKey: ['voucher-service-catalog-company'],
+    queryFn: () => vouchersApi.getServiceCatalogCompany(),
     staleTime: 60_000,
   })
 
@@ -243,7 +243,7 @@ function ServiceCatalogField({ field, value, error, onChange }: FieldProps) {
   const selected: { id: number; name: string; price: number }[] = Array.isArray(value) ? value : []
   const selectedIds = new Set(selected.map((s) => s.id))
 
-  const toggle = (svc: ServiceCatalogItem, checked: boolean) => {
+  const toggle = (svc: ServiceCatalogCompanyItem, checked: boolean) => {
     if (checked) {
       onChange([...selected, { id: svc.id, name: svc.name, price: svc.price }])
     } else {

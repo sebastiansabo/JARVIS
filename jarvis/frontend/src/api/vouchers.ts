@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Voucher, VoucherCreatePayload, AccountingListResponse, ServiceCatalogItem } from '@/types/vouchers'
+import type { Voucher, VoucherCreatePayload, AccountingListResponse, ServiceCatalogItem, ServiceCatalogCompanyItem, ServicePricing } from '@/types/vouchers'
 
 export const vouchersApi = {
   create: (data: VoucherCreatePayload) =>
@@ -32,15 +32,31 @@ export const vouchersApi = {
     return `/api/vouchers/export${qs}`
   },
 
+  // Master service catalog (all services + all company pricing)
   getServiceCatalog: () =>
     api.get<ServiceCatalogItem[]>('/api/vouchers/service-catalog'),
 
-  createService: (data: { name: string; price: number; currency: string; category?: string }) =>
-    api.post<ServiceCatalogItem>('/api/vouchers/service-catalog', data),
+  // Company-filtered flat list (for voucher form)
+  getServiceCatalogCompany: () =>
+    api.get<ServiceCatalogCompanyItem[]>('/api/vouchers/service-catalog/company'),
 
-  updateService: (id: number, data: { name: string; price: number; currency: string; category?: string }) =>
-    api.put<ServiceCatalogItem>(`/api/vouchers/service-catalog/${id}`, data),
+  // Master service CRUD
+  createService: (data: { name: string; category?: string; sort_order?: number }) =>
+    api.post<{ success: boolean; item: ServiceCatalogItem }>('/api/vouchers/service-catalog', data),
+
+  updateService: (id: number, data: { name?: string; category?: string; sort_order?: number; is_active?: boolean }) =>
+    api.put<{ success: boolean; item: ServiceCatalogItem }>(`/api/vouchers/service-catalog/${id}`, data),
 
   deleteService: (id: number) =>
     api.delete<{ success: boolean }>(`/api/vouchers/service-catalog/${id}`),
+
+  // Pricing CRUD
+  createPricing: (serviceId: number, data: { company_id: number; department?: string; service_code?: string; price: number; currency?: string }) =>
+    api.post<{ success: boolean; item: ServicePricing }>(`/api/vouchers/service-catalog/${serviceId}/pricing`, data),
+
+  updatePricing: (pricingId: number, data: { department?: string; service_code?: string; price?: number; currency?: string; is_active?: boolean }) =>
+    api.put<{ success: boolean; item: ServicePricing }>(`/api/vouchers/service-catalog/pricing/${pricingId}`, data),
+
+  deletePricing: (pricingId: number) =>
+    api.delete<{ success: boolean }>(`/api/vouchers/service-catalog/pricing/${pricingId}`),
 }
