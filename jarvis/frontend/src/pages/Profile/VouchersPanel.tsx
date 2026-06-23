@@ -1,6 +1,7 @@
 import { useState, lazy, Suspense } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileText, ScanLine, ArrowLeft } from 'lucide-react'
+import { FileText, ScanLine, ArrowLeft, Plus } from 'lucide-react'
+import { useAuthStore } from '@/stores/authStore'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -42,6 +43,10 @@ function expiringClass(v: Voucher): string {
 export default function VouchersPanel() {
   const [selected, setSelected] = useState<Voucher | null>(null)
   const [showRedeem, setShowRedeem] = useState(false)
+  const user = useAuthStore((s) => s.user)
+  const perms = user?.permissions || {}
+  const canIssue = !user?.permissions || (perms['vouchers.form.view'] ?? true)
+  const canRedeem = !user?.permissions || (perms['vouchers.accounting.redeem'] ?? true)
 
   const { data: vouchers = [], isLoading } = useQuery({
     queryKey: ['my-vouchers'],
@@ -67,9 +72,18 @@ export default function VouchersPanel() {
     <>
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm text-muted-foreground">{vouchers.length} voucher{vouchers.length !== 1 ? 's' : ''}</span>
-        <Button variant="outline" size="sm" onClick={() => setShowRedeem(true)}>
-          <ScanLine className="mr-1 h-4 w-4" />Redeem Voucher
-        </Button>
+        <div className="flex gap-2">
+          {canRedeem && (
+            <Button variant="outline" size="sm" onClick={() => setShowRedeem(true)}>
+              <ScanLine className="mr-1 h-4 w-4" />Redeem
+            </Button>
+          )}
+          {canIssue && (
+            <Button size="sm" onClick={() => window.location.href = '/app/accounting/vouchers'}>
+              <Plus className="mr-1 h-4 w-4" />Issue
+            </Button>
+          )}
+        </div>
       </div>
 
       {vouchers.length === 0 ? (
