@@ -125,7 +125,7 @@ def _build_data_context(repo: BabRepository, company_id: int, companies: list, c
         months = [pr['label'] for pr in period_reports]
         header = f"| Indicator | {' | '.join(months)} |"
         separator = f"|{'---|' * (len(months) + 1)}"
-        parts.append(f"Curs EUR: {', '.join(f'{pr['label']}: {pr['eur_rate']}' for pr in period_reports)}\n")
+        parts.append("Curs EUR: " + ', '.join(f"{pr['label']}: {pr['eur_rate']}" for pr in period_reports) + "\n")
         parts.append(header)
         parts.append(separator)
 
