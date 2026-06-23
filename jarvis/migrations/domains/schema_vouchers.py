@@ -107,7 +107,7 @@ def create_schema_vouchers(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vsc_company_active ON voucher_service_catalog(company_id, is_active)')
 
-    # Seed default services for company 16 (AUTOWORLD S.R.L.)
+    # Seed default services for company 16 (AUTOWORLD S.R.L.) — legacy table
     cursor.execute('SELECT COUNT(*) AS cnt FROM voucher_service_catalog WHERE company_id = 16')
     if cursor.fetchone()['cnt'] == 0:
         seed_services = [
@@ -126,6 +126,90 @@ def create_schema_vouchers(conn, cursor):
                 VALUES (16, %s, %s, %s, 'LEI', %s)
             ''', (code, name, price, idx))
         logger.info('Seeded %d default service catalog items for company 16', len(seed_services))
+
+    # ── Master Service Catalog (new structure) ──────────
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS service_catalog (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL UNIQUE,
+            category VARCHAR(100),
+            is_active BOOLEAN DEFAULT TRUE,
+            sort_order INT DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS service_catalog_pricing (
+            id SERIAL PRIMARY KEY,
+            service_id INT NOT NULL REFERENCES service_catalog(id),
+            company_id INT NOT NULL REFERENCES companies(id),
+            service_code VARCHAR(50),
+            price NUMERIC(12,2) NOT NULL,
+            currency VARCHAR(10) DEFAULT 'LEI',
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(service_id, company_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_scp_service ON service_catalog_pricing(service_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_scp_company ON service_catalog_pricing(company_id, is_active)')
+
+    # Migrate data from voucher_service_catalog → service_catalog + service_catalog_pricing
+    cursor.execute('SELECT COUNT(*) AS cnt FROM service_catalog')
+    if cursor.fetchone()['cnt'] == 0:
+        # Check if there is legacy data to migrate
+        cursor.execute('SELECT COUNT(*) AS cnt FROM voucher_service_catalog')
+        legacy_count = cursor.fetchone()['cnt']
+        if legacy_count > 0:
+            # Insert unique service names into service_catalog
+            cursor.execute('''
+                INSERT INTO service_catalog (name, category, is_active, sort_order)
+                SELECT DISTINCT ON (name)
+                    name, category, is_active, sort_order
+                FROM voucher_service_catalog
+                ORDER BY name, id
+                ON CONFLICT (name) DO NOTHING
+            ''')
+            # Insert company-specific pricing into service_catalog_pricing
+            cursor.execute('''
+                INSERT INTO service_catalog_pricing (service_id, company_id, service_code, price, currency, is_active)
+                SELECT sc.id, vsc.company_id, vsc.service_code, vsc.price, vsc.currency, vsc.is_active
+                FROM voucher_service_catalog vsc
+                JOIN service_catalog sc ON sc.name = vsc.name
+                ON CONFLICT (service_id, company_id) DO NOTHING
+            ''')
+            logger.info('Migrated %d legacy service catalog entries to new tables', legacy_count)
+        else:
+            # Seed master services for company 16
+            seed_services = [
+                ('Oil change', 'Maintenance', 0, 'SVC-OIL', 900),
+                ('Tire rotation', 'Maintenance', 1, 'SVC-TIRE', 200),
+                ('Brake inspection', 'Maintenance', 2, 'SVC-BRK', 350),
+                ('Air filter replacement', 'Maintenance', 3, 'SVC-AIR', 150),
+                ('Coolant flush', 'Maintenance', 4, 'SVC-COOL', 400),
+                ('Battery check', 'Maintenance', 5, 'SVC-BAT', 100),
+                ('Wheel alignment', 'Maintenance', 6, 'SVC-WHL', 300),
+                ('Interior cleaning', 'Detailing', 7, 'SVC-CLN', 250),
+                ('Exterior wash', 'Detailing', 8, 'SVC-WASH', 120),
+                ('AC service', 'Maintenance', 9, 'SVC-AC', 500),
+                ('Diagnostic scan', 'Diagnostics', 10, 'SVC-DIAG', 200),
+                ('Transmission fluid change', 'Maintenance', 11, 'SVC-TRANS', 600),
+            ]
+            for name, category, sort_order, code, price in seed_services:
+                cursor.execute('''
+                    INSERT INTO service_catalog (name, category, sort_order)
+                    VALUES (%s, %s, %s)
+                    RETURNING id
+                ''', (name, category, sort_order))
+                svc_id = cursor.fetchone()['id']
+                cursor.execute('''
+                    INSERT INTO service_catalog_pricing (service_id, company_id, service_code, price, currency)
+                    VALUES (%s, 16, %s, %s, 'LEI')
+                ''', (svc_id, code, price))
+            logger.info('Seeded %d master services with company 16 pricing', len(seed_services))
 
     # ── service_items_value column on vouchers ────────
     cursor.execute('''

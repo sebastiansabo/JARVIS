@@ -59,6 +59,28 @@ export interface AccountingListResponse {
 
 export interface ServiceCatalogItem {
   id: number
+  name: string
+  category: string | null
+  is_active: boolean
+  sort_order?: number
+  pricing: ServicePricing[]
+}
+
+export interface ServicePricing {
+  id: number
+  service_id: number
+  company_id: number
+  company_name: string
+  department: string | null
+  service_code: string | null
+  price: number
+  currency: string
+  is_active: boolean
+}
+
+/** Flat service item returned by /service-catalog/company (for voucher form) */
+export interface ServiceCatalogCompanyItem {
+  id: number
   service_code: string | null
   name: string
   price: number
