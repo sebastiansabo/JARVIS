@@ -94,6 +94,7 @@ def create_schema_vouchers(conn, cursor):
         CREATE TABLE IF NOT EXISTS voucher_service_catalog (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL REFERENCES companies(id),
+            service_code VARCHAR(50),
             name VARCHAR(255) NOT NULL,
             price NUMERIC(12,2) NOT NULL,
             currency VARCHAR(10) DEFAULT 'LEI',
@@ -110,20 +111,20 @@ def create_schema_vouchers(conn, cursor):
     cursor.execute('SELECT COUNT(*) AS cnt FROM voucher_service_catalog WHERE company_id = 16')
     if cursor.fetchone()['cnt'] == 0:
         seed_services = [
-            ('Oil change', 900),
-            ('Tire rotation', 200),
-            ('Brake inspection', 350),
-            ('Air filter replacement', 150),
-            ('Coolant flush', 400),
-            ('Battery check', 100),
-            ('Wheel alignment', 300),
-            ('Interior cleaning', 250),
+            ('SVC-OIL', 'Oil change', 900),
+            ('SVC-TIRE', 'Tire rotation', 200),
+            ('SVC-BRK', 'Brake inspection', 350),
+            ('SVC-AIR', 'Air filter replacement', 150),
+            ('SVC-COOL', 'Coolant flush', 400),
+            ('SVC-BAT', 'Battery check', 100),
+            ('SVC-WHL', 'Wheel alignment', 300),
+            ('SVC-CLN', 'Interior cleaning', 250),
         ]
-        for idx, (name, price) in enumerate(seed_services):
+        for idx, (code, name, price) in enumerate(seed_services):
             cursor.execute('''
-                INSERT INTO voucher_service_catalog (company_id, name, price, currency, sort_order)
-                VALUES (16, %s, %s, 'LEI', %s)
-            ''', (name, price, idx))
+                INSERT INTO voucher_service_catalog (company_id, service_code, name, price, currency, sort_order)
+                VALUES (16, %s, %s, %s, 'LEI', %s)
+            ''', (code, name, price, idx))
         logger.info('Seeded %d default service catalog items for company 16', len(seed_services))
 
     # ── service_items_value column on vouchers ────────

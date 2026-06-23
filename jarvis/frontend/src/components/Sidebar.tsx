@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, ClipboardList, Newspaper, Car, DollarSign, Tag, BarChart3, Receipt, Headset, MoreHorizontal, GraduationCap } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, ClipboardList, Newspaper, Car, DollarSign, Tag, BarChart3, Receipt, Headset, MoreHorizontal, GraduationCap, Wrench } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -91,6 +91,15 @@ const navItemsDef: NavItem[] = [
       { path: '/app/carpark/pricing-rules', label: 'Reguli preț', icon: DollarSign, moduleKey: 'carpark_pricing' },
       { path: '/app/carpark/promotions', label: 'Promoții', icon: Tag, moduleKey: 'carpark_promotions' },
       { path: '/app/foi-parcurs', label: 'Foi de Parcurs', icon: FileText, moduleKey: 'foi_parcurs', permission: 'can_access_carpark' },
+    ],
+  },
+  {
+    path: '/app/service',
+    label: 'Service',
+    icon: Wrench,
+    moduleKey: 'service',
+    children: [
+      { path: '/app/service/catalog', label: 'Service Catalog', icon: Tag, moduleKey: 'service_catalog' },
     ],
   },
   {
