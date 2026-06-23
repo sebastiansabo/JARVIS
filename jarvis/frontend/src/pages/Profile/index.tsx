@@ -79,21 +79,27 @@ import type { BioStarDayHistory, BioStarPunchLog, BioStarDailySummary, BioStarRa
 
 const VouchersPanel = lazy(() => import('./VouchersPanel'))
 
-type Tab = 'invoices' | 'hr-events' | 'pontaje' | 'team-pontaje' | 'sincron' | 'leave-permits' | 'activity' | 'vouchers'
+type Tab = 'invoices' | 'hr' | 'vouchers'
+type HrSubTab = 'hr-events' | 'pontaje' | 'team-pontaje' | 'sincron' | 'leave-permits'
 
-const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
+const mainTabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'invoices', label: 'My Invoices', icon: FileText },
+  { key: 'hr', label: 'HR', icon: Activity },
+  { key: 'vouchers', label: 'Vouchers', icon: Ticket },
+]
+
+const hrSubTabs: { key: HrSubTab; label: string; icon: React.ElementType }[] = [
   { key: 'hr-events', label: 'Bonuses', icon: Gift },
   { key: 'pontaje', label: 'Pontaje', icon: Fingerprint },
   { key: 'team-pontaje', label: 'Team Pontaje', icon: Users },
   { key: 'sincron', label: 'Sincron', icon: FileSpreadsheet },
   { key: 'leave-permits', label: 'Leave Permits', icon: ClipboardList },
-  { key: 'vouchers', label: 'Vouchers', icon: Ticket },
 ]
 
 export default function Profile() {
   const isMobile = useIsMobile()
   const [activeTab, setActiveTab] = useTabParam<Tab>('invoices')
+  const [activeHrSubTab, setActiveHrSubTab] = useTabParam<HrSubTab>('pontaje', 'hrtab')
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
@@ -164,17 +170,22 @@ export default function Profile() {
                 </div>
               </div>
 
-              {/* Info grid — collapsed by default */}
+              {/* Info grid + signature — collapsed by default */}
               {detailsOpen && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm border-t pt-3 mt-3">
-                  <InfoField icon={Mail} label="Email" value={user?.email} />
-                  <InfoField icon={Phone} label="Phone" value={user?.phone} />
-                  <InfoField icon={Building2} label="Department" value={(() => { const depts = orgPaths.map((o: any) => o.sincron_department || o.department).filter(Boolean); return depts.length > 0 ? depts : (summary?.sincron?.department || user?.department); })()} />
-                  <InfoField icon={Shield} label="Company" value={(() => { const comps = [...new Set(orgPaths.map(o => o.company).filter(Boolean))]; return comps.length > 0 ? comps : user?.company; })()} />
-                  <InfoField icon={Hash} label="CNP" value={user?.cnp} />
-                  <InfoField icon={Calendar} label="Birthdate" value={user?.birthdate ? new Date(user.birthdate).toLocaleDateString('ro-RO') : null} />
-                  <InfoField icon={Briefcase} label="Position" value={user?.position} />
-                  <InfoField icon={Calendar} label="Contract Start" value={user?.contract_work_date ? new Date(user.contract_work_date).toLocaleDateString('ro-RO') : null} />
+                <div className="border-t pt-3 mt-3 space-y-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm">
+                    <InfoField icon={Mail} label="Email" value={user?.email} />
+                    <InfoField icon={Phone} label="Phone" value={user?.phone} />
+                    <InfoField icon={Building2} label="Department" value={(() => { const depts = orgPaths.map((o: any) => o.sincron_department || o.department).filter(Boolean); return depts.length > 0 ? depts : (summary?.sincron?.department || user?.department); })()} />
+                    <InfoField icon={Shield} label="Company" value={(() => { const comps = [...new Set(orgPaths.map(o => o.company).filter(Boolean))]; return comps.length > 0 ? comps : user?.company; })()} />
+                    <InfoField icon={Hash} label="CNP" value={user?.cnp} />
+                    <InfoField icon={Calendar} label="Birthdate" value={user?.birthdate ? new Date(user.birthdate).toLocaleDateString('ro-RO') : null} />
+                    <InfoField icon={Briefcase} label="Position" value={user?.position} />
+                    <InfoField icon={Calendar} label="Contract Start" value={user?.contract_work_date ? new Date(user.contract_work_date).toLocaleDateString('ro-RO') : null} />
+                  </div>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <SignatureSection />
+                  </div>
                 </div>
               )}
 
@@ -184,9 +195,6 @@ export default function Profile() {
           )}
         </CardContent>
       </Card>
-
-      {/* Signature */}
-      <SignatureSection />
 
       {/* Edit Profile Dialog */}
       {user && (
@@ -201,12 +209,12 @@ export default function Profile() {
       {/* Change Password Dialog */}
       <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
 
-      {/* Tabs */}
+      {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
         {isMobile ? (
           <MobileBottomTabs>
             <TabsList className="w-full">
-              {tabs.map((tab) => {
+              {mainTabs.map((tab) => {
                 const Icon = tab.icon
                 return (
                   <TabsTrigger key={tab.key} value={tab.key}>
@@ -219,7 +227,7 @@ export default function Profile() {
           </MobileBottomTabs>
         ) : (
           <TabsList className="w-auto">
-            {tabs.map((tab) => {
+            {mainTabs.map((tab) => {
               const Icon = tab.icon
               return (
                 <TabsTrigger key={tab.key} value={tab.key}>
@@ -232,14 +240,30 @@ export default function Profile() {
         )}
       </Tabs>
 
+      {/* HR Sub-Tabs */}
+      {activeTab === 'hr' && (
+        <Tabs value={activeHrSubTab} onValueChange={(v) => setActiveHrSubTab(v as HrSubTab)}>
+          <TabsList className="w-auto h-8 bg-muted/50">
+            {hrSubTabs.map((tab) => {
+              const Icon = tab.icon
+              return (
+                <TabsTrigger key={tab.key} value={tab.key} className="text-xs h-7 px-2.5 gap-1">
+                  <Icon className="h-3.5 w-3.5" />
+                  {tab.label}
+                </TabsTrigger>
+              )
+            })}
+          </TabsList>
+        </Tabs>
+      )}
+
       {/* Tab Content */}
       {activeTab === 'invoices' && <InvoicesPanel orgDepartments={orgPaths.map(o => o.department).filter(Boolean)} isOrgResponsable={summary?.is_org_responsable ?? false} />}
-      {activeTab === 'hr-events' && <HrEventsPanel />}
-      {activeTab === 'pontaje' && <PontajePanel />}
-      {activeTab === 'team-pontaje' && <TeamPontajePanel />}
-      {activeTab === 'sincron' && <SincronPanel />}
-      {activeTab === 'leave-permits' && user && <LeavePermitsPanel userId={user.id} />}
-      {activeTab === 'activity' && <ActivityPanel />}
+      {activeTab === 'hr' && activeHrSubTab === 'hr-events' && <HrEventsPanel />}
+      {activeTab === 'hr' && activeHrSubTab === 'pontaje' && <PontajePanel />}
+      {activeTab === 'hr' && activeHrSubTab === 'team-pontaje' && <TeamPontajePanel />}
+      {activeTab === 'hr' && activeHrSubTab === 'sincron' && <SincronPanel />}
+      {activeTab === 'hr' && activeHrSubTab === 'leave-permits' && user && <LeavePermitsPanel userId={user.id} />}
       {activeTab === 'vouchers' && <Suspense fallback={<div className="py-8 text-center text-muted-foreground">Loading...</div>}><VouchersPanel /></Suspense>}
     </div>
   )
@@ -359,28 +383,27 @@ function SignatureSection() {
   const signature = data?.signature || ''
 
   return (
-    <div className="rounded-lg border p-4 space-y-3">
+    <div className="border-t pt-3 space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-sm">My Signature</h3>
+        <span className="text-xs text-muted-foreground font-medium">Signature</span>
         {signature && !editing && (
           <div className="flex gap-1">
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>Change</Button>
-            <Button variant="ghost" size="sm" className="text-destructive" onClick={() => clearMutation.mutate()}>Clear</Button>
+            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setEditing(true)}>Change</Button>
+            <Button variant="ghost" size="sm" className="h-6 text-xs text-destructive" onClick={() => clearMutation.mutate()}>Clear</Button>
           </div>
         )}
       </div>
       {signature && !editing ? (
-        <img src={signature} alt="Signature" className="max-h-20 border rounded bg-white p-1" />
+        <img src={signature} alt="Signature" className="max-h-14 border rounded bg-white p-1" />
       ) : (
-        <Suspense fallback={<div className="h-[150px] border rounded animate-pulse bg-muted" />}>
+        <Suspense fallback={<div className="h-[120px] border rounded animate-pulse bg-muted" />}>
           <SignatureCanvas
-            height={150}
+            height={120}
             onSave={(base64) => { saveMutation.mutate(base64); setEditing(false) }}
             onClear={() => setEditing(false)}
           />
         </Suspense>
       )}
-      <p className="text-xs text-muted-foreground">This signature will appear on all vouchers you issue.</p>
     </div>
   )
 }
@@ -2815,9 +2838,9 @@ function ProfileLeaveRequestDialog({ onClose, onSubmitted }: {
   )
 }
 
-// ─── Activity Panel ─────────────────────────────────────────────────
+// ─── Activity Panel (kept for potential future use) ─────────────────
 
-function ActivityPanel() {
+export function ActivityPanel() {
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = usePersistedState('profile-activity-page-size', 25)
 
