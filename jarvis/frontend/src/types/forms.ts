@@ -21,6 +21,7 @@ export type FieldType =
   | 'service_catalog'
   | 'company_select'
   | 'department_select'
+  | 'user_select'
 
 export interface ApprovalConfig {
   flow_id?: number

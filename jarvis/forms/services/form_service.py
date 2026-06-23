@@ -136,8 +136,15 @@ class FormService:
 
         schema = form.get('published_schema', [])
 
-        # Check submission limit
+        # Block internal-only forms from public submission
         settings = form.get('settings', {})
+        if isinstance(settings, str):
+            import json as _json
+            settings = _json.loads(settings)
+        if settings.get('internal_only'):
+            return ServiceResult(success=False, error='This form is not available for public submission', status_code=403)
+
+        # Check submission limit
         submission_limit = settings.get('submission_limit')
         if submission_limit:
             current_count = self.form_repo.count_submissions(form['id'])

@@ -284,6 +284,29 @@ function DepartmentSelectField({ field, value, error, onChange, allAnswers }: Fi
   )
 }
 
+function UserSelectField({ field, value, error, onChange }: FieldProps) {
+  const { data: users = [] } = useQuery({
+    queryKey: ['users-list'],
+    queryFn: () => import('@/api/users').then((m) => m.usersApi.getUsers()),
+    staleTime: 10 * 60_000,
+  })
+  return (
+    <div className="space-y-1">
+      <Label>{field.label}</Label>
+      <Select value={(value as string) ?? '__none__'} onValueChange={(v) => onChange(v === '__none__' ? '' : v)}>
+        <SelectTrigger><SelectValue placeholder={field.placeholder || 'Select user...'} /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">Direct manager</SelectItem>
+          {users.map((u: { id: number; name: string }) => (
+            <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  )
+}
+
 function ServiceCatalogField({ field, value, error, onChange }: FieldProps) {
   const { data: services = [] } = useQuery({
     queryKey: ['voucher-service-catalog-company'],
@@ -334,7 +357,7 @@ function ServiceCatalogField({ field, value, error, onChange }: FieldProps) {
   )
 }
 
-function FieldComponent({ field, value, error, onChange, onSetField }: FieldProps) {
+function FieldComponent({ field, value, error, onChange, onSetField, allAnswers }: FieldProps) {
   switch (field.type) {
     case 'heading':
       return <h2 className="text-lg font-bold pt-2">{field.label}</h2>
@@ -516,7 +539,10 @@ function FieldComponent({ field, value, error, onChange, onSetField }: FieldProp
       return <CompanySelectField field={field} value={value} error={error} onChange={onChange} onSetField={onSetField} />
 
     case 'department_select':
-      return <DepartmentSelectField field={field} value={value} error={error} onChange={onChange} onSetField={onSetField} />
+      return <DepartmentSelectField field={field} value={value} error={error} onChange={onChange} onSetField={onSetField} allAnswers={allAnswers} />
+
+    case 'user_select':
+      return <UserSelectField field={field} value={value} error={error} onChange={onChange} />
 
     default:
       return null

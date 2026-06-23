@@ -195,7 +195,11 @@ export default function Vouchers() {
       { id: 'f_company', type: 'company_select' as any, label: 'Company', required: true, order: -2 },
       { id: 'f_department', type: 'department_select' as any, label: 'Department', required: false, placeholder: authUser?.company || '', order: -1, config: { companyField: 'f_company' } },
     ]
-    let schema = [...contextFields, ...formData.schema]
+    const approverField: typeof formData.schema[0] = {
+      id: 'f_approver', type: 'user_select' as any, label: 'Send for Approval to', required: false,
+      placeholder: 'Leave empty for direct manager', order: 98,
+    }
+    let schema = [...contextFields, ...formData.schema, approverField]
     if (sigStatus && !sigStatus.has_signature) {
       schema = [...schema, { id: 'f_signature', type: 'signature' as const, label: 'Your Signature', required: true, order: 99 }]
     }
