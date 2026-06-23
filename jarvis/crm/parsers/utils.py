@@ -109,6 +109,80 @@ def normalize_phone(raw):
     return digits, raw
 
 
+def read_file_chunked(file_path, sheet_name=None, chunk_size=5000):
+    """Read Excel/CSV in chunks using streaming to avoid memory spikes.
+
+    For CSV: uses pandas native chunksize.
+    For XLSX: uses openpyxl read_only mode (never loads full file into memory).
+    For XLS: falls back to pandas full read, then yields in chunks.
+
+    Yields pandas DataFrames of up to chunk_size rows each.
+    """
+    import pandas as pd
+
+    if file_path.endswith('.csv'):
+        try:
+            for chunk in pd.read_csv(file_path, dtype=str, keep_default_na=False, chunksize=chunk_size):
+                yield chunk
+        except Exception as e:
+            logger.error(f'Failed to read CSV {file_path}: {e}')
+        return
+
+    if file_path.endswith('.xls'):
+        # Old format — no openpyxl support, fall back to full read + chunking
+        try:
+            df = pd.read_excel(file_path, dtype=str, keep_default_na=False)
+            for start in range(0, len(df), chunk_size):
+                yield df.iloc[start:start + chunk_size]
+        except Exception as e:
+            logger.error(f'Failed to read XLS {file_path}: {e}')
+        return
+
+    # XLSX: stream via openpyxl read_only mode
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+
+        ws = None
+        if sheet_name and sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+        else:
+            ws = wb.active
+
+        if ws is None:
+            wb.close()
+            return
+
+        rows_iter = ws.iter_rows(values_only=True)
+
+        try:
+            header_row = next(rows_iter)
+        except StopIteration:
+            wb.close()
+            return
+
+        headers = [str(h).strip() if h is not None else f'_col_{i}'
+                   for i, h in enumerate(header_row)]
+
+        chunk_rows = []
+        for row_values in rows_iter:
+            row_dict = {}
+            for i, v in enumerate(row_values):
+                if i < len(headers):
+                    row_dict[headers[i]] = str(v).strip() if v is not None else ''
+            chunk_rows.append(row_dict)
+            if len(chunk_rows) >= chunk_size:
+                yield pd.DataFrame(chunk_rows)
+                chunk_rows = []
+
+        if chunk_rows:
+            yield pd.DataFrame(chunk_rows)
+
+        wb.close()
+    except Exception as e:
+        logger.error(f'Failed to stream Excel {file_path}: {e}')
+
+
 def normalize_columns(df, column_map):
     """Rename DataFrame columns: accept both original Excel headers and DB field names.
 

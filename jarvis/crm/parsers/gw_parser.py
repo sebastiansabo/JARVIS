@@ -53,48 +53,51 @@ INT_FIELDS = {'door_count', 'model_year', 'order_year'}
 
 def parse_gw(file_path):
     """Parse GW Excel/CSV and yield (dossier_number, row_hash, row_data) tuples."""
-    # Try 'Deals' sheet (unified template), fall back to first sheet
-    df = read_file(file_path, sheet_name='Deals')
-    if df is None or df.empty:
-        df = read_file(file_path)
-    if df is None or df.empty:
-        logger.warning(f'No data in GW file: {file_path}')
-        return
+    from .utils import read_file_chunked
 
-    # Accept both Romanian DMS headers and DB field names
-    df = normalize_columns(df, COLUMN_MAP)
-
-    # Unified template: filter to GW rows only if source column exists
-    if 'source' in df.columns:
-        df = df[df['source'].str.strip().str.lower() == 'gw']
-
-    for _, row in df.iterrows():
-        data = {}
-
-        all_fields = {v for v in COLUMN_MAP.values() if not v.startswith('_')} | UNIFIED_EXTRA
-        for db_field in all_fields:
-            val = row.get(db_field)
-            if db_field in DATE_FIELDS:
-                data[db_field] = safe_date(val)
-            elif db_field in DECIMAL_FIELDS:
-                data[db_field] = safe_decimal(val)
-            elif db_field in INT_FIELDS:
-                data[db_field] = safe_int(val)
-            else:
-                data[db_field] = safe_str(val)
-
-        # Combine owner address fields (from Romanian DMS format)
-        addr2 = safe_str(row.get('_owner_address_2'))
-        if addr2 and data.get('owner_address'):
-            data['owner_address'] = f"{data['owner_address']}, {addr2}"
-        elif addr2:
-            data['owner_address'] = addr2
-
-        dossier_number = data.get('dossier_number')
-        if not dossier_number:
+    yielded = False
+    for df in read_file_chunked(file_path, sheet_name='Deals', chunk_size=5000):
+        if df is None or df.empty:
             continue
 
-        hash_input = f"gw|{dossier_number}|{data.get('buyer_name', '')}|{data.get('dossier_status', '')}"
-        row_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
+        # Accept both Romanian DMS headers and DB field names
+        df = normalize_columns(df, COLUMN_MAP)
 
-        yield dossier_number, row_hash, data
+        # Unified template: filter to GW rows only if source column exists
+        if 'source' in df.columns:
+            df = df[df['source'].str.strip().str.lower() == 'gw']
+
+        for _, row in df.iterrows():
+            data = {}
+
+            all_fields = {v for v in COLUMN_MAP.values() if not v.startswith('_')} | UNIFIED_EXTRA
+            for db_field in all_fields:
+                val = row.get(db_field)
+                if db_field in DATE_FIELDS:
+                    data[db_field] = safe_date(val)
+                elif db_field in DECIMAL_FIELDS:
+                    data[db_field] = safe_decimal(val)
+                elif db_field in INT_FIELDS:
+                    data[db_field] = safe_int(val)
+                else:
+                    data[db_field] = safe_str(val)
+
+            # Combine owner address fields (from Romanian DMS format)
+            addr2 = safe_str(row.get('_owner_address_2'))
+            if addr2 and data.get('owner_address'):
+                data['owner_address'] = f"{data['owner_address']}, {addr2}"
+            elif addr2:
+                data['owner_address'] = addr2
+
+            dossier_number = data.get('dossier_number')
+            if not dossier_number:
+                continue
+
+            hash_input = f"gw|{dossier_number}|{data.get('buyer_name', '')}|{data.get('dossier_status', '')}"
+            row_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
+
+            yielded = True
+            yield dossier_number, row_hash, data
+
+    if not yielded:
+        logger.warning(f'No data in GW file: {file_path}')
