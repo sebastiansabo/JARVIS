@@ -1,7 +1,11 @@
-import { useState, lazy, Suspense } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useMemo, lazy, Suspense } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { FileText, ScanLine, ArrowLeft, Plus } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
+import { FormRenderer } from '@/components/forms/FormRenderer'
+import { formsApi } from '@/api/forms'
+import { api } from '@/api/client'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -43,7 +47,9 @@ function expiringClass(v: Voucher): string {
 export default function VouchersPanel() {
   const [selected, setSelected] = useState<Voucher | null>(null)
   const [showRedeem, setShowRedeem] = useState(false)
+  const [showIssue, setShowIssue] = useState(false)
   const user = useAuthStore((s) => s.user)
+  const queryClient = useQueryClient()
   const perms = user?.permissions || {}
   const canIssue = !user?.permissions || (perms['vouchers.form.view'] ?? true)
   const canRedeem = !user?.permissions || (perms['vouchers.accounting.redeem'] ?? true)
@@ -52,6 +58,59 @@ export default function VouchersPanel() {
     queryKey: ['my-vouchers'],
     queryFn: () => vouchersApi.myVouchers(),
   })
+
+  const { data: formData } = useQuery({
+    queryKey: ['voucher-form-schema'],
+    queryFn: async () => {
+      const { form_id } = await vouchersApi.getFormId()
+      return formsApi.getForm(form_id)
+    },
+    enabled: showIssue,
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: sigStatus } = useQuery({
+    queryKey: ['voucher-sig-status'],
+    queryFn: () => api.get<{ has_signature: boolean }>('/api/vouchers/signature-status'),
+    enabled: showIssue,
+    staleTime: 60_000,
+  })
+
+  const submitMutation = useMutation({
+    mutationFn: async (answers: Record<string, unknown>) => {
+      if (!formData?.id) throw new Error('Form not loaded')
+      if (answers.f_signature && typeof answers.f_signature === 'string') {
+        await api.put('/profile/api/signature', { signature: answers.f_signature })
+      }
+      const { f_signature: _, ...formAnswers } = answers
+      return formsApi.submitInternal(formData.id, formAnswers)
+    },
+    onSuccess: () => {
+      toast.success('Voucher submitted for approval!')
+      setShowIssue(false)
+      queryClient.invalidateQueries({ queryKey: ['my-vouchers'] })
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : 'Submission failed')
+    },
+  })
+
+  const issueSchema = useMemo(() => {
+    if (!formData?.schema) return null
+    const contextFields: typeof formData.schema = [
+      { id: 'f_company', type: 'company_select' as any, label: 'Company', required: true, order: -2 },
+      { id: 'f_department', type: 'department_select' as any, label: 'Department', required: false, order: -1, config: { companyField: 'f_company' } },
+    ]
+    const approverField: typeof formData.schema[0] = {
+      id: 'f_approver', type: 'user_select' as any, label: 'Send for Approval to', required: false,
+      placeholder: 'Leave empty for direct manager', order: 98,
+    }
+    let schema = [...contextFields, ...formData.schema, approverField]
+    if (sigStatus && !sigStatus.has_signature) {
+      schema = [...schema, { id: 'f_signature', type: 'signature' as const, label: 'Your Signature', required: true, order: 99 }]
+    }
+    return schema
+  }, [formData?.schema, sigStatus])
 
   if (showRedeem) {
     return (
@@ -62,6 +121,29 @@ export default function VouchersPanel() {
         <Suspense fallback={<div className="py-8 text-center text-muted-foreground">Loading...</div>}>
           <VoucherRedeem />
         </Suspense>
+      </div>
+    )
+  }
+
+  if (showIssue) {
+    return (
+      <div className="space-y-3">
+        <Button variant="ghost" size="sm" onClick={() => setShowIssue(false)}>
+          <ArrowLeft className="mr-1 h-4 w-4" />Back to My Vouchers
+        </Button>
+        <div className="rounded-lg border p-6">
+          {issueSchema ? (
+            <FormRenderer
+              schema={issueSchema}
+              onSubmit={(answers) => submitMutation.mutate(answers)}
+              submitting={submitMutation.isPending}
+              submitLabel="Issue Voucher"
+              defaultValues={{ f_company: user?.company || '', f_department: user?.department || '' }}
+            />
+          ) : (
+            <div className="py-8 text-center text-muted-foreground">Loading form...</div>
+          )}
+        </div>
       </div>
     )
   }
@@ -79,7 +161,7 @@ export default function VouchersPanel() {
             </Button>
           )}
           {canIssue && (
-            <Button size="sm" onClick={() => window.location.href = '/app/accounting/vouchers'}>
+            <Button size="sm" onClick={() => setShowIssue(true)}>
               <Plus className="mr-1 h-4 w-4" />Issue
             </Button>
           )}
