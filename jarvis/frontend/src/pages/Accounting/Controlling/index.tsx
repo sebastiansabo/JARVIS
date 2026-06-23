@@ -231,6 +231,7 @@ export default function Controlling() {
           <TabsTrigger value="marja">Marjă</TabsTrigger>
           <TabsTrigger value="verificare">Verificare</TabsTrigger>
           <TabsTrigger value="configurare">Configurare</TabsTrigger>
+          <TabsTrigger value="analiza">Analiză AI</TabsTrigger>
         </TabsList>
 
         {/* ═══ TAB: Marjă ═══ */}
@@ -392,6 +393,11 @@ export default function Controlling() {
               <ConfigTable companyId={companyId} setCompanyId={setCompanyId} companies={companies} configRows={configRows} queryClient={queryClient} />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ═══ TAB: Analiză AI ═══ */}
+        <TabsContent value="analiza" className="mt-4">
+          <AnalysisTab companyId={companyId} />
         </TabsContent>
       </Tabs>
 
@@ -638,6 +644,145 @@ function VerificationTable({ accounts, totalEntries }: { accounts: BabAccountGro
       </div>
     </>
   )
+}
+
+
+/* ═══════════════════════════════════════
+   Analysis Tab — AI-powered insights
+   ═══════════════════════════════════════ */
+
+function AnalysisTab({ companyId }: { companyId: number }) {
+  const [autoAnalysis, setAutoAnalysis] = useState<string | null>(null)
+  const [autoLoading, setAutoLoading] = useState(false)
+  const [queryHistory, setQueryHistory] = useState<{ prompt: string; response: string }[]>([])
+  const [queryInput, setQueryInput] = useState('')
+  const [queryLoading, setQueryLoading] = useState(false)
+  const [crossCompany, setCrossCompany] = useState(false)
+
+  const runAutoAnalysis = async () => {
+    setAutoLoading(true)
+    try {
+      const res = await controllingApi.analyze(companyId, 'auto', undefined, crossCompany)
+      setAutoAnalysis(res.analysis)
+    } catch (e: unknown) {
+      setAutoAnalysis(`Eroare: ${e instanceof Error ? e.message : 'necunoscută'}`)
+    } finally {
+      setAutoLoading(false)
+    }
+  }
+
+  const runQuery = async () => {
+    if (!queryInput.trim()) return
+    const prompt = queryInput.trim()
+    setQueryInput('')
+    setQueryLoading(true)
+    try {
+      const res = await controllingApi.analyze(companyId, 'query', prompt, crossCompany)
+      setQueryHistory(prev => [...prev, { prompt, response: res.analysis }])
+    } catch (e: unknown) {
+      setQueryHistory(prev => [...prev, { prompt, response: `Eroare: ${e instanceof Error ? e.message : 'necunoscută'}` }])
+    } finally {
+      setQueryLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Auto-analysis section */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold">Analiză Financiară AI</h3>
+              <p className="text-sm text-muted-foreground">Analiză de tip Big 4 — profitabilitate, variații, riscuri și oportunități</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                <input type="checkbox" className="rounded" checked={crossCompany} onChange={e => setCrossCompany(e.target.checked)} />
+                Include toate companiile
+              </label>
+              <Button onClick={runAutoAnalysis} disabled={autoLoading}>
+                {autoLoading ? (
+                  <><span className="animate-spin mr-2">⏳</span> Se generează...</>
+                ) : (
+                  <><FileSpreadsheet className="h-4 w-4 mr-2" /> Generează analiză</>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {autoAnalysis ? (
+            <div className="prose prose-sm max-w-none dark:prose-invert">
+              <MarkdownRenderer content={autoAnalysis} />
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              <FileSpreadsheet className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">Apasă butonul pentru a genera analiza financiară AI</p>
+              <p className="text-xs mt-1">Analiza acoperă: profitabilitate, variații lunare, structura costurilor, riscuri și oportunități</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Query section */}
+      <Card>
+        <CardContent className="p-6">
+          <h3 className="text-sm font-semibold mb-3">Întreabă despre date</h3>
+
+          {/* Query history */}
+          {queryHistory.length > 0 && (
+            <div className="space-y-4 mb-4 max-h-[500px] overflow-y-auto">
+              {queryHistory.map((qa, i) => (
+                <div key={i} className="space-y-2">
+                  <div className="flex justify-end">
+                    <div className="bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm max-w-[80%]">{qa.prompt}</div>
+                  </div>
+                  <div className="bg-muted rounded-lg px-4 py-3 prose prose-sm max-w-none dark:prose-invert">
+                    <MarkdownRenderer content={qa.response} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {queryLoading && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
+              <span className="animate-spin">⏳</span> Se generează răspunsul...
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Input
+              placeholder="ex: De ce a scăzut marja în aprilie? Care segment are cea mai bună evoluție?"
+              value={queryInput}
+              onChange={e => setQueryInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !queryLoading && runQuery()}
+              className="flex-1"
+            />
+            <Button onClick={runQuery} disabled={queryLoading || !queryInput.trim()}>
+              Trimite
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function MarkdownRenderer({ content }: { content: string }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [Md, setMd] = useState<any>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [gfm, setGfm] = useState<any>(null)
+
+  useMemo(() => {
+    import('react-markdown').then(m => setMd(() => m.default))
+    import('remark-gfm').then(m => setGfm(() => m.default))
+  }, [])
+
+  if (!Md) return <div className="whitespace-pre-wrap text-sm">{content}</div>
+  return <Md remarkPlugins={gfm ? [gfm] : []}>{content}</Md>
 }
 
 

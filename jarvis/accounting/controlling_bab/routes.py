@@ -466,6 +466,42 @@ def api_replace_config():
     return jsonify({'success': True, 'count': count})
 
 
+# ── AI Analysis ──
+
+@controlling_bab_bp.route('/controlling/bab/api/analyze', methods=['POST'])
+@login_required
+@handle_api_errors
+def api_analyze():
+    """AI-powered financial analysis of BAB data."""
+    if not _check_bab_perm('view'):
+        return error_response('Permission denied', 403)
+    data = request.get_json()
+    if not data or 'company_id' not in data:
+        return error_response('company_id is required', 400)
+
+    from .ai_analysis import analyze_bab
+    from database import get_db, get_cursor, release_db
+
+    # Get companies list for context
+    conn = get_db()
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute('SELECT id, company FROM companies ORDER BY company')
+        companies = [{'id': r[0], 'company': r[1]} for r in cursor.fetchall()]
+    finally:
+        release_db(conn)
+
+    result = analyze_bab(
+        repo=_repo,
+        company_id=data['company_id'],
+        companies=companies,
+        mode=data.get('mode', 'auto'),
+        prompt=data.get('prompt', ''),
+        cross_company=data.get('cross_company', False),
+    )
+    return jsonify({'success': True, **result})
+
+
 # ── Verification (raw entries by account) ──
 
 @controlling_bab_bp.route('/controlling/bab/api/verification/<int:upload_id>', methods=['GET'])
