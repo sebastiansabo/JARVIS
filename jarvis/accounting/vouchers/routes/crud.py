@@ -5,6 +5,19 @@ import io
 from accounting.vouchers.form_seed import VOUCHER_FORM_SLUG
 
 
+@vouchers_bp.route('/api/vouchers/signature-status', methods=['GET'])
+@login_required
+@handle_api_errors
+def get_signature_status():
+    """Check if current user has a saved signature."""
+    from core.base_repository import BaseRepository
+    row = BaseRepository().query_one(
+        'SELECT signature FROM users WHERE id = %s', (current_user.id,)
+    )
+    has_sig = bool(row and row.get('signature'))
+    return jsonify({'has_signature': has_sig})
+
+
 @vouchers_bp.route('/api/vouchers/form-id', methods=['GET'])
 @login_required
 @handle_api_errors

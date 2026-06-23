@@ -1,0 +1,1 @@
+import{ah as S,r as c}from"./index-u8FL13Iy.js";function l(t,s="tab"){const[o,a]=S(),n=o.get(s)||t,[u,i]=c.useState(n),h=c.useCallback(e=>{i(e),a(P=>{const r=new URLSearchParams(P);return e===t?r.delete(s):r.set(s,e),r},{replace:!0})},[t,s,a]);return[u,h]}export{l as u};
