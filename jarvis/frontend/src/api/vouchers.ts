@@ -34,4 +34,13 @@ export const vouchersApi = {
 
   getServiceCatalog: () =>
     api.get<ServiceCatalogItem[]>('/api/vouchers/service-catalog'),
+
+  createService: (data: { name: string; price: number; currency: string; category?: string }) =>
+    api.post<ServiceCatalogItem>('/api/vouchers/service-catalog', data),
+
+  updateService: (id: number, data: { name: string; price: number; currency: string; category?: string }) =>
+    api.put<ServiceCatalogItem>(`/api/vouchers/service-catalog/${id}`, data),
+
+  deleteService: (id: number) =>
+    api.delete<{ success: boolean }>(`/api/vouchers/service-catalog/${id}`),
 }

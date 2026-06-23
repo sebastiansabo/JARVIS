@@ -185,7 +185,7 @@ def send_voucher_to_client(voucher_id):
 def list_service_catalog():
     """List active service catalog items for the current user's company."""
     rows = _base.query_all(
-        '''SELECT id, name, price, currency, category, is_active
+        '''SELECT id, service_code, name, price, currency, category, is_active
            FROM voucher_service_catalog
            WHERE company_id = %s AND is_active = TRUE
            ORDER BY sort_order, name''',
@@ -203,6 +203,7 @@ def create_service_catalog_item():
         return error_response('Forbidden', 403)
 
     data = request.get_json(silent=True) or {}
+    service_code = (data.get('service_code') or '').strip() or None
     name = (data.get('name') or '').strip()
     price = data.get('price')
     currency = (data.get('currency') or 'LEI').strip().upper()
@@ -216,10 +217,10 @@ def create_service_catalog_item():
 
     row = _base.execute(
         '''INSERT INTO voucher_service_catalog
-               (company_id, name, price, currency, category, sort_order)
-           VALUES (%s, %s, %s, %s, %s, %s)
-           RETURNING id, name, price, currency, category, is_active''',
-        (current_user.company_id, name, float(price), currency, category, sort_order),
+               (company_id, service_code, name, price, currency, category, sort_order)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)
+           RETURNING id, service_code, name, price, currency, category, is_active''',
+        (current_user.company_id, service_code, name, float(price), currency, category, sort_order),
         returning=True,
     )
     return jsonify({'success': True, 'item': row}), 201
@@ -242,6 +243,9 @@ def update_service_catalog_item(item_id):
 
     data = request.get_json(silent=True) or {}
     sets, params = [], []
+    if 'service_code' in data:
+        sets.append('service_code = %s')
+        params.append((data['service_code'] or '').strip() or None)
     if 'name' in data:
         sets.append('name = %s')
         params.append(data['name'].strip())

@@ -59,6 +59,7 @@ export interface AccountingListResponse {
 
 export interface ServiceCatalogItem {
   id: number
+  service_code: string | null
   name: string
   price: number
   currency: string
