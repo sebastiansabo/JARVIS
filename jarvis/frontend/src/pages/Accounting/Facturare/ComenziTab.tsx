@@ -972,11 +972,9 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
                     const lastIdx = covEntries.length - 1
                     return covEntries.map((c, ci) => {
                     const isProf = c.invoice_type === 'PROFORMA'
-                    if (c.invoice_type === 'INVOICE') cumInvoiced += (c.amount_eur || 0)
-                    // Rest: after invoice = selling - cumInvoiced, after storno = full (reverses all), after final = 0
+                    if (c.invoice_type === 'INVOICE' || c.invoice_type === 'STORNO') cumInvoiced += (c.amount_eur || 0)
                     const rawRest = l.selling_price_eur - cumInvoiced
-                    const restAfter = c.invoice_type === 'INVOICE' ? (Math.abs(rawRest) < 1 ? 0 : rawRest)
-                      : c.invoice_type === 'STORNO' ? l.selling_price_eur
+                    const restAfter = (c.invoice_type === 'INVOICE' || c.invoice_type === 'STORNO') ? (Math.abs(rawRest) < 1 ? 0 : rawRest)
                       : c.invoice_type === 'FINAL' ? 0
                       : null
                     return (
