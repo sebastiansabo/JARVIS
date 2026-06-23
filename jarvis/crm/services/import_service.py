@@ -12,6 +12,139 @@ _client_repo = ClientRepository()
 _deal_repo = DealRepository()
 _import_repo = ImportRepository()
 
+
+def _trigram_set(s):
+    """Generate trigram set for a string (matches pg_trgm behavior)."""
+    padded = f'  {s} '
+    return {padded[i:i+3] for i in range(len(padded) - 2)}
+
+
+def _trigram_similarity(a, b):
+    """Approximate pg_trgm similarity using trigram Jaccard index."""
+    if not a or not b:
+        return 0.0
+    ta, tb = _trigram_set(a), _trigram_set(b)
+    if not ta or not tb:
+        return 0.0
+    inter = len(ta & tb)
+    union = len(ta | tb)
+    return inter / union if union else 0.0
+
+
+class _ClientCache:
+    """In-memory client lookup cache — avoids per-row DB queries during import.
+
+    Uses trigram-based prefix bucketing for fast fuzzy name matching:
+    each name is indexed under its first-3-char prefix, so fuzzy lookups
+    only scan ~1-5% of the name list instead of all 21k clients.
+    """
+
+    def __init__(self):
+        self.by_phone = {}       # phone → client_id
+        self.by_vin = {}         # vin → client_id
+        self.by_plate = {}       # license_plate → client_id
+        self.by_nr_reg = {}      # nr_reg → client_id
+        self.by_name = {}        # name_normalized → client_id (exact)
+        self.name_buckets = {}   # prefix → [(name_normalized, client_id), ...]
+        self._loaded = False
+
+    def _bucket_key(self, name):
+        """First 3 chars as bucket key."""
+        return name[:3] if len(name) >= 3 else name
+
+    def load(self):
+        """Pre-load all client lookup data in 3 queries."""
+        if self._loaded:
+            return
+        logger.info('Building client cache...')
+
+        # 1. All active clients: phone, name, nr_reg
+        clients = _client_repo.query_all(
+            '''SELECT id, phone, name_normalized, nr_reg
+               FROM crm_clients WHERE merged_into_id IS NULL'''
+        )
+        for c in clients:
+            cid = c['id']
+            if c.get('phone'):
+                self.by_phone[c['phone']] = cid
+            if c.get('name_normalized'):
+                nm = c['name_normalized']
+                self.by_name[nm] = cid
+                bk = self._bucket_key(nm)
+                self.name_buckets.setdefault(bk, []).append((nm, cid))
+            if c.get('nr_reg'):
+                self.by_nr_reg[c['nr_reg']] = cid
+
+        # 2. Extra phones from client_phones
+        phones = _client_repo.query_all(
+            '''SELECT cp.phone, cp.client_id FROM client_phones cp
+               JOIN crm_clients c ON c.id = cp.client_id
+               WHERE c.merged_into_id IS NULL'''
+        )
+        for p in phones:
+            if p.get('phone'):
+                self.by_phone.setdefault(p['phone'], p['client_id'])
+
+        # 3. Fleet: VIN + plate → client
+        fleet = _client_repo.query_all(
+            '''SELECT cf.client_id, cf.vin, cf.license_plate FROM client_fleet cf
+               JOIN crm_clients c ON c.id = cf.client_id
+               WHERE c.merged_into_id IS NULL'''
+        )
+        for f in fleet:
+            cid = f['client_id']
+            if f.get('vin'):
+                self.by_vin[f['vin']] = cid
+            if f.get('license_plate'):
+                self.by_plate[f['license_plate']] = cid
+
+        self._loaded = True
+        logger.info('Client cache ready: %d clients, %d phones, %d VINs, %d plates, %d name buckets',
+                     len(self.by_name), len(self.by_phone), len(self.by_vin),
+                     len(self.by_plate), len(self.name_buckets))
+
+    def find(self, phone=None, vin=None, license_plate=None, nr_reg=None, name_norm=None):
+        """Look up client in cache. Returns client_id or None."""
+        if phone and phone in self.by_phone:
+            return self.by_phone[phone]
+        if vin and vin in self.by_vin:
+            return self.by_vin[vin]
+        if license_plate and license_plate in self.by_plate:
+            return self.by_plate[license_plate]
+        if nr_reg and nr_reg in self.by_nr_reg:
+            return self.by_nr_reg[nr_reg]
+        if name_norm:
+            # Exact match
+            if name_norm in self.by_name:
+                return self.by_name[name_norm]
+            # Fuzzy: check same-prefix bucket + neighboring buckets
+            bk = self._bucket_key(name_norm)
+            candidates = self.name_buckets.get(bk, [])
+            best_id, best_score = None, 0
+            for cached_name, cid in candidates:
+                score = _trigram_similarity(name_norm, cached_name)
+                if score > best_score:
+                    best_score = score
+                    best_id = cid
+            if best_score >= 0.7:
+                return best_id
+        return None
+
+    def add(self, client_id, phone=None, name_norm=None, vin=None, license_plate=None, nr_reg=None):
+        """Register a newly created client in the cache."""
+        if phone:
+            self.by_phone[phone] = client_id
+        if name_norm:
+            self.by_name[name_norm] = client_id
+            bk = self._bucket_key(name_norm)
+            self.name_buckets.setdefault(bk, []).append((name_norm, client_id))
+        if vin:
+            self.by_vin[vin] = client_id
+        if license_plate:
+            self.by_plate[license_plate] = client_id
+        if nr_reg:
+            self.by_nr_reg[nr_reg] = client_id
+
 # ── Allowed DB columns per table (excludes auto-generated: id, created_at, etc.) ──
 
 DEAL_COLS = {
@@ -57,7 +190,9 @@ def _match_or_create_client(display_name, phone_raw=None, email=None,
                             street=None, city=None, region=None,
                             company_name=None, source_key='crm',
                             vin=None, license_plate=None, nr_reg=None):
-    """Find existing client by phone, VIN, plate, nr_reg, or name. Returns (client_id, is_new)."""
+    """Find existing client by phone, VIN, plate, nr_reg, or name. Returns (client_id, is_new).
+    Original DB-per-row version — used by non-bulk importers (deals, clients, crm_clients, clienti).
+    """
     phone, phone_raw_out = normalize_phone(phone_raw)
     name_norm = normalize_name(display_name)
 
@@ -123,6 +258,41 @@ def _match_or_create_client(display_name, phone_raw=None, email=None,
         source_flags={source_key: True},
     )
     return result['id'], True
+
+
+def _match_or_create_client_cached(cache, display_name, phone_raw=None, email=None,
+                                   client_type='person', responsible=None,
+                                   street=None, city=None, region=None,
+                                   company_name=None, source_key='crm',
+                                   vin=None, license_plate=None, nr_reg=None):
+    """Cache-backed client matching — 0 DB queries for known clients."""
+    phone, phone_raw_out = normalize_phone(phone_raw)
+    name_norm = normalize_name(display_name)
+
+    existing_id = cache.find(phone=phone, vin=vin, license_plate=license_plate,
+                             nr_reg=nr_reg, name_norm=name_norm)
+    if existing_id:
+        _client_repo.update_source_flags(existing_id, source_key)
+        return existing_id, False
+
+    result = _client_repo.create(
+        display_name=display_name,
+        name_normalized=name_norm,
+        client_type=client_type,
+        phone=phone,
+        phone_raw=phone_raw_out,
+        email=email,
+        street=street,
+        city=city,
+        region=region,
+        company_name=company_name if client_type == 'company' else None,
+        responsible=responsible,
+        source_flags={source_key: True},
+    )
+    new_id = result['id']
+    cache.add(new_id, phone=phone, name_norm=name_norm, vin=vin,
+              license_plate=license_plate, nr_reg=nr_reg)
+    return new_id, True
 
 
 def _read_sheet(file_path, sheet_name):
@@ -266,6 +436,8 @@ def _flush_stats(batch_id, stats, status='processing'):
 
 def import_nw(file_path, user_id, original_filename=None):
     from ..parsers import parse_nw
+    cache = _ClientCache()
+    cache.load()
     batch = _import_repo.create('nw', original_filename or file_path.split('/')[-1], user_id)
     batch_id = batch['id']
     stats = {'total': 0, 'new': 0, 'updated': 0, 'skipped': 0,
@@ -276,8 +448,8 @@ def import_nw(file_path, user_id, original_filename=None):
             try:
                 buyer = data.get('buyer_name')
                 if buyer:
-                    cid, is_new = _match_or_create_client(
-                        display_name=buyer, source_key='nw',
+                    cid, is_new = _match_or_create_client_cached(
+                        cache, display_name=buyer, source_key='nw',
                         vin=data.get('vin'),
                         license_plate=data.get('registration_number'),
                     )
@@ -299,6 +471,8 @@ def import_nw(file_path, user_id, original_filename=None):
 
 def import_gw(file_path, user_id, original_filename=None):
     from ..parsers import parse_gw
+    cache = _ClientCache()
+    cache.load()
     batch = _import_repo.create('gw', original_filename or file_path.split('/')[-1], user_id)
     batch_id = batch['id']
     stats = {'total': 0, 'new': 0, 'updated': 0, 'skipped': 0,
@@ -309,8 +483,8 @@ def import_gw(file_path, user_id, original_filename=None):
             try:
                 buyer = data.get('buyer_name')
                 if buyer:
-                    cid, is_new = _match_or_create_client(
-                        display_name=buyer, source_key='gw',
+                    cid, is_new = _match_or_create_client_cached(
+                        cache, display_name=buyer, source_key='gw',
                         vin=data.get('vin'),
                         license_plate=data.get('registration_number'),
                     )
