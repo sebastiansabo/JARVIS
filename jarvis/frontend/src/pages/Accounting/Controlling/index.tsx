@@ -668,7 +668,10 @@ function AnalysisTab({ companyId, companies }: { companyId: number; companies: {
       const res = await controllingApi.analyze(effectiveCompanyId, 'auto', undefined, crossCompany)
       setAutoAnalysis(res.analysis)
     } catch (e: unknown) {
-      setAutoAnalysis(`Eroare: ${e instanceof Error ? e.message : 'necunoscută'}`)
+      const detail = e && typeof e === 'object' && 'data' in e
+        ? String((e as { data: { error?: string } }).data?.error || (e as Error).message)
+        : (e instanceof Error ? e.message : 'necunoscută')
+      setAutoAnalysis(`Eroare: ${detail}`)
     } finally {
       setAutoLoading(false)
     }
@@ -683,7 +686,10 @@ function AnalysisTab({ companyId, companies }: { companyId: number; companies: {
       const res = await controllingApi.analyze(effectiveCompanyId, 'query', prompt, crossCompany)
       setQueryHistory(prev => [...prev, { prompt, response: res.analysis }])
     } catch (e: unknown) {
-      setQueryHistory(prev => [...prev, { prompt, response: `Eroare: ${e instanceof Error ? e.message : 'necunoscută'}` }])
+      const detail = e && typeof e === 'object' && 'data' in e
+        ? String((e as { data: { error?: string } }).data?.error || (e as Error).message)
+        : (e instanceof Error ? e.message : 'necunoscută')
+      setQueryHistory(prev => [...prev, { prompt, response: `Eroare: ${detail}` }])
     } finally {
       setQueryLoading(false)
     }

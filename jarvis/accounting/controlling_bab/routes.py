@@ -475,8 +475,10 @@ def api_analyze():
     """AI-powered financial analysis of BAB data."""
     if not _check_bab_perm('view'):
         return error_response('Permission denied', 403)
-    data = request.get_json()
+    data = request.get_json(force=True, silent=True)
     if not data or 'company_id' not in data:
+        logger.warning('analyze: missing company_id — content_type=%s body_len=%s',
+                       request.content_type, request.content_length)
         return error_response('company_id is required', 400)
 
     from .ai_analysis import analyze_bab
