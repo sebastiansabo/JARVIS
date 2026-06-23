@@ -1161,6 +1161,12 @@ def api_generate_pdf(invoice_id):
     mode = request.args.get("mode", "merged")
     # Storno: use multipage renderer with per-invoice line items
     if inv_type_str == "STORNO" and storno_groups:
+        # Single car storno via ?car=N
+        car_idx = request.args.get("car")
+        if car_idx is not None and car_idx.isdigit():
+            idx = int(car_idx)
+            if 0 <= idx < len(storno_groups):
+                storno_groups = [storno_groups[idx]]
         pdf_bytes = renderer.render_storno_multipage(storno_groups, start_no)
         return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
 
