@@ -171,14 +171,16 @@ def analyze_bab(repo: BabRepository, company_id: int, companies: list,
         user_prompt = QUERY_TEMPLATE.format(data_context=data_context, prompt=prompt)
         max_tokens = 2048
 
+    if not data_context.strip() or 'Nu există date importate' in data_context:
+        return {'analysis': 'Nu există date BAB importate pentru această companie. Importă o perioadă mai întâi.', 'tokens_used': 0}
+
     try:
         response = ask(
             prompt=user_prompt,
             system=SYSTEM_PROMPT,
-            model='claude-sonnet-4-5-20250514',
             max_tokens=max_tokens,
         )
-        return {'analysis': response, 'tokens_used': 0}  # token count not exposed by ask()
+        return {'analysis': response, 'tokens_used': 0}
     except Exception as e:
         logger.error(f"AI analysis failed: {e}")
         return {'analysis': f"Eroare la generarea analizei: {str(e)}", 'tokens_used': 0}

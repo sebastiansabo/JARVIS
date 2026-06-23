@@ -397,7 +397,7 @@ export default function Controlling() {
 
         {/* ═══ TAB: Analiză AI ═══ */}
         <TabsContent value="analiza" className="mt-4">
-          <AnalysisTab companyId={companyId} />
+          <AnalysisTab companyId={companyId} companies={companies} />
         </TabsContent>
       </Tabs>
 
@@ -651,18 +651,21 @@ function VerificationTable({ accounts, totalEntries }: { accounts: BabAccountGro
    Analysis Tab — AI-powered insights
    ═══════════════════════════════════════ */
 
-function AnalysisTab({ companyId }: { companyId: number }) {
+function AnalysisTab({ companyId, companies }: { companyId: number; companies: { id: number; company: string }[] }) {
   const [autoAnalysis, setAutoAnalysis] = useState<string | null>(null)
   const [autoLoading, setAutoLoading] = useState(false)
   const [queryHistory, setQueryHistory] = useState<{ prompt: string; response: string }[]>([])
   const [queryInput, setQueryInput] = useState('')
   const [queryLoading, setQueryLoading] = useState(false)
-  const [crossCompany, setCrossCompany] = useState(false)
+  const [analysisScope, setAnalysisScope] = useState<string>(String(companyId))
+
+  const effectiveCompanyId = analysisScope === 'all' ? companyId : Number(analysisScope)
+  const crossCompany = analysisScope === 'all'
 
   const runAutoAnalysis = async () => {
     setAutoLoading(true)
     try {
-      const res = await controllingApi.analyze(companyId, 'auto', undefined, crossCompany)
+      const res = await controllingApi.analyze(effectiveCompanyId, 'auto', undefined, crossCompany)
       setAutoAnalysis(res.analysis)
     } catch (e: unknown) {
       setAutoAnalysis(`Eroare: ${e instanceof Error ? e.message : 'necunoscută'}`)
@@ -677,7 +680,7 @@ function AnalysisTab({ companyId }: { companyId: number }) {
     setQueryInput('')
     setQueryLoading(true)
     try {
-      const res = await controllingApi.analyze(companyId, 'query', prompt, crossCompany)
+      const res = await controllingApi.analyze(effectiveCompanyId, 'query', prompt, crossCompany)
       setQueryHistory(prev => [...prev, { prompt, response: res.analysis }])
     } catch (e: unknown) {
       setQueryHistory(prev => [...prev, { prompt, response: `Eroare: ${e instanceof Error ? e.message : 'necunoscută'}` }])
@@ -697,10 +700,17 @@ function AnalysisTab({ companyId }: { companyId: number }) {
               <p className="text-sm text-muted-foreground">Analiză de tip Big 4 — profitabilitate, variații, riscuri și oportunități</p>
             </div>
             <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                <input type="checkbox" className="rounded" checked={crossCompany} onChange={e => setCrossCompany(e.target.checked)} />
-                Include toate companiile
-              </label>
+              <Select value={analysisScope} onValueChange={v => { setAnalysisScope(v); setAutoAnalysis(null) }}>
+                <SelectTrigger className="w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {companies.map(c => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+                  ))}
+                  <SelectItem value="all">Toate companiile</SelectItem>
+                </SelectContent>
+              </Select>
               <Button onClick={runAutoAnalysis} disabled={autoLoading}>
                 {autoLoading ? (
                   <><span className="animate-spin mr-2">⏳</span> Se generează...</>
