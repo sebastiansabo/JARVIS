@@ -4,6 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { formsApi } from '@/api/forms'
 import { FormRenderer } from '@/components/forms/FormRenderer'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { Ticket, ScanLine } from 'lucide-react'
 
 const VoucherRedeem = lazy(() => import('./VoucherRedeem'))
@@ -82,6 +83,19 @@ export default function PublicForm() {
     )
   }
 
+  // Internal-only forms redirect to login
+  if (form && (form.settings as any)?.internal_only) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="text-center space-y-4">
+          <h1 className="text-2xl font-bold">Login Required</h1>
+          <p className="text-muted-foreground">This form is only available to logged-in users.</p>
+          <Button onClick={() => window.location.href = '/login'}>Go to Login</Button>
+        </div>
+      </div>
+    )
+  }
+
   if (isError || !form) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -104,6 +118,10 @@ export default function PublicForm() {
           </div>
           <h1 className="text-2xl font-bold">Submitted!</h1>
           <p className="text-muted-foreground">{thankYou}</p>
+          <div className="flex justify-center gap-3 pt-2">
+            <Button variant="outline" onClick={() => setSubmitted(false)}>Submit Another</Button>
+            <Button onClick={() => window.location.href = '/app/dashboard'}>Go to Dashboard</Button>
+          </div>
         </div>
       </div>
     )
