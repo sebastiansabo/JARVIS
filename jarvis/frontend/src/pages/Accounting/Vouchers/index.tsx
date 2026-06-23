@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Download, FileText, ScanLine, Send, ArrowLeft } from 'lucide-react'
@@ -35,6 +35,7 @@ import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/share
 import { FormRenderer } from '@/components/forms/FormRenderer'
 import { formsApi } from '@/api/forms'
 import { api } from '@/api/client'
+import { useAuthStore } from '@/stores/authStore'
 import { vouchersApi } from '@/api/vouchers'
 import type { Voucher, VoucherSummary } from '@/types/vouchers'
 
@@ -186,6 +187,21 @@ export default function Vouchers() {
     },
   })
 
+  const authUser = useAuthStore((s) => s.user)
+
+  const issueSchema = useMemo(() => {
+    if (!formData?.schema) return null
+    const contextFields: typeof formData.schema = [
+      { id: 'f_company', type: 'short_text', label: 'Company', required: true, placeholder: authUser?.company || '', order: -2 },
+      { id: 'f_department', type: 'short_text', label: 'Department', required: false, placeholder: authUser?.department || '', order: -1 },
+    ]
+    let schema = [...contextFields, ...formData.schema]
+    if (sigStatus && !sigStatus.has_signature) {
+      schema = [...schema, { id: 'f_signature', type: 'signature' as const, label: 'Your Signature', required: true, order: 99 }]
+    }
+    return schema
+  }, [formData?.schema, sigStatus, authUser])
+
   if (view === 'issue') {
     return (
       <div className="space-y-4 p-6">
@@ -196,14 +212,13 @@ export default function Vouchers() {
           <h1 className="text-2xl font-bold">Issue Voucher</h1>
         </div>
         <div className="mx-auto max-w-2xl rounded-lg border p-6">
-          {formData?.schema ? (
+          {issueSchema ? (
             <FormRenderer
-              schema={sigStatus && !sigStatus.has_signature
-                ? [...formData.schema, { id: 'f_signature', type: 'signature' as const, label: 'Your Signature', required: true, order: 99 }]
-                : formData.schema}
+              schema={issueSchema}
               onSubmit={(answers) => submitFormMutation.mutate(answers)}
               submitting={submitFormMutation.isPending}
               submitLabel="Issue Voucher"
+              defaultValues={{ f_company: authUser?.company || '', f_department: authUser?.department || '' }}
             />
           ) : (
             <div className="py-8 text-center text-muted-foreground">Loading form...</div>
