@@ -81,4 +81,9 @@ export const controllingApi = {
   getBnrRate: (year: number, month: number) =>
     api.get<{ success: boolean; eur_rate: number; rate_date: string }>(
       `${BASE}/bnr-rate${buildQs({ year, month })}`),
+
+  // AI Analysis
+  analyze: (companyId: number, mode: 'auto' | 'query', prompt?: string, crossCompany?: boolean) =>
+    api.post<{ success: boolean; analysis: string; tokens_used: number }>(
+      `${BASE}/analyze`, { company_id: companyId, mode, prompt, cross_company: crossCompany }),
 }
