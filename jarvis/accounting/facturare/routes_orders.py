@@ -1043,9 +1043,16 @@ def api_generate_pdf(invoice_id):
     if inv_type_str == "STORNO":
         # Build storno groups: per car, one line per reversed invoice (10%, 90%, etc.)
         import json as _json
+        # Only include invoices actually reversed by this storno (via links table)
+        reversed_links = _repo.query_all(
+            "SELECT source_invoice_id FROM facturare_invoice_links WHERE target_invoice_id = %s AND link_type = 'REVERSES'",
+            (invoice_id,))
+        reversed_inv_ids = {r["source_invoice_id"] for r in reversed_links} if reversed_links else None
         all_invoices = _repo.query_all(
-            "SELECT * FROM facturare_invoices WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number",
+            "SELECT * FROM facturare_invoices WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY created_at",
             (anexa["id"],))
+        if reversed_inv_ids:
+            all_invoices = [inv for inv in all_invoices if inv["id"] in reversed_inv_ids]
         storno_line_set = set(inv_line_ids) if inv_line_ids else {l["id"] for l in all_lines}
         line_map = {l["id"]: l for l in all_lines}
 
