@@ -145,8 +145,6 @@ export default function App() {
     <Routes>
       {/* Public form — no auth, no layout */}
       <Route path="/f/:slug" element={<SuspensePage><PublicForm /></SuspensePage>} />
-      <Route path="/voucher" element={<SuspensePage><VoucherPortal /></SuspensePage>} />
-      <Route path="/voucher/:code" element={<SuspensePage><VoucherPortal /></SuspensePage>} />
 
       <Route path="/app" element={<Layout />}>
         <Route index element={<DefaultRedirect />} />
@@ -166,6 +164,8 @@ export default function App() {
         <Route path="accounting/vouchers" element={<Guard flag="can_access_accounting"><SuspensePage><VoucherTracking /></SuspensePage></Guard>} />
         <Route path="accounting/vouchers/new" element={<SuspensePage><VoucherNew /></SuspensePage>} />
         <Route path="accounting/vouchers/redeem" element={<Guard flag="can_access_accounting"><SuspensePage><VoucherRedeem /></SuspensePage></Guard>} />
+        <Route path="voucher" element={<SuspensePage><VoucherPortal /></SuspensePage>} />
+        <Route path="voucher/:code" element={<SuspensePage><VoucherPortal /></SuspensePage>} />
 
         {/* HR — requires can_access_hr */}
         <Route path="hr/*" element={<Guard flag="can_access_hr"><SuspensePage><Hr /></SuspensePage></Guard>} />

@@ -23,6 +23,20 @@ def _generate_qr_image(data: str, box_size: int = 8) -> ImageReader:
     return ImageReader(buf)
 
 
+def _get_user_signature(user_id: int) -> str | None:
+    """Fetch user's saved signature (base64 PNG)."""
+    if not user_id:
+        return None
+    try:
+        from core.base_repository import BaseRepository
+        row = BaseRepository().query_one(
+            'SELECT signature FROM users WHERE id = %s', (user_id,)
+        )
+        return row.get('signature') if row else None
+    except Exception:
+        return None
+
+
 def _get_company_info(company_id: int) -> dict:
     """Fetch company details for the voucher header."""
     try:
@@ -79,7 +93,7 @@ def generate_voucher_pdf(voucher: dict) -> bytes:
         try:
             from flask import current_app
             base_url = current_app.config.get('APP_BASE_URL', 'https://jarvis.autoworld.ro')
-            qr_data = f"{base_url}/voucher/{voucher_code}"
+            qr_data = f"{base_url}/app/voucher/{voucher_code}"
         except RuntimeError:
             pass
         qr_img = _generate_qr_image(qr_data, box_size=6)
@@ -147,12 +161,31 @@ def generate_voucher_pdf(voucher: dict) -> bytes:
     # Issuer
     y = _label_value('Issued by:', voucher.get('issued_by_name', ''), y)
 
-    # Approval placeholder
-    y -= 15 * mm
-    c.setFont('Helvetica', 9)
-    c.setFillColor(HexColor('#a0aec0'))
-    c.drawString(30 * mm, y, 'Approval stamp:')
-    c.rect(30 * mm, y - 25 * mm, 60 * mm, 25 * mm, fill=0, stroke=1)
+    # Issuer signature
+    issuer_sig = _get_user_signature(voucher.get('issued_by_user_id'))
+    if issuer_sig:
+        y -= 3 * mm
+        c.setFont('Helvetica', 9)
+        c.setFillColor(HexColor('#a0aec0'))
+        c.drawString(30 * mm, y, 'Signature:')
+        try:
+            import base64
+            sig_data = issuer_sig.split(',', 1)[-1]  # strip data:image/png;base64, prefix
+            sig_buf = io.BytesIO(base64.b64decode(sig_data))
+            sig_img = ImageReader(sig_buf)
+            c.drawImage(sig_img, 80 * mm, y - 18 * mm, width=50 * mm, height=20 * mm,
+                         preserveAspectRatio=True, mask='auto')
+            y -= 22 * mm
+        except Exception:
+            y -= 5 * mm
+    else:
+        # Signature placeholder
+        y -= 15 * mm
+        c.setFont('Helvetica', 9)
+        c.setFillColor(HexColor('#a0aec0'))
+        c.drawString(30 * mm, y, 'Signature:')
+        c.rect(30 * mm, y - 20 * mm, 60 * mm, 20 * mm, fill=0, stroke=1)
+        y -= 25 * mm
 
     # Footer
     c.setFont('Helvetica', 8)

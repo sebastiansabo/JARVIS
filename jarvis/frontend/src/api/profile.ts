@@ -15,6 +15,10 @@ export const profileApi = {
 
   updateProfile: (data: ProfileUpdatePayload) => api.put<{ success: boolean }>('/profile/api/update', data),
 
+  getSignature: () => api.get<{ signature: string | null }>('/profile/api/signature'),
+
+  saveSignature: (signature: string) => api.put<{ success: boolean }>('/profile/api/signature', { signature }),
+
   getInvoices: (params?: { status?: string; start_date?: string; end_date?: string; search?: string; department?: string; page?: number; per_page?: number; archive_view?: string }) => {
     const sp = new URLSearchParams()
     if (params?.status) sp.set('status', params.status)

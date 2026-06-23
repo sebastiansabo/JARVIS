@@ -102,7 +102,7 @@ def api_profile_update():
         data = request.get_json() or {}
 
         # Only allow users to edit specific personal fields
-        allowed_fields = {'phone', 'cnp', 'birthdate', 'position', 'contract_work_date'}
+        allowed_fields = {'phone', 'cnp', 'birthdate', 'position', 'contract_work_date', 'signature'}
         update_kwargs = {}
         for field in allowed_fields:
             if field in data:
@@ -119,6 +119,24 @@ def api_profile_update():
         return jsonify({'success': True})
     except Exception as e:
         return safe_error_response(e)
+
+
+@profile_bp.route('/api/signature', methods=['GET'])
+@login_required
+def api_get_signature():
+    """Get current user's signature."""
+    sig = _user_repo.query_one('SELECT signature FROM users WHERE id = %s', (current_user.id,))
+    return jsonify({'signature': sig.get('signature') if sig else None})
+
+
+@profile_bp.route('/api/signature', methods=['PUT'])
+@login_required
+def api_save_signature():
+    """Save current user's signature (base64 PNG)."""
+    data = request.get_json() or {}
+    signature = data.get('signature', '')
+    _user_repo.update(current_user.id, signature=signature or None)
+    return jsonify({'success': True})
 
 
 @profile_bp.route('/api/invoices')

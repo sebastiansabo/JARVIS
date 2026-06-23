@@ -251,7 +251,8 @@ class UserRepository(BaseRepository):
                company: str = None, brand: str = None, department: str = None,
                subdepartment: str = None, notify_on_allocation: bool = None,
                cnp: str = None, birthdate=None, position: str = None,
-               contract_work_date=None, contract_status: str = None) -> bool:
+               contract_work_date=None, contract_status: str = None,
+               signature: str = None) -> bool:
         """Update a user. Returns True if updated."""
         updates = []
         params = []
@@ -300,6 +301,9 @@ class UserRepository(BaseRepository):
         if contract_status is not None:
             updates.append('contract_status = %s')
             params.append(contract_status)
+        if signature is not None:
+            updates.append('signature = %s')
+            params.append(signature if signature else None)
         if not updates:
             return False
         updates.append('updated_at = CURRENT_TIMESTAMP')

@@ -88,7 +88,6 @@ const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'team-pontaje', label: 'Team Pontaje', icon: Users },
   { key: 'sincron', label: 'Sincron', icon: FileSpreadsheet },
   { key: 'leave-permits', label: 'Leave Permits', icon: ClipboardList },
-  { key: 'activity', label: 'Activity Log', icon: Activity },
   { key: 'vouchers', label: 'Vouchers', icon: Ticket },
 ]
 
@@ -185,6 +184,9 @@ export default function Profile() {
           )}
         </CardContent>
       </Card>
+
+      {/* Signature */}
+      <SignatureSection />
 
       {/* Edit Profile Dialog */}
       {user && (
@@ -334,6 +336,53 @@ function birthdateFromCnp(cnp: string): string | null {
   const d = new Date(dateStr)
   if (isNaN(d.getTime()) || d.getMonth() + 1 !== parseInt(mm, 10)) return null
   return dateStr
+}
+
+// ─── Signature Section ───────────────────────────────────────────
+
+const SignatureCanvas = lazy(() => import('@/components/shared/SignatureCanvas'))
+
+function SignatureSection() {
+  const { data, refetch } = useQuery({
+    queryKey: ['my-signature'],
+    queryFn: () => profileApi.getSignature(),
+  })
+  const saveMutation = useMutation({
+    mutationFn: (sig: string) => profileApi.saveSignature(sig),
+    onSuccess: () => { toast.success('Signature saved'); refetch() },
+  })
+  const clearMutation = useMutation({
+    mutationFn: () => profileApi.saveSignature(''),
+    onSuccess: () => { toast.success('Signature cleared'); refetch() },
+  })
+  const [editing, setEditing] = useState(false)
+  const signature = data?.signature || ''
+
+  return (
+    <div className="rounded-lg border p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-sm">My Signature</h3>
+        {signature && !editing && (
+          <div className="flex gap-1">
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>Change</Button>
+            <Button variant="ghost" size="sm" className="text-destructive" onClick={() => clearMutation.mutate()}>Clear</Button>
+          </div>
+        )}
+      </div>
+      {signature && !editing ? (
+        <img src={signature} alt="Signature" className="max-h-20 border rounded bg-white p-1" />
+      ) : (
+        <Suspense fallback={<div className="h-[150px] border rounded animate-pulse bg-muted" />}>
+          <SignatureCanvas
+            height={150}
+            onSave={(base64) => { saveMutation.mutate(base64); setEditing(false) }}
+            onClear={() => setEditing(false)}
+          />
+        </Suspense>
+      )}
+      <p className="text-xs text-muted-foreground">This signature will appear on all vouchers you issue.</p>
+    </div>
+  )
 }
 
 // ─── Edit Profile Dialog ──────────────────────────────────────────

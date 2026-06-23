@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Camera, CameraOff, Keyboard, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
@@ -7,6 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { useAuthStore } from '@/stores/authStore'
+
+const SignatureCanvas = lazy(() => import('@/components/shared/SignatureCanvas'))
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-800',
@@ -45,13 +48,14 @@ function benefitDisplay(v: VoucherPublic): string {
 
 export default function VoucherRedeem() {
   const { code: urlCode } = useParams<{ code?: string }>()
+  const user = useAuthStore((s) => s.user)
   const [mode, setMode] = useState<'scan' | 'manual'>(urlCode ? 'manual' : 'scan')
   const [manualCode, setManualCode] = useState(urlCode || '')
   const [voucher, setVoucher] = useState<VoucherPublic | null>(null)
   const [redeemed, setRedeemed] = useState(false)
-  const [redeemerName, setRedeemerName] = useState('')
   const [lookupError, setLookupError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [redeemSignature, setRedeemSignature] = useState('')
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -141,14 +145,17 @@ export default function VoucherRedeem() {
 
   useEffect(() => () => stopCamera(), [stopCamera])
 
+  const effectiveName = user?.name || ''
+
   const handleRedeem = async () => {
-    if (!voucher || !redeemerName.trim()) return
+    if (!voucher || !effectiveName) return
+    if (!redeemSignature) { toast.error('Signature is required'); return }
     setLoading(true)
     try {
       const resp = await fetch('/api/public/vouchers/redeem', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voucher_code: voucher.voucher_code, redeemer_name: redeemerName.trim() }),
+        body: JSON.stringify({ voucher_code: voucher.voucher_code, redeemer_name: effectiveName, signature: redeemSignature }),
       })
       const data = await resp.json()
       if (data.success) {
@@ -298,11 +305,21 @@ export default function VoucherRedeem() {
 
               {canRedeem && (
                 <div className="space-y-3 border-t pt-3">
+                  <p className="text-sm text-muted-foreground">Redeeming as: <strong>{user?.name}</strong></p>
                   <div className="grid gap-1.5">
-                    <Label>Your Name (required to redeem)</Label>
-                    <Input value={redeemerName} onChange={(e) => setRedeemerName(e.target.value)} placeholder="Enter your name..." />
+                    <Label>Signature (required)</Label>
+                    {redeemSignature ? (
+                      <div className="space-y-2">
+                        <img src={redeemSignature} alt="Signature" className="max-h-16 border rounded bg-white p-1" />
+                        <Button type="button" variant="outline" size="sm" onClick={() => setRedeemSignature('')}>Clear & Re-sign</Button>
+                      </div>
+                    ) : (
+                      <Suspense fallback={<div className="h-[120px] border rounded animate-pulse bg-muted" />}>
+                        <SignatureCanvas height={120} onSave={(base64) => setRedeemSignature(base64)} onClear={() => setRedeemSignature('')} />
+                      </Suspense>
+                    )}
                   </div>
-                  <Button className="w-full" onClick={handleRedeem} disabled={loading || !redeemerName.trim()}>
+                  <Button className="w-full" onClick={handleRedeem} disabled={loading || !effectiveName || !redeemSignature}>
                     {loading ? 'Redeeming...' : 'Redeem Voucher'}
                   </Button>
                 </div>
@@ -313,7 +330,7 @@ export default function VoucherRedeem() {
 
         {/* Scan another */}
         {voucher && (
-          <Button variant="outline" className="w-full" onClick={() => { setVoucher(null); setRedeemed(false); setRedeemerName(''); setManualCode(''); setLookupError('') }}>
+          <Button variant="outline" className="w-full" onClick={() => { setVoucher(null); setRedeemed(false); setRedeemSignature(''); setManualCode(''); setLookupError('') }}>
             Scan Another Voucher
           </Button>
         )}

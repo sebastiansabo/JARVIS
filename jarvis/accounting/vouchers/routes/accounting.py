@@ -132,6 +132,7 @@ def redeem_by_code():
 
 
 @vouchers_bp.route('/api/public/vouchers/lookup/<code>', methods=['GET'])
+@login_required
 @handle_api_errors
 def public_lookup_voucher(code):
     """Public: look up a voucher by code (no auth). Returns limited info."""
@@ -153,17 +154,21 @@ def public_lookup_voucher(code):
 
 
 @vouchers_bp.route('/api/public/vouchers/redeem', methods=['POST'])
+@login_required
 @handle_api_errors
 def public_redeem_voucher():
     """Public: redeem a voucher by code (no auth). QR code acts as proof."""
     data = request.get_json(silent=True) or {}
     code = (data.get('voucher_code') or '').strip().upper()
     redeemer_name = (data.get('redeemer_name') or '').strip()
+    signature = (data.get('signature') or '').strip()
 
     if not code:
         return jsonify({'success': False, 'error': 'voucher_code is required'}), 400
     if not redeemer_name:
         return jsonify({'success': False, 'error': 'redeemer_name is required'}), 400
+    if not signature:
+        return jsonify({'success': False, 'error': 'Signature is required'}), 400
 
     voucher = _repo.query_one(
         'SELECT id, status, expires_at FROM vouchers WHERE voucher_code = %s', (code,)
@@ -184,9 +189,9 @@ def public_redeem_voucher():
     _repo.execute('''
         UPDATE vouchers
         SET status = 'redeemed', redeemed_at = CURRENT_TIMESTAMP,
-            redemption_notes = %s, updated_at = CURRENT_TIMESTAMP
+            redemption_notes = %s, redeemer_signature = %s, updated_at = CURRENT_TIMESTAMP
         WHERE id = %s AND status = 'active'
-    ''', (f'Redeemed by: {redeemer_name}', voucher['id']))
+    ''', (f'Redeemed by: {redeemer_name}', signature, voucher['id']))
 
     # Notify issuer
     try:

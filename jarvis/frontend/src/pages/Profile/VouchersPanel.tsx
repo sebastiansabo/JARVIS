@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileText } from 'lucide-react'
+import { FileText, ScanLine, ArrowLeft } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -22,6 +22,8 @@ import {
 import { vouchersApi } from '@/api/vouchers'
 import type { Voucher } from '@/types/vouchers'
 
+const VoucherRedeem = lazy(() => import('@/pages/Public/VoucherRedeem'))
+
 const STATUS_COLORS: Record<string, string> = {
   pending_approval: 'bg-yellow-100 text-yellow-800',
   active: 'bg-green-100 text-green-800',
@@ -39,57 +41,81 @@ function expiringClass(v: Voucher): string {
 
 export default function VouchersPanel() {
   const [selected, setSelected] = useState<Voucher | null>(null)
+  const [showRedeem, setShowRedeem] = useState(false)
 
   const { data: vouchers = [], isLoading } = useQuery({
     queryKey: ['my-vouchers'],
     queryFn: () => vouchersApi.myVouchers(),
   })
 
+  if (showRedeem) {
+    return (
+      <div className="space-y-3">
+        <Button variant="ghost" size="sm" onClick={() => setShowRedeem(false)}>
+          <ArrowLeft className="mr-1 h-4 w-4" />Back to My Vouchers
+        </Button>
+        <Suspense fallback={<div className="py-8 text-center text-muted-foreground">Loading...</div>}>
+          <VoucherRedeem />
+        </Suspense>
+      </div>
+    )
+  }
+
   if (isLoading) return <div className="py-8 text-center text-muted-foreground">Loading...</div>
-  if (vouchers.length === 0) return <div className="py-8 text-center text-muted-foreground">No vouchers issued yet.</div>
 
   return (
     <>
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Code</TableHead>
-              <TableHead>Client</TableHead>
-              <TableHead>Contract</TableHead>
-              <TableHead>VIN</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Benefit</TableHead>
-              <TableHead>Issued</TableHead>
-              <TableHead>Expires</TableHead>
-              <TableHead>Days Left</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {vouchers.map((v) => (
-              <TableRow key={v.id} className={`cursor-pointer hover:bg-muted/50 ${expiringClass(v)}`} onClick={() => setSelected(v)}>
-                <TableCell className="font-mono text-xs">{v.voucher_code}</TableCell>
-                <TableCell>{v.client_name}</TableCell>
-                <TableCell>{v.contract_number}</TableCell>
-                <TableCell className="font-mono text-xs">{v.car_vin}</TableCell>
-                <TableCell>{v.voucher_type.replace(/_/g, ' ')}</TableCell>
-                <TableCell>{v.benefit_display}</TableCell>
-                <TableCell>{v.issued_at || '—'}</TableCell>
-                <TableCell>{v.expires_at || '—'}</TableCell>
-                <TableCell>
-                  {v.days_remaining !== null && v.days_remaining !== undefined ? (
-                    <span className={v.days_remaining <= 30 ? 'text-orange-500 font-medium' : ''}>{v.days_remaining}d</span>
-                  ) : '—'}
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={STATUS_COLORS[v.status] || ''}>{v.status.replace('_', ' ')}</Badge>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm text-muted-foreground">{vouchers.length} voucher{vouchers.length !== 1 ? 's' : ''}</span>
+        <Button variant="outline" size="sm" onClick={() => setShowRedeem(true)}>
+          <ScanLine className="mr-1 h-4 w-4" />Redeem Voucher
+        </Button>
       </div>
+
+      {vouchers.length === 0 ? (
+        <div className="py-8 text-center text-muted-foreground">No vouchers issued yet.</div>
+      ) : (
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Code</TableHead>
+                <TableHead>Client</TableHead>
+                <TableHead>Contract</TableHead>
+                <TableHead>VIN</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Benefit</TableHead>
+                <TableHead>Issued</TableHead>
+                <TableHead>Expires</TableHead>
+                <TableHead>Days Left</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {vouchers.map((v) => (
+                <TableRow key={v.id} className={`cursor-pointer hover:bg-muted/50 ${expiringClass(v)}`} onClick={() => setSelected(v)}>
+                  <TableCell className="font-mono text-xs">{v.voucher_code}</TableCell>
+                  <TableCell>{v.client_name}</TableCell>
+                  <TableCell>{v.contract_number}</TableCell>
+                  <TableCell className="font-mono text-xs">{v.car_vin}</TableCell>
+                  <TableCell>{v.voucher_type.replace(/_/g, ' ')}</TableCell>
+                  <TableCell>{v.benefit_display}</TableCell>
+                  <TableCell>{v.issued_at || '—'}</TableCell>
+                  <TableCell>{v.expires_at || '—'}</TableCell>
+                  <TableCell>
+                    {v.days_remaining !== null && v.days_remaining !== undefined ? (
+                      <span className={v.days_remaining <= 30 ? 'text-orange-500 font-medium' : ''}>{v.days_remaining}d</span>
+                    ) : '—'}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={STATUS_COLORS[v.status] || ''}>{v.status.replace('_', ' ')}</Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
         <DialogContent className="sm:max-w-lg">

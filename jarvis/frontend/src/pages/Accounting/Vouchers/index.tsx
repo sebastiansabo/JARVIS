@@ -31,8 +31,10 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { FormRenderer } from '@/components/forms/FormRenderer'
 import { formsApi } from '@/api/forms'
+import { api } from '@/api/client'
 import { vouchersApi } from '@/api/vouchers'
 import type { Voucher, VoucherSummary } from '@/types/vouchers'
 
@@ -129,11 +131,23 @@ export default function Vouchers() {
     },
   })
 
-  const getDaysLabel = (v: Voucher) => {
-    if (v.days_remaining === null || v.days_remaining === undefined) return ''
-    if (v.days_remaining <= 0) return 'Expired'
-    return `${v.days_remaining}d`
-  }
+  const allColumns: ColumnDef<Voucher>[] = [
+    { key: 'code', label: 'Code', className: 'font-mono text-xs', render: (v) => v.voucher_code },
+    { key: 'issuer', label: 'Issuer', render: (v) => v.issued_by_name || '' },
+    { key: 'client', label: 'Client', render: (v) => v.client_name },
+    { key: 'contract', label: 'Contract', render: (v) => v.contract_number },
+    { key: 'vin', label: 'VIN', className: 'font-mono text-xs', render: (v) => v.car_vin },
+    { key: 'type', label: 'Type', render: (v) => v.voucher_type.replace(/_/g, ' ') },
+    { key: 'benefit', label: 'Benefit', render: (v) => v.benefit_display },
+    { key: 'issued', label: 'Issued', render: (v) => v.issued_at || '—' },
+    { key: 'expires', label: 'Expires', render: (v) => <>{v.expires_at || '—'}{v.days_remaining != null && v.days_remaining <= 30 && v.days_remaining > 0 && <span className="ml-1 text-xs text-orange-500">({v.days_remaining}d)</span>}</> },
+    { key: 'status', label: 'Status', render: (v) => <StatusBadge status={v.status} /> },
+    { key: 'actions', label: 'Actions', render: (v) => v.status === 'active' ? <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setRedeemVoucher(v); setRedeemNotes('') }}>Redeem</Button> : null },
+  ]
+
+  const defaultCols = ['code', 'client', 'contract', 'vin', 'type', 'benefit', 'issued', 'expires', 'status', 'actions']
+  const allColKeys = allColumns.map((c) => c.key)
+  const { visibleColumns, setVisibleColumns, defaultColumns: defaultColState } = useColumnState('voucherColumns', defaultCols, allColKeys)
 
   const { data: formData } = useQuery({
     queryKey: ['voucher-form-schema'],
@@ -145,10 +159,22 @@ export default function Vouchers() {
     staleTime: 5 * 60_000,
   })
 
+  const { data: sigStatus } = useQuery({
+    queryKey: ['voucher-sig-status'],
+    queryFn: () => api.get<{ has_signature: boolean }>('/api/vouchers/signature-status'),
+    enabled: view === 'issue',
+    staleTime: 60_000,
+  })
+
   const submitFormMutation = useMutation({
     mutationFn: async (answers: Record<string, unknown>) => {
       if (!formData?.id) throw new Error('Form not loaded')
-      return formsApi.submitInternal(formData.id, answers)
+      // If signature was captured, save it to user profile
+      if (answers.f_signature && typeof answers.f_signature === 'string') {
+        await api.put('/profile/api/signature', { signature: answers.f_signature })
+      }
+      const { f_signature: _, ...formAnswers } = answers
+      return formsApi.submitInternal(formData.id, formAnswers)
     },
     onSuccess: () => {
       toast.success('Voucher submitted for approval!')
@@ -172,7 +198,9 @@ export default function Vouchers() {
         <div className="mx-auto max-w-2xl rounded-lg border p-6">
           {formData?.schema ? (
             <FormRenderer
-              schema={formData.schema}
+              schema={sigStatus && !sigStatus.has_signature
+                ? [...formData.schema, { id: 'f_signature', type: 'signature' as const, label: 'Your Signature', required: true, order: 99 }]
+                : formData.schema}
               onSubmit={(answers) => submitFormMutation.mutate(answers)}
               submitting={submitFormMutation.isPending}
               submitLabel="Issue Voucher"
@@ -247,6 +275,12 @@ export default function Vouchers() {
         </Select>
         <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-40" placeholder="From" />
         <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-40" placeholder="To" />
+        <ColumnToggle
+          visibleColumns={visibleColumns}
+          defaultColumns={defaultColState}
+          columnDefs={allColumns as ColumnDef<never>[]}
+          onChange={setVisibleColumns}
+        />
       </div>
 
       {/* Table */}
@@ -254,49 +288,24 @@ export default function Vouchers() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Code</TableHead>
-              <TableHead>Issuer</TableHead>
-              <TableHead>Client</TableHead>
-              <TableHead>Contract</TableHead>
-              <TableHead>VIN</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Benefit</TableHead>
-              <TableHead>Issued</TableHead>
-              <TableHead>Expires</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
+              {visibleColumns.map((key) => {
+                const col = allColumns.find((c) => c.key === key)
+                return col ? <TableHead key={key} className={col.className}>{col.label}</TableHead> : null
+              })}
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={visibleColumns.length} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
             ) : vouchers.length === 0 ? (
-              <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">No vouchers found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={visibleColumns.length} className="text-center py-8 text-muted-foreground">No vouchers found</TableCell></TableRow>
             ) : (
               vouchers.map((v) => (
                 <TableRow key={v.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setDetailVoucher(v)}>
-                  <TableCell className="font-mono text-xs">{v.voucher_code}</TableCell>
-                  <TableCell>{v.issued_by_name}</TableCell>
-                  <TableCell>{v.client_name}</TableCell>
-                  <TableCell>{v.contract_number}</TableCell>
-                  <TableCell className="font-mono text-xs">{v.car_vin}</TableCell>
-                  <TableCell>{v.voucher_type.replace(/_/g, ' ')}</TableCell>
-                  <TableCell>{v.benefit_display}</TableCell>
-                  <TableCell>{v.issued_at || '—'}</TableCell>
-                  <TableCell>
-                    {v.expires_at || '—'}
-                    {v.days_remaining !== null && v.days_remaining !== undefined && v.days_remaining <= 30 && v.days_remaining > 0 && (
-                      <span className="ml-1 text-xs text-orange-500">({getDaysLabel(v)})</span>
-                    )}
-                  </TableCell>
-                  <TableCell><StatusBadge status={v.status} /></TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    {v.status === 'active' && (
-                      <Button size="sm" variant="outline" onClick={() => { setRedeemVoucher(v); setRedeemNotes('') }}>
-                        Redeem
-                      </Button>
-                    )}
-                  </TableCell>
+                  {visibleColumns.map((key) => {
+                    const col = allColumns.find((c) => c.key === key)
+                    return col ? <TableCell key={key} className={col.className}>{col.render(v)}</TableCell> : null
+                  })}
                 </TableRow>
               ))
             )}
