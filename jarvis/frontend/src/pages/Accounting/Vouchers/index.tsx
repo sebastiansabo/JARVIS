@@ -192,8 +192,8 @@ export default function Vouchers() {
   const issueSchema = useMemo(() => {
     if (!formData?.schema) return null
     const contextFields: typeof formData.schema = [
-      { id: 'f_company', type: 'short_text', label: 'Company', required: true, placeholder: authUser?.company || '', order: -2 },
-      { id: 'f_department', type: 'short_text', label: 'Department', required: false, placeholder: authUser?.department || '', order: -1 },
+      { id: 'f_company', type: 'company_select' as any, label: 'Company', required: true, order: -2 },
+      { id: 'f_department', type: 'department_select' as any, label: 'Department', required: false, placeholder: authUser?.company || '', order: -1, config: { companyField: 'f_company' } },
     ]
     let schema = [...contextFields, ...formData.schema]
     if (sigStatus && !sigStatus.has_signature) {

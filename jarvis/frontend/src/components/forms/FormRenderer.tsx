@@ -10,6 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { crmApi } from '@/api/crm'
+import { organizationApi } from '@/api/organization'
 import { vouchersApi } from '@/api/vouchers'
 import type { FormField } from '@/types/forms'
 import type { ServiceCatalogCompanyItem } from '@/types/vouchers'
@@ -91,6 +92,7 @@ export function FormRenderer({ schema, onSubmit, submitting, submitLabel = 'Subm
             error={errors[field.id]}
             onChange={(val) => setValue(field.id, val)}
             onSetField={setValue}
+            allAnswers={answers}
           />
         )
       })}
@@ -107,6 +109,7 @@ interface FieldProps {
   error?: string
   onChange: (value: unknown) => void
   onSetField?: (fieldId: string, value: unknown) => void
+  allAnswers?: Record<string, unknown>
 }
 
 function CrmClientField({ field, value, error, onChange, onSetField }: FieldProps) {
@@ -227,6 +230,55 @@ function CrmClientField({ field, value, error, onChange, onSetField }: FieldProp
           </div>
         )}
       </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  )
+}
+
+function CompanySelectField({ field, value, error, onChange, onSetField }: FieldProps) {
+  const { data: companies = [] } = useQuery({
+    queryKey: ['companies-config'],
+    queryFn: () => organizationApi.getCompaniesConfig(),
+    staleTime: 5 * 60_000,
+  })
+  return (
+    <div className="space-y-1">
+      <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+      <Select value={(value as string) ?? ''} onValueChange={(v) => { onChange(v); if (onSetField) onSetField('f_department', '') }}>
+        <SelectTrigger><SelectValue placeholder="Select company..." /></SelectTrigger>
+        <SelectContent>
+          {companies.map((c: { id: number; company: string }) => (
+            <SelectItem key={c.id} value={c.company}>{c.company}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  )
+}
+
+function DepartmentSelectField({ field, value, error, onChange, allAnswers }: FieldProps) {
+  const companyFieldId = (field.config as Record<string, unknown> | undefined)?.companyField as string || 'f_company'
+  const companyName = (allAnswers?.[companyFieldId] as string) || ''
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments', companyName],
+    queryFn: () => organizationApi.getDepartments(companyName),
+    enabled: !!companyName,
+    staleTime: 5 * 60_000,
+  })
+
+  return (
+    <div className="space-y-1">
+      <Label>{field.label}</Label>
+      <Select value={(value as string) ?? ''} onValueChange={onChange}>
+        <SelectTrigger><SelectValue placeholder={companyName ? 'Select department...' : 'Select company first'} /></SelectTrigger>
+        <SelectContent>
+          {departments.map((dept: string) => (
+            <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   )
@@ -459,6 +511,12 @@ function FieldComponent({ field, value, error, onChange, onSetField }: FieldProp
 
     case 'service_catalog':
       return <ServiceCatalogField field={field} value={value} error={error} onChange={onChange} />
+
+    case 'company_select':
+      return <CompanySelectField field={field} value={value} error={error} onChange={onChange} onSetField={onSetField} />
+
+    case 'department_select':
+      return <DepartmentSelectField field={field} value={value} error={error} onChange={onChange} onSetField={onSetField} />
 
     default:
       return null

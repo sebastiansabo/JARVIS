@@ -19,6 +19,8 @@ export type FieldType =
   | 'signature'
   | 'crm_client'
   | 'service_catalog'
+  | 'company_select'
+  | 'department_select'
 
 export interface ApprovalConfig {
   flow_id?: number
