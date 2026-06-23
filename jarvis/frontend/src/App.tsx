@@ -161,11 +161,11 @@ export default function App() {
         <Route path="accounting/facturare" element={<Guard flag="can_access_accounting"><SuspensePage><Facturare /></SuspensePage></Guard>} />
         <Route path="accounting/controlling" element={<Guard flag="can_access_accounting"><V2Guard permKey="controlling.bab.view"><SuspensePage><Controlling /></SuspensePage></V2Guard></Guard>} />
         <Route path="accounting/controlling/:uploadId" element={<Guard flag="can_access_accounting"><V2Guard permKey="controlling.bab.view"><SuspensePage><MarjaReport /></SuspensePage></V2Guard></Guard>} />
-        <Route path="accounting/vouchers" element={<Guard flag="can_access_accounting"><SuspensePage><VoucherTracking /></SuspensePage></Guard>} />
-        <Route path="accounting/vouchers/new" element={<SuspensePage><VoucherNew /></SuspensePage>} />
-        <Route path="accounting/vouchers/redeem" element={<Guard flag="can_access_accounting"><SuspensePage><VoucherRedeem /></SuspensePage></Guard>} />
-        <Route path="voucher" element={<SuspensePage><VoucherPortal /></SuspensePage>} />
-        <Route path="voucher/:code" element={<SuspensePage><VoucherPortal /></SuspensePage>} />
+        <Route path="accounting/vouchers" element={<Guard flag="can_access_accounting"><V2Guard permKey="vouchers.accounting.view"><SuspensePage><VoucherTracking /></SuspensePage></V2Guard></Guard>} />
+        <Route path="accounting/vouchers/new" element={<V2Guard permKey="vouchers.form.view"><SuspensePage><VoucherNew /></SuspensePage></V2Guard>} />
+        <Route path="accounting/vouchers/redeem" element={<V2Guard permKey="vouchers.accounting.redeem"><SuspensePage><VoucherRedeem /></SuspensePage></V2Guard>} />
+        <Route path="voucher" element={<V2Guard permKey="vouchers.form.view"><SuspensePage><VoucherPortal /></SuspensePage></V2Guard>} />
+        <Route path="voucher/:code" element={<V2Guard permKey="vouchers.form.view"><SuspensePage><VoucherPortal /></SuspensePage></V2Guard>} />
 
         {/* HR — requires can_access_hr */}
         <Route path="hr/*" element={<Guard flag="can_access_hr"><SuspensePage><Hr /></SuspensePage></Guard>} />

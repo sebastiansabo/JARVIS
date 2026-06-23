@@ -64,6 +64,7 @@ import { settingsApi } from '@/api/settings'
 import { checkinApi } from '@/api/checkin'
 import { usersApi } from '@/api/users'
 import { useAuth } from '@/hooks/useAuth'
+import { useAuthStore } from '@/stores/authStore'
 import { connecteamApi, type ConnecteamSubmission } from '@/api/connecteam'
 import { formsApi } from '@/api/forms'
 import { AllocationEditor, allocationsToRows, rowsToApiPayload } from '@/pages/Accounting/AllocationEditor'
@@ -98,6 +99,9 @@ const hrSubTabs: { key: HrSubTab; label: string; icon: React.ElementType }[] = [
 
 export default function Profile() {
   const isMobile = useIsMobile()
+  const authUser = useAuthStore((s) => s.user)
+  const hasVouchersPerm = !authUser?.permissions || (authUser.permissions['vouchers.profile.view'] ?? true)
+  const visibleMainTabs = hasVouchersPerm ? mainTabs : mainTabs.filter((t) => t.key !== 'vouchers')
   const [activeTab, setActiveTab] = useTabParam<Tab>('invoices')
   const [activeHrSubTab, setActiveHrSubTab] = useTabParam<HrSubTab>('pontaje', 'hrtab')
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -214,7 +218,7 @@ export default function Profile() {
         {isMobile ? (
           <MobileBottomTabs>
             <TabsList className="w-full">
-              {mainTabs.map((tab) => {
+              {visibleMainTabs.map((tab) => {
                 const Icon = tab.icon
                 return (
                   <TabsTrigger key={tab.key} value={tab.key}>
@@ -227,7 +231,7 @@ export default function Profile() {
           </MobileBottomTabs>
         ) : (
           <TabsList className="w-auto">
-            {mainTabs.map((tab) => {
+            {visibleMainTabs.map((tab) => {
               const Icon = tab.icon
               return (
                 <TabsTrigger key={tab.key} value={tab.key}>
