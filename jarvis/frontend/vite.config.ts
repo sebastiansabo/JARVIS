@@ -101,6 +101,10 @@ export default defineConfig({
         target: 'http://localhost:5001',
         changeOrigin: true,
       },
+      '/controlling': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
     },
   },
 })
