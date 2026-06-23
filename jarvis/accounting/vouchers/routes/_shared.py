@@ -16,7 +16,8 @@ __all__ = [
     'VoucherRepository', 'VoucherService',
     'VoucherCreate', 'VoucherRead', 'VoucherListItem', 'VoucherRedeem',
     'error_response', 'handle_api_errors', 'PermissionRepository',
-    'logger', '_repo', '_service', '_perm_repo', '_check_accounting_role',
+    'logger', '_repo', '_service', '_perm_repo',
+    '_check_accounting_role', '_check_voucher_perm',
 ]
 
 logger = logging.getLogger('jarvis.vouchers.routes')
@@ -25,12 +26,17 @@ _service = VoucherService()
 _perm_repo = PermissionRepository()
 
 
-def _check_accounting_role() -> bool:
-    """Check if current user has accounting/admin access."""
-    if current_user.role_name in ('admin', 'superadmin'):
+def _check_voucher_perm(entity: str, action: str) -> bool:
+    """Check vouchers.{entity}.{action} V2 permission."""
+    if getattr(current_user, 'role_name', '') in ('admin', 'superadmin'):
         return True
-    if getattr(current_user, 'can_access_accounting', False):
-        return _perm_repo.check_permission_v2(
-            current_user.role_id, 'accounting', 'vouchers', 'manage'
-        )
-    return False
+    role_id = getattr(current_user, 'role_id', None)
+    if not role_id:
+        return False
+    perm = _perm_repo.check_permission_v2(role_id, 'vouchers', entity, action)
+    return perm.get('has_permission', False)
+
+
+def _check_accounting_role() -> bool:
+    """Check if current user has accounting voucher access."""
+    return _check_voucher_perm('accounting', 'view')

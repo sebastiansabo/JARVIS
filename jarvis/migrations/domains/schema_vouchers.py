@@ -89,5 +89,60 @@ def create_schema_vouchers(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_issued_by ON vouchers(issued_by_user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_expires_at ON vouchers(expires_at)')
 
+    # ── V2 Permissions ──────────────────────────────────
+    cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'vouchers'")
+    if cursor.fetchone()['cnt'] == 0:
+        voucher_perms = [
+            # Accounting Vouchers section
+            ('vouchers', 'Vouchers', 'bi-ticket', 'accounting', 'Accounting Vouchers', 'view', 'View', 'View voucher tracking in Accounting', False, 1),
+            ('vouchers', 'Vouchers', 'bi-ticket', 'accounting', 'Accounting Vouchers', 'redeem', 'Redeem', 'Redeem vouchers in Accounting', False, 2),
+            ('vouchers', 'Vouchers', 'bi-ticket', 'accounting', 'Accounting Vouchers', 'export', 'Export', 'Export vouchers CSV', False, 3),
+            # Profile Vouchers tab
+            ('vouchers', 'Vouchers', 'bi-ticket', 'profile', 'Profile Vouchers', 'view', 'View', 'View My Vouchers tab in Profile', False, 4),
+            # Form (Issue) Vouchers
+            ('vouchers', 'Vouchers', 'bi-ticket', 'form', 'Issue Vouchers', 'view', 'View', 'Access voucher issuance form', False, 5),
+        ]
+        for p in voucher_perms:
+            cursor.execute('''
+                INSERT INTO permissions_v2 (module_key, module_label, module_icon,
+                                           entity_key, entity_label, action_key, action_label,
+                                           description, is_scope_based, sort_order)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+            ''', p)
+
+        # Admin gets all voucher permissions
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, 'all', TRUE
+            FROM roles r
+            CROSS JOIN permissions_v2 p
+            WHERE r.name = 'Admin' AND p.module_key = 'vouchers'
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''')
+
+        # Manager gets all voucher permissions
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, 'all', TRUE
+            FROM roles r
+            CROSS JOIN permissions_v2 p
+            WHERE r.name = 'Manager' AND p.module_key = 'vouchers'
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''')
+
+        # User gets view + form (issue) only
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, 'all', TRUE
+            FROM roles r
+            CROSS JOIN permissions_v2 p
+            WHERE r.name = 'User' AND p.module_key = 'vouchers'
+            AND p.action_key = 'view'
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''')
+
+        logger.info('Voucher V2 permissions seeded')
+
     conn.commit()
     logger.info('Vouchers schema created/updated')
