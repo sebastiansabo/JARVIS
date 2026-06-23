@@ -160,21 +160,21 @@ def _build_data_context(repo: BabRepository, company_id: int, companies: list, c
 def analyze_bab(repo: BabRepository, company_id: int, companies: list,
                 mode: str = 'auto', prompt: str = '', cross_company: bool = False) -> dict:
     """Run AI analysis on BAB data. Returns { analysis: str, tokens_used: int }."""
-    from ai_agent.services.llm_client import ask
-
-    data_context = _build_data_context(repo, company_id, companies, cross_company)
-
-    if mode == 'auto':
-        user_prompt = AUTO_ANALYSIS_TEMPLATE.format(data_context=data_context)
-        max_tokens = 4096
-    else:
-        user_prompt = QUERY_TEMPLATE.format(data_context=data_context, prompt=prompt)
-        max_tokens = 2048
-
-    if not data_context.strip() or 'Nu există date importate' in data_context:
-        return {'analysis': 'Nu există date BAB importate pentru această companie. Importă o perioadă mai întâi.', 'tokens_used': 0}
-
     try:
+        from ai_agent.services.llm_client import ask
+
+        data_context = _build_data_context(repo, company_id, companies, cross_company)
+
+        if not data_context.strip() or 'Nu există date importate' in data_context:
+            return {'analysis': 'Nu există date BAB importate pentru această companie. Importă o perioadă mai întâi.', 'tokens_used': 0}
+
+        if mode == 'auto':
+            user_prompt = AUTO_ANALYSIS_TEMPLATE.format(data_context=data_context)
+            max_tokens = 4096
+        else:
+            user_prompt = QUERY_TEMPLATE.format(data_context=data_context, prompt=prompt)
+            max_tokens = 2048
+
         response = ask(
             prompt=user_prompt,
             system=SYSTEM_PROMPT,
