@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import {
   Plus, FileText, Loader2, ChevronRight, ChevronDown, Copy,
   Search, CheckCircle2, Ban, Pencil, Check, X,
-  Trash2, Download, Archive, FileSpreadsheet,
+  Trash2, Download, Archive, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -640,18 +640,79 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
   const [stornoOpen, setStornoOpen] = useState(false)
   const [finalOpen, setFinalOpen] = useState(false)
 
+  // Filter & sort
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<Set<CarNextAction>>(new Set())
+  const [comandaFrom, setComandaFrom] = useState('')
+  const [comandaTo, setComandaTo] = useState('')
+  const [sortCol, setSortCol] = useState<string | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const toggleSort = (col: string) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+  const toggleStatus = (s: CarNextAction) => {
+    setStatusFilter(prev => { const next = new Set(prev); if (next.has(s)) next.delete(s); else next.add(s); return next })
+  }
+  const sortIcon = (col: string) => sortCol === col
+    ? (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)
+    : <ArrowUpDown className="h-3 w-3 opacity-20" />
+
   // Per-line next actions
   const lineActions = new Map<number, CarNextAction>()
   for (const l of lines) lineActions.set(l.id, getCarNextAction(l))
+
+  // Status counts (from all lines, for filter pills)
+  const statusCounts = new Map<CarNextAction, number>()
+  for (const [, action] of lineActions) statusCounts.set(action, (statusCounts.get(action) || 0) + 1)
+
+  // Apply filters & sort
+  let filteredLines = lines as AnexaLine[]
+  if (statusFilter.size > 0) filteredLines = filteredLines.filter(l => statusFilter.has(lineActions.get(l.id)!))
+  if (comandaFrom || comandaTo) {
+    const from = comandaFrom ? parseInt(comandaFrom, 10) : -Infinity
+    const to = comandaTo ? parseInt(comandaTo, 10) : Infinity
+    filteredLines = filteredLines.filter(l => {
+      const num = parseInt(l.nr_comanda || '', 10)
+      return !isNaN(num) && num >= from && num <= to
+    })
+  }
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase().trim()
+    filteredLines = filteredLines.filter(l =>
+      (l.nr_comanda || '').toLowerCase().includes(q) ||
+      (l.model || '').toLowerCase().includes(q) ||
+      (l.vin || '').toLowerCase().includes(q) ||
+      (l.culoare || '').toLowerCase().includes(q)
+    )
+  }
+  if (sortCol) {
+    filteredLines = [...filteredLines].sort((a, b) => {
+      let av: any, bv: any
+      switch (sortCol) {
+        case 'nr_comanda': av = a.nr_comanda || ''; bv = b.nr_comanda || ''; break
+        case 'model': av = a.model || ''; bv = b.model || ''; break
+        case 'culoare': av = a.culoare || ''; bv = b.culoare || ''; break
+        case 'selling_price': av = a.selling_price_eur; bv = b.selling_price_eur; break
+        case 'proforma': av = a.proforma_eur || 0; bv = b.proforma_eur || 0; break
+        case 'invoiced': av = a.invoiced_eur || 0; bv = b.invoiced_eur || 0; break
+        case 'rest': av = a.selling_price_eur - (a.invoiced_eur || 0); bv = b.selling_price_eur - (b.invoiced_eur || 0); break
+        case 'progress': av = a.selling_price_eur > 0 ? (a.proforma_eur || 0) / a.selling_price_eur : 0; bv = b.selling_price_eur > 0 ? (b.proforma_eur || 0) / b.selling_price_eur : 0; break
+        default: return 0
+      }
+      if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
+      return sortDir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number)
+    })
+  }
 
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
   const toggleExpand = (id: number) => {
     setExpandedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
   }
 
-  const totalSelling = lines.reduce((s, l) => s + l.selling_price_eur, 0)
-  const totalProforma = lines.reduce((s, l) => s + (l.proforma_eur || 0), 0)
-  const totalInvoiced = lines.reduce((s, l) => s + (l.invoiced_eur || 0), 0)
+  const totalSelling = filteredLines.reduce((s, l) => s + l.selling_price_eur, 0)
+  const totalProforma = filteredLines.reduce((s, l) => s + (l.proforma_eur || 0), 0)
+  const totalInvoiced = filteredLines.reduce((s, l) => s + (l.invoiced_eur || 0), 0)
   const totalRemaining = totalSelling - totalInvoiced
 
   // Sort coverage entries chronologically by invoice_id (insertion order)
@@ -683,7 +744,7 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
   }
 
   // Selection: any non-complete car is selectable
-  const selectableLines = lines.filter(l => lineActions.get(l.id) !== 'COMPLETE')
+  const selectableLines = filteredLines.filter(l => lineActions.get(l.id) !== 'COMPLETE')
   const allSelectableSelected = selectableLines.length > 0 && selectableLines.every(l => selectedIds.has(l.id))
 
   const toggleLine = (id: number) => {
@@ -727,7 +788,7 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
         {/* Action bar */}
         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30 flex-wrap gap-2">
           <div className="flex items-center gap-3 text-xs">
-            <span className="font-medium text-muted-foreground">{lines.length} vehicle(s)</span>
+            <span className="font-medium text-muted-foreground">{filteredLines.length}{filteredLines.length !== lines.length ? ` / ${lines.length}` : ''} vehicle(s)</span>
             {selectedCount > 0 && (
               <span className="text-blue-600 font-medium">{selectedCount} selected — {fmtEur(selectedTotal)} EUR</span>
             )}
@@ -758,6 +819,42 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
           </div>
         </div>
 
+        {/* Filter bar */}
+        <div className="flex items-center gap-2 px-3 py-2 border-b flex-wrap">
+          <div className="flex items-center gap-1">
+            {(['PROFORMA', 'INVOICE', 'STORNO', 'FINAL', 'COMPLETE'] as CarNextAction[]).map(status => {
+              const count = statusCounts.get(status) || 0
+              const active = statusFilter.has(status)
+              return (
+                <button key={status} onClick={() => count > 0 && toggleStatus(status)}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors border ${active ? CAR_ACTION_COLORS[status] + ' border-current' : count > 0 ? 'bg-muted/50 text-muted-foreground border-transparent hover:bg-muted cursor-pointer' : 'bg-muted/20 text-muted-foreground/40 border-transparent cursor-default'}`}>
+                  {CAR_ACTION_LABELS[status]}
+                  <span className="text-[10px] opacity-70">{count}</span>
+                </button>
+              )
+            })}
+            {statusFilter.size > 0 && (
+              <button onClick={() => setStatusFilter(new Set())}
+                className="text-[11px] text-muted-foreground hover:text-foreground ml-1">
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <span>Comanda</span>
+            <Input className="h-7 w-20 text-xs text-center" placeholder="de la" type="number"
+              value={comandaFrom} onChange={e => setComandaFrom(e.target.value)} />
+            <span>—</span>
+            <Input className="h-7 w-20 text-xs text-center" placeholder="pana la" type="number"
+              value={comandaTo} onChange={e => setComandaTo(e.target.value)} />
+          </div>
+          <div className="ml-auto relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+            <Input className="h-7 w-48 text-xs pl-7" placeholder="Cauta comanda, model, VIN..."
+              value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+          </div>
+        </div>
+
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -767,21 +864,37 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
                   <input type="checkbox" checked={allSelectableSelected} onChange={toggleAll} className="rounded" />
                 </th>
                 <th className="w-6 px-1 py-1.5"></th>
-                <th className="text-left px-2 py-1.5 font-medium">Comanda</th>
-                <th className="text-left px-2 py-1.5 font-medium">Model</th>
-                <th className="text-left px-2 py-1.5 font-medium">Culoare</th>
+                <th className="text-left px-2 py-1.5 font-medium cursor-pointer select-none" onClick={() => toggleSort('nr_comanda')}>
+                  <span className="inline-flex items-center gap-0.5">Comanda {sortIcon('nr_comanda')}</span>
+                </th>
+                <th className="text-left px-2 py-1.5 font-medium cursor-pointer select-none" onClick={() => toggleSort('model')}>
+                  <span className="inline-flex items-center gap-0.5">Model {sortIcon('model')}</span>
+                </th>
+                <th className="text-left px-2 py-1.5 font-medium cursor-pointer select-none" onClick={() => toggleSort('culoare')}>
+                  <span className="inline-flex items-center gap-0.5">Culoare {sortIcon('culoare')}</span>
+                </th>
                 <th className="text-left px-2 py-1.5 font-medium">VIN</th>
-                <th className="text-right px-2 py-1.5 font-medium">Pret Vanzare</th>
-                <th className="text-right px-2 py-1.5 font-medium text-blue-600">Proforma</th>
-                <th className="text-right px-2 py-1.5 font-medium text-emerald-600">Facturat</th>
-                <th className="text-right px-2 py-1.5 font-medium">Rest</th>
-                <th className="text-center px-2 py-1.5 font-medium w-24">Progres</th>
+                <th className="text-right px-2 py-1.5 font-medium cursor-pointer select-none" onClick={() => toggleSort('selling_price')}>
+                  <span className="inline-flex items-center gap-0.5 justify-end w-full">Pret Vanzare {sortIcon('selling_price')}</span>
+                </th>
+                <th className="text-right px-2 py-1.5 font-medium text-blue-600 cursor-pointer select-none" onClick={() => toggleSort('proforma')}>
+                  <span className="inline-flex items-center gap-0.5 justify-end w-full">Proforma {sortIcon('proforma')}</span>
+                </th>
+                <th className="text-right px-2 py-1.5 font-medium text-emerald-600 cursor-pointer select-none" onClick={() => toggleSort('invoiced')}>
+                  <span className="inline-flex items-center gap-0.5 justify-end w-full">Facturat {sortIcon('invoiced')}</span>
+                </th>
+                <th className="text-right px-2 py-1.5 font-medium cursor-pointer select-none" onClick={() => toggleSort('rest')}>
+                  <span className="inline-flex items-center gap-0.5 justify-end w-full">Rest {sortIcon('rest')}</span>
+                </th>
+                <th className="text-center px-2 py-1.5 font-medium w-24 cursor-pointer select-none" onClick={() => toggleSort('progress')}>
+                  <span className="inline-flex items-center gap-0.5 justify-center w-full">Progres {sortIcon('progress')}</span>
+                </th>
                 <th className="text-center px-2 py-1.5 font-medium">Urmatorul Pas</th>
                 <th className="text-center px-2 py-1.5 font-medium w-10"></th>
               </tr>
             </thead>
             <tbody>
-              {lines.map(l => {
+              {filteredLines.map(l => {
                 const proforma = l.proforma_eur || 0
                 const invoiced = l.invoiced_eur || 0
                 const rest = l.selling_price_eur - invoiced
