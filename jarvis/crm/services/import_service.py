@@ -253,6 +253,17 @@ def import_clients(file_path, user_id, original_filename=None):
 
 # ── Legacy importers (Romanian DMS column headers) ──
 
+def _flush_stats(batch_id, stats, status='processing'):
+    """Flush current import stats to DB (for progress tracking and crash recovery)."""
+    try:
+        _import_repo.update_stats(batch_id, total_rows=stats['total'], new_rows=stats['new'],
+                                  updated_rows=stats['updated'], skipped_rows=stats['skipped'],
+                                  new_clients=stats['new_clients'], matched_clients=stats['matched_clients'],
+                                  status=status, error_log=stats['errors'][:100])
+    except Exception:
+        logger.exception('Failed to flush import stats for batch %s', batch_id)
+
+
 def import_nw(file_path, user_id, original_filename=None):
     from ..parsers import parse_nw
     batch = _import_repo.create('nw', original_filename or file_path.split('/')[-1], user_id)
@@ -277,10 +288,9 @@ def import_nw(file_path, user_id, original_filename=None):
             except Exception as e:
                 stats['errors'].append(f'Row {stats["total"]}: {str(e)[:200]}')
                 stats['skipped'] += 1
-        _import_repo.update_stats(batch_id, total_rows=stats['total'], new_rows=stats['new'],
-                                  updated_rows=stats['updated'], skipped_rows=stats['skipped'],
-                                  new_clients=stats['new_clients'], matched_clients=stats['matched_clients'],
-                                  status='completed', error_log=stats['errors'][:100])
+            if stats['total'] % 1000 == 0:
+                _flush_stats(batch_id, stats)
+        _flush_stats(batch_id, stats, status='completed')
     except Exception as e:
         _import_repo.update_stats(batch_id, status='failed', error_log=[str(e)[:500]])
         stats['errors'].append(str(e))
@@ -311,10 +321,9 @@ def import_gw(file_path, user_id, original_filename=None):
             except Exception as e:
                 stats['errors'].append(f'Row {stats["total"]}: {str(e)[:200]}')
                 stats['skipped'] += 1
-        _import_repo.update_stats(batch_id, total_rows=stats['total'], new_rows=stats['new'],
-                                  updated_rows=stats['updated'], skipped_rows=stats['skipped'],
-                                  new_clients=stats['new_clients'], matched_clients=stats['matched_clients'],
-                                  status='completed', error_log=stats['errors'][:100])
+            if stats['total'] % 1000 == 0:
+                _flush_stats(batch_id, stats)
+        _flush_stats(batch_id, stats, status='completed')
     except Exception as e:
         _import_repo.update_stats(batch_id, status='failed', error_log=[str(e)[:500]])
         stats['errors'].append(str(e))
