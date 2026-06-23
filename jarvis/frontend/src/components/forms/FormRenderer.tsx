@@ -19,6 +19,7 @@ interface FormRendererProps {
   onSubmit: (answers: Record<string, unknown>) => void
   submitting?: boolean
   submitLabel?: string
+  defaultValues?: Record<string, unknown>
 }
 
 function isFieldVisible(field: FormField, answers: Record<string, unknown>): boolean {
@@ -38,8 +39,8 @@ function isFieldVisible(field: FormField, answers: Record<string, unknown>): boo
   }
 }
 
-export function FormRenderer({ schema, onSubmit, submitting, submitLabel = 'Submit' }: FormRendererProps) {
-  const [answers, setAnswers] = useState<Record<string, unknown>>({})
+export function FormRenderer({ schema, onSubmit, submitting, submitLabel = 'Submit', defaultValues }: FormRendererProps) {
+  const [answers, setAnswers] = useState<Record<string, unknown>>(() => defaultValues || {})
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const setValue = (fieldId: string, value: unknown) => {
