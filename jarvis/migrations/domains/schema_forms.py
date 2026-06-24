@@ -64,13 +64,22 @@ def create_schema_forms(conn, cursor):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT form_submissions_status_check CHECK (status IN (
-                'new', 'read', 'flagged', 'approved', 'rejected'
+                'new', 'read', 'flagged', 'approved', 'rejected', 'pending_approval'
             )),
             CONSTRAINT form_submissions_source_check CHECK (source IN (
                 'web_public', 'web_internal', 'mobile'
             ))
         )
     ''')
+    # Ensure pending_approval is allowed in status constraint
+    cursor.execute('''
+        DO $$ BEGIN
+            ALTER TABLE form_submissions DROP CONSTRAINT IF EXISTS form_submissions_status_check;
+            ALTER TABLE form_submissions ADD CONSTRAINT form_submissions_status_check
+                CHECK (status IN ('new', 'read', 'flagged', 'approved', 'rejected', 'pending_approval'));
+        END $$;
+    ''')
+
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_form_submissions_form ON form_submissions(form_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_form_submissions_status ON form_submissions(status)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_form_submissions_created ON form_submissions(created_at)')

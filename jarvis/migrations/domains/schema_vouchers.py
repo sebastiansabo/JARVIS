@@ -89,6 +89,15 @@ def create_schema_vouchers(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_issued_by ON vouchers(issued_by_user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_expires_at ON vouchers(expires_at)')
 
+    # Link voucher to the form submission that created it
+    cursor.execute('''
+        DO $$ BEGIN
+            ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS form_submission_id INT REFERENCES form_submissions(id);
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_form_submission ON vouchers(form_submission_id) WHERE form_submission_id IS NOT NULL')
+
     # ── Service Catalog ─────────────────────────────────
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS voucher_service_catalog (

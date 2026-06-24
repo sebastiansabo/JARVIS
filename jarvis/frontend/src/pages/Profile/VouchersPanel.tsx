@@ -230,6 +230,7 @@ export default function VouchersPanel() {
                 <div><span className="text-muted-foreground">Issued:</span> {selected.issued_at || '—'}</div>
                 <div><span className="text-muted-foreground">Expires:</span> {selected.expires_at || '—'}</div>
                 <div><span className="text-muted-foreground">Status:</span> <Badge variant="outline" className={STATUS_COLORS[selected.status] || ''}>{selected.status.replace('_', ' ')}</Badge></div>
+                {selected.approver_name && <div><span className="text-muted-foreground">Approver:</span> {selected.approver_name}</div>}
               </div>
               {selected.notes && <div><span className="text-muted-foreground">Notes:</span> {selected.notes}</div>}
               {selected.redemption_notes && <div><span className="text-muted-foreground">Redemption notes:</span> {selected.redemption_notes}</div>}
