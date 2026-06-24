@@ -32,7 +32,6 @@ import {
   CheckCircle2,
   MapPin,
   SlidersHorizontal,
-  ChevronUp,
   ClipboardList,
   Plus,
   Ticket,
@@ -51,7 +50,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
@@ -128,83 +126,180 @@ export default function Profile() {
     enabled: !!user?.id,
   })
 
+  // Check-in status for header quick action
+  const { data: checkinStatus } = useQuery({
+    queryKey: ['checkin', 'status'],
+    queryFn: async () => {
+      const res = await checkinApi.getStatus()
+      return (res as any).data ?? res
+    },
+    refetchInterval: 60_000,
+  })
+
+  const punchMut = useMutation({
+    mutationFn: async () => {
+      const pos = await new Promise<GeolocationPosition | null>((resolve) => {
+        if (!navigator.geolocation) return resolve(null)
+        navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), {
+          enableHighAccuracy: true, timeout: 5000, maximumAge: 0,
+        })
+      })
+      const payload: { lat?: number; lng?: number; direction?: string } = {}
+      if (pos) { payload.lat = pos.coords.latitude; payload.lng = pos.coords.longitude }
+      payload.direction = checkinStatus?.next_direction ?? 'IN'
+      const res = await checkinApi.punch(payload)
+      return (res as any).data ?? res
+    },
+    onSuccess: (res) => {
+      if (res.success) {
+        queryClient.invalidateQueries({ queryKey: ['checkin', 'status'] })
+        queryClient.invalidateQueries({ queryKey: ['profile', 'pontaje'] })
+        toast.success(`${res.direction} at ${res.time} — ${res.location}`)
+      } else {
+        toast.error(res.error || 'Punch failed')
+      }
+    },
+    onError: () => toast.error('Punch failed — try the Check In page'),
+  })
+
+  const checkinDir = checkinStatus?.next_direction ?? 'IN'
+  const isCheckedIn = checkinDir !== 'IN'
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="My Profile"
-        breadcrumbs={[{ label: 'My Profile' }]}
-      />
-
-      {/* User Info Card */}
-      <Card className="cursor-pointer" onClick={() => setProfileDetailsOpen(d => !d)}>
-        <CardContent className="px-4 py-3">
-          {isLoading ? (
-            <div className="flex items-center gap-3">
-              <Skeleton className="h-10 w-10 rounded-full shrink-0" />
-              <div className="space-y-1.5">
-                <Skeleton className="h-5 w-40" />
-                <Skeleton className="h-3.5 w-56" />
-              </div>
+      {/* Command Center Header */}
+      {isLoading ? (
+        <div className="rounded-lg bg-primary p-4">
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-11 w-11 rounded-full shrink-0 bg-primary-foreground/20" />
+            <div className="space-y-1.5">
+              <Skeleton className="h-3 w-24 bg-primary-foreground/20" />
+              <Skeleton className="h-5 w-36 bg-primary-foreground/20" />
             </div>
-          ) : (
-            <>
-              {/* Top row: avatar + name + chevron + actions */}
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
-                  {user?.name
-                    ?.split(' ')
-                    .map((n) => n[0])
-                    .join('')
-                    .slice(0, 2)
-                    .toUpperCase() || '?'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base font-semibold">{user?.name}</h2>
-                    {user?.role && <StatusBadge status={user.role} />}
-                    {user?.position && <Badge variant="outline" className="text-xs">{user.position}</Badge>}
-                    {profileDetailsOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
-                  </div>
-                </div>
-                <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                  <Button variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg bg-primary text-primary-foreground p-4">
+          <div className="flex items-center gap-4">
+            {/* Left: Avatar + Identity */}
+            <button
+              type="button"
+              className="flex items-center gap-3 min-w-0 hover:opacity-80 transition-opacity"
+              onClick={() => setProfileDetailsOpen(true)}
+            >
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-foreground text-primary text-sm font-bold">
+                {user?.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
+              </div>
+              <div className="min-w-0 text-left">
+                <p className="text-xs text-primary-foreground/70 truncate">
+                  {user?.company || 'Loading...'}
+                </p>
+                <h1 className="text-lg font-bold leading-tight">Command center</h1>
+              </div>
+            </button>
+
+            {/* Right: Actions */}
+            <div className="ml-auto flex items-center gap-2">
+              {user?.role && (
+                <Badge variant="outline" className="border-primary-foreground/30 text-primary-foreground text-xs">
+                  {user.role}
+                </Badge>
+              )}
+
+              {/* Desktop action buttons */}
+              {!isMobile && (
+                <>
+                  {checkinStatus?.mapped && (
+                    <Button
+                      size="sm"
+                      className={cn(
+                        'shrink-0 font-semibold text-white',
+                        isCheckedIn
+                          ? 'bg-red-600 hover:bg-red-700'
+                          : 'bg-green-600 hover:bg-green-700',
+                      )}
+                      onClick={() => punchMut.mutate()}
+                      disabled={punchMut.isPending}
+                    >
+                      {isCheckedIn ? <LogOut className="h-3.5 w-3.5 mr-1.5" /> : <LogIn className="h-3.5 w-3.5 mr-1.5" />}
+                      {punchMut.isPending ? '...' : isCheckedIn ? 'Check Out' : 'Check In'}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10"
+                    onClick={() => setTicketOpen(true)}
+                  >
+                    <Ticket className="h-3.5 w-3.5 mr-1.5" />
+                    Ticket
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10"
+                    onClick={() => setPasswordOpen(true)}
+                  >
                     <Key className="h-3.5 w-3.5 mr-1.5" />
                     Password
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10"
+                    onClick={() => setEditOpen(true)}
+                  >
                     <Pencil className="h-3.5 w-3.5 mr-1.5" />
-                    Edit
+                    Edit profile
                   </Button>
-                </div>
-              </div>
-
-              {/* Info grid + signature — collapsed by default */}
-              {profileDetailsOpen && (
-                <div className="border-t pt-3 mt-3 space-y-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm">
-                    <InfoField icon={Mail} label="Email" value={user?.email} />
-                    <InfoField icon={Phone} label="Phone" value={user?.phone} />
-                    <InfoField icon={Building2} label="Department" value={(() => { const depts = orgPaths.map((o: any) => o.sincron_department || o.department).filter(Boolean); return depts.length > 0 ? depts : (summary?.sincron?.department || user?.department); })()} />
-                    <InfoField icon={Shield} label="Company" value={(() => { const comps = [...new Set(orgPaths.map(o => o.company).filter(Boolean))]; return comps.length > 0 ? comps : user?.company; })()} />
-                    <InfoField icon={Hash} label="CNP" value={user?.cnp} />
-                    <InfoField icon={Calendar} label="Birthdate" value={user?.birthdate ? new Date(user.birthdate).toLocaleDateString('ro-RO') : null} />
-                    <InfoField icon={Briefcase} label="Position" value={user?.position} />
-                    <InfoField icon={Calendar} label="Contract Start" value={user?.contract_work_date ? new Date(user.contract_work_date).toLocaleDateString('ro-RO') : null} />
-                  </div>
-                  <div onClick={(e) => e.stopPropagation()}>
-                    <SignatureSection />
-                  </div>
-                </div>
+                </>
               )}
 
-              {/* Anniversary banners */}
-              <AnniversaryBanners birthdate={user?.birthdate} contractDate={user?.contract_work_date} name={user?.name ?? ''} />
-            </>
-          )}
-        </CardContent>
-      </Card>
+              {/* Mobile: overflow menu */}
+              {isMobile && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline" className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {checkinStatus?.mapped && (
+                      <DropdownMenuItem onClick={() => punchMut.mutate()} disabled={punchMut.isPending}>
+                        {isCheckedIn ? <LogOut className="h-4 w-4 mr-2" /> : <LogIn className="h-4 w-4 mr-2" />}
+                        {isCheckedIn ? 'Check Out' : 'Check In'}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => setTicketOpen(true)}>
+                      <Ticket className="h-4 w-4 mr-2" />
+                      New Ticket
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setPasswordOpen(true)}>
+                      <Key className="h-4 w-4 mr-2" />
+                      Password
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Edit profile
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Edit Profile Dialog */}
+      {/* Dialogs */}
+      {user && (
+        <ProfileDetailsDialog
+          open={profileDetailsOpen}
+          onOpenChange={setProfileDetailsOpen}
+          user={user}
+          orgPaths={orgPaths}
+          sincronDepartment={summary?.sincron?.department}
+        />
+      )}
       {user && (
         <EditProfileDialog
           open={editOpen}
@@ -213,9 +308,10 @@ export default function Profile() {
           onSaved={() => queryClient.invalidateQueries({ queryKey: ['profile', 'summary'] })}
         />
       )}
-
-      {/* Change Password Dialog */}
       <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
+      <Suspense fallback={null}>
+        <CreateTicketDialog open={ticketOpen} onOpenChange={setTicketOpen} />
+      </Suspense>
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
