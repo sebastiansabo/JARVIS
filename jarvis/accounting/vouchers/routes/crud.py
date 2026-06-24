@@ -36,6 +36,26 @@ def get_voucher_form_id():
     return jsonify({'form_id': row['id']})
 
 
+@vouchers_bp.route('/api/vouchers/form-schema', methods=['GET'])
+@login_required
+@handle_api_errors
+def get_voucher_form_schema():
+    """Return the voucher issuance form schema (no forms.form.view needed)."""
+    from forms.repositories import FormRepository
+    form_repo = FormRepository()
+    from core.base_repository import BaseRepository
+    row = BaseRepository().query_one(
+        "SELECT id FROM forms WHERE slug = %s AND deleted_at IS NULL",
+        (VOUCHER_FORM_SLUG,)
+    )
+    if not row:
+        return error_response('Voucher form not configured', 404)
+    form = form_repo.get_by_id(row['id'])
+    if not form:
+        return error_response('Voucher form not found', 404)
+    return jsonify(form)
+
+
 @vouchers_bp.route('/api/vouchers', methods=['POST'])
 @login_required
 @handle_api_errors

@@ -228,10 +228,7 @@ export default function Vouchers() {
 
   const { data: formData } = useQuery({
     queryKey: ['voucher-form-schema'],
-    queryFn: async () => {
-      const { form_id } = await vouchersApi.getFormId()
-      return formsApi.getForm(form_id)
-    },
+    queryFn: () => vouchersApi.getFormSchema(),
     enabled: view === 'issue',
     staleTime: 5 * 60_000,
   })
