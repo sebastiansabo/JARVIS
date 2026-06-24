@@ -432,6 +432,8 @@ function CreateAnexaDialog({ open, onOpenChange, contractId, onCreated }: {
 function EditableAnexaLine({ line, canDelete, onUpdated }: { line: AnexaLine; canDelete?: boolean; onUpdated: () => void }) {
   const [editing, setEditing] = useState(false)
   const [vin, setVin] = useState(line.vin || '')
+  const [editingNr, setEditingNr] = useState(false)
+  const [nrComanda, setNrComanda] = useState(line.nr_comanda || '')
 
   const saveVin = async () => {
     const trimmed = vin.trim().toUpperCase()
@@ -450,10 +452,36 @@ function EditableAnexaLine({ line, canDelete, onUpdated }: { line: AnexaLine; ca
     } catch (err: any) { toast.error(err.message) }
   }
 
+  const saveNrComanda = async () => {
+    const trimmed = nrComanda.trim()
+    try {
+      const res = await fetch(`/facturare/api/anexa-lines/${line.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nr_comanda: trimmed || null }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed') }
+      toast.success('Nr. comandă updated')
+      setEditingNr(false); onUpdated()
+    } catch (err: any) { toast.error(err.message) }
+  }
+
   return (
     <div className="flex justify-between items-center py-0.5 border-b border-dashed last:border-0 gap-2">
       <span className="flex items-center gap-1 min-w-0">
-        {line.nr_comanda && <span className="font-mono text-muted-foreground mr-1">{line.nr_comanda}</span>}
+        {editingNr ? (
+          <span className="flex items-center gap-1 mr-1">
+            <Input className="h-6 w-20 text-xs font-mono" placeholder="150001" value={nrComanda}
+              onChange={e => setNrComanda(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveNrComanda()} autoFocus />
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={saveNrComanda}><CheckCircle2 className="h-3 w-3 text-emerald-500" /></Button>
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setEditingNr(false); setNrComanda(line.nr_comanda || '') }}>
+              <span className="text-xs text-muted-foreground">✕</span>
+            </Button>
+          </span>
+        ) : line.nr_comanda ? (
+          <span className="font-mono text-muted-foreground mr-1 cursor-pointer hover:underline" onClick={() => setEditingNr(true)}>{line.nr_comanda}</span>
+        ) : (
+          <span className="text-amber-500 mr-1 italic cursor-pointer hover:underline text-xs" onClick={() => setEditingNr(true)}>+ nr.</span>
+        )}
         <span className="truncate">{line.model}{line.culoare && ` (${line.culoare})`}</span>
         {editing ? (
           <span className="flex items-center gap-1 ml-1">
@@ -619,6 +647,20 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [editingVinId, setEditingVinId] = useState<number | null>(null)
   const [editingVinValue, setEditingVinValue] = useState('')
+  const [editingNrComandaId, setEditingNrComandaId] = useState<number | null>(null)
+  const [editingNrComandaValue, setEditingNrComandaValue] = useState('')
+  const saveNrComandaInline = async (lineId: number) => {
+    const trimmed = editingNrComandaValue.trim()
+    try {
+      const res = await fetch(`/facturare/api/anexa-lines/${lineId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nr_comanda: trimmed || null }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed') }
+      toast.success('Nr. comandă updated')
+      setEditingNrComandaId(null); onCreated()
+    } catch (err: any) { toast.error(err.message) }
+  }
   const saveVinInline = async (lineId: number) => {
     const trimmed = editingVinValue.trim().toUpperCase()
     if (trimmed) {
@@ -914,7 +956,26 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
                     <td className="w-6 px-1 py-1.5 text-center text-muted-foreground">
                       {hasCov && <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />}
                     </td>
-                    <td className="px-2 py-1.5 font-mono text-muted-foreground">{l.nr_comanda || '—'}</td>
+                    <td className="px-2 py-1.5 font-mono text-muted-foreground" onClick={e => e.stopPropagation()}>
+                      {editingNrComandaId === l.id ? (
+                        <span className="flex items-center gap-1">
+                          <Input className="h-6 w-24 text-xs font-mono" placeholder="150001" value={editingNrComandaValue}
+                            onChange={e => setEditingNrComandaValue(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') saveNrComandaInline(l.id); if (e.key === 'Escape') setEditingNrComandaId(null) }}
+                            autoFocus />
+                          <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => saveNrComandaInline(l.id)}>
+                            <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setEditingNrComandaId(null)}>
+                            <Ban className="h-3 w-3 text-muted-foreground" />
+                          </Button>
+                        </span>
+                      ) : l.nr_comanda ? (
+                        <span className="cursor-pointer hover:underline" onClick={() => { setEditingNrComandaId(l.id); setEditingNrComandaValue(l.nr_comanda || '') }}>{l.nr_comanda}</span>
+                      ) : (
+                        <span className="text-amber-500 italic cursor-pointer hover:underline" onClick={() => { setEditingNrComandaId(l.id); setEditingNrComandaValue('') }}>+ Nr.</span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5">{l.model}</td>
                     <td className="px-2 py-1.5 text-muted-foreground">{l.culoare || '—'}</td>
                     <td className="px-2 py-1.5 font-mono text-muted-foreground text-[11px]" onClick={e => e.stopPropagation()}>
