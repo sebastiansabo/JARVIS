@@ -37,6 +37,7 @@ import { formsApi } from '@/api/forms'
 import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { vouchersApi } from '@/api/vouchers'
+import { organizationApi } from '@/api/organization'
 import type { Voucher, VoucherSummary } from '@/types/vouchers'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -90,10 +91,17 @@ export default function Vouchers() {
   const queryClient = useQueryClient()
   const [view, setView] = useState<'tracking' | 'issue' | 'redeem'>('tracking')
 
+  const [companyFilter, setCompanyFilter] = useState('__all__')
   const [statusFilter, setStatusFilter] = useState('__all__')
   const [typeFilter, setTypeFilter] = useState('__all__')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+
+  const { data: companies = [] } = useQuery({
+    queryKey: ['companies-vat'],
+    queryFn: () => organizationApi.getCompaniesVat(),
+    staleTime: 10 * 60_000,
+  })
 
   const [redeemVoucher, setRedeemVoucher] = useState<Voucher | null>(null)
   const [redeemNotes, setRedeemNotes] = useState('')
@@ -104,6 +112,7 @@ export default function Vouchers() {
 
   const buildParams = () => {
     const p: Record<string, string> = {}
+    if (companyFilter !== '__all__') p.company_id = companyFilter
     if (statusFilter !== '__all__') p.status = statusFilter
     if (typeFilter !== '__all__') p.voucher_type = typeFilter
     if (dateFrom) p.date_from = dateFrom
@@ -112,7 +121,7 @@ export default function Vouchers() {
   }
 
   const { data, isLoading } = useQuery({
-    queryKey: ['vouchers-accounting', statusFilter, typeFilter, dateFrom, dateTo],
+    queryKey: ['vouchers-accounting', companyFilter, statusFilter, typeFilter, dateFrom, dateTo],
     queryFn: () => vouchersApi.accountingList(buildParams()),
   })
 
@@ -271,6 +280,15 @@ export default function Vouchers() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
+        <Select value={companyFilter} onValueChange={setCompanyFilter}>
+          <SelectTrigger className="w-56"><SelectValue placeholder="Company" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All Companies</SelectItem>
+            {companies.map((c: { id: number; company: string }) => (
+              <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>

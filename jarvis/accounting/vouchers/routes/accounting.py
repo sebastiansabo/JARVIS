@@ -25,9 +25,13 @@ def accounting_list():
     status_list = status.split(',') if status else None
     type_list = voucher_type.split(',') if voucher_type else None
 
-    # Admins see all companies
+    # Admins can filter by company or see all
     is_admin = getattr(current_user, 'role_name', '').lower() in ('admin', 'superadmin')
-    cid = None if is_admin else current_user.company_id
+    requested_cid = request.args.get('company_id', type=int)
+    if is_admin:
+        cid = requested_cid  # None = all companies
+    else:
+        cid = current_user.company_id
 
     rows = _repo.get_all(
         company_id=cid,
