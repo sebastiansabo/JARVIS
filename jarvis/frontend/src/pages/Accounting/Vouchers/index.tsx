@@ -151,11 +151,12 @@ export default function Vouchers() {
     { key: 'benefit', label: 'Benefit', render: (v) => v.benefit_display },
     { key: 'issued', label: 'Issued', render: (v) => v.issued_at || '—' },
     { key: 'expires', label: 'Expires', render: (v) => <>{v.expires_at || '—'}{v.days_remaining != null && v.days_remaining <= 30 && v.days_remaining > 0 && <span className="ml-1 text-xs text-orange-500">({v.days_remaining}d)</span>}</> },
+    { key: 'approver', label: 'Approver', render: (v) => v.approver_name || '—' },
     { key: 'status', label: 'Status', render: (v) => <StatusBadge status={v.status} /> },
     { key: 'actions', label: 'Actions', render: (v) => v.status === 'active' ? <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setRedeemVoucher(v); setRedeemNotes('') }}>Redeem</Button> : null },
   ]
 
-  const defaultCols = ['code', 'client', 'contract', 'vin', 'type', 'benefit', 'issued', 'expires', 'status', 'actions']
+  const defaultCols = ['code', 'client', 'contract', 'vin', 'type', 'benefit', 'issued', 'expires', 'approver', 'status', 'actions']
   const allColKeys = allColumns.map((c) => c.key)
   const { visibleColumns, setVisibleColumns, defaultColumns: defaultColState } = useColumnState('voucherColumns', defaultCols, allColKeys)
 

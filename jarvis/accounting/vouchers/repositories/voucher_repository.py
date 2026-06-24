@@ -154,11 +154,13 @@ class VoucherRepository(BaseRepository):
         rows = self.query_all(f'''
             SELECT v.*,
                    u_issued.name AS issued_by_name,
+                   u_approver.name AS approver_name,
                    CASE WHEN v.expires_at IS NOT NULL AND v.status = 'active'
                         THEN (v.expires_at - CURRENT_DATE)
                         ELSE NULL END AS days_remaining
             FROM vouchers v
             LEFT JOIN users u_issued ON u_issued.id = v.issued_by_user_id
+            LEFT JOIN users u_approver ON u_approver.id = v.approver_user_id
             WHERE {where}
             ORDER BY v.created_at DESC
             LIMIT %s OFFSET %s
