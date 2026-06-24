@@ -1,7 +1,7 @@
 import { useState, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Download, FileText, ScanLine, Send, ArrowLeft } from 'lucide-react'
+import { Plus, Download, FileText, ScanLine, Send, ArrowLeft, Pencil, Copy, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -48,6 +48,7 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: 'bg-red-100 text-red-800',
   redeemed: 'bg-gray-200 text-gray-600',
   expired: 'bg-red-50 text-red-600',
+  archived: 'bg-gray-100 text-gray-500',
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -90,6 +91,7 @@ const RedeemScan = lazy(() => import('./RedeemScan'))
 export default function Vouchers() {
   const queryClient = useQueryClient()
   const [view, setView] = useState<'tracking' | 'issue' | 'redeem'>('tracking')
+  const [activeTab, setActiveTab] = useState<'active' | 'archive'>('active')
 
   const [companyFilter, setCompanyFilter] = useState('__all__')
   const [statusFilter, setStatusFilter] = useState('__all__')
@@ -125,8 +127,23 @@ export default function Vouchers() {
     queryFn: () => vouchersApi.accountingList(buildParams()),
   })
 
-  const vouchers = data?.vouchers ?? []
+  const allVouchers = data?.vouchers ?? []
   const summary = data?.summary ?? { active_count: 0, expiring_soon_count: 0, redeemed_this_month: 0, expired_count: 0, total_active_value: 0 }
+
+  const vouchers = allVouchers.filter((v) =>
+    activeTab === 'archive' ? v.status === 'archived' : v.status !== 'archived'
+  )
+  const archivedCount = allVouchers.filter((v) => v.status === 'archived').length
+
+  const [editVoucher, setEditVoucher] = useState<Voucher | null>(null)
+  const [editForm, setEditForm] = useState({ client_name: '', contract_number: '', car_vin: '', notes: '' })
+
+  const user = useAuthStore((s) => s.user)
+  const perms = user?.permissions || {}
+  const isAdmin = !user?.permissions || user?.role_name?.toLowerCase() === 'admin'
+  const canEdit = isAdmin || perms['vouchers.accounting.edit']
+  const canReissue = isAdmin || perms['vouchers.accounting.reissue']
+  const canDelete = isAdmin || perms['vouchers.accounting.delete']
 
   const redeemMutation = useMutation({
     mutationFn: ({ id, notes }: { id: number; notes?: string }) => vouchersApi.redeem(id, notes),
@@ -141,6 +158,34 @@ export default function Vouchers() {
     },
   })
 
+  const editMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Record<string, string> }) => vouchersApi.editVoucher(id, data),
+    onSuccess: () => {
+      toast.success('Voucher updated')
+      setEditVoucher(null)
+      queryClient.invalidateQueries({ queryKey: ['vouchers-accounting'] })
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to update'),
+  })
+
+  const reissueMutation = useMutation({
+    mutationFn: (id: number) => vouchersApi.reissueVoucher(id),
+    onSuccess: (res) => {
+      toast.success(`Reissued as ${res.voucher.voucher_code}`)
+      queryClient.invalidateQueries({ queryKey: ['vouchers-accounting'] })
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to reissue'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => vouchersApi.deleteVoucher(id),
+    onSuccess: () => {
+      toast.success('Voucher deleted')
+      queryClient.invalidateQueries({ queryKey: ['vouchers-accounting'] })
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to delete'),
+  })
+
   const allColumns: ColumnDef<Voucher>[] = [
     { key: 'code', label: 'Code', className: 'font-mono text-xs', render: (v) => v.voucher_code },
     { key: 'issuer', label: 'Issuer', render: (v) => v.issued_by_name || '' },
@@ -153,7 +198,28 @@ export default function Vouchers() {
     { key: 'expires', label: 'Expires', render: (v) => <>{v.expires_at || '—'}{v.days_remaining != null && v.days_remaining <= 30 && v.days_remaining > 0 && <span className="ml-1 text-xs text-orange-500">({v.days_remaining}d)</span>}</> },
     { key: 'approver', label: 'Approver', render: (v) => v.approver_name || '—' },
     { key: 'status', label: 'Status', render: (v) => <StatusBadge status={v.status} /> },
-    { key: 'actions', label: 'Actions', render: (v) => v.status === 'active' ? <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setRedeemVoucher(v); setRedeemNotes('') }}>Redeem</Button> : null },
+    { key: 'actions', label: 'Actions', render: (v) => (
+      <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+        {v.status === 'active' && (
+          <Button size="sm" variant="outline" onClick={() => { setRedeemVoucher(v); setRedeemNotes('') }}>Redeem</Button>
+        )}
+        {canEdit && (v.status === 'active' || v.status === 'pending_approval') && (
+          <Button size="sm" variant="ghost" onClick={() => { setEditVoucher(v); setEditForm({ client_name: v.client_name, contract_number: v.contract_number, car_vin: v.car_vin, notes: v.notes || '' }) }}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        )}
+        {canReissue && ['archived', 'expired', 'rejected', 'redeemed'].includes(v.status) && (
+          <Button size="sm" variant="ghost" onClick={() => { if (confirm(`Reissue voucher ${v.voucher_code}?`)) reissueMutation.mutate(v.id) }}>
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+        )}
+        {canDelete && (
+          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => { if (confirm(`Delete voucher ${v.voucher_code}? This cannot be undone.`)) deleteMutation.mutate(v.id) }}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+    )},
   ]
 
   const defaultCols = ['code', 'client', 'contract', 'vin', 'type', 'benefit', 'issued', 'expires', 'approver', 'status', 'actions']
@@ -277,7 +343,23 @@ export default function Vouchers() {
         </div>
       </div>
 
-      <SummaryBar summary={summary} />
+      {activeTab === 'active' && <SummaryBar summary={summary} />}
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b">
+        <button
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'active' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          onClick={() => setActiveTab('active')}
+        >
+          Active
+        </button>
+        <button
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'archive' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          onClick={() => setActiveTab('archive')}
+        >
+          Archive {archivedCount > 0 && <span className="ml-1 text-xs bg-muted px-1.5 py-0.5 rounded-full">{archivedCount}</span>}
+        </button>
+      </div>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
@@ -350,6 +432,40 @@ export default function Vouchers() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Edit Modal */}
+      <Dialog open={!!editVoucher} onOpenChange={() => setEditVoucher(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Voucher {editVoucher?.voucher_code}</DialogTitle>
+            <DialogDescription>Update voucher details</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Client Name</Label>
+              <Input value={editForm.client_name} onChange={(e) => setEditForm((f) => ({ ...f, client_name: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Contract Number</Label>
+              <Input value={editForm.contract_number} onChange={(e) => setEditForm((f) => ({ ...f, contract_number: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Car VIN</Label>
+              <Input value={editForm.car_vin} onChange={(e) => setEditForm((f) => ({ ...f, car_vin: e.target.value }))} maxLength={17} className="font-mono" />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditVoucher(null)}>Cancel</Button>
+            <Button onClick={() => editVoucher && editMutation.mutate({ id: editVoucher.id, data: editForm })} disabled={editMutation.isPending}>
+              {editMutation.isPending ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Redeem Modal */}
       <Dialog open={!!redeemVoucher} onOpenChange={() => setRedeemVoucher(null)}>

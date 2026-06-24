@@ -263,3 +263,106 @@ def export_vouchers():
         mimetype='text/csv',
         headers={'Content-Disposition': 'attachment; filename=vouchers.csv'},
     )
+
+
+@vouchers_bp.route('/api/vouchers/<int:voucher_id>/edit', methods=['PATCH'])
+@login_required
+@handle_api_errors
+def edit_voucher(voucher_id):
+    """Edit voucher details (client, contract, VIN, notes)."""
+    if not _check_voucher_perm('accounting', 'edit'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+    data = request.get_json(force=True, silent=True) or {}
+    voucher = _repo.get_by_id(voucher_id)
+    if not voucher:
+        return error_response('Voucher not found', 404)
+
+    if voucher['status'] not in ('active', 'pending_approval'):
+        return error_response('Can only edit active or pending vouchers', 400)
+
+    allowed = ('client_name', 'contract_number', 'car_vin', 'notes')
+    sets, params = [], []
+    for key in allowed:
+        if key in data:
+            sets.append(f'{key} = %s')
+            params.append(data[key])
+    if not sets:
+        return error_response('No valid fields to update', 400)
+
+    sets.append('updated_at = CURRENT_TIMESTAMP')
+    params.append(voucher_id)
+    _repo.execute(f"UPDATE vouchers SET {', '.join(sets)} WHERE id = %s", tuple(params))
+
+    return jsonify({'success': True, 'voucher': _repo.get_by_id(voucher_id)})
+
+
+@vouchers_bp.route('/api/vouchers/<int:voucher_id>/reissue', methods=['POST'])
+@login_required
+@handle_api_errors
+def reissue_voucher(voucher_id):
+    """Create a new voucher from an existing one (goes through approval)."""
+    if not _check_voucher_perm('accounting', 'reissue'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+    original = _repo.get_by_id(voucher_id)
+    if not original:
+        return error_response('Voucher not found', 404)
+
+    if original['status'] not in ('archived', 'expired', 'rejected', 'redeemed'):
+        return error_response('Can only reissue archived, expired, rejected, or redeemed vouchers', 400)
+
+    new_voucher = _repo.create(
+        company_id=original['company_id'],
+        issued_by_user_id=current_user.id,
+        client_name=original['client_name'],
+        contract_number=original['contract_number'],
+        car_vin=original['car_vin'],
+        validity_months=original['validity_months'],
+        voucher_type=original['voucher_type'],
+        value_lei=original.get('value_lei'),
+        discount_code=original.get('discount_code'),
+        discount_percentage=original.get('discount_percentage'),
+        service_items=original.get('service_items'),
+        notes=f"Reissued from {original['voucher_code']}",
+    )
+
+    # Submit for approval
+    try:
+        from core.approvals.engine import ApprovalEngine
+        approver_id = _service.resolve_approver(current_user.id, original['company_id'])
+        context = {
+            'title': f"Voucher Reissue — {original['client_name']}",
+            'approver_user_id': approver_id['id'] if approver_id else None,
+            'voucher_code': new_voucher['voucher_code'],
+            'original_code': original['voucher_code'],
+        }
+        ApprovalEngine().submit(
+            entity_type='voucher',
+            entity_id=new_voucher['id'],
+            context=context,
+            requested_by=current_user.id,
+        )
+    except Exception:
+        logger.exception('Failed to submit reissued voucher for approval')
+
+    return jsonify({'success': True, 'voucher': _repo.get_by_id(new_voucher['id'])})
+
+
+@vouchers_bp.route('/api/vouchers/<int:voucher_id>', methods=['DELETE'])
+@login_required
+@handle_api_errors
+def delete_voucher_route(voucher_id):
+    """Hard-delete a voucher."""
+    if not _check_voucher_perm('accounting', 'delete'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+    voucher = _repo.get_by_id(voucher_id)
+    if not voucher:
+        return error_response('Voucher not found', 404)
+
+    deleted = _repo.delete_voucher(voucher_id)
+    if not deleted:
+        return error_response('Failed to delete voucher', 500)
+
+    return jsonify({'success': True})

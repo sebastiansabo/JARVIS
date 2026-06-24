@@ -15,7 +15,7 @@ export interface Voucher {
   discount_code: string | null
   discount_percentage: number | null
   service_items: string[] | null
-  status: 'draft' | 'pending_approval' | 'approved' | 'active' | 'rejected' | 'redeemed' | 'expired'
+  status: 'draft' | 'pending_approval' | 'approved' | 'active' | 'rejected' | 'redeemed' | 'expired' | 'archived'
   approver_user_id: number | null
   approver_name: string | null
   approval_request_id: number | null
