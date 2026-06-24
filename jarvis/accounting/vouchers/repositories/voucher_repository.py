@@ -96,13 +96,16 @@ class VoucherRepository(BaseRepository):
             WHERE v.id = %s
         ''', (voucher_id,))
 
-    def get_all(self, company_id: int, status=None, voucher_type=None,
+    def get_all(self, company_id=None, status=None, voucher_type=None,
                 issued_by_user_id=None, expiring_soon=False,
                 date_from=None, date_to=None, expiring_within_days=None,
                 limit=200, offset=0) -> list[dict]:
-        """List vouchers with filters, company-scoped."""
-        conditions = ['v.company_id = %s']
-        params = [company_id]
+        """List vouchers with filters. company_id=None shows all companies."""
+        conditions = []
+        params = []
+        if company_id:
+            conditions.append('v.company_id = %s')
+            params.append(company_id)
 
         if status:
             if isinstance(status, list):
@@ -145,7 +148,7 @@ class VoucherRepository(BaseRepository):
             conditions.append('v.issued_at <= %s')
             params.append(date_to)
 
-        where = ' AND '.join(conditions)
+        where = ' AND '.join(conditions) if conditions else 'TRUE'
         params.extend([limit, offset])
 
         rows = self.query_all(f'''
@@ -240,9 +243,11 @@ class VoucherRepository(BaseRepository):
             WHERE v.status = 'active' AND v.expires_at = %s
         ''', (target_date,))
 
-    def get_summary_counts(self, company_id: int) -> dict:
+    def get_summary_counts(self, company_id=None) -> dict:
         """Get status counts and total active value for summary bar."""
-        row = self.query_one('''
+        where = 'WHERE company_id = %s' if company_id else ''
+        params = (company_id,) if company_id else ()
+        row = self.query_one(f'''
             SELECT
                 COUNT(*) FILTER (WHERE status = 'active') AS active_count,
                 COUNT(*) FILTER (WHERE status = 'active' AND expires_at <= CURRENT_DATE + INTERVAL '30 days' AND expires_at >= CURRENT_DATE) AS expiring_soon_count,
@@ -250,8 +255,8 @@ class VoucherRepository(BaseRepository):
                 COUNT(*) FILTER (WHERE status = 'expired') AS expired_count,
                 COALESCE(SUM(value_lei) FILTER (WHERE status = 'active' AND voucher_type = 'value'), 0) AS total_active_value
             FROM vouchers
-            WHERE company_id = %s
-        ''', (company_id,))
+            {where}
+        ''', params)
         return row or {}
 
     def get_digest_data(self, company_id: int, ref_date: date) -> dict:
