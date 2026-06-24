@@ -961,6 +961,136 @@ def _seed_missing_permissions_v2(cursor, conn):
     conn.commit()
 
 
+def _seed_sidebar_permissions_v2(cursor, conn):
+    """Add module.access entries for modules missing them and seed controlling/vouchers/facturare/service permissions.
+
+    Ensures Viewer role is properly denied access to non-essential modules via v2 permission schema.
+    Uses ON CONFLICT DO NOTHING so it's safe to run repeatedly.
+    """
+    # ── 1. module.access entries for modules that don't have them yet ──
+    module_access_perms = [
+        ('accounting',  'Accounting',      'bi-calculator',       'module', 'Accounting Module',  'access', 'Access', 'Access Accounting module',      False, 0),
+        ('efactura',    'e-Factura',       'bi-file-earmark-code','module', 'e-Factura Module',   'access', 'Access', 'Access e-Factura module',       False, 0),
+        ('statements',  'Bank Statements', 'bi-bank',            'module', 'Statements Module',  'access', 'Access', 'Access Bank Statements module', False, 0),
+        ('marketing',   'Marketing',       'bi-megaphone',       'module', 'Marketing Module',   'access', 'Access', 'Access Marketing module',       False, 0),
+        ('carpark',     'CarPark',         'bi-car-front',       'module', 'CarPark Module',     'access', 'Access', 'Access CarPark module',         False, 0),
+        ('service',     'Service',         'bi-wrench',          'module', 'Service Module',     'access', 'Access', 'Access Service module',         False, 0),
+        ('ticketing',   'Ticketing',       'bi-headset',         'module', 'Ticketing Module',   'access', 'Access', 'Access Ticketing module',       False, 0),
+        ('controlling', 'Controlling',     'bi-bar-chart',       'module', 'Controlling Module', 'access', 'Access', 'Access Controlling module',     False, 0),
+        ('vouchers',    'Vouchers',        'bi-tag',             'module', 'Vouchers Module',    'access', 'Access', 'Access Vouchers module',        False, 0),
+        ('facturare',   'Comenzi Externe', 'bi-receipt',         'module', 'Facturare Module',   'access', 'Access', 'Access Comenzi Externe module', False, 0),
+    ]
+
+    for p in module_access_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label,
+                                        action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+
+    # ── 2. Controlling module fine-grained permissions ──
+    controlling_perms = [
+        ('controlling', 'Controlling', 'bi-bar-chart', 'bab', 'BAB / Marja', 'view',    'View',    'View BAB margin reports',          False, 1),
+        ('controlling', 'Controlling', 'bi-bar-chart', 'bab', 'BAB / Marja', 'edit',    'Edit',    'Edit BAB configuration and rates', False, 2),
+        ('controlling', 'Controlling', 'bi-bar-chart', 'bab', 'BAB / Marja', 'analyze', 'Analyze', 'Generate AI financial analysis',   False, 3),
+        ('controlling', 'Controlling', 'bi-bar-chart', 'bab', 'BAB / Marja', 'export',  'Export',  'Export BAB reports',               False, 4),
+    ]
+
+    for p in controlling_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label,
+                                        action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+
+    # ── 3. Vouchers module fine-grained permissions ──
+    vouchers_perms = [
+        ('vouchers', 'Vouchers', 'bi-tag', 'accounting', 'Voucher Accounting', 'view', 'View', 'View voucher records', False, 1),
+        ('vouchers', 'Vouchers', 'bi-tag', 'accounting', 'Voucher Accounting', 'edit', 'Edit', 'Edit voucher records', False, 2),
+    ]
+
+    for p in vouchers_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label,
+                                        action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+
+    # ── 4. Facturare (Comenzi Externe) fine-grained permissions ──
+    facturare_perms = [
+        ('facturare', 'Comenzi Externe', 'bi-receipt', 'orders', 'Orders', 'view',   'View',   'View external orders',   False, 1),
+        ('facturare', 'Comenzi Externe', 'bi-receipt', 'orders', 'Orders', 'edit',   'Edit',   'Edit external orders',   False, 2),
+        ('facturare', 'Comenzi Externe', 'bi-receipt', 'orders', 'Orders', 'export', 'Export', 'Export external orders', False, 3),
+    ]
+
+    for p in facturare_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label,
+                                        action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+
+    # ── 5. Service module fine-grained permissions ──
+    service_perms = [
+        ('service', 'Service', 'bi-wrench', 'catalog', 'Service Catalog', 'view', 'View', 'View service catalog', False, 1),
+        ('service', 'Service', 'bi-wrench', 'catalog', 'Service Catalog', 'edit', 'Edit', 'Edit service catalog', False, 2),
+    ]
+
+    for p in service_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label,
+                                        action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+
+    # ── 6. Seed role_permissions_v2 for all new permissions that lack entries ──
+    cursor.execute('SELECT id, name FROM roles')
+    roles_list = cursor.fetchall()
+
+    cursor.execute('''
+        SELECT p.id, p.module_key, p.entity_key, p.action_key
+        FROM permissions_v2 p
+        WHERE NOT EXISTS (
+            SELECT 1 FROM role_permissions_v2 rp WHERE rp.permission_id = p.id
+        )
+    ''')
+    new_perm_rows = cursor.fetchall()
+
+    for role in roles_list:
+        role_id = role['id']
+        role_name = role['name']
+
+        for perm in new_perm_rows:
+            perm_id = perm['id']
+            action = perm['action_key']
+
+            if role_name == 'Admin':
+                scope = 'all'
+            elif role_name == 'Manager':
+                scope = 'all'
+            elif role_name == 'User':
+                if action in ('view', 'access'):
+                    scope = 'own'
+                else:
+                    scope = 'deny'
+            else:  # Viewer — deny everything
+                scope = 'deny'
+
+            granted = scope != 'deny'
+            cursor.execute('''
+                INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (role_id, permission_id) DO NOTHING
+            ''', (role_id, perm_id, scope, granted))
+
+    conn.commit()
+
+
 def _seed_checkin_bypass_permission(cursor, conn):
     """Add hr.checkin.bypass_radius permission for unrestricted GPS check-in."""
     cursor.execute('''

@@ -228,6 +228,22 @@ class VoucherRepository(BaseRepository):
             RETURNING *
         ''', (redeemed_by_user_id, redemption_notes, voucher_id), returning=True)
 
+    def archive_redeemed(self) -> int:
+        """Move redeemed vouchers to archived after 2 hours. Returns count."""
+        return self.execute('''
+            UPDATE vouchers
+            SET status = 'archived', updated_at = CURRENT_TIMESTAMP
+            WHERE status = 'redeemed'
+              AND redeemed_at < CURRENT_TIMESTAMP - INTERVAL '2 hours'
+        ''')
+
+    def delete_voucher(self, voucher_id: int) -> bool:
+        """Hard-delete a voucher. Returns True if deleted."""
+        count = self.execute(
+            'DELETE FROM vouchers WHERE id = %s', (voucher_id,)
+        )
+        return count > 0
+
     def expire_active(self) -> int:
         """Set status='expired' for active vouchers past expiry. Returns count."""
         return self.execute('''

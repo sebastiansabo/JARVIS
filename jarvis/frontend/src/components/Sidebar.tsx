@@ -39,9 +39,9 @@ const navItemsDef: NavItem[] = [
       { path: '/app/statements', label: 'Statements', icon: Landmark, moduleKey: 'accounting_statements', permission: 'can_access_statements' },
       { path: '/app/efactura', label: 'e-Factura', icon: FileText, moduleKey: 'accounting_efactura', permission: 'can_access_efactura' },
       { path: '/app/accounting/bilant', label: 'Bilant', icon: Scale, moduleKey: 'accounting_bilant', v2Permission: 'bilant.templates.view' },
-      { path: '/app/accounting/facturare', label: 'Comenzi Externe', icon: Receipt, moduleKey: 'accounting_facturare' },
-      { path: '/app/accounting/controlling', label: 'Controlling', icon: BarChart3, moduleKey: 'accounting_controlling', v2Permission: 'controlling.bab.view' },
-      { path: '/app/accounting/vouchers', label: 'Vouchers', icon: Tag, moduleKey: 'accounting_vouchers', v2Permission: 'vouchers.accounting.view' },
+      { path: '/app/accounting/facturare', label: 'Comenzi Externe', icon: Receipt, moduleKey: 'accounting_facturare', permission: 'can_access_facturare' },
+      { path: '/app/accounting/controlling', label: 'Controlling', icon: BarChart3, moduleKey: 'accounting_controlling', permission: 'can_access_controlling', v2Permission: 'controlling.bab.view' },
+      { path: '/app/accounting/vouchers', label: 'Vouchers', icon: Tag, moduleKey: 'accounting_vouchers', permission: 'can_access_vouchers', v2Permission: 'vouchers.accounting.view' },
       { path: '/app/dms/suppliers', label: 'Suppliers', icon: Building2, moduleKey: 'dms_suppliers', permission: 'can_access_dms' },
     ],
   },
@@ -98,8 +98,9 @@ const navItemsDef: NavItem[] = [
     label: 'Service',
     icon: Wrench,
     moduleKey: 'service',
+    permission: 'can_access_service',
     children: [
-      { path: '/app/service/catalog', label: 'Service Catalog', icon: Tag, moduleKey: 'service_catalog' },
+      { path: '/app/service/catalog', label: 'Service Catalog', icon: Tag, moduleKey: 'service_catalog', permission: 'can_access_service' },
     ],
   },
   {
@@ -108,10 +109,10 @@ const navItemsDef: NavItem[] = [
     icon: MoreHorizontal,
     moduleKey: 'others',
     children: [
-      { path: '/app/ai-agent', label: 'AI Agent', icon: Bot, moduleKey: 'ai_agent' },
-      { path: '/app/forms', label: 'Forms', icon: ClipboardList, moduleKey: 'forms' },
-      { path: '/app/digest', label: 'Digest', icon: Newspaper, moduleKey: 'digest' },
-      { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms' },
+      { path: '/app/ai-agent', label: 'AI Agent', icon: Bot, moduleKey: 'ai_agent', permission: 'can_access_ai_agent' },
+      { path: '/app/forms', label: 'Forms', icon: ClipboardList, moduleKey: 'forms', permission: 'can_access_forms' },
+      { path: '/app/digest', label: 'Digest', icon: Newspaper, moduleKey: 'digest', permission: 'can_access_digest' },
+      { path: '/app/dms', label: 'Documents', icon: FolderOpen, moduleKey: 'dms', permission: 'can_access_dms' },
     ],
   },
 ]
@@ -211,7 +212,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
           ...child,
           label: (child.moduleKey && dbModuleMap?.get(child.moduleKey)?.name) || child.label,
         })),
-    }))
+    })).filter(item => !item.children || item.children.length > 0) // Hide groups with no visible children
   }, [user, dbModuleMap])
 
   // Auto-open groups whose children match current path
@@ -476,6 +477,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
         <div className={cn('border-t', collapsed ? 'p-2' : 'p-3')}>
           {collapsed ? (
             <>
+              {user?.can_access_approvals && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link
@@ -492,6 +494,8 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 </TooltipTrigger>
                 <TooltipContent side="right">Approvals</TooltipContent>
               </Tooltip>
+              )}
+              {user?.can_access_settings && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link
@@ -508,6 +512,8 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 </TooltipTrigger>
                 <TooltipContent side="right">Settings</TooltipContent>
               </Tooltip>
+              )}
+              {user?.can_access_ticketing && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link
@@ -524,6 +530,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 </TooltipTrigger>
                 <TooltipContent side="right">Tickets</TooltipContent>
               </Tooltip>
+              )}
               <Separator className="my-2" />
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -575,6 +582,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
             </>
           ) : (
             <>
+              {user?.can_access_approvals && (
               <Link
                 to="/app/approvals"
                 className={cn(
@@ -588,6 +596,8 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 <span className="flex-1 text-sm font-medium">Approvals</span>
                 <ApprovalBadge />
               </Link>
+              )}
+              {user?.can_access_settings && (
               <Link
                 to="/app/settings"
                 className={cn(
@@ -600,6 +610,8 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 <Settings className="h-5 w-5 shrink-0" />
                 <span className="text-sm font-medium">Settings</span>
               </Link>
+              )}
+              {user?.can_access_ticketing && (
               <Link
                 to="/app/ticketing"
                 className={cn(
@@ -612,6 +624,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 <Headset className="h-5 w-5 shrink-0" />
                 <span className="text-sm font-medium">Tickets</span>
               </Link>
+              )}
               <Separator className="my-2" />
               <Link
                 to="/app/mobile-checkin"

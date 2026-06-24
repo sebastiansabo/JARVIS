@@ -14,10 +14,12 @@ import { cn } from '@/lib/utils'
 
 export default function Layout() {
   const { user, isLoading } = useAuth()
+  const isViewer = user?.role_name === 'Viewer'
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => {
     try { const v = localStorage.getItem('sidebar-collapsed'); return v === null ? true : v === 'true' } catch { return true }
   })
+  const effectiveCollapsed = isViewer || collapsed
 
   // Heartbeat: keep server warm while user is active
   useEffect(() => {
@@ -80,10 +82,10 @@ export default function Layout() {
       <aside
         className={cn(
           'hidden border-r transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] md:block overflow-hidden',
-          collapsed ? 'w-16' : 'w-64',
+          effectiveCollapsed ? 'w-16' : 'w-64',
         )}
       >
-        <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} />
+        <Sidebar collapsed={effectiveCollapsed} onToggle={isViewer ? undefined : toggleCollapsed} />
       </aside>
 
       {/* Mobile sidebar */}

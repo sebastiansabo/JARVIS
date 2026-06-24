@@ -43,7 +43,7 @@ def create_schema_vouchers(conn, cursor):
                 SELECT 1 FROM pg_constraint WHERE conname = 'chk_voucher_status'
             ) THEN
                 ALTER TABLE vouchers ADD CONSTRAINT chk_voucher_status
-                CHECK (status IN ('draft', 'pending_approval', 'approved', 'active', 'rejected', 'redeemed', 'expired'));
+                CHECK (status IN ('draft', 'pending_approval', 'approved', 'active', 'rejected', 'redeemed', 'expired', 'archived'));
             END IF;
         END $$;
     ''')
@@ -97,6 +97,15 @@ def create_schema_vouchers(conn, cursor):
         END $$;
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_form_submission ON vouchers(form_submission_id) WHERE form_submission_id IS NOT NULL')
+
+    # Add 'archived' to voucher status constraint
+    cursor.execute('''
+        DO $$ BEGIN
+            ALTER TABLE vouchers DROP CONSTRAINT IF EXISTS chk_voucher_status;
+            ALTER TABLE vouchers ADD CONSTRAINT chk_voucher_status
+                CHECK (status IN ('draft', 'pending_approval', 'approved', 'active', 'rejected', 'redeemed', 'expired', 'archived'));
+        END $$;
+    ''')
 
     # Ensure approval flow steps use context_approver (not specific_user)
     cursor.execute('''
@@ -294,6 +303,33 @@ def create_schema_vouchers(conn, cursor):
         ''')
 
         logger.info('Voucher V2 permissions seeded')
+
+    # ── Add edit/reissue/delete permissions (idempotent) ──
+    new_perms = [
+        ('vouchers', 'Vouchers', 'bi-ticket', 'accounting', 'Accounting Vouchers', 'edit', 'Edit', 'Edit voucher details', False, 6),
+        ('vouchers', 'Vouchers', 'bi-ticket', 'accounting', 'Accounting Vouchers', 'reissue', 'Reissue', 'Reissue a voucher as new', False, 7),
+        ('vouchers', 'Vouchers', 'bi-ticket', 'accounting', 'Accounting Vouchers', 'delete', 'Delete', 'Delete vouchers', False, 8),
+    ]
+    for p in new_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon,
+                                       entity_key, entity_label, action_key, action_label,
+                                       description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+
+    # Grant new permissions to Admin + Manager
+    for role_name in ('Admin', 'Manager'):
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, 'all', TRUE
+            FROM roles r
+            CROSS JOIN permissions_v2 p
+            WHERE r.name = %s AND p.module_key = 'vouchers'
+              AND p.action_key IN ('edit', 'reissue', 'delete')
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''', (role_name,))
 
     conn.commit()
     logger.info('Vouchers schema created/updated')
