@@ -203,6 +203,18 @@ def _create_voucher_on_submit(submission_id, sub_repo):
         answers = sub.get('answers') or {}
         fields = _parse_voucher_fields(answers)
 
+        # Resolve approver from the linked approval request context
+        approver_user_id = None
+        if sub.get('approval_request_id'):
+            from core.base_repository import BaseRepository
+            req = BaseRepository().query_one(
+                'SELECT context_snapshot FROM approval_requests WHERE id = %s',
+                (sub['approval_request_id'],)
+            )
+            if req:
+                ctx = req.get('context_snapshot') or {}
+                approver_user_id = ctx.get('approver_user_id')
+
         from accounting.vouchers.repositories import VoucherRepository
         repo = VoucherRepository()
         voucher = repo.create(
@@ -220,6 +232,7 @@ def _create_voucher_on_submit(submission_id, sub_repo):
             notes=str(answers.get('f_notes', '')).strip() or None,
             client_email=str(answers.get('f_client_email', '')).strip() or None,
             form_submission_id=submission_id,
+            approver_user_id=approver_user_id,
         )
         # Status is already 'pending_approval' from repo.create()
 

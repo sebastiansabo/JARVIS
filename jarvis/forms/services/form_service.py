@@ -221,6 +221,14 @@ class FormService:
 
         schema = form.get('published_schema') or form.get('schema', [])
 
+        # Extract approver before stripping unknown keys
+        explicit_approver_id = answers.get('f_approver') or None
+        if explicit_approver_id:
+            try:
+                explicit_approver_id = int(explicit_approver_id)
+            except (ValueError, TypeError):
+                explicit_approver_id = None
+
         # Strip unknown answer keys
         known_field_ids = {f.get('id') for f in schema if f.get('id')}
         answers = {k: v for k, v in answers.items() if k in known_field_ids}
@@ -243,7 +251,10 @@ class FormService:
         )
 
         if form.get('requires_approval'):
-            self._trigger_approval(form, submission_id, {'user_id': user.user_id})
+            self._trigger_approval(form, submission_id, {
+                'user_id': user.user_id,
+                'explicit_approver_id': explicit_approver_id,
+            })
 
         return ServiceResult(success=True, data={'submission_id': submission_id}, status_code=201)
 
@@ -263,6 +274,19 @@ class FormService:
             'user_id': user_id,
             'respondent_email': submission.get('respondent_email'),
         })
+
+    def _resolve_form_approver(self, user_id, company_id, explicit_approver_id=None):
+        """Resolve the approver for a form submission using VoucherService logic."""
+        try:
+            from accounting.vouchers.services import VoucherService
+            approver = VoucherService().resolve_approver(
+                user_id, company_id or 0,
+                explicit_approver_id=explicit_approver_id,
+            )
+            return approver['id'] if approver else None
+        except Exception as e:
+            logger.warning(f'Failed to resolve approver for user {user_id}: {e}')
+            return None
 
     # ============== Private Helpers ==============
 
@@ -376,6 +400,13 @@ class FormService:
 
             approval_config = form.get('approval_config', {})
 
+            # Resolve approver from org hierarchy
+            requested_by = respondent_info.get('user_id', form.get('owner_id'))
+            approver_user_id = self._resolve_form_approver(
+                requested_by, form.get('company_id'),
+                respondent_info.get('explicit_approver_id'),
+            )
+
             context = {
                 'form_id': form['id'],
                 'form_name': form.get('name', ''),
@@ -383,14 +414,13 @@ class FormService:
                 'respondent_email': respondent_info.get('email', ''),
                 'respondent_name': respondent_info.get('name', ''),
                 'company_id': form.get('company_id'),
+                'approver_user_id': approver_user_id,
                 'notify_on_submit': approval_config.get('notify_on_submit', []),
                 'notify_on_approve': approval_config.get('notify_on_approve', []),
                 'notify_on_reject': approval_config.get('notify_on_reject', []),
                 'notify_respondent': approval_config.get('notify_respondent', False),
                 'requires_signature': approval_config.get('requires_signature', False),
             }
-
-            requested_by = respondent_info.get('user_id', form.get('owner_id'))
             result = engine.submit(
                 entity_type='form_submission',
                 entity_id=submission_id,

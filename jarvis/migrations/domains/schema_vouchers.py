@@ -98,6 +98,13 @@ def create_schema_vouchers(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_form_submission ON vouchers(form_submission_id) WHERE form_submission_id IS NOT NULL')
 
+    # Ensure approval flow steps use context_approver (not specific_user)
+    cursor.execute('''
+        UPDATE approval_steps SET approver_type = 'context_approver'
+        WHERE approver_type = 'specific_user' AND approver_user_id IS NULL
+          AND flow_id IN (SELECT id FROM approval_flows WHERE entity_type IN ('voucher', 'form_submission'))
+    ''')
+
     # ── Service Catalog ─────────────────────────────────
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS voucher_service_catalog (
