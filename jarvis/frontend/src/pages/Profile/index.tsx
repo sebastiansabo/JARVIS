@@ -85,10 +85,10 @@ const CreateTicketDialog = lazy(() => import('@/pages/Ticketing/CreateTicketDial
 type Tab = 'invoices' | 'hr' | 'vouchers'
 type HrSubTab = 'hr-events' | 'pontaje' | 'team-pontaje' | 'sincron' | 'leave-permits'
 
-const mainTabs: { key: Tab; label: string; icon: React.ElementType }[] = [
-  { key: 'invoices', label: 'My Invoices', icon: FileText },
-  { key: 'hr', label: 'HR', icon: Activity },
-  { key: 'vouchers', label: 'Vouchers', icon: Ticket },
+const mainTabs: { key: NonNullable<Tab>; label: string; icon: React.ElementType; description: string }[] = [
+  { key: 'invoices', label: 'My Invoices', icon: FileText, description: 'View your invoices and allocations' },
+  { key: 'hr', label: 'HR', icon: Activity, description: 'Pontaje, bonuses, timesheets' },
+  { key: 'vouchers', label: 'Vouchers', icon: Ticket, description: 'Voucher tracking and redemption' },
 ]
 
 const hrSubTabs: { key: HrSubTab; label: string; icon: React.ElementType }[] = [
@@ -102,10 +102,17 @@ const hrSubTabs: { key: HrSubTab; label: string; icon: React.ElementType }[] = [
 export default function Profile() {
   const isMobile = useIsMobile()
   const authUser = useAuthStore((s) => s.user)
+  const isViewer = authUser?.role_name === 'Viewer'
   const hasVouchersPerm = !authUser?.permissions || (authUser.permissions['vouchers.profile.view'] ?? true)
   const visibleMainTabs = hasVouchersPerm ? mainTabs : mainTabs.filter((t) => t.key !== 'vouchers')
   const [activeTab, setActiveTab] = useTabParam<Tab>('invoices')
   const [activeHrSubTab, setActiveHrSubTab] = useTabParam<HrSubTab>('pontaje', 'hrtab')
+  // Viewer: show grid when no tab param in URL
+  const [viewerInModule, setViewerInModule] = useState(() => {
+    if (!isViewer) return true
+    const params = new URLSearchParams(window.location.search)
+    return params.has('tab')
+  })
   const [profileDetailsOpen, setProfileDetailsOpen] = useState(false)
   const [ticketOpen, setTicketOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -317,73 +324,110 @@ export default function Profile() {
         <CreateTicketDialog open={ticketOpen} onOpenChange={setTicketOpen} />
       </Suspense>
 
-      {/* Main Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
-        {isMobile ? (
-          <MobileBottomTabs>
-            <TabsList className="w-full">
-              {visibleMainTabs.map((tab) => {
-                const Icon = tab.icon
-                return (
-                  <TabsTrigger key={tab.key} value={tab.key}>
-                    <Icon className="h-5 w-5" />
-                    {tab.label}
-                  </TabsTrigger>
-                )
-              })}
-            </TabsList>
-          </MobileBottomTabs>
-        ) : (
-          <div className="flex gap-2">
-            {visibleMainTabs.map((tab) => {
-              const Icon = tab.icon
-              const isActive = activeTab === tab.key
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActiveTab(tab.key)}
-                  className={cn(
-                    'flex items-center gap-2.5 rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50',
-                  )}
-                >
-                  <Icon className="h-5 w-5" />
-                  {tab.label}
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </Tabs>
+      {/* ── Viewer Command Center: app tile grid ── */}
+      {isViewer && !viewerInModule ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          {visibleMainTabs.map((tab) => {
+            const Icon = tab.icon
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => { setActiveTab(tab.key); setViewerInModule(true) }}
+                className="flex flex-col items-center gap-3 rounded-xl border bg-card p-6 text-center transition-all hover:shadow-md hover:border-primary/40 hover:bg-accent/50"
+              >
+                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Icon className="h-7 w-7" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">{tab.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{tab.description}</p>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <>
+          {/* Back button for Viewer when inside a module */}
+          {isViewer && (
+            <Button variant="ghost" size="sm" className="gap-1.5 -ml-1" onClick={() => setViewerInModule(false)}>
+              <ChevronLeft className="h-4 w-4" />
+              Back to Command Center
+            </Button>
+          )}
 
-      {/* HR Sub-Tabs */}
-      {activeTab === 'hr' && (
-        <Tabs value={activeHrSubTab} onValueChange={(v) => setActiveHrSubTab(v as HrSubTab)}>
-          <TabsList className="w-auto h-8 bg-muted/50">
-            {hrSubTabs.map((tab) => {
-              const Icon = tab.icon
-              return (
-                <TabsTrigger key={tab.key} value={tab.key} className="text-xs h-7 px-2.5 gap-1">
-                  <Icon className="h-3.5 w-3.5" />
-                  {tab.label}
-                </TabsTrigger>
-              )
-            })}
-          </TabsList>
-        </Tabs>
+          {/* Main Tabs (non-Viewer) */}
+          {!isViewer && (
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
+              {isMobile ? (
+                <MobileBottomTabs>
+                  <TabsList className="w-full">
+                    {visibleMainTabs.map((tab) => {
+                      const Icon = tab.icon
+                      return (
+                        <TabsTrigger key={tab.key} value={tab.key}>
+                          <Icon className="h-5 w-5" />
+                          {tab.label}
+                        </TabsTrigger>
+                      )
+                    })}
+                  </TabsList>
+                </MobileBottomTabs>
+              ) : (
+                <div className="flex gap-2">
+                  {visibleMainTabs.map((tab) => {
+                    const Icon = tab.icon
+                    const isActive = activeTab === tab.key
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setActiveTab(tab.key)}
+                        className={cn(
+                          'flex items-center gap-2.5 rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors',
+                          isActive
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50',
+                        )}
+                      >
+                        <Icon className="h-5 w-5" />
+                        {tab.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </Tabs>
+          )}
+
+          {/* HR Sub-Tabs */}
+          {activeTab === 'hr' && (
+            <Tabs value={activeHrSubTab} onValueChange={(v) => setActiveHrSubTab(v as HrSubTab)}>
+              <TabsList className="w-auto h-8 bg-muted/50">
+                {hrSubTabs.map((tab) => {
+                  const Icon = tab.icon
+                  return (
+                    <TabsTrigger key={tab.key} value={tab.key} className="text-xs h-7 px-2.5 gap-1">
+                      <Icon className="h-3.5 w-3.5" />
+                      {tab.label}
+                    </TabsTrigger>
+                  )
+                })}
+              </TabsList>
+            </Tabs>
+          )}
+
+          {/* Tab Content */}
+          {activeTab === 'invoices' && <InvoicesPanel orgDepartments={orgPaths.map(o => o.department).filter(Boolean)} isOrgResponsable={summary?.is_org_responsable ?? false} />}
+          {activeTab === 'hr' && activeHrSubTab === 'hr-events' && <HrEventsPanel />}
+          {activeTab === 'hr' && activeHrSubTab === 'pontaje' && <PontajePanel />}
+          {activeTab === 'hr' && activeHrSubTab === 'team-pontaje' && <TeamPontajePanel />}
+          {activeTab === 'hr' && activeHrSubTab === 'sincron' && <SincronPanel />}
+          {activeTab === 'hr' && activeHrSubTab === 'leave-permits' && user && <LeavePermitsPanel userId={user.id} />}
+          {activeTab === 'vouchers' && <Suspense fallback={<div className="py-8 text-center text-muted-foreground">Loading...</div>}><VouchersPanel /></Suspense>}
+        </>
       )}
-
-      {/* Tab Content */}
-      {activeTab === 'invoices' && <InvoicesPanel orgDepartments={orgPaths.map(o => o.department).filter(Boolean)} isOrgResponsable={summary?.is_org_responsable ?? false} />}
-      {activeTab === 'hr' && activeHrSubTab === 'hr-events' && <HrEventsPanel />}
-      {activeTab === 'hr' && activeHrSubTab === 'pontaje' && <PontajePanel />}
-      {activeTab === 'hr' && activeHrSubTab === 'team-pontaje' && <TeamPontajePanel />}
-      {activeTab === 'hr' && activeHrSubTab === 'sincron' && <SincronPanel />}
-      {activeTab === 'hr' && activeHrSubTab === 'leave-permits' && user && <LeavePermitsPanel userId={user.id} />}
-      {activeTab === 'vouchers' && <Suspense fallback={<div className="py-8 text-center text-muted-foreground">Loading...</div>}><VouchersPanel /></Suspense>}
     </div>
   )
 }
