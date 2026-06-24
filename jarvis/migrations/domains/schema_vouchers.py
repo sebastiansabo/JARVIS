@@ -331,5 +331,17 @@ def create_schema_vouchers(conn, cursor):
             ON CONFLICT (role_id, permission_id) DO NOTHING
         ''', (role_name,))
 
+    # Viewer gets profile.view + form.view (issue from profile, no Forms section)
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'all', TRUE
+        FROM roles r
+        CROSS JOIN permissions_v2 p
+        WHERE r.name = 'Viewer' AND p.module_key = 'vouchers'
+          AND ((p.entity_key = 'profile' AND p.action_key = 'view')
+            OR (p.entity_key = 'form' AND p.action_key = 'view'))
+        ON CONFLICT (role_id, permission_id) DO UPDATE SET granted = TRUE
+    ''')
+
     conn.commit()
     logger.info('Vouchers schema created/updated')
