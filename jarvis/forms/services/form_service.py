@@ -407,7 +407,18 @@ class FormService:
                 respondent_info.get('explicit_approver_id'),
             )
 
+            # Build human-readable title: "Voucher — Dept — Client Name"
+            sub = self.submission_repo.get_by_id(submission_id)
+            answers = (sub.get('answers') or {}) if sub else {}
+            title_parts = [form.get('name', 'Form Submission')]
+            if answers.get('f_department'):
+                title_parts.append(str(answers['f_department']))
+            if answers.get('f_client_name'):
+                title_parts.append(str(answers['f_client_name']))
+            title = ' — '.join(title_parts)
+
             context = {
+                'title': title,
                 'form_id': form['id'],
                 'form_name': form.get('name', ''),
                 'submission_id': submission_id,

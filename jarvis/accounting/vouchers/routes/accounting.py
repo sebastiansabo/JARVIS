@@ -25,8 +25,12 @@ def accounting_list():
     status_list = status.split(',') if status else None
     type_list = voucher_type.split(',') if voucher_type else None
 
+    # Admins see all companies
+    is_admin = getattr(current_user, 'role_name', '') in ('admin', 'superadmin')
+    cid = None if is_admin else current_user.company_id
+
     rows = _repo.get_all(
-        company_id=current_user.company_id,
+        company_id=cid,
         status=status_list,
         voucher_type=type_list,
         date_from=date_from,
@@ -36,7 +40,7 @@ def accounting_list():
         offset=offset,
     )
 
-    summary = _repo.get_summary_counts(current_user.company_id)
+    summary = _repo.get_summary_counts(cid)
 
     return jsonify({
         'vouchers': rows,
