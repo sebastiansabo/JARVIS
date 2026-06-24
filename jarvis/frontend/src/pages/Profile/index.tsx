@@ -36,6 +36,7 @@ import {
   ClipboardList,
   Plus,
   Ticket,
+  MoreHorizontal,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -48,6 +49,7 @@ import { DateField, shiftDate } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatCard } from '@/components/shared/StatCard'
@@ -79,6 +81,7 @@ import type { ProfileInvoice, ProfileActivity, ProfileBonus, OrgTreeNode } from 
 import type { BioStarDayHistory, BioStarPunchLog, BioStarDailySummary, BioStarRangeSummary } from '@/types/biostar'
 
 const VouchersPanel = lazy(() => import('./VouchersPanel'))
+const CreateTicketDialog = lazy(() => import('@/pages/Ticketing/CreateTicketDialog'))
 
 type Tab = 'invoices' | 'hr' | 'vouchers'
 type HrSubTab = 'hr-events' | 'pontaje' | 'team-pontaje' | 'sincron' | 'leave-permits'
@@ -104,7 +107,8 @@ export default function Profile() {
   const visibleMainTabs = hasVouchersPerm ? mainTabs : mainTabs.filter((t) => t.key !== 'vouchers')
   const [activeTab, setActiveTab] = useTabParam<Tab>('invoices')
   const [activeHrSubTab, setActiveHrSubTab] = useTabParam<HrSubTab>('pontaje', 'hrtab')
-  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [profileDetailsOpen, setProfileDetailsOpen] = useState(false)
+  const [ticketOpen, setTicketOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
 
@@ -132,7 +136,7 @@ export default function Profile() {
       />
 
       {/* User Info Card */}
-      <Card className="cursor-pointer" onClick={() => setDetailsOpen(d => !d)}>
+      <Card className="cursor-pointer" onClick={() => setProfileDetailsOpen(d => !d)}>
         <CardContent className="px-4 py-3">
           {isLoading ? (
             <div className="flex items-center gap-3">
@@ -159,7 +163,7 @@ export default function Profile() {
                     <h2 className="text-base font-semibold">{user?.name}</h2>
                     {user?.role && <StatusBadge status={user.role} />}
                     {user?.position && <Badge variant="outline" className="text-xs">{user.position}</Badge>}
-                    {detailsOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+                    {profileDetailsOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
                   </div>
                 </div>
                 <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
@@ -175,7 +179,7 @@ export default function Profile() {
               </div>
 
               {/* Info grid + signature — collapsed by default */}
-              {detailsOpen && (
+              {profileDetailsOpen && (
                 <div className="border-t pt-3 mt-3 space-y-4">
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm">
                     <InfoField icon={Mail} label="Email" value={user?.email} />
@@ -409,6 +413,57 @@ function SignatureSection() {
         </Suspense>
       )}
     </div>
+  )
+}
+
+// ─── Profile Details Dialog ──────────────────────────────────────
+
+function ProfileDetailsDialog({
+  open,
+  onOpenChange,
+  user,
+  orgPaths,
+  sincronDepartment,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  user: NonNullable<ReturnType<typeof profileApi.getSummary> extends Promise<infer T> ? T : never>['user']
+  orgPaths: any[]
+  sincronDepartment?: string
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
+              {user?.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span>{user?.name}</span>
+                {user?.role && <StatusBadge status={user.role} />}
+              </div>
+              {user?.position && <p className="text-sm font-normal text-muted-foreground">{user.position}</p>}
+            </div>
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+            <InfoField icon={Mail} label="Email" value={user?.email} />
+            <InfoField icon={Phone} label="Phone" value={user?.phone} />
+            <InfoField icon={Building2} label="Department" value={(() => { const depts = orgPaths.map((o: any) => o.sincron_department || o.department).filter(Boolean); return depts.length > 0 ? depts : (sincronDepartment || user?.department); })()} />
+            <InfoField icon={Shield} label="Company" value={(() => { const comps = [...new Set(orgPaths.map((o: any) => o.company).filter(Boolean))]; return comps.length > 0 ? comps : user?.company; })()} />
+            <InfoField icon={Hash} label="CNP" value={user?.cnp} />
+            <InfoField icon={Calendar} label="Birthdate" value={user?.birthdate ? new Date(user.birthdate).toLocaleDateString('ro-RO') : null} />
+            <InfoField icon={Briefcase} label="Position" value={user?.position} />
+            <InfoField icon={Calendar} label="Contract Start" value={user?.contract_work_date ? new Date(user.contract_work_date).toLocaleDateString('ro-RO') : null} />
+          </div>
+          <SignatureSection />
+          <AnniversaryBanners birthdate={user?.birthdate} contractDate={user?.contract_work_date} name={user?.name ?? ''} />
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
