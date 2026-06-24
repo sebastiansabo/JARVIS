@@ -14,6 +14,7 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   ChevronDown,
   Fingerprint,
   Clock,
@@ -108,7 +109,6 @@ export default function Profile() {
   const [profileDetailsOpen, setProfileDetailsOpen] = useState(false)
   const [ticketOpen, setTicketOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
-  const [passwordOpen, setPasswordOpen] = useState(false)
 
   const queryClient = useQueryClient()
 
@@ -164,22 +164,25 @@ export default function Profile() {
 
   const checkinDir = checkinStatus?.next_direction ?? 'IN'
   const isCheckedIn = checkinDir !== 'IN'
+  const lastPunch = checkinStatus?.punches?.length
+    ? checkinStatus.punches[checkinStatus.punches.length - 1]
+    : null
 
   return (
     <div className="space-y-6">
       {/* Command Center Header */}
       {isLoading ? (
-        <div className="rounded-lg bg-primary p-4">
+        <div className="rounded-lg border bg-card p-4">
           <div className="flex items-center gap-4">
-            <Skeleton className="h-11 w-11 rounded-full shrink-0 bg-primary-foreground/20" />
+            <Skeleton className="h-11 w-11 rounded-full shrink-0" />
             <div className="space-y-1.5">
-              <Skeleton className="h-3 w-24 bg-primary-foreground/20" />
-              <Skeleton className="h-5 w-36 bg-primary-foreground/20" />
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-5 w-36" />
             </div>
           </div>
         </div>
       ) : (
-        <div className="rounded-lg bg-primary text-primary-foreground p-4">
+        <div className="rounded-lg border bg-card p-4">
           <div className="flex items-center gap-4">
             {/* Left: Avatar + Identity */}
             <button
@@ -187,21 +190,24 @@ export default function Profile() {
               className="flex items-center gap-3 min-w-0 hover:opacity-80 transition-opacity"
               onClick={() => setProfileDetailsOpen(true)}
             >
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-foreground text-primary text-sm font-bold">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
                 {user?.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
               </div>
               <div className="min-w-0 text-left">
-                <p className="text-xs text-primary-foreground/70 truncate">
-                  {user?.company || 'Loading...'}
+                <p className="text-xs text-muted-foreground truncate">
+                  {user?.name || 'Loading...'}
                 </p>
-                <h1 className="text-lg font-bold leading-tight">Command center</h1>
+                <h1 className="text-lg font-bold leading-tight">Command Center</h1>
               </div>
             </button>
 
             {/* Right: Actions */}
             <div className="ml-auto flex items-center gap-2">
+              {user?.company && (
+                <span className="text-xs text-muted-foreground hidden sm:inline">{user.company}</span>
+              )}
               {user?.role && (
-                <Badge variant="outline" className="border-primary-foreground/30 text-primary-foreground text-xs">
+                <Badge variant="outline" className="text-xs">
                   {user.role}
                 </Badge>
               )}
@@ -210,25 +216,37 @@ export default function Profile() {
               {!isMobile && (
                 <>
                   {checkinStatus?.mapped && (
-                    <Button
-                      size="sm"
-                      className={cn(
-                        'shrink-0 font-semibold text-white',
-                        isCheckedIn
-                          ? 'bg-red-600 hover:bg-red-700'
-                          : 'bg-green-600 hover:bg-green-700',
+                    <div className="flex items-center gap-2">
+                      {lastPunch && (
+                        <div className="text-xs text-right leading-tight">
+                          <p className="font-medium">
+                            {lastPunch.direction === 'IN' ? 'In' : 'Out'} at{' '}
+                            {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                          {lastPunch.raw_data?.location_name && (
+                            <p className="text-muted-foreground">{lastPunch.raw_data.location_name}</p>
+                          )}
+                        </div>
                       )}
-                      onClick={() => punchMut.mutate()}
-                      disabled={punchMut.isPending}
-                    >
-                      {isCheckedIn ? <LogOut className="h-3.5 w-3.5 mr-1.5" /> : <LogIn className="h-3.5 w-3.5 mr-1.5" />}
-                      {punchMut.isPending ? '...' : isCheckedIn ? 'Check Out' : 'Check In'}
-                    </Button>
+                      <Button
+                        size="sm"
+                        className={cn(
+                          'shrink-0 font-semibold text-white',
+                          isCheckedIn
+                            ? 'bg-red-600 hover:bg-red-700'
+                            : 'bg-green-600 hover:bg-green-700',
+                        )}
+                        onClick={() => punchMut.mutate()}
+                        disabled={punchMut.isPending}
+                      >
+                        {isCheckedIn ? <LogOut className="h-3.5 w-3.5 mr-1.5" /> : <LogIn className="h-3.5 w-3.5 mr-1.5" />}
+                        {punchMut.isPending ? '...' : isCheckedIn ? 'Check Out' : 'Check In'}
+                      </Button>
+                    </div>
                   )}
                   <Button
                     size="sm"
                     variant="outline"
-                    className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10"
                     onClick={() => setTicketOpen(true)}
                   >
                     <Ticket className="h-3.5 w-3.5 mr-1.5" />
@@ -237,16 +255,6 @@ export default function Profile() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10"
-                    onClick={() => setPasswordOpen(true)}
-                  >
-                    <Key className="h-3.5 w-3.5 mr-1.5" />
-                    Password
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10"
                     onClick={() => setEditOpen(true)}
                   >
                     <Pencil className="h-3.5 w-3.5 mr-1.5" />
@@ -259,7 +267,7 @@ export default function Profile() {
               {isMobile && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="sm" variant="outline" className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
+                    <Button size="sm" variant="outline">
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -273,10 +281,6 @@ export default function Profile() {
                     <DropdownMenuItem onClick={() => setTicketOpen(true)}>
                       <Ticket className="h-4 w-4 mr-2" />
                       New Ticket
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setPasswordOpen(true)}>
-                      <Key className="h-4 w-4 mr-2" />
-                      Password
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setEditOpen(true)}>
                       <Pencil className="h-4 w-4 mr-2" />
@@ -298,6 +302,7 @@ export default function Profile() {
           user={user}
           orgPaths={orgPaths}
           sincronDepartment={summary?.sincron?.department}
+          onEdit={() => setEditOpen(true)}
         />
       )}
       {user && (
@@ -308,7 +313,6 @@ export default function Profile() {
           onSaved={() => queryClient.invalidateQueries({ queryKey: ['profile', 'summary'] })}
         />
       )}
-      <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
       <Suspense fallback={null}>
         <CreateTicketDialog open={ticketOpen} onOpenChange={setTicketOpen} />
       </Suspense>
@@ -322,7 +326,7 @@ export default function Profile() {
                 const Icon = tab.icon
                 return (
                   <TabsTrigger key={tab.key} value={tab.key}>
-                    <Icon className="h-4 w-4" />
+                    <Icon className="h-5 w-5" />
                     {tab.label}
                   </TabsTrigger>
                 )
@@ -330,17 +334,28 @@ export default function Profile() {
             </TabsList>
           </MobileBottomTabs>
         ) : (
-          <TabsList className="w-auto">
+          <div className="flex gap-2">
             {visibleMainTabs.map((tab) => {
               const Icon = tab.icon
+              const isActive = activeTab === tab.key
               return (
-                <TabsTrigger key={tab.key} value={tab.key}>
-                  <Icon className="h-4 w-4" />
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  className={cn(
+                    'flex items-center gap-2.5 rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50',
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
                   {tab.label}
-                </TabsTrigger>
+                </button>
               )
             })}
-          </TabsList>
+          </div>
         )}
       </Tabs>
 
@@ -520,28 +535,34 @@ function ProfileDetailsDialog({
   user,
   orgPaths,
   sincronDepartment,
+  onEdit,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   user: NonNullable<ReturnType<typeof profileApi.getSummary> extends Promise<infer T> ? T : never>['user']
   orgPaths: any[]
   sincronDepartment?: string
+  onEdit: () => void
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
               {user?.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span>{user?.name}</span>
                 {user?.role && <StatusBadge status={user.role} />}
               </div>
               {user?.position && <p className="text-sm font-normal text-muted-foreground">{user.position}</p>}
             </div>
+            <Button variant="outline" size="sm" onClick={() => { onOpenChange(false); onEdit() }}>
+              <Pencil className="h-3.5 w-3.5 mr-1.5" />
+              Edit
+            </Button>
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
@@ -584,6 +605,14 @@ function EditProfileDialog({
     contract_work_date: user.contract_work_date || '',
   })
 
+  // Password section state
+  const [pwOpen, setPwOpen] = useState(false)
+  const [currentPw, setCurrentPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
+  const [showCurrent, setShowCurrent] = useState(false)
+  const [showNew, setShowNew] = useState(false)
+
   // Reset form when dialog opens with latest user data
   useEffect(() => {
     if (open) {
@@ -594,6 +623,12 @@ function EditProfileDialog({
         position: user.position || '',
         contract_work_date: user.contract_work_date || '',
       })
+      setPwOpen(false)
+      setCurrentPw('')
+      setNewPw('')
+      setConfirmPw('')
+      setShowCurrent(false)
+      setShowNew(false)
     }
   }, [open, user])
 
@@ -605,54 +640,89 @@ function EditProfileDialog({
     },
   })
 
+  const pwMutation = useMutation({
+    mutationFn: () => profileApi.changePassword(currentPw, newPw),
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success('Password changed')
+        setPwOpen(false)
+        setCurrentPw('')
+        setNewPw('')
+        setConfirmPw('')
+      }
+    },
+  })
+
   const handleSave = () => {
     mutation.mutate(form)
   }
 
+  const pwMatch = newPw === confirmPw
+  const pwLong = newPw.length >= 10
+  const canSavePw = currentPw.length > 0 && pwLong && pwMatch
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Edit Profile</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-2">
-          <div className="grid gap-1.5">
-            <Label htmlFor="edit-phone">Phone</Label>
-            <Input
-              id="edit-phone"
-              value={form.phone}
-              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-              placeholder="+40..."
-            />
+          {/* Read-only fields */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="grid gap-1.5">
+              <Label className="text-muted-foreground">Email</Label>
+              <Input value={user.email || ''} disabled className="bg-muted" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-muted-foreground">Department</Label>
+              <Input value={user.department || ''} disabled className="bg-muted" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-muted-foreground">Company</Label>
+              <Input value={user.company || ''} disabled className="bg-muted" />
+            </div>
           </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="edit-cnp">CNP</Label>
-            <Input
-              id="edit-cnp"
-              value={form.cnp}
-              onChange={(e) => {
-                const cnp = e.target.value
-                setForm((f) => {
-                  const next = { ...f, cnp }
-                  const extracted = birthdateFromCnp(cnp)
-                  if (extracted) next.birthdate = extracted
-                  return next
-                })
-              }}
-              placeholder="1234567890123"
-              maxLength={13}
-            />
+          {/* Editable fields */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="edit-phone">Phone</Label>
+              <Input
+                id="edit-phone"
+                value={form.phone}
+                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                placeholder="+40..."
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="edit-cnp">CNP</Label>
+              <Input
+                id="edit-cnp"
+                value={form.cnp}
+                onChange={(e) => {
+                  const cnp = e.target.value
+                  setForm((f) => {
+                    const next = { ...f, cnp }
+                    const extracted = birthdateFromCnp(cnp)
+                    if (extracted) next.birthdate = extracted
+                    return next
+                  })
+                }}
+                placeholder="1234567890123"
+                maxLength={13}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="edit-position">Position</Label>
+              <Input
+                id="edit-position"
+                value={form.position}
+                onChange={(e) => setForm((f) => ({ ...f, position: e.target.value }))}
+                placeholder="e.g. Software Engineer"
+              />
+            </div>
           </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="edit-position">Position</Label>
-            <Input
-              id="edit-position"
-              value={form.position}
-              onChange={(e) => setForm((f) => ({ ...f, position: e.target.value }))}
-              placeholder="e.g. Software Engineer"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div className="grid gap-1.5">
               <Label htmlFor="edit-birthdate">Birthdate</Label>
               <DateField value={form.birthdate ?? ''} onChange={(v) => setForm((f) => ({ ...f, birthdate: v }))} className="w-full" />
@@ -661,6 +731,92 @@ function EditProfileDialog({
               <Label htmlFor="edit-contract">Contract Start Date</Label>
               <DateField value={form.contract_work_date ?? ''} onChange={(v) => setForm((f) => ({ ...f, contract_work_date: v }))} className="w-full" />
             </div>
+          </div>
+          {/* Signature */}
+          <SignatureSection />
+          {/* Change Password */}
+          <div className="border-t pt-3">
+            <button
+              type="button"
+              className="flex items-center gap-2 text-sm font-medium hover:text-foreground text-muted-foreground transition-colors"
+              onClick={() => setPwOpen(!pwOpen)}
+            >
+              <Key className="h-3.5 w-3.5" />
+              Change Password
+              {pwOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+            {pwOpen && (
+              <div className="grid grid-cols-3 gap-4 mt-3">
+                <div className="grid gap-1.5">
+                  <Label>Current Password</Label>
+                  <div className="relative">
+                    <Input
+                      type={showCurrent ? 'text' : 'password'}
+                      value={currentPw}
+                      onChange={(e) => setCurrentPw(e.target.value)}
+                      placeholder="Current password"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                      onClick={() => setShowCurrent(!showCurrent)}
+                    >
+                      {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>New Password</Label>
+                  <div className="relative">
+                    <Input
+                      type={showNew ? 'text' : 'password'}
+                      value={newPw}
+                      onChange={(e) => setNewPw(e.target.value)}
+                      placeholder="Min. 10 characters"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                      onClick={() => setShowNew(!showNew)}
+                    >
+                      {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  {newPw.length > 0 && !pwLong && (
+                    <p className="text-xs text-destructive">Must be at least 10 characters</p>
+                  )}
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>Confirm New Password</Label>
+                  <Input
+                    type={showNew ? 'text' : 'password'}
+                    value={confirmPw}
+                    onChange={(e) => setConfirmPw(e.target.value)}
+                    placeholder="Re-enter password"
+                  />
+                  {confirmPw.length > 0 && !pwMatch && (
+                    <p className="text-xs text-destructive">Passwords do not match</p>
+                  )}
+                  {confirmPw.length > 0 && pwMatch && pwLong && (
+                    <p className="text-xs text-green-600 flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3" /> Passwords match
+                    </p>
+                  )}
+                </div>
+                {pwMutation.isError && (
+                  <p className="text-sm text-destructive col-span-3">Current password is incorrect</p>
+                )}
+                <div className="col-span-3 flex justify-end">
+                  <Button size="sm" onClick={() => pwMutation.mutate()} disabled={!canSavePw || pwMutation.isPending}>
+                    {pwMutation.isPending ? 'Changing...' : 'Change Password'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         <DialogFooter>
@@ -674,113 +830,6 @@ function EditProfileDialog({
   )
 }
 
-// ─── Change Password Dialog ───────────────────────────────────────
-
-function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [currentPw, setCurrentPw] = useState('')
-  const [newPw, setNewPw] = useState('')
-  const [confirmPw, setConfirmPw] = useState('')
-  const [showCurrent, setShowCurrent] = useState(false)
-  const [showNew, setShowNew] = useState(false)
-
-  useEffect(() => {
-    if (open) { setCurrentPw(''); setNewPw(''); setConfirmPw(''); setShowCurrent(false); setShowNew(false) }
-  }, [open])
-
-  const mutation = useMutation({
-    mutationFn: () => profileApi.changePassword(currentPw, newPw),
-    onSuccess: (data) => {
-      if (data.success) {
-        onOpenChange(false)
-      }
-    },
-  })
-
-  const pwMatch = newPw === confirmPw
-  const pwLong = newPw.length >= 10
-  const canSave = currentPw.length > 0 && pwLong && pwMatch
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Change Password</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-4 py-2">
-          <div className="grid gap-1.5">
-            <Label>Current Password</Label>
-            <div className="relative">
-              <Input
-                type={showCurrent ? 'text' : 'password'}
-                value={currentPw}
-                onChange={(e) => setCurrentPw(e.target.value)}
-                placeholder="Enter current password"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                onClick={() => setShowCurrent(!showCurrent)}
-              >
-                {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
-            </div>
-          </div>
-          <div className="grid gap-1.5">
-            <Label>New Password</Label>
-            <div className="relative">
-              <Input
-                type={showNew ? 'text' : 'password'}
-                value={newPw}
-                onChange={(e) => setNewPw(e.target.value)}
-                placeholder="Min. 10 characters"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                onClick={() => setShowNew(!showNew)}
-              >
-                {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
-            </div>
-            {newPw.length > 0 && !pwLong && (
-              <p className="text-xs text-destructive">Must be at least 10 characters</p>
-            )}
-          </div>
-          <div className="grid gap-1.5">
-            <Label>Confirm New Password</Label>
-            <Input
-              type={showNew ? 'text' : 'password'}
-              value={confirmPw}
-              onChange={(e) => setConfirmPw(e.target.value)}
-              placeholder="Re-enter new password"
-            />
-            {confirmPw.length > 0 && !pwMatch && (
-              <p className="text-xs text-destructive">Passwords do not match</p>
-            )}
-            {confirmPw.length > 0 && pwMatch && pwLong && (
-              <p className="text-xs text-green-600 flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3" /> Passwords match
-              </p>
-            )}
-          </div>
-          {mutation.isError && (
-            <p className="text-sm text-destructive">Current password is incorrect</p>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => mutation.mutate()} disabled={!canSave || mutation.isPending}>
-            {mutation.isPending ? 'Changing...' : 'Change Password'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 // ─── Pontaje Helpers ───────────────────────────────────────────────
 
