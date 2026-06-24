@@ -28,7 +28,7 @@ _perm_repo = PermissionRepository()
 
 def _check_voucher_perm(entity: str, action: str) -> bool:
     """Check vouchers.{entity}.{action} V2 permission."""
-    if getattr(current_user, 'role_name', '') in ('admin', 'superadmin'):
+    if getattr(current_user, 'role_name', '').lower() in ('admin', 'superadmin'):
         return True
     role_id = getattr(current_user, 'role_id', None)
     if not role_id:

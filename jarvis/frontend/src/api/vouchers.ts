@@ -20,6 +20,15 @@ export const vouchersApi = {
   redeem: (id: number, notes?: string) =>
     api.patch<{ success: boolean; voucher: Voucher }>(`/api/vouchers/${id}/redeem`, { redemption_notes: notes }),
 
+  editVoucher: (id: number, data: { client_name?: string; contract_number?: string; car_vin?: string; notes?: string }) =>
+    api.patch<{ success: boolean; voucher: Voucher }>(`/api/vouchers/${id}/edit`, data),
+
+  reissueVoucher: (id: number) =>
+    api.post<{ success: boolean; voucher: Voucher }>(`/api/vouchers/${id}/reissue`),
+
+  deleteVoucher: (id: number) =>
+    api.delete<{ success: boolean }>(`/api/vouchers/${id}`),
+
   pdfUrl: (id: number) => `/api/vouchers/${id}/pdf`,
 
   sendToClient: (id: number, email: string) =>
