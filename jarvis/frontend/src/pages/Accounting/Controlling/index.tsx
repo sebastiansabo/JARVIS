@@ -669,7 +669,7 @@ function AnalysisTab({ companyId, companies }: { companyId: number; companies: {
       setAutoAnalysis(res.analysis)
     } catch (e: unknown) {
       const detail = e && typeof e === 'object' && 'data' in e
-        ? String((e as { data: { error?: string } }).data?.error || (e as Error).message)
+        ? String((e as { data: { error?: string } }).data?.error || (e instanceof Error ? e.message : 'necunoscută'))
         : (e instanceof Error ? e.message : 'necunoscută')
       setAutoAnalysis(`Eroare: ${detail}`)
     } finally {
@@ -687,7 +687,7 @@ function AnalysisTab({ companyId, companies }: { companyId: number; companies: {
       setQueryHistory(prev => [...prev, { prompt, response: res.analysis }])
     } catch (e: unknown) {
       const detail = e && typeof e === 'object' && 'data' in e
-        ? String((e as { data: { error?: string } }).data?.error || (e as Error).message)
+        ? String((e as { data: { error?: string } }).data?.error || (e instanceof Error ? e.message : 'necunoscută'))
         : (e instanceof Error ? e.message : 'necunoscută')
       setQueryHistory(prev => [...prev, { prompt, response: `Eroare: ${detail}` }])
     } finally {
