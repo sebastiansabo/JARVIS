@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, useRef, lazy, Suspense } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +9,9 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Check, ChevronsUpDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { crmApi } from '@/api/crm'
 import { organizationApi } from '@/api/organization'
 import { vouchersApi } from '@/api/vouchers'
@@ -285,23 +288,77 @@ function DepartmentSelectField({ field, value, error, onChange, allAnswers }: Fi
 }
 
 function UserSelectField({ field, value, error, onChange }: FieldProps) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
   const { data: users = [] } = useQuery({
     queryKey: ['users-list'],
     queryFn: () => import('@/api/users').then((m) => m.usersApi.getUsers()),
     staleTime: 10 * 60_000,
   })
+
+  const selectedId = (value as string) || ''
+  const selectedUser = users.find((u: { id: number; name: string }) => String(u.id) === selectedId)
+  const displayLabel = selectedUser ? selectedUser.name : 'Direct manager'
+
+  const filtered = search.trim()
+    ? users.filter((u: { id: number; name: string }) =>
+        u.name.toLowerCase().includes(search.toLowerCase())
+      )
+    : users
+
   return (
     <div className="space-y-1">
       <Label>{field.label}</Label>
-      <Select value={(value as string) ?? '__none__'} onValueChange={(v) => onChange(v === '__none__' ? '' : v)}>
-        <SelectTrigger><SelectValue placeholder={field.placeholder || 'Select user...'} /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__none__">Direct manager</SelectItem>
-          {users.map((u: { id: number; name: string }) => (
-            <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <Popover open={open} onOpenChange={(v) => { setOpen(v); if (v) setTimeout(() => inputRef.current?.focus(), 0) }}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal">
+            {displayLabel}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+          <div className="p-2 border-b">
+            <Input
+              ref={inputRef}
+              placeholder="Search user..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8"
+            />
+          </div>
+          <div className="max-h-60 overflow-y-auto p-1">
+            <button
+              type="button"
+              className={cn(
+                'flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer',
+                !selectedId && 'bg-accent',
+              )}
+              onClick={() => { onChange(''); setOpen(false); setSearch('') }}
+            >
+              <Check className={cn('mr-2 h-4 w-4', selectedId ? 'opacity-0' : 'opacity-100')} />
+              Direct manager
+            </button>
+            {filtered.map((u: { id: number; name: string }) => (
+              <button
+                type="button"
+                key={u.id}
+                className={cn(
+                  'flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer',
+                  selectedId === String(u.id) && 'bg-accent',
+                )}
+                onClick={() => { onChange(String(u.id)); setOpen(false); setSearch('') }}
+              >
+                <Check className={cn('mr-2 h-4 w-4', selectedId === String(u.id) ? 'opacity-100' : 'opacity-0')} />
+                {u.name}
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <p className="py-4 text-center text-sm text-muted-foreground">No users found</p>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   )
