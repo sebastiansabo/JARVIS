@@ -40,6 +40,11 @@ export interface User {
   can_edit_carpark: boolean
   can_delete_carpark: boolean
   can_access_carpark_mobile: boolean
+  can_access_service: boolean
+  can_access_ticketing: boolean
+  can_access_controlling: boolean
+  can_access_vouchers: boolean
+  can_access_facturare: boolean
   // Full v2 permissions map — "module.entity.action" → bool (for sidebar/tab visibility)
   permissions?: Record<string, boolean>
   // Scope values for granted permissions — "module.entity.action" → 'own'|'department'|'all'

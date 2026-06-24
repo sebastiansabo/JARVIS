@@ -336,6 +336,8 @@ def api_current_user():
         def _access(module_key, fallback_attr):
             if module_key in mod_access:
                 return mod_access[module_key]
+            if not fallback_attr:
+                return False
             return bool(getattr(current_user, fallback_attr, False))
 
         return jsonify({
@@ -372,6 +374,11 @@ def api_current_user():
                 'can_access_digest':     _access('digest',     'can_access_digest'),
                 'can_access_field_sales': _access('field_sales', None),
                 'can_access_carpark':    _access('carpark',     'can_access_carpark'),
+                'can_access_service':    _access('service',     None),
+                'can_access_ticketing':  _access('ticketing',   None),
+                'can_access_controlling': _access('controlling', None),
+                'can_access_vouchers':   _access('vouchers',    None),
+                'can_access_facturare':  _access('facturare',   None),
                 'can_edit_carpark':      current_user.can_edit_carpark,
                 'can_delete_carpark':    current_user.can_delete_carpark,
                 # Legacy / granular flags still read from role

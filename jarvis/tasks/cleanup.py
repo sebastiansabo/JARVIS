@@ -413,6 +413,16 @@ def start_scheduler():
 
     # ── Voucher jobs ──────────────────────────────────
 
+    def _archive_redeemed_vouchers():
+        """Every 30 min: move redeemed vouchers to archived after 2 hours."""
+        try:
+            from accounting.vouchers.repositories import VoucherRepository
+            count = VoucherRepository().archive_redeemed()
+            if count:
+                logger.info('Archived %d redeemed voucher(s)', count)
+        except Exception:
+            logger.exception('Failed to run voucher archive job')
+
     def _expire_vouchers():
         """Daily: expire active vouchers past their expiry date."""
         try:
@@ -461,6 +471,16 @@ def start_scheduler():
             send_monthly_digest()
         except Exception:
             logger.exception('Failed to run monthly voucher digest')
+
+    scheduler.add_job(
+        _archive_redeemed_vouchers,
+        'interval',
+        minutes=30,
+        id='archive_redeemed_vouchers',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
 
     scheduler.add_job(
         _expire_vouchers,
