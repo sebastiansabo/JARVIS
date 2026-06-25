@@ -42,15 +42,16 @@ type HrSubTab = 'pontaje' | 'bonuses' | 'leave-permits'
 interface AppTile {
   key: NonNullable<ActiveModule>
   label: string
-  description: string
   icon: React.ElementType
+  bg: string
+  fg: string
 }
 
 const appTiles: AppTile[] = [
-  { key: 'invoices', label: 'My Invoices', description: 'View your invoices and allocations', icon: FileText },
-  { key: 'hr', label: 'HR', description: 'Pontaje, bonuses, leave permits', icon: Activity },
-  { key: 'vouchers', label: 'Vouchers', description: 'Voucher tracking and redemption', icon: Ticket },
-  { key: 'forms', label: 'Forms', description: 'Submit and view forms', icon: ClipboardList },
+  { key: 'invoices', label: 'My Invoices', icon: FileText, bg: 'bg-blue-600', fg: 'text-white' },
+  { key: 'hr', label: 'HR', icon: Activity, bg: 'bg-emerald-600', fg: 'text-white' },
+  { key: 'vouchers', label: 'Vouchers', icon: Ticket, bg: 'bg-amber-500', fg: 'text-white' },
+  { key: 'forms', label: 'Forms', icon: ClipboardList, bg: 'bg-violet-600', fg: 'text-white' },
 ]
 
 const MONTHS_RO = ['Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie', 'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie']
@@ -204,11 +205,11 @@ export default function Hub() {
           {/* Left 2/3 */}
           <div className="lg:col-span-2 space-y-6">
             <Card>
-              <CardHeader className="pb-3">
+              <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Apps</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="flex flex-wrap gap-6">
                   {visibleTiles.map((tile) => {
                     const Icon = tile.icon
                     return (
@@ -216,15 +217,12 @@ export default function Hub() {
                         key={tile.key}
                         type="button"
                         onClick={() => setActiveModule(tile.key)}
-                        className="flex flex-col items-center gap-2.5 rounded-lg border bg-background p-5 text-center transition-all hover:shadow-sm hover:border-primary/40 hover:bg-accent/30"
+                        className="flex flex-col items-center gap-1.5 w-20 group"
                       >
-                        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                          <Icon className="h-6 w-6" />
+                        <div className={cn('flex h-14 w-14 items-center justify-center rounded-xl shadow-sm transition-transform group-hover:scale-105 group-hover:shadow-md', tile.bg, tile.fg)}>
+                          <Icon className="h-7 w-7" />
                         </div>
-                        <div>
-                          <p className="text-sm font-semibold">{tile.label}</p>
-                          <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">{tile.description}</p>
-                        </div>
+                        <p className="text-[11px] font-medium text-center leading-tight">{tile.label}</p>
                       </button>
                     )
                   })}
