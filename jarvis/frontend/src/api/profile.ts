@@ -130,6 +130,20 @@ export const profileApi = {
     }>(`/sincron/api/timesheets${qs ? `?${qs}` : ''}`)
   },
 
+  getContracts: () =>
+    api.get<{
+      success: boolean
+      contracts: {
+        company: string
+        contract_number: string | null
+        start_date: string | null
+        years_employed: number | null
+        department: string | null
+        work_norm: string | null
+        status: string | null
+      }[]
+    }>('/profile/api/contracts'),
+
   getWorkSummary: (params?: { year?: number; month?: number }) => {
     const sp = new URLSearchParams()
     if (params?.year) sp.set('year', String(params.year))

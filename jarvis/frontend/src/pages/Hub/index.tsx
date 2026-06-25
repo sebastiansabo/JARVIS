@@ -325,7 +325,7 @@ export default function Hub() {
         </div>
       ) : (
         /* ── Grid: 2/3 apps + 1/3 notifications ── */
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           {/* Left 2/3 */}
           <div className="lg:col-span-2 space-y-6">
             <Card>
