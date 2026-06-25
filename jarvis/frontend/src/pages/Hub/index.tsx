@@ -20,6 +20,7 @@ import {
   Ticket as TicketIcon,
   Clock,
   Award,
+  UserCog,
   Eye,
   ExternalLink,
   SlidersHorizontal,
@@ -61,6 +62,7 @@ import type { BioStarDayHistory } from '@/types/biostar'
 
 const VouchersPanel = lazy(() => import('@/pages/Profile/VouchersPanel'))
 const CreateTicketDialog = lazy(() => import('@/pages/Ticketing/CreateTicketDialog'))
+const EditProfileDialogLazy = lazy(() => import('@/pages/Profile/index').then(m => ({ default: m.EditProfileDialog })))
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -93,6 +95,7 @@ export default function Hub() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [ticketOpen, setTicketOpen] = useState(false)
+  const [editProfileOpen, setEditProfileOpen] = useState(false)
   const activeModule = (searchParams.get('module') as ActiveModule) || null
   const setActiveModule = useCallback((mod: ActiveModule) => {
     setSearchParams((prev) => {
@@ -251,6 +254,9 @@ export default function Hub() {
                 </Button>
               </div>
 
+              <Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)}>
+                <UserCog className="h-3.5 w-3.5 mr-1.5" />Profile
+              </Button>
               <Button size="sm" variant="outline" onClick={() => setTicketOpen(true)}>
                 <TicketIcon className="h-3.5 w-3.5 mr-1.5" />Ticket
               </Button>
@@ -263,6 +269,18 @@ export default function Hub() {
       <Suspense fallback={null}>
         <CreateTicketDialog open={ticketOpen} onOpenChange={setTicketOpen} />
       </Suspense>
+
+      {/* Edit Profile Dialog */}
+      {editProfileOpen && user && (
+        <Suspense fallback={null}>
+          <EditProfileDialogLazy
+            open={editProfileOpen}
+            onOpenChange={setEditProfileOpen}
+            user={user}
+            onSaved={() => queryClient.invalidateQueries({ queryKey: ['profile', 'summary'] })}
+          />
+        </Suspense>
+      )}
 
       {/* ── Active Module (inline content) ── */}
       {activeModule !== null ? (
