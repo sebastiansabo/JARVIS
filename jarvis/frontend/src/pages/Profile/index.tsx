@@ -586,7 +586,7 @@ function ProfileDetailsDialog({
 
 // ─── Edit Profile Dialog ──────────────────────────────────────────
 
-function EditProfileDialog({
+export function EditProfileDialog({
   open,
   onOpenChange,
   user,
