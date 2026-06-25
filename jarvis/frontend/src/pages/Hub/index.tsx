@@ -17,6 +17,7 @@ import {
   Car,
   MessageSquare,
   Ticket as TicketIcon,
+  Clock,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -59,7 +60,7 @@ const appTiles: AppTile[] = [
 
 const MONTHS_RO = ['Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie', 'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie']
 
-// ─── Command Hub ────────────────────────────────────────
+// ─── JARVIS Hub ────────────────────────────────────────
 
 export default function Hub() {
   const authUser = useAuthStore((s) => s.user)
@@ -190,7 +191,7 @@ export default function Hub() {
             </div>
             <div className="min-w-0">
               <p className="text-xs text-muted-foreground truncate">{user?.name || 'Loading...'}</p>
-              <h1 className="text-lg font-bold leading-tight">Command Hub</h1>
+              <h1 className="text-lg font-bold leading-tight">JARVIS Hub</h1>
             </div>
 
             {/* Right: company, role, actions */}
@@ -202,31 +203,29 @@ export default function Hub() {
                 <Badge variant="outline" className="text-xs">{authUser.role_name}</Badge>
               )}
 
-              {/* Check In/Out */}
-              {checkinStatus?.mapped && (
-                <div className="flex items-center gap-2">
-                  {lastPunch && (
-                    <div className="text-xs text-right leading-tight hidden sm:block">
-                      <p className="font-medium">
-                        {lastPunch.direction === 'IN' ? 'In' : 'Out'} at{' '}
-                        {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                      {lastPunch.raw_data?.location_name && (
-                        <p className="text-muted-foreground">{lastPunch.raw_data.location_name}</p>
-                      )}
-                    </div>
-                  )}
-                  <Button
-                    size="sm"
-                    className={cn('font-semibold text-white', isCheckedIn ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700')}
-                    onClick={() => punchMut.mutate()}
-                    disabled={punchMut.isPending}
-                  >
-                    {isCheckedIn ? <LogOut className="h-3.5 w-3.5 mr-1.5" /> : <LogIn className="h-3.5 w-3.5 mr-1.5" />}
-                    {punchMut.isPending ? '...' : isCheckedIn ? 'Check Out' : 'Check In'}
-                  </Button>
-                </div>
-              )}
+              {/* Check In/Out — always visible */}
+              <div className="flex items-center gap-2">
+                {lastPunch && (
+                  <div className="text-xs text-right leading-tight hidden sm:block">
+                    <p className="font-medium">
+                      {lastPunch.direction === 'IN' ? 'In' : 'Out'} at{' '}
+                      {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                    {lastPunch.raw_data?.location_name && (
+                      <p className="text-muted-foreground">{lastPunch.raw_data.location_name}</p>
+                    )}
+                  </div>
+                )}
+                <Button
+                  size="sm"
+                  className={cn('font-semibold text-white', isCheckedIn ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700')}
+                  onClick={() => punchMut.mutate()}
+                  disabled={punchMut.isPending}
+                >
+                  {isCheckedIn ? <LogOut className="h-3.5 w-3.5 mr-1.5" /> : <LogIn className="h-3.5 w-3.5 mr-1.5" />}
+                  {punchMut.isPending ? '...' : isCheckedIn ? 'Check Out' : 'Check In'}
+                </Button>
+              </div>
 
               <Button size="sm" variant="outline" onClick={() => setTicketOpen(true)}>
                 <TicketIcon className="h-3.5 w-3.5 mr-1.5" />Ticket
@@ -288,11 +287,13 @@ export default function Hub() {
               </CardContent>
             </Card>
 
+            {/* HR Summary Card */}
+            <HubHrSummaryCard />
           </div>
 
-          {/* Right 1/3 — Notifications */}
-          <div>
-            <Card className="sticky top-6">
+          {/* Right 1/3 — Notifications + Punch Card */}
+          <div className="space-y-6">
+            <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -308,7 +309,7 @@ export default function Hub() {
                   )}
                 </div>
               </CardHeader>
-              <CardContent className="space-y-1 max-h-[60vh] overflow-y-auto">
+              <CardContent className="space-y-1 max-h-[40vh] overflow-y-auto">
                 {notifications.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-6">No notifications</p>
                 ) : notifications.map((n) => (
@@ -335,6 +336,9 @@ export default function Hub() {
                 ))}
               </CardContent>
             </Card>
+
+            {/* Weekly Punch Card */}
+            <HubWeeklyPunchCard />
           </div>
         </div>
       )}
@@ -671,6 +675,173 @@ function HubFormsPanel() {
               </Link>
             )
           })}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── Weekly Punch Card ──────────────────────────────────
+
+function HubWeeklyPunchCard() {
+  // Get Monday of current week
+  const now = new Date()
+  const dayOfWeek = now.getDay()
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+
+  const start = monday.toISOString().slice(0, 10)
+  const end = sunday.toISOString().slice(0, 10)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['hub', 'weekly-punch', start, end],
+    queryFn: () => profileApi.getPontaje({ start, end }),
+    staleTime: 5 * 60_000,
+  })
+
+  const history: BioStarDayHistory[] = data?.history ?? []
+  if (isLoading) return <Skeleton className="h-32 w-full rounded-lg" />
+  if (!data?.mapped) return null // No BioStar mapping
+
+  const totalHours = history.reduce((sum, d) => sum + (d.duration_seconds ? d.duration_seconds / 3600 : 0), 0)
+  const DAYS_RO = ['Lun', 'Mar', 'Mie', 'Joi', 'Vin', 'Sam', 'Dum']
+
+  // Build a map of date → day data
+  const dayMap = new Map(history.map(d => [d.date, d]))
+
+  // Generate all 7 days of the week
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(monday)
+    date.setDate(monday.getDate() + i)
+    const dateStr = date.toISOString().slice(0, 10)
+    const dayData = dayMap.get(dateStr)
+    const hours = dayData?.duration_seconds ? dayData.duration_seconds / 3600 : 0
+    const isToday = dateStr === now.toISOString().slice(0, 10)
+    const isFuture = date > now
+    const punchIn = dayData?.first_punch?.slice(0, 5) || null
+    const punchOut = dayData?.last_punch?.slice(0, 5) || null
+    return { dateStr, label: DAYS_RO[i], day: date.getDate(), hours, isToday, isFuture, hasData: !!dayData, punchIn, punchOut }
+  })
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            This Week
+          </CardTitle>
+          <span className="text-xs font-semibold tabular-nums">{totalHours.toFixed(1)}h</span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex justify-between gap-1">
+          {weekDays.map((d) => (
+            <div key={d.dateStr} className="flex flex-col items-center gap-1 flex-1">
+              <span className="text-[10px] text-muted-foreground">{d.label}</span>
+              <div className={cn(
+                'w-full rounded-md flex flex-col items-center justify-center py-2 gap-0.5',
+                d.isToday ? 'ring-2 ring-primary ring-offset-1' : '',
+                d.isFuture ? 'bg-muted/30 text-muted-foreground/50' :
+                d.hours >= 8 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                d.hours > 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                d.hasData ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                'bg-muted/50 text-muted-foreground',
+              )}>
+                {!d.isFuture && d.punchIn && <span className="text-[8px] opacity-70">{d.punchIn}</span>}
+                <span className="text-[11px] font-semibold">
+                  {d.isFuture ? '' : d.hours > 0 ? `${d.hours.toFixed(1)}` : d.hasData ? '0' : '-'}
+                </span>
+                {!d.isFuture && d.punchOut && <span className="text-[8px] opacity-70">{d.punchOut}</span>}
+              </div>
+              <span className={cn('text-[9px]', d.isToday ? 'font-bold' : 'text-muted-foreground')}>{d.day}</span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── HR Summary Card ────────────────────────────────────
+
+function HubHrSummaryCard() {
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth() + 1)
+
+  const { data: tsData, isLoading } = useQuery({
+    queryKey: ['hub', 'sincron-timesheet', year, month],
+    queryFn: () => profileApi.getSincronTimesheet({ year, month }),
+    staleTime: 5 * 60_000,
+  })
+
+  const summary = tsData?.data?.summary ?? []
+  const employee = tsData?.data?.employee
+
+  if (isLoading) return <Skeleton className="h-24 w-full" />
+  if (!employee && summary.length === 0) return null
+
+  // Activity code colors
+  const codeColors: Record<string, string> = {
+    OZ: 'text-green-600', CES: 'text-blue-600', CFS: 'text-blue-500',
+    CIC: 'text-purple-600', CM: 'text-red-600', CMS: 'text-red-500',
+    CO: 'text-amber-600', DLG: 'text-orange-600', OSW: 'text-cyan-600',
+    X: 'text-gray-500', ZLS: 'text-pink-600',
+  }
+
+  const totalEntry = summary.reduce((sum, s) => sum + (s.unit === 'hours' ? s.total_value : 0), 0)
+
+  const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1) } else setMonth(m => m - 1) }
+  const nextMonth = () => { if (month === 12) { setMonth(1); setYear(y => y + 1) } else setMonth(m => m + 1) }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Timesheet</CardTitle>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={prevMonth}><ChevronLeft className="h-3.5 w-3.5" /></Button>
+            <span className="text-xs font-medium w-28 text-center">{MONTHS_RO[month - 1]} {year}</span>
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={nextMonth}><ChevronRight className="h-3.5 w-3.5" /></Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b bg-muted/30">
+                {summary.map((s) => (
+                  <th key={s.short_code} className={cn('px-2.5 py-1.5 font-medium text-center whitespace-nowrap', codeColors[s.short_code] || 'text-muted-foreground')}>
+                    {s.short_code}
+                  </th>
+                ))}
+                <th className="px-2.5 py-1.5 font-semibold text-right whitespace-nowrap">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                {summary.map((s) => (
+                  <td key={s.short_code} className="px-2.5 py-2 text-center tabular-nums font-medium">
+                    {s.total_value > 0 ? (s.unit === 'hours' ? `${s.total_value}` : s.day_count > 0 ? s.day_count : '—') : '—'}
+                  </td>
+                ))}
+                <td className="px-2.5 py-2 text-right tabular-nums font-semibold">{totalEntry > 0 ? `${totalEntry}h` : '—'}</td>
+              </tr>
+              {/* Days row */}
+              <tr className="border-t">
+                {summary.map((s) => (
+                  <td key={`d-${s.short_code}`} className="px-2.5 py-1 text-center text-[10px] text-muted-foreground">
+                    {s.day_count > 0 ? `${s.day_count}d` : ''}
+                  </td>
+                ))}
+                <td />
+              </tr>
+            </tbody>
+          </table>
         </div>
       </CardContent>
     </Card>
