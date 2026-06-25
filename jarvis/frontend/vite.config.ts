@@ -113,6 +113,10 @@ export default defineConfig({
         target: 'http://localhost:5001',
         changeOrigin: true,
       },
+      '/sincron': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
     },
   },
 })
