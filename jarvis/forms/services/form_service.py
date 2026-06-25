@@ -205,7 +205,8 @@ class FormService:
 
         # Trigger approval if required
         if form.get('requires_approval'):
-            self._trigger_approval(form, submission_id, sanitized_respondent)
+            respondent_with_user = {**sanitized_respondent, 'user_id': user_id}
+            self._trigger_approval(form, submission_id, respondent_with_user)
         else:
             # Even without approval, send submit notifications
             self._send_submit_notifications(form, submission_id, sanitized_respondent)
