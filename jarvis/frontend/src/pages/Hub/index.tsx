@@ -222,43 +222,32 @@ export default function Hub() {
             </div>
 
             {/* Right: company, role, actions */}
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
               {user?.company && (
-                <span className="text-xs text-muted-foreground hidden sm:inline">{user.company}</span>
+                <span className="text-xs text-muted-foreground hidden lg:inline">{user.company}</span>
               )}
               {authUser?.role_name && (
-                <Badge variant="outline" className="text-xs">{authUser.role_name}</Badge>
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">{authUser.role_name}</Badge>
               )}
-
-              {/* Check In/Out — always visible */}
-              <div className="flex items-center gap-2">
-                {lastPunch && (
-                  <div className="text-xs text-right leading-tight hidden sm:block">
-                    <p className="font-medium">
-                      {lastPunch.direction === 'IN' ? 'In' : 'Out'} at{' '}
-                      {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                    {lastPunch.raw_data?.location_name && (
-                      <p className="text-muted-foreground">{lastPunch.raw_data.location_name}</p>
-                    )}
-                  </div>
-                )}
-                <Button
-                  size="sm"
-                  className={cn('font-semibold text-white', isCheckedIn ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700')}
-                  onClick={() => punchMut.mutate()}
-                  disabled={punchMut.isPending}
-                >
-                  {isCheckedIn ? <LogOut className="h-3.5 w-3.5 mr-1.5" /> : <LogIn className="h-3.5 w-3.5 mr-1.5" />}
-                  {punchMut.isPending ? '...' : isCheckedIn ? 'Check Out' : 'Check In'}
-                </Button>
-              </div>
-
-              <Button size="sm" variant="outline" onClick={() => setEditProfileOpen(true)}>
-                <UserCog className="h-3.5 w-3.5 mr-1.5" />Profile
+              {lastPunch && (
+                <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                  {lastPunch.direction === 'IN' ? 'In' : 'Out'} {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              <Button
+                size="sm"
+                className={cn('h-7 px-2 text-xs font-semibold text-white', isCheckedIn ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700')}
+                onClick={() => punchMut.mutate()}
+                disabled={punchMut.isPending}
+              >
+                {isCheckedIn ? <LogOut className="h-3 w-3 mr-1" /> : <LogIn className="h-3 w-3 mr-1" />}
+                {punchMut.isPending ? '...' : isCheckedIn ? 'Out' : 'In'}
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setTicketOpen(true)}>
-                <TicketIcon className="h-3.5 w-3.5 mr-1.5" />Ticket
+              <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setEditProfileOpen(true)}>
+                <UserCog className="h-3 w-3 mr-1" />Profile
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setTicketOpen(true)}>
+                <TicketIcon className="h-3 w-3 mr-1" />Ticket
               </Button>
             </div>
           </div>
