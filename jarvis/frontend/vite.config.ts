@@ -105,6 +105,14 @@ export default defineConfig({
         target: 'http://localhost:5001',
         changeOrigin: true,
       },
+      '/connecteam': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
+      '/vouchers': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
     },
   },
 })
