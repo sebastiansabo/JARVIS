@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, lazy, Suspense } from 'react'
+import React, { useState, useMemo, useCallback, lazy, Suspense } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -11,6 +11,7 @@ import {
   FileCheck,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Fingerprint,
   Gift,
   ClipboardList,
@@ -19,21 +20,43 @@ import {
   Ticket as TicketIcon,
   Clock,
   Award,
+  Eye,
+  ExternalLink,
+  SlidersHorizontal,
+  Pencil,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { DateField } from '@/components/ui/date-field'
+import { StatusBadge } from '@/components/shared/StatusBadge'
+import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { SearchInput } from '@/components/shared/SearchInput'
+import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
+import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
+import { InvoiceLinkedDocs } from '@/components/shared/InvoiceLinkedDocs'
+import { AllocationEditor, allocationsToRows, rowsToApiPayload } from '@/pages/Accounting/AllocationEditor'
+import { EditInvoiceDialog } from '@/pages/Accounting/EditInvoiceDialog'
+import { dedupeMergedAllocations } from '@/pages/Accounting/allocationUtils'
+import { LineItemAllocationsView } from '@/pages/Accounting/LineItemAllocationsView'
 import { useAuthStore } from '@/stores/authStore'
+import { useAuth } from '@/hooks/useAuth'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import { profileApi } from '@/api/profile'
+import { settingsApi } from '@/api/settings'
 import { checkinApi } from '@/api/checkin'
 import { notificationsApi } from '@/api/notifications'
 import { connecteamApi, type ConnecteamSubmission } from '@/api/connecteam'
-import { cn } from '@/lib/utils'
+import { cn, usePersistedState } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { InAppNotification } from '@/types/notifications'
 import type { ProfileInvoice, ProfileBonus } from '@/types/profile'
+import type { Invoice } from '@/types/invoices'
 import type { BioStarDayHistory } from '@/types/biostar'
 
 const VouchersPanel = lazy(() => import('@/pages/Profile/VouchersPanel'))
@@ -350,62 +373,603 @@ export default function Hub() {
   )
 }
 
-// ─── Invoices Panel ─────────────────────────────────────
+// ─── Invoices Panel (full-featured, same as Profile) ────
 
 function HubInvoicesPanel() {
-  const { data, isLoading } = useQuery({
-    queryKey: ['hub', 'invoices'],
-    queryFn: () => profileApi.getInvoices({ per_page: 50 }),
-  })
-  const invoices: ProfileInvoice[] = data?.invoices ?? []
+  const isMobile = useIsMobile()
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const [search, setSearch] = useState('')
+  const [department, setDepartment] = useState('')
+  const [status, setStatus] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+  const [archiveView, setArchiveView] = useState<'active' | 'archived'>('active')
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = usePersistedState('hub-invoices-page-size', 25)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
 
-  if (isLoading) return <Skeleton className="h-64 w-full" />
-  if (invoices.length === 0) {
-    return <Card><CardContent className="py-12 text-center text-muted-foreground text-sm">No invoices assigned to you.</CardContent></Card>
+  const isArchivedView = archiveView === 'archived'
+  const canEdit = isArchivedView ? false : (user?.can_edit_invoices || (user?.permissions?.['invoices.records.edit'] ?? false))
+
+  const handleDownloadPdf = async (inv: ProfileInvoice) => {
+    const url = inv.drive_link?.startsWith('/efactura/')
+      ? `/profile/api/invoices/${inv.id}/pdf`
+      : inv.drive_link
+    if (!url) return
+    if (!inv.drive_link?.startsWith('/efactura/')) {
+      window.open(url, '_blank', 'noopener')
+      return
+    }
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Download failed')
+      const blob = await res.blob()
+      const filename = res.headers.get('Content-Disposition')?.match(/filename="?([^";\n]+)"?/)?.[1] || `invoice-${inv.id}.pdf`
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      URL.revokeObjectURL(a.href)
+      a.remove()
+    } catch {
+      window.location.href = url
+    }
+  }
+
+  const { data: dropdownOptions = [] } = useQuery({
+    queryKey: ['settings', 'dropdowns'],
+    queryFn: () => settingsApi.getDropdownOptions(),
+    staleTime: 10 * 60_000,
+  })
+  const statusOptions = useMemo(
+    () => dropdownOptions.filter((d) => d.dropdown_type === 'invoice_status' && d.value).map((d) => ({ value: d.value, label: d.label, color: d.color })),
+    [dropdownOptions],
+  )
+  const statusLabelMap = useMemo(
+    () => Object.fromEntries(statusOptions.map((o) => [o.value, o.label])),
+    [statusOptions],
+  )
+  const paymentOptions = useMemo(
+    () => dropdownOptions.filter((d) => d.dropdown_type === 'payment_status' && d.value).map((d) => ({ value: d.value, label: d.label })),
+    [dropdownOptions],
+  )
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['hub', 'invoices', { search, department, status, startDate, endDate, page, perPage, archiveView }],
+    queryFn: () => profileApi.getInvoices({ search: search || undefined, department: department || undefined, status: status || undefined, start_date: startDate || undefined, end_date: endDate || undefined, page, per_page: perPage, archive_view: archiveView }),
+  })
+
+  const { data: expandedInvoice } = useQuery({
+    queryKey: ['profile', 'invoice-detail', expandedId],
+    queryFn: () => profileApi.getInvoiceDetail(expandedId!),
+    enabled: expandedId !== null,
+  })
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: { invoiceId: number; company: string; rows: import('@/pages/Accounting/AllocationEditor').AllocationRow[] }) =>
+      profileApi.updateAllocations(payload.invoiceId, {
+        allocations: rowsToApiPayload(payload.company, payload.rows),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hub', 'invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['profile', 'invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      setEditingId(null)
+      toast.success('Allocations updated')
+    },
+    onError: () => toast.error('Failed to update allocations'),
+  })
+
+  const invoices = data?.invoices ?? []
+  const total = data?.total ?? 0
+  const totalPages = Math.ceil(total / perPage)
+
+  const filterFields: FilterField[] = useMemo(() => [
+    { key: 'status', label: 'Status', type: 'select' as const, options: statusOptions },
+  ], [statusOptions])
+
+  const filterValues: Record<string, string> = useMemo(() => ({
+    department,
+    status,
+  }), [department, status])
+
+  const handleFilterChange = (values: Record<string, string>) => {
+    if ('department' in values) { setDepartment(values.department || ''); setPage(1) }
+    if ('status' in values) { setStatus(values.status || ''); setPage(1) }
+  }
+
+  const toggleExpand = (id: number) => {
+    setExpandedId(expandedId === id ? null : id)
+    if (expandedId === id) setEditingId(null)
   }
 
   return (
     <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-base">My Invoices ({invoices.length})</CardTitle></CardHeader>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/30">
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Supplier</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Invoice #</th>
-                <th className="text-right px-4 py-2 font-medium text-muted-foreground">Amount</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Date</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {invoices.map((inv) => (
-                <tr key={inv.id} className="border-b last:border-0 hover:bg-muted/20">
-                  <td className="px-4 py-2.5 font-medium truncate max-w-[200px]">{inv.supplier || '—'}</td>
-                  <td className="px-4 py-2.5 text-muted-foreground">{inv.invoice_number || '—'}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-medium">
-                    {inv.invoice_value != null ? `${Number(inv.invoice_value).toLocaleString('ro-RO', { minimumFractionDigits: 2 })} ${inv.currency || 'RON'}` : '—'}
-                  </td>
-                  <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
-                    {inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString('ro-RO') : '—'}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <span className={cn('inline-block text-xs px-2 py-0.5 rounded-full',
-                      inv.status === 'allocated' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                      inv.status === 'pending' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                      'bg-muted text-muted-foreground',
-                    )}>
-                      {inv.status || 'new'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <CardHeader>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <CardTitle className="text-base">
+              My Invoices
+              <span className="ml-2 text-sm font-normal text-muted-foreground">({total})</span>
+            </CardTitle>
+            <div className="flex items-center rounded-md border bg-muted/50 p-0.5 gap-0.5">
+              <Button
+                variant={archiveView === 'active' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => { setArchiveView('active'); setPage(1) }}
+              >
+                Active
+              </Button>
+              <Button
+                variant={archiveView === 'archived' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => { setArchiveView('archived'); setPage(1) }}
+              >
+                Archived
+              </Button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Button variant="ghost" size="icon" className={cn('h-8 w-8', showFilters && 'bg-muted')} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
+            <SearchInput
+              placeholder="Search invoices..."
+              value={search}
+              onChange={(v) => { setSearch(v); setPage(1) }}
+              className="w-full sm:w-64"
+            />
+          </div>
         </div>
+        {showFilters && (
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} iconOnly={isMobile} />
+            <DateField
+              mode="range"
+              startDate={startDate}
+              endDate={endDate}
+              onRangeChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1) }}
+            />
+          </div>
+        )}
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-10 animate-pulse rounded bg-muted" />
+            ))}
+          </div>
+        ) : invoices.length === 0 ? (
+          <EmptyState title="No invoices" description="No invoices assigned to you yet." />
+        ) : (
+          <>
+            {isMobile ? (
+              <MobileCardList
+                data={invoices}
+                fields={[
+                  { key: 'supplier', label: 'Supplier', isPrimary: true, render: (inv) => (
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate">{inv.supplier}</span>
+                      {inv.is_observer && (
+                        <Badge variant="outline" className="gap-0.5 px-1.5 py-0 text-[10px] text-muted-foreground">
+                          <Eye className="h-2.5 w-2.5" />
+                          Observer
+                        </Badge>
+                      )}
+                    </div>
+                  ) },
+                  { key: 'invoice_number', label: 'Invoice #', isSecondary: true, render: (inv) => <span className="font-mono">{inv.invoice_number}</span> },
+                  { key: 'date', label: 'Date', isSecondary: true, render: (inv) => new Date(inv.invoice_date).toLocaleDateString('ro-RO') },
+                  { key: 'value', label: 'Value', render: (inv) => <CurrencyDisplay value={inv.invoice_value} currency={inv.currency} className="text-xs" /> },
+                  { key: 'status', label: 'Status', render: (inv) => <StatusBadge status={inv.status} label={statusLabelMap[inv.status] || inv.status} /> },
+                  { key: 'company', label: 'Company', expandOnly: true, render: (inv) => inv.company },
+                  { key: 'department', label: 'Department', expandOnly: true, render: (inv) => inv.department || '-' },
+                  { key: 'percent', label: 'Allocation', expandOnly: true, render: (inv) => {
+                    const allocs = inv.allocation_mode === 'per_line' && inv.allocations
+                      ? dedupeMergedAllocations(inv.allocations as never)
+                      : (inv.allocations ?? [])
+                    return (allocs.length || 1) > 1 ? 'split' : `${inv.allocation_percent}%`
+                  } },
+                ] satisfies MobileCardField<ProfileInvoice>[]}
+                getRowId={(inv) => inv.id}
+                actions={(inv) => inv.drive_link ? (
+                  <button
+                    onClick={() => handleDownloadPdf(inv)}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-6" />
+                      <TableHead>Date</TableHead>
+                      <TableHead>Invoice #</TableHead>
+                      <TableHead>Supplier</TableHead>
+                      <TableHead>Company</TableHead>
+                      <TableHead>Department</TableHead>
+                      <TableHead className="text-right">Value</TableHead>
+                      <TableHead className="text-right">%</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-10" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {invoices.map((inv: ProfileInvoice) => {
+                      const isExpanded = expandedId === inv.id
+                      const dedupedAllocs = inv.allocation_mode === 'per_line' && inv.allocations
+                        ? dedupeMergedAllocations(inv.allocations as never)
+                        : (inv.allocations ?? [])
+                      const allocCount = dedupedAllocs.length || 1
+
+                      return (
+                        <React.Fragment key={inv.id}>
+                          <TableRow
+                            className="cursor-pointer hover:bg-muted/40"
+                            onClick={() => toggleExpand(inv.id)}
+                          >
+                            <TableCell className="px-1">
+                              {isExpanded
+                                ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                                : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                              {new Date(inv.invoice_date).toLocaleDateString('ro-RO')}
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">{inv.invoice_number}</TableCell>
+                            <TableCell className="max-w-[200px] font-medium">
+                              <div className="flex items-center gap-1.5">
+                                <span className="truncate">{inv.supplier}</span>
+                                {inv.is_observer && (
+                                  <Badge
+                                    variant="outline"
+                                    className="gap-0.5 px-1.5 py-0 text-[10px] text-muted-foreground"
+                                    title="You are an observer on this invoice (view-only)"
+                                  >
+                                    <Eye className="h-2.5 w-2.5" />
+                                    Observer
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-sm">{inv.company}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {inv.department || '-'}
+                              {allocCount > 1 && <span className="ml-1 text-xs text-muted-foreground/60">+{allocCount - 1}</span>}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <CurrencyDisplay value={inv.invoice_value} currency={inv.currency} className="text-sm" />
+                            </TableCell>
+                            <TableCell className="text-right text-sm text-muted-foreground">
+                              {allocCount > 1 ? 'split' : `${inv.allocation_percent}%`}
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge status={inv.status} label={statusLabelMap[inv.status] || inv.status} />
+                            </TableCell>
+                            <TableCell onClick={(e) => e.stopPropagation()}>
+                              {inv.drive_link && (
+                                <button
+                                  onClick={() => handleDownloadPdf(inv)}
+                                  className="text-muted-foreground hover:text-foreground"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                          {isExpanded && (
+                            <TableRow>
+                              <TableCell colSpan={10} className="p-0">
+                                <HubInvoiceExpansion
+                                  invoiceId={inv.id}
+                                  invoice={expandedInvoice}
+                                  isEditing={editingId === inv.id}
+                                  canEdit={canEdit}
+                                  onEdit={() => setEditingId(inv.id)}
+                                  onCancelEdit={() => setEditingId(null)}
+                                  onSave={(company, rows) => saveMutation.mutate({ invoiceId: inv.id, company, rows })}
+                                  isSaving={saveMutation.isPending}
+                                  onEditInvoice={(fullInv) => setEditInvoice(fullInv)}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            <HubPagination page={page} totalPages={totalPages} total={total} perPage={perPage} onPageChange={setPage} onPerPageChange={(n) => { setPerPage(n); setPage(1) }} />
+          </>
+        )}
       </CardContent>
+
+      {editInvoice && (
+        <EditInvoiceDialog
+          invoice={editInvoice}
+          open={!!editInvoice}
+          onClose={() => setEditInvoice(null)}
+          statusOptions={statusOptions}
+          paymentOptions={paymentOptions}
+          mode="profile"
+          apiOverrides={{
+            updateInvoice: profileApi.updateInvoiceMetadata,
+            updateAllocations: profileApi.updateAllocations,
+          }}
+          invalidateQueryKeys={[['hub', 'invoices'], ['profile', 'invoices'], ['profile', 'invoice-detail'], ['invoices']]}
+        />
+      )}
     </Card>
+  )
+}
+
+// ─── Invoice Expansion Row ──────────────────────────────
+
+function HubInvoiceExpansion({
+  invoiceId,
+  invoice,
+  isEditing,
+  canEdit,
+  onEdit,
+  onCancelEdit,
+  onSave,
+  isSaving,
+  onEditInvoice,
+}: {
+  invoiceId: number
+  invoice: unknown
+  isEditing: boolean
+  canEdit: boolean
+  onEdit: () => void
+  onCancelEdit: () => void
+  onSave: (company: string, rows: import('@/pages/Accounting/AllocationEditor').AllocationRow[]) => void
+  isSaving: boolean
+  onEditInvoice: (inv: Invoice) => void
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const inv = invoice as any
+
+  if (!inv) {
+    return (
+      <div className="px-8 py-4 bg-muted/30">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          Loading allocations...
+        </div>
+      </div>
+    )
+  }
+
+  const rawAllocations = (inv.allocations ?? []) as Array<Record<string, unknown>>
+  const isPerLine = inv.allocation_mode === 'per_line'
+  const allocations = (
+    isPerLine
+      ? (dedupeMergedAllocations(rawAllocations as unknown as never) as unknown as Array<Record<string, unknown>>)
+      : rawAllocations
+  )
+  const effectiveValue = (inv.net_value ?? inv.invoice_value) as number
+  const currency = inv.currency as string
+
+  if (isEditing) {
+    return (
+      <div className="px-8 py-3 bg-muted/30 border-l-2 border-l-primary/50">
+        <AllocationEditor
+          initialCompany={allocations[0]?.company as string}
+          initialRows={allocations.length > 0 ? allocationsToRows(allocations as never, effectiveValue) : undefined}
+          effectiveValue={effectiveValue}
+          currency={currency}
+          onSave={onSave}
+          onCancel={onCancelEdit}
+          isSaving={isSaving}
+          compact
+        />
+      </div>
+    )
+  }
+
+  if (allocations.length === 0) {
+    return (
+      <div className="px-8 py-4 bg-muted/30">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">No allocations</span>
+          {canEdit && (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => onEditInvoice(inv as Invoice)}>
+                <Pencil className="h-3 w-3 mr-1" /> Edit Invoice
+              </Button>
+              <Button variant="outline" size="sm" onClick={onEdit}>
+                <Pencil className="h-3 w-3 mr-1" /> Add Allocation
+              </Button>
+            </div>
+          )}
+        </div>
+        <InvoiceLinkedDocs
+          invoiceId={invoiceId}
+          isBin={false}
+          canEdit={canEdit}
+          api={{
+            getDocs: profileApi.getInvoiceDmsDocuments,
+            unlinkDoc: profileApi.unlinkDmsDocument,
+            searchDocs: profileApi.searchDmsDocuments,
+            linkDoc: profileApi.linkDmsDocument,
+            uploadAndLink: profileApi.uploadAndLinkDms,
+          }}
+        />
+      </div>
+    )
+  }
+
+  if (isPerLine && (inv.line_items?.length ?? 0) > 0) {
+    return (
+      <div className="px-8 py-3 bg-muted/30 border-l-2 border-l-primary/50">
+        <LineItemAllocationsView
+          invoice={inv as Invoice}
+          canEdit={canEdit}
+          onEdit={() => onEditInvoice(inv as Invoice)}
+        />
+        {canEdit && (
+          <div className="mt-2 flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => onEditInvoice(inv as Invoice)}>
+              <Pencil className="h-3 w-3 mr-1" /> Edit Invoice
+            </Button>
+          </div>
+        )}
+        <InvoiceLinkedDocs
+          invoiceId={invoiceId}
+          isBin={false}
+          canEdit={canEdit}
+          api={{
+            getDocs: profileApi.getInvoiceDmsDocuments,
+            unlinkDoc: profileApi.unlinkDmsDocument,
+            searchDocs: profileApi.searchDmsDocuments,
+            linkDoc: profileApi.linkDmsDocument,
+            uploadAndLink: profileApi.uploadAndLinkDms,
+          }}
+        />
+      </div>
+    )
+  }
+
+  const hasBrand = allocations.some(a => a.brand) || allocations.some(a => (a.reinvoice_destinations as Array<Record<string, unknown>> | undefined)?.some(rd => rd.brand))
+  const hasSubdept = allocations.some(a => a.subdepartment) || allocations.some(a => (a.reinvoice_destinations as Array<Record<string, unknown>> | undefined)?.some(rd => rd.subdepartment))
+
+  return (
+    <div className="px-8 py-3 bg-muted/30 border-l-2 border-l-primary/50">
+      <table className="text-xs w-full">
+        <thead>
+          <tr className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
+            <th className="py-1 pr-4 text-left font-medium">Company</th>
+            {hasBrand && <th className="py-1 pr-4 text-left font-medium">Brand</th>}
+            <th className="py-1 pr-4 text-left font-medium">Department</th>
+            {hasSubdept && <th className="py-1 pr-4 text-left font-medium">Sub-dept</th>}
+            <th className="py-1 pr-4 text-left font-medium">Responsible</th>
+            <th className="py-1 pr-4 text-right font-medium">Amount</th>
+            <th className="py-1 pr-4 text-right font-medium w-14">%</th>
+            <th className="w-7" />
+          </tr>
+        </thead>
+        <tbody>
+          {allocations.map((alloc, idx) => {
+            const reinvoiceDests = (alloc.reinvoice_destinations ?? []) as Array<Record<string, unknown>>
+            const hasReinvoice = reinvoiceDests.length > 0
+            const totalTableRows = allocations.reduce(
+              (sum, a) => sum + 1 + ((a.reinvoice_destinations as Array<unknown> | undefined)?.length ?? 0), 0
+            )
+            return (
+              <React.Fragment key={alloc.id as number}>
+                <tr className={cn('border-t border-border/50', hasReinvoice && 'text-muted-foreground/50')}>
+                  <td className="py-1 pr-4">{alloc.company as string}</td>
+                  {hasBrand && <td className="py-1 pr-4">{(alloc.brand as string) || '-'}</td>}
+                  <td className="py-1 pr-4">{alloc.department as string}</td>
+                  {hasSubdept && <td className="py-1 pr-4">{(alloc.subdepartment as string) || '-'}</td>}
+                  <td className="py-1 pr-4 text-muted-foreground">{(alloc.responsible as string) || '-'}</td>
+                  <td className={cn('py-1 pr-4 text-right tabular-nums', hasReinvoice && 'opacity-40')}>
+                    <CurrencyDisplay value={alloc.allocation_value as number} currency={currency} />
+                  </td>
+                  <td className="py-1 pr-4 text-right tabular-nums">{alloc.allocation_percent as number}%</td>
+                  {idx === 0 && canEdit && (
+                    <td rowSpan={totalTableRows} className="py-1 pl-1 align-middle w-7">
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onEdit}>
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    </td>
+                  )}
+                </tr>
+                {hasReinvoice && reinvoiceDests.map((rd) => (
+                  <tr key={rd.id as number} className="text-[11px]">
+                    <td className="py-0.5 pl-6 pr-4 text-foreground">{rd.company as string}</td>
+                    {hasBrand && <td className="py-0.5 pr-4 text-foreground">{(rd.brand as string) || '-'}</td>}
+                    <td className="py-0.5 pr-4 text-foreground">{rd.department as string}</td>
+                    {hasSubdept && <td className="py-0.5 pr-4 text-foreground">{(rd.subdepartment as string) || '-'}</td>}
+                    <td className="py-0.5 pr-4 text-muted-foreground italic">reinvoiced</td>
+                    <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">
+                      <CurrencyDisplay value={rd.value as number} currency={currency} />
+                    </td>
+                    <td className="py-0.5 pr-4 text-right text-foreground tabular-nums">{rd.percentage as number}%</td>
+                  </tr>
+                ))}
+              </React.Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+
+      {canEdit && (
+        <div className="mt-2 flex justify-end">
+          <Button variant="outline" size="sm" onClick={() => onEditInvoice(inv as Invoice)}>
+            <Pencil className="h-3 w-3 mr-1" /> Edit Invoice
+          </Button>
+        </div>
+      )}
+
+      <InvoiceLinkedDocs
+        invoiceId={invoiceId}
+        isBin={false}
+        canEdit={canEdit}
+        api={{
+          getDocs: profileApi.getInvoiceDmsDocuments,
+          unlinkDoc: profileApi.unlinkDmsDocument,
+          searchDocs: profileApi.searchDmsDocuments,
+          linkDoc: profileApi.linkDmsDocument,
+          uploadAndLink: profileApi.uploadAndLinkDms,
+        }}
+      />
+    </div>
+  )
+}
+
+// ─── Pagination ─────────────────────────────────────────
+
+function HubPagination({
+  page, totalPages, total, perPage, onPageChange, onPerPageChange,
+}: {
+  page: number; totalPages: number; total: number; perPage: number
+  onPageChange: (p: number) => void; onPerPageChange?: (n: number) => void
+}) {
+  const from = (page - 1) * perPage + 1
+  const to = Math.min(page * perPage, total)
+  return (
+    <div className="mt-4 flex items-center justify-between">
+      <span className="text-xs text-muted-foreground">{from}-{to} of {total}</span>
+      <div className="flex items-center gap-3">
+        {onPerPageChange && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Rows</span>
+            <Select value={String(perPage)} onValueChange={(v) => onPerPageChange(Number(v))}>
+              <SelectTrigger className="h-8 w-[70px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {[25, 50, 100, 200].map((n) => (
+                  <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        <div className="flex gap-1">
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }
 
