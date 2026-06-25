@@ -87,14 +87,17 @@ def api_submit_public_form(slug):
     }
 
     # Attach logged-in user info if available (Hub submissions)
-    from flask_login import current_user
     user_id = None
-    if current_user and current_user.is_authenticated:
-        user_id = current_user.id
-        if not respondent_info.get('name'):
-            respondent_info['name'] = current_user.name
-        if not respondent_info.get('email'):
-            respondent_info['email'] = current_user.email
+    try:
+        from flask_login import current_user as _cu
+        if hasattr(_cu, 'is_authenticated') and _cu.is_authenticated:
+            user_id = _cu.id
+            if not respondent_info.get('name'):
+                respondent_info['name'] = _cu.name
+            if not respondent_info.get('email'):
+                respondent_info['email'] = _cu.email
+    except Exception:
+        pass
 
     result = _service.submit_public(slug, answers, utm_data, respondent_info, ip, user_id=user_id)
 
