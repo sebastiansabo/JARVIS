@@ -137,13 +137,38 @@ export default function Hub() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   })
 
+  // Pre-fetch counts to hide empty tiles
+  const { data: invoicesData } = useQuery({
+    queryKey: ['hub', 'invoices-count'],
+    queryFn: () => profileApi.getInvoices({ per_page: 1 }),
+    staleTime: 60_000,
+  })
+  const { data: vouchersData } = useQuery({
+    queryKey: ['hub', 'vouchers-count'],
+    queryFn: () => fetch('/api/vouchers/my?limit=1', { credentials: 'include' }).then(r => r.json()),
+    staleTime: 60_000,
+  })
+  const { data: formsCountData } = useQuery({
+    queryKey: ['hub', 'forms-count'],
+    queryFn: () => fetch('/forms/api/forms/published', { credentials: 'include' }).then(r => r.json()),
+    staleTime: 60_000,
+  })
+
+  const tileCounts: Record<string, number> = {
+    invoices: invoicesData?.total ?? -1,
+    hr: -1, // always show — sub-tabs auto-hide when empty
+    vouchers: Array.isArray(vouchersData) ? vouchersData.length : -1,
+    forms: (formsCountData?.forms ?? []).length || -1,
+  }
+
   const hasVouchersPerm = !authUser?.permissions || (authUser.permissions['vouchers.profile.view'] ?? true)
   const visibleTiles = useMemo(() => {
     return appTiles.filter((t) => {
       if (t.key === 'vouchers' && !hasVouchersPerm) return false
+      if (tileCounts[t.key] === 0) return false
       return true
     })
-  }, [hasVouchersPerm])
+  }, [hasVouchersPerm, tileCounts])
 
   return (
     <div className="space-y-6">
@@ -385,18 +410,58 @@ function HubHrPanel({ userId }: { userId: number }) {
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
 
+  const start = `${year}-${String(month).padStart(2, '0')}-01`
+  const lastDay = new Date(year, month, 0).getDate()
+  const end = `${year}-${String(month).padStart(2, '0')}-${lastDay}`
+
+  // Pre-fetch all HR data to know which tabs have content
+  const { data: pontajeData } = useQuery({
+    queryKey: ['hub', 'pontaje', start, end],
+    queryFn: () => profileApi.getPontaje({ start, end }),
+  })
+  const { data: bonusesData } = useQuery({
+    queryKey: ['hub', 'bonuses', year, month],
+    queryFn: () => profileApi.getHrEvents({ year, month }),
+  })
+  const { data: lpData } = useQuery({
+    queryKey: ['hub', 'leave-permits', userId, year, month],
+    queryFn: () => connecteamApi.getEmployeeSubmissions(userId, year, month),
+  })
+
+  const pontajeCount = (pontajeData?.history ?? []).length
+  const bonusesCount = (bonusesData?.bonuses ?? []).length
+  const lpCount = (lpData?.data ?? []).length
+
+  const availableTabs = useMemo(() => {
+    const tabs: { key: HrSubTab; label: string; icon: React.ElementType }[] = []
+    if (pontajeCount > 0) tabs.push({ key: 'pontaje', label: 'Pontaje', icon: Fingerprint })
+    if (bonusesCount > 0) tabs.push({ key: 'bonuses', label: 'Bonuses', icon: Gift })
+    if (lpCount > 0) tabs.push({ key: 'leave-permits', label: 'Leave Permits', icon: ClipboardList })
+    return tabs
+  }, [pontajeCount, bonusesCount, lpCount])
+
+  // Auto-select first available tab if current has no data
+  const effectiveTab = availableTabs.find(t => t.key === subTab) ? subTab : availableTabs[0]?.key ?? 'pontaje'
+
   const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 12) { setMonth(1); setYear(y => y + 1) } else setMonth(m => m + 1) }
 
+  if (availableTabs.length === 0) {
+    return <Card><CardContent className="py-12 text-center text-muted-foreground text-sm">No HR data for {MONTHS_RO[month - 1]} {year}.</CardContent></Card>
+  }
+
   return (
     <div className="space-y-4">
-      <Tabs value={subTab} onValueChange={(v) => setSubTab(v as HrSubTab)}>
-        <TabsList className="h-8 bg-muted/50">
-          <TabsTrigger value="pontaje" className="text-xs h-7 px-2.5 gap-1"><Fingerprint className="h-3.5 w-3.5" />Pontaje</TabsTrigger>
-          <TabsTrigger value="bonuses" className="text-xs h-7 px-2.5 gap-1"><Gift className="h-3.5 w-3.5" />Bonuses</TabsTrigger>
-          <TabsTrigger value="leave-permits" className="text-xs h-7 px-2.5 gap-1"><ClipboardList className="h-3.5 w-3.5" />Leave Permits</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {availableTabs.length > 1 && (
+        <Tabs value={effectiveTab} onValueChange={(v) => setSubTab(v as HrSubTab)}>
+          <TabsList className="h-8 bg-muted/50">
+            {availableTabs.map((tab) => {
+              const Icon = tab.icon
+              return <TabsTrigger key={tab.key} value={tab.key} className="text-xs h-7 px-2.5 gap-1"><Icon className="h-3.5 w-3.5" />{tab.label}</TabsTrigger>
+            })}
+          </TabsList>
+        </Tabs>
+      )}
 
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
@@ -404,9 +469,9 @@ function HubHrPanel({ userId }: { userId: number }) {
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
       </div>
 
-      {subTab === 'pontaje' && <HubPontajeContent year={year} month={month} />}
-      {subTab === 'bonuses' && <HubBonusesContent year={year} month={month} />}
-      {subTab === 'leave-permits' && <HubLeavePermitsContent userId={userId} year={year} month={month} />}
+      {effectiveTab === 'pontaje' && <HubPontajeContent year={year} month={month} />}
+      {effectiveTab === 'bonuses' && <HubBonusesContent year={year} month={month} />}
+      {effectiveTab === 'leave-permits' && <HubLeavePermitsContent userId={userId} year={year} month={month} />}
     </div>
   )
 }
