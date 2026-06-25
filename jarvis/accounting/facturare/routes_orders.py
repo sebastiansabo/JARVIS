@@ -598,24 +598,28 @@ def api_get_anexa_detail(anexa_id):
     line_invoiced_eur = {l["id"]: 0.0 for l in lines}
     for inv in invoices:
         covered = inv.get("line_ids") or list(all_line_ids)  # null = all
+        doc_mode = inv.get("doc_mode", "per_car")
+        base_no = inv.get("invoice_number")
         # Per-car share: car_price × rounded_pct (detect nearest whole % from total)
         covered_total = sum(line_prices.get(lid, 0) for lid in covered)
         raw_pct = (inv["total_amount_eur"] / covered_total) if covered_total else 0
         # Snap to nearest whole percentage (10%, 90%, 100%, etc.) if within 0.5%
         rounded_pct = round(raw_pct * 100) / 100
         pct = rounded_pct if abs(raw_pct - rounded_pct) < 0.005 else raw_pct
-        for lid in covered:
+        for idx, lid in enumerate(covered):
             if lid not in line_coverage:
                 line_coverage[lid] = []
             share = line_prices.get(lid, 0) * pct
             share_ron = 0
+            # Per-vehicle document number: matches PDF renderer logic (start_no + idx)
+            display_no = base_no + idx if base_no is not None and doc_mode != 'single_doc' and len(covered) > 1 else base_no
             line_coverage[lid].append({
                 "invoice_id": inv["id"],
                 "invoice_type": inv["invoice_type"],
                 "sequence_number": inv.get("sequence_number", 1),
                 "amount_eur": round(share, 2),
                 "amount_ron": round(share_ron, 2),
-                "invoice_number": inv.get("invoice_number"),
+                "invoice_number": display_no,
                 "kurs_applied": float(inv["kurs_applied"]) if inv.get("kurs_applied") else None,
                 "issued_date": str(inv["issued_date"]) if inv.get("issued_date") else None,
             })
