@@ -1090,6 +1090,22 @@ def _seed_sidebar_permissions_v2(cursor, conn):
 
     conn.commit()
 
+    # Grant hr.leave_permissions.view to all roles (needed for leave permits endpoint)
+    cursor.execute('''
+        INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order)
+        VALUES ('hr', 'HR', 'bi-people-fill', 'leave_permissions', 'Leave Permissions', 'view', 'View', 'View leave permission submissions', TRUE, 25)
+        ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+    ''')
+    for role_name, scope in [('Admin', 'all'), ('Manager', 'department'), ('User', 'own'), ('Viewer', 'own')]:
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, %s, TRUE
+            FROM roles r CROSS JOIN permissions_v2 p
+            WHERE r.name = %s AND p.module_key = 'hr' AND p.entity_key = 'leave_permissions' AND p.action_key = 'view'
+            ON CONFLICT (role_id, permission_id) DO UPDATE SET scope = EXCLUDED.scope, granted = TRUE
+        ''', (scope, role_name))
+    conn.commit()
+
     # Grant forms.form.view to Viewer so they can submit forms from Command Hub
     cursor.execute('''
         INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
