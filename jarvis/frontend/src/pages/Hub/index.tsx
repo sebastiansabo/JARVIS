@@ -18,6 +18,7 @@ import {
   MessageSquare,
   Ticket as TicketIcon,
   Clock,
+  Award,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -289,6 +290,9 @@ export default function Hub() {
 
             {/* HR Summary Card */}
             <HubHrSummaryCard />
+
+            {/* Marketing Events & Bonuses Card */}
+            <HubBonusCard />
           </div>
 
           {/* Right 1/3 — Notifications + Punch Card */}
@@ -843,6 +847,99 @@ function HubHrSummaryCard() {
             </tbody>
           </table>
         </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── Marketing Events & Bonuses Card ────────────────────
+
+function HubBonusCard() {
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['hub', 'bonuses-card', year],
+    queryFn: () => profileApi.getHrEvents({ year, per_page: 50 }),
+    staleTime: 5 * 60_000,
+  })
+
+  const bonuses: ProfileBonus[] = data?.bonuses ?? []
+
+  if (isLoading) return <Skeleton className="h-24 w-full" />
+  if (bonuses.length === 0 && year === now.getFullYear()) return null
+
+  const prevYear = () => setYear(y => y - 1)
+  const nextYear = () => setYear(y => y + 1)
+
+  const totalBonusDays = bonuses.reduce((sum, b) => sum + (b.bonus_days ?? 0), 0)
+  const totalHoursFree = bonuses.reduce((sum, b) => sum + (b.hours_free ?? 0), 0)
+  const totalBonusNet = bonuses.reduce((sum, b) => sum + (b.bonus_net ? Number(b.bonus_net) : 0), 0)
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+            <Award className="h-4 w-4" />
+            Marketing Events & Bonuses
+          </CardTitle>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={prevYear}><ChevronLeft className="h-3.5 w-3.5" /></Button>
+            <span className="text-xs font-medium w-12 text-center">{year}</span>
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={nextYear}><ChevronRight className="h-3.5 w-3.5" /></Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {bonuses.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-6">No event bonuses for {year}.</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Event</th>
+                    <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Period</th>
+                    <th className="text-right px-3 py-1.5 font-medium text-muted-foreground">Days</th>
+                    <th className="text-right px-3 py-1.5 font-medium text-muted-foreground">Hours</th>
+                    <th className="text-right px-3 py-1.5 font-medium text-muted-foreground">Bonus</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bonuses.map((b) => {
+                    const startStr = b.participation_start || b.start_date
+                    const endStr = b.participation_end || b.end_date
+                    const fmtDate = (d: string | null) => d ? new Date(d + 'T00:00').toLocaleDateString('ro-RO', { day: '2-digit', month: 'short' }) : ''
+                    return (
+                      <tr key={b.id} className="border-b last:border-0 hover:bg-muted/20">
+                        <td className="px-3 py-2">
+                          <div className="font-medium">{b.event_name}</div>
+                          {b.brand && <div className="text-[10px] text-muted-foreground">{b.brand}</div>}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                          {startStr && endStr ? `${fmtDate(startStr)} – ${fmtDate(endStr)}` : fmtDate(startStr) || '—'}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium">{b.bonus_days ?? '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{b.hours_free ?? '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium">
+                          {b.bonus_net ? `${Number(b.bonus_net).toLocaleString('ro-RO')} RON` : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {/* Totals row */}
+            <div className="flex items-center justify-end gap-4 px-3 py-2 border-t bg-muted/20 text-xs">
+              {totalBonusDays > 0 && <span className="tabular-nums font-medium">{totalBonusDays} days</span>}
+              {totalHoursFree > 0 && <span className="tabular-nums">{totalHoursFree}h free</span>}
+              {totalBonusNet > 0 && <span className="tabular-nums font-semibold">{totalBonusNet.toLocaleString('ro-RO')} RON</span>}
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   )
