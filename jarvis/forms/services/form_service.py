@@ -200,6 +200,9 @@ class FormService:
             utm_data=filtered_utm,
         )
 
+        # Post-submission hooks (e.g. voucher creation)
+        self._run_post_submit_hooks(form, submission_id, answers, user_id)
+
         # Trigger approval if required
         if form.get('requires_approval'):
             self._trigger_approval(form, submission_id, sanitized_respondent)
@@ -254,6 +257,9 @@ class FormService:
             respondent_user_id=user.user_id,
         )
 
+        # Post-submission hooks (e.g. voucher creation)
+        self._run_post_submit_hooks(form, submission_id, answers, user.user_id)
+
         if form.get('requires_approval'):
             self._trigger_approval(form, submission_id, {
                 'user_id': user.user_id,
@@ -261,6 +267,83 @@ class FormService:
             })
 
         return ServiceResult(success=True, data={'submission_id': submission_id}, status_code=201)
+
+    # ============== Post-Submit Hooks ==============
+
+    def _run_post_submit_hooks(self, form: dict, submission_id: int, answers: Dict, user_id: Optional[int]):
+        """Run form-specific hooks after submission (e.g. voucher creation)."""
+        slug = form.get('slug', '')
+        try:
+            if slug == 'voucher-issuance' and user_id:
+                self._create_voucher_from_submission(form, submission_id, answers, user_id)
+        except Exception as e:
+            logger.error('Post-submit hook failed for %s submission %s: %s', slug, submission_id, e)
+
+    def _create_voucher_from_submission(self, form: dict, submission_id: int, answers: Dict, user_id: int):
+        """Create a voucher record from a voucher-issuance form submission."""
+        from accounting.vouchers.services.voucher_service import VoucherService
+
+        # Map form field IDs to voucher data
+        validity_str = answers.get('f_validity_months', '6 months')
+        try:
+            validity_months = int(str(validity_str).split()[0])
+        except (ValueError, IndexError):
+            validity_months = 6
+
+        type_map = {
+            'Value (LEI)': 'value',
+            'Accessory Discount Code': 'accessory_discount_code',
+            'Accessory Percentage': 'accessory_percentage',
+            'Service Items': 'service_items',
+        }
+        raw_type = answers.get('f_voucher_type', 'Value (LEI)')
+        voucher_type = type_map.get(raw_type, 'value')
+
+        service_items = answers.get('f_service_items')
+        if isinstance(service_items, str):
+            import json as _json
+            try:
+                service_items = _json.loads(service_items)
+            except (ValueError, TypeError):
+                service_items = None
+
+        # Get user's company_id
+        from database import get_db, get_cursor, release_db
+        conn = get_db()
+        cur = get_cursor(conn)
+        try:
+            cur.execute('SELECT company_id FROM users WHERE id = %s', (user_id,))
+            row = cur.fetchone()
+            company_id = row['company_id'] if row else form.get('company_id')
+        finally:
+            release_db(conn)
+
+        data = {
+            'client_name': answers.get('f_client_name', ''),
+            'contract_number': answers.get('f_contract_number', ''),
+            'car_vin': answers.get('f_car_vin', ''),
+            'validity_months': validity_months,
+            'voucher_type': voucher_type,
+            'value_lei': answers.get('f_value_lei'),
+            'discount_code': answers.get('f_discount_code'),
+            'discount_percentage': answers.get('f_discount_percentage'),
+            'service_items': service_items if isinstance(service_items, list) else None,
+            'notes': answers.get('f_notes'),
+        }
+
+        svc = VoucherService()
+        voucher = svc.create_voucher(data=data, user_id=user_id, company_id=company_id)
+
+        # Link submission to voucher
+        conn = get_db()
+        cur = get_cursor(conn)
+        try:
+            cur.execute('UPDATE vouchers SET form_submission_id = %s WHERE id = %s', (submission_id, voucher['id']))
+            conn.commit()
+        finally:
+            release_db(conn)
+
+        logger.info('Voucher %s created from form submission %s by user %s', voucher['id'], submission_id, user_id)
 
     # ============== Approval ==============
 
