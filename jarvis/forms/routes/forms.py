@@ -8,7 +8,7 @@ from flask_login import login_required, current_user
 from forms import forms_bp
 from forms.repositories import FormRepository
 from forms.services.form_service import FormService, UserContext
-from core.utils.api_helpers import get_json_or_error, handle_api_errors
+from core.utils.api_helpers import get_json_or_error, handle_api_errors, api_login_required
 from core.roles.decorators import v2_permission_required
 
 logger = logging.getLogger('jarvis.forms.routes.forms')
@@ -23,6 +23,34 @@ _UPDATABLE_FIELDS = {'name', 'description', 'schema', 'settings', 'utm_config', 
 def form_permission_required(entity, action):
     """Forms V2 permission check."""
     return v2_permission_required('forms', entity, action)
+
+
+@forms_bp.route('/api/forms/published', methods=['GET'])
+@api_login_required
+def api_published_forms():
+    """List forms published to Hub, visible to any logged-in user."""
+    rows = _form_repo.query_all('''
+        SELECT f.id, f.name, f.slug, f.description, f.company_id,
+               c.company AS company_name
+        FROM forms f
+        LEFT JOIN companies c ON c.id = f.company_id
+        WHERE f.status = 'published' AND f.published_to_hub = TRUE AND f.deleted_at IS NULL
+        ORDER BY f.name
+    ''')
+    return jsonify({'forms': rows or []})
+
+
+@forms_bp.route('/api/forms/<int:form_id>/hub', methods=['POST'])
+@login_required
+@form_permission_required('form', 'edit')
+def api_toggle_hub(form_id):
+    """Toggle published_to_hub flag on a form."""
+    data = request.get_json(silent=True) or {}
+    published = bool(data.get('published_to_hub', False))
+    ok = _form_repo.update(form_id, published_to_hub=published)
+    if not ok:
+        return jsonify({'success': False, 'error': 'Form not found'}), 404
+    return jsonify({'success': True, 'published_to_hub': published})
 
 
 def _check_scope_access(form):

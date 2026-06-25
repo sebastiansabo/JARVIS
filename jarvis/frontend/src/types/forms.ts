@@ -65,6 +65,7 @@ export interface Form {
   published_at: string | null
   requires_approval: boolean
   approval_config?: ApprovalConfig
+  published_to_hub?: boolean
   submission_count?: number
   created_at: string
   updated_at: string | null

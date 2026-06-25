@@ -58,6 +58,7 @@ const TicketDetail = lazy(() => import('./pages/Ticketing/TicketDetail'))
 const FoiParcurs = lazy(() => import('./pages/FoiParcurs'))
 const TestDriveForm = lazy(() => import('./pages/FoiParcurs/TestDriveForm'))
 const ServiceCatalog = lazy(() => import('./pages/Service/Catalog'))
+const Hub = lazy(() => import('./pages/Hub'))
 
 function PageLoader() {
   return (
@@ -119,22 +120,28 @@ function V2Guard({ permKey, children }: { permKey: string; children: React.React
   return <>{children}</>
 }
 
-/** Redirect /app to profile for users without dashboard access (e.g. Viewer role). */
+/** Redirect /app to hub for Viewers, dashboard for everyone else. */
 function DefaultRedirect() {
   const user = useAuthStore((s) => s.user)
   const isLoading = useAuthStore((s) => s.isLoading)
   if (isLoading) return <PageLoader />
+  if (user?.role_name === 'Viewer') {
+    return <Navigate to="hub" replace />
+  }
   if (user && !user.can_access_dashboard) {
     return <Navigate to="profile" replace />
   }
   return <Navigate to="dashboard" replace />
 }
 
-/** Show Dashboard if user has access, otherwise redirect to profile (not Access Denied). */
+/** Show Dashboard if user has access, otherwise redirect to hub/profile (not Access Denied). */
 function DashboardOrRedirect() {
   const user = useAuthStore((s) => s.user)
   const isLoading = useAuthStore((s) => s.isLoading)
   if (isLoading) return <PageLoader />
+  if (user?.role_name === 'Viewer') {
+    return <Navigate to="/app/hub" replace />
+  }
   if (user && !user.can_access_dashboard) {
     return <Navigate to="/app/profile" replace />
   }
@@ -151,6 +158,7 @@ export default function App() {
         <Route index element={<DefaultRedirect />} />
         <Route path="dashboard" element={<DashboardOrRedirect />} />
         <Route path="profile" element={<SuspensePage><Profile /></SuspensePage>} />
+        <Route path="hub" element={<SuspensePage><Hub /></SuspensePage>} />
 
         {/* Accounting — requires can_access_accounting */}
         <Route path="accounting" element={<Guard flag="can_access_accounting"><SuspensePage><Accounting /></SuspensePage></Guard>} />
