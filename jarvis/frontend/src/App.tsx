@@ -151,6 +151,9 @@ function DashboardOrRedirect() {
 export default function App() {
   return (
     <Routes>
+      {/* Root redirect */}
+      <Route path="/" element={<Navigate to="/app" replace />} />
+
       {/* Public form — no auth, no layout */}
       <Route path="/f/:slug" element={<SuspensePage><PublicForm /></SuspensePage>} />
 
