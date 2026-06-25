@@ -86,7 +86,17 @@ def api_submit_public_form(slug):
         'phone': data.get('respondent_phone'),
     }
 
-    result = _service.submit_public(slug, answers, utm_data, respondent_info, ip)
+    # Attach logged-in user info if available (Hub submissions)
+    from flask_login import current_user
+    user_id = None
+    if current_user and current_user.is_authenticated:
+        user_id = current_user.id
+        if not respondent_info.get('name'):
+            respondent_info['name'] = current_user.name
+        if not respondent_info.get('email'):
+            respondent_info['email'] = current_user.email
+
+    result = _service.submit_public(slug, answers, utm_data, respondent_info, ip, user_id=user_id)
 
     if result.success:
         return jsonify({'success': True, **result.data}), result.status_code
