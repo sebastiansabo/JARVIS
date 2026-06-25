@@ -1434,7 +1434,7 @@ function HubBonusCard() {
   const bonuses: ProfileBonus[] = data?.bonuses ?? []
 
   if (isLoading) return <Skeleton className="h-24 w-full" />
-  if (bonuses.length === 0 && year === now.getFullYear()) return null
+  // Always show card — display empty state if no bonuses
 
   const prevYear = () => setYear(y => y - 1)
   const nextYear = () => setYear(y => y + 1)
