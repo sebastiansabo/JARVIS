@@ -15,6 +15,14 @@ _profile_repo = ProfileRepository()
 _user_repo = UserRepository()
 
 
+def _has_invoice_edit_permission(user) -> bool:
+    """Check if user has invoice edit permission via can_edit_invoices flag or permissions_v2."""
+    if getattr(user, 'can_edit_invoices', False):
+        return True
+    perms = getattr(user, 'permissions_v2', None) or {}
+    return perms.get('invoices.records.edit', False)
+
+
 # ============== Page Route ==============
 
 @profile_bp.route('/')
@@ -260,12 +268,13 @@ def api_profile_invoice_pdf(invoice_id):
 @profile_bp.route('/api/invoices/<int:invoice_id>/allocations', methods=['PUT'])
 @login_required
 def api_profile_update_allocations(invoice_id):
-    """Update allocations for an invoice — allowed for org responsables within their scope."""
+    """Update allocations for an invoice — allowed for org responsables or users with edit permission."""
     try:
         from core.organization.hr_utils import is_manager
 
-        # Must be an org responsable (L0-L5)
-        if not is_manager(current_user.id):
+        # Must be an org responsable (L0-L5) OR have invoice edit permission
+        has_edit_perm = _has_invoice_edit_permission(current_user)
+        if not is_manager(current_user.id) and not has_edit_perm:
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
         # Invoice must be in the user's org scope
@@ -344,11 +353,8 @@ def api_profile_update_invoice_metadata(invoice_id):
 @profile_bp.route('/api/invoices/<int:invoice_id>/dms-documents')
 @login_required
 def api_profile_get_invoice_dms_docs(invoice_id):
-    """List DMS documents linked to an invoice — org-scope check."""
+    """List DMS documents linked to an invoice — visible to any assigned user."""
     try:
-        from core.organization.hr_utils import is_manager
-        if not is_manager(current_user.id):
-            return jsonify({'success': False, 'error': 'Permission denied'}), 403
         if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
@@ -362,10 +368,11 @@ def api_profile_get_invoice_dms_docs(invoice_id):
 @profile_bp.route('/api/invoices/<int:invoice_id>/dms-documents', methods=['POST'])
 @login_required
 def api_profile_link_invoice_dms_doc(invoice_id):
-    """Link a DMS document to an invoice — org-scope check."""
+    """Link a DMS document to an invoice — allowed for managers or users with edit permission."""
     try:
         from core.organization.hr_utils import is_manager
-        if not is_manager(current_user.id):
+        has_edit_perm = _has_invoice_edit_permission(current_user)
+        if not is_manager(current_user.id) and not has_edit_perm:
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
         if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
@@ -387,10 +394,11 @@ def api_profile_link_invoice_dms_doc(invoice_id):
 @profile_bp.route('/api/invoices/<int:invoice_id>/dms-documents/<int:document_id>', methods=['DELETE'])
 @login_required
 def api_profile_unlink_invoice_dms_doc(invoice_id, document_id):
-    """Unlink a DMS document from an invoice — org-scope check."""
+    """Unlink a DMS document from an invoice — allowed for managers or users with edit permission."""
     try:
         from core.organization.hr_utils import is_manager
-        if not is_manager(current_user.id):
+        has_edit_perm = _has_invoice_edit_permission(current_user)
+        if not is_manager(current_user.id) and not has_edit_perm:
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
         if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
