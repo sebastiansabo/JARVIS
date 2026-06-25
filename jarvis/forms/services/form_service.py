@@ -128,7 +128,8 @@ class FormService:
     # ============== Public Submission ==============
 
     def submit_public(self, slug: str, answers: Dict, utm_data: Dict,
-                      respondent_info: Dict, ip: Optional[str] = None) -> ServiceResult:
+                      respondent_info: Dict, ip: Optional[str] = None,
+                      user_id: Optional[int] = None) -> ServiceResult:
         """Handle a public form submission."""
         form = self.form_repo.get_by_slug(slug)
         if not form:
@@ -189,12 +190,13 @@ class FormService:
             form_version=form.get('version', 1),
             answers=answers,
             form_schema_snapshot=schema,
-            source='web_public',
+            source='web_internal' if user_id else 'web_public',
             company_id=form.get('company_id'),
             respondent_name=sanitized_respondent['name'] or None,
             respondent_email=sanitized_respondent['email'] or None,
             respondent_phone=sanitized_respondent['phone'] or None,
             respondent_ip=ip,
+            respondent_user_id=user_id,
             utm_data=filtered_utm,
         )
 
