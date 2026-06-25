@@ -267,10 +267,35 @@ export default function Hub() {
       {/* ── Active Module (inline content) ── */}
       {activeModule !== null ? (
         <div className="space-y-4">
-          <Button variant="ghost" size="sm" className="gap-1.5 -ml-1" onClick={() => setActiveModule(null)}>
-            <ChevronLeft className="h-4 w-4" />
-            Back
-          </Button>
+          {/* Mini app nav bar */}
+          <div className="flex items-center gap-1.5">
+            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => setActiveModule(null)} title="Back to Hub">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex items-center gap-1 overflow-x-auto">
+              {visibleTiles.map((tile) => {
+                const Icon = tile.icon
+                const isActive = tile.key === activeModule
+                return (
+                  <button
+                    key={tile.key}
+                    type="button"
+                    onClick={() => setActiveModule(tile.key)}
+                    title={tile.label}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors shrink-0',
+                      isActive
+                        ? cn(tile.bg, tile.fg, 'shadow-sm')
+                        : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {tile.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
           {activeModule === 'invoices' && <HubInvoicesPanel />}
           {activeModule === 'hr' && user && <HubHrPanel userId={user.id} />}
           {activeModule === 'forms' && <HubFormsPanel />}
@@ -1288,8 +1313,15 @@ function HubWeeklyPunchCard() {
     const hours = dayData?.duration_seconds ? dayData.duration_seconds / 3600 : 0
     const isToday = dateStr === now.toISOString().slice(0, 10)
     const isFuture = date > now
-    const punchIn = dayData?.first_punch?.slice(0, 5) || null
-    const punchOut = dayData?.last_punch?.slice(0, 5) || null
+    const extractTime = (v?: string | null) => {
+      if (!v) return null
+      // "HH:MM" (5 chars) vs "2026-06-23T08:02:00" (full ISO)
+      if (v.length <= 5) return v
+      const t = v.includes('T') ? v.split('T')[1] : v
+      return t?.slice(0, 5) || null
+    }
+    const punchIn = extractTime(dayData?.adjusted_first_punch ?? dayData?.first_punch)
+    const punchOut = extractTime(dayData?.adjusted_last_punch ?? dayData?.last_punch)
     return { dateStr, label: DAYS_RO[i], day: date.getDate(), hours, isToday, isFuture, hasData: !!dayData, punchIn, punchOut }
   })
 
