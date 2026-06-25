@@ -480,6 +480,46 @@ def api_profile_hr_events():
         return safe_error_response(e)
 
 
+@profile_bp.route('/api/contracts')
+@login_required
+def api_profile_contracts():
+    """Get user's employment contracts from Sincron."""
+    try:
+        from core.connectors.sincron.repositories import SincronRepository
+        repo = SincronRepository()
+        rows = repo.query_all(
+            """
+            SELECT company_name, nr_contract, data_incepere_contract, department,
+                   norma_lucru, contract_status
+            FROM sincron_employees
+            WHERE mapped_jarvis_user_id = %s AND is_active IS NOT FALSE
+            ORDER BY data_incepere_contract ASC
+            """,
+            (current_user.id,),
+        )
+        from datetime import date
+        contracts = []
+        for r in rows:
+            start = r.get('data_incepere_contract')
+            years = None
+            if start:
+                start_date = start if isinstance(start, date) else date.fromisoformat(str(start))
+                delta = date.today() - start_date
+                years = round(delta.days / 365.25, 1)
+            contracts.append({
+                'company': r['company_name'],
+                'contract_number': r.get('nr_contract'),
+                'start_date': str(start) if start else None,
+                'years_employed': years,
+                'department': r.get('department'),
+                'work_norm': r.get('norma_lucru'),
+                'status': r.get('contract_status'),
+            })
+        return jsonify({'success': True, 'contracts': contracts})
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @profile_bp.route('/api/work-summary')
 @login_required
 def api_profile_work_summary():
