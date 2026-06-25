@@ -80,10 +80,6 @@ export default function VouchersPanel() {
         await api.put('/profile/api/signature', { signature: answers.f_signature })
       }
       const { f_signature: _, ...formAnswers } = answers
-      // Use public endpoint (works for all roles including Viewer)
-      if (formData.slug) {
-        return formsApi.submitPublicForm(formData.slug, { answers: formAnswers })
-      }
       return formsApi.submitInternal(formData.id, formAnswers)
     },
     onSuccess: () => {
