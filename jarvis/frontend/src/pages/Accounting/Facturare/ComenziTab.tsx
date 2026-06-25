@@ -1495,6 +1495,14 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
   })
 
+  // Compute per-vehicle document number for display (matches PDF renderer logic)
+  const perVehicleInvNo = (inv: InvoiceDetail) => {
+    if (!inv.invoice_number || !inv.line_ids || inv.line_ids.length <= 1 || !lineIds?.length) return inv.invoice_number
+    const lid = lineIds[0]
+    const idx = inv.line_ids.indexOf(lid)
+    return idx >= 0 ? inv.invoice_number + idx : inv.invoice_number
+  }
+
   // Compute per-invoice proportional share for selected cars only
   const allLineIds = (lines || []).map(l => l.id)
   const linePriceMap = new Map((lines || []).map(l => [l.id, l.selling_price_eur]))
@@ -1561,7 +1569,7 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
               {relevantInvoices.map(inv => (
                 <label key={inv.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded">
                   <input type="checkbox" checked={selectedInvIds.has(inv.id)} onChange={() => toggleInv(inv.id)} className="rounded" />
-                  <span className="font-mono text-muted-foreground">{inv.invoice_number || '—'}</span>
+                  <span className="font-mono text-muted-foreground">{perVehicleInvNo(inv) || '—'}</span>
                   <span className="text-muted-foreground">{inv.issued_date ? new Date(inv.issued_date).toLocaleDateString('ro-RO') : ''}</span>
                   <span className="flex-1"></span>
                   <span className="font-mono">{fmtEur(invoiceShare(inv))} EUR</span>
