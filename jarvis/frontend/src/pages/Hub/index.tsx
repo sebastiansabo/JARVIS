@@ -1,5 +1,5 @@
-import { useState, useMemo, lazy, Suspense } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useMemo, useCallback, lazy, Suspense } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
@@ -65,8 +65,16 @@ export default function Hub() {
   const authUser = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  const [activeModule, setActiveModule] = useState<ActiveModule>(null)
+  const activeModule = (searchParams.get('module') as ActiveModule) || null
+  const setActiveModule = useCallback((mod: ActiveModule) => {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev)
+      if (mod) { p.set('module', mod) } else { p.delete('module'); p.delete('hrtab') }
+      return p
+    }, { replace: true })
+  }, [setSearchParams])
 
   // Profile summary
   const { data: summary, isLoading: loadingProfile } = useQuery({
@@ -368,7 +376,11 @@ function HubInvoicesPanel() {
 // ─── HR Panel ───────────────────────────────────────────
 
 function HubHrPanel({ userId }: { userId: number }) {
-  const [subTab, setSubTab] = useState<HrSubTab>('pontaje')
+  const [sp, setSp] = useSearchParams()
+  const subTab = (sp.get('hrtab') as HrSubTab) || 'pontaje'
+  const setSubTab = (tab: HrSubTab) => {
+    setSp((prev) => { const p = new URLSearchParams(prev); p.set('hrtab', tab); return p }, { replace: true })
+  }
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
