@@ -1090,6 +1090,18 @@ def _seed_sidebar_permissions_v2(cursor, conn):
 
     conn.commit()
 
+    # Grant forms.form.view to Viewer so they can submit forms from Command Hub
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'own', TRUE
+        FROM roles r
+        CROSS JOIN permissions_v2 p
+        WHERE r.name = 'Viewer'
+          AND p.module_key = 'forms' AND p.entity_key = 'form' AND p.action_key = 'view'
+        ON CONFLICT (role_id, permission_id) DO UPDATE SET scope = 'own', granted = TRUE
+    ''')
+    conn.commit()
+
 
 def _seed_checkin_bypass_permission(cursor, conn):
     """Add hr.checkin.bypass_radius permission for unrestricted GPS check-in."""
