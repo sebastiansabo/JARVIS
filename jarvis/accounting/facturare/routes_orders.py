@@ -1070,6 +1070,7 @@ def api_generate_pdf(invoice_id):
                 raw = inv.get("line_ids")
                 if isinstance(raw, str):
                     raw = _json.loads(raw)
+                raw_list = raw if isinstance(raw, list) else None
                 inv_lines = set(raw) if raw else {x["id"] for x in all_lines}
                 if lid not in inv_lines:
                     continue
@@ -1077,7 +1078,13 @@ def api_generate_pdf(invoice_id):
                 inv_total = float(inv["total_amount_eur"])
                 inv_selling_sum = sum(float(line_map[x]["selling_price_eur"]) for x in inv_lines if x in line_map) or 1
                 car_share = inv_total * (selling / inv_selling_sum)
-                inv_no = inv.get("invoice_number") or inv["id"]
+                base_no = inv.get("invoice_number") or inv["id"]
+                inv_doc_mode = inv.get("doc_mode", "per_car")
+                # Per-vehicle document number: matches PDF renderer logic (start_no + idx)
+                if inv_doc_mode != 'single_doc' and raw_list and len(raw_list) > 1 and lid in raw_list:
+                    inv_no = base_no + raw_list.index(lid)
+                else:
+                    inv_no = base_no
                 inv_date = inv.get("issued_date")
                 date_fmt = ""
                 if inv_date:
