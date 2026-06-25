@@ -20,6 +20,7 @@ import {
   Ticket as TicketIcon,
   Clock,
   Award,
+  UserCog,
   Eye,
   ExternalLink,
   SlidersHorizontal,
@@ -61,6 +62,7 @@ import type { BioStarDayHistory } from '@/types/biostar'
 
 const VouchersPanel = lazy(() => import('@/pages/Profile/VouchersPanel'))
 const CreateTicketDialog = lazy(() => import('@/pages/Ticketing/CreateTicketDialog'))
+const EditProfileDialogLazy = lazy(() => import('@/pages/Profile/index').then(m => ({ default: m.EditProfileDialog })))
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -93,6 +95,7 @@ export default function Hub() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [ticketOpen, setTicketOpen] = useState(false)
+  const [editProfileOpen, setEditProfileOpen] = useState(false)
   const activeModule = (searchParams.get('module') as ActiveModule) || null
   const setActiveModule = useCallback((mod: ActiveModule) => {
     setSearchParams((prev) => {
@@ -219,40 +222,32 @@ export default function Hub() {
             </div>
 
             {/* Right: company, role, actions */}
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
               {user?.company && (
-                <span className="text-xs text-muted-foreground hidden sm:inline">{user.company}</span>
+                <span className="text-xs text-muted-foreground hidden lg:inline">{user.company}</span>
               )}
               {authUser?.role_name && (
-                <Badge variant="outline" className="text-xs">{authUser.role_name}</Badge>
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">{authUser.role_name}</Badge>
               )}
-
-              {/* Check In/Out — always visible */}
-              <div className="flex items-center gap-2">
-                {lastPunch && (
-                  <div className="text-xs text-right leading-tight hidden sm:block">
-                    <p className="font-medium">
-                      {lastPunch.direction === 'IN' ? 'In' : 'Out'} at{' '}
-                      {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                    {lastPunch.raw_data?.location_name && (
-                      <p className="text-muted-foreground">{lastPunch.raw_data.location_name}</p>
-                    )}
-                  </div>
-                )}
-                <Button
-                  size="sm"
-                  className={cn('font-semibold text-white', isCheckedIn ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700')}
-                  onClick={() => punchMut.mutate()}
-                  disabled={punchMut.isPending}
-                >
-                  {isCheckedIn ? <LogOut className="h-3.5 w-3.5 mr-1.5" /> : <LogIn className="h-3.5 w-3.5 mr-1.5" />}
-                  {punchMut.isPending ? '...' : isCheckedIn ? 'Check Out' : 'Check In'}
-                </Button>
-              </div>
-
-              <Button size="sm" variant="outline" onClick={() => setTicketOpen(true)}>
-                <TicketIcon className="h-3.5 w-3.5 mr-1.5" />Ticket
+              {lastPunch && (
+                <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                  {lastPunch.direction === 'IN' ? 'In' : 'Out'} {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              <Button
+                size="sm"
+                className={cn('h-7 px-2 text-xs font-semibold text-white', isCheckedIn ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700')}
+                onClick={() => punchMut.mutate()}
+                disabled={punchMut.isPending}
+              >
+                {isCheckedIn ? <LogOut className="h-3 w-3 mr-1" /> : <LogIn className="h-3 w-3 mr-1" />}
+                {punchMut.isPending ? '...' : isCheckedIn ? 'Out' : 'In'}
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setEditProfileOpen(true)}>
+                <UserCog className="h-3 w-3 mr-1" />Profile
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setTicketOpen(true)}>
+                <TicketIcon className="h-3 w-3 mr-1" />Ticket
               </Button>
             </div>
           </div>
@@ -264,13 +259,50 @@ export default function Hub() {
         <CreateTicketDialog open={ticketOpen} onOpenChange={setTicketOpen} />
       </Suspense>
 
+      {/* Edit Profile Dialog */}
+      {editProfileOpen && user && (
+        <Suspense fallback={null}>
+          <EditProfileDialogLazy
+            open={editProfileOpen}
+            onOpenChange={setEditProfileOpen}
+            user={user}
+            onSaved={() => queryClient.invalidateQueries({ queryKey: ['profile', 'summary'] })}
+          />
+        </Suspense>
+      )}
+
       {/* ── Active Module (inline content) ── */}
       {activeModule !== null ? (
         <div className="space-y-4">
-          <Button variant="ghost" size="sm" className="gap-1.5 -ml-1" onClick={() => setActiveModule(null)}>
-            <ChevronLeft className="h-4 w-4" />
-            Back
-          </Button>
+          {/* Mini app nav bar */}
+          <div className="flex items-center gap-1.5">
+            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => setActiveModule(null)} title="Back to Hub">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex items-center gap-1 overflow-x-auto">
+              {visibleTiles.map((tile) => {
+                const Icon = tile.icon
+                const isActive = tile.key === activeModule
+                return (
+                  <button
+                    key={tile.key}
+                    type="button"
+                    onClick={() => setActiveModule(tile.key)}
+                    title={tile.label}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors shrink-0',
+                      isActive
+                        ? cn(tile.bg, tile.fg, 'shadow-sm')
+                        : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {tile.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
           {activeModule === 'invoices' && <HubInvoicesPanel />}
           {activeModule === 'hr' && user && <HubHrPanel userId={user.id} />}
           {activeModule === 'forms' && <HubFormsPanel />}
@@ -282,7 +314,7 @@ export default function Hub() {
         </div>
       ) : (
         /* ── Grid: 2/3 apps + 1/3 notifications ── */
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           {/* Left 2/3 */}
           <div className="lg:col-span-2 space-y-6">
             <Card>
@@ -1288,8 +1320,15 @@ function HubWeeklyPunchCard() {
     const hours = dayData?.duration_seconds ? dayData.duration_seconds / 3600 : 0
     const isToday = dateStr === now.toISOString().slice(0, 10)
     const isFuture = date > now
-    const punchIn = dayData?.first_punch?.slice(0, 5) || null
-    const punchOut = dayData?.last_punch?.slice(0, 5) || null
+    const extractTime = (v?: string | null) => {
+      if (!v) return null
+      // "HH:MM" (5 chars) vs "2026-06-23T08:02:00" (full ISO)
+      if (v.length <= 5) return v
+      const t = v.includes('T') ? v.split('T')[1] : v
+      return t?.slice(0, 5) || null
+    }
+    const punchIn = extractTime(dayData?.adjusted_first_punch ?? dayData?.first_punch)
+    const punchOut = extractTime(dayData?.adjusted_last_punch ?? dayData?.last_punch)
     return { dateStr, label: DAYS_RO[i], day: date.getDate(), hours, isToday, isFuture, hasData: !!dayData, punchIn, punchOut }
   })
 
@@ -1434,7 +1473,7 @@ function HubBonusCard() {
   const bonuses: ProfileBonus[] = data?.bonuses ?? []
 
   if (isLoading) return <Skeleton className="h-24 w-full" />
-  if (bonuses.length === 0 && year === now.getFullYear()) return null
+  // Always show card — display empty state if no bonuses
 
   const prevYear = () => setYear(y => y - 1)
   const nextYear = () => setYear(y => y + 1)
