@@ -560,7 +560,6 @@ function HubFormsPanel() {
               <Link
                 key={form.id}
                 to={`/f/${form.slug}`}
-                target="_blank"
                 className="flex flex-col items-center gap-1.5 w-20 group"
               >
                 <div className={cn('flex h-14 w-14 items-center justify-center rounded-xl shadow-sm transition-transform group-hover:scale-105 group-hover:shadow-md', style.bg, style.fg)}>
