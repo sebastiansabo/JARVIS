@@ -480,6 +480,91 @@ def api_profile_hr_events():
         return safe_error_response(e)
 
 
+@profile_bp.route('/api/work-summary')
+@login_required
+def api_profile_work_summary():
+    """Monthly work summary: days worked, leave days by type, CO balance remaining."""
+    try:
+        from datetime import date
+        import calendar
+
+        year = request.args.get('year', date.today().year, type=int)
+        month = request.args.get('month', date.today().month, type=int)
+
+        # 1. Days worked from BioStar pontaje
+        days_worked = 0
+        from core.connectors.biostar.services import BioStarSyncService
+        bio_service = BioStarSyncService()
+        employee = bio_service.repo.get_employee_by_jarvis_user(current_user.id)
+        if employee:
+            start = f'{year}-{month:02d}-01'
+            last_day = calendar.monthrange(year, month)[1]
+            end = f'{year}-{month:02d}-{last_day}'
+            history = bio_service.get_employee_daily_history(
+                employee['biostar_user_id'], start, end
+            )
+            days_worked = sum(1 for d in history if d.get('duration_seconds', 0) > 0)
+
+        # 2. Working days in month (Mon-Fri, no holidays)
+        _, num_days = calendar.monthrange(year, month)
+        working_days = sum(
+            1 for d in range(1, num_days + 1)
+            if date(year, month, d).weekday() < 5
+        )
+
+        # 3. Leave days by type from Sincron timesheet
+        leave_days = []
+        try:
+            from core.connectors.sincron.repositories import SincronRepository
+            sincron_repo = SincronRepository()
+            se = sincron_repo.get_employee_by_jarvis_user(current_user.id)
+            if se:
+                ts_data = sincron_repo.get_employee_timesheet(
+                    se['sincron_employee_id'], se['company_name'], year, month
+                )
+                summary = ts_data.get('summary', []) if ts_data else []
+                leave_codes = {'CO', 'CM', 'CES', 'CFS', 'CIC', 'CMS', 'DLG', 'ZLS'}
+                for s in summary:
+                    if s.get('short_code') in leave_codes and s.get('day_count', 0) > 0:
+                        leave_days.append({
+                            'code': s['short_code'],
+                            'name': s.get('name', s['short_code']),
+                            'days': s['day_count'],
+                        })
+        except Exception:
+            pass  # Sincron not configured
+
+        # 4. CO balance (annual leave remaining)
+        co_total = None
+        co_used_ytd = None
+        co_remaining = None
+        try:
+            from hr.co_balance.repository import CoBalanceRepository
+            co_repo = CoBalanceRepository()
+            co_row = co_repo.get_for_user(current_user.id, year)
+            if co_row:
+                co_total = float(co_row.get('total_available') or 0)
+                used_map = co_repo.get_used_ytd_by_user(year)
+                co_used_ytd = used_map.get(current_user.id, 0)
+                co_remaining = co_total - co_used_ytd
+        except Exception:
+            pass
+
+        return jsonify({
+            'success': True,
+            'year': year,
+            'month': month,
+            'days_worked': days_worked,
+            'working_days': working_days,
+            'leave_days': leave_days,
+            'co_total': co_total,
+            'co_used_ytd': co_used_ytd,
+            'co_remaining': co_remaining,
+        })
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @profile_bp.route('/api/pontaje')
 @login_required
 def api_profile_pontaje():
