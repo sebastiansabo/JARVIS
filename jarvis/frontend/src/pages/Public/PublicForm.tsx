@@ -83,18 +83,8 @@ export default function PublicForm() {
     )
   }
 
-  // Internal-only forms redirect to login
-  if (form && (form.settings as any)?.internal_only) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="text-center space-y-4">
-          <h1 className="text-2xl font-bold">Login Required</h1>
-          <p className="text-muted-foreground">This form is only available to logged-in users.</p>
-          <Button onClick={() => window.location.href = '/login'}>Go to Login</Button>
-        </div>
-      </div>
-    )
-  }
+  // Internal-only forms: skip the gate entirely (Hub already requires login)
+  // Non-internal forms: always public
 
   if (isError || !form) {
     return (
