@@ -201,12 +201,15 @@ def get_employee_submissions(user_id):
 @connecteam_bp.route('/api/submissions/recent', methods=['GET'])
 @admin_required
 def get_recent_submissions():
-    """Get submissions across all users (admin only), filtered by year/month."""
+    """Get submissions across all users (admin only), filtered by year/month.
+
+    Merges Connecteam imported submissions and JARVIS internal form submissions.
+    """
     limit = min(request.args.get('limit', 500, type=int), 1000)
     year = request.args.get('year', type=int)
     month = request.args.get('month', type=int)
     try:
-        data = service.repo.get_recent_submissions(limit, year=year, month=month)
+        data = service.get_all_submissions(year=year, month=month, limit=limit)
         return jsonify({'success': True, 'data': data})
     except Exception as e:
         return safe_error_response(e)

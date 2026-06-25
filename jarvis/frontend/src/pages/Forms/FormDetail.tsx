@@ -66,6 +66,21 @@ export default function FormDetail() {
     onError: () => toast.error('Failed to disable form'),
   })
 
+  const hubToggleMut = useMutation({
+    mutationFn: (publish: boolean) =>
+      fetch(`/forms/api/forms/${formId}/hub`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ published_to_hub: publish }),
+      }).then(r => r.json()),
+    onSuccess: (res) => {
+      toast.success(res.published_to_hub ? 'Published to Hub' : 'Removed from Hub')
+      queryClient.invalidateQueries({ queryKey: ['form', formId] })
+    },
+    onError: () => toast.error('Failed to update Hub status'),
+  })
+
   if (isLoading) return <TableSkeleton />
   if (!form) return <p className="text-muted-foreground">Form not found.</p>
 
@@ -112,9 +127,19 @@ export default function FormDetail() {
                 </Button>
               )}
               {form.status === 'published' && (
-                <Button variant="destructive" size="sm" onClick={() => disableMutation.mutate()}>
-                  Disable
-                </Button>
+                <>
+                  <Button
+                    variant={form.published_to_hub ? 'secondary' : 'outline'}
+                    size="sm"
+                    onClick={() => hubToggleMut.mutate(!form.published_to_hub)}
+                    disabled={hubToggleMut.isPending}
+                  >
+                    {form.published_to_hub ? 'Remove from Hub' : 'Publish to Hub'}
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => disableMutation.mutate()}>
+                    Disable
+                  </Button>
+                </>
               )}
             </div>
           }

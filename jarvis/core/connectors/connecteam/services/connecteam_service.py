@@ -285,6 +285,107 @@ class ConnecteamService:
 
     # ── Query ──
 
+    def get_all_submissions(self, year=None, month=None, limit=500):
+        """Get all leave permission submissions across all users.
+
+        Combines data from two sources:
+        - Connecteam imported submissions (connecteam_form_submissions)
+        - JARVIS internal form submissions (form_submissions for 'bilet-de-invoire')
+        """
+        ct_submissions = self.repo.get_recent_submissions(limit, year, month)
+        for s in ct_submissions:
+            s['source'] = 'connecteam'
+
+        jarvis_submissions = self._get_all_jarvis_form_submissions(year, month, limit)
+
+        all_subs = ct_submissions + jarvis_submissions
+        all_subs.sort(
+            key=lambda s: s.get('leave_date') or s.get('created_at') or '',
+            reverse=True,
+        )
+        return all_subs[:limit]
+
+    def _get_all_jarvis_form_submissions(self, year=None, month=None, limit=500):
+        """Fetch ALL JARVIS internal 'Bilet de Invoire' form submissions."""
+        from database import get_db, get_cursor, release_db, dict_from_row
+
+        conn = get_db()
+        cursor = get_cursor(conn)
+        try:
+            cursor.execute(
+                "SELECT id FROM forms WHERE slug = %s AND deleted_at IS NULL LIMIT 1",
+                (JARVIS_LEAVE_FORM_SLUG,)
+            )
+            form_row = cursor.fetchone()
+            if not form_row:
+                return []
+
+            form_id = form_row['id'] if isinstance(form_row, dict) else form_row[0]
+
+            query = '''
+                SELECT fs.id, fs.form_id, f.name AS form_name,
+                       fs.answers, fs.status, fs.source,
+                       fs.respondent_user_id, fs.created_at::text,
+                       u.name AS respondent_name,
+                       u.company AS respondent_company
+                FROM form_submissions fs
+                JOIN forms f ON f.id = fs.form_id
+                LEFT JOIN users u ON u.id = fs.respondent_user_id
+                WHERE fs.form_id = %s
+            '''
+            params: list = [form_id]
+
+            if year:
+                query += " AND EXTRACT(YEAR FROM fs.created_at) = %s"
+                params.append(year)
+            if month:
+                query += " AND EXTRACT(MONTH FROM fs.created_at) = %s"
+                params.append(month)
+
+            query += ' ORDER BY fs.created_at DESC LIMIT %s'
+            params.append(limit)
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+
+            results = []
+            for row in rows:
+                r = dict_from_row(row) if not isinstance(row, dict) else dict(row)
+                answers = r.get('answers', {})
+                if isinstance(answers, str):
+                    answers = json.loads(answers)
+
+                results.append({
+                    'id': r['id'],
+                    'submission_id': f"jarvis-{r['id']}",
+                    'form_id': r['form_id'],
+                    'form_name': r.get('form_name', BILET_INVOIRE_FORM_NAME),
+                    'connecteam_user_id': None,
+                    'mapped_jarvis_user_id': r.get('respondent_user_id'),
+                    'connecteam_user_name': r.get('respondent_name'),
+                    'jarvis_user_name': r.get('respondent_name'),
+                    'jarvis_user_company': r.get('respondent_company'),
+                    'submission_timestamp': r.get('created_at'),
+                    'leave_date': answers.get('f_bi_leave_date'),
+                    'leave_start_time': answers.get('f_bi_start_time'),
+                    'leave_end_time': answers.get('f_bi_end_time'),
+                    'leave_hours': _safe_float(answers.get('f_bi_hours')),
+                    'leave_reason': answers.get('f_bi_reason'),
+                    'leave_destination': answers.get('f_bi_destination'),
+                    'approved_by': answers.get('f_bi_approved_by'),
+                    'status': r.get('status', 'new'),
+                    'event_type': 'jarvis_form',
+                    'entry_num': None,
+                    'received_at': r.get('created_at'),
+                    'created_at': r.get('created_at'),
+                    'source': 'jarvis',
+                })
+            return results
+        except Exception as e:
+            logger.error('Error fetching all JARVIS form submissions: %s', e)
+            return []
+        finally:
+            release_db(conn)
+
     def get_user_submissions(self, jarvis_user_id, year=None, month=None):
         """Get leave permission submissions for a JARVIS user.
 

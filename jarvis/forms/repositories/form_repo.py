@@ -119,6 +119,7 @@ class FormRepository(BaseRepository):
         allowed = {
             'name', 'description', 'schema', 'settings', 'utm_config',
             'branding', 'requires_approval', 'status', 'owner_id',
+            'published_to_hub',
         }
         updates = []
         params = []
