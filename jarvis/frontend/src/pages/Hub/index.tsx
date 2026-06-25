@@ -16,7 +16,6 @@ import {
   ClipboardList,
   Car,
   MessageSquare,
-  Pencil,
   Ticket as TicketIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,6 +35,7 @@ import type { ProfileInvoice, ProfileBonus } from '@/types/profile'
 import type { BioStarDayHistory } from '@/types/biostar'
 
 const VouchersPanel = lazy(() => import('@/pages/Profile/VouchersPanel'))
+const CreateTicketDialog = lazy(() => import('@/pages/Ticketing/CreateTicketDialog'))
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -67,6 +67,7 @@ export default function Hub() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
+  const [ticketOpen, setTicketOpen] = useState(false)
   const activeModule = (searchParams.get('module') as ActiveModule) || null
   const setActiveModule = useCallback((mod: ActiveModule) => {
     setSearchParams((prev) => {
@@ -227,16 +228,18 @@ export default function Hub() {
                 </div>
               )}
 
-              <Button size="sm" variant="outline" onClick={() => navigate('/app/profile')}>
+              <Button size="sm" variant="outline" onClick={() => setTicketOpen(true)}>
                 <TicketIcon className="h-3.5 w-3.5 mr-1.5" />Ticket
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => navigate('/app/profile')}>
-                <Pencil className="h-3.5 w-3.5 mr-1.5" />Edit profile
               </Button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Ticket Dialog */}
+      <Suspense fallback={null}>
+        <CreateTicketDialog open={ticketOpen} onOpenChange={setTicketOpen} />
+      </Suspense>
 
       {/* ── Active Module (inline content) ── */}
       {activeModule !== null ? (
