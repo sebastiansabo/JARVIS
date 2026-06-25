@@ -1158,17 +1158,35 @@ def api_generate_pdf(invoice_id):
         "FINAL":    "",
     }
 
+    base_note = inv_row.get("notes") or ""
     renderer = ProformaPdfRenderer(
         supplier=supplier, customer=customer,
         invoice_date=date_str,
         intocmit_de=inv_row.get("intocmit_de") or "",
         title_lines=title_map.get(inv_type_str, ["FACTURA", "INVOICE"]),
         description_prefix=desc_map.get(inv_type_str, "1."),
-        note=inv_row.get("notes") or "",
+        note=base_note,
         kurs_applied=float(inv_row["kurs_applied"]) if inv_row.get("kurs_applied") else None,
     )
 
     doc_mode = inv_row.get("doc_mode", "per_car")
+
+    # For INVOICE type: compute per-vehicle proforma reference number for notes
+    import re as _re
+    _linked_proforma_no = None
+    if inv_type_str == "INVOICE" and doc_mode != "single_doc":
+        linked = _repo.query_one(
+            "SELECT i.invoice_number, i.doc_mode FROM facturare_invoice_links l "
+            "JOIN facturare_invoices i ON i.id = l.source_invoice_id "
+            "WHERE l.target_invoice_id = %s AND l.link_type = 'PRECEDES'",
+            (invoice_id,))
+        if linked and linked.get("doc_mode", "per_car") != "single_doc":
+            _linked_proforma_no = linked.get("invoice_number")
+
+    def _note_for_car(idx):
+        if not _linked_proforma_no:
+            return base_note
+        return _re.sub(r'\(No:\s*\d+\)', f'(No: {_linked_proforma_no + idx})', base_note)
     mode = request.args.get("mode", "merged")
     # Storno: use multipage renderer with per-invoice line items
     if inv_type_str == "STORNO" and storno_groups:
@@ -1193,6 +1211,7 @@ def api_generate_pdf(invoice_id):
         if 0 <= idx < len(order_lines):
             line = order_lines[idx]
             inv_no = start_no if doc_mode == 'single_doc' else start_no + idx
+            renderer.note = _note_for_car(idx)
             single_buf = io.BytesIO()
             from reportlab.lib.pagesizes import A4
             from reportlab.pdfgen import canvas as rc
@@ -1209,6 +1228,7 @@ def api_generate_pdf(invoice_id):
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for i, line in enumerate(order_lines):
                 inv_no = start_no if doc_mode == 'single_doc' else start_no + i
+                renderer.note = _note_for_car(i)
                 single_buf = io.BytesIO()
                 from reportlab.lib.pagesizes import A4
                 from reportlab.pdfgen import canvas as rc
@@ -1221,7 +1241,21 @@ def api_generate_pdf(invoice_id):
         zip_buf.seek(0)
         return send_file(zip_buf, mimetype="application/zip", as_attachment=True, download_name=f"{filename}.zip")
     else:
-        pdf_bytes = renderer.render_all_to_bytes(order_lines, start_no, same_number=(doc_mode == 'single_doc'))
+        if _linked_proforma_no:
+            # Manual loop to set per-vehicle note before each page
+            from reportlab.lib.pagesizes import A4
+            from reportlab.pdfgen import canvas as rc
+            buf = io.BytesIO()
+            c = rc.Canvas(buf, pagesize=A4)
+            for i, line in enumerate(order_lines):
+                inv_no = start_no + (0 if doc_mode == 'single_doc' else i)
+                renderer.note = _note_for_car(i)
+                renderer.render_one(c, inv_no, line)
+                c.showPage()
+            c.save()
+            pdf_bytes = buf.getvalue()
+        else:
+            pdf_bytes = renderer.render_all_to_bytes(order_lines, start_no, same_number=(doc_mode == 'single_doc'))
         return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
 
 
