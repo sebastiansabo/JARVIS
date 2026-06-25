@@ -130,6 +130,24 @@ export const profileApi = {
     }>(`/sincron/api/timesheets${qs ? `?${qs}` : ''}`)
   },
 
+  getWorkSummary: (params?: { year?: number; month?: number }) => {
+    const sp = new URLSearchParams()
+    if (params?.year) sp.set('year', String(params.year))
+    if (params?.month) sp.set('month', String(params.month))
+    const qs = sp.toString()
+    return api.get<{
+      success: boolean
+      year: number
+      month: number
+      days_worked: number
+      working_days: number
+      leave_days: { code: string; name: string; days: number }[]
+      co_total: number | null
+      co_used_ytd: number | null
+      co_remaining: number | null
+    }>(`/profile/api/work-summary${qs ? `?${qs}` : ''}`)
+  },
+
   changePassword: (currentPassword: string, newPassword: string) =>
     api.post<{ success: boolean; message?: string; error?: string }>('/api/auth/change-password', {
       current_password: currentPassword,

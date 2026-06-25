@@ -311,9 +311,6 @@ export default function Hub() {
               </CardContent>
             </Card>
 
-            {/* HR Summary Card */}
-            <HubHrSummaryCard />
-
             {/* Marketing Events & Bonuses Card */}
             <HubBonusCard />
           </div>
@@ -363,6 +360,9 @@ export default function Hub() {
                 ))}
               </CardContent>
             </Card>
+
+            {/* Work Summary Card */}
+            <HubWorkSummaryCard />
 
             {/* Weekly Punch Card */}
             <HubWeeklyPunchCard />
@@ -1333,84 +1333,87 @@ function HubWeeklyPunchCard() {
   )
 }
 
-// ─── HR Summary Card ────────────────────────────────────
+// ─── Work Summary Card (1/3 column) ─────────────────────
 
-function HubHrSummaryCard() {
+function HubWorkSummaryCard() {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
 
-  const { data: tsData, isLoading } = useQuery({
-    queryKey: ['hub', 'sincron-timesheet', year, month],
-    queryFn: () => profileApi.getSincronTimesheet({ year, month }),
+  const { data, isLoading } = useQuery({
+    queryKey: ['hub', 'work-summary', year, month],
+    queryFn: () => profileApi.getWorkSummary({ year, month }),
     staleTime: 5 * 60_000,
   })
 
-  const summary = tsData?.data?.summary ?? []
-  const employee = tsData?.data?.employee
+  if (isLoading) return <Skeleton className="h-32 w-full rounded-lg" />
+  if (!data?.success) return null
 
-  if (isLoading) return <Skeleton className="h-24 w-full" />
-  if (!employee && summary.length === 0) return null
-
-  // Activity code colors
-  const codeColors: Record<string, string> = {
-    OZ: 'text-green-600', CES: 'text-blue-600', CFS: 'text-blue-500',
-    CIC: 'text-purple-600', CM: 'text-red-600', CMS: 'text-red-500',
-    CO: 'text-amber-600', DLG: 'text-orange-600', OSW: 'text-cyan-600',
-    X: 'text-gray-500', ZLS: 'text-pink-600',
-  }
-
-  const totalEntry = summary.reduce((sum, s) => sum + (s.unit === 'hours' ? s.total_value : 0), 0)
+  const { days_worked, working_days, leave_days, co_remaining } = data
 
   const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 12) { setMonth(1); setYear(y => y + 1) } else setMonth(m => m + 1) }
+
+  const leaveCodeLabels: Record<string, string> = {
+    CO: 'Concediu Odihna', CM: 'Concediu Medical', CES: 'Concediu Eveniment Special',
+    CFS: 'Concediu Fara Salariu', CIC: 'Concediu Ingrijire Copil',
+    CMS: 'Concediu Maternitate', DLG: 'Delegatie', ZLS: 'Zile Libere Suplimentare',
+  }
+
+  const workedPct = working_days > 0 ? Math.round((days_worked / working_days) * 100) : 0
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Timesheet</CardTitle>
+          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            This Month
+          </CardTitle>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={prevMonth}><ChevronLeft className="h-3.5 w-3.5" /></Button>
-            <span className="text-xs font-medium w-28 text-center">{MONTHS_RO[month - 1]} {year}</span>
+            <span className="text-[11px] font-medium w-24 text-center">{MONTHS_RO[month - 1]} {year}</span>
             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={nextMonth}><ChevronRight className="h-3.5 w-3.5" /></Button>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b bg-muted/30">
-                {summary.map((s) => (
-                  <th key={s.short_code} className={cn('px-2.5 py-1.5 font-medium text-center whitespace-nowrap', codeColors[s.short_code] || 'text-muted-foreground')}>
-                    {s.short_code}
-                  </th>
-                ))}
-                <th className="px-2.5 py-1.5 font-semibold text-right whitespace-nowrap">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                {summary.map((s) => (
-                  <td key={s.short_code} className="px-2.5 py-2 text-center tabular-nums font-medium">
-                    {s.total_value > 0 ? (s.unit === 'hours' ? `${s.total_value}` : s.day_count > 0 ? s.day_count : '—') : '—'}
-                  </td>
-                ))}
-                <td className="px-2.5 py-2 text-right tabular-nums font-semibold">{totalEntry > 0 ? `${totalEntry}h` : '—'}</td>
-              </tr>
-              {/* Days row */}
-              <tr className="border-t">
-                {summary.map((s) => (
-                  <td key={`d-${s.short_code}`} className="px-2.5 py-1 text-center text-[10px] text-muted-foreground">
-                    {s.day_count > 0 ? `${s.day_count}d` : ''}
-                  </td>
-                ))}
-                <td />
-              </tr>
-            </tbody>
-          </table>
+      <CardContent className="space-y-3">
+        {/* Days Worked */}
+        <div>
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="text-muted-foreground">Days Worked</span>
+            <span className="font-semibold tabular-nums">{days_worked} / {working_days}</span>
+          </div>
+          <div className="h-2 rounded-full bg-muted overflow-hidden">
+            <div
+              className={cn('h-full rounded-full transition-all', workedPct >= 90 ? 'bg-green-500' : workedPct >= 50 ? 'bg-amber-500' : 'bg-red-500')}
+              style={{ width: `${Math.min(workedPct, 100)}%` }}
+            />
+          </div>
         </div>
+
+        {/* Leave Days */}
+        {leave_days.length > 0 && (
+          <div className="space-y-1">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">On Leave</span>
+            {leave_days.map((l) => (
+              <div key={l.code} className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">{leaveCodeLabels[l.code] || l.name}</span>
+                <span className="font-medium tabular-nums">{l.days}d</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* CO Balance */}
+        {co_remaining != null && (
+          <div className="pt-2 border-t">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">CO Days Left</span>
+              <span className="font-semibold tabular-nums text-emerald-600">{co_remaining}</span>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
