@@ -468,14 +468,36 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
           {!collapsed && <NotificationBell />}
         </div>
 
-        {/* Navigation */}
+        {/* Navigation — hidden for Viewer (they use the Hub) */}
+        {user?.role_name !== 'Viewer' && (
         <nav className={cn('flex-1 space-y-1', collapsed ? 'p-2' : 'p-3')}>
           {visibleItems.map((item) => renderNavItem(item))}
         </nav>
+        )}
+        {user?.role_name === 'Viewer' && <div className="flex-1" />}
 
         {/* Footer */}
         <div className={cn('border-t', collapsed ? 'p-2' : 'p-3')}>
           {collapsed ? (
+            user?.role_name === 'Viewer' ? (
+              <>
+                <div className="my-2 flex justify-center">
+                  <ThemeToggle />
+                </div>
+                <Separator className="my-2" />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <a
+                      href="/logout"
+                      className="flex items-center justify-center rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <LogOut className="h-4 w-4" />
+                    </a>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Logout</TooltipContent>
+                </Tooltip>
+              </>
+            ) : (
             <>
               {user?.can_access_approvals && (
               <Tooltip>
@@ -580,6 +602,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 <TooltipContent side="right">Logout</TooltipContent>
               </Tooltip>
             </>
+            )
           ) : (
             <>
               {user?.can_access_approvals && (

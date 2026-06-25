@@ -16,10 +16,13 @@ import {
   ClipboardList,
   Car,
   MessageSquare,
+  Pencil,
+  Ticket as TicketIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/stores/authStore'
 import { profileApi } from '@/api/profile'
@@ -138,48 +141,67 @@ export default function Hub() {
     <div className="space-y-6">
       {/* Header */}
       {loadingProfile ? (
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-12 w-12 rounded-full" />
-          <div className="space-y-1.5"><Skeleton className="h-4 w-32" /><Skeleton className="h-6 w-48" /></div>
+        <div className="rounded-lg border bg-card p-4">
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-11 w-11 rounded-full shrink-0" />
+            <div className="space-y-1.5"><Skeleton className="h-3 w-24" /><Skeleton className="h-5 w-36" /></div>
+          </div>
         </div>
       ) : (
-        <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="rounded-lg border bg-card p-4">
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
+            {/* Avatar + Name */}
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
               {user?.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
             </div>
-            <div>
-              <p className="text-sm text-muted-foreground">
-                {new Date().getHours() < 12 ? 'Buna dimineata' : 'Buna ziua'},{' '}
-                <span className="font-medium text-foreground">{user?.name?.split(' ')[0] || 'User'}</span>
-              </p>
-              <h1 className="text-xl font-bold">Command Hub</h1>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground truncate">{user?.name || 'Loading...'}</p>
+              <h1 className="text-lg font-bold leading-tight">Command Hub</h1>
             </div>
-          </div>
-          {checkinStatus?.mapped && (
-            <div className="flex items-center gap-3">
-              {lastPunch && (
-                <div className="text-xs text-right leading-tight">
-                  <p className="font-medium">
-                    {lastPunch.direction === 'IN' ? 'In' : 'Out'} at{' '}
-                    {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                  {lastPunch.raw_data?.location_name && (
-                    <p className="text-muted-foreground">{lastPunch.raw_data.location_name}</p>
+
+            {/* Right: company, role, actions */}
+            <div className="ml-auto flex items-center gap-2">
+              {user?.company && (
+                <span className="text-xs text-muted-foreground hidden sm:inline">{user.company}</span>
+              )}
+              {authUser?.role_name && (
+                <Badge variant="outline" className="text-xs">{authUser.role_name}</Badge>
+              )}
+
+              {/* Check In/Out */}
+              {checkinStatus?.mapped && (
+                <div className="flex items-center gap-2">
+                  {lastPunch && (
+                    <div className="text-xs text-right leading-tight hidden sm:block">
+                      <p className="font-medium">
+                        {lastPunch.direction === 'IN' ? 'In' : 'Out'} at{' '}
+                        {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                      {lastPunch.raw_data?.location_name && (
+                        <p className="text-muted-foreground">{lastPunch.raw_data.location_name}</p>
+                      )}
+                    </div>
                   )}
+                  <Button
+                    size="sm"
+                    className={cn('font-semibold text-white', isCheckedIn ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700')}
+                    onClick={() => punchMut.mutate()}
+                    disabled={punchMut.isPending}
+                  >
+                    {isCheckedIn ? <LogOut className="h-3.5 w-3.5 mr-1.5" /> : <LogIn className="h-3.5 w-3.5 mr-1.5" />}
+                    {punchMut.isPending ? '...' : isCheckedIn ? 'Check Out' : 'Check In'}
+                  </Button>
                 </div>
               )}
-              <Button
-                size="sm"
-                className={cn('font-semibold text-white', isCheckedIn ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700')}
-                onClick={() => punchMut.mutate()}
-                disabled={punchMut.isPending}
-              >
-                {isCheckedIn ? <LogOut className="h-3.5 w-3.5 mr-1.5" /> : <LogIn className="h-3.5 w-3.5 mr-1.5" />}
-                {punchMut.isPending ? '...' : isCheckedIn ? 'Check Out' : 'Check In'}
+
+              <Button size="sm" variant="outline" onClick={() => navigate('/app/profile')}>
+                <TicketIcon className="h-3.5 w-3.5 mr-1.5" />Ticket
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => navigate('/app/profile')}>
+                <Pencil className="h-3.5 w-3.5 mr-1.5" />Edit profile
               </Button>
             </div>
-          )}
+          </div>
         </div>
       )}
 
