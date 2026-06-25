@@ -586,7 +586,7 @@ function ProfileDetailsDialog({
 
 // ─── Edit Profile Dialog ──────────────────────────────────────────
 
-function EditProfileDialog({
+export function EditProfileDialog({
   open,
   onOpenChange,
   user,
@@ -604,6 +604,15 @@ function EditProfileDialog({
     position: user.position || '',
     contract_work_date: user.contract_work_date || '',
   })
+
+  // Contracts from Sincron
+  const { data: contractsData } = useQuery({
+    queryKey: ['profile', 'contracts'],
+    queryFn: () => profileApi.getContracts(),
+    staleTime: 10 * 60_000,
+    enabled: open,
+  })
+  const contracts = contractsData?.contracts ?? []
 
   // Password section state
   const [pwOpen, setPwOpen] = useState(false)
@@ -732,6 +741,35 @@ function EditProfileDialog({
               <DateField value={form.contract_work_date ?? ''} onChange={(v) => setForm((f) => ({ ...f, contract_work_date: v }))} className="w-full" />
             </div>
           </div>
+          {/* Employment Contracts */}
+          {contracts.length > 0 && (
+            <div className="border-t pt-3 space-y-2">
+              <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Employment Contracts</span>
+              {contracts.map((c, i) => {
+                const startDate = c.start_date ? new Date(c.start_date + 'T00:00').toLocaleDateString('ro-RO') : '—'
+                return (
+                  <div key={i} className="grid grid-cols-4 gap-3 rounded-md border p-2.5 bg-muted/30">
+                    <div className="grid gap-0.5">
+                      <span className="text-[10px] text-muted-foreground uppercase">Company</span>
+                      <span className="text-xs font-medium truncate">{c.company}</span>
+                    </div>
+                    <div className="grid gap-0.5">
+                      <span className="text-[10px] text-muted-foreground uppercase">Contract Nr.</span>
+                      <span className="text-xs font-medium">{c.contract_number || '—'}</span>
+                    </div>
+                    <div className="grid gap-0.5">
+                      <span className="text-[10px] text-muted-foreground uppercase">Start Date</span>
+                      <span className="text-xs font-medium">{startDate}</span>
+                    </div>
+                    <div className="grid gap-0.5">
+                      <span className="text-[10px] text-muted-foreground uppercase">Years</span>
+                      <span className="text-xs font-medium">{c.years_employed != null ? `${c.years_employed} yr` : '—'}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
           {/* Signature */}
           <SignatureSection />
           {/* Change Password */}
