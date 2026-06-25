@@ -120,6 +120,13 @@ function V2Guard({ permKey, children }: { permKey: string; children: React.React
   return <>{children}</>
 }
 
+/** Block Viewers from accessing any route outside Hub — redirect to /app/hub. */
+function ViewerBlock({ children }: { children: React.ReactNode }) {
+  const user = useAuthStore((s) => s.user)
+  if (user?.role_name === 'Viewer') return <Navigate to="/app/hub" replace />
+  return <>{children}</>
+}
+
 /** Redirect /app to hub for Viewers, dashboard for everyone else. */
 function DefaultRedirect() {
   const user = useAuthStore((s) => s.user)
@@ -160,7 +167,7 @@ export default function App() {
       <Route path="/app" element={<Layout />}>
         <Route index element={<DefaultRedirect />} />
         <Route path="dashboard" element={<DashboardOrRedirect />} />
-        <Route path="profile" element={<SuspensePage><Profile /></SuspensePage>} />
+        <Route path="profile" element={<ViewerBlock><SuspensePage><Profile /></SuspensePage></ViewerBlock>} />
         <Route path="hub" element={<SuspensePage><Hub /></SuspensePage>} />
 
         {/* Accounting — requires can_access_accounting */}
