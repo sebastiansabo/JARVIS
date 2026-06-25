@@ -1278,7 +1278,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
                   }
                 }} />
             </div>
-            <div><Label>Start No.</Label><Input type="number" placeholder="9102842" value={startNo} onChange={e => setStartNo(e.target.value)} /></div>
+            <div><Label>Start No.</Label><Input type="number" value={startNo} onChange={e => setStartNo(e.target.value)} /></div>
             <div><Label>Date</Label><Input type="date" value={issuedDate} onChange={e => setIssuedDate(e.target.value)} /></div>
           </div>
           {/* Split mode + doc mode + breakdown */}
@@ -1418,7 +1418,7 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
             </Select>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div><Label>Invoice No.</Label><Input type="number" placeholder="9102842" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} /></div>
+            <div><Label>Invoice No.</Label><Input type="number" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} /></div>
             <div><Label>Date</Label><Input type="date" value={issuedDate} onChange={e => setIssuedDate(e.target.value)} /></div>
             <div><Label>Intocmit de</Label><UserSearchInput value={intocmitDe} onChange={setIntocmitDe} /></div>
           </div>
@@ -1477,10 +1477,18 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
     return invLids.some(id => lidSet.has(id))
   }) : []
 
-  // Pre-select all relevant invoices when dialog opens
+  // Pre-select all relevant invoices and auto-suggest next invoice number when dialog opens
   useEffect(() => {
-    if (!open || action !== 'storno') return
-    setSelectedInvIds(new Set(relevantInvoices.map(i => i.id)))
+    if (!open) return
+    setNotes('')
+    setIssuedDate(new Date().toISOString().split('T')[0])
+    setIntocmitDe(defaultIntocmit || '')
+    // Auto-suggest next invoice number based on existing invoices on this anexa
+    const maxNo = (invoices || []).reduce((m, i) => Math.max(m, i.invoice_number || 0), 0)
+    setInvoiceNumber(maxNo > 0 ? String(maxNo + 1) : '')
+    if (action === 'storno') {
+      setSelectedInvIds(new Set(relevantInvoices.map(i => i.id)))
+    }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleInv = (id: number) => setSelectedInvIds(prev => {
@@ -1566,7 +1574,7 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
             </div>
           )}
           <div className="grid grid-cols-3 gap-3">
-            <div><Label>Invoice No.</Label><Input type="number" placeholder="9102842" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} /></div>
+            <div><Label>Invoice No.</Label><Input type="number" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} /></div>
             <div><Label>Date</Label><Input type="date" value={issuedDate} onChange={e => setIssuedDate(e.target.value)} /></div>
             <div><Label>Intocmit de</Label><UserSearchInput value={intocmitDe} onChange={setIntocmitDe} /></div>
           </div>
