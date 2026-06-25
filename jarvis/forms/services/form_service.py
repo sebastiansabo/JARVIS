@@ -136,13 +136,15 @@ class FormService:
 
         schema = form.get('published_schema', [])
 
-        # Block internal-only forms from public submission
+        # Block internal-only forms from public submission (allow if user is logged in)
         settings = form.get('settings', {})
         if isinstance(settings, str):
             import json as _json
             settings = _json.loads(settings)
         if settings.get('internal_only'):
-            return ServiceResult(success=False, error='This form is not available for public submission', status_code=403)
+            from flask_login import current_user
+            if not current_user or not current_user.is_authenticated:
+                return ServiceResult(success=False, error='This form is not available for public submission', status_code=403)
 
         # Check submission limit
         submission_limit = settings.get('submission_limit')
