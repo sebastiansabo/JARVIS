@@ -21,6 +21,7 @@ import {
   Clock,
   Award,
   UserCog,
+  Home,
   Eye,
   ExternalLink,
   SlidersHorizontal,
@@ -63,6 +64,7 @@ import type { BioStarDayHistory } from '@/types/biostar'
 const VouchersPanel = lazy(() => import('@/pages/Profile/VouchersPanel'))
 const CreateTicketDialog = lazy(() => import('@/pages/Ticketing/CreateTicketDialog'))
 const EditProfileDialogLazy = lazy(() => import('@/pages/Profile/index').then(m => ({ default: m.EditProfileDialog })))
+const FormRendererLazy = lazy(() => import('@/components/forms/FormRenderer').then(m => ({ default: m.FormRenderer })))
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -200,59 +202,43 @@ export default function Hub() {
   }, [hasVouchersPerm, tileCounts])
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      {loadingProfile ? (
-        <div className="rounded-lg border bg-card p-4">
-          <div className="flex items-center gap-4">
-            <Skeleton className="h-11 w-11 rounded-full shrink-0" />
-            <div className="space-y-1.5"><Skeleton className="h-3 w-24" /><Skeleton className="h-5 w-36" /></div>
-          </div>
-        </div>
-      ) : (
-        <div className="rounded-lg border bg-card p-4">
-          <div className="flex items-center gap-4">
-            {/* Avatar + Name */}
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
-              {user?.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground truncate">{user?.name || 'Loading...'}</p>
-              <h1 className="text-lg font-bold leading-tight">JARVIS Hub</h1>
-            </div>
-
-            {/* Right: company, role, actions */}
-            <div className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
-              {user?.company && (
-                <span className="text-xs text-muted-foreground hidden lg:inline">{user.company}</span>
-              )}
-              {authUser?.role_name && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0">{authUser.role_name}</Badge>
-              )}
-              {lastPunch && (
-                <span className="text-[10px] text-muted-foreground hidden sm:inline">
-                  {lastPunch.direction === 'IN' ? 'In' : 'Out'} {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
-              <Button
-                size="sm"
-                className={cn('h-7 px-2 text-xs font-semibold text-white', isCheckedIn ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700')}
-                onClick={() => punchMut.mutate()}
-                disabled={punchMut.isPending}
-              >
-                {isCheckedIn ? <LogOut className="h-3 w-3 mr-1" /> : <LogIn className="h-3 w-3 mr-1" />}
-                {punchMut.isPending ? '...' : isCheckedIn ? 'Out' : 'In'}
-              </Button>
-              <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setEditProfileOpen(true)}>
-                <UserCog className="h-3 w-3 mr-1" />Profile
-              </Button>
-              <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setTicketOpen(true)}>
-                <TicketIcon className="h-3 w-3 mr-1" />Ticket
-              </Button>
+    <div className="space-y-6 pb-16 sm:pb-0">
+      {/* Header — hidden on mobile (sidebar handles identity) */}
+      <div className="hidden sm:block">
+        {loadingProfile ? (
+          <div className="rounded-lg border bg-card p-4">
+            <div className="flex items-center gap-4">
+              <Skeleton className="h-11 w-11 rounded-full shrink-0" />
+              <div className="space-y-1.5"><Skeleton className="h-3 w-24" /><Skeleton className="h-5 w-36" /></div>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="rounded-lg border bg-card p-4">
+            <div className="flex items-center gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
+                {user?.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground truncate">{user?.name || 'Loading...'}</p>
+                <h1 className="text-lg font-bold leading-tight">JARVIS Hub</h1>
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                {user?.company && (
+                  <span className="text-xs text-muted-foreground">{user.company}</span>
+                )}
+                {authUser?.role_name && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">{authUser.role_name}</Badge>
+                )}
+                {lastPunch && (
+                  <span className="text-[10px] text-muted-foreground">
+                    {lastPunch.direction === 'IN' ? 'In' : 'Out'} {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Ticket Dialog */}
       <Suspense fallback={null}>
@@ -273,36 +259,15 @@ export default function Hub() {
 
       {/* ── Active Module (inline content) ── */}
       {activeModule !== null ? (
-        <div className="space-y-4">
-          {/* Mini app nav bar */}
-          <div className="flex items-center gap-1.5">
-            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => setActiveModule(null)} title="Back to Hub">
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <div className="flex items-center gap-1 overflow-x-auto">
-              {visibleTiles.map((tile) => {
-                const Icon = tile.icon
-                const isActive = tile.key === activeModule
-                return (
-                  <button
-                    key={tile.key}
-                    type="button"
-                    onClick={() => setActiveModule(tile.key)}
-                    title={tile.label}
-                    className={cn(
-                      'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors shrink-0',
-                      isActive
-                        ? cn(tile.bg, tile.fg, 'shadow-sm')
-                        : 'bg-muted/50 text-muted-foreground hover:bg-muted',
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {tile.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+        <div className="space-y-4 pb-20">
+          {/* Section title */}
+          <h2 className="text-lg font-semibold">
+            {visibleTiles.find(t => t.key === activeModule)?.label || 'Section'}
+            {tileCounts[activeModule] > 0 && (
+              <span className="text-sm font-normal text-muted-foreground ml-1.5">({tileCounts[activeModule]})</span>
+            )}
+          </h2>
+
           {activeModule === 'invoices' && <HubInvoicesPanel />}
           {activeModule === 'hr' && user && <HubHrPanel userId={user.id} />}
           {activeModule === 'forms' && <HubFormsPanel />}
@@ -311,37 +276,14 @@ export default function Hub() {
               <VouchersPanel />
             </Suspense>
           )}
+
         </div>
       ) : (
         /* ── Grid: 2/3 apps + 1/3 notifications ── */
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           {/* Left 2/3 */}
           <div className="lg:col-span-2 space-y-6">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Apps</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-6">
-                  {visibleTiles.map((tile) => {
-                    const Icon = tile.icon
-                    return (
-                      <button
-                        key={tile.key}
-                        type="button"
-                        onClick={() => setActiveModule(tile.key)}
-                        className="flex flex-col items-center gap-1.5 w-20 group"
-                      >
-                        <div className={cn('flex h-14 w-14 items-center justify-center rounded-xl shadow-sm transition-transform group-hover:scale-105 group-hover:shadow-md', tile.bg, tile.fg)}>
-                          <Icon className="h-7 w-7" />
-                        </div>
-                        <p className="text-[11px] font-medium text-center leading-tight">{tile.label}</p>
-                      </button>
-                    )
-                  })}
-                </div>
-              </CardContent>
-            </Card>
+            <HubAppsCard tiles={visibleTiles} onSelect={setActiveModule} />
 
             {/* Marketing Events & Bonuses Card */}
             <HubBonusCard />
@@ -401,7 +343,91 @@ export default function Hub() {
           </div>
         </div>
       )}
+
+      {/* ── Bottom Tab Bar (mobile only, Instagram-style) ── */}
+      <div className="fixed bottom-0 inset-x-0 z-40 sm:hidden">
+        <div className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-t">
+          <div className="flex items-center justify-around h-14 px-2 pb-[env(safe-area-inset-bottom)]">
+            <button
+              type="button"
+              onClick={() => setActiveModule(null)}
+              className={cn('flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg transition-colors min-w-[48px]',
+                activeModule === null ? 'text-primary' : 'text-muted-foreground'
+              )}
+            >
+              <Home className="h-5 w-5" />
+              <span className="text-[9px] font-medium">Hub</span>
+            </button>
+            {visibleTiles.map((tile) => {
+              const Icon = tile.icon
+              const isActive = activeModule === tile.key
+              return (
+                <button
+                  key={tile.key}
+                  type="button"
+                  onClick={() => setActiveModule(tile.key)}
+                  className={cn('flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg transition-colors min-w-[48px]',
+                    isActive ? 'text-primary' : 'text-muted-foreground'
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span className="text-[9px] font-medium">{tile.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
     </div>
+  )
+}
+
+// ─── Apps Card (max 6, expandable) ──────────────────────
+
+function HubAppsCard({ tiles, onSelect }: { tiles: AppTile[]; onSelect: (key: NonNullable<ActiveModule>) => void }) {
+  const [showAll, setShowAll] = useState(false)
+  const limit = 6
+  const hasMore = tiles.length > limit
+  const displayed = showAll ? tiles : tiles.slice(0, limit)
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Apps</CardTitle>
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => setShowAll(s => !s)}
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showAll ? 'Show less' : `All (${tiles.length})`}
+              <ChevronRight className={cn('h-3 w-3 transition-transform', showAll && 'rotate-90')} />
+            </button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap gap-6">
+          {displayed.map((tile) => {
+            const Icon = tile.icon
+            return (
+              <button
+                key={tile.key}
+                type="button"
+                onClick={() => onSelect(tile.key)}
+                className="flex flex-col items-center gap-2 w-20 group"
+              >
+                <div className={cn('flex h-16 w-16 sm:h-14 sm:w-14 items-center justify-center rounded-xl shadow-sm transition-transform group-hover:scale-105 group-hover:shadow-md', tile.bg, tile.fg)}>
+                  <Icon className="h-8 w-8 sm:h-7 sm:w-7" />
+                </div>
+                <p className="text-[11px] font-medium text-center leading-tight">{tile.label}</p>
+              </button>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -1061,19 +1087,19 @@ function HubHrPanel({ userId }: { userId: number }) {
     <div className="space-y-4">
       {availableTabs.length > 1 && (
         <Tabs value={effectiveTab} onValueChange={(v) => setSubTab(v as HrSubTab)}>
-          <TabsList className="h-8 bg-muted/50">
+          <TabsList className="h-11 bg-muted/50 w-full">
             {availableTabs.map((tab) => {
               const Icon = tab.icon
-              return <TabsTrigger key={tab.key} value={tab.key} className="text-xs h-7 px-2.5 gap-1"><Icon className="h-3.5 w-3.5" />{tab.label}</TabsTrigger>
+              return <TabsTrigger key={tab.key} value={tab.key} className="text-xs h-10 px-4 gap-1.5 flex-1"><Icon className="h-4 w-4" />{tab.label}</TabsTrigger>
             })}
           </TabsList>
         </Tabs>
       )}
 
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-        <span className="text-sm font-medium w-36 text-center">{MONTHS_RO[month - 1]} {year}</span>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" className="h-11 w-11" onClick={prevMonth}><ChevronLeft className="h-5 w-5" /></Button>
+        <span className="text-sm font-medium flex-1 text-center">{MONTHS_RO[month - 1]} {year}</span>
+        <Button variant="ghost" size="icon" className="h-11 w-11" onClick={nextMonth}><ChevronRight className="h-5 w-5" /></Button>
       </div>
 
       {effectiveTab === 'pontaje' && <HubPontajeContent year={year} month={month} />}
@@ -1100,35 +1126,49 @@ function HubPontajeContent({ year, month }: { year: number; month: number }) {
     return <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">No punch data for this month.</CardContent></Card>
   }
 
+  const extractTime = (v?: string | null) => {
+    if (!v) return '—'
+    if (v.length <= 5) return v
+    const t = v.includes('T') ? v.split('T')[1] : v
+    return t?.slice(0, 5) || '—'
+  }
+
+  const netHours = (d: BioStarDayHistory): number | null => {
+    if (d.duration_seconds == null) return null
+    if (d.lunch_break_minutes == null) return null
+    return Math.max(0, d.duration_seconds - d.lunch_break_minutes * 60) / 3600
+  }
+  const totalHours = history.reduce((sum, d) => sum + (netHours(d) ?? 0), 0)
+
   return (
     <Card>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/30">
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Date</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">First In</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Last Out</th>
-                <th className="text-right px-4 py-2 font-medium text-muted-foreground">Hours</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map((d) => {
-                const hours = d.duration_seconds != null ? d.duration_seconds / 3600 : null
-                return (
-                  <tr key={d.date} className="border-b last:border-0 hover:bg-muted/20">
-                    <td className="px-4 py-2 whitespace-nowrap font-medium">
-                      {new Date(d.date + 'T00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short' })}
-                    </td>
-                    <td className="px-4 py-2 text-muted-foreground">{d.first_punch || '—'}</td>
-                    <td className="px-4 py-2 text-muted-foreground">{d.last_punch || '—'}</td>
-                    <td className="px-4 py-2 text-right tabular-nums font-medium">{hours != null ? `${hours.toFixed(1)}h` : '—'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+      <CardContent className="px-0 pb-0">
+        <div className="flex items-center justify-between px-4 pb-2 text-xs text-muted-foreground">
+          <span>{history.length} days</span>
+          <span className="font-semibold tabular-nums">{totalHours.toFixed(1)}h total</span>
+        </div>
+        <div className="divide-y">
+          {history.map((d) => {
+            const hours = netHours(d)
+            const inTime = extractTime((d as any).adjusted_first_punch ?? d.first_punch)
+            const outTime = extractTime((d as any).adjusted_last_punch ?? d.last_punch)
+            return (
+              <div key={d.date} className="flex items-center justify-between px-4 py-2.5">
+                <div>
+                  <p className="text-xs font-medium">
+                    {new Date(d.date + 'T00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short' })}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">{inTime} — {outTime}</p>
+                </div>
+                <span className={cn(
+                  'text-sm font-semibold tabular-nums',
+                  hours != null && hours >= 8 ? 'text-green-600' : hours != null && hours > 0 ? 'text-amber-600' : 'text-muted-foreground',
+                )}>
+                  {hours != null ? `${hours.toFixed(1)}h` : '—'}
+                </span>
+              </div>
+            )
+          })}
         </div>
       </CardContent>
     </Card>
@@ -1148,28 +1188,53 @@ function HubBonusesContent({ year, month }: { year: number; month: number }) {
     return <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">No bonuses for this month.</CardContent></Card>
   }
 
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const fmtDate = (d: string | null) => d ? new Date(d + 'T00:00').toLocaleDateString('ro-RO', { day: '2-digit', month: 'short' }) : ''
+
   return (
     <Card>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/30">
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Type</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Details</th>
-                <th className="text-right px-4 py-2 font-medium text-muted-foreground">Days</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bonuses.map((b) => (
-                <tr key={b.id} className="border-b last:border-0 hover:bg-muted/20">
-                  <td className="px-4 py-2 font-medium">{b.event_name || '—'}</td>
-                  <td className="px-4 py-2 text-muted-foreground truncate max-w-[250px]">{b.details || '—'}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{b.bonus_days ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <CardContent className="px-0 pb-0">
+        <div className="divide-y">
+          {bonuses.map((b) => {
+            const isOpen = expandedId === b.id
+            const startStr = b.participation_start || b.start_date
+            const endStr = b.participation_end || b.end_date
+            return (
+              <button
+                key={b.id}
+                type="button"
+                className="w-full text-left hover:bg-muted/30 transition-colors"
+                onClick={() => setExpandedId(isOpen ? null : b.id)}
+              >
+                <div className="flex items-center justify-between px-4 py-3">
+                  <p className="text-sm font-medium">{b.event_name || '—'}</p>
+                  <span className="text-sm font-semibold tabular-nums shrink-0 ml-3">{b.bonus_days ?? 0}d</span>
+                </div>
+                {isOpen && (
+                  <div className="px-4 pb-3 grid grid-cols-2 gap-2 text-[11px]" onClick={(e) => e.stopPropagation()}>
+                    <div>
+                      <span className="text-muted-foreground">Period</span>
+                      <p className="font-medium">{startStr && endStr ? `${fmtDate(startStr)} – ${fmtDate(endStr)}` : '—'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Hours Free</span>
+                      <p className="font-medium">{b.hours_free ?? '—'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Bonus</span>
+                      <p className="font-medium">{b.bonus_net ? `${Number(b.bonus_net).toLocaleString('ro-RO')} RON` : '—'}</p>
+                    </div>
+                    {b.details && (
+                      <div>
+                        <span className="text-muted-foreground">Details</span>
+                        <p className="font-medium">{b.details}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </button>
+            )
+          })}
         </div>
       </CardContent>
     </Card>
@@ -1189,42 +1254,51 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
     return <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">No leave permits for this month.</CardContent></Card>
   }
 
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
   return (
     <Card>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/30">
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Date</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Start</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">End</th>
-                <th className="text-right px-4 py-2 font-medium text-muted-foreground">Hours</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Reason</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {submissions.map((s) => (
-                <tr key={`${s.source ?? 'ct'}-${s.id}`} className="border-b last:border-0 hover:bg-muted/20">
-                  <td className="px-4 py-2 whitespace-nowrap font-medium">
-                    {s.leave_date ? new Date(s.leave_date + 'T00:00').toLocaleDateString('ro-RO') : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-muted-foreground">{s.leave_start_time?.slice(0, 5) || '—'}</td>
-                  <td className="px-4 py-2 text-muted-foreground">{s.leave_end_time?.slice(0, 5) || '—'}</td>
-                  <td className="px-4 py-2 text-right tabular-nums font-medium">{s.leave_hours != null ? `${s.leave_hours}h` : '—'}</td>
-                  <td className="px-4 py-2 text-muted-foreground truncate max-w-[200px]">{s.leave_reason || '—'}</td>
-                  <td className="px-4 py-2">
-                    <span className={cn('text-xs px-1.5 py-0.5 rounded-full',
-                      s.source === 'jarvis' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-                    )}>
-                      {s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <CardContent className="px-0 pb-0">
+        <div className="divide-y">
+          {submissions.map((s) => {
+            const key = `${s.source ?? 'ct'}-${s.id}`
+            const isOpen = expandedId === key
+            const dateStr = s.leave_date ? new Date(s.leave_date + 'T00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short' }) : '—'
+            return (
+              <button
+                key={key}
+                type="button"
+                className="w-full text-left hover:bg-muted/30 transition-colors"
+                onClick={() => setExpandedId(isOpen ? null : key)}
+              >
+                <div className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium">{dateStr}</p>
+                    <p className="text-[10px] text-muted-foreground">{s.leave_reason || 'Leave permit'}</p>
+                  </div>
+                  <span className="text-sm font-semibold tabular-nums shrink-0 ml-3">{s.leave_hours != null ? `${s.leave_hours}h` : '—'}</span>
+                </div>
+                {isOpen && (
+                  <div className="px-4 pb-3 grid grid-cols-2 gap-2 text-[11px]" onClick={(e) => e.stopPropagation()}>
+                    <div>
+                      <span className="text-muted-foreground">Time</span>
+                      <p className="font-medium">{s.leave_start_time?.slice(0, 5) || '—'} — {s.leave_end_time?.slice(0, 5) || '—'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Source</span>
+                      <p className="font-medium">{s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}</p>
+                    </div>
+                    {s.leave_reason && (
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">Reason</span>
+                        <p className="font-medium">{s.leave_reason}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </button>
+            )
+          })}
         </div>
       </CardContent>
     </Card>
@@ -1234,6 +1308,9 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
 // ─── Forms Panel ────────────────────────────────────────
 
 function HubFormsPanel() {
+  const queryClient = useQueryClient()
+  const [openSlug, setOpenSlug] = useState<string | null>(null)
+
   const { data, isLoading } = useQuery({
     queryKey: ['hub', 'published-forms'],
     queryFn: () => fetch('/forms/api/forms/published', { credentials: 'include' }).then(r => r.json()),
@@ -1245,7 +1322,6 @@ function HubFormsPanel() {
     return <Card><CardContent className="py-12 text-center text-muted-foreground text-sm">No forms available.</CardContent></Card>
   }
 
-  // Map form slugs to distinct icon/color combos
   const formStyle = (slug: string) => {
     if (slug.includes('voucher')) return { icon: Ticket, bg: 'bg-amber-100 dark:bg-amber-900/30', fg: 'text-amber-700 dark:text-amber-400' }
     if (slug.includes('invoire') || slug.includes('leave')) return { icon: ClipboardList, bg: 'bg-blue-100 dark:bg-blue-900/30', fg: 'text-blue-700 dark:text-blue-400' }
@@ -1254,30 +1330,100 @@ function HubFormsPanel() {
     return { icon: FileCheck, bg: 'bg-emerald-100 dark:bg-emerald-900/30', fg: 'text-emerald-700 dark:text-emerald-400' }
   }
 
+  const openForm = forms.find(f => f.slug === openSlug)
+
   return (
-    <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-base">Available Forms</CardTitle></CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap gap-6">
-          {forms.map((form) => {
-            const style = formStyle(form.slug)
-            const Icon = style.icon
-            return (
-              <Link
-                key={form.id}
-                to={`/f/${form.slug}`}
-                className="flex flex-col items-center gap-1.5 w-20 group"
-              >
-                <div className={cn('flex h-14 w-14 items-center justify-center rounded-xl shadow-sm transition-transform group-hover:scale-105 group-hover:shadow-md', style.bg, style.fg)}>
-                  <Icon className="h-7 w-7" />
-                </div>
-                <p className="text-[11px] font-medium text-center leading-tight line-clamp-2">{form.name}</p>
-              </Link>
-            )
-          })}
+    <>
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Available Forms</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-6">
+            {forms.map((form) => {
+              const style = formStyle(form.slug)
+              const Icon = style.icon
+              return (
+                <button
+                  key={form.id}
+                  type="button"
+                  onClick={() => setOpenSlug(form.slug)}
+                  className="flex flex-col items-center gap-2 w-20 group"
+                >
+                  <div className={cn('flex h-16 w-16 sm:h-14 sm:w-14 items-center justify-center rounded-xl shadow-sm transition-transform group-hover:scale-105 group-hover:shadow-md', style.bg, style.fg)}>
+                    <Icon className="h-8 w-8 sm:h-7 sm:w-7" />
+                  </div>
+                  <p className="text-[11px] font-medium text-center leading-tight line-clamp-2">{form.name}</p>
+                </button>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {openSlug && (
+        <HubFormModal
+          slug={openSlug}
+          name={openForm?.name || ''}
+          onClose={() => setOpenSlug(null)}
+          onSubmitted={() => {
+            setOpenSlug(null)
+            queryClient.invalidateQueries({ queryKey: ['hub'] })
+            toast.success('Form submitted')
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+function HubFormModal({ slug, name, onClose, onSubmitted }: { slug: string; name: string; onClose: () => void; onSubmitted: () => void }) {
+  const { data: form, isLoading } = useQuery({
+    queryKey: ['public-form', slug],
+    queryFn: () => import('@/api/forms').then(m => m.formsApi.getPublicForm(slug)),
+  })
+
+  const submitMutation = useMutation({
+    mutationFn: (answers: Record<string, unknown>) =>
+      import('@/api/forms').then(m => m.formsApi.submitPublicForm(slug, { answers })),
+    onSuccess: () => onSubmitted(),
+    onError: () => toast.error('Failed to submit form'),
+  })
+
+  const schema = form?.schema ?? []
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background flex flex-col animate-in slide-in-from-right duration-200">
+      {/* Top nav bar */}
+      <div className="shrink-0 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex items-center h-12 px-4">
+          <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs" onClick={onClose}>
+            <ChevronLeft className="h-4 w-4" />
+            Back
+          </Button>
+          <h2 className="flex-1 text-center text-sm font-semibold truncate px-2">{name}</h2>
+          <div className="w-16" />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+      {/* Form body */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-lg px-5 py-6">
+          {isLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+            </div>
+          ) : schema.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">This form has no fields.</p>
+          ) : (
+            <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+              <FormRendererLazy
+                schema={schema}
+                onSubmit={(answers) => submitMutation.mutate(answers)}
+                submitting={submitMutation.isPending}
+              />
+            </Suspense>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1305,7 +1451,13 @@ function HubWeeklyPunchCard() {
   if (isLoading) return <Skeleton className="h-32 w-full rounded-lg" />
   if (!data?.mapped) return null // No BioStar mapping
 
-  const totalHours = history.reduce((sum, d) => sum + (d.duration_seconds ? d.duration_seconds / 3600 : 0), 0)
+  const netHours = (d: BioStarDayHistory): number | null => {
+    if (!d.duration_seconds) return 0
+    if (d.lunch_break_minutes == null) return null // can't calculate without lunch data
+    return Math.max(0, d.duration_seconds - d.lunch_break_minutes * 60) / 3600
+  }
+
+  const totalHours = history.reduce((sum, d) => sum + (netHours(d) ?? 0), 0)
   const DAYS_RO = ['Lun', 'Mar', 'Mie', 'Joi', 'Vin', 'Sam', 'Dum']
 
   // Build a map of date → day data
@@ -1317,7 +1469,7 @@ function HubWeeklyPunchCard() {
     date.setDate(monday.getDate() + i)
     const dateStr = date.toISOString().slice(0, 10)
     const dayData = dayMap.get(dateStr)
-    const hours = dayData?.duration_seconds ? dayData.duration_seconds / 3600 : 0
+    const hours = dayData ? netHours(dayData) : 0
     const isToday = dateStr === now.toISOString().slice(0, 10)
     const isFuture = date > now
     const extractTime = (v?: string | null) => {
@@ -1463,6 +1615,7 @@ function HubWorkSummaryCard() {
 function HubBonusCard() {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
+  const [expandedId, setExpandedId] = useState<number | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['hub', 'bonuses-card', year],
@@ -1473,14 +1626,12 @@ function HubBonusCard() {
   const bonuses: ProfileBonus[] = data?.bonuses ?? []
 
   if (isLoading) return <Skeleton className="h-24 w-full" />
-  // Always show card — display empty state if no bonuses
 
   const prevYear = () => setYear(y => y - 1)
   const nextYear = () => setYear(y => y + 1)
 
-  const totalBonusDays = bonuses.reduce((sum, b) => sum + (b.bonus_days ?? 0), 0)
-  const totalHoursFree = bonuses.reduce((sum, b) => sum + (b.hours_free ?? 0), 0)
   const totalBonusNet = bonuses.reduce((sum, b) => sum + (b.bonus_net ? Number(b.bonus_net) : 0), 0)
+  const fmtDate = (d: string | null) => d ? new Date(d + 'T00:00').toLocaleDateString('ro-RO', { day: '2-digit', month: 'short' }) : ''
 
   return (
     <Card>
@@ -1488,7 +1639,7 @@ function HubBonusCard() {
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
             <Award className="h-4 w-4" />
-            Marketing Events & Bonuses
+            Events & Bonuses
           </CardTitle>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={prevYear}><ChevronLeft className="h-3.5 w-3.5" /></Button>
@@ -1497,53 +1648,58 @@ function HubBonusCard() {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="px-0 pb-0">
         {bonuses.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-6">No event bonuses for {year}.</p>
+          <p className="text-xs text-muted-foreground text-center py-6 px-4">No event bonuses for {year}.</p>
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Event</th>
-                    <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Period</th>
-                    <th className="text-right px-3 py-1.5 font-medium text-muted-foreground">Days</th>
-                    <th className="text-right px-3 py-1.5 font-medium text-muted-foreground">Hours</th>
-                    <th className="text-right px-3 py-1.5 font-medium text-muted-foreground">Bonus</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bonuses.map((b) => {
-                    const startStr = b.participation_start || b.start_date
-                    const endStr = b.participation_end || b.end_date
-                    const fmtDate = (d: string | null) => d ? new Date(d + 'T00:00').toLocaleDateString('ro-RO', { day: '2-digit', month: 'short' }) : ''
-                    return (
-                      <tr key={b.id} className="border-b last:border-0 hover:bg-muted/20">
-                        <td className="px-3 py-2">
-                          <div className="font-medium">{b.event_name}</div>
-                          {b.brand && <div className="text-[10px] text-muted-foreground">{b.brand}</div>}
-                        </td>
-                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
-                          {startStr && endStr ? `${fmtDate(startStr)} – ${fmtDate(endStr)}` : fmtDate(startStr) || '—'}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium">{b.bonus_days ?? '—'}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{b.hours_free ?? '—'}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium">
-                          {b.bonus_net ? `${Number(b.bonus_net).toLocaleString('ro-RO')} RON` : '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+            <div className="divide-y">
+              {bonuses.map((b) => {
+                const isOpen = expandedId === b.id
+                const startStr = b.participation_start || b.start_date
+                const endStr = b.participation_end || b.end_date
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    className="w-full text-left hover:bg-muted/30 transition-colors"
+                    onClick={() => setExpandedId(isOpen ? null : b.id)}
+                  >
+                    <div className="flex items-center justify-between px-4 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate">{b.event_name}</p>
+                        {b.brand && <p className="text-[10px] text-muted-foreground">{b.brand}</p>}
+                      </div>
+                      <span className="text-xs font-semibold tabular-nums shrink-0 ml-3">
+                        {b.bonus_net ? `${Number(b.bonus_net).toLocaleString('ro-RO')} RON` : '—'}
+                      </span>
+                    </div>
+                    {isOpen && (
+                      <div className="px-4 pb-2.5 grid grid-cols-3 gap-2 text-[10px]" onClick={(e) => e.stopPropagation()}>
+                        <div>
+                          <span className="text-muted-foreground uppercase tracking-wider">Period</span>
+                          <p className="font-medium mt-0.5">{startStr && endStr ? `${fmtDate(startStr)} – ${fmtDate(endStr)}` : '—'}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground uppercase tracking-wider">Days</span>
+                          <p className="font-medium mt-0.5">{b.bonus_days ?? '—'}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground uppercase tracking-wider">Hours Free</span>
+                          <p className="font-medium mt-0.5">{b.hours_free ?? '—'}</p>
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
             </div>
-            {/* Totals row */}
-            <div className="flex items-center justify-end gap-4 px-3 py-2 border-t bg-muted/20 text-xs">
-              {totalBonusDays > 0 && <span className="tabular-nums font-medium">{totalBonusDays} days</span>}
-              {totalHoursFree > 0 && <span className="tabular-nums">{totalHoursFree}h free</span>}
-              {totalBonusNet > 0 && <span className="tabular-nums font-semibold">{totalBonusNet.toLocaleString('ro-RO')} RON</span>}
-            </div>
+            {totalBonusNet > 0 && (
+              <div className="flex items-center justify-between px-4 py-2 border-t bg-muted/20 text-xs">
+                <span className="text-muted-foreground">{bonuses.length} events</span>
+                <span className="tabular-nums font-semibold">{totalBonusNet.toLocaleString('ro-RO')} RON</span>
+              </div>
+            )}
           </>
         )}
       </CardContent>
