@@ -36,7 +36,7 @@ export const vouchersApi = {
 
   getFormId: () => api.get<{ form_id: number }>('/api/vouchers/form-id'),
 
-  getFormSchema: () => api.get<{ id: number; schema: import('@/types/forms').FormField[]; published_schema?: import('@/types/forms').FormField[] }>('/api/vouchers/form-schema'),
+  getFormSchema: () => api.get<{ id: number; slug: string; schema: import('@/types/forms').FormField[]; published_schema?: import('@/types/forms').FormField[] }>('/api/vouchers/form-schema'),
 
   exportUrl: (params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params).toString() : ''
