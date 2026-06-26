@@ -1452,6 +1452,23 @@ def api_generate_eurofib(invoice_id):
                     kurs=ri_kurs,
                 ))
     else:
+        # For FINAL: use kurs from the last advance invoice in this anexa
+        _final_kurs_date_set = False
+        if inv_type_str == "FINAL":
+            from datetime import timedelta as _td
+            last_advance = _repo.query_one(
+                "SELECT kurs_applied, issued_date FROM facturare_invoices "
+                "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number DESC LIMIT 1",
+                (anexa["id"],))
+            if last_advance and last_advance.get("kurs_applied"):
+                kurs = float(last_advance["kurs_applied"])
+                adv_date = last_advance.get("issued_date")
+                if adv_date and isinstance(adv_date, str):
+                    adv_date = date_type.fromisoformat(adv_date)
+                if adv_date:
+                    kurs_date = adv_date - _td(days=1)
+                    _final_kurs_date_set = True
+
         order_lines = []
         for l in lines:
             selling = float(l["selling_price_eur"])
@@ -1459,11 +1476,24 @@ def api_generate_eurofib(invoice_id):
                 car_advance = total_amount * (selling / total_selling)
             else:
                 car_advance = total_amount / max(len(lines), 1)
+
+            # For FINAL: look up venituri rule per line
+            line_kostenstelle = None
+            line_konto_credit = None
+            if inv_type_str == "FINAL":
+                nr_cmd = l.get("nr_comanda") or ""
+                rule = _repo.match_venituri_rule(contract["supplier_id"], nr_cmd)
+                if rule:
+                    line_konto_credit = rule["konto_venituri"]
+                    line_kostenstelle = rule["kostenstelle"]
+
             order_lines.append(OrderLine(
                 comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
                 model=l["model"], culoare=l.get("culoare") or "",
                 list_price=float(l["list_price_eur"]), selling_price=selling,
                 advance=car_advance, rest=selling,
+                kostenstelle=line_kostenstelle,
+                konto_credit_override=line_konto_credit,
             ))
 
     # Compute kurs_date (day before issued_date)
@@ -1474,6 +1504,10 @@ def api_generate_eurofib(invoice_id):
         if first_ri_date and isinstance(first_ri_date, str):
             first_ri_date = date_type.fromisoformat(first_ri_date)
         kurs_date = (first_ri_date - timedelta(days=1)) if first_ri_date else issued_date - timedelta(days=1)
+    elif inv_type_str == "FINAL":
+        # kurs_date already set above from last advance invoice (if found); fall back to day before issued_date
+        if not _final_kurs_date_set:
+            kurs_date = issued_date - timedelta(days=1)
     else:
         kurs_date = issued_date - timedelta(days=1)
 
