@@ -238,7 +238,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+      <DialogContent className="sm:max-w-3xl max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto p-4 sm:p-6 max-sm:h-[100dvh] max-sm:rounded-none max-sm:border-0 [&_input]:max-sm:h-[44px] [&_input]:max-sm:text-base [&_textarea]:max-sm:text-base [&_button[role=combobox]]:max-sm:h-[44px] [&_button[role=combobox]]:max-sm:text-base">
         <DialogHeader>
           <DialogTitle>Edit Invoice #{invoice.id}</DialogTitle>
           <DialogDescription>
@@ -427,12 +427,12 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
             )}
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={saving}>
+        <DialogFooter className="max-sm:flex-col max-sm:gap-2 max-sm:pb-[env(safe-area-inset-bottom)]">
+          <Button onClick={handleSave} disabled={saving} className="max-sm:h-[44px] max-sm:text-base">
             {saving ? 'Saving...' : 'Save'}
+          </Button>
+          <Button variant="outline" onClick={onClose} className="max-sm:h-[44px] max-sm:text-base">
+            Cancel
           </Button>
         </DialogFooter>
       </DialogContent>
