@@ -1,9 +1,10 @@
-import { Outlet } from 'react-router-dom'
-import { Menu } from 'lucide-react'
+import { Outlet, Link } from 'react-router-dom'
+import { Menu, MapPin, LogOut, Bot } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { fetchColumnDefaults } from '@/lib/columnDefaults'
 import { Sidebar } from './Sidebar'
+import { ThemeToggle } from './ThemeToggle'
 import { AiAgentWidget, AiAgentPanel } from './AiAgentWidget'
 import { NotificationBell } from './NotificationBell'
 import { Button } from '@/components/ui/button'
@@ -98,24 +99,47 @@ export default function Layout() {
 
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Mobile header */}
-        <header className="flex h-14 items-center justify-between border-b px-4 md:hidden">
-          <div className="flex items-center">
-            <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <Menu className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-            </Sheet>
+        {/* Mobile header — iOS 44pt nav bar */}
+        <header className="flex h-[44px] items-center justify-between border-b px-2 md:hidden">
+          <div className="flex items-center gap-1">
+            {!isViewer ? (
+              <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-[44px] w-[44px]">
+                    <Menu className="h-[22px] w-[22px]" />
+                  </Button>
+                </SheetTrigger>
+              </Sheet>
+            ) : (
+              <div className="h-[44px] w-[44px] flex items-center justify-center">
+                <Bot className="h-[22px] w-[22px] text-primary translate-y-[1px]" />
+              </div>
+            )}
             <span
-              className="ml-2 text-lg font-semibold"
+              className="text-[17px] font-semibold tracking-tight leading-none"
               title="Just AutoWorld's Real Very Intelligent System — crafted by Seba"
             >
               JARVIS
             </span>
           </div>
-          <NotificationBell />
+          <div className="flex items-center">
+            {isViewer && (
+              <>
+                <Link to="/app/mobile-checkin" className="h-[44px] w-[44px] flex items-center justify-center text-muted-foreground">
+                  <MapPin className="h-[22px] w-[22px]" />
+                </Link>
+                <div className="h-[44px] w-[44px] flex items-center justify-center">
+                  <ThemeToggle />
+                </div>
+                <a href="/logout" className="h-[44px] w-[44px] flex items-center justify-center text-muted-foreground">
+                  <LogOut className="h-[22px] w-[22px]" />
+                </a>
+              </>
+            )}
+            <div className="h-[44px] w-[44px] flex items-center justify-center">
+              <NotificationBell />
+            </div>
+          </div>
         </header>
 
         <main className="flex-1 overflow-auto p-4 pb-16 md:p-6 md:pb-6">
@@ -126,8 +150,10 @@ export default function Layout() {
       {/* AI Agent panel — pushes main content when open */}
       <AiAgentPanel />
 
-      {/* Floating trigger button (only visible when panel is closed) */}
-      <AiAgentWidget />
+      {/* Floating trigger button (hidden on mobile) */}
+      <div className="hidden md:block">
+        <AiAgentWidget />
+      </div>
 
       <Toaster />
     </div>

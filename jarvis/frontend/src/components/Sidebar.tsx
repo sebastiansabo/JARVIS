@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, ClipboardList, Newspaper, Car, DollarSign, Tag, BarChart3, Receipt, Headset, MoreHorizontal, GraduationCap, Wrench } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, ClipboardList, Newspaper, Car, DollarSign, Tag, BarChart3, Receipt, Headset, MoreHorizontal, GraduationCap, Wrench, Activity, Ticket, Home, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -468,13 +468,56 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
           {!collapsed && <NotificationBell />}
         </div>
 
-        {/* Navigation — hidden for Viewer (they use the Hub) */}
-        {user?.role_name !== 'Viewer' && (
+        {/* Navigation */}
+        {user?.role_name !== 'Viewer' ? (
         <nav className={cn('flex-1 space-y-1', collapsed ? 'p-2' : 'p-3')}>
           {visibleItems.map((item) => renderNavItem(item))}
         </nav>
+        ) : (
+        <nav className={cn('flex-1 space-y-1', collapsed ? 'p-2' : 'p-3')}>
+          {([
+            { path: '/app/hub', label: 'Hub', icon: Home, module: null },
+            { path: '/app/hub?module=invoices', label: 'My Invoices', icon: FileText, module: 'invoices' },
+            { path: '/app/hub?module=hr', label: 'HR', icon: Activity, module: 'hr' },
+            { path: '/app/hub?module=vouchers', label: 'Vouchers', icon: Ticket, module: 'vouchers' },
+            { path: '/app/hub?module=forms', label: 'Forms', icon: ClipboardList, module: 'forms' },
+            { path: '/app/hub?module=chat', label: 'Connecteams', icon: MessageSquare, module: 'chat' },
+          ] as const).map((item) => {
+            const Icon = item.icon
+            const isActive = item.module
+              ? new URLSearchParams(location.search).get('module') === item.module
+              : location.pathname === '/app/hub' && !new URLSearchParams(location.search).get('module')
+            return collapsed ? (
+              <Tooltip key={item.path}>
+                <TooltipTrigger asChild>
+                  <Link
+                    to={item.path}
+                    className={cn(
+                      'flex items-center justify-center rounded-md p-2 transition-colors',
+                      isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                    )}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="right">{item.label}</TooltipContent>
+              </Tooltip>
+            ) : (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={cn(
+                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {item.label}
+              </Link>
+            )
+          })}
+        </nav>
         )}
-        {user?.role_name === 'Viewer' && <div className="flex-1" />}
 
         {/* Footer */}
         <div className={cn('border-t', collapsed ? 'p-2' : 'p-3')}>

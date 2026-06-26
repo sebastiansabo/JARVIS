@@ -172,11 +172,10 @@ export default function VoucherRedeem() {
     }
   }
 
-  const canRedeem = voucher?.status === 'active' && !redeemed
+  const canRedeem = (voucher?.status === 'active' || voucher?.status === 'approved') && !redeemed
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-start justify-center p-4 pt-12">
-      <div className="w-full max-w-md space-y-6">
+    <div className="space-y-3">
         {/* Header */}
         <div className="text-center">
           <h1 className="text-2xl font-bold">Voucher Redemption</h1>
@@ -248,7 +247,7 @@ export default function VoucherRedeem() {
         {voucher && (
           <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
             {/* Card header */}
-            <div className="bg-slate-800 text-white p-4">
+            <div className="bg-slate-800 text-white px-3 py-2.5">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-slate-300">VOUCHER</p>
@@ -264,7 +263,7 @@ export default function VoucherRedeem() {
             </div>
 
             {/* Card body */}
-            <div className="p-4 space-y-3">
+            <div className="px-3 py-3 space-y-3">
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div><span className="text-gray-500">Client:</span> <strong>{voucher.client_name}</strong></div>
                 <div><span className="text-gray-500">Contract:</span> {voucher.contract_number}</div>
@@ -306,22 +305,26 @@ export default function VoucherRedeem() {
               {canRedeem && (
                 <div className="space-y-3 border-t pt-3">
                   <p className="text-sm text-muted-foreground">Redeeming as: <strong>{user?.name}</strong></p>
-                  <div className="grid gap-1.5">
-                    <Label>Signature (required)</Label>
-                    {redeemSignature ? (
-                      <div className="space-y-2">
-                        <img src={redeemSignature} alt="Signature" className="max-h-16 border rounded bg-white p-1" />
-                        <Button type="button" variant="outline" size="sm" onClick={() => setRedeemSignature('')}>Clear & Re-sign</Button>
-                      </div>
-                    ) : (
-                      <Suspense fallback={<div className="h-[120px] border rounded animate-pulse bg-muted" />}>
-                        <SignatureCanvas height={120} onSave={(base64) => setRedeemSignature(base64)} onClear={() => setRedeemSignature('')} />
-                      </Suspense>
-                    )}
-                  </div>
-                  <Button className="w-full" onClick={handleRedeem} disabled={loading || !effectiveName || !redeemSignature}>
-                    {loading ? 'Redeeming...' : 'Redeem Voucher'}
-                  </Button>
+                  <p className="text-xs text-muted-foreground">Sign below, then tap Save & Redeem</p>
+                  <Suspense fallback={<div className="h-[140px] border rounded animate-pulse bg-muted" />}>
+                    <SignatureCanvas
+                      height={140}
+                      onSave={(base64) => {
+                        setRedeemSignature(base64)
+                      }}
+                      onClear={() => setRedeemSignature('')}
+                      saveLabel="Redeem"
+                    />
+                  </Suspense>
+                  {redeemSignature && (
+                    <Button
+                      className="w-full h-12 text-base bg-emerald-600 hover:bg-emerald-700 text-white"
+                      onClick={handleRedeem}
+                      disabled={loading || !effectiveName}
+                    >
+                      {loading ? 'Redeeming...' : 'Confirm Redeem'}
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -336,7 +339,6 @@ export default function VoucherRedeem() {
         )}
 
         <p className="text-center text-xs text-gray-400">Powered by JARVIS</p>
-      </div>
     </div>
   )
 }
