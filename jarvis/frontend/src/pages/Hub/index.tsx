@@ -194,7 +194,7 @@ export default function Hub() {
 
   const tileCounts: Record<string, number> = {
     invoices: invoicesData?.total ?? -1,
-    approvals: approvalsCountData?.count ?? -1,
+    approvals: approvalsCountData?.count ?? -1, // show count badge but always visible
     hr: -1, // always show — sub-tabs auto-hide when empty
     vouchers: Array.isArray(vouchersData) ? vouchersData.length : -1,
     forms: (formsCountData?.forms ?? []).length || -1,
@@ -204,7 +204,7 @@ export default function Hub() {
   const visibleTiles = useMemo(() => {
     return appTiles.filter((t) => {
       if (t.key === 'vouchers' && !hasVouchersPerm) return false
-      if (tileCounts[t.key] === 0) return false
+      if (t.key !== 'approvals' && tileCounts[t.key] === 0) return false
       return true
     })
   }, [hasVouchersPerm, tileCounts])
