@@ -100,7 +100,7 @@ def _entity_link(entity_type, entity_id):
     if entity_type == 'invoice':
         return '/app/accounting'
     if entity_type == 'form_submission' and entity_id:
-        return '/app/forms'
+        return '/app/approvals'
     if entity_type == 'carpark_price_change':
         return '/app/carpark/pricing-rules'
     if entity_type == 'leave_permit_conversion':
