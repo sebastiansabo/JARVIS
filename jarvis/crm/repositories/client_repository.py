@@ -18,12 +18,16 @@ class ClientRepository(BaseRepository):
     def search(self, name=None, phone=None, email=None, client_type=None,
                responsible=None, city=None, date_from=None, date_to=None,
                sort_by=None, sort_order=None, show_blacklisted=None,
-               limit=50, offset=0):
+               limit=50, offset=0, q=None):
         conditions, params = ['c.merged_into_id IS NULL'], []
         if show_blacklisted == 'only':
             conditions.append('c.is_blacklisted = TRUE')
         elif show_blacklisted != 'all':
             conditions.append('(c.is_blacklisted = FALSE OR c.is_blacklisted IS NULL)')
+        if q:
+            conditions.append('(c.name_normalized ILIKE %s OR c.nr_reg ILIKE %s OR c.phone ILIKE %s)')
+            like = f'%{q.lower()}%'
+            params.extend([like, like, like])
         if name:
             conditions.append('c.name_normalized ILIKE %s')
             params.append(f'%{name.lower()}%')
