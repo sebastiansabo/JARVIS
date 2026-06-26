@@ -57,6 +57,9 @@ import type { ProfileInvoice, ProfileBonus } from '@/types/profile'
 import type { Invoice } from '@/types/invoices'
 import type { BioStarDayHistory } from '@/types/biostar'
 
+import { useVoucherSchema } from '@/hooks/useVoucherSchema'
+import { api } from '@/api/client'
+
 const VouchersPanel = lazy(() => import('@/pages/Profile/VouchersPanel'))
 const CreateTicketDialog = lazy(() => import('@/pages/Ticketing/CreateTicketDialog'))
 const EditProfileDialogLazy = lazy(() => import('@/pages/Profile/index').then(m => ({ default: m.EditProfileDialog })))
@@ -1399,14 +1402,20 @@ function HubFormModal({ slug, name, onClose, onSubmitted }: { slug: string; name
     queryFn: () => import('@/api/forms').then(m => m.formsApi.getPublicForm(slug)),
   })
 
+  const { schema, defaultValues, submitLabel, needsSignatureSave } =
+    useVoucherSchema(form?.schema ?? [], slug)
+
   const submitMutation = useMutation({
-    mutationFn: (answers: Record<string, unknown>) =>
-      import('@/api/forms').then(m => m.formsApi.submitPublicForm(slug, { answers })),
+    mutationFn: async (answers: Record<string, unknown>) => {
+      if (needsSignatureSave && answers.f_signature && typeof answers.f_signature === 'string') {
+        await api.put('/profile/api/signature', { signature: answers.f_signature })
+      }
+      const { f_signature: _, ...formAnswers } = answers
+      return import('@/api/forms').then(m => m.formsApi.submitPublicForm(slug, { answers: formAnswers }))
+    },
     onSuccess: () => onSubmitted(),
     onError: () => toast.error('Failed to submit form'),
   })
-
-  const schema = form?.schema ?? []
 
   return (
     <div className="fixed inset-0 z-50 bg-background flex flex-col animate-in slide-in-from-right duration-200">
@@ -1436,6 +1445,8 @@ function HubFormModal({ slug, name, onClose, onSubmitted }: { slug: string; name
                 schema={schema}
                 onSubmit={(answers) => submitMutation.mutate(answers)}
                 submitting={submitMutation.isPending}
+                submitLabel={submitLabel}
+                defaultValues={defaultValues}
               />
             </Suspense>
           )}

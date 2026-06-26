@@ -7,6 +7,8 @@ import { Ticket, ScanLine } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { FormRenderer } from '@/components/forms/FormRenderer'
 import { formsApi } from '@/api/forms'
+import { api } from '@/api/client'
+import { useVoucherSchema } from '@/hooks/useVoucherSchema'
 
 const VoucherRedeem = lazy(() => import('./VoucherRedeem'))
 
@@ -21,12 +23,20 @@ export default function VoucherPortal() {
     enabled: mode === 'issue',
   })
 
+  const { schema, defaultValues, submitLabel, needsSignatureSave } =
+    useVoucherSchema(form?.schema ?? [], 'voucher-issuance')
+
   const submitMutation = useMutation({
-    mutationFn: (answers: Record<string, unknown>) =>
-      formsApi.submitPublicForm('voucher-issuance', {
-        answers,
+    mutationFn: async (answers: Record<string, unknown>) => {
+      if (needsSignatureSave && answers.f_signature && typeof answers.f_signature === 'string') {
+        await api.put('/profile/api/signature', { signature: answers.f_signature })
+      }
+      const { f_signature: _, ...formAnswers } = answers
+      return formsApi.submitPublicForm('voucher-issuance', {
+        answers: formAnswers,
         utm_data: {},
-      }),
+      })
+    },
     onSuccess: (data) => {
       setSubmitted(true)
       toast.success(data.thank_you_message || 'Voucher submitted!')
@@ -73,13 +83,14 @@ export default function VoucherPortal() {
             </div>
             {isLoading ? (
               <div className="py-8 text-center text-muted-foreground">Loading form...</div>
-            ) : form?.schema ? (
+            ) : schema.length ? (
               <>
                 <FormRenderer
-                  schema={form.schema}
+                  schema={schema}
                   onSubmit={(answers) => submitMutation.mutate(answers)}
                   submitting={submitMutation.isPending}
-                  submitLabel="Issue Voucher"
+                  submitLabel={submitLabel}
+                  defaultValues={defaultValues}
                 />
                 {submitMutation.isError && (
                   <p className="text-sm text-destructive text-center">
