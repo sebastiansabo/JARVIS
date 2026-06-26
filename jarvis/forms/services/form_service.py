@@ -164,6 +164,7 @@ class FormService:
                 explicit_approver_id = None
         context_company = answers.pop('f_company', None)
         context_department = answers.pop('f_department', None)
+        start_date = answers.pop('f_start_date', None)
 
         # Strip unknown answer keys — only accept keys matching schema field IDs
         known_field_ids = {f.get('id') for f in schema if f.get('id')}
@@ -174,6 +175,8 @@ class FormService:
             answers['f_company'] = context_company
         if context_department:
             answers['f_department'] = context_department
+        if start_date:
+            answers['f_start_date'] = start_date
 
         # Validate required fields and types
         validation_error = self._validate_answers(schema, answers)
@@ -249,17 +252,20 @@ class FormService:
 
         schema = form.get('published_schema') or form.get('schema', [])
 
-        # Extract approver before stripping unknown keys
+        # Extract context fields before stripping unknown keys
         explicit_approver_id = answers.get('f_approver') or None
         if explicit_approver_id:
             try:
                 explicit_approver_id = int(explicit_approver_id)
             except (ValueError, TypeError):
                 explicit_approver_id = None
+        start_date = answers.get('f_start_date')
 
         # Strip unknown answer keys
         known_field_ids = {f.get('id') for f in schema if f.get('id')}
         answers = {k: v for k, v in answers.items() if k in known_field_ids}
+        if start_date:
+            answers['f_start_date'] = start_date
 
         validation_error = self._validate_answers(schema, answers)
         if validation_error:
