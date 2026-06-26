@@ -223,7 +223,7 @@ export default function Vouchers() {
     )},
   ]
 
-  const defaultCols = ['code', 'client', 'contract', 'vin', 'type', 'benefit', 'issued', 'expires', 'approver', 'status', 'actions']
+  const defaultCols = ['code', 'client', 'contract', 'vin', 'type', 'benefit', 'issued', 'expires', 'issuer', 'approver', 'status', 'actions']
   const allColKeys = allColumns.map((c) => c.key)
   const { visibleColumns, setVisibleColumns, defaultColumns: defaultColState } = useColumnState('voucherColumns', defaultCols, allColKeys)
 
