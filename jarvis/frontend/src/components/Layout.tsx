@@ -150,8 +150,10 @@ export default function Layout() {
       {/* AI Agent panel — pushes main content when open */}
       <AiAgentPanel />
 
-      {/* Floating trigger button (only visible when panel is closed) */}
-      <AiAgentWidget />
+      {/* Floating trigger button (hidden on mobile) */}
+      <div className="hidden md:block">
+        <AiAgentWidget />
+      </div>
 
       <Toaster />
     </div>
