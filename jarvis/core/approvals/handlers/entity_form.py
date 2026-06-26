@@ -263,6 +263,24 @@ def _activate_voucher_from_submission(submission_id, sub_repo):
             _create_voucher_from_submission_legacy(submission_id, sub_repo)
             return
 
+        # Ensure approver is set on the voucher from the approval request
+        if sub.get('approval_request_id'):
+            try:
+                from core.base_repository import BaseRepository
+                req = BaseRepository().query_one(
+                    'SELECT context_snapshot FROM approval_requests WHERE id = %s',
+                    (sub['approval_request_id'],)
+                )
+                if req:
+                    approver_id = (req.get('context_snapshot') or {}).get('approver_user_id')
+                    if approver_id:
+                        BaseRepository().execute(
+                            'UPDATE vouchers SET approver_user_id = %s WHERE id = %s AND approver_user_id IS NULL',
+                            (int(approver_id), voucher_id)
+                        )
+            except Exception as e:
+                logger.warning(f'Failed to set approver on voucher #{voucher_id}: {e}')
+
         from accounting.vouchers.services import VoucherService
         VoucherService().activate_voucher(voucher_id)
 
