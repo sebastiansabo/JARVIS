@@ -66,10 +66,15 @@ class EurofibXlsxRenderer:
         row_kurs = line.kurs if line.kurs is not None else cfg.fx.kurs
         fw_amount = line.advance * line.qty  # negative for storno
 
+        # For STORNO, swap s/h and konto/gegenkonto to produce the reversal entry
+        konto = cfg.eurofib.konto_credit if cfg.eurofib.is_storno else cfg.eurofib.konto_debit
+        sh = "h" if cfg.eurofib.is_storno else "s"
+        gegenkonto = cfg.eurofib.konto_debit if cfg.eurofib.is_storno else cfg.eurofib.konto_credit
+
         ws.cell(row=r, column=1, value="x")                      # A marker
         ws.cell(row=r, column=2, value=cfg.eurofib.klient)        # B klient
-        ws.cell(row=r, column=3, value=cfg.eurofib.konto_debit)   # C konto
-        ws.cell(row=r, column=4, value="s")                       # D soll_haben
+        ws.cell(row=r, column=3, value=konto)                     # C konto
+        ws.cell(row=r, column=4, value=sh)                        # D soll_haben
         ws.cell(row=r, column=5, value=buch_date)                 # E buchdatum
         ws.cell(row=r, column=6, value=cfg.eurofib.belegart)      # F belegart
         ws.cell(row=r, column=7, value=buch_date)                 # G belegdatum
@@ -80,7 +85,7 @@ class EurofibXlsxRenderer:
         ws.cell(row=r, column=12, value=cfg.fx.currency)          # L fwcd
         ws.cell(row=r, column=13, value=fw_amount)                # M fwbetrag
         # N fw_steuercode: blank for debit
-        ws.cell(row=r, column=16, value=int(line.konto_credit_override) if line.konto_credit_override else cfg.eurofib.konto_credit)  # P gegenkonto
+        ws.cell(row=r, column=16, value=int(line.konto_credit_override) if line.konto_credit_override else gegenkonto)  # P gegenkonto
         ws.cell(row=r, column=17, value=text)                     # Q text
         ws.cell(row=r, column=18, value="B")                      # R brutto_netto
         ws.cell(row=r, column=25, value=line.comanda)             # Y extbeleg
@@ -103,10 +108,14 @@ class EurofibXlsxRenderer:
         row_kurs = line.kurs if line.kurs is not None else cfg.fx.kurs
         fw_amount = line.advance * line.qty  # negative for storno
 
+        # For STORNO, swap s/h: credit row uses konto_debit and "s"
+        credit_konto = cfg.eurofib.konto_debit if cfg.eurofib.is_storno else cfg.eurofib.konto_credit
+        credit_sh = "s" if cfg.eurofib.is_storno else "h"
+
         # A marker: blank for credit
         ws.cell(row=r, column=2, value=cfg.eurofib.klient)        # B klient
-        ws.cell(row=r, column=3, value=int(line.konto_credit_override) if line.konto_credit_override else cfg.eurofib.konto_credit)  # C konto
-        ws.cell(row=r, column=4, value="h")                       # D soll_haben
+        ws.cell(row=r, column=3, value=int(line.konto_credit_override) if line.konto_credit_override else credit_konto)  # C konto
+        ws.cell(row=r, column=4, value=credit_sh)                 # D soll_haben
         ws.cell(row=r, column=5, value=buch_date)                 # E buchdatum
         ws.cell(row=r, column=6, value=cfg.eurofib.belegart)      # F belegart
         ws.cell(row=r, column=7, value=buch_date)                 # G belegdatum

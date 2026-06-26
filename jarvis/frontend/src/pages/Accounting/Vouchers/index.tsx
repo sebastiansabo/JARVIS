@@ -1,4 +1,4 @@
-import { useState, useMemo, lazy, Suspense } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Download, FileText, ScanLine, Send, ArrowLeft, Pencil, Copy, Trash2 } from 'lucide-react'
@@ -33,6 +33,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
 import { FormRenderer } from '@/components/forms/FormRenderer'
+import { useVoucherSchema } from '@/hooks/useVoucherSchema'
 import { formsApi } from '@/api/forms'
 import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
@@ -233,18 +234,13 @@ export default function Vouchers() {
     staleTime: 5 * 60_000,
   })
 
-  const { data: sigStatus } = useQuery({
-    queryKey: ['voucher-sig-status'],
-    queryFn: () => api.get<{ has_signature: boolean }>('/api/vouchers/signature-status'),
-    enabled: view === 'issue',
-    staleTime: 60_000,
-  })
+  const { schema: issueSchema, defaultValues: voucherDefaults, needsSignatureSave } =
+    useVoucherSchema(formData?.schema ?? [], 'voucher-issuance')
 
   const submitFormMutation = useMutation({
     mutationFn: async (answers: Record<string, unknown>) => {
       if (!formData?.id) throw new Error('Form not loaded')
-      // If signature was captured, save it to user profile
-      if (answers.f_signature && typeof answers.f_signature === 'string') {
+      if (needsSignatureSave && answers.f_signature && typeof answers.f_signature === 'string') {
         await api.put('/profile/api/signature', { signature: answers.f_signature })
       }
       const { f_signature: _, ...formAnswers } = answers
@@ -260,25 +256,6 @@ export default function Vouchers() {
     },
   })
 
-  const authUser = useAuthStore((s) => s.user)
-
-  const issueSchema = useMemo(() => {
-    if (!formData?.schema) return null
-    const contextFields: typeof formData.schema = [
-      { id: 'f_company', type: 'company_select' as any, label: 'Company', required: true, order: -2 },
-      { id: 'f_department', type: 'department_select' as any, label: 'Department', required: false, placeholder: authUser?.company || '', order: -1, config: { companyField: 'f_company' } },
-    ]
-    const approverField: typeof formData.schema[0] = {
-      id: 'f_approver', type: 'user_select' as any, label: 'Send for Approval to', required: false,
-      placeholder: 'Leave empty for direct manager', order: 98,
-    }
-    let schema = [...contextFields, ...formData.schema, approverField]
-    if (sigStatus && !sigStatus.has_signature) {
-      schema = [...schema, { id: 'f_signature', type: 'signature' as const, label: 'Your Signature', required: true, order: 99 }]
-    }
-    return schema
-  }, [formData?.schema, sigStatus, authUser])
-
   if (view === 'issue') {
     return (
       <div className="space-y-4 p-6">
@@ -289,13 +266,13 @@ export default function Vouchers() {
           <h1 className="text-2xl font-bold">Issue Voucher</h1>
         </div>
         <div className="mx-auto max-w-2xl rounded-lg border p-6">
-          {issueSchema ? (
+          {issueSchema.length ? (
             <FormRenderer
               schema={issueSchema}
               onSubmit={(answers) => submitFormMutation.mutate(answers)}
               submitting={submitFormMutation.isPending}
               submitLabel="Issue Voucher"
-              defaultValues={{ f_company: authUser?.company || '', f_department: authUser?.department || '' }}
+              defaultValues={voucherDefaults}
             />
           ) : (
             <div className="py-8 text-center text-muted-foreground">Loading form...</div>
