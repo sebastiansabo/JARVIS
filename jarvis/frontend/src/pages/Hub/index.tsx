@@ -68,7 +68,7 @@ const Digest = lazy(() => import('@/pages/Digest'))
 
 // ─── Types ──────────────────────────────────────────────
 
-type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat'
+type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals'
 type HrSubTab = 'pontaje' | 'bonuses' | 'leave-permits'
 
 interface AppTile {
@@ -81,6 +81,7 @@ interface AppTile {
 
 const appTiles: (AppTile & { shortLabel?: string })[] = [
   { key: 'invoices', label: 'My Invoices', shortLabel: 'Invoices', icon: FileText, bg: 'bg-blue-600', fg: 'text-white' },
+  { key: 'approvals', label: 'Approvals', icon: FileCheck, bg: 'bg-orange-600', fg: 'text-white' },
   { key: 'hr', label: 'HR', icon: Activity, bg: 'bg-emerald-600', fg: 'text-white' },
   { key: 'vouchers', label: 'Vouchers', icon: Ticket, bg: 'bg-amber-500', fg: 'text-white' },
   { key: 'forms', label: 'Forms', icon: ClipboardList, bg: 'bg-violet-600', fg: 'text-white' },
@@ -185,9 +186,15 @@ export default function Hub() {
     queryFn: () => fetch('/forms/api/forms/published', { credentials: 'include' }).then(r => r.json()),
     staleTime: 60_000,
   })
+  const { data: approvalsCountData } = useQuery({
+    queryKey: ['hub', 'approvals-count'],
+    queryFn: () => fetch('/approvals/api/my-queue/count', { credentials: 'include' }).then(r => r.ok ? r.json() : { count: 0 }),
+    refetchInterval: 30_000,
+  })
 
   const tileCounts: Record<string, number> = {
     invoices: invoicesData?.total ?? -1,
+    approvals: approvalsCountData?.count ?? -1,
     hr: -1, // always show — sub-tabs auto-hide when empty
     vouchers: Array.isArray(vouchersData) ? vouchersData.length : -1,
     forms: (formsCountData?.forms ?? []).length || -1,
@@ -272,6 +279,7 @@ export default function Hub() {
           )}
 
           {activeModule === 'invoices' && <HubInvoicesPanel />}
+          {activeModule === 'approvals' && <HubApprovalsPanel />}
           {activeModule === 'hr' && user && <HubHrPanel userId={user.id} />}
           {activeModule === 'forms' && <HubFormsPanel />}
           {activeModule === 'vouchers' && (
@@ -332,6 +340,7 @@ export default function Hub() {
                           '/app/vouchers': 'vouchers',
                           '/app/hr': 'hr',
                           '/app/chat': 'chat',
+                          '/app/approvals': 'approvals',
                         }
                         const link = n.link!
                         const mod = linkToModule[link] || Object.entries(linkToModule).find(([prefix]) => link.startsWith(prefix))?.[1]
@@ -1323,6 +1332,82 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+// ─── Approvals Panel ─────────────────────────────────────
+
+function HubApprovalsPanel() {
+  const queryClient = useQueryClient()
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['hub', 'approvals-queue'],
+    queryFn: () => fetch('/approvals/api/my-queue', { credentials: 'include' }).then(r => r.json()),
+    refetchInterval: 30_000,
+  })
+
+  const decideMutation = useMutation({
+    mutationFn: ({ id, decision, comment }: { id: number; decision: string; comment?: string }) =>
+      fetch(`/approvals/api/requests/${id}/decide`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision, comment }),
+      }).then(r => r.json()),
+    onSuccess: () => {
+      toast.success('Decision recorded')
+      queryClient.invalidateQueries({ queryKey: ['hub', 'approvals'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+    },
+    onError: () => toast.error('Failed to submit decision'),
+  })
+
+  const queue = data?.queue ?? []
+
+  if (isLoading) return <Skeleton className="h-32 w-full rounded-lg" />
+  if (queue.length === 0) return <div className="py-8 text-center text-muted-foreground text-sm">No pending approvals</div>
+
+  return (
+    <div className="space-y-3">
+      {queue.map((item: any) => {
+        const ctx = item.context_snapshot || {}
+        const title = ctx.title || `${item.entity_type} #${item.entity_id}`
+        const requestedBy = item.requested_by?.name || 'Unknown'
+        const requestedAt = item.requested_at ? new Date(item.requested_at).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
+        return (
+          <div key={item.id} className="rounded-lg border bg-card p-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium">{title}</p>
+              <p className="text-xs text-muted-foreground">
+                From {requestedBy} &middot; {requestedAt}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white"
+                disabled={decideMutation.isPending}
+                onClick={() => decideMutation.mutate({ id: item.id, decision: 'approved' })}
+              >
+                Approve
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-9"
+                disabled={decideMutation.isPending}
+                onClick={() => {
+                  const reason = prompt('Reason for rejection (optional):')
+                  decideMutation.mutate({ id: item.id, decision: 'rejected', comment: reason || undefined })
+                }}
+              >
+                Reject
+              </Button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
