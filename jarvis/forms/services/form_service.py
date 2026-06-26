@@ -155,9 +155,25 @@ class FormService:
                 msg = settings.get('limit_message', 'This form is no longer accepting submissions.')
                 return ServiceResult(success=False, error=msg, status_code=403)
 
+        # Extract context fields before stripping (injected by frontend for voucher forms)
+        explicit_approver_id = answers.pop('f_approver', None) or None
+        if explicit_approver_id:
+            try:
+                explicit_approver_id = int(explicit_approver_id)
+            except (ValueError, TypeError):
+                explicit_approver_id = None
+        context_company = answers.pop('f_company', None)
+        context_department = answers.pop('f_department', None)
+
         # Strip unknown answer keys — only accept keys matching schema field IDs
         known_field_ids = {f.get('id') for f in schema if f.get('id')}
         answers = {k: v for k, v in answers.items() if k in known_field_ids}
+
+        # Re-add context fields so they appear in stored answers (for approval title etc.)
+        if context_company:
+            answers['f_company'] = context_company
+        if context_department:
+            answers['f_department'] = context_department
 
         # Validate required fields and types
         validation_error = self._validate_answers(schema, answers)
@@ -205,7 +221,11 @@ class FormService:
 
         # Trigger approval if required
         if form.get('requires_approval'):
-            respondent_with_user = {**sanitized_respondent, 'user_id': user_id}
+            respondent_with_user = {
+                **sanitized_respondent,
+                'user_id': user_id,
+                'explicit_approver_id': explicit_approver_id,
+            }
             self._trigger_approval(form, submission_id, respondent_with_user)
         else:
             # Even without approval, send submit notifications
