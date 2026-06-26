@@ -33,8 +33,8 @@ def _on_submitted(payload):
     if approver_ids:
         notify_users(
             approver_ids,
-            f'New approval request: {entity_type} #{entity_id}',
-            message=f'Flow: {flow_name}. Please review and approve.',
+            f'New approval request: {project_title}',
+            message=f'Please review and approve.',
             link=_entity_link(entity_type, entity_id),
             entity_type=entity_type,
             entity_id=entity_id,
@@ -85,7 +85,7 @@ def _on_approved(payload):
         msg = 'Auto-approved' if auto else 'All approval steps completed'
         notify_user(
             requester_id,
-            f'{entity_type.replace("_", " ").title()} #{entity_id} approved',
+            f'{project_title} — approved',
             message=msg,
             link=_entity_link(entity_type, entity_id),
             entity_type=entity_type,
@@ -172,7 +172,7 @@ def _on_rejected(payload):
     if requester_id:
         notify_user(
             requester_id,
-            f'{entity_type.replace("_", " ").title()} #{entity_id} rejected',
+            f'{project_title} — rejected',
             message=note or 'Your request was rejected.',
             link=_entity_link(entity_type, entity_id),
             entity_type=entity_type,
@@ -235,7 +235,7 @@ def _on_returned(payload):
     if requester_id:
         notify_user(
             requester_id,
-            f'{entity_type.replace("_", " ").title()} #{entity_id} returned',
+            f'{project_title} — returned',
             message=comment or 'Please review and resubmit.',
             link=_entity_link(entity_type, entity_id),
             entity_type=entity_type,
@@ -283,8 +283,8 @@ def _on_step_advanced(payload):
     if approver_ids:
         notify_users(
             approver_ids,
-            f'Approval request awaiting your review',
-            message=f'{entity_type.replace("_", " ").title()} #{entity_id} — Step: {step_name}',
+            f'Approval request: {project_title}',
+            message=f'Step: {step_name}. Please review and approve.',
             link=_entity_link(entity_type, entity_id),
             entity_type=entity_type,
             entity_id=entity_id,
