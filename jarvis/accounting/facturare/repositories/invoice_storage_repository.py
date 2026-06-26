@@ -170,15 +170,53 @@ class InvoiceStorageRepository(BaseRepository):
                JOIN companies comp ON comp.id = kc.supplier_id
                ORDER BY kc.supplier_id, kc.invoice_type""")
 
-    def upsert_konto_config(self, supplier_id, invoice_type, konto_debit, konto_credit, centru_gestiune, updated_by=None):
+    def upsert_konto_config(self, supplier_id, invoice_type, konto_debit, konto_credit, centru_gestiune, text_template=None, updated_by=None):
         return self.execute(
-            """INSERT INTO facturare_konto_config (supplier_id, invoice_type, konto_debit, konto_credit, centru_gestiune, updated_by)
-               VALUES (%s,%s,%s,%s,%s,%s)
+            """INSERT INTO facturare_konto_config (supplier_id, invoice_type, konto_debit, konto_credit, centru_gestiune, text_template, updated_by)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT (supplier_id, invoice_type) DO UPDATE SET
                  konto_debit = EXCLUDED.konto_debit, konto_credit = EXCLUDED.konto_credit,
-                 centru_gestiune = EXCLUDED.centru_gestiune, updated_at = now(), updated_by = EXCLUDED.updated_by
+                 centru_gestiune = EXCLUDED.centru_gestiune, text_template = EXCLUDED.text_template,
+                 updated_at = now(), updated_by = EXCLUDED.updated_by
                RETURNING *""",
-            (supplier_id, invoice_type, konto_debit, konto_credit, centru_gestiune, updated_by), returning=True)
+            (supplier_id, invoice_type, konto_debit, konto_credit, centru_gestiune, text_template, updated_by), returning=True)
+
+    # ── Venituri Rules ─────────────────────────────────────────────
+
+    def get_venituri_rules(self):
+        return self.query_all(
+            """SELECT vr.*, comp.company AS supplier_name
+               FROM facturare_venituri_rules vr
+               JOIN companies comp ON comp.id = vr.supplier_id
+               ORDER BY vr.supplier_id, vr.comanda_prefix""")
+
+    def upsert_venituri_rule(self, supplier_id, comanda_prefix, konto_venituri, kostenstelle, updated_by=None):
+        return self.execute(
+            """INSERT INTO facturare_venituri_rules (supplier_id, comanda_prefix, konto_venituri, kostenstelle, updated_by)
+               VALUES (%s,%s,%s,%s,%s)
+               ON CONFLICT (supplier_id, comanda_prefix) DO UPDATE SET
+                 konto_venituri = EXCLUDED.konto_venituri, kostenstelle = EXCLUDED.kostenstelle,
+                 updated_at = now(), updated_by = EXCLUDED.updated_by
+               RETURNING *""",
+            (supplier_id, comanda_prefix, konto_venituri, kostenstelle, updated_by), returning=True)
+
+    def delete_venituri_rule(self, rule_id):
+        self.execute("DELETE FROM facturare_venituri_rules WHERE id = %s", (rule_id,))
+
+    def match_venituri_rule(self, supplier_id, nr_comanda):
+        """Find the venituri rule for a supplier + order number.
+        Tries prefix match first, then wildcard '*'."""
+        nr_str = str(nr_comanda)
+        rules = self.query_all(
+            "SELECT * FROM facturare_venituri_rules WHERE supplier_id = %s ORDER BY comanda_prefix DESC",
+            (supplier_id,))
+        for rule in rules:
+            if rule["comanda_prefix"] != "*" and nr_str.startswith(rule["comanda_prefix"]):
+                return rule
+        for rule in rules:
+            if rule["comanda_prefix"] == "*":
+                return rule
+        return None
 
     # ── Invoice Links ────────────────────────────────────────────
 
