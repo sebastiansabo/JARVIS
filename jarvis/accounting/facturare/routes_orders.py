@@ -850,7 +850,8 @@ def api_get_konto_config():
     return jsonify({"configs": [
         {"supplier_id": r["supplier_id"], "supplier_name": r.get("supplier_name", ""),
          "invoice_type": r["invoice_type"], "konto_debit": r.get("konto_debit") or "",
-         "konto_credit": r.get("konto_credit") or "", "centru_gestiune": r.get("centru_gestiune") or ""}
+         "konto_credit": r.get("konto_credit") or "", "centru_gestiune": r.get("centru_gestiune") or "",
+         "text_template": r.get("text_template") or ""}
         for r in rows
     ]})
 
@@ -868,9 +869,103 @@ def api_put_konto_config():
             supplier_id=item["supplier_id"], invoice_type=item["invoice_type"],
             konto_debit=item.get("konto_debit") or None, konto_credit=item.get("konto_credit") or None,
             centru_gestiune=item.get("centru_gestiune") or None,
+            text_template=item.get("text_template") or None,
             updated_by=current_user.id,
         )
     return jsonify({"success": True, "count": len(items)})
+
+
+# ── Venituri Rules ───────────────────────────────────────────────
+
+@facturare_bp.route("/facturare/api/venituri-rules")
+@login_required
+@handle_api_errors
+def api_get_venituri_rules():
+    if not _check_perm("view"):
+        return error_response("Permission denied", 403)
+    rows = _repo.get_venituri_rules()
+    return jsonify({"rules": [
+        {"id": r["id"], "supplier_id": r["supplier_id"], "supplier_name": r.get("supplier_name", ""),
+         "comanda_prefix": r["comanda_prefix"], "konto_venituri": r["konto_venituri"],
+         "kostenstelle": r["kostenstelle"]}
+        for r in rows
+    ]})
+
+
+@facturare_bp.route("/facturare/api/venituri-rules", methods=["PUT"])
+@login_required
+@handle_api_errors
+def api_put_venituri_rules():
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+    data = request.get_json(force=True)
+    items = data.get("items", [])
+    for item in items:
+        _repo.upsert_venituri_rule(
+            supplier_id=item["supplier_id"], comanda_prefix=item["comanda_prefix"],
+            konto_venituri=item["konto_venituri"], kostenstelle=item["kostenstelle"],
+            updated_by=current_user.id,
+        )
+    return jsonify({"success": True, "count": len(items)})
+
+
+@facturare_bp.route("/facturare/api/venituri-rules/<int:rule_id>", methods=["DELETE"])
+@login_required
+@handle_api_errors
+def api_delete_venituri_rule(rule_id):
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+    _repo.delete_venituri_rule(rule_id)
+    return jsonify({"success": True})
+
+
+@facturare_bp.route("/facturare/api/contracts/<int:contract_id>/accounting-summary")
+@login_required
+@handle_api_errors
+def api_contract_accounting_summary(contract_id):
+    """Return all accounting data relevant to a contract for display."""
+    if not _check_perm("view"):
+        return error_response("Permission denied", 403)
+
+    contract = _repo.get_contract_by_id(contract_id)
+    if not contract:
+        return error_response("Contract not found", 404)
+
+    # Supplier info (firmennr)
+    supplier = _repo.query_one(
+        "SELECT id, company, eurofib_klient_id FROM companies WHERE id = %s",
+        (contract["supplier_id"],))
+
+    # Customer konto debit
+    customer = _repo.query_one(
+        "SELECT id, display_name, eurofib_konto_debit FROM crm_clients WHERE id = %s",
+        (contract["customer_id"],))
+
+    firmennr = supplier.get("eurofib_klient_id") if supplier else None
+    kd_map = customer.get("eurofib_konto_debit") if customer else None
+    client_konto_debit = kd_map.get(str(firmennr)) if isinstance(kd_map, dict) and firmennr else None
+
+    # Konto configs per invoice type
+    konto_configs = {}
+    for inv_type in ('INVOICE', 'STORNO', 'FINAL'):
+        row = _repo.query_one(
+            "SELECT konto_debit, konto_credit, centru_gestiune, text_template FROM facturare_konto_config WHERE supplier_id = %s AND invoice_type = %s",
+            (contract["supplier_id"], inv_type))
+        konto_configs[inv_type] = dict(row) if row else None
+
+    # Venituri rules for this supplier
+    venituri = _repo.query_all(
+        "SELECT comanda_prefix, konto_venituri, kostenstelle FROM facturare_venituri_rules WHERE supplier_id = %s ORDER BY comanda_prefix",
+        (contract["supplier_id"],))
+
+    return jsonify({
+        "firmennr": firmennr,
+        "supplier_name": supplier["company"] if supplier else None,
+        "customer_name": customer["display_name"] if customer else None,
+        "client_konto_debit": client_konto_debit,
+        "konto_configs": konto_configs,
+        "venituri_rules": [dict(r) for r in venituri] if venituri else [],
+    })
 
 
 # ── Individual document items (per car) ──────────────────────────
@@ -1311,7 +1406,11 @@ def api_generate_eurofib(invoice_id):
     split_mode = inv_row.get("split_mode", "equal")
     total_selling = sum(float(l["selling_price_eur"]) for l in lines) or 1
     start_no = inv_row.get("invoice_number") or inv_row["id"]
-    issued_date = inv_row.get("issued_date") or date_type.today()
+    issued_date = inv_row.get("issued_date")
+    if not issued_date:
+        return error_response("Invoice has no issued date. Please set the issued date before exporting.", 400)
+    if isinstance(issued_date, str):
+        issued_date = date_type.fromisoformat(issued_date)
     kurs = float(inv_row["kurs_applied"]) if inv_row.get("kurs_applied") else 1.0
 
     # For storno: build lines per reversed invoice (negative amounts)
@@ -1354,21 +1453,36 @@ def api_generate_eurofib(invoice_id):
 
     # Compute kurs_date (day before issued_date)
     from datetime import timedelta
-    kurs_date = issued_date - timedelta(days=1) if isinstance(issued_date, date_type) else date_type.today()
+    kurs_date = issued_date - timedelta(days=1)
+
+    # Get supplier firmennr (eurofib_klient_id)
+    supplier_row = _repo.query_one(
+        "SELECT eurofib_klient_id FROM companies WHERE id = %s",
+        (contract["supplier_id"],))
+    firmennr = supplier_row.get("eurofib_klient_id") if supplier_row else None
+    if not firmennr:
+        return error_response("Firmennr (eurofib_klient_id) not configured for this supplier. Check company settings.", 400)
+
+    default_text_templates = {
+        'INVOICE': 'avans {model} {comanda}',
+        'STORNO': 'storno avans {model} {comanda}',
+        'FINAL': '{model} {comanda}',
+    }
 
     # Build JobConfig for the renderer
     cfg = JobConfig(
         job_id=f"inv-{invoice_id}",
         contract=ContractConfig(ref=contract["contract_ref"], anexa_ref=f"Anexa {anexa['anexa_number']}"),
         input=InputConfig(anexa="n/a"),
-        invoice=InvoiceConfig(kind="invoice", start_no=start_no, date=issued_date if isinstance(issued_date, date_type) else date_type.today()),
+        invoice=InvoiceConfig(kind="invoice", start_no=start_no, date=issued_date),
         fx=FxConfig(currency="EUR", kurs=kurs, kurs_date=kurs_date),
         supplier=PartyConfig(name="", address_lines=[]),
         customer=PartyConfig(name="", address_lines=[]),
         eurofib=EurofibConfig(
-            klient=0,
+            klient=firmennr,
             konto_debit=int(konto_row["konto_debit"]),
             konto_credit=int(konto_row["konto_credit"]),
+            text_template=konto_row.get("text_template") or default_text_templates.get(inv_type_str, "{model} {comanda}"),
         ),
     )
 

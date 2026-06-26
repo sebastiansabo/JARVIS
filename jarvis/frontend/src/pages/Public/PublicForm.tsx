@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { formsApi } from '@/api/forms'
 import { api } from '@/api/client'
-import { useAuthStore } from '@/stores/authStore'
+import { useAuth } from '@/hooks/useAuth'
 import { FormRenderer } from '@/components/forms/FormRenderer'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -19,7 +19,7 @@ export default function PublicForm() {
   const [submitted, setSubmitted] = useState(false)
   const [thankYou, setThankYou] = useState('')
   const [mode, setMode] = useState<'issue' | 'redeem'>('issue')
-  const user = useAuthStore((s) => s.user)
+  const { user } = useAuth()
 
   const isVoucherForm = slug === VOUCHER_SLUG
 

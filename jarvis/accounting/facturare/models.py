@@ -26,6 +26,8 @@ class OrderLine:
     qty: int = 1
     kurs: float | None = None
     storno_description: str | None = None
+    kostenstelle: str | None = None
+    konto_credit_override: str | None = None
 
 
 InvoiceKind = Literal["invoice", "proforma"]
