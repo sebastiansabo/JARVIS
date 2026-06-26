@@ -10,7 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronsUpDown, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { crmApi } from '@/api/crm'
 import { organizationApi } from '@/api/organization'
@@ -125,22 +125,25 @@ interface FieldProps {
 
 function CrmClientField({ field, value, error, onChange, onSetField }: FieldProps) {
   const [search, setSearch] = useState('')
+  const [activeSearch, setActiveSearch] = useState('')
   const [showResults, setShowResults] = useState(false)
 
-  // Search by name
+  const triggerSearch = () => { if (search.length >= 2) { setActiveSearch(search); setShowResults(true) } }
+
+  // Search by name, CIF, phone (uses q= for elastic search across all fields)
   const { data: clientData } = useQuery({
-    queryKey: ['crm-clients-search', search],
-    queryFn: () => crmApi.getClients({ name: search, limit: '10' }),
-    enabled: search.length >= 2,
+    queryKey: ['crm-clients-search', activeSearch],
+    queryFn: () => crmApi.getClients({ q: activeSearch, limit: '10' }),
+    enabled: activeSearch.length >= 2,
     staleTime: 30_000,
   })
 
   // Search by VIN
-  const isVinLike = /^[A-Z0-9]{5,17}$/i.test(search.trim())
+  const isVinLike = /^[A-Z0-9]{5,17}$/i.test(activeSearch.trim())
   const { data: dealData } = useQuery({
-    queryKey: ['crm-deals-vin', search],
-    queryFn: () => crmApi.getDeals({ vin: search.trim(), limit: '10' }),
-    enabled: isVinLike && search.length >= 5,
+    queryKey: ['crm-deals-vin', activeSearch],
+    queryFn: () => crmApi.getDeals({ vin: activeSearch.trim(), limit: '10' }),
+    enabled: isVinLike && activeSearch.length >= 5,
     staleTime: 30_000,
   })
 
@@ -175,14 +178,26 @@ function CrmClientField({ field, value, error, onChange, onSetField }: FieldProp
       <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
       <p className="text-xs text-muted-foreground">Search by client name, CIF, or VIN</p>
       <div className="relative">
-        <Input
-          value={search || selectedLabel}
-          onChange={(e) => { setSearch(e.target.value); setShowResults(true); if (!e.target.value) onChange('') }}
-          onFocus={() => { if (selectedLabel) { setSearch(selectedLabel); setShowResults(true) } }}
-          onBlur={() => setTimeout(() => setShowResults(false), 200)}
-          placeholder={field.placeholder || 'Search by name, CIF, or VIN...'}
-        />
-        {showResults && search.length >= 2 && hasResults && (
+        <div className="relative">
+          <Input
+            value={search || selectedLabel}
+            onChange={(e) => { setSearch(e.target.value); if (!e.target.value) { onChange(''); setActiveSearch('') } }}
+            onFocus={() => { if (selectedLabel) { setSearch(selectedLabel) } }}
+            onBlur={() => setTimeout(() => setShowResults(false), 200)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); triggerSearch() } }}
+            placeholder={field.placeholder || 'Search by name, CIF, or VIN...'}
+            className="pr-10"
+          />
+          <button
+            type="button"
+            className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground transition-colors"
+            onClick={triggerSearch}
+            tabIndex={-1}
+          >
+            <Search className="h-4 w-4" />
+          </button>
+        </div>
+        {showResults && activeSearch.length >= 2 && hasResults && (
           <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-lg max-h-60 overflow-y-auto">
             {clients.length > 0 && (
               <>
