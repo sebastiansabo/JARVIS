@@ -182,10 +182,10 @@ class VoucherRepository(BaseRepository):
             FROM vouchers v
             LEFT JOIN users u_issued ON u_issued.id = v.issued_by_user_id
             LEFT JOIN users u_approver ON u_approver.id = v.approver_user_id
-            WHERE v.issued_by_user_id = %s
+            WHERE v.issued_by_user_id = %s OR v.approver_user_id = %s
             ORDER BY v.created_at DESC
             LIMIT %s OFFSET %s
-        ''', (user_id, limit, offset))
+        ''', (user_id, user_id, limit, offset))
 
         for row in rows:
             row['benefit_display'] = _benefit_display(row)
