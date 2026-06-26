@@ -139,6 +139,8 @@ export default function VouchersPanel() {
                       <div><span className="text-muted-foreground">Expires:</span> {v.expires_at || '—'}</div>
                       <div><span className="text-muted-foreground">Type:</span> {v.voucher_type.replace(/_/g, ' ')}</div>
                       <div><span className="text-muted-foreground">Days left:</span> {v.days_remaining != null ? <span className={v.days_remaining <= 30 ? 'text-orange-500 font-medium' : ''}>{v.days_remaining}d</span> : '—'}</div>
+                      <div><span className="text-muted-foreground">Issuer:</span> {(v as any).issued_by_name || '—'}</div>
+                      <div><span className="text-muted-foreground">Approver:</span> {(v as any).approver_name || '—'}</div>
                     </div>
                     {v.notes && <p className="text-xs text-muted-foreground">{v.notes}</p>}
                     <div className="flex gap-2">
