@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, ClipboardList, Newspaper, Car, DollarSign, Tag, BarChart3, Receipt, Headset, MoreHorizontal, GraduationCap, Wrench, Activity, Ticket, Home } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, ClipboardList, Newspaper, Car, DollarSign, Tag, BarChart3, Receipt, Headset, MoreHorizontal, GraduationCap, Wrench, Activity, Ticket, Home, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -481,6 +481,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
             { path: '/app/hub?module=hr', label: 'HR', icon: Activity, module: 'hr' },
             { path: '/app/hub?module=vouchers', label: 'Vouchers', icon: Ticket, module: 'vouchers' },
             { path: '/app/hub?module=forms', label: 'Forms', icon: ClipboardList, module: 'forms' },
+            { path: '/app/hub?module=chat', label: 'Connecteams', icon: MessageSquare, module: 'chat' },
           ] as const).map((item) => {
             const Icon = item.icon
             const isActive = item.module

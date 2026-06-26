@@ -1,7 +1,7 @@
 import { useState, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { FileText, ScanLine, ArrowLeft, Plus } from 'lucide-react'
+import { FileText, ScanLine, ArrowLeft } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { FormRenderer } from '@/components/forms/FormRenderer'
 import { formsApi } from '@/api/forms'
@@ -9,25 +9,8 @@ import { api } from '@/api/client'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
 import { vouchersApi } from '@/api/vouchers'
 import type { Voucher } from '@/types/vouchers'
-
-const VoucherRedeem = lazy(() => import('@/pages/Public/VoucherRedeem'))
 
 const STATUS_COLORS: Record<string, string> = {
   pending_approval: 'bg-yellow-100 text-yellow-800',
@@ -52,8 +35,8 @@ export default function VouchersPanel() {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
   const perms = user?.permissions || {}
-  const canIssue = !user?.permissions || (perms['vouchers.form.view'] ?? true)
-  const canRedeem = !user?.permissions || (perms['vouchers.accounting.redeem'] ?? true)
+  const _canIssue = !user?.permissions || (perms['vouchers.form.view'] ?? true)
+  const _canRedeem = !user?.permissions || (perms['vouchers.accounting.redeem'] ?? true)
 
   const { data: vouchers = [], isLoading } = useQuery({
     queryKey: ['my-vouchers'],

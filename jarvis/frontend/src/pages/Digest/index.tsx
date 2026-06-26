@@ -23,7 +23,7 @@ interface TargetItem {
   label: string
 }
 
-export default function Digest() {
+export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}) {
   const queryClient = useQueryClient()
   const [selectedChannel, setSelectedChannel] = useState<DigestChannel | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -147,15 +147,17 @@ export default function Digest() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Digest</h1>
-          <p className="text-sm text-muted-foreground">Communication channels for your organization</p>
+      {!readOnly && (
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Digest</h1>
+            <p className="text-sm text-muted-foreground">Communication channels for your organization</p>
+          </div>
+          <Button onClick={() => setShowCreate(true)} size="sm">
+            <Plus className="mr-1.5 h-4 w-4" /> New Channel
+          </Button>
         </div>
-        <Button onClick={() => setShowCreate(true)} size="sm">
-          <Plus className="mr-1.5 h-4 w-4" /> New Channel
-        </Button>
-      </div>
+      )}
 
       {isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
