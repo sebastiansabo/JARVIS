@@ -1008,13 +1008,14 @@ def api_generate_pdf(invoice_id):
     contract = _repo.get_contract_by_id(anexa["contract_id"])
     all_lines = _repo.get_lines_by_anexa(anexa["id"])
     # Filter to selected lines if line_ids is set on this invoice
+    # Preserve line_ids order so PDF page numbering matches the UI
     inv_line_ids = inv_row.get("line_ids")
     if inv_line_ids:
         import json as _json
         if isinstance(inv_line_ids, str):
             inv_line_ids = _json.loads(inv_line_ids)
-        _lid_set = set(inv_line_ids)
-        lines = [l for l in all_lines if l["id"] in _lid_set]
+        _lid_map = {l["id"]: l for l in all_lines}
+        lines = [_lid_map[lid] for lid in inv_line_ids if lid in _lid_map]
     else:
         lines = all_lines
 
@@ -1286,13 +1287,14 @@ def api_generate_eurofib(invoice_id):
     contract = _repo.get_contract_by_id(anexa["contract_id"])
     all_lines = _repo.get_lines_by_anexa(anexa["id"])
     # Filter to selected lines if line_ids is set
+    # Preserve line_ids order so numbering matches the UI
     inv_line_ids = inv_row.get("line_ids")
     if inv_line_ids:
         import json as _json
         if isinstance(inv_line_ids, str):
             inv_line_ids = _json.loads(inv_line_ids)
-        _lid_set = set(inv_line_ids)
-        lines = [l for l in all_lines if l["id"] in _lid_set]
+        _lid_map = {l["id"]: l for l in all_lines}
+        lines = [_lid_map[lid] for lid in inv_line_ids if lid in _lid_map]
     else:
         lines = all_lines
 
