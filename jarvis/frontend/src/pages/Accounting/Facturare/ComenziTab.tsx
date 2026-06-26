@@ -21,7 +21,7 @@ import {
 
 // ── Types ───────────────────────────────────────────────────────
 
-interface Company { id: number; company: string; vat: string | null }
+interface Company { id: number; company: string; vat: string | null; eurofib_klient_id: number | null }
 
 interface ContractSummary {
   id: number; contract_ref: string; supplier_id: number; customer_id: number
@@ -161,6 +161,55 @@ function CreateContractDialog({ open, onOpenChange, companies, onCreated }: {
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [searching, setSearching] = useState(false)
+  const [clientKonto, setClientKonto] = useState<{ status: 'unknown' | 'ok' | 'missing'; value: string }>({ status: 'unknown', value: '' })
+  const [kontoInput, setKontoInput] = useState('')
+  const [savingKonto, setSavingKonto] = useState(false)
+
+  // Check client konto when customer + supplier are selected
+  useEffect(() => {
+    if (!customerId || !supplierId) { setClientKonto({ status: 'unknown', value: '' }); return }
+    const company = companies.find(c => String(c.id) === supplierId)
+    const klientId = company?.eurofib_klient_id
+    if (!klientId) { setClientKonto({ status: 'unknown', value: '' }); return }
+
+    fetch(`/api/crm/clients/${customerId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) { setClientKonto({ status: 'missing', value: '' }); return }
+        const kdMap = data.eurofib_konto_debit as Record<string, number> | null
+        const val = kdMap?.[String(klientId)]
+        if (val) {
+          setClientKonto({ status: 'ok', value: String(val) })
+        } else {
+          setClientKonto({ status: 'missing', value: '' })
+        }
+      })
+      .catch(() => setClientKonto({ status: 'unknown', value: '' }))
+  }, [customerId, supplierId, companies])
+
+  const saveClientKonto = async () => {
+    if (!kontoInput.trim() || !customerId || !supplierId) return
+    const company = companies.find(c => String(c.id) === supplierId)
+    const klientId = company?.eurofib_klient_id
+    if (!klientId) return
+
+    setSavingKonto(true)
+    try {
+      // Fetch current client to get existing konto map
+      const clientRes = await fetch(`/api/crm/clients/${customerId}`)
+      const clientData = await clientRes.json()
+      const kdMap = (clientData.eurofib_konto_debit as Record<string, number>) || {}
+      kdMap[String(klientId)] = parseInt(kontoInput)
+
+      await fetch(`/api/crm/clients/${customerId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eurofib_konto_debit: kdMap }),
+      })
+      setClientKonto({ status: 'ok', value: kontoInput })
+      toast.success('Konto saved')
+    } catch { toast.error('Failed to save konto') }
+    finally { setSavingKonto(false) }
+  }
 
   const searchCrm = () => {
     if (!customerSearch.trim()) return
@@ -192,6 +241,7 @@ function CreateContractDialog({ open, onOpenChange, companies, onCreated }: {
       toast.success(`Contract ${data.contract.contract_ref} created`)
       onOpenChange(false); onCreated()
       setRef(''); setSupplierId(''); setCustomerId(''); setCustomerName(''); setContractDate(''); setResponsible(''); setNotes('')
+      setClientKonto({ status: 'unknown', value: '' }); setKontoInput('')
     } catch (err: any) { toast.error(err.message) }
     finally { setSubmitting(false) }
   }
@@ -235,6 +285,31 @@ function CreateContractDialog({ open, onOpenChange, companies, onCreated }: {
               </div>
             )}
           </div>
+          {/* Konto validation */}
+          {customerId && supplierId && (
+            <div className="space-y-1">
+              {clientKonto.status === 'ok' && (
+                <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 px-3 py-1.5 rounded">
+                  <span>✓</span>
+                  <span>Konto {companies.find(c => String(c.id) === supplierId)?.company}: <strong>{clientKonto.value}</strong></span>
+                </div>
+              )}
+              {clientKonto.status === 'missing' && (
+                <div className="space-y-1.5">
+                  <div className="text-xs text-amber-600 bg-amber-50 px-3 py-1.5 rounded">
+                    ⚠ Konto debit lipsește pentru {companies.find(c => String(c.id) === supplierId)?.company}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input className="h-7 text-xs w-28" placeholder="ex: 41214286" value={kontoInput}
+                      onChange={e => setKontoInput(e.target.value)} />
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={saveClientKonto} disabled={savingKonto}>
+                      {savingKonto ? 'Saving...' : 'Save Konto'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div><Label>Date</Label><Input type="date" value={contractDate} onChange={e => setContractDate(e.target.value)} /></div>
             <div><Label>Responsible</Label><UserSearchInput value={responsible} onChange={setResponsible} /></div>
