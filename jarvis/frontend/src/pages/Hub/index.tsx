@@ -122,7 +122,7 @@ export default function Hub() {
     refetchInterval: 60_000,
   })
 
-  const _punchMut = useMutation({
+  useMutation({
     mutationFn: async () => {
       const pos = await new Promise<GeolocationPosition | null>((resolve) => {
         if (!navigator.geolocation) return resolve(null)
@@ -148,7 +148,7 @@ export default function Hub() {
   })
 
   const checkinDir = checkinStatus?.next_direction ?? 'IN'
-  const _isCheckedIn = checkinDir !== 'IN'
+  void checkinDir
   const lastPunch = checkinStatus?.punches?.length
     ? checkinStatus.punches[checkinStatus.punches.length - 1]
     : null
@@ -330,8 +330,9 @@ export default function Hub() {
                           '/app/hr': 'hr',
                           '/app/chat': 'chat',
                         }
-                        const mod = linkToModule[n.link] || Object.entries(linkToModule).find(([prefix]) => n.link.startsWith(prefix))?.[1]
-                        if (mod) { setActiveModule(mod) } else { navigate(n.link) }
+                        const link = n.link!
+                        const mod = linkToModule[link] || Object.entries(linkToModule).find(([prefix]) => link.startsWith(prefix))?.[1]
+                        if (mod) { setActiveModule(mod) } else { navigate(link) }
                       }
                     }}
                   >
