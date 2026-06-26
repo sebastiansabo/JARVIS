@@ -1,12 +1,10 @@
 import React, { useState, useMemo, useCallback, lazy, Suspense } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
   Activity,
   Ticket,
-  LogIn,
-  LogOut,
   Bell,
   FileCheck,
   ChevronLeft,
@@ -17,10 +15,8 @@ import {
   ClipboardList,
   Car,
   MessageSquare,
-  Ticket as TicketIcon,
   Clock,
   Award,
-  UserCog,
   Home,
   Eye,
   ExternalLink,
@@ -65,10 +61,11 @@ const VouchersPanel = lazy(() => import('@/pages/Profile/VouchersPanel'))
 const CreateTicketDialog = lazy(() => import('@/pages/Ticketing/CreateTicketDialog'))
 const EditProfileDialogLazy = lazy(() => import('@/pages/Profile/index').then(m => ({ default: m.EditProfileDialog })))
 const FormRendererLazy = lazy(() => import('@/components/forms/FormRenderer').then(m => ({ default: m.FormRenderer })))
+const Digest = lazy(() => import('@/pages/Digest'))
 
 // ─── Types ──────────────────────────────────────────────
 
-type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms'
+type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat'
 type HrSubTab = 'pontaje' | 'bonuses' | 'leave-permits'
 
 interface AppTile {
@@ -84,6 +81,7 @@ const appTiles: AppTile[] = [
   { key: 'hr', label: 'HR', icon: Activity, bg: 'bg-emerald-600', fg: 'text-white' },
   { key: 'vouchers', label: 'Vouchers', icon: Ticket, bg: 'bg-amber-500', fg: 'text-white' },
   { key: 'forms', label: 'Forms', icon: ClipboardList, bg: 'bg-violet-600', fg: 'text-white' },
+  { key: 'chat', label: 'Connecteams', icon: MessageSquare, bg: 'bg-pink-600', fg: 'text-white' },
 ]
 
 const MONTHS_RO = ['Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie', 'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie']
@@ -124,7 +122,7 @@ export default function Hub() {
     refetchInterval: 60_000,
   })
 
-  const punchMut = useMutation({
+  const _punchMut = useMutation({
     mutationFn: async () => {
       const pos = await new Promise<GeolocationPosition | null>((resolve) => {
         if (!navigator.geolocation) return resolve(null)
@@ -150,7 +148,7 @@ export default function Hub() {
   })
 
   const checkinDir = checkinStatus?.next_direction ?? 'IN'
-  const isCheckedIn = checkinDir !== 'IN'
+  const _isCheckedIn = checkinDir !== 'IN'
   const lastPunch = checkinStatus?.punches?.length
     ? checkinStatus.punches[checkinStatus.punches.length - 1]
     : null
@@ -260,13 +258,15 @@ export default function Hub() {
       {/* ── Active Module (inline content) ── */}
       {activeModule !== null ? (
         <div className="space-y-4 pb-20">
-          {/* Section title */}
-          <h2 className="text-lg font-semibold">
-            {visibleTiles.find(t => t.key === activeModule)?.label || 'Section'}
-            {tileCounts[activeModule] > 0 && (
-              <span className="text-sm font-normal text-muted-foreground ml-1.5">({tileCounts[activeModule]})</span>
-            )}
-          </h2>
+          {/* Section title (skip for chat — has its own header) */}
+          {activeModule !== 'chat' && (
+            <h2 className="text-lg font-semibold">
+              {visibleTiles.find(t => t.key === activeModule)?.label || 'Section'}
+              {tileCounts[activeModule] > 0 && (
+                <span className="text-sm font-normal text-muted-foreground ml-1.5">({tileCounts[activeModule]})</span>
+              )}
+            </h2>
+          )}
 
           {activeModule === 'invoices' && <HubInvoicesPanel />}
           {activeModule === 'hr' && user && <HubHrPanel userId={user.id} />}
@@ -274,6 +274,11 @@ export default function Hub() {
           {activeModule === 'vouchers' && (
             <Suspense fallback={<div className="py-8 text-center text-muted-foreground text-sm">Loading...</div>}>
               <VouchersPanel />
+            </Suspense>
+          )}
+          {activeModule === 'chat' && (
+            <Suspense fallback={<div className="py-8 text-center text-muted-foreground text-sm">Loading...</div>}>
+              <Digest readOnly />
             </Suspense>
           )}
 
@@ -317,7 +322,17 @@ export default function Hub() {
                     className={cn('w-full text-left rounded-md px-3 py-2.5 transition-colors hover:bg-accent/50', !n.is_read && 'bg-primary/5')}
                     onClick={() => {
                       if (!n.is_read) markReadMut.mutate(n.id)
-                      if (n.link) navigate(n.link)
+                      if (n.link) {
+                        const linkToModule: Record<string, NonNullable<ActiveModule>> = {
+                          '/app/forms': 'forms',
+                          '/app/accounting': 'invoices',
+                          '/app/vouchers': 'vouchers',
+                          '/app/hr': 'hr',
+                          '/app/chat': 'chat',
+                        }
+                        const mod = linkToModule[n.link] || Object.entries(linkToModule).find(([prefix]) => n.link.startsWith(prefix))?.[1]
+                        if (mod) { setActiveModule(mod) } else { navigate(n.link) }
+                      }
                     }}
                   >
                     <div className="flex items-start gap-2">
@@ -1504,14 +1519,14 @@ function HubWeeklyPunchCard() {
                 'w-full rounded-md flex flex-col items-center justify-center py-2 gap-0.5',
                 d.isToday ? 'ring-2 ring-primary ring-offset-1' : '',
                 d.isFuture ? 'bg-muted/30 text-muted-foreground/50' :
-                d.hours >= 8 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                d.hours > 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                (d.hours ?? 0) >= 8 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                (d.hours ?? 0) > 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
                 d.hasData ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
                 'bg-muted/50 text-muted-foreground',
               )}>
                 {!d.isFuture && d.punchIn && <span className="text-[8px] opacity-70">{d.punchIn}</span>}
                 <span className="text-[11px] font-semibold">
-                  {d.isFuture ? '' : d.hours > 0 ? `${d.hours.toFixed(1)}` : d.hasData ? '0' : '-'}
+                  {d.isFuture ? '' : (d.hours ?? 0) > 0 ? `${(d.hours ?? 0).toFixed(1)}` : d.hasData ? '0' : '-'}
                 </span>
                 {!d.isFuture && d.punchOut && <span className="text-[8px] opacity-70">{d.punchOut}</span>}
               </div>
