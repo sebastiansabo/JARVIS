@@ -35,8 +35,8 @@ export default function VouchersPanel() {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
   const perms = user?.permissions || {}
-  const _canIssue = !user?.permissions || (perms['vouchers.form.view'] ?? true)
-  const _canRedeem = !user?.permissions || (perms['vouchers.accounting.redeem'] ?? true)
+  void (!user?.permissions || (perms['vouchers.form.view'] ?? true))
+  void (!user?.permissions || (perms['vouchers.accounting.redeem'] ?? true))
 
   const { data: vouchers = [], isLoading } = useQuery({
     queryKey: ['my-vouchers'],
