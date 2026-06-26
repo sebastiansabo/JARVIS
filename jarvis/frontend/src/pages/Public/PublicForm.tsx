@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { formsApi } from '@/api/forms'
 import { api } from '@/api/client'
-import { useAuth } from '@/hooks/useAuth'
+import { useVoucherSchema } from '@/hooks/useVoucherSchema'
 import { FormRenderer } from '@/components/forms/FormRenderer'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -19,7 +19,6 @@ export default function PublicForm() {
   const [submitted, setSubmitted] = useState(false)
   const [thankYou, setThankYou] = useState('')
   const [mode, setMode] = useState<'issue' | 'redeem'>('issue')
-  const { user } = useAuth()
 
   const isVoucherForm = slug === VOUCHER_SLUG
 
@@ -27,14 +26,6 @@ export default function PublicForm() {
     queryKey: ['public-form', slug],
     queryFn: () => formsApi.getPublicForm(slug!),
     enabled: !!slug,
-  })
-
-  // Signature status for voucher form (logged-in users only)
-  const { data: sigStatus } = useQuery({
-    queryKey: ['voucher-sig-status'],
-    queryFn: () => api.get<{ has_signature: boolean }>('/api/vouchers/signature-status'),
-    enabled: isVoucherForm && !!user,
-    staleTime: 60_000,
   })
 
   // Capture UTM params from URL
@@ -62,33 +53,13 @@ export default function PublicForm() {
     })
   }, [form, searchParams])
 
-  // For voucher form + logged-in user: inject same fields as VouchersPanel
-  const schema = useMemo(() => {
-    if (!isVoucherForm || !user || !baseSchema.length) return baseSchema
-    const contextFields: typeof baseSchema = [
-      { id: 'f_company', type: 'company_select' as any, label: 'Company', required: true, order: -2 },
-      { id: 'f_department', type: 'department_select' as any, label: 'Department', required: false, order: -1, config: { companyField: 'f_company' } },
-    ]
-    const approverField: (typeof baseSchema)[0] = {
-      id: 'f_approver', type: 'user_select' as any, label: 'Send for Approval to', required: false,
-      placeholder: 'Leave empty for direct manager', order: 98,
-    }
-    let enhanced = [...contextFields, ...baseSchema, approverField]
-    if (sigStatus && !sigStatus.has_signature) {
-      enhanced = [...enhanced, { id: 'f_signature', type: 'signature' as const, label: 'Your Signature', required: true, order: 99 }]
-    }
-    return enhanced
-  }, [isVoucherForm, user, baseSchema, sigStatus])
-
-  const voucherDefaults = useMemo(() => {
-    if (!isVoucherForm || !user) return undefined
-    return { f_company: user.company || '', f_department: user.department || '' }
-  }, [isVoucherForm, user])
+  // Shared hook: injects Company, Department, Approver, Signature for voucher form
+  const { schema, defaultValues, submitLabel, needsSignatureSave } =
+    useVoucherSchema(baseSchema, slug || '')
 
   const submitMutation = useMutation({
     mutationFn: async (answers: Record<string, unknown>) => {
-      // Save signature if provided (same as VouchersPanel)
-      if (answers.f_signature && typeof answers.f_signature === 'string') {
+      if (needsSignatureSave && answers.f_signature && typeof answers.f_signature === 'string') {
         await api.put('/profile/api/signature', { signature: answers.f_signature })
       }
       const { f_signature: _, ...formAnswers } = answers
@@ -122,9 +93,6 @@ export default function PublicForm() {
       </div>
     )
   }
-
-  // Internal-only forms: skip the gate entirely (Hub already requires login)
-  // Non-internal forms: always public
 
   if (isError || !form) {
     return (
@@ -211,8 +179,8 @@ export default function PublicForm() {
               schema={schema}
               onSubmit={(answers) => submitMutation.mutate(answers)}
               submitting={submitMutation.isPending}
-              submitLabel={isVoucherForm && user ? 'Issue Voucher' : undefined}
-              defaultValues={voucherDefaults}
+              submitLabel={submitLabel}
+              defaultValues={defaultValues}
             />
 
             {submitMutation.isError && (
