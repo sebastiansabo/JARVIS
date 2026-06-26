@@ -361,6 +361,9 @@ def delete_voucher_route(voucher_id):
     if not voucher:
         return error_response('Voucher not found', 404)
 
+    if voucher.get('status') in ('active', 'redeemed'):
+        return jsonify({'success': False, 'error': f'Cannot delete a voucher with status "{voucher["status"]}"'}), 400
+
     deleted = _repo.delete_voucher(voucher_id)
     if not deleted:
         return error_response('Failed to delete voucher', 500)
