@@ -1414,15 +1414,29 @@ def api_generate_eurofib(invoice_id):
     kurs = float(inv_row["kurs_applied"]) if inv_row.get("kurs_applied") else 1.0
 
     # For storno: build lines per reversed invoice (negative amounts)
+    reversed_invoices = []  # populated below for STORNO kurs_date usage
     if inv_type_str == "STORNO":
+        # Only reverse the invoices actually linked to this storno (not all advances in the anexa)
+        reversed_links = _repo.query_all(
+            "SELECT source_invoice_id FROM facturare_invoice_links WHERE target_invoice_id = %s AND link_type = 'REVERSES'",
+            (invoice_id,))
+        reversed_inv_ids = [r["source_invoice_id"] for r in reversed_links] if reversed_links else []
+
+        if not reversed_inv_ids:
+            return error_response("STORNO has no linked reversed invoices", 400)
+
         reversed_invoices = _repo.query_all(
-            "SELECT invoice_number, total_amount_eur, split_mode FROM facturare_invoices "
-            "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number",
-            (anexa["id"],))
+            "SELECT id, invoice_number, total_amount_eur, split_mode, kurs_applied, issued_date FROM facturare_invoices "
+            "WHERE id IN ({}) ORDER BY sequence_number".format(",".join(["%s"] * len(reversed_inv_ids))),
+            tuple(reversed_inv_ids))
+
         order_lines = []
         for ri in reversed_invoices:
             ri_total = float(ri["total_amount_eur"])
             ri_split = ri.get("split_mode") or "equal"
+            ri_inv_no = ri.get("invoice_number") or ri["id"]
+            # Kurs from the original advance invoice
+            ri_kurs = float(ri["kurs_applied"]) if ri.get("kurs_applied") else kurs
             for car in lines:
                 selling = float(car["selling_price_eur"])
                 if ri_split == "proportional" and total_selling > 0:
@@ -1434,7 +1448,8 @@ def api_generate_eurofib(invoice_id):
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
                     list_price=float(car["list_price_eur"]), selling_price=selling,
                     advance=-car_amount, rest=None,
-                    start_no=start_no,
+                    start_no=ri_inv_no,
+                    kurs=ri_kurs,
                 ))
     else:
         order_lines = []
@@ -1453,7 +1468,14 @@ def api_generate_eurofib(invoice_id):
 
     # Compute kurs_date (day before issued_date)
     from datetime import timedelta
-    kurs_date = issued_date - timedelta(days=1)
+    if inv_type_str == "STORNO" and reversed_invoices:
+        # Use the first reversed invoice's issued_date for the global kurs_date
+        first_ri_date = reversed_invoices[0].get("issued_date")
+        if first_ri_date and isinstance(first_ri_date, str):
+            first_ri_date = date_type.fromisoformat(first_ri_date)
+        kurs_date = (first_ri_date - timedelta(days=1)) if first_ri_date else issued_date - timedelta(days=1)
+    else:
+        kurs_date = issued_date - timedelta(days=1)
 
     # Get supplier firmennr (eurofib_klient_id)
     supplier_row = _repo.query_one(
@@ -1483,6 +1505,7 @@ def api_generate_eurofib(invoice_id):
             konto_debit=int(konto_row["konto_debit"]),
             konto_credit=int(konto_row["konto_credit"]),
             text_template=konto_row.get("text_template") or default_text_templates.get(inv_type_str, "{model} {comanda}"),
+            is_storno=(inv_type_str == "STORNO"),
         ),
     )
 
