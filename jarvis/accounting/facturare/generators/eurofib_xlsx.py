@@ -66,10 +66,10 @@ class EurofibXlsxRenderer:
         row_kurs = line.kurs if line.kurs is not None else cfg.fx.kurs
         fw_amount = line.advance * line.qty  # negative for storno
 
-        # For STORNO, swap s/h and konto/gegenkonto to produce the reversal entry
-        konto = cfg.eurofib.konto_credit if cfg.eurofib.is_storno else cfg.eurofib.konto_debit
+        # For STORNO: DB already stores accounts inverted, only swap s/h flags
+        konto = cfg.eurofib.konto_debit
         sh = "h" if cfg.eurofib.is_storno else "s"
-        gegenkonto = cfg.eurofib.konto_debit if cfg.eurofib.is_storno else cfg.eurofib.konto_credit
+        gegenkonto = cfg.eurofib.konto_credit
 
         ws.cell(row=r, column=1, value="x")                      # A marker
         ws.cell(row=r, column=2, value=cfg.eurofib.klient)        # B klient
@@ -108,8 +108,8 @@ class EurofibXlsxRenderer:
         row_kurs = line.kurs if line.kurs is not None else cfg.fx.kurs
         fw_amount = line.advance * line.qty  # negative for storno
 
-        # For STORNO, swap s/h: credit row uses konto_debit and "s"
-        credit_konto = cfg.eurofib.konto_debit if cfg.eurofib.is_storno else cfg.eurofib.konto_credit
+        # For STORNO: DB already stores accounts inverted, only swap s/h flags
+        credit_konto = cfg.eurofib.konto_credit
         credit_sh = "s" if cfg.eurofib.is_storno else "h"
 
         # A marker: blank for credit
@@ -154,10 +154,13 @@ class EurofibXlsxRenderer:
         for i, line in enumerate(lines):
             inv_no = self._resolve_inv_no(i, line)
             brand = _brand_short(line.model, self.cfg.eurofib.brand_map)
-            text = self.cfg.eurofib.text_template.format(
-                model=line.model, comanda=line.comanda,
-                brand_short=brand,  # keep for backwards compat
-            )
+            try:
+                text = self.cfg.eurofib.text_template.format(
+                    model=line.model, comanda=line.comanda,
+                    brand_short=brand,  # keep for backwards compat
+                )
+            except KeyError:
+                text = f"{line.model} {line.comanda}"
             debit_row = 3 + 2 * i
             credit_row = debit_row + 1
 
@@ -178,10 +181,13 @@ class EurofibXlsxRenderer:
         for i, line in enumerate(lines):
             inv_no = self._resolve_inv_no(i, line)
             brand = _brand_short(line.model, self.cfg.eurofib.brand_map)
-            text = self.cfg.eurofib.text_template.format(
-                model=line.model, comanda=line.comanda,
-                brand_short=brand,  # keep for backwards compat
-            )
+            try:
+                text = self.cfg.eurofib.text_template.format(
+                    model=line.model, comanda=line.comanda,
+                    brand_short=brand,  # keep for backwards compat
+                )
+            except KeyError:
+                text = f"{line.model} {line.comanda}"
             debit_row = 3 + 2 * i
             credit_row = debit_row + 1
 
