@@ -49,6 +49,18 @@ def _get_company_info(company_id: int) -> dict:
         return {}
 
 
+def _fmt_date_ro(d) -> str:
+    """Format a date as dd/mm/yyyy (Romanian)."""
+    if not d:
+        return ''
+    if isinstance(d, str):
+        try:
+            d = date.fromisoformat(d[:10])
+        except (ValueError, TypeError):
+            return str(d)
+    return d.strftime('%d/%m/%Y')
+
+
 def generate_voucher_pdf(voucher: dict) -> bytes:
     """Generate a printable A4 voucher PDF with QR code and company details. Returns PDF bytes."""
     buf = io.BytesIO()
@@ -148,8 +160,8 @@ def generate_voucher_pdf(voucher: dict) -> bytes:
     # Validity
     validity = f"{voucher.get('validity_months', '')} months"
     y = _label_value('Validity:', validity, y)
-    y = _label_value('Issued:', str(voucher.get('issued_at', '')), y)
-    y = _label_value('Expires:', str(voucher.get('expires_at', '')), y)
+    y = _label_value('Issued:', _fmt_date_ro(voucher.get('issued_at')), y)
+    y = _label_value('Expires:', _fmt_date_ro(voucher.get('expires_at')), y)
 
     # Separator line
     y -= 5 * mm
@@ -158,8 +170,10 @@ def generate_voucher_pdf(voucher: dict) -> bytes:
     c.line(30 * mm, y, w - 30 * mm, y)
     y -= 10 * mm
 
-    # Issuer
+    # Issuer & Approver
     y = _label_value('Issued by:', voucher.get('issued_by_name', ''), y)
+    if voucher.get('approver_name'):
+        y = _label_value('Approved by:', voucher['approver_name'], y)
 
     # Issuer signature
     issuer_sig = _get_user_signature(voucher.get('issued_by_user_id'))

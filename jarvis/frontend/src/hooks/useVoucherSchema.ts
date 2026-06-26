@@ -39,11 +39,15 @@ export function useVoucherSchema(
       { id: 'f_company', type: 'company_select' as any, label: 'Company', required: true, order: -2 },
       { id: 'f_department', type: 'department_select' as any, label: 'Department', required: false, order: -1, config: { companyField: 'f_company' } },
     ]
+    const startDateField: FormField = {
+      id: 'f_start_date', type: 'date' as any, label: 'Starting Date', required: false,
+      placeholder: 'Leave empty for today', order: 6.5,
+    }
     const approverField: FormField = {
       id: 'f_approver', type: 'user_select' as any, label: 'Send for Approval to', required: false,
       placeholder: 'Leave empty for direct manager', order: 98,
     }
-    let enhanced = [...contextFields, ...baseSchema, approverField]
+    let enhanced = [...contextFields, ...baseSchema, startDateField, approverField]
     if (sigStatus && !sigStatus.has_signature) {
       enhanced = [...enhanced, { id: 'f_signature', type: 'signature' as const, label: 'Your Signature', required: true, order: 99 }]
     }

@@ -141,15 +141,27 @@ class VoucherService:
             logger.warning('Voucher %s not found for activation', voucher_id)
             return
 
-        today = date.today()
-        expires = today + relativedelta(months=voucher['validity_months'])
+        # Use f_start_date from form submission if available, else today
+        start = date.today()
+        if voucher.get('form_submission_id'):
+            try:
+                from forms.repositories import SubmissionRepository
+                sub = SubmissionRepository().get_by_id(voucher['form_submission_id'])
+                if sub:
+                    raw = (sub.get('answers') or {}).get('f_start_date', '')
+                    if raw:
+                        start = date.fromisoformat(str(raw)[:10])
+            except Exception:
+                pass
+
+        expires = start + relativedelta(months=voucher['validity_months'])
         self.repo.update_status(
             voucher_id,
             status='active',
-            issued_at=today,
+            issued_at=start,
             expires_at=expires,
         )
-        logger.info('Voucher %s activated, expires %s', voucher['voucher_code'], expires)
+        logger.info('Voucher %s activated, issued %s expires %s', voucher['voucher_code'], start, expires)
 
         # Notify issuer
         self._notify_issuer_approved(voucher)
