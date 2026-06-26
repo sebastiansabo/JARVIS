@@ -1406,7 +1406,11 @@ def api_generate_eurofib(invoice_id):
     split_mode = inv_row.get("split_mode", "equal")
     total_selling = sum(float(l["selling_price_eur"]) for l in lines) or 1
     start_no = inv_row.get("invoice_number") or inv_row["id"]
-    issued_date = inv_row.get("issued_date") or date_type.today()
+    issued_date = inv_row.get("issued_date")
+    if not issued_date:
+        return error_response("Invoice has no issued date. Please set the issued date before exporting.", 400)
+    if isinstance(issued_date, str):
+        issued_date = date_type.fromisoformat(issued_date)
     kurs = float(inv_row["kurs_applied"]) if inv_row.get("kurs_applied") else 1.0
 
     # For storno: build lines per reversed invoice (negative amounts)
@@ -1449,21 +1453,36 @@ def api_generate_eurofib(invoice_id):
 
     # Compute kurs_date (day before issued_date)
     from datetime import timedelta
-    kurs_date = issued_date - timedelta(days=1) if isinstance(issued_date, date_type) else date_type.today()
+    kurs_date = issued_date - timedelta(days=1)
+
+    # Get supplier firmennr (eurofib_klient_id)
+    supplier_row = _repo.query_one(
+        "SELECT eurofib_klient_id FROM companies WHERE id = %s",
+        (contract["supplier_id"],))
+    firmennr = supplier_row.get("eurofib_klient_id") if supplier_row else None
+    if not firmennr:
+        return error_response("Firmennr (eurofib_klient_id) not configured for this supplier. Check company settings.", 400)
+
+    default_text_templates = {
+        'INVOICE': 'avans {model} {comanda}',
+        'STORNO': 'storno avans {model} {comanda}',
+        'FINAL': '{model} {comanda}',
+    }
 
     # Build JobConfig for the renderer
     cfg = JobConfig(
         job_id=f"inv-{invoice_id}",
         contract=ContractConfig(ref=contract["contract_ref"], anexa_ref=f"Anexa {anexa['anexa_number']}"),
         input=InputConfig(anexa="n/a"),
-        invoice=InvoiceConfig(kind="invoice", start_no=start_no, date=issued_date if isinstance(issued_date, date_type) else date_type.today()),
+        invoice=InvoiceConfig(kind="invoice", start_no=start_no, date=issued_date),
         fx=FxConfig(currency="EUR", kurs=kurs, kurs_date=kurs_date),
         supplier=PartyConfig(name="", address_lines=[]),
         customer=PartyConfig(name="", address_lines=[]),
         eurofib=EurofibConfig(
-            klient=0,
+            klient=firmennr,
             konto_debit=int(konto_row["konto_debit"]),
             konto_credit=int(konto_row["konto_credit"]),
+            text_template=konto_row.get("text_template") or default_text_templates.get(inv_type_str, "{model} {comanda}"),
         ),
     )
 
