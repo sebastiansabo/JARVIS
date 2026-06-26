@@ -184,8 +184,9 @@ def api_list_user_submissions(user_id):
 def api_submit_internal(form_id):
     """Submit a form as a logged-in user."""
     form = _form_repo.get_by_id(form_id)
-    if not form or not _check_scope_access(form):
+    if not form:
         return jsonify({'success': False, 'error': 'Form not found'}), 404
+    # Any authenticated user can submit a form — scope only restricts form management
 
     data, error = get_json_or_error()
     if error:
