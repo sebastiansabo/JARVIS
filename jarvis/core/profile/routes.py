@@ -271,14 +271,22 @@ def api_profile_update_allocations(invoice_id):
     """Update allocations for an invoice — allowed for org responsables or users with edit permission."""
     try:
         from core.organization.hr_utils import is_manager
+        from core.roles.repositories.permission_repository import PermissionRepository
+        _perm_repo = PermissionRepository()
+        perm = _perm_repo.check_permission_v2(current_user.role_id, 'invoices', 'records', 'edit')
+        has_own_edit = perm.get('has_permission') and perm.get('scope') == 'own'
 
         # Must be an org responsable (L0-L5) OR have invoice edit permission
         has_edit_perm = _has_invoice_edit_permission(current_user)
-        if not is_manager(current_user.id) and not has_edit_perm:
+        if not is_manager(current_user.id) and not has_edit_perm and not has_own_edit:
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
-        # Invoice must be in the user's org scope
-        if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
+        # Own-scope: verify user has allocation on this invoice
+        if has_own_edit and not is_manager(current_user.id) and not has_edit_perm:
+            from accounting.invoices.repositories import AllocationRepository
+            if not AllocationRepository().user_has_allocation(invoice_id, current_user.id):
+                return jsonify({'success': False, 'error': 'Permission denied'}), 403
+        elif not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
         data = request.get_json()
@@ -318,9 +326,17 @@ def api_profile_update_invoice_metadata(invoice_id):
     """Update restricted invoice fields — allowed for org responsables within their scope."""
     try:
         from core.organization.hr_utils import is_manager
-        if not is_manager(current_user.id):
+        from core.roles.repositories.permission_repository import PermissionRepository
+        _perm_repo = PermissionRepository()
+        perm = _perm_repo.check_permission_v2(current_user.role_id, 'invoices', 'records', 'edit')
+        has_own_edit = perm.get('has_permission') and perm.get('scope') == 'own'
+        if not is_manager(current_user.id) and not has_own_edit:
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
-        if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
+        if has_own_edit and not is_manager(current_user.id):
+            from accounting.invoices.repositories import AllocationRepository
+            if not AllocationRepository().user_has_allocation(invoice_id, current_user.id):
+                return jsonify({'success': False, 'error': 'Permission denied'}), 403
+        elif not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
         data = request.get_json() or {}
