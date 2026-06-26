@@ -919,6 +919,55 @@ def api_delete_venituri_rule(rule_id):
     return jsonify({"success": True})
 
 
+@facturare_bp.route("/facturare/api/contracts/<int:contract_id>/accounting-summary")
+@login_required
+@handle_api_errors
+def api_contract_accounting_summary(contract_id):
+    """Return all accounting data relevant to a contract for display."""
+    if not _check_perm("view"):
+        return error_response("Permission denied", 403)
+
+    contract = _repo.get_contract_by_id(contract_id)
+    if not contract:
+        return error_response("Contract not found", 404)
+
+    # Supplier info (firmennr)
+    supplier = _repo.query_one(
+        "SELECT id, company, eurofib_klient_id FROM companies WHERE id = %s",
+        (contract["supplier_id"],))
+
+    # Customer konto debit
+    customer = _repo.query_one(
+        "SELECT id, display_name, eurofib_konto_debit FROM crm_clients WHERE id = %s",
+        (contract["customer_id"],))
+
+    firmennr = supplier.get("eurofib_klient_id") if supplier else None
+    kd_map = customer.get("eurofib_konto_debit") if customer else None
+    client_konto_debit = kd_map.get(str(firmennr)) if isinstance(kd_map, dict) and firmennr else None
+
+    # Konto configs per invoice type
+    konto_configs = {}
+    for inv_type in ('INVOICE', 'STORNO', 'FINAL'):
+        row = _repo.query_one(
+            "SELECT konto_debit, konto_credit, centru_gestiune, text_template FROM facturare_konto_config WHERE supplier_id = %s AND invoice_type = %s",
+            (contract["supplier_id"], inv_type))
+        konto_configs[inv_type] = dict(row) if row else None
+
+    # Venituri rules for this supplier
+    venituri = _repo.query_all(
+        "SELECT comanda_prefix, konto_venituri, kostenstelle FROM facturare_venituri_rules WHERE supplier_id = %s ORDER BY comanda_prefix",
+        (contract["supplier_id"],))
+
+    return jsonify({
+        "firmennr": firmennr,
+        "supplier_name": supplier["company"] if supplier else None,
+        "customer_name": customer["display_name"] if customer else None,
+        "client_konto_debit": client_konto_debit,
+        "konto_configs": konto_configs,
+        "venituri_rules": [dict(r) for r in venituri] if venituri else [],
+    })
+
+
 # ── Individual document items (per car) ──────────────────────────
 
 @facturare_bp.route("/facturare/api/document-items")

@@ -1868,6 +1868,63 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
   )
 }
 
+// ── AccountingCard ───────────────────────────────────────────────
+
+function AccountingCard({ contractId }: { contractId: number }) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetch(`/facturare/api/contracts/${contractId}/accounting-summary`)
+      .then(r => r.ok ? r.json() : null)
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false))
+  }, [contractId])
+
+  if (loading) return <div className="py-2"><Loader2 className="h-4 w-4 animate-spin" /></div>
+  if (!data) return null
+
+  const missing: string[] = []
+  if (!data.firmennr) missing.push('Firmennr')
+  if (!data.client_konto_debit) missing.push('Client Konto Debit')
+  if (!data.konto_configs?.INVOICE) missing.push('Konto INVOICE')
+  if (!data.konto_configs?.STORNO) missing.push('Konto STORNO')
+  if (!data.konto_configs?.FINAL) missing.push('Konto FINAL')
+
+  const Row = ({ label, value, warn }: { label: string; value: any; warn?: boolean }) => (
+    <div className="flex justify-between text-xs py-0.5">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={warn ? 'text-red-500 font-medium' : 'font-medium'}>{value ?? '—'}</span>
+    </div>
+  )
+
+  return (
+    <div className="border rounded-lg p-3 bg-muted/30 space-y-1">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-semibold">Date Contabile</span>
+        {missing.length > 0 && <span className="text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded">⚠ {missing.length} lipsă</span>}
+      </div>
+      <Row label="Firmennr" value={data.firmennr} warn={!data.firmennr} />
+      <Row label="Client" value={data.customer_name} />
+      <Row label="Konto Debit Client" value={data.client_konto_debit} warn={!data.client_konto_debit} />
+      {data.konto_configs?.INVOICE && <Row label="Konto Credit (Avans)" value={data.konto_configs.INVOICE.konto_credit} />}
+      {data.konto_configs?.STORNO && <Row label="Konto Credit (Storno)" value={data.konto_configs.STORNO.konto_credit} />}
+      {data.konto_configs?.FINAL && <Row label="Konto Credit (Final)" value={data.konto_configs.FINAL.konto_credit} />}
+      {data.konto_configs?.INVOICE && <Row label="Centru Gestiune" value={data.konto_configs.INVOICE.centru_gestiune} />}
+      {data.venituri_rules?.length > 0 && (
+        <div className="pt-1 border-t mt-1">
+          <span className="text-[10px] text-muted-foreground">Venituri FINAL:</span>
+          {data.venituri_rules.map((r: any, i: number) => (
+            <Row key={i} label={`Prefix ${r.comanda_prefix}`} value={`${r.konto_venituri} / KST ${r.kostenstelle}`} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main ComenziTab ─────────────────────────────────────────────
 
 export default function ComenziTab({ companies }: { companies: Company[] }) {
@@ -2083,6 +2140,8 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
               </div>
               {!selectedAnexaId && <Button size="sm" onClick={() => setCreateAnexaOpen(true)}><Plus className="h-4 w-4 mr-1" /> New Anexa</Button>}
             </div>
+
+            <AccountingCard contractId={drillContract.id} />
 
             <Card>
               <CardContent className="p-0 overflow-x-auto">
