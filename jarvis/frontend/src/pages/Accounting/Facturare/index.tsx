@@ -16,6 +16,7 @@ interface Company {
   id: number
   company: string
   vat: string | null
+  eurofib_klient_id: number | null
 }
 
 // ── Konto Settings Tab ──────────────────────────────────────────
