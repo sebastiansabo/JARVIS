@@ -26,6 +26,7 @@ _fs_repo = _LazyFSRepo()
 @crm_required
 def api_clients():
     rows, total = _client_repo.search(
+        q=request.args.get('q'),
         name=request.args.get('name'),
         phone=request.args.get('phone'),
         email=request.args.get('email'),
