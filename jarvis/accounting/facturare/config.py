@@ -63,8 +63,9 @@ class EurofibConfig(BaseModel):
     belegart: str = "JVV"
     steuercode: str = "L00"
     fw_steuercode: str = "L00"
-    text_template: str = "avans {brand_short} {comanda}"
+    text_template: str = "avans {model} {comanda}"
     brand_map: dict[str, str] = {}
+    is_storno: bool = False
 
 
 class OutputConfig(BaseModel):
