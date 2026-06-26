@@ -76,12 +76,12 @@ interface AppTile {
   fg: string
 }
 
-const appTiles: AppTile[] = [
-  { key: 'invoices', label: 'My Invoices', icon: FileText, bg: 'bg-blue-600', fg: 'text-white' },
+const appTiles: (AppTile & { shortLabel?: string })[] = [
+  { key: 'invoices', label: 'My Invoices', shortLabel: 'Invoices', icon: FileText, bg: 'bg-blue-600', fg: 'text-white' },
   { key: 'hr', label: 'HR', icon: Activity, bg: 'bg-emerald-600', fg: 'text-white' },
   { key: 'vouchers', label: 'Vouchers', icon: Ticket, bg: 'bg-amber-500', fg: 'text-white' },
   { key: 'forms', label: 'Forms', icon: ClipboardList, bg: 'bg-violet-600', fg: 'text-white' },
-  { key: 'chat', label: 'Connecteams', icon: MessageSquare, bg: 'bg-pink-600', fg: 'text-white' },
+  { key: 'chat', label: 'Connecteams', shortLabel: 'Chat', icon: MessageSquare, bg: 'bg-pink-600', fg: 'text-white' },
 ]
 
 const MONTHS_RO = ['Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie', 'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie']
@@ -360,19 +360,21 @@ export default function Hub() {
         </div>
       )}
 
-      {/* ── Bottom Tab Bar (mobile only, Instagram-style) ── */}
-      <div className="fixed bottom-0 inset-x-0 z-40 sm:hidden">
-        <div className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-t">
-          <div className="flex items-center justify-around h-14 px-2 pb-[env(safe-area-inset-bottom)]">
+      {/* ── Bottom Tab Bar (mobile only, Instagram floating pill) ── */}
+      <div className="fixed bottom-0 inset-x-0 z-40 sm:hidden pb-[env(safe-area-inset-bottom)]">
+        <div className="mx-4 mb-2 bg-zinc-900 dark:bg-zinc-800 rounded-[22px] shadow-lg">
+          <div className="flex items-center justify-around h-[52px] px-1">
             <button
               type="button"
               onClick={() => setActiveModule(null)}
-              className={cn('flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg transition-colors min-w-[48px]',
-                activeModule === null ? 'text-primary' : 'text-muted-foreground'
+              className={cn('flex items-center justify-center h-9 rounded-full transition-all',
+                activeModule === null
+                  ? 'bg-zinc-700 dark:bg-zinc-600 text-white px-4 gap-1.5'
+                  : 'text-zinc-400 w-9'
               )}
             >
-              <Home className="h-5 w-5" />
-              <span className="text-[9px] font-medium">Hub</span>
+              <Home className="h-[20px] w-[20px] shrink-0" />
+              {activeModule === null && <span className="text-[11px] font-semibold">Hub</span>}
             </button>
             {visibleTiles.map((tile) => {
               const Icon = tile.icon
@@ -382,12 +384,14 @@ export default function Hub() {
                   key={tile.key}
                   type="button"
                   onClick={() => setActiveModule(tile.key)}
-                  className={cn('flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg transition-colors min-w-[48px]',
-                    isActive ? 'text-primary' : 'text-muted-foreground'
+                  className={cn('flex items-center justify-center h-9 rounded-full transition-all',
+                    isActive
+                      ? 'bg-zinc-700 dark:bg-zinc-600 text-white px-4 gap-1.5'
+                      : 'text-zinc-400 w-9'
                   )}
                 >
-                  <Icon className="h-5 w-5" />
-                  <span className="text-[9px] font-medium">{tile.label}</span>
+                  <Icon className="h-[20px] w-[20px] shrink-0" />
+                  {isActive && <span className="text-[11px] font-semibold">{tile.shortLabel || tile.label}</span>}
                 </button>
               )
             })}
@@ -564,13 +568,10 @@ function HubInvoicesPanel() {
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <CardTitle className="text-base">
-              My Invoices
-              <span className="ml-2 text-sm font-normal text-muted-foreground">({total})</span>
-            </CardTitle>
+      <CardHeader className="max-sm:px-3 max-sm:py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base sm:text-base">Invoices</CardTitle>
             <div className="flex items-center rounded-md border bg-muted/50 p-0.5 gap-0.5">
               <Button
                 variant={archiveView === 'active' ? 'secondary' : 'ghost'}
@@ -589,28 +590,29 @@ function HubInvoicesPanel() {
                 Archived
               </Button>
             </div>
+            <span className="text-xs text-muted-foreground">{total}</span>
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Button variant="ghost" size="icon" className={cn('h-8 w-8', showFilters && 'bg-muted')} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
-              <SlidersHorizontal className="h-4 w-4" />
-            </Button>
+          <Button variant="ghost" size="icon" className={cn('h-8 w-8 shrink-0', showFilters && 'bg-muted')} onClick={() => setShowFilters(s => !s)}>
+            <SlidersHorizontal className="h-4 w-4" />
+          </Button>
+        </div>
+        {showFilters && (
+          <div className="flex flex-col gap-2 pt-2">
             <SearchInput
               placeholder="Search invoices..."
               value={search}
               onChange={(v) => { setSearch(v); setPage(1) }}
-              className="w-full sm:w-64"
+              className="w-full"
             />
-          </div>
-        </div>
-        {showFilters && (
-          <div className="flex flex-wrap items-center gap-2 pt-2">
-            <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} iconOnly={isMobile} />
-            <DateField
-              mode="range"
-              startDate={startDate}
-              endDate={endDate}
-              onRangeChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1) }}
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} iconOnly={isMobile} />
+              <DateField
+                mode="range"
+                startDate={startDate}
+                endDate={endDate}
+                onRangeChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1) }}
+              />
+            </div>
           </div>
         )}
       </CardHeader>
