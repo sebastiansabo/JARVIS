@@ -850,7 +850,8 @@ def api_get_konto_config():
     return jsonify({"configs": [
         {"supplier_id": r["supplier_id"], "supplier_name": r.get("supplier_name", ""),
          "invoice_type": r["invoice_type"], "konto_debit": r.get("konto_debit") or "",
-         "konto_credit": r.get("konto_credit") or "", "centru_gestiune": r.get("centru_gestiune") or ""}
+         "konto_credit": r.get("konto_credit") or "", "centru_gestiune": r.get("centru_gestiune") or "",
+         "text_template": r.get("text_template") or ""}
         for r in rows
     ]})
 
@@ -868,9 +869,54 @@ def api_put_konto_config():
             supplier_id=item["supplier_id"], invoice_type=item["invoice_type"],
             konto_debit=item.get("konto_debit") or None, konto_credit=item.get("konto_credit") or None,
             centru_gestiune=item.get("centru_gestiune") or None,
+            text_template=item.get("text_template") or None,
             updated_by=current_user.id,
         )
     return jsonify({"success": True, "count": len(items)})
+
+
+# ── Venituri Rules ───────────────────────────────────────────────
+
+@facturare_bp.route("/facturare/api/venituri-rules")
+@login_required
+@handle_api_errors
+def api_get_venituri_rules():
+    if not _check_perm("view"):
+        return error_response("Permission denied", 403)
+    rows = _repo.get_venituri_rules()
+    return jsonify({"rules": [
+        {"id": r["id"], "supplier_id": r["supplier_id"], "supplier_name": r.get("supplier_name", ""),
+         "comanda_prefix": r["comanda_prefix"], "konto_venituri": r["konto_venituri"],
+         "kostenstelle": r["kostenstelle"]}
+        for r in rows
+    ]})
+
+
+@facturare_bp.route("/facturare/api/venituri-rules", methods=["PUT"])
+@login_required
+@handle_api_errors
+def api_put_venituri_rules():
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+    data = request.get_json(force=True)
+    items = data.get("items", [])
+    for item in items:
+        _repo.upsert_venituri_rule(
+            supplier_id=item["supplier_id"], comanda_prefix=item["comanda_prefix"],
+            konto_venituri=item["konto_venituri"], kostenstelle=item["kostenstelle"],
+            updated_by=current_user.id,
+        )
+    return jsonify({"success": True, "count": len(items)})
+
+
+@facturare_bp.route("/facturare/api/venituri-rules/<int:rule_id>", methods=["DELETE"])
+@login_required
+@handle_api_errors
+def api_delete_venituri_rule(rule_id):
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+    _repo.delete_venituri_rule(rule_id)
+    return jsonify({"success": True})
 
 
 # ── Individual document items (per car) ──────────────────────────
