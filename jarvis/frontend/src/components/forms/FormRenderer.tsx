@@ -84,7 +84,15 @@ export function FormRenderer({ schema, onSubmit, submitting, submitLabel = 'Subm
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-5 form-mobile-friendly">
+      <style>{`
+        .form-mobile-friendly input:not([type="checkbox"]):not([type="radio"]),
+        .form-mobile-friendly textarea,
+        .form-mobile-friendly [role="combobox"],
+        .form-mobile-friendly select { min-height: 44px; font-size: 16px; }
+        .form-mobile-friendly [role="radiogroup"] label { min-height: 44px; display: flex; align-items: center; }
+        .form-mobile-friendly .space-y-1 { gap: 0.375rem; }
+      `}</style>
       {schema.map((field) => {
         if (!isFieldVisible(field, answers)) return null
         return (
@@ -99,7 +107,7 @@ export function FormRenderer({ schema, onSubmit, submitting, submitLabel = 'Subm
           />
         )
       })}
-      <Button type="submit" className="w-full" disabled={submitting}>
+      <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={submitting}>
         {submitting ? 'Submitting...' : submitLabel}
       </Button>
     </form>

@@ -409,6 +409,7 @@ class InvoiceStateMachine:
             notes=notes,
             created_by=created_by_user_id,
             line_ids=list(target_lines) if line_ids else None,
+            split_mode="proportional",
         )
 
         self.repo.create_link(

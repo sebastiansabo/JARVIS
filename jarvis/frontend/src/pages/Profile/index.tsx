@@ -672,169 +672,169 @@ export function EditProfileDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Edit Profile</DialogTitle>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="pb-0">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
+              {user.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
+            </div>
+            <div>
+              <DialogTitle className="text-base">{user.name}</DialogTitle>
+              <p className="text-xs text-muted-foreground">{user.email}</p>
+            </div>
+          </div>
         </DialogHeader>
-        <div className="grid gap-4 py-2">
-          {/* Read-only fields */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="grid gap-1.5">
-              <Label className="text-muted-foreground">Email</Label>
-              <Input value={user.email || ''} disabled className="bg-muted" />
-            </div>
-            <div className="grid gap-1.5">
-              <Label className="text-muted-foreground">Department</Label>
-              <Input value={user.department || ''} disabled className="bg-muted" />
-            </div>
-            <div className="grid gap-1.5">
-              <Label className="text-muted-foreground">Company</Label>
-              <Input value={user.company || ''} disabled className="bg-muted" />
-            </div>
+
+        <div className="space-y-5 pt-2">
+          {/* Info row — read-only chips */}
+          <div className="flex flex-wrap gap-2">
+            {user.company && <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] text-muted-foreground">{user.company}</span>}
+            {user.department && <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] text-muted-foreground">{user.department}</span>}
+            {user.position && <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium">{user.position}</span>}
           </div>
-          {/* Editable fields */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="grid gap-1.5">
-              <Label htmlFor="edit-phone">Phone</Label>
-              <Input
-                id="edit-phone"
-                value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                placeholder="+40..."
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="edit-cnp">CNP</Label>
-              <Input
-                id="edit-cnp"
-                value={form.cnp}
-                onChange={(e) => {
-                  const cnp = e.target.value
-                  setForm((f) => {
-                    const next = { ...f, cnp }
-                    const extracted = birthdateFromCnp(cnp)
-                    if (extracted) next.birthdate = extracted
-                    return next
-                  })
-                }}
-                placeholder="1234567890123"
-                maxLength={13}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="edit-position">Position</Label>
-              <Input
-                id="edit-position"
-                value={form.position}
-                onChange={(e) => setForm((f) => ({ ...f, position: e.target.value }))}
-                placeholder="e.g. Software Engineer"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <div className="grid gap-1.5">
-              <Label htmlFor="edit-birthdate">Birthdate</Label>
-              <DateField value={form.birthdate ?? ''} onChange={(v) => setForm((f) => ({ ...f, birthdate: v }))} className="w-full" />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="edit-contract">Contract Start Date</Label>
-              <DateField value={form.contract_work_date ?? ''} onChange={(v) => setForm((f) => ({ ...f, contract_work_date: v }))} className="w-full" />
-            </div>
-          </div>
+
           {/* Employment Contracts */}
           {contracts.length > 0 && (
-            <div className="border-t pt-3 space-y-2">
-              <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Employment Contracts</span>
-              {contracts.map((c, i) => {
-                const startDate = c.start_date ? new Date(c.start_date + 'T00:00').toLocaleDateString('ro-RO') : '—'
-                return (
-                  <div key={i} className="grid grid-cols-4 gap-3 rounded-md border p-2.5 bg-muted/30">
-                    <div className="grid gap-0.5">
-                      <span className="text-[10px] text-muted-foreground uppercase">Company</span>
-                      <span className="text-xs font-medium truncate">{c.company}</span>
+            <div className="space-y-2">
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Contracts</span>
+              <div className="grid gap-2">
+                {contracts.map((c, i) => {
+                  const startDate = c.start_date ? new Date(c.start_date + 'T00:00').toLocaleDateString('ro-RO') : '—'
+                  return (
+                    <div key={i} className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate">{c.company}</p>
+                        <p className="text-[10px] text-muted-foreground">Nr. {c.contract_number || '—'} &middot; {startDate}</p>
+                      </div>
+                      {c.years_employed != null && (
+                        <span className="text-xs font-semibold text-primary tabular-nums shrink-0 ml-3">{c.years_employed} yr</span>
+                      )}
                     </div>
-                    <div className="grid gap-0.5">
-                      <span className="text-[10px] text-muted-foreground uppercase">Contract Nr.</span>
-                      <span className="text-xs font-medium">{c.contract_number || '—'}</span>
-                    </div>
-                    <div className="grid gap-0.5">
-                      <span className="text-[10px] text-muted-foreground uppercase">Start Date</span>
-                      <span className="text-xs font-medium">{startDate}</span>
-                    </div>
-                    <div className="grid gap-0.5">
-                      <span className="text-[10px] text-muted-foreground uppercase">Years</span>
-                      <span className="text-xs font-medium">{c.years_employed != null ? `${c.years_employed} yr` : '—'}</span>
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
           )}
+
+          {/* Editable fields */}
+          <div className="space-y-3">
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Personal Info</span>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1">
+                <Label htmlFor="edit-phone" className="text-[11px]">Phone</Label>
+                <Input
+                  id="edit-phone"
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                  placeholder="+40..."
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label htmlFor="edit-cnp" className="text-[11px]">CNP</Label>
+                <Input
+                  id="edit-cnp"
+                  value={form.cnp}
+                  onChange={(e) => {
+                    const cnp = e.target.value
+                    setForm((f) => {
+                      const next = { ...f, cnp }
+                      const extracted = birthdateFromCnp(cnp)
+                      if (extracted) next.birthdate = extracted
+                      return next
+                    })
+                  }}
+                  placeholder="1234567890123"
+                  maxLength={13}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label htmlFor="edit-position" className="text-[11px]">Position</Label>
+                <Input
+                  id="edit-position"
+                  value={form.position}
+                  onChange={(e) => setForm((f) => ({ ...f, position: e.target.value }))}
+                  placeholder="e.g. Software Engineer"
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label htmlFor="edit-birthdate" className="text-[11px]">Birthdate</Label>
+                <DateField value={form.birthdate ?? ''} onChange={(v) => setForm((f) => ({ ...f, birthdate: v }))} className="w-full h-8 text-sm" />
+              </div>
+            </div>
+          </div>
+
           {/* Signature */}
           <SignatureSection />
+
           {/* Change Password */}
           <div className="border-t pt-3">
             <button
               type="button"
-              className="flex items-center gap-2 text-sm font-medium hover:text-foreground text-muted-foreground transition-colors"
+              className="flex items-center gap-2 text-xs font-medium hover:text-foreground text-muted-foreground transition-colors"
               onClick={() => setPwOpen(!pwOpen)}
             >
-              <Key className="h-3.5 w-3.5" />
+              <Key className="h-3 w-3" />
               Change Password
-              {pwOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              {pwOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </button>
             {pwOpen && (
-              <div className="grid grid-cols-3 gap-4 mt-3">
-                <div className="grid gap-1.5">
-                  <Label>Current Password</Label>
+              <div className="grid grid-cols-3 gap-3 mt-3">
+                <div className="grid gap-1">
+                  <Label className="text-[11px]">Current Password</Label>
                   <div className="relative">
                     <Input
                       type={showCurrent ? 'text' : 'password'}
                       value={currentPw}
                       onChange={(e) => setCurrentPw(e.target.value)}
                       placeholder="Current password"
+                      className="h-8 text-sm"
                     />
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                      className="absolute right-0 top-0 h-full px-2 hover:bg-transparent"
                       onClick={() => setShowCurrent(!showCurrent)}
                     >
-                      {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showCurrent ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                     </Button>
                   </div>
                 </div>
-                <div className="grid gap-1.5">
-                  <Label>New Password</Label>
+                <div className="grid gap-1">
+                  <Label className="text-[11px]">New Password</Label>
                   <div className="relative">
                     <Input
                       type={showNew ? 'text' : 'password'}
                       value={newPw}
                       onChange={(e) => setNewPw(e.target.value)}
                       placeholder="Min. 10 characters"
+                      className="h-8 text-sm"
                     />
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                      className="absolute right-0 top-0 h-full px-2 hover:bg-transparent"
                       onClick={() => setShowNew(!showNew)}
                     >
-                      {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showNew ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                     </Button>
                   </div>
                   {newPw.length > 0 && !pwLong && (
-                    <p className="text-xs text-destructive">Must be at least 10 characters</p>
+                    <p className="text-[10px] text-destructive">Min. 10 characters</p>
                   )}
                 </div>
-                <div className="grid gap-1.5">
-                  <Label>Confirm New Password</Label>
+                <div className="grid gap-1">
+                  <Label className="text-[11px]">Confirm Password</Label>
                   <Input
                     type={showNew ? 'text' : 'password'}
                     value={confirmPw}
                     onChange={(e) => setConfirmPw(e.target.value)}
                     placeholder="Re-enter password"
+                    className="h-8 text-sm"
                   />
                   {confirmPw.length > 0 && !pwMatch && (
                     <p className="text-xs text-destructive">Passwords do not match</p>
