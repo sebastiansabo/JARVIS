@@ -22,6 +22,8 @@ import {
   ExternalLink,
   SlidersHorizontal,
   Pencil,
+  LogIn,
+  LogOut,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -126,7 +128,7 @@ export default function Hub() {
     refetchInterval: 60_000,
   })
 
-  useMutation({
+  const punchMut = useMutation({
     mutationFn: async () => {
       const pos = await new Promise<GeolocationPosition | null>((resolve) => {
         if (!navigator.geolocation) return resolve(null)
@@ -151,8 +153,7 @@ export default function Hub() {
     onError: () => toast.error('Punch failed'),
   })
 
-  const checkinDir = checkinStatus?.next_direction ?? 'IN'
-  void checkinDir
+  const isCheckedIn = checkinStatus?.next_direction === 'OUT'
   const lastPunch = checkinStatus?.punches?.length
     ? checkinStatus.punches[checkinStatus.punches.length - 1]
     : null
@@ -237,10 +238,31 @@ export default function Hub() {
                 {authUser?.role_name && (
                   <Badge variant="outline" className="text-[10px] px-1.5 py-0">{authUser.role_name}</Badge>
                 )}
-                {lastPunch && (
-                  <span className="text-[10px] text-muted-foreground">
-                    {lastPunch.direction === 'IN' ? 'In' : 'Out'} {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
+                {checkinStatus?.mapped && (
+                  <div className="flex items-center gap-2">
+                    {lastPunch && (
+                      <div className="text-xs text-right leading-tight hidden sm:block">
+                        <p className="font-medium">
+                          {lastPunch.direction === 'IN' ? 'In' : 'Out'} at{' '}
+                          {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    )}
+                    <Button
+                      size="sm"
+                      className={cn(
+                        'shrink-0 font-semibold text-white',
+                        isCheckedIn
+                          ? 'bg-red-600 hover:bg-red-700'
+                          : 'bg-green-600 hover:bg-green-700',
+                      )}
+                      onClick={() => punchMut.mutate()}
+                      disabled={punchMut.isPending}
+                    >
+                      {isCheckedIn ? <LogOut className="h-3.5 w-3.5 mr-1.5" /> : <LogIn className="h-3.5 w-3.5 mr-1.5" />}
+                      {punchMut.isPending ? '...' : isCheckedIn ? 'Check Out' : 'Check In'}
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
