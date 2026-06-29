@@ -823,6 +823,171 @@ def api_delete_invoice(invoice_id):
     return jsonify({"success": True})
 
 
+# ── Anexa status export (Excel) ──────────────────────────────────
+
+@facturare_bp.route("/facturare/api/anexas/<int:anexa_id>/status-export.xlsx")
+@login_required
+@handle_api_errors
+def api_anexa_status_export(anexa_id):
+    """Export per-car invoicing status for an anexa as styled XLSX."""
+    if not _check_perm("view"):
+        return error_response("Permission denied", 403)
+
+    import io as _io
+    import json as _json
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+
+    anexa = _repo.get_anexa_by_id(anexa_id)
+    if not anexa:
+        return error_response("Anexa not found", 404)
+    contract = _repo.get_contract_by_id(anexa["contract_id"])
+    lines = _repo.get_lines_by_anexa(anexa_id)
+    invoices = _repo.get_invoices_by_anexa(anexa_id)
+
+    sup = _repo.query_one("SELECT company FROM companies WHERE id = %s", (contract["supplier_id"],))
+    cust = _repo.query_one("SELECT display_name FROM crm_clients WHERE id = %s", (contract["customer_id"],))
+    supplier_name = sup["company"] if sup else ""
+    customer_name = cust["display_name"] if cust else ""
+
+    prices = {l["id"]: float(l["selling_price_eur"]) for l in lines}
+    nr_map = {l["id"]: l.get("nr_comanda", "") for l in lines}
+    model_map = {l["id"]: l.get("model", "") for l in lines}
+    total_selling = sum(prices.values()) or 1
+
+    # Compute per-line amounts
+    line_data = {lid: {"prof": 0, "inv": 0, "sto": 0, "fin": 0} for lid in prices}
+    for inv in invoices:
+        raw = inv.get("line_ids")
+        if isinstance(raw, str):
+            raw = _json.loads(raw)
+        inv_lids = raw if raw else list(prices.keys())
+        covered_total = sum(prices.get(l, 0) for l in inv_lids)
+        if not covered_total:
+            continue
+        amt = float(inv["total_amount_eur"])
+        for lid in inv_lids:
+            if lid not in line_data:
+                continue
+            share = round(abs(amt) * (prices[lid] / covered_total))
+            if inv["invoice_type"] == "PROFORMA":
+                line_data[lid]["prof"] += share
+            elif inv["invoice_type"] == "INVOICE":
+                line_data[lid]["inv"] += share
+            elif inv["invoice_type"] == "STORNO":
+                line_data[lid]["sto"] += share
+            elif inv["invoice_type"] == "FINAL":
+                line_data[lid]["fin"] += share
+
+    # Build workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"Anexa {anexa['anexa_number']}"
+
+    bold = Font(bold=True, size=10)
+    hdr_font = Font(bold=True, size=10, color="FFFFFF")
+    hdr_fill = PatternFill(start_color="2F5496", end_color="2F5496", fill_type="solid")
+    total_fill = PatternFill(start_color="D6E4F0", end_color="D6E4F0", fill_type="solid")
+    complete_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+    storno_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+    prof90_fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+    thin = Border(left=Side(style="thin"), right=Side(style="thin"),
+                  top=Side(style="thin"), bottom=Side(style="thin"))
+    num_fmt = "#,##0"
+
+    # Title
+    ws.merge_cells("A1:I1")
+    ws["A1"] = f"{contract['contract_ref']} | Anexa {anexa['anexa_number']} | {supplier_name} → {customer_name}"
+    ws["A1"].font = Font(bold=True, size=13)
+    ws.merge_cells("A2:I2")
+    ws["A2"] = f"{len(lines)} cars | {int(total_selling):,} EUR"
+    ws["A2"].font = Font(size=10, italic=True)
+
+    # Headers
+    headers = ["Nr Comanda", "Model", "Selling EUR", "Proforma", "Invoiced", "Storno", "Final", "Remaining", "Stage"]
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(row=4, column=col, value=h)
+        c.font = hdr_font
+        c.fill = hdr_fill
+        c.alignment = Alignment(horizontal="center")
+        c.border = thin
+
+    # Data rows
+    totals = [0] * 6
+    row = 5
+    for lid in sorted(prices.keys()):
+        d = line_data[lid]
+        remain = int(prices[lid]) - d["prof"] + d["sto"]
+        if d["fin"] > 0:
+            stage = "COMPLETE"
+        elif d["sto"] > 0 and d["fin"] == 0:
+            stage = "STORNO (awaiting FINAL)"
+        elif d["inv"] > 0 and d["inv"] >= int(prices[lid]):
+            stage = "FULLY INVOICED"
+        elif d["prof"] > 0 and d["prof"] >= int(prices[lid]) - 1:
+            stage = "PROFORMA COMPLETE"
+        elif d["prof"] > 0:
+            stage = "PARTIAL"
+        else:
+            stage = "NEW"
+
+        vals = [nr_map.get(lid, ""), model_map.get(lid, ""), int(prices[lid]),
+                d["prof"] or None, d["inv"] or None, d["sto"] or None, d["fin"] or None, remain, stage]
+        for col, v in enumerate(vals, 1):
+            c = ws.cell(row=row, column=col, value=v)
+            c.border = thin
+            if col >= 3 and col <= 8 and v is not None:
+                c.number_format = num_fmt
+                c.alignment = Alignment(horizontal="right")
+            if stage == "COMPLETE":
+                c.fill = complete_fill
+            elif stage == "FULLY INVOICED":
+                c.fill = storno_fill
+            elif stage == "PROFORMA COMPLETE":
+                c.fill = prof90_fill
+
+        totals[0] += int(prices[lid])
+        totals[1] += d["prof"]
+        totals[2] += d["inv"]
+        totals[3] += d["sto"]
+        totals[4] += d["fin"]
+        totals[5] += remain
+        row += 1
+
+    # Total row
+    total_vals = ["", "TOTAL"] + totals + [f"{len(lines)} cars"]
+    for col, v in enumerate(total_vals, 1):
+        c = ws.cell(row=row, column=col, value=v)
+        c.font = bold
+        c.fill = total_fill
+        c.border = thin
+        if col >= 3 and col <= 8 and isinstance(v, (int, float)):
+            c.number_format = num_fmt
+            c.alignment = Alignment(horizontal="right")
+
+    # Column widths
+    for i, w in enumerate([12, 38, 14, 12, 12, 12, 12, 12, 22], 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+    # Legend
+    row += 2
+    ws.cell(row=row, column=1, value="Legend:").font = bold
+    row += 1
+    ws.cell(row=row, column=1, value="Complete").fill = complete_fill
+    row += 1
+    ws.cell(row=row, column=1, value="Fully Invoiced (awaiting Storno)").fill = storno_fill
+    row += 1
+    ws.cell(row=row, column=1, value="Proforma Complete (awaiting Invoice)").fill = prof90_fill
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    dl_name = f"{contract['contract_ref']}_Anexa{anexa['anexa_number']}_Status.xlsx"
+    from flask import send_file
+    return send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True, download_name=dl_name)
+
+
 # ── User search ──────────────────────────────────────────────────
 
 @facturare_bp.route("/facturare/api/users")
@@ -1096,7 +1261,7 @@ def api_document_items():
 
         for idx, l in enumerate(inv_lines):
             selling = float(l["selling_price_eur"])
-            car_amount = selling * pct
+            car_amount = round(selling * pct)
 
             items.append({
                 "invoice_id": inv["invoice_id"],
@@ -1116,7 +1281,7 @@ def api_document_items():
                 "culoare": l.get("culoare"),
                 "vin": l.get("vin"),
                 "unit_price": selling,
-                "doc_amount": round(car_amount, 2),
+                "doc_amount": car_amount,
                 "notes": inv.get("notes"),
                 "payment_status": inv.get("payment_status") or "UNPAID",
             })
