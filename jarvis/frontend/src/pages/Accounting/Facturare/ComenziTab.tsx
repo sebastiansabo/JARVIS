@@ -2283,6 +2283,10 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-right">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" title="Export status XLSX"
+                              onClick={(e) => { e.stopPropagation(); window.open(`/facturare/api/anexas/${a.id}/status-export.xlsx`, '_blank') }}>
+                              <FileSpreadsheet className="h-3.5 w-3.5 text-muted-foreground hover:text-emerald-500" />
+                            </Button>
                             {a.stage === 'NEW' && (
                               <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete anexa (no invoices yet)"
                                 onClick={async (e) => {
