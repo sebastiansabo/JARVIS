@@ -609,7 +609,7 @@ def api_get_anexa_detail(anexa_id):
         for idx, lid in enumerate(covered):
             if lid not in line_coverage:
                 line_coverage[lid] = []
-            share = line_prices.get(lid, 0) * pct
+            share = round(line_prices.get(lid, 0) * pct)
             share_ron = 0
             # Per-vehicle document number: matches PDF renderer logic (start_no + idx)
             display_no = base_no + idx if base_no is not None and doc_mode != 'single_doc' and len(covered) > 1 else base_no
