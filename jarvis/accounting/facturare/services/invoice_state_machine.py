@@ -9,7 +9,9 @@ Entity hierarchy: Contract → Anexa → Invoices.
 Vehicle lines live on the Anexa, not on invoices.
 """
 import logging
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
+
+ONE = Decimal("1")
 
 from ..models import StoredInvoice, InvoiceTypeEnum, InvoiceStateEnum, InvoiceLinkTypeEnum
 from ..repositories.invoice_storage_repository import InvoiceStorageRepository
@@ -259,7 +261,7 @@ class InvoiceStateMachine:
             inv_lines = set(raw) if raw else all_line_id_set
             covered_total = sum(line_prices.get(lid, Decimal("0")) for lid in inv_lines)
             for lid in (inv_lines & target_lines):
-                share = (line_prices.get(lid, Decimal("0")) / covered_total * Decimal(str(inv["total_amount_eur"]))) if covered_total else Decimal("0")
+                share = (line_prices.get(lid, Decimal("0")) / covered_total * Decimal(str(inv["total_amount_eur"]))).quantize(ONE, rounding=ROUND_HALF_UP) if covered_total else Decimal("0")
                 invoiced_for_target += share
 
         storno_total = invoiced_for_target
@@ -353,7 +355,7 @@ class InvoiceStateMachine:
             inv_lines = set(raw) if raw else all_line_id_set
             covered_total = sum(line_prices.get(lid, Decimal("0")) for lid in inv_lines)
             for lid in (inv_lines & target_lines):
-                share = (line_prices.get(lid, Decimal("0")) / covered_total * Decimal(str(inv["total_amount_eur"]))) if covered_total else Decimal("0")
+                share = (line_prices.get(lid, Decimal("0")) / covered_total * Decimal(str(inv["total_amount_eur"]))).quantize(ONE, rounding=ROUND_HALF_UP) if covered_total else Decimal("0")
                 net_invoiced += share
         for s in all_stornos:
             raw = s.get("line_ids")
@@ -362,7 +364,7 @@ class InvoiceStateMachine:
             s_lines = set(raw) if raw else all_line_id_set
             covered_total = sum(line_prices.get(lid, Decimal("0")) for lid in s_lines)
             for lid in (s_lines & target_lines):
-                share = (line_prices.get(lid, Decimal("0")) / covered_total * abs(Decimal(str(s["total_amount_eur"])))) if covered_total else Decimal("0")
+                share = (line_prices.get(lid, Decimal("0")) / covered_total * abs(Decimal(str(s["total_amount_eur"])))).quantize(ONE, rounding=ROUND_HALF_UP) if covered_total else Decimal("0")
                 net_invoiced -= share
         final_total = target_total - net_invoiced
 
@@ -383,7 +385,7 @@ class InvoiceStateMachine:
             inv_total = Decimal(str(inv["total_amount_eur"]))
             inv_covered_total = sum(line_prices.get(lid, Decimal("0")) for lid in inv_lids)
             for lid in overlap:
-                share = (line_prices.get(lid, Decimal("0")) / inv_covered_total * inv_total) if inv_covered_total else Decimal("0")
+                share = (line_prices.get(lid, Decimal("0")) / inv_covered_total * inv_total).quantize(ONE, rounding=ROUND_HALF_UP) if inv_covered_total else Decimal("0")
                 sum_eur_x_kurs += share * inv_kurs
                 sum_eur += share
         final_kurs = (sum_eur_x_kurs / sum_eur).quantize(Decimal("0.0001")) if sum_eur else None
