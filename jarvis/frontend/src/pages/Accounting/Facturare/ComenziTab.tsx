@@ -1586,7 +1586,7 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
     const coveredTotal = invLids.reduce((s, id) => s + (linePriceMap.get(id) || 0), 0)
     if (!coveredTotal) return 0
     const selectedShare = invLids.filter(id => lidSet.has(id)).reduce((s, id) => s + (linePriceMap.get(id) || 0), 0)
-    return inv.total_amount_eur * (selectedShare / coveredTotal)
+    return Math.round(inv.total_amount_eur * (selectedShare / coveredTotal))
   }
 
   const stornoTotal = action === 'storno'
@@ -1873,8 +1873,12 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
 function AccountingCard({ contractId }: { contractId: number }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState<Record<string, string>>({})
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     setLoading(true)
     fetch(`/facturare/api/contracts/${contractId}/accounting-summary`)
       .then(r => r.ok ? r.json() : null)
@@ -1882,6 +1886,47 @@ function AccountingCard({ contractId }: { contractId: number }) {
       .catch(() => setData(null))
       .finally(() => setLoading(false))
   }, [contractId])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  const startEdit = () => {
+    if (!data) return
+    setForm({
+      firmennr: data.firmennr ?? '',
+      client_konto_debit: data.client_konto_debit ?? '',
+      konto_credit_avans: data.konto_configs?.INVOICE?.konto_credit ?? '',
+      konto_credit_storno: data.konto_configs?.STORNO?.konto_credit ?? '',
+      konto_credit_final: data.konto_configs?.FINAL?.konto_credit ?? '',
+      centru_gestiune: data.konto_configs?.INVOICE?.centru_gestiune ?? '',
+    })
+    setEditing(true)
+    setExpanded(true)
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/facturare/api/contracts/${contractId}/accounting-summary`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firmennr: form.firmennr || null,
+          firmennr_key: form.firmennr || data.firmennr,
+          client_konto_debit: form.client_konto_debit || null,
+          konto_invoice: { konto_credit: form.konto_credit_avans || null, centru_gestiune: form.centru_gestiune || null,
+            konto_debit: data.konto_configs?.INVOICE?.konto_debit || null, text_template: data.konto_configs?.INVOICE?.text_template || null },
+          konto_storno: { konto_credit: form.konto_credit_storno || null, centru_gestiune: data.konto_configs?.STORNO?.centru_gestiune || null,
+            konto_debit: data.konto_configs?.STORNO?.konto_debit || null, text_template: data.konto_configs?.STORNO?.text_template || null },
+          konto_final: { konto_credit: form.konto_credit_final || null, centru_gestiune: data.konto_configs?.FINAL?.centru_gestiune || null,
+            konto_debit: data.konto_configs?.FINAL?.konto_debit || null, text_template: data.konto_configs?.FINAL?.text_template || null },
+        }),
+      })
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed') }
+      toast.success('Date contabile salvate')
+      setEditing(false)
+      loadData()
+    } catch (err: any) { toast.error(err.message) }
+    finally { setSaving(false) }
+  }
 
   if (loading) return <div className="py-2"><Loader2 className="h-4 w-4 animate-spin" /></div>
   if (!data) return null
@@ -1893,32 +1938,60 @@ function AccountingCard({ contractId }: { contractId: number }) {
   if (!data.konto_configs?.STORNO) missing.push('Konto STORNO')
   if (!data.konto_configs?.FINAL) missing.push('Konto FINAL')
 
-  const Row = ({ label, value, warn }: { label: string; value: any; warn?: boolean }) => (
-    <div className="flex justify-between text-xs py-0.5">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={warn ? 'text-red-500 font-medium' : 'font-medium'}>{value ?? '—'}</span>
+  const Row = ({ label, value, warn, field }: { label: string; value: any; warn?: boolean; field?: string }) => (
+    <div className="flex justify-between items-center text-xs py-0.5 gap-2">
+      <span className="text-muted-foreground shrink-0">{label}</span>
+      {editing && field ? (
+        <Input className="h-6 text-xs text-right w-40 font-mono" value={form[field] || ''}
+          onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))} />
+      ) : (
+        <span className={warn ? 'text-red-500 font-medium' : 'font-medium'}>{value ?? '—'}</span>
+      )}
     </div>
   )
 
   return (
-    <div className="border rounded-lg p-3 bg-muted/30 space-y-1">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-semibold">Date Contabile</span>
-        {missing.length > 0 && <span className="text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded">⚠ {missing.length} lipsă</span>}
+    <div className="border rounded-lg bg-muted/30">
+      <div className="flex items-center justify-between px-3 py-2 cursor-pointer select-none"
+        onClick={() => !editing && setExpanded(e => !e)}>
+        <div className="flex items-center gap-1.5">
+          {expanded ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+          <span className="text-xs font-semibold">Date Contabile</span>
+          {missing.length > 0 && <span className="text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded">⚠ {missing.length} lipsă</span>}
+        </div>
+        {expanded && !editing && (
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={e => { e.stopPropagation(); startEdit() }}>
+            <Pencil className="h-3 w-3 text-muted-foreground" />
+          </Button>
+        )}
       </div>
-      <Row label="Firmennr" value={data.firmennr} warn={!data.firmennr} />
-      <Row label="Client" value={data.customer_name} />
-      <Row label="Konto Debit Client" value={data.client_konto_debit} warn={!data.client_konto_debit} />
-      {data.konto_configs?.INVOICE && <Row label="Konto Credit (Avans)" value={data.konto_configs.INVOICE.konto_credit} />}
-      {data.konto_configs?.STORNO && <Row label="Konto Credit (Storno)" value={data.konto_configs.STORNO.konto_credit} />}
-      {data.konto_configs?.FINAL && <Row label="Konto Credit (Final)" value={data.konto_configs.FINAL.konto_credit} />}
-      {data.konto_configs?.INVOICE && <Row label="Centru Gestiune" value={data.konto_configs.INVOICE.centru_gestiune} />}
-      {data.venituri_rules?.length > 0 && (
-        <div className="pt-1 border-t mt-1">
-          <span className="text-[10px] text-muted-foreground">Venituri FINAL:</span>
-          {data.venituri_rules.map((r: any, i: number) => (
-            <Row key={i} label={`Prefix ${r.comanda_prefix}`} value={`${r.konto_venituri} / KST ${r.kostenstelle}`} />
-          ))}
+      {expanded && (
+        <div className="px-3 pb-3 space-y-1">
+          <Row label="Firmennr" value={data.firmennr} warn={!data.firmennr} field="firmennr" />
+          <Row label="Client" value={data.customer_name} />
+          <Row label="Konto Debit Client" value={data.client_konto_debit} warn={!data.client_konto_debit} field="client_konto_debit" />
+          <Row label="Konto Credit (Avans)" value={data.konto_configs?.INVOICE?.konto_credit} field="konto_credit_avans" />
+          <Row label="Konto Credit (Storno)" value={data.konto_configs?.STORNO?.konto_credit} field="konto_credit_storno" />
+          <Row label="Konto Credit (Final)" value={data.konto_configs?.FINAL?.konto_credit} field="konto_credit_final" />
+          <Row label="Centru Gestiune" value={data.konto_configs?.INVOICE?.centru_gestiune} field="centru_gestiune" />
+          {data.venituri_rules?.length > 0 && (
+            <div className="pt-1 border-t mt-1">
+              <span className="text-[10px] text-muted-foreground">Venituri FINAL:</span>
+              {data.venituri_rules.map((r: any, i: number) => (
+                <Row key={i} label={`Prefix ${r.comanda_prefix}`} value={`${r.konto_venituri} / KST ${r.kostenstelle}`} />
+              ))}
+            </div>
+          )}
+          {editing && (
+            <div className="flex justify-end gap-1.5 pt-2">
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditing(false)}>
+                <X className="h-3 w-3 mr-1" /> Anulează
+              </Button>
+              <Button size="sm" className="h-7 text-xs" onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Check className="h-3 w-3 mr-1" />} Salvează
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>
