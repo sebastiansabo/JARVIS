@@ -1640,11 +1640,12 @@ def api_generate_eurofib(invoice_id):
             "WHERE id IN ({}) ORDER BY sequence_number".format(",".join(["%s"] * len(reversed_inv_ids))),
             tuple(reversed_inv_ids))
 
+        # belegnummer = storno invoice number (not the original advance number)
+        storno_inv_no = inv_row.get("invoice_number") or inv_row["id"]
         order_lines = []
         for ri in reversed_invoices:
             ri_total = float(ri["total_amount_eur"])
             ri_split = ri.get("split_mode") or "equal"
-            ri_inv_no = ri.get("invoice_number") or ri["id"]
             # Kurs from the original advance invoice
             ri_kurs = float(ri["kurs_applied"]) if ri.get("kurs_applied") else kurs
             for car in lines:
@@ -1658,7 +1659,7 @@ def api_generate_eurofib(invoice_id):
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
                     list_price=float(car["list_price_eur"]), selling_price=selling,
                     advance=-car_amount, rest=None,
-                    start_no=ri_inv_no,
+                    start_no=storno_inv_no,
                     kurs=ri_kurs,
                 ))
     else:
