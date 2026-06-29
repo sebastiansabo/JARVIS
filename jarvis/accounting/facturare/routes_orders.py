@@ -968,6 +968,51 @@ def api_contract_accounting_summary(contract_id):
     })
 
 
+@facturare_bp.route("/facturare/api/contracts/<int:contract_id>/accounting-summary", methods=["PUT"])
+@login_required
+@handle_api_errors
+def api_put_contract_accounting_summary(contract_id):
+    """Update accounting data for a contract (firmennr, konto debit, konto configs, centru gestiune)."""
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+
+    contract = _repo.get_contract_by_id(contract_id)
+    if not contract:
+        return error_response("Contract not found", 404)
+
+    data = request.get_json(force=True)
+    supplier_id = contract["supplier_id"]
+    customer_id = contract["customer_id"]
+
+    # Update firmennr (companies.eurofib_klient_id)
+    if "firmennr" in data:
+        _repo.execute(
+            "UPDATE companies SET eurofib_klient_id = %s WHERE id = %s",
+            (data["firmennr"] or None, supplier_id))
+
+    # Update client konto debit (crm_clients.eurofib_konto_debit JSONB)
+    if "client_konto_debit" in data and data.get("firmennr_key"):
+        import json as _json
+        _repo.execute(
+            "UPDATE crm_clients SET eurofib_konto_debit = COALESCE(eurofib_konto_debit, '{}'::jsonb) || %s WHERE id = %s",
+            (_json.dumps({str(data["firmennr_key"]): data["client_konto_debit"]}), customer_id))
+
+    # Update konto configs per invoice type
+    for inv_type in ("INVOICE", "STORNO", "FINAL"):
+        key = f"konto_{inv_type.lower()}"
+        if key in data:
+            cfg = data[key]
+            _repo.upsert_konto_config(
+                supplier_id=supplier_id, invoice_type=inv_type,
+                konto_debit=cfg.get("konto_debit") or None,
+                konto_credit=cfg.get("konto_credit") or None,
+                centru_gestiune=cfg.get("centru_gestiune") or None,
+                text_template=cfg.get("text_template") or None,
+                updated_by=current_user.id)
+
+    return jsonify({"success": True})
+
+
 # ── Individual document items (per car) ──────────────────────────
 
 @facturare_bp.route("/facturare/api/document-items")
@@ -1173,7 +1218,7 @@ def api_generate_pdf(invoice_id):
                 # Per-car share of this invoice
                 inv_total = float(inv["total_amount_eur"])
                 inv_selling_sum = sum(float(line_map[x]["selling_price_eur"]) for x in inv_lines if x in line_map) or 1
-                car_share = inv_total * (selling / inv_selling_sum)
+                car_share = round(inv_total * (selling / inv_selling_sum))
                 base_no = inv.get("invoice_number") or inv["id"]
                 inv_doc_mode = inv.get("doc_mode", "per_car")
                 # Per-vehicle document number: matches PDF renderer logic (start_no + idx)
@@ -1218,9 +1263,9 @@ def api_generate_pdf(invoice_id):
         for l in lines:
             selling = float(l["selling_price_eur"])
             if split_mode == "proportional" and total_selling > 0:
-                car_advance = total_amount * (selling / total_selling)
+                car_advance = round(total_amount * (selling / total_selling))
             else:
-                car_advance = total_amount / max(len(lines), 1)
+                car_advance = round(total_amount / max(len(lines), 1))
 
             order_lines.append(OrderLine(
                 comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
@@ -1473,9 +1518,9 @@ def api_generate_eurofib(invoice_id):
         for l in lines:
             selling = float(l["selling_price_eur"])
             if split_mode == "proportional" and total_selling > 0:
-                car_advance = total_amount * (selling / total_selling)
+                car_advance = round(total_amount * (selling / total_selling))
             else:
-                car_advance = total_amount / max(len(lines), 1)
+                car_advance = round(total_amount / max(len(lines), 1))
 
             # For FINAL: look up venituri rule per line
             line_kostenstelle = None
