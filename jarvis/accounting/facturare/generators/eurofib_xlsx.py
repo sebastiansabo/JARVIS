@@ -66,9 +66,8 @@ class EurofibXlsxRenderer:
         row_kurs = line.kurs if line.kurs is not None else cfg.fx.kurs
         fw_amount = line.advance * line.qty  # negative for storno
 
-        # For STORNO: DB already stores accounts inverted, only swap s/h flags
         konto = cfg.eurofib.konto_debit
-        sh = "h" if cfg.eurofib.is_storno else "s"
+        sh = "s"
         gegenkonto = cfg.eurofib.konto_credit
 
         ws.cell(row=r, column=1, value="x")                      # A marker
@@ -108,9 +107,8 @@ class EurofibXlsxRenderer:
         row_kurs = line.kurs if line.kurs is not None else cfg.fx.kurs
         fw_amount = line.advance * line.qty  # negative for storno
 
-        # For STORNO: DB already stores accounts inverted, only swap s/h flags
         credit_konto = cfg.eurofib.konto_credit
-        credit_sh = "s" if cfg.eurofib.is_storno else "h"
+        credit_sh = "h"
 
         # A marker: blank for credit
         ws.cell(row=r, column=2, value=cfg.eurofib.klient)        # B klient
