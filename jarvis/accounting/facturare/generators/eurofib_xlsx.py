@@ -201,3 +201,46 @@ class EurofibXlsxRenderer:
         wb.save(buf)
         wb.close()
         return buf.getvalue()
+
+    @staticmethod
+    def render_multi_to_bytes(batches: list[tuple["JobConfig", list[OrderLine]]]) -> bytes:
+        """Concatenate multiple invoice batches into a single EuroFib xlsx."""
+        wb = load_workbook(str(TEMPLATE_PATH))
+        ws = wb.active
+        # Clear data rows
+        for r in range(3, ws.max_row + 1):
+            for col in range(1, ws.max_column + 1):
+                cell = ws.cell(row=r, column=col)
+                cell.value = None
+                cell.font = _DEFAULT_FONT
+                cell.fill = _DEFAULT_FILL
+                cell.border = _DEFAULT_BORDER
+                cell.alignment = _DEFAULT_ALIGN
+                cell.number_format = "General"
+
+        row_offset = 0
+        for cfg, lines in batches:
+            renderer = EurofibXlsxRenderer(cfg)
+            for i, line in enumerate(lines):
+                inv_no = renderer._resolve_inv_no(i, line)
+                brand = _brand_short(line.model, cfg.eurofib.brand_map)
+                try:
+                    text = cfg.eurofib.text_template.format(
+                        model=line.model, comanda=line.comanda,
+                        brand_short=brand,
+                    )
+                except KeyError:
+                    text = f"{line.model} {line.comanda}"
+                debit_row = 3 + row_offset + 2 * i
+                credit_row = debit_row + 1
+
+                renderer._write_debit(ws, debit_row, inv_no, line, text)
+                renderer._apply_date_format(ws, debit_row)
+                renderer._write_credit(ws, credit_row, inv_no, line, text, debit_row)
+                renderer._apply_date_format(ws, credit_row)
+            row_offset += 2 * len(lines)
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        wb.close()
+        return buf.getvalue()
