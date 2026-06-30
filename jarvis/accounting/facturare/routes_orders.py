@@ -436,7 +436,7 @@ def api_import_anexa(contract_id):
     return jsonify({
         "success": True,
         "anexa": {"id": anexa_row["id"], "anexa_number": anexa_row["anexa_number"]},
-        "lines_imported": len(order_lines),
+        "lines_imported": len(parsed_lines),
     }), 201
 
 
@@ -1762,5 +1762,200 @@ def api_generate_eurofib(invoice_id):
     type_label = {"INVOICE": "advance", "STORNO": "storno", "FINAL": "final"}.get(inv_type_str, "")
     dl_name = f"EuroFib_{cust_name}_{start_no}_{type_label}.xlsx"
 
+    return send_file(io.BytesIO(xlsx_bytes), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True, download_name=dl_name)
+
+
+def _build_eurofib_batch(inv_row):
+    """Build (JobConfig, order_lines) for a single invoice. Returns (cfg, lines) or raises ValueError."""
+    from .config import JobConfig, InvoiceConfig, FxConfig, EurofibConfig, ContractConfig, InputConfig, PartyConfig
+    from .models import OrderLine
+    from datetime import date as date_type, timedelta
+
+    invoice_id = inv_row["id"]
+    anexa = _repo.get_anexa_by_id(inv_row["anexa_id"])
+    contract = _repo.get_contract_by_id(anexa["contract_id"])
+    all_lines = _repo.get_lines_by_anexa(anexa["id"])
+
+    inv_line_ids = inv_row.get("line_ids")
+    if inv_line_ids:
+        import json as _json
+        if isinstance(inv_line_ids, str):
+            inv_line_ids = _json.loads(inv_line_ids)
+        _lid_map = {l["id"]: l for l in all_lines}
+        lines = [_lid_map[lid] for lid in inv_line_ids if lid in _lid_map]
+    else:
+        lines = all_lines
+
+    konto_row = _repo.query_one(
+        "SELECT * FROM facturare_konto_config WHERE supplier_id = %s AND invoice_type = %s",
+        (contract["supplier_id"], inv_row["invoice_type"]))
+    if not konto_row or not konto_row.get("konto_debit") or not konto_row.get("konto_credit"):
+        raise ValueError(f"Konto config not set for invoice {inv_row.get('invoice_number')}")
+
+    inv_type_str = inv_row["invoice_type"]
+    total_amount = float(inv_row["total_amount_eur"])
+    split_mode = inv_row.get("split_mode", "equal")
+    total_selling = sum(float(l["selling_price_eur"]) for l in lines) or 1
+    start_no = inv_row.get("invoice_number") or inv_row["id"]
+    issued_date = inv_row.get("issued_date")
+    if not issued_date:
+        raise ValueError(f"Invoice {inv_row.get('invoice_number')} has no issued date")
+    if isinstance(issued_date, str):
+        issued_date = date_type.fromisoformat(issued_date)
+    kurs = float(inv_row["kurs_applied"]) if inv_row.get("kurs_applied") else 1.0
+
+    reversed_invoices = []
+    if inv_type_str == "STORNO":
+        reversed_links = _repo.query_all(
+            "SELECT source_invoice_id FROM facturare_invoice_links WHERE target_invoice_id = %s AND link_type = 'REVERSES'",
+            (invoice_id,))
+        reversed_inv_ids = [r["source_invoice_id"] for r in reversed_links] if reversed_links else []
+        if not reversed_inv_ids:
+            raise ValueError(f"STORNO {inv_row.get('invoice_number')} has no linked reversed invoices")
+        reversed_invoices = _repo.query_all(
+            "SELECT id, invoice_number, total_amount_eur, split_mode, kurs_applied, issued_date FROM facturare_invoices "
+            "WHERE id IN ({}) ORDER BY sequence_number".format(",".join(["%s"] * len(reversed_inv_ids))),
+            tuple(reversed_inv_ids))
+        storno_inv_no = inv_row.get("invoice_number") or inv_row["id"]
+        order_lines = []
+        for ri in reversed_invoices:
+            ri_total = float(ri["total_amount_eur"])
+            ri_split = ri.get("split_mode") or "equal"
+            ri_kurs = float(ri["kurs_applied"]) if ri.get("kurs_applied") else kurs
+            for car in lines:
+                selling = float(car["selling_price_eur"])
+                if ri_split == "proportional" and total_selling > 0:
+                    car_amount = ri_total * (selling / total_selling)
+                else:
+                    car_amount = ri_total / max(len(lines), 1)
+                order_lines.append(OrderLine(
+                    comanda=int(car["nr_comanda"]) if car.get("nr_comanda") and str(car["nr_comanda"]).isdigit() else 0,
+                    model=car.get("model", ""), culoare=car.get("culoare") or "",
+                    list_price=float(car["list_price_eur"]), selling_price=selling,
+                    advance=-car_amount, rest=None,
+                    start_no=storno_inv_no, kurs=ri_kurs,
+                ))
+    else:
+        _final_kurs_date_set = False
+        if inv_type_str == "FINAL":
+            last_advance = _repo.query_one(
+                "SELECT kurs_applied, issued_date FROM facturare_invoices "
+                "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number DESC LIMIT 1",
+                (anexa["id"],))
+            if last_advance and last_advance.get("kurs_applied"):
+                kurs = float(last_advance["kurs_applied"])
+                adv_date = last_advance.get("issued_date")
+                if adv_date and isinstance(adv_date, str):
+                    adv_date = date_type.fromisoformat(adv_date)
+                if adv_date:
+                    kurs_date = adv_date - timedelta(days=1)
+                    _final_kurs_date_set = True
+
+        order_lines = []
+        for l in lines:
+            selling = float(l["selling_price_eur"])
+            if split_mode == "proportional" and total_selling > 0:
+                car_advance = round(total_amount * (selling / total_selling))
+            else:
+                car_advance = round(total_amount / max(len(lines), 1))
+            line_kostenstelle = None
+            line_konto_credit = None
+            if inv_type_str == "FINAL":
+                nr_cmd = l.get("nr_comanda") or ""
+                rule = _repo.match_venituri_rule(contract["supplier_id"], nr_cmd)
+                if rule:
+                    line_konto_credit = rule["konto_venituri"]
+                    line_kostenstelle = rule["kostenstelle"]
+            order_lines.append(OrderLine(
+                comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
+                model=l["model"], culoare=l.get("culoare") or "",
+                list_price=float(l["list_price_eur"]), selling_price=selling,
+                advance=car_advance, rest=selling,
+                kostenstelle=line_kostenstelle, konto_credit_override=line_konto_credit,
+            ))
+
+    # Compute kurs_date
+    if inv_type_str == "STORNO" and reversed_invoices:
+        first_ri_date = reversed_invoices[0].get("issued_date")
+        if first_ri_date and isinstance(first_ri_date, str):
+            first_ri_date = date_type.fromisoformat(first_ri_date)
+        kurs_date = (first_ri_date - timedelta(days=1)) if first_ri_date else issued_date - timedelta(days=1)
+    elif inv_type_str == "FINAL":
+        if not _final_kurs_date_set:
+            kurs_date = issued_date - timedelta(days=1)
+    else:
+        kurs_date = issued_date - timedelta(days=1)
+
+    supplier_row = _repo.query_one(
+        "SELECT eurofib_klient_id FROM companies WHERE id = %s",
+        (contract["supplier_id"],))
+    firmennr = supplier_row.get("eurofib_klient_id") if supplier_row else None
+    if not firmennr:
+        raise ValueError(f"Firmennr not configured for supplier of invoice {inv_row.get('invoice_number')}")
+
+    default_text_templates = {
+        'INVOICE': 'avans {model} {comanda}',
+        'STORNO': 'storno avans {model} {comanda}',
+        'FINAL': '{model} {comanda}',
+    }
+
+    cfg = JobConfig(
+        job_id=f"inv-{invoice_id}",
+        contract=ContractConfig(ref=contract["contract_ref"], anexa_ref=f"Anexa {anexa['anexa_number']}"),
+        input=InputConfig(anexa="n/a"),
+        invoice=InvoiceConfig(kind="invoice", start_no=start_no, date=issued_date),
+        fx=FxConfig(currency="EUR", kurs=kurs, kurs_date=kurs_date),
+        supplier=PartyConfig(name="", address_lines=[]),
+        customer=PartyConfig(name="", address_lines=[]),
+        eurofib=EurofibConfig(
+            klient=firmennr,
+            konto_debit=int(konto_row["konto_debit"]),
+            konto_credit=int(konto_row["konto_credit"]),
+            text_template=konto_row.get("text_template") or default_text_templates.get(inv_type_str, "{model} {comanda}"),
+            is_storno=(inv_type_str == "STORNO"),
+        ),
+    )
+
+    return cfg, order_lines
+
+
+@facturare_bp.route("/facturare/api/anexas/<int:anexa_id>/eurofib-daily")
+@login_required
+@handle_api_errors
+def api_generate_eurofib_daily(anexa_id):
+    """Generate a single concatenated EuroFib XLSX for all invoices on a given date."""
+    from flask import send_file
+    from .generators.eurofib_xlsx import EurofibXlsxRenderer
+    import io
+
+    if not _check_perm("view"):
+        return error_response("Permission denied", 403)
+
+    target_date = request.args.get("date")
+    if not target_date:
+        return error_response("date parameter required (YYYY-MM-DD)", 400)
+
+    invoices = _repo.query_all(
+        "SELECT * FROM facturare_invoices WHERE anexa_id = %s AND issued_date = %s AND invoice_type != 'PROFORMA' ORDER BY id",
+        (anexa_id, target_date))
+    if not invoices:
+        return error_response("No invoices found for this date", 404)
+
+    batches = []
+    errors = []
+    for inv_row in invoices:
+        try:
+            cfg, order_lines = _build_eurofib_batch(inv_row)
+            batches.append((cfg, order_lines))
+        except ValueError as e:
+            errors.append(str(e))
+
+    if not batches:
+        return error_response("; ".join(errors), 400)
+
+    xlsx_bytes = EurofibXlsxRenderer.render_multi_to_bytes(batches)
+
+    dl_name = f"EuroFib_{target_date}.xlsx"
     return send_file(io.BytesIO(xlsx_bytes), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                      as_attachment=True, download_name=dl_name)
