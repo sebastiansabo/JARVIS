@@ -1798,7 +1798,14 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
                       </td>
                       <td className="px-2 py-1.5 text-right font-mono text-[11px] text-muted-foreground">{fmtEur(group.totalEur)}</td>
                       <td></td>
-                      <td></td>
+                      <td className="px-2 py-1.5 text-right">
+                        {group.key !== 'no-date' && group.invoices.some(i => i.invoice_type !== 'PROFORMA') && (
+                          <Button variant="ghost" size="icon" className="h-5 w-5" title="Download EuroFib daily XLSX"
+                            onClick={(e) => { e.stopPropagation(); window.open(`/facturare/api/anexas/${detail.anexa_id}/eurofib-daily?date=${group.key}`, '_blank') }}>
+                            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-500" />
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                     {!isCollapsed && group.invoices.map((inv, idx) => (
                       <tr key={inv.id} className="border-b border-blue-100 dark:border-blue-900/30 last:border-0 hover:bg-blue-50/50">
