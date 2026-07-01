@@ -348,6 +348,87 @@ class BilantService:
             'values': values, 'prior': prior,
         })
 
+    def generate_anaf_export_xml(self, generation_id, identification_overrides: dict | None = None):
+        """Generate XSD-validated ANAF XML for import into official forms.
+
+        Uses the new multi-schema exporter with F10+F20+F30+F40 support.
+
+        Args:
+            generation_id: ID of the bilant generation.
+            identification_overrides: optional dict to override/supplement identification
+                from stored source data. Must include 'entity_type' or 'tipBIL'.
+        """
+        from ..anaf_exporter import build_anaf_xml
+        from ..anaf_token_mapper import map_f10_to_tokens, map_f20_to_tokens
+        from ..f10s_engine import compute_f10s
+
+        detail = self.get_generation_detail(generation_id)
+        if not detail.success:
+            return detail
+        generation = detail.data['generation']
+        results = detail.data['results']
+
+        try:
+            # Determine entity type
+            ident = dict(identification_overrides) if identification_overrides else {}
+            entity_type = ident.pop('entity_type', 'UU')
+
+            # Build F10 values from stored accounts or results
+            accounts_data = self.generation_repo.get_source_accounts(generation_id)
+            f10s_values = {}
+            if accounts_data:
+                import pandas as pd
+                rows = [[c, v.get('sfd', 0) or 0, v.get('sfc', 0) or 0]
+                        for c, v in accounts_data.items()]
+                if rows:
+                    df = pd.DataFrame(rows, columns=['Cont', 'SFD', 'SFC'])
+                    f10s_values = compute_f10s(df)
+
+            if not f10s_values:
+                # Fallback: use template-engine results
+                for r in results:
+                    nr = r.get('nr_rd')
+                    if nr:
+                        f10s_values[f'R{nr}' if not str(nr).startswith('R') else nr] = r.get('value', 0) or 0
+
+            # Map to ANAF tokens
+            prior = self._get_prior_results(generation['company_id'], generation_id)
+            prior_tagged = {f'R{k}' if not str(k).startswith('R') else k: v
+                           for k, v in (prior or {}).items()}
+            f10_tokens = map_f10_to_tokens(f10s_values, prior_tagged, entity_type)
+
+            # F20 tokens (if TSD/TSC data available)
+            f20_tokens = None
+            if accounts_data:
+                from ..f20_engine import compute_f20
+                f20_raw = compute_f20(accounts_data)
+                f20_tokens = map_f20_to_tokens(f20_raw, entity_type)
+
+            # F30/F40 — pass through from overrides (manual data)
+            f30_tokens = ident.pop('f30_values', None)
+            f40_tokens = ident.pop('f40_values', None)
+
+            # Set defaults for identification
+            ident.setdefault('an', str(generation.get('period_date', '') or '')[:4] or '2025')
+            ident.setdefault('luna', '12')
+
+            xml_bytes = build_anaf_xml(
+                entity_type=entity_type,
+                identification=ident,
+                f10_values=f10_tokens,
+                f20_values=f20_tokens,
+                f30_values=f30_tokens,
+                f40_values=f40_tokens,
+            )
+            return ServiceResult(success=True, data=xml_bytes)
+
+        except ValueError as e:
+            logger.warning('ANAF XML validation failed: %s', e)
+            return ServiceResult(success=False, error=str(e), status_code=400)
+        except Exception as e:
+            logger.exception('ANAF XML export failed: %s', e)
+            return ServiceResult(success=False, error=str(e), status_code=500)
+
     def generate_anaf_import_xml(self, generation_id):
         """Generate ANAF XML import file (form1 > F10L > Table1 structure)."""
         loaded = self._build_values_and_prior(generation_id)
