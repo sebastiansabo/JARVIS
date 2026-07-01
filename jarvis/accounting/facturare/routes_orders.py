@@ -1644,8 +1644,6 @@ def api_generate_eurofib(invoice_id):
         all_line_prices = {l["id"]: float(l["selling_price_eur"]) for l in all_lines}
         all_line_id_set = set(l["id"] for l in all_lines)
 
-        # belegnummer = storno invoice number (not the original advance number)
-        storno_inv_no = inv_row.get("invoice_number") or inv_row["id"]
         order_lines = []
         for ri in reversed_invoices:
             ri_total = float(ri["total_amount_eur"])
@@ -1671,7 +1669,6 @@ def api_generate_eurofib(invoice_id):
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
                     list_price=float(car["list_price_eur"]), selling_price=selling,
                     advance=-car_amount, rest=None,
-                    start_no=storno_inv_no,
                     kurs=ri_kurs,
                 ))
     else:
@@ -1837,7 +1834,6 @@ def _build_eurofib_batch(inv_row):
             "SELECT id, invoice_number, total_amount_eur, split_mode, kurs_applied, issued_date FROM facturare_invoices "
             "WHERE id IN ({}) ORDER BY sequence_number".format(",".join(["%s"] * len(reversed_inv_ids))),
             tuple(reversed_inv_ids))
-        storno_inv_no = inv_row.get("invoice_number") or inv_row["id"]
         order_lines = []
         for ri in reversed_invoices:
             ri_total = float(ri["total_amount_eur"])
@@ -1854,7 +1850,7 @@ def _build_eurofib_batch(inv_row):
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
                     list_price=float(car["list_price_eur"]), selling_price=selling,
                     advance=-car_amount, rest=None,
-                    start_no=storno_inv_no, kurs=ri_kurs,
+                    kurs=ri_kurs,
                 ))
     else:
         _final_kurs_date_set = False
