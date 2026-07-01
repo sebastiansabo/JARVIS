@@ -22,20 +22,18 @@ interface Company {
 // ── Konto Settings Tab ──────────────────────────────────────────
 
 const INVOICE_TYPES = [
-  { key: 'INVOICE', label: 'Advance', fields: ['konto_debit', 'konto_credit', 'centru_gestiune', 'text_template'] as const },
-  { key: 'STORNO', label: 'Storno', fields: ['konto_debit', 'konto_credit', 'centru_gestiune', 'text_template'] as const },
-  { key: 'FINAL', label: 'Final', fields: ['konto_debit', 'konto_credit', 'centru_gestiune', 'text_template'] as const },
+  { key: 'INVOICE', label: 'Advance', fields: ['konto_credit', 'centru_gestiune', 'text_template'] as const },
+  { key: 'STORNO', label: 'Storno', fields: ['konto_credit', 'centru_gestiune', 'text_template'] as const },
+  { key: 'FINAL', label: 'Final', fields: ['konto_credit', 'centru_gestiune', 'text_template'] as const },
 ] as const
 
 const FIELD_LABELS: Record<string, string> = {
-  konto_debit: 'Konto Debit',
   konto_credit: 'Konto Credit',
   centru_gestiune: 'Centru Gest.',
   text_template: 'Text Template',
 }
 
 interface KontoEntry {
-  konto_debit: string
   konto_credit: string
   centru_gestiune: string
   text_template: string
@@ -57,14 +55,13 @@ function KontoSettingsTab({ companies }: { companies: Company[] }) {
         for (const c of companies) {
           m[String(c.id)] = {}
           for (const t of INVOICE_TYPES) {
-            m[String(c.id)][t.key] = { konto_debit: '', konto_credit: '', centru_gestiune: '', text_template: '' }
+            m[String(c.id)][t.key] = { konto_credit: '', centru_gestiune: '', text_template: '' }
           }
         }
         for (const cfg of data.configs || []) {
           const sid = String(cfg.supplier_id)
           if (m[sid]) {
             m[sid][cfg.invoice_type] = {
-              konto_debit: cfg.konto_debit || '',
               konto_credit: cfg.konto_credit || '',
               centru_gestiune: cfg.centru_gestiune || '',
               text_template: cfg.text_template || '',
@@ -91,10 +88,10 @@ function KontoSettingsTab({ companies }: { companies: Company[] }) {
 
   const save = async () => {
     setSaving(true)
-    const items: { supplier_id: number; invoice_type: string; konto_debit: string; konto_credit: string; centru_gestiune: string; text_template: string }[] = []
+    const items: { supplier_id: number; invoice_type: string; konto_credit: string; centru_gestiune: string; text_template: string }[] = []
     for (const [sid, types] of Object.entries(matrix)) {
       for (const [type, entry] of Object.entries(types)) {
-        if (entry.konto_debit || entry.konto_credit || entry.centru_gestiune) {
+        if (entry.konto_credit || entry.centru_gestiune) {
           items.push({ supplier_id: parseInt(sid), invoice_type: type, ...entry })
         }
       }
@@ -149,7 +146,7 @@ function KontoSettingsTab({ companies }: { companies: Company[] }) {
                 <tr key={c.id} className="border-b hover:bg-muted/20">
                   <td className="px-3 py-1.5 font-medium text-xs whitespace-nowrap">{c.company}</td>
                   {INVOICE_TYPES.map(t => {
-                    const entry = matrix[String(c.id)]?.[t.key] || { konto_debit: '', konto_credit: '', centru_gestiune: '', text_template: '' }
+                    const entry = matrix[String(c.id)]?.[t.key] || { konto_credit: '', centru_gestiune: '', text_template: '' }
                     return (
                       <React.Fragment key={t.key}>
                         {t.fields.map(f => (
