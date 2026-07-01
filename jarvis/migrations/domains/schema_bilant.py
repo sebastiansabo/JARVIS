@@ -195,9 +195,9 @@ def _seed_bilant_dynamic_metrics(cursor):
         ('struct_creante', 'Creante', 'structure', '36', None, 'currency', None, None, None, 'assets', 22),
         ('struct_disponibilitati', 'Disponibilitati', 'structure', '40', None, 'currency', None, None, None, 'assets', 23),
         # Structure — liabilities
-        ('struct_capitaluri_proprii', 'Capitaluri Proprii', 'structure', '100', None, 'currency', None, None, None, 'liabilities', 24),
-        ('struct_datorii_scurt', 'Datorii < 1 an', 'structure', '53', None, 'currency', None, None, None, 'liabilities', 25),
-        ('struct_datorii_lung', 'Datorii > 1 an', 'structure', '64', None, 'currency', None, None, None, 'liabilities', 26),
+        ('struct_capitaluri_proprii', 'Capitaluri Proprii', 'structure', '101', None, 'currency', None, None, None, 'liabilities', 24),
+        ('struct_datorii_scurt', 'Datorii < 1 an', 'structure', '54', None, 'currency', None, None, None, 'liabilities', 25),
+        ('struct_datorii_lung', 'Datorii > 1 an', 'structure', '55', None, 'currency', None, None, None, 'liabilities', 26),
     ]
 
     for c in configs:
