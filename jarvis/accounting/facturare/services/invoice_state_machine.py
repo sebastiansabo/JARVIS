@@ -230,6 +230,10 @@ class InvoiceStateMachine:
             if invalid:
                 raise InvoiceStateMachineError(f"Line IDs {invalid} not found in this anexa")
 
+        # Preserve line_number ordering for deterministic per-car invoice numbering
+        line_number_order = {l["id"]: l["line_number"] for l in all_lines}
+        sorted_target_line_ids = sorted(target_lines, key=lambda lid: line_number_order.get(lid, lid))
+
         proformas = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.PROFORMA)
         invoices = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.INVOICE)
 
@@ -298,7 +302,7 @@ class InvoiceStateMachine:
             intocmit_de=intocmit,
             notes=notes or f"Reverses invoices for {len(target_lines)} vehicle(s)",
             created_by=created_by_user_id,
-            line_ids=list(target_lines) if line_ids else None,
+            line_ids=sorted_target_line_ids if line_ids else None,
         )
 
         for inv in relevant_invoices:
@@ -325,6 +329,10 @@ class InvoiceStateMachine:
         all_lines = self.repo.get_lines_by_anexa(anexa_id)
         all_line_id_set = {l["id"] for l in all_lines}
         target_lines = set(line_ids) if line_ids else all_line_id_set
+
+        # Preserve line_number ordering for deterministic per-car invoice numbering
+        line_number_order = {l["id"]: l["line_number"] for l in all_lines}
+        sorted_target_line_ids = sorted(target_lines, key=lambda lid: line_number_order.get(lid, lid))
 
         # Verify at least one storno covers the target cars
         stornos = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.STORNO)
@@ -410,7 +418,7 @@ class InvoiceStateMachine:
             intocmit_de=intocmit,
             notes=notes,
             created_by=created_by_user_id,
-            line_ids=list(target_lines) if line_ids else None,
+            line_ids=sorted_target_line_ids if line_ids else None,
             split_mode="proportional",
         )
 
