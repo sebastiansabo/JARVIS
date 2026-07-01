@@ -1736,9 +1736,7 @@ def api_generate_eurofib(invoice_id):
         (contract["customer_id"],))
     crm_kd_map = crm_client.get("eurofib_konto_debit") if crm_client else None
     crm_konto_debit = crm_kd_map.get(str(firmennr)) if isinstance(crm_kd_map, dict) else None
-    if not crm_konto_debit:
-        return error_response(f"Client has no Konto Debit configured for this supplier (firmennr {firmennr}). Set it in CRM or via the contract modal.", 400)
-    effective_konto_debit = int(crm_konto_debit)
+    effective_konto_debit = int(crm_konto_debit) if crm_konto_debit else 0
 
     default_text_templates = {
         'INVOICE': 'avans {model} {comanda}',
@@ -1910,9 +1908,7 @@ def _build_eurofib_batch(inv_row):
         (contract["customer_id"],))
     _crm_kd_map = _crm_client.get("eurofib_konto_debit") if _crm_client else None
     _crm_konto = _crm_kd_map.get(str(firmennr)) if isinstance(_crm_kd_map, dict) else None
-    if not _crm_konto:
-        raise ValueError(f"Client has no Konto Debit for supplier firmennr {firmennr} (invoice {inv_row.get('invoice_number')})")
-    effective_konto_debit = int(_crm_konto)
+    effective_konto_debit = int(_crm_konto) if _crm_konto else 0
 
     default_text_templates = {
         'INVOICE': 'avans {model} {comanda}',
