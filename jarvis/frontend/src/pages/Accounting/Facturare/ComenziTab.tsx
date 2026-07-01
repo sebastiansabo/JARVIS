@@ -4,7 +4,6 @@ import {
   Plus, FileText, Loader2, ChevronRight, ChevronDown, Copy,
   Search, CheckCircle2, Ban, Pencil, Check, X,
   Trash2, Download, Archive, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown,
-  Scissors,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -1687,43 +1686,6 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
   const [loading, setLoading] = useState(true)
   const [linesExpanded, setLinesExpanded] = useState(false)
   const [expandedCycles, setExpandedCycles] = useState<Set<string>>(new Set())
-
-  // Split EuroFib state
-  const [stornoSplits, setStornoSplits] = useState<Record<number, any[]>>({})
-  const [splittingId, setSplittingId] = useState<number | null>(null)
-  const [expandedSplits, setExpandedSplits] = useState<Set<number>>(new Set())
-
-  const loadSplits = async (invoiceId: number) => {
-    const res = await fetch(`/facturare/api/invoices/${invoiceId}/splits`)
-    if (res.ok) {
-      const data = await res.json()
-      setStornoSplits(prev => ({ ...prev, [invoiceId]: data.splits || [] }))
-    }
-  }
-
-  const handleSplit = async (invoiceId: number) => {
-    setSplittingId(invoiceId)
-    try {
-      const res = await fetch(`/facturare/api/invoices/${invoiceId}/split-eurofib`, { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed')
-      toast.success(`Created ${data.count} splits`)
-      await loadSplits(invoiceId)
-      setExpandedSplits(prev => new Set(prev).add(invoiceId))
-    } catch (err: any) { toast.error(err.message) }
-    finally { setSplittingId(null) }
-  }
-
-  const handleDeleteSplits = async (invoiceId: number) => {
-    if (!confirm('Delete all splits for this STORNO?')) return
-    try {
-      const res = await fetch(`/facturare/api/invoices/${invoiceId}/splits`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Failed')
-      toast.success('Splits deleted')
-      setStornoSplits(prev => { const n = { ...prev }; delete n[invoiceId]; return n })
-      setExpandedSplits(prev => { const n = new Set(prev); n.delete(invoiceId); return n })
-    } catch (err: any) { toast.error(err.message) }
-  }
   const toggleCycle = (key: string) => setExpandedCycles(prev => {
     const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next
   })
@@ -1749,16 +1711,6 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
       .finally(() => setLoading(false))
   }, [anexaId]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [load])
-
-  // Load splits for all STORNO invoices when detail changes
-  useEffect(() => {
-    if (!detail) return
-    for (const inv of detail.invoices) {
-      if (inv.invoice_type === 'STORNO') {
-        loadSplits(inv.id)
-      }
-    }
-  }, [detail]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
   if (!detail) return <div className="text-center py-8 text-muted-foreground">Not found</div>
@@ -1856,8 +1808,7 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
                       </td>
                     </tr>
                     {!isCollapsed && group.invoices.map((inv, idx) => (
-                      <React.Fragment key={inv.id}>
-                      <tr className="border-b border-blue-100 dark:border-blue-900/30 last:border-0 hover:bg-blue-50/50">
+                      <tr key={inv.id} className="border-b border-blue-100 dark:border-blue-900/30 last:border-0 hover:bg-blue-50/50">
                         <td className="px-3 py-1.5 pl-8">
                           <Badge className={`text-xs ${TYPE_COLORS[inv.invoice_type] || ''}`}>
                             {TYPE_LABELS[inv.invoice_type]}
@@ -1894,28 +1845,6 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
                                 <FileSpreadsheet className="h-3 w-3 text-emerald-500" />
                               </Button>
                             )}
-                            {inv.invoice_type === 'STORNO' && (inv.line_ids?.length || detail.lines.length) > 1 && (
-                              <>
-                                {!stornoSplits[inv.id]?.length ? (
-                                  <Button variant="ghost" size="icon" className="h-5 w-5" title="Split EuroFib (per car)"
-                                    disabled={splittingId === inv.id}
-                                    onClick={async (e) => { e.stopPropagation(); await handleSplit(inv.id) }}>
-                                    {splittingId === inv.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Scissors className="h-3 w-3 text-violet-500" />}
-                                  </Button>
-                                ) : (
-                                  <>
-                                    <Button variant="ghost" size="icon" className="h-5 w-5" title="Toggle splits"
-                                      onClick={(e) => { e.stopPropagation(); setExpandedSplits(prev => { const n = new Set(prev); n.has(inv.id) ? n.delete(inv.id) : n.add(inv.id); return n }) }}>
-                                      {expandedSplits.has(inv.id) ? <ChevronDown className="h-3 w-3 text-violet-500" /> : <ChevronRight className="h-3 w-3 text-violet-500" />}
-                                    </Button>
-                                    <Button variant="ghost" size="icon" className="h-5 w-5" title="Delete splits"
-                                      onClick={async (e) => { e.stopPropagation(); await handleDeleteSplits(inv.id) }}>
-                                      <Trash2 className="h-3 w-3 text-red-400" />
-                                    </Button>
-                                  </>
-                                )}
-                              </>
-                            )}
                             {idx === group.invoices.length - 1 && (
                               <Button variant="ghost" size="icon" className="h-5 w-5" title="Delete"
                                 onClick={async (e) => {
@@ -1932,23 +1861,6 @@ function AnexaDetailPanel({ anexaId, onAction, onDetailLoaded, showInvoices = tr
                           </div>
                         </td>
                       </tr>
-                      {inv.invoice_type === 'STORNO' && expandedSplits.has(inv.id) && stornoSplits[inv.id]?.map((split) => {
-                        const carLine = detail.lines.find(l => split.line_ids?.includes(l.id))
-                        return (
-                          <tr key={`split-${split.id}`} className="border-b border-violet-100 bg-violet-50/30 text-[10px]">
-                            <td className="px-3 py-1 pl-12 text-violet-600">
-                              Split {split.sequence_number}
-                            </td>
-                            <td className="px-2 py-1 text-violet-600 font-mono">{split.invoice_number}</td>
-                            <td className="px-2 py-1 text-muted-foreground" colSpan={2}>
-                              {carLine ? `${carLine.model} — ${carLine.nr_comanda}` : `Line ${split.line_ids?.[0]}`}
-                            </td>
-                            <td className="px-2 py-1 text-right font-mono">{fmtEur(split.total_amount_eur)}</td>
-                            <td colSpan={2}></td>
-                          </tr>
-                        )
-                      })}
-                      </React.Fragment>
                     ))}
                   </React.Fragment>
                 )
