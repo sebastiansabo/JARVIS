@@ -40,7 +40,6 @@ class InvoiceTypeEnum(str, Enum):
     INVOICE = "INVOICE"
     STORNO = "STORNO"
     FINAL = "FINAL"
-    STORNO_SPLIT = "STORNO_SPLIT"
 
 
 class InvoiceStateEnum(str, Enum):
@@ -54,7 +53,6 @@ class InvoiceLinkTypeEnum(str, Enum):
     REVERSES = "REVERSES"
     PRECEDES = "PRECEDES"
     REPLACES = "REPLACES"
-    SPLITS = "SPLITS"
 
 
 # ── Contract ─────────────────────────────────────────────────────

@@ -134,7 +134,7 @@ class InvoiceStorageRepository(BaseRepository):
 
     def get_invoices_by_anexa(self, anexa_id):
         return self.query_all(
-            "SELECT * FROM facturare_invoices WHERE anexa_id = %s AND invoice_type != 'STORNO_SPLIT' ORDER BY created_at",
+            "SELECT * FROM facturare_invoices WHERE anexa_id = %s ORDER BY created_at",
             (anexa_id,))
 
     def get_invoice_by_anexa_type_and_seq(self, anexa_id, invoice_type, sequence_number):
@@ -160,34 +160,6 @@ class InvoiceStorageRepository(BaseRepository):
 
     def delete_invoice(self, invoice_id):
         self.execute("DELETE FROM facturare_invoices WHERE id = %s", (invoice_id,))
-
-    # ── Storno Splits ──────────────────────────────────────────
-
-    def get_splits_for_invoice(self, invoice_id):
-        """Get all STORNO_SPLIT children of a parent STORNO."""
-        return self.query_all(
-            """SELECT fi.* FROM facturare_invoices fi
-               JOIN facturare_invoice_links fil ON fil.target_invoice_id = fi.id
-               WHERE fil.source_invoice_id = %s AND fil.link_type = 'SPLITS'
-               ORDER BY fi.sequence_number""",
-            (invoice_id,))
-
-    def has_splits(self, invoice_id):
-        row = self.query_one(
-            "SELECT EXISTS(SELECT 1 FROM facturare_invoice_links WHERE source_invoice_id = %s AND link_type = 'SPLITS') AS has",
-            (invoice_id,))
-        return row["has"] if row else False
-
-    def delete_splits_for_invoice(self, invoice_id):
-        """Delete all STORNO_SPLIT children and their links."""
-        split_ids = self.query_all(
-            "SELECT target_invoice_id FROM facturare_invoice_links WHERE source_invoice_id = %s AND link_type = 'SPLITS'",
-            (invoice_id,))
-        if split_ids:
-            ids = [r["target_invoice_id"] for r in split_ids]
-            ph = ",".join(["%s"] * len(ids))
-            self.execute(f"DELETE FROM facturare_invoice_links WHERE source_invoice_id IN ({ph}) OR target_invoice_id IN ({ph})", tuple(ids + ids))
-            self.execute(f"DELETE FROM facturare_invoices WHERE id IN ({ph})", tuple(ids))
 
     # ── Konto Config ────────────────────────────────────────────
 
