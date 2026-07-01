@@ -1975,7 +1975,7 @@ def _build_eurofib_batch(inv_row):
     konto_row = _repo.query_one(
         "SELECT * FROM facturare_konto_config WHERE supplier_id = %s AND invoice_type = %s",
         (contract["supplier_id"], konto_lookup_type))
-    if not konto_row or not konto_row.get("konto_debit") or not konto_row.get("konto_credit"):
+    if not konto_row or not konto_row.get("konto_credit"):
         raise ValueError(f"Konto config not set for invoice {inv_row.get('invoice_number')}")
 
     total_amount = float(inv_row["total_amount_eur"])
