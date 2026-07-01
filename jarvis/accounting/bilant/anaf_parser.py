@@ -441,7 +441,11 @@ def generate_anaf_xml(values: dict, prior_values: dict | None = None,
                       company_name: str = '', cif: str = '',
                       period_date: str | None = None,
                       form: str = 'F10L') -> bytes:
-    """Generate ANAF XML import file for 'Import fisier XML creat cu alte aplicatii'.
+    """Generate ANAF XML import file.
+
+    DEPRECATED: Use anaf_exporter.build_anaf_xml() instead.
+    This function only generates F10 tokens for S1002/S1003.
+    The new exporter supports all four schemas with F10+F20+F30+F40 and XSD validation.
 
     The XML uses the official ANAF format:
       <?xml version="1.0"?>
