@@ -57,6 +57,53 @@ STANDARD_RATIOS = {
 }
 
 
+# Row number mapping per entity type for financial metrics.
+# Each entity type uses different nr_rd values for the same financial concept.
+BI_ROW_MAP = {
+    'UU': {  # S1005 micro — 49 rows
+        'active_imobilizate': '4',
+        'active_circulante': '9',
+        'cheltuieli_avans': '10',
+        'stocuri': '5',
+        'creante': '6',
+        'disponibilitati': '8',
+        'datorii_termen_scurt': '13',
+        'datorii_termen_lung': '16',
+        'capitaluri_proprii': '46',
+        'capitaluri_total': '49',
+        'capital_social': '30',
+    },
+    'BS': {  # S1003 small — row numbers from full bilant prescurtat
+        'active_imobilizate': '25',
+        'active_circulante': '42',
+        'cheltuieli_avans': '43',
+        'stocuri': '30',
+        'creante': '36',
+        'disponibilitati': '40',
+        'datorii_termen_scurt': '54',
+        'datorii_termen_lung': '55',
+        'capitaluri_proprii': '101',
+        'capitaluri_total': '103',
+        'capital_social': '81',
+    },
+    'BL': {  # S1002 large — same as BS for standard OMFP 1802
+        'active_imobilizate': '25',
+        'active_circulante': '42',
+        'cheltuieli_avans': '43',
+        'stocuri': '30',
+        'creante': '36',
+        'disponibilitati': '40',
+        'datorii_termen_scurt': '54',
+        'datorii_termen_lung': '55',
+        'capitaluri_proprii': '101',
+        'capitaluri_total': '103',
+        'capital_social': '81',
+    },
+}
+# SL uses same rows as BS
+BI_ROW_MAP['SL'] = BI_ROW_MAP['BS']
+
+
 # ── Balanta preparation ──
 
 def prepare_balanta(df_balanta):
