@@ -382,3 +382,144 @@ def generate_anaf_excel(generation, results, row_mapping=None, prior_results=Non
     wb.save(output)
     output.seek(0)
     return output
+
+
+# ── Identificare / Mijloace_fixe sheet parsers ──────────────────────────────
+
+# Field name mapping: Romanian label → ANAF attribute name
+_IDENTIFICARE_MAP = {
+    'cui': 'cui', 'cif': 'cui',
+    'denumire': 'den',
+    'judet': '_judet', 'cod judet': '_cod_judet', 'cod județ (codjj)': 'codJJ',
+    'localitate': '_localitate',
+    'strada': '_strada', 'numar': '_numar', 'număr': '_numar',
+    'telefon': 'telefon',
+    'nr. reg. com.': 'regCom', 'nr reg com': 'regCom',
+    'caen': 'caen', 'caen efectiv': 'caenE',
+    'forma proprietate': 'codPP',
+    'an_caen': 'AN_CAEN',
+    'an exercitiu': '_an', 'an exercițiu': '_an',
+    'luna': '_luna',
+    'administrator': 'nume_admin',
+    'intocmit': 'nume_intocmit', 'întocmit': 'nume_intocmit',
+    'calitate': 'calit_intocmit',
+    'cod lei': 'codLEI',
+    'bifa aprobare': 'bifa_aprob',
+    'tip entitate': '_tip_entitate',
+}
+
+_ENTITY_TYPE_MAP = {
+    'microentitate': 'UU', 'micro': 'UU', 'uu': 'UU',
+    'mica': 'BS', 'mici': 'BS', 'bs': 'BS',
+    'mica sl': 'SL', 'sl': 'SL',
+    'mare': 'BL', 'mari': 'BL', 'bl': 'BL',
+}
+
+
+def read_identificare_sheet(file_bytes: bytes) -> dict | None:
+    """Read the Identificare sheet from an uploaded Excel.
+
+    Returns dict with ANAF attribute names, or None if sheet not found.
+    """
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    if 'Identificare' not in wb.sheetnames:
+        return None
+
+    ws = wb['Identificare']
+    raw = {}
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row or not row[0]:
+            continue
+        label = str(row[0]).strip().lower()
+        value = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ''
+        mapped = _IDENTIFICARE_MAP.get(label)
+        if mapped:
+            raw[mapped] = value
+
+    # Build identification dict (exclude private underscore-prefixed keys)
+    ident = {}
+    for key, val in raw.items():
+        if not key.startswith('_'):
+            ident[key] = val
+
+    # Build adresa from parts
+    parts = [raw.get('_judet', ''), raw.get('_localitate', ''),
+             raw.get('_strada', ''), raw.get('_numar', '')]
+    if any(parts):
+        ident['adresa'] = (
+            f"Judet: {parts[0]}, Localitate: {parts[1]}, "
+            f"Strada: {parts[2]}, Nr.: {parts[3]}, "
+        )
+
+    # Set an/luna
+    if '_an' in raw:
+        ident['an'] = raw['_an']
+    if '_luna' in raw:
+        ident['luna'] = raw['_luna']
+
+    # Detect entity type
+    tip = raw.get('_tip_entitate', '').lower()
+    ident['entity_type'] = _ENTITY_TYPE_MAP.get(tip, 'UU')
+
+    # Set fixed fields per entity type
+    entity_type = ident['entity_type']
+    if entity_type == 'UU':
+        ident.setdefault('tipBIL', 'UU')
+        ident.setdefault('interes_public', '0')
+        ident.setdefault('bifa_art27', '0')
+    elif entity_type == 'BS':
+        ident.setdefault('tipBIL', 'BS')
+        ident.setdefault('interes_public', '0')
+        ident.setdefault('bifa_art27', '0')
+    elif entity_type == 'SL':
+        ident.setdefault('tipBIL', 'SL')
+        ident.setdefault('bifa_art27', '1')
+        ident.setdefault('bifa_aprob', '0')
+    elif entity_type == 'BL':
+        ident.setdefault('tipBIL', 'BL')
+        ident.setdefault('bifa_art27', '0')
+
+    # Defaults for bifa fields
+    for bf in ('bifaMC', 'bifaDD', 'bifaGG', 'bifaAA'):
+        ident.setdefault(bf, '0')
+    ident.setdefault('totalPlata_A', '0')
+
+    # codTT defaults to codJJ (same county code) if not set
+    if 'codJJ' in ident and 'codTT' not in ident:
+        ident['codTT'] = ident['codJJ']
+
+    # caenE defaults to caen if not set
+    if 'caen' in ident and 'caenE' not in ident:
+        ident['caenE'] = ident['caen']
+
+    return ident
+
+
+def read_mijloace_fixe_sheet(file_bytes: bytes) -> dict | None:
+    """Read optional Mijloace_fixe sheet for F40 movements.
+
+    Returns dict: {cont: {'sold_initial': float, 'cresteri': float,
+                           'reduceri': float, 'reduceri_dezm': float}}
+    or None if sheet not found.
+    """
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    if 'Mijloace_fixe' not in wb.sheetnames:
+        return None
+
+    ws = wb['Mijloace_fixe']
+    result = {}
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row or not row[0]:
+            continue
+        cont = str(row[0]).strip()
+        if not cont or not cont[0].isdigit():
+            continue
+        result[cont] = {
+            'sold_initial': float(row[1]) if len(row) > 1 and row[1] else 0,
+            'cresteri': float(row[2]) if len(row) > 2 and row[2] else 0,
+            'reduceri': float(row[3]) if len(row) > 3 and row[3] else 0,
+            'reduceri_dezm': float(row[4]) if len(row) > 4 and row[4] else 0,
+        }
+    return result if result else None
