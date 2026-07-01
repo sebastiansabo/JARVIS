@@ -165,18 +165,22 @@ export const bilantApi = {
     URL.revokeObjectURL(url)
   },
 
-  downloadGenerationXml: async (id: number) => {
-    const res = await fetch(`${BASE}/generations/${id}/download-xml`, { credentials: 'same-origin' })
+  downloadGenerationXml: async (id: number, identification?: Record<string, string>) => {
+    const url = `${BASE}/generations/${id}/download-xml`
+    const options: RequestInit = identification
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(identification), credentials: 'same-origin' }
+      : { credentials: 'same-origin' }
+    const res = await fetch(url, options)
     if (!res.ok) return
     const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
+    const blobUrl = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
+    a.href = blobUrl
     a.download = res.headers.get('content-disposition')?.match(/filename="?(.+?)"?$/)?.[1] || `Bilant_ANAF_${id}.xml`
     document.body.appendChild(a)
     a.click()
     a.remove()
-    URL.revokeObjectURL(url)
+    URL.revokeObjectURL(blobUrl)
   },
 
   downloadGenerationTxt: async (id: number) => {
