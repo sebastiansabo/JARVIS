@@ -1636,9 +1636,13 @@ def api_generate_eurofib(invoice_id):
             return error_response("STORNO has no linked reversed invoices", 400)
 
         reversed_invoices = _repo.query_all(
-            "SELECT id, invoice_number, total_amount_eur, split_mode, kurs_applied, issued_date FROM facturare_invoices "
+            "SELECT id, invoice_number, total_amount_eur, split_mode, kurs_applied, issued_date, line_ids FROM facturare_invoices "
             "WHERE id IN ({}) ORDER BY sequence_number".format(",".join(["%s"] * len(reversed_inv_ids))),
             tuple(reversed_inv_ids))
+
+        # Build price map for ALL lines in annexa (needed for proportional calculation)
+        all_line_prices = {l["id"]: float(l["selling_price_eur"]) for l in all_lines}
+        all_line_id_set = set(l["id"] for l in all_lines)
 
         # belegnummer = storno invoice number (not the original advance number)
         storno_inv_no = inv_row.get("invoice_number") or inv_row["id"]
@@ -1648,12 +1652,20 @@ def api_generate_eurofib(invoice_id):
             ri_split = ri.get("split_mode") or "equal"
             # Kurs from the original advance invoice
             ri_kurs = float(ri["kurs_applied"]) if ri.get("kurs_applied") else kurs
+            # Compute covered_selling from the ADVANCE's lines, not the storno's
+            import json as _json2
+            ri_raw_lids = ri.get("line_ids")
+            if isinstance(ri_raw_lids, str):
+                ri_raw_lids = _json2.loads(ri_raw_lids)
+            ri_line_ids = set(ri_raw_lids) if ri_raw_lids else all_line_id_set
+            covered_selling = sum(all_line_prices.get(lid, 0) for lid in ri_line_ids) or 1
+
             for car in lines:
                 selling = float(car["selling_price_eur"])
-                if ri_split == "proportional" and total_selling > 0:
-                    car_amount = ri_total * (selling / total_selling)
+                if ri_split == "proportional" and covered_selling > 0:
+                    car_amount = ri_total * (selling / covered_selling)
                 else:
-                    car_amount = ri_total / max(len(lines), 1)
+                    car_amount = ri_total / max(len(ri_line_ids), 1)
                 order_lines.append(OrderLine(
                     comanda=int(car["nr_comanda"]) if car.get("nr_comanda") and str(car["nr_comanda"]).isdigit() else 0,
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
