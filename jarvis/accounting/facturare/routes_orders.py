@@ -1178,6 +1178,148 @@ def api_put_contract_accounting_summary(contract_id):
     return jsonify({"success": True})
 
 
+# ── Storno Split EuroFib endpoints ───────────────────────────────
+
+@facturare_bp.route("/facturare/api/invoices/<int:invoice_id>/split-eurofib", methods=["POST"])
+@login_required
+@handle_api_errors
+def api_split_storno_eurofib(invoice_id):
+    """Split a STORNO into per-car STORNO_SPLIT children for EuroFib export."""
+    from .models import InvoiceTypeEnum, InvoiceStateEnum, InvoiceLinkTypeEnum
+    from decimal import Decimal, ROUND_HALF_UP
+    import json as _json
+
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+
+    inv = _repo.get_invoice_by_id(invoice_id)
+    if not inv:
+        return error_response("Invoice not found", 404)
+    if inv["invoice_type"] != "STORNO":
+        return error_response("Only STORNO invoices can be split", 400)
+    if _repo.has_splits(invoice_id):
+        return error_response("This STORNO already has splits. Delete them first to re-split.", 400)
+
+    # Get target line_ids
+    raw_line_ids = inv.get("line_ids")
+    if isinstance(raw_line_ids, str):
+        raw_line_ids = _json.loads(raw_line_ids)
+
+    anexa_id = inv["anexa_id"]
+    all_lines = _repo.get_lines_by_anexa(anexa_id)
+    all_line_id_set = {l["id"] for l in all_lines}
+    target_line_ids = raw_line_ids if raw_line_ids else sorted(all_line_id_set)
+
+    if len(target_line_ids) <= 1:
+        return error_response("Cannot split a single-car STORNO", 400)
+
+    # Get reversed advance invoices (parent's REVERSES links)
+    reversed_links = _repo.query_all(
+        "SELECT source_invoice_id FROM facturare_invoice_links WHERE target_invoice_id = %s AND link_type = 'REVERSES'",
+        (invoice_id,))
+    reversed_inv_ids = [r["source_invoice_id"] for r in reversed_links] if reversed_links else []
+
+    reversed_invoices = []
+    if reversed_inv_ids:
+        ph = ",".join(["%s"] * len(reversed_inv_ids))
+        reversed_invoices = _repo.query_all(
+            f"SELECT id, invoice_number, total_amount_eur, line_ids, kurs_applied FROM facturare_invoices WHERE id IN ({ph})",
+            tuple(reversed_inv_ids))
+
+    # Build line price map
+    line_map = {l["id"]: l for l in all_lines}
+    line_prices = {l["id"]: Decimal(str(l["selling_price_eur"])) for l in all_lines}
+
+    # Calculate per-car share from reversed advances
+    parent_number = inv.get("invoice_number") or inv["id"]
+    parent_kurs = Decimal(str(inv["kurs_applied"])) if inv.get("kurs_applied") else Decimal("1")
+    ONE = Decimal("0.01")
+
+    split_ids = []
+    for idx, lid in enumerate(target_line_ids):
+        car_share = Decimal("0")
+        for ri in reversed_invoices:
+            ri_raw = ri.get("line_ids")
+            if isinstance(ri_raw, str):
+                ri_raw = _json.loads(ri_raw)
+            ri_lines = set(ri_raw) if ri_raw else all_line_id_set
+            covered_total = sum(line_prices.get(x, Decimal("0")) for x in ri_lines)
+            if covered_total and lid in ri_lines:
+                car_share += (line_prices.get(lid, Decimal("0")) / covered_total * Decimal(str(abs(float(ri["total_amount_eur"]))))).quantize(ONE, rounding=ROUND_HALF_UP)
+
+        split_number = parent_number * 100 + (idx + 1)
+        split_row = _repo.create_invoice(
+            anexa_id=anexa_id,
+            invoice_type=InvoiceTypeEnum.STORNO_SPLIT,
+            invoice_state=InvoiceStateEnum(inv.get("invoice_state", "DRAFT")),
+            sequence_number=idx + 1,
+            total_amount_eur=-car_share,
+            total_amount_ron=(-car_share * parent_kurs).quantize(ONE, rounding=ROUND_HALF_UP),
+            kurs_applied=inv.get("kurs_applied"),
+            invoice_number=split_number,
+            issued_date=inv.get("issued_date"),
+            intocmit_de=inv.get("intocmit_de"),
+            notes=f"Split {idx + 1}/{len(target_line_ids)} of storno {parent_number}",
+            created_by=current_user.id,
+            line_ids=[lid],
+        )
+
+        # Link parent → split
+        _repo.create_link(
+            source_invoice_id=invoice_id,
+            target_invoice_id=split_row["id"],
+            link_type=InvoiceLinkTypeEnum.SPLITS,
+        )
+        # Copy parent's REVERSES links to split
+        for ri in reversed_invoices:
+            _repo.create_link(
+                source_invoice_id=ri["id"],
+                target_invoice_id=split_row["id"],
+                link_type=InvoiceLinkTypeEnum.REVERSES,
+            )
+
+        split_ids.append(split_row["id"])
+
+    return jsonify({"success": True, "count": len(split_ids), "split_ids": split_ids})
+
+
+@facturare_bp.route("/facturare/api/invoices/<int:invoice_id>/splits", methods=["DELETE"])
+@login_required
+@handle_api_errors
+def api_delete_storno_splits(invoice_id):
+    """Delete all STORNO_SPLIT children of a STORNO."""
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+    inv = _repo.get_invoice_by_id(invoice_id)
+    if not inv or inv["invoice_type"] != "STORNO":
+        return error_response("Not a STORNO invoice", 400)
+    _repo.delete_splits_for_invoice(invoice_id)
+    return jsonify({"success": True})
+
+
+@facturare_bp.route("/facturare/api/invoices/<int:invoice_id>/splits")
+@login_required
+@handle_api_errors
+def api_get_storno_splits(invoice_id):
+    """Get STORNO_SPLIT children with car details."""
+    if not _check_perm("view"):
+        return error_response("Permission denied", 403)
+    import json as _json
+    splits = _repo.get_splits_for_invoice(invoice_id)
+    result = []
+    for s in splits:
+        raw = s.get("line_ids")
+        if isinstance(raw, str):
+            raw = _json.loads(raw)
+        result.append({
+            "id": s["id"], "invoice_number": s["invoice_number"],
+            "sequence_number": s["sequence_number"],
+            "total_amount_eur": float(s["total_amount_eur"]),
+            "line_ids": raw or [],
+        })
+    return jsonify({"splits": result})
+
+
 # ── Individual document items (per car) ──────────────────────────
 
 @facturare_bp.route("/facturare/api/document-items")
