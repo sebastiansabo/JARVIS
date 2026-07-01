@@ -59,7 +59,6 @@ import { DateField } from '@/components/ui/date-field'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { useAuthStore } from '@/stores/authStore'
 import { foiParcursApi } from '@/api/foiParcurs'
-import { crmApi } from '@/api/crm'
 import { hrApi } from '@/api/hr'
 import {
   FUEL_LEVEL_OPTIONS,
@@ -709,8 +708,8 @@ function AllocateClientDialog({
   const [error, setError] = useState('')
 
   const { data: searchResults } = useQuery({
-    queryKey: ['crm-clients-search', searchQuery],
-    queryFn: () => crmApi.getClients({ q: searchQuery, per_page: '10' }),
+    queryKey: ['fp-clients-search', searchQuery],
+    queryFn: () => foiParcursApi.searchClients(searchQuery, 10),
     enabled: searchQuery.length >= 2,
     staleTime: 10_000,
   })
@@ -769,12 +768,12 @@ function AllocateClientDialog({
                           key={c.id}
                           className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex justify-between"
                           onClick={() => {
-                            setSelectedClient({ id: c.id, name: c.display_name })
+                            setSelectedClient({ id: c.id, name: c.name })
                             setSearchQuery('')
                           }}
                         >
-                          <span className="font-medium">{c.display_name}</span>
-                          <span className="text-muted-foreground">{c.phone || c.company_name}</span>
+                          <span className="font-medium">{c.name}</span>
+                          <span className="text-muted-foreground">{c.phone}</span>
                         </button>
                       ))
                     )}
