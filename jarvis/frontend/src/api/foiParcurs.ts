@@ -1,10 +1,10 @@
 import { api } from './client'
-import type { CrmClient } from './crm'
 import type {
   BatchConfig,
   PreviewResponse,
   CreateContractPayload,
   FoiContract,
+  FoiClient,
   CreateClientPayload,
   FpVehicle,
   FpVehicleInspection,
@@ -58,9 +58,12 @@ export const foiParcursApi = {
   generateSignature: (advisorName: string, variant: number) =>
     api.post<{ svg: string }>(`${BASE}/signature`, { advisor_name: advisorName, variant }),
 
-  // ── Clients (creates in CRM) ──
+  // ── Clients ──
+  searchClients: (q: string, limit = 20) =>
+    api.get<{ success: boolean; clients: FoiClient[] }>(`${BASE}/clients/search${qs({ q, limit })}`),
+
   createClient: (data: CreateClientPayload) =>
-    api.post<{ success: boolean; client: CrmClient }>(`${BASE}/clients`, data),
+    api.post<{ success: boolean; client: FoiClient }>(`${BASE}/clients`, data),
 
   // ── Vehicles (Stock) ──
   getVehicles: (activeOnly = true) =>

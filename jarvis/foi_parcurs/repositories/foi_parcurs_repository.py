@@ -62,10 +62,10 @@ class FoiParcursRepository(BaseRepository):
         offset = (page - 1) * per_page
         data_sql = (
             f'SELECT fp.*, '
-            f'c.display_name AS client_name, c.phone AS client_phone, '
+            f'c.name AS client_name, c.phone AS client_phone, '
             f'co.company AS company_name '
             f'FROM foi_de_parcurs fp '
-            f'LEFT JOIN crm_clients c ON c.id = fp.client_id '
+            f'LEFT JOIN fp_clients c ON c.id = fp.client_id '
             f'LEFT JOIN companies co ON co.id = fp.company_id'
             f'{where_sql} '
             f'ORDER BY fp.{sort_by} {sort_dir} '
@@ -80,10 +80,10 @@ class FoiParcursRepository(BaseRepository):
         """Single contract with client + company join."""
         sql = (
             'SELECT fp.*, '
-            'c.display_name AS client_name, c.phone AS client_phone, '
+            'c.name AS client_name, c.phone AS client_phone, '
             'co.company AS company_name '
             'FROM foi_de_parcurs fp '
-            'LEFT JOIN crm_clients c ON c.id = fp.client_id '
+            'LEFT JOIN fp_clients c ON c.id = fp.client_id '
             'LEFT JOIN companies co ON co.id = fp.company_id '
             'WHERE fp.id = %s'
         )
@@ -93,10 +93,10 @@ class FoiParcursRepository(BaseRepository):
         """Get all contracts for a batch."""
         sql = (
             'SELECT fp.*, '
-            'c.display_name AS client_name, c.phone AS client_phone, '
+            'c.name AS client_name, c.phone AS client_phone, '
             'co.company AS company_name '
             'FROM foi_de_parcurs fp '
-            'LEFT JOIN crm_clients c ON c.id = fp.client_id '
+            'LEFT JOIN fp_clients c ON c.id = fp.client_id '
             'LEFT JOIN companies co ON co.id = fp.company_id '
             'WHERE fp.batch_id = %s '
             'ORDER BY fp.slot_number ASC'
