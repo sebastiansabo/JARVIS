@@ -1607,7 +1607,7 @@ def api_generate_eurofib(invoice_id):
     konto_row = _repo.query_one(
         "SELECT * FROM facturare_konto_config WHERE supplier_id = %s AND invoice_type = %s",
         (contract["supplier_id"], inv_row["invoice_type"]))
-    if not konto_row or not konto_row.get("konto_debit") or not konto_row.get("konto_credit"):
+    if not konto_row or not konto_row.get("konto_credit"):
         return error_response("Konto config not set for this supplier/type. Go to Settings tab.", 400)
 
     # Build per-car order lines
@@ -1730,6 +1730,14 @@ def api_generate_eurofib(invoice_id):
     if not firmennr:
         return error_response("Firmennr (eurofib_klient_id) not configured for this supplier. Check company settings.", 400)
 
+    # Get konto_debit from CRM client (per supplier) — mandatory
+    crm_client = _repo.query_one(
+        "SELECT eurofib_konto_debit FROM crm_clients WHERE id = %s",
+        (contract["customer_id"],))
+    crm_kd_map = crm_client.get("eurofib_konto_debit") if crm_client else None
+    crm_konto_debit = crm_kd_map.get(str(firmennr)) if isinstance(crm_kd_map, dict) else None
+    effective_konto_debit = int(crm_konto_debit) if crm_konto_debit else 0
+
     default_text_templates = {
         'INVOICE': 'avans {model} {comanda}',
         'STORNO': 'storno avans {model} {comanda}',
@@ -1747,7 +1755,7 @@ def api_generate_eurofib(invoice_id):
         customer=PartyConfig(name="", address_lines=[]),
         eurofib=EurofibConfig(
             klient=firmennr,
-            konto_debit=int(konto_row["konto_debit"]),
+            konto_debit=effective_konto_debit,
             konto_credit=int(konto_row["konto_credit"]),
             text_template=konto_row.get("text_template") or default_text_templates.get(inv_type_str, "{model} {comanda}"),
             is_storno=(inv_type_str == "STORNO"),
@@ -1894,6 +1902,14 @@ def _build_eurofib_batch(inv_row):
     if not firmennr:
         raise ValueError(f"Firmennr not configured for supplier of invoice {inv_row.get('invoice_number')}")
 
+    # Get konto_debit from CRM client (per supplier) — mandatory
+    _crm_client = _repo.query_one(
+        "SELECT eurofib_konto_debit FROM crm_clients WHERE id = %s",
+        (contract["customer_id"],))
+    _crm_kd_map = _crm_client.get("eurofib_konto_debit") if _crm_client else None
+    _crm_konto = _crm_kd_map.get(str(firmennr)) if isinstance(_crm_kd_map, dict) else None
+    effective_konto_debit = int(_crm_konto) if _crm_konto else 0
+
     default_text_templates = {
         'INVOICE': 'avans {model} {comanda}',
         'STORNO': 'storno avans {model} {comanda}',
@@ -1910,7 +1926,7 @@ def _build_eurofib_batch(inv_row):
         customer=PartyConfig(name="", address_lines=[]),
         eurofib=EurofibConfig(
             klient=firmennr,
-            konto_debit=int(konto_row["konto_debit"]),
+            konto_debit=effective_konto_debit,
             konto_credit=int(konto_row["konto_credit"]),
             text_template=konto_row.get("text_template") or default_text_templates.get(inv_type_str, "{model} {comanda}"),
             is_storno=(inv_type_str == "STORNO"),

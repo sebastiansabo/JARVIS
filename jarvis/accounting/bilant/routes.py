@@ -442,20 +442,35 @@ def api_download_generation_anaf(generation_id):
     )
 
 
-@bilant_bp.route('/api/generations/<int:generation_id>/download-xml', methods=['GET'])
+@bilant_bp.route('/api/generations/<int:generation_id>/download-xml', methods=['GET', 'POST'])
 @login_required
 @bilant_permission_required('generations', 'export')
 def api_download_generation_xml(generation_id):
-    """Download bilant as ANAF XML import file."""
-    result = _service.generate_anaf_import_xml(generation_id)
+    """Download bilant as XSD-validated ANAF XML import file.
+
+    GET: Uses default entity type (UU) and minimal identification.
+    POST: Accepts JSON body with identification overrides and entity_type.
+    """
+    identification = {}
+    if request.method == 'POST':
+        identification = request.get_json(silent=True) or {}
+
+    result = _service.generate_anaf_export_xml(generation_id, identification_overrides=identification)
     if not result.success:
         return jsonify({'success': False, 'error': result.error}), result.status_code
+
     gen = _generation_repo.get_by_id(generation_id)
-    name = f"Bilant_ANAF_{gen['company_name']}_{gen.get('period_label', generation_id)}.xml" if gen else f"Bilant_ANAF_{generation_id}.xml"
+    entity_type = identification.get('entity_type', 'UU')
+    from .anaf_schemas import _TIP_BIL_MAP
+    schema_code = _TIP_BIL_MAP.get(entity_type, 's1005')
+    cui = identification.get('cui', '')
+    an = identification.get('an', '')
+    name = f'Bilant_{schema_code}_{cui}_{an}.xml' if cui else f'Bilant_ANAF_{generation_id}.xml'
     name = name.replace(' ', '_')
-    import io
+
+    import io as _io
     return send_file(
-        io.BytesIO(result.data),
+        _io.BytesIO(result.data),
         mimetype='application/xml',
         as_attachment=True,
         download_name=name,
