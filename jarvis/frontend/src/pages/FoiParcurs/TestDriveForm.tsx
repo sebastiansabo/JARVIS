@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { foiParcursApi } from '@/api/foiParcurs'
-import { crmApi, type CrmClient } from '@/api/crm'
 import { useAuthStore } from '@/stores/authStore'
 import {
   FUEL_LEVEL_OPTIONS,
   type FuelGaugeLevel,
+  type FoiClient,
   type FpVehicle,
   type FpVehicleInspection,
   type TestDriveFormPayload,
@@ -73,7 +73,7 @@ export default function TestDriveForm() {
   // ── Section 2: Client ──
   const [clientSearch, setClientSearch] = useState('')
   const debouncedSearch = useDebounce(clientSearch, 300)
-  const [selectedClient, setSelectedClient] = useState<CrmClient | null>(null)
+  const [selectedClient, setSelectedClient] = useState<FoiClient | null>(null)
   const [showClientDropdown, setShowClientDropdown] = useState(false)
 
   // ── Section 3: Route ──
@@ -132,8 +132,8 @@ export default function TestDriveForm() {
   const latestInspection: FpVehicleInspection | null = inspectionData?.inspection ?? null
 
   const { data: clientSearchData, isFetching: isSearching } = useQuery({
-    queryKey: ['crm-client-search', debouncedSearch],
-    queryFn: () => crmApi.getClients({ q: debouncedSearch, per_page: '10' }),
+    queryKey: ['fp-clients-search', debouncedSearch],
+    queryFn: () => foiParcursApi.searchClients(debouncedSearch, 10),
     enabled: debouncedSearch.length >= 2 && !selectedClient,
   })
   const clientResults = clientSearchData?.clients ?? []
@@ -375,7 +375,7 @@ export default function TestDriveForm() {
           {selectedClient ? (
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="text-sm py-1 px-3">
-                {selectedClient.display_name}
+                {selectedClient.name}
                 {selectedClient.phone && ` — ${selectedClient.phone}`}
               </Badge>
               <Button
@@ -392,7 +392,7 @@ export default function TestDriveForm() {
             </div>
           ) : (
             <div className="space-y-1.5 relative">
-              <Label className="text-xs">Cauta client CRM *</Label>
+              <Label className="text-xs">Cauta client *</Label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -422,9 +422,9 @@ export default function TestDriveForm() {
                         setClientSearch('')
                       }}
                     >
-                      <p className="font-medium">{c.display_name}</p>
+                      <p className="font-medium">{c.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {[c.phone, c.company_name].filter(Boolean).join(' — ') || 'Fara detalii'}
+                        {c.phone || 'Fara detalii'}
                       </p>
                     </button>
                   ))}

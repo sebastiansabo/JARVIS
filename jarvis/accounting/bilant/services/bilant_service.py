@@ -430,25 +430,11 @@ class BilantService:
             return ServiceResult(success=False, error=str(e), status_code=500)
 
     def generate_anaf_import_xml(self, generation_id):
-        """Generate ANAF XML import file (form1 > F10L > Table1 structure)."""
-        loaded = self._build_values_and_prior(generation_id)
-        if not loaded.success:
-            return loaded
-        gen = loaded.data['generation']
-        values = loaded.data['values']
-        prior = loaded.data['prior']
-        try:
-            xml_bytes = generate_anaf_xml(
-                values, prior_values=prior,
-                company_name=gen.get('company_name', ''),
-                cif='',  # CIF not stored on generation
-                period_date=gen.get('period_date'),
-                form='F10L',
-            )
-            return ServiceResult(success=True, data=xml_bytes)
-        except Exception as e:
-            logger.exception(f'ANAF XML generation failed: {e}')
-            return ServiceResult(success=False, error=str(e), status_code=500)
+        """Generate ANAF XML import file.
+
+        Delegates to generate_anaf_export_xml() with default UU entity type.
+        """
+        return self.generate_anaf_export_xml(generation_id)
 
     def generate_anaf_import_txt(self, generation_id):
         """Generate ANAF balanta.txt import file."""
