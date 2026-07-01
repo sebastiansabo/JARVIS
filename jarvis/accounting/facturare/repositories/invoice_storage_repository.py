@@ -134,7 +134,7 @@ class InvoiceStorageRepository(BaseRepository):
 
     def get_invoices_by_anexa(self, anexa_id):
         return self.query_all(
-            "SELECT * FROM facturare_invoices WHERE anexa_id = %s ORDER BY created_at",
+            "SELECT * FROM facturare_invoices WHERE anexa_id = %s AND invoice_type != 'STORNO_SPLIT' ORDER BY created_at",
             (anexa_id,))
 
     def get_invoice_by_anexa_type_and_seq(self, anexa_id, invoice_type, sequence_number):
