@@ -1661,9 +1661,9 @@ def api_generate_eurofib(invoice_id):
             for car in lines:
                 selling = float(car["selling_price_eur"])
                 if ri_split == "proportional" and covered_selling > 0:
-                    car_amount = ri_total * (selling / covered_selling)
+                    car_amount = round(ri_total * (selling / covered_selling), 2)
                 else:
-                    car_amount = ri_total / max(len(ri_line_ids), 1)
+                    car_amount = round(ri_total / max(len(ri_line_ids), 1), 2)
                 order_lines.append(OrderLine(
                     comanda=int(car["nr_comanda"]) if car.get("nr_comanda") and str(car["nr_comanda"]).isdigit() else 0,
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
@@ -1807,7 +1807,7 @@ def _build_eurofib_batch(inv_row):
     konto_row = _repo.query_one(
         "SELECT * FROM facturare_konto_config WHERE supplier_id = %s AND invoice_type = %s",
         (contract["supplier_id"], inv_row["invoice_type"]))
-    if not konto_row or not konto_row.get("konto_debit") or not konto_row.get("konto_credit"):
+    if not konto_row or not konto_row.get("konto_credit"):
         raise ValueError(f"Konto config not set for invoice {inv_row.get('invoice_number')}")
 
     inv_type_str = inv_row["invoice_type"]
@@ -1831,20 +1831,31 @@ def _build_eurofib_batch(inv_row):
         if not reversed_inv_ids:
             raise ValueError(f"STORNO {inv_row.get('invoice_number')} has no linked reversed invoices")
         reversed_invoices = _repo.query_all(
-            "SELECT id, invoice_number, total_amount_eur, split_mode, kurs_applied, issued_date FROM facturare_invoices "
+            "SELECT id, invoice_number, total_amount_eur, split_mode, kurs_applied, issued_date, line_ids FROM facturare_invoices "
             "WHERE id IN ({}) ORDER BY sequence_number".format(",".join(["%s"] * len(reversed_inv_ids))),
             tuple(reversed_inv_ids))
+
+        all_line_prices = {l["id"]: float(l["selling_price_eur"]) for l in all_lines}
+        all_line_id_set = set(l["id"] for l in all_lines)
+
         order_lines = []
         for ri in reversed_invoices:
             ri_total = float(ri["total_amount_eur"])
             ri_split = ri.get("split_mode") or "equal"
             ri_kurs = float(ri["kurs_applied"]) if ri.get("kurs_applied") else kurs
+            import json as _json2
+            ri_raw_lids = ri.get("line_ids")
+            if isinstance(ri_raw_lids, str):
+                ri_raw_lids = _json2.loads(ri_raw_lids)
+            ri_line_ids = set(ri_raw_lids) if ri_raw_lids else all_line_id_set
+            covered_selling = sum(all_line_prices.get(lid, 0) for lid in ri_line_ids) or 1
+
             for car in lines:
                 selling = float(car["selling_price_eur"])
-                if ri_split == "proportional" and total_selling > 0:
-                    car_amount = ri_total * (selling / total_selling)
+                if ri_split == "proportional" and covered_selling > 0:
+                    car_amount = round(ri_total * (selling / covered_selling), 2)
                 else:
-                    car_amount = ri_total / max(len(lines), 1)
+                    car_amount = round(ri_total / max(len(ri_line_ids), 1), 2)
                 order_lines.append(OrderLine(
                     comanda=int(car["nr_comanda"]) if car.get("nr_comanda") and str(car["nr_comanda"]).isdigit() else 0,
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
