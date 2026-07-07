@@ -31,6 +31,7 @@ const FIELD_TYPES: { value: FieldType; label: string; group: string }[] = [
   { value: 'phone', label: 'Phone', group: 'Input' },
   { value: 'number', label: 'Number', group: 'Input' },
   { value: 'date', label: 'Date', group: 'Input' },
+  { value: 'datetime', label: 'Date & Time', group: 'Input' },
   { value: 'dropdown', label: 'Dropdown', group: 'Selection' },
   { value: 'radio', label: 'Radio', group: 'Selection' },
   { value: 'checkbox', label: 'Checkbox', group: 'Selection' },
@@ -40,6 +41,8 @@ const FIELD_TYPES: { value: FieldType; label: string; group: string }[] = [
   { value: 'paragraph', label: 'Paragraph', group: 'Display' },
   { value: 'hidden', label: 'Hidden Field', group: 'Special' },
   { value: 'crm_client', label: 'CRM Client', group: 'Special' },
+  { value: 'fp_vehicle', label: 'FP Vehicle', group: 'Special' },
+  { value: 'fp_client', label: 'FP Client', group: 'Special' },
 ]
 
 function generateId() {

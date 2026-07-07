@@ -508,6 +508,19 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
         </div>
       )
 
+    case 'datetime':
+      return (
+        <div className="space-y-1">
+          <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+          <Input
+            type="datetime-local"
+            value={(value as string) ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+      )
+
     case 'dropdown':
       return (
         <div className="space-y-1">

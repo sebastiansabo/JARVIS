@@ -12,6 +12,7 @@ export type FieldType =
   | 'radio'
   | 'checkbox'
   | 'date'
+  | 'datetime'
   | 'file_upload'
   | 'heading'
   | 'paragraph'
@@ -22,6 +23,8 @@ export type FieldType =
   | 'company_select'
   | 'department_select'
   | 'user_select'
+  | 'fp_vehicle'
+  | 'fp_client'
 
 export interface ApprovalConfig {
   flow_id?: number
