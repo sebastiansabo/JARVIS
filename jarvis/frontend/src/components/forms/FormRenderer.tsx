@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { crmApi } from '@/api/crm'
 import { organizationApi } from '@/api/organization'
 import { vouchersApi } from '@/api/vouchers'
+import { foiParcursApi } from '@/api/foiParcurs'
 import type { FormField } from '@/types/forms'
 import type { ServiceCatalogCompanyItem } from '@/types/vouchers'
 
@@ -437,6 +438,68 @@ function ServiceCatalogField({ field, value, error, onChange }: FieldProps) {
   )
 }
 
+function FpVehicleField({ field, value, error, onChange, allAnswers }: FieldProps) {
+  const companyFieldId = (field.config as Record<string, unknown> | undefined)?.companyField as string || 'f_company'
+  const companyName = (allAnswers?.[companyFieldId] as string) || ''
+
+  const { data: vehicleData } = useQuery({
+    queryKey: ['fp-vehicles-active'],
+    queryFn: () => foiParcursApi.getVehicles(true),
+    staleTime: 60_000,
+  })
+
+  const allVehicles = vehicleData?.vehicles ?? []
+  const filtered = companyName
+    ? allVehicles.filter((v: { company_name?: string }) => v.company_name === companyName)
+    : allVehicles
+
+  const selectedId = value ? String(value) : ''
+  const selectedVehicle = allVehicles.find((v: { id: number }) => String(v.id) === selectedId) as Record<string, unknown> | undefined
+
+  const { data: inspectionData } = useQuery({
+    queryKey: ['fp-inspection', selectedId],
+    queryFn: () => foiParcursApi.getLatestInspection(Number(selectedId)),
+    enabled: !!selectedId,
+  })
+  const latestInspection = inspectionData?.inspection ?? null
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+        <Select value={selectedId} onValueChange={onChange}>
+          <SelectTrigger>
+            <SelectValue placeholder={companyName ? 'Selectati vehiculul...' : 'Selectati compania intai'} />
+          </SelectTrigger>
+          <SelectContent>
+            {filtered.map((v: { id: number; mark: string; model: string; vin: string; registration_number?: string }) => (
+              <SelectItem key={v.id} value={String(v.id)}>
+                {v.mark} {v.model} — {v.registration_number || v.vin}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+      {selectedVehicle && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm space-y-1">
+          <p><span className="text-muted-foreground">VIN:</span> {String(selectedVehicle.vin)}</p>
+          <p><span className="text-muted-foreground">Nr. inmatriculare:</span> {String(selectedVehicle.registration_number || '—')}</p>
+          <p><span className="text-muted-foreground">Combustibil:</span> {String(selectedVehicle.fuel_type)} — {String(selectedVehicle.fuel_tank_capacity_liters)}L</p>
+        </div>
+      )}
+      {latestInspection && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm">
+          <p className="font-medium text-xs text-amber-700 dark:text-amber-400">Ultima inspectie: {latestInspection.inspection_date}</p>
+          {latestInspection.condition_notes && (
+            <p className="text-muted-foreground mt-1">{latestInspection.condition_notes}</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function FieldComponent({ field, value, error, onChange, onSetField, allAnswers }: FieldProps) {
   switch (field.type) {
     case 'heading':
@@ -450,6 +513,9 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
 
     case 'crm_client':
       return <CrmClientField field={field} value={value} error={error} onChange={onChange} onSetField={onSetField} />
+
+    case 'fp_vehicle':
+      return <FpVehicleField field={field} value={value} error={error} onChange={onChange} allAnswers={allAnswers} />
 
     case 'short_text':
     case 'email':
