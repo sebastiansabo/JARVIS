@@ -34,3 +34,45 @@ def test_module_label_maps_workstream():
     assert jcs.module_label("pontaje") == "HR"
     assert jcs.module_label("reinvoice") == "Accounting"
     assert jcs.module_label("totally-unknown") == "Platform"
+
+
+def _commit(sha, subject, files=None):
+    return {"sha": sha, "subject": subject, "files": files or []}
+
+
+def test_effective_scope_prefers_subject_then_path_then_default():
+    assert jcs.effective_scope(_commit("a1", "fix(hr): x")) == "hr"
+    assert jcs.effective_scope(_commit("a2", "misc change", ["jarvis/repos/efactura/y.py"])) == "efactura"
+    assert jcs.effective_scope(_commit("a3", "misc change", ["README.md"])) == "__default__"
+
+
+def test_group_commits_buckets_by_scope():
+    commits = [
+        _commit("a1", "fix(pontaje): 1"),
+        _commit("a2", "feat(facturare): 2"),
+        _commit("a3", "fix(pontaje): 3"),
+    ]
+    groups = jcs.group_commits(commits)
+    assert set(groups.keys()) == {"pontaje", "facturare"}
+    assert [c["sha"] for c in groups["pontaje"]] == ["a1", "a3"]
+
+
+def test_build_summary_labels_and_truncates():
+    s = jcs.build_summary("pontaje", [_commit("a1", "x"), _commit("a2", "y")], "2026-07-07 21:00")
+    assert s.startswith("[HR] 2 commits — 2026-07-07 21:00")
+    assert len(s) <= 80
+
+
+def test_build_summary_singular():
+    s = jcs.build_summary("reinvoice", [_commit("a1", "x")], "2026-07-07 21:00")
+    assert s.startswith("[Accounting] 1 commit — ")
+
+
+def test_build_description_adf_lists_commits():
+    adf = jcs.build_description_adf(
+        "pontaje", [_commit("abcdef1234", "fix(pontaje): read holidays")],
+        "dev", "2026-07-07 21:00")
+    assert adf["type"] == "doc" and adf["version"] == 1
+    text = adf["content"][0]["content"][0]["text"]
+    assert "Branch: dev" in text
+    assert "abcdef1 fix(pontaje): read holidays" in text
