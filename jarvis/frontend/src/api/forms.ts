@@ -96,5 +96,6 @@ export const formsApi = {
       submission_id: number
       thank_you_message?: string
       redirect_url?: string
+      hook_data?: Record<string, string>
     }>(`/forms/public/${slug}/submit`, data),
 }

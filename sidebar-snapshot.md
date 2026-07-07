@@ -1,0 +1,5530 @@
+- generic [ref=e10]:
+  - complementary [ref=e11]:
+    - generic [ref=e12]:
+      - link "JARVIS" [ref=e5172] [cursor=pointer]:
+        - /url: /app/dashboard
+        - img [ref=e15]
+        - generic [ref=e5173]: JARVIS
+      - navigation [ref=e18]:
+        - link "Dashboard" [ref=e5174] [cursor=pointer]:
+          - /url: /app/dashboard
+          - img [ref=e5175]
+          - generic [ref=e5180]: Dashboard
+        - link "AI Agent" [ref=e5181] [cursor=pointer]:
+          - /url: /app/ai-agent
+          - img [ref=e5182]
+          - generic [ref=e5185]: AI Agent
+        - generic [ref=e5186]:
+          - button "Accounting" [ref=e5187]:
+            - generic [ref=e5188]:
+              - img [ref=e5189]
+              - generic [ref=e5191]: Accounting
+            - img [ref=e5192]
+          - generic [ref=e5194]:
+            - link "Invoices" [ref=e5195] [cursor=pointer]:
+              - /url: /app/accounting
+              - img [ref=e5196]
+              - generic [ref=e5198]: Invoices
+            - link "Statements" [ref=e5199] [cursor=pointer]:
+              - /url: /app/statements
+              - img [ref=e5200]
+              - generic [ref=e5202]: Statements
+            - link "e-Factura" [ref=e5203] [cursor=pointer]:
+              - /url: /app/efactura
+              - img [ref=e5204]
+              - generic [ref=e5207]: e-Factura
+        - link "HR" [ref=e5208] [cursor=pointer]:
+          - /url: /app/hr
+          - img [ref=e5209]
+          - generic [ref=e5214]: HR
+        - link "Settings" [ref=e5215] [cursor=pointer]:
+          - /url: /app/settings
+          - img [ref=e5216]
+          - generic [ref=e5219]: Settings
+      - generic [ref=e42]:
+        - link "Sebastian Sabo Admin" [ref=e5220] [cursor=pointer]:
+          - /url: /app/profile
+          - img [ref=e5221]
+          - generic [ref=e5225]:
+            - generic [ref=e5226]: Sebastian Sabo
+            - generic [ref=e5227]: Admin
+          - button "Switch to light mode" [ref=e5228]:
+            - img
+        - link "Logout" [ref=e5229] [cursor=pointer]:
+          - /url: /logout
+          - img [ref=e5230]
+          - text: Logout
+        - button "Collapse" [active] [ref=e5233]:
+          - img [ref=e5234]
+          - generic [ref=e5237]: Collapse
+  - main [ref=e58]:
+    - generic [ref=e59]:
+      - generic [ref=e60]:
+        - generic [ref=e61]:
+          - heading "Accounting" [level=1] [ref=e62]
+          - paragraph [ref=e63]: Invoice management, allocations & financial reports.
+        - link "New Invoice" [ref=e65] [cursor=pointer]:
+          - /url: /app/accounting/add
+          - img
+          - text: New Invoice
+      - generic [ref=e66]:
+        - generic [ref=e68]:
+          - generic [ref=e69]:
+            - paragraph [ref=e70]: Invoices
+            - img [ref=e72]
+          - paragraph [ref=e75]: "192"
+        - generic [ref=e77]:
+          - generic [ref=e78]:
+            - paragraph [ref=e79]: Companies
+            - img [ref=e81]
+          - paragraph [ref=e85]: "7"
+        - generic [ref=e87]:
+          - generic [ref=e88]:
+            - paragraph [ref=e89]: Departments
+            - img [ref=e91]
+          - paragraph [ref=e96]: "5"
+        - generic [ref=e98]:
+          - generic [ref=e99]:
+            - paragraph [ref=e100]: Total RON
+            - generic [ref=e101]: RON
+          - paragraph [ref=e102]: NaN
+        - generic [ref=e104]:
+          - generic [ref=e105]:
+            - paragraph [ref=e106]: Total EUR
+            - generic [ref=e107]: EUR
+          - paragraph [ref=e108]: NaN
+      - generic [ref=e109]:
+        - button "Invoices" [ref=e110]:
+          - img [ref=e111]
+          - text: Invoices
+        - button "By Company" [ref=e114]:
+          - img [ref=e115]
+          - text: By Company
+        - button "By Department" [ref=e119]:
+          - img [ref=e120]
+          - text: By Department
+        - button "By Brand" [ref=e125]:
+          - img [ref=e126]
+          - text: By Brand
+        - button "By Supplier" [ref=e129]:
+          - img [ref=e130]
+          - text: By Supplier
+        - button "Bin" [ref=e135]:
+          - img [ref=e136]
+          - text: Bin
+      - generic [ref=e139]:
+        - generic [ref=e140]:
+          - combobox [ref=e142]:
+            - generic [ref=e143]: "Company:"
+            - generic: All
+            - img
+          - combobox [ref=e145]:
+            - generic [ref=e146]: "Department:"
+            - generic: All
+            - img
+          - combobox [ref=e148]:
+            - generic [ref=e149]: "Status:"
+            - generic: All
+            - img
+          - textbox [ref=e151]:
+            - /placeholder: Start Date
+          - textbox [ref=e153]:
+            - /placeholder: End Date
+        - generic [ref=e154]:
+          - generic [ref=e155]:
+            - img [ref=e156]
+            - 'textbox "Search supplier or invoice #..." [ref=e159]'
+          - button "Toggle columns" [ref=e160]:
+            - img
+      - generic [ref=e162]:
+        - table [ref=e165]:
+          - rowgroup [ref=e166]:
+            - 'row "ID Supplier Invoice # Date Total Company Department Status Payment Drive Link Actions" [ref=e167]':
+              - columnheader [ref=e168]:
+                - checkbox [ref=e169]
+              - columnheader "ID" [ref=e170]
+              - columnheader "Supplier" [ref=e171]
+              - 'columnheader "Invoice #" [ref=e172]'
+              - columnheader "Date" [ref=e173]
+              - columnheader "Total" [ref=e174]
+              - columnheader "Company" [ref=e175]
+              - columnheader "Department" [ref=e176]
+              - columnheader "Status" [ref=e177]
+              - columnheader "Payment" [ref=e178]
+              - columnheader "Drive Link" [ref=e179]
+              - columnheader "Actions" [ref=e180]
+          - rowgroup [ref=e181]:
+            - row "284 VGS ROMANIA SRL VGSR 3491 31.01.2026 160,51 RON Autoworld ONE S.R.L. Sales new not_paid Link" [ref=e182] [cursor=pointer]:
+              - cell [ref=e183]:
+                - checkbox [ref=e184]
+              - cell "284" [ref=e185]:
+                - generic [ref=e186]:
+                  - img [ref=e187]
+                  - text: "284"
+              - cell "VGS ROMANIA SRL" [ref=e189]:
+                - generic [ref=e190]: VGS ROMANIA SRL
+              - cell "VGSR 3491" [ref=e191]
+              - cell "31.01.2026" [ref=e192]
+              - cell "160,51 RON" [ref=e193]:
+                - generic [ref=e195]: 160,51 RON
+              - cell "Autoworld ONE S.R.L." [ref=e196]
+              - cell "Sales" [ref=e197]
+              - cell "new" [ref=e198]:
+                - generic [ref=e199]: new
+              - cell "not_paid" [ref=e200]:
+                - generic [ref=e201]: not_paid
+              - cell "Link" [ref=e202]:
+                - link "Link" [ref=e203]:
+                  - /url: https://drive.google.com/file/d/1u2Ta9alhvvBFFkfx_onccZ3lC5omu953/view?usp=drivesdk
+              - cell [ref=e204]:
+                - generic [ref=e205]:
+                  - button "Edit" [ref=e206]:
+                    - img
+                  - button "Delete" [ref=e207]:
+                    - img
+            - row "283 Google Ireland Limited 5490105653 31.01.2026 3.754,83 RON - - new not_paid -" [ref=e208] [cursor=pointer]:
+              - cell [ref=e209]:
+                - checkbox [ref=e210]
+              - cell "283" [ref=e211]:
+                - generic [ref=e212]: "283"
+              - cell "Google Ireland Limited" [ref=e213]:
+                - generic [ref=e214]: Google Ireland Limited
+              - cell "5490105653" [ref=e215]
+              - cell "31.01.2026" [ref=e216]
+              - cell "3.754,83 RON" [ref=e217]:
+                - generic [ref=e219]: 3.754,83 RON
+              - cell "-" [ref=e220]
+              - cell "-" [ref=e221]
+              - cell "new" [ref=e222]:
+                - generic [ref=e223]: new
+              - cell "not_paid" [ref=e224]:
+                - generic [ref=e225]: not_paid
+              - cell "-" [ref=e226]
+              - cell [ref=e227]:
+                - generic [ref=e228]:
+                  - button "Edit" [ref=e229]:
+                    - img
+                  - button "Delete" [ref=e230]:
+                    - img
+            - row "282 Google Ireland Limited 5490271028 31.01.2026 1.927,23 RON Autoworld PLUS S.R.L. Sales new paid Link" [ref=e231] [cursor=pointer]:
+              - cell [ref=e232]:
+                - checkbox [ref=e233]
+              - cell "282" [ref=e234]:
+                - generic [ref=e235]:
+                  - img [ref=e236]
+                  - text: "282"
+              - cell "Google Ireland Limited" [ref=e238]:
+                - generic [ref=e239]: Google Ireland Limited
+              - cell "5490271028" [ref=e240]
+              - cell "31.01.2026" [ref=e241]
+              - cell "1.927,23 RON" [ref=e242]:
+                - generic [ref=e244]: 1.927,23 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e245]
+              - cell "Sales" [ref=e246]
+              - cell "new" [ref=e247]:
+                - generic [ref=e248]: new
+              - cell "paid" [ref=e249]:
+                - generic [ref=e250]: paid
+              - cell "Link" [ref=e251]:
+                - link "Link" [ref=e252]:
+                  - /url: https://drive.google.com/file/d/19_dTWplwYflpGfNH481No1Ym6p3E8YSs/view?usp=drivesdk
+              - cell [ref=e253]:
+                - generic [ref=e254]:
+                  - button "Edit" [ref=e255]:
+                    - img
+                  - button "Delete" [ref=e256]:
+                    - img
+            - row "281 Google Ireland Limited 5488353145 31.01.2026 1.572,43 RON Autoworld PLUS S.R.L. Sales new paid Link" [ref=e257] [cursor=pointer]:
+              - cell [ref=e258]:
+                - checkbox [ref=e259]
+              - cell "281" [ref=e260]:
+                - generic [ref=e261]:
+                  - img [ref=e262]
+                  - text: "281"
+              - cell "Google Ireland Limited" [ref=e264]:
+                - generic [ref=e265]: Google Ireland Limited
+              - cell "5488353145" [ref=e266]
+              - cell "31.01.2026" [ref=e267]
+              - cell "1.572,43 RON" [ref=e268]:
+                - generic [ref=e270]: 1.572,43 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e271]
+              - cell "Sales" [ref=e272]
+              - cell "new" [ref=e273]:
+                - generic [ref=e274]: new
+              - cell "paid" [ref=e275]:
+                - generic [ref=e276]: paid
+              - cell "Link" [ref=e277]:
+                - link "Link" [ref=e278]:
+                  - /url: https://drive.google.com/file/d/1vrutqKigAyIfpbHfZQHRZNqXknhmKWkp/view?usp=drivesdk
+              - cell [ref=e279]:
+                - generic [ref=e280]:
+                  - button "Edit" [ref=e281]:
+                    - img
+                  - button "Delete" [ref=e282]:
+                    - img
+            - row "280 Google Ireland Limited 5488784816 31.01.2026 742,70 RON Autoworld PRESTIGE S.R.L. Sales new paid Link" [ref=e283] [cursor=pointer]:
+              - cell [ref=e284]:
+                - checkbox [ref=e285]
+              - cell "280" [ref=e286]:
+                - generic [ref=e287]:
+                  - img [ref=e288]
+                  - text: "280"
+              - cell "Google Ireland Limited" [ref=e290]:
+                - generic [ref=e291]: Google Ireland Limited
+              - cell "5488784816" [ref=e292]
+              - cell "31.01.2026" [ref=e293]
+              - cell "742,70 RON" [ref=e294]:
+                - generic [ref=e296]: 742,70 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e297]
+              - cell "Sales" [ref=e298]
+              - cell "new" [ref=e299]:
+                - generic [ref=e300]: new
+              - cell "paid" [ref=e301]:
+                - generic [ref=e302]: paid
+              - cell "Link" [ref=e303]:
+                - link "Link" [ref=e304]:
+                  - /url: https://drive.google.com/file/d/1R1GxHg_uc0VievI7wHx_3vOeTBtaCfWw/view?usp=drivesdk
+              - cell [ref=e305]:
+                - generic [ref=e306]:
+                  - button "Edit" [ref=e307]:
+                    - img
+                  - button "Delete" [ref=e308]:
+                    - img
+            - row "279 DROP OF INK PUBLISHING SRL 380 30.01.2026 64,99 RON Autoworld PRESTIGE S.R.L. Sales new paid Link" [ref=e309] [cursor=pointer]:
+              - cell [ref=e310]:
+                - checkbox [ref=e311]
+              - cell "279" [ref=e312]:
+                - generic [ref=e313]:
+                  - img [ref=e314]
+                  - text: "279"
+              - cell "DROP OF INK PUBLISHING SRL" [ref=e316]:
+                - generic [ref=e317]: DROP OF INK PUBLISHING SRL
+              - cell "380" [ref=e318]
+              - cell "30.01.2026" [ref=e319]
+              - cell "64,99 RON" [ref=e320]:
+                - generic [ref=e322]: 64,99 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e323]
+              - cell "Sales" [ref=e324]
+              - cell "new" [ref=e325]:
+                - generic [ref=e326]: new
+              - cell "paid" [ref=e327]:
+                - generic [ref=e328]: paid
+              - cell "Link" [ref=e329]:
+                - link "Link" [ref=e330]:
+                  - /url: https://drive.google.com/file/d/1Tsv23msDeeEz7MfidNBp9x2P78OCtVxB/view?usp=drivesdk
+              - cell [ref=e331]:
+                - generic [ref=e332]:
+                  - button "Edit" [ref=e333]:
+                    - img
+                  - button "Delete" [ref=e334]:
+                    - img
+            - row "278 VGS ROMANIA SRL VGSR 3486 30.01.2026 70,18 RON Autoworld NEXT S.R.L. Sales processed not_paid Link" [ref=e335] [cursor=pointer]:
+              - cell [ref=e336]:
+                - checkbox [ref=e337]
+              - cell "278" [ref=e338]:
+                - generic [ref=e339]:
+                  - img [ref=e340]
+                  - text: "278"
+              - cell "VGS ROMANIA SRL" [ref=e342]:
+                - generic [ref=e343]: VGS ROMANIA SRL
+              - cell "VGSR 3486" [ref=e344]
+              - cell "30.01.2026" [ref=e345]
+              - cell "70,18 RON" [ref=e346]:
+                - generic [ref=e348]: 70,18 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e349]
+              - cell "Sales" [ref=e350]
+              - cell "processed" [ref=e351]:
+                - generic [ref=e352]: processed
+              - cell "not_paid" [ref=e353]:
+                - generic [ref=e354]: not_paid
+              - cell "Link" [ref=e355]:
+                - link "Link" [ref=e356]:
+                  - /url: https://drive.google.com/file/d/1ryCG8aP-DsuZEW9yZNDyGNKk_9INDEiB/view?usp=drivesdk
+              - cell [ref=e357]:
+                - generic [ref=e358]:
+                  - button "Edit" [ref=e359]:
+                    - img
+                  - button "Delete" [ref=e360]:
+                    - img
+            - row "277 VGS ROMANIA SRL VGSR 3469 13.01.2026 207,52 RON Autoworld PRESTIGE S.R.L. Aftersales processed not_paid Link" [ref=e361] [cursor=pointer]:
+              - cell [ref=e362]:
+                - checkbox [ref=e363]
+              - cell "277" [ref=e364]:
+                - generic [ref=e365]:
+                  - img [ref=e366]
+                  - text: "277"
+              - cell "VGS ROMANIA SRL" [ref=e368]:
+                - generic [ref=e369]: VGS ROMANIA SRL
+              - cell "VGSR 3469" [ref=e370]
+              - cell "13.01.2026" [ref=e371]
+              - cell "207,52 RON" [ref=e372]:
+                - generic [ref=e374]: 207,52 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e375]
+              - cell "Aftersales" [ref=e376]
+              - cell "processed" [ref=e377]:
+                - generic [ref=e378]: processed
+              - cell "not_paid" [ref=e379]:
+                - generic [ref=e380]: not_paid
+              - cell "Link" [ref=e381]:
+                - link "Link" [ref=e382]:
+                  - /url: https://drive.google.com/file/d/1PdMrNa7i3tqKl1nTiDeaP766rslmzYte/view?usp=drivesdk
+              - cell [ref=e383]:
+                - generic [ref=e384]:
+                  - button "Edit" [ref=e385]:
+                    - img
+                  - button "Delete" [ref=e386]:
+                    - img
+            - row "276 Google Cloud EMEA Limited 5483381456 31.01.2026 82,31 USD AUTOWORLD S.R.L. Conducere new paid Link" [ref=e387] [cursor=pointer]:
+              - cell [ref=e388]:
+                - checkbox [ref=e389]
+              - cell "276" [ref=e390]:
+                - generic [ref=e391]:
+                  - img [ref=e392]
+                  - text: "276"
+              - cell "Google Cloud EMEA Limited" [ref=e394]:
+                - generic [ref=e395]: Google Cloud EMEA Limited
+              - cell "5483381456" [ref=e396]
+              - cell "31.01.2026" [ref=e397]
+              - cell "82,31 USD" [ref=e398]:
+                - generic [ref=e400]: 82,31 USD
+              - cell "AUTOWORLD S.R.L." [ref=e401]
+              - cell "Conducere" [ref=e402]
+              - cell "new" [ref=e403]:
+                - generic [ref=e404]: new
+              - cell "paid" [ref=e405]:
+                - generic [ref=e406]: paid
+              - cell "Link" [ref=e407]:
+                - link "Link" [ref=e408]:
+                  - /url: https://drive.google.com/file/d/1HvSP1wwZcC3wiwEWYzsf4OgBMl5GGbDB/view?usp=drivesdk
+              - cell [ref=e409]:
+                - generic [ref=e410]:
+                  - button "Edit" [ref=e411]:
+                    - img
+                  - button "Delete" [ref=e412]:
+                    - img
+            - row "275 DigitalOcean LLC 538043928 01.02.2026 60,96 USD AUTOWORLD S.R.L. Conducere new paid Link" [ref=e413] [cursor=pointer]:
+              - cell [ref=e414]:
+                - checkbox [ref=e415]
+              - cell "275" [ref=e416]:
+                - generic [ref=e417]:
+                  - img [ref=e418]
+                  - text: "275"
+              - cell "DigitalOcean LLC" [ref=e420]:
+                - generic [ref=e421]: DigitalOcean LLC
+              - cell "538043928" [ref=e422]
+              - cell "01.02.2026" [ref=e423]
+              - cell "60,96 USD" [ref=e424]:
+                - generic [ref=e426]: 60,96 USD
+              - cell "AUTOWORLD S.R.L." [ref=e427]
+              - cell "Conducere" [ref=e428]
+              - cell "new" [ref=e429]:
+                - generic [ref=e430]: new
+              - cell "paid" [ref=e431]:
+                - generic [ref=e432]: paid
+              - cell "Link" [ref=e433]:
+                - link "Link" [ref=e434]:
+                  - /url: https://drive.google.com/file/d/16RLp54_JenWqQkm46YvO-gYsyudp6507/view?usp=drivesdk
+              - cell [ref=e435]:
+                - generic [ref=e436]:
+                  - button "Edit" [ref=e437]:
+                    - img
+                  - button "Delete" [ref=e438]:
+                    - img
+            - row "274 Meta Platforms Ireland Limited FBADS-125-105401723 31.01.2026 190,26 RON AUTOWORLD S.R.L. Aftersales incomplete paid Link" [ref=e439] [cursor=pointer]:
+              - cell [ref=e440]:
+                - checkbox [ref=e441]
+              - cell "274" [ref=e442]:
+                - generic [ref=e443]:
+                  - img [ref=e444]
+                  - text: "274"
+              - cell "Meta Platforms Ireland Limited" [ref=e446]:
+                - generic [ref=e447]: Meta Platforms Ireland Limited
+              - cell "FBADS-125-105401723" [ref=e448]
+              - cell "31.01.2026" [ref=e449]
+              - cell "190,26 RON" [ref=e450]:
+                - generic [ref=e452]: 190,26 RON
+              - cell "AUTOWORLD S.R.L." [ref=e453]
+              - cell "Aftersales" [ref=e454]
+              - cell "incomplete" [ref=e455]:
+                - generic [ref=e456]: incomplete
+              - cell "paid" [ref=e457]:
+                - generic [ref=e458]: paid
+              - cell "Link" [ref=e459]:
+                - link "Link" [ref=e460]:
+                  - /url: https://drive.google.com/file/d/1NWwBb0drJQunE532GHRpJ2N7qFPZM3HK/view?usp=drivesdk
+              - cell [ref=e461]:
+                - generic [ref=e462]:
+                  - button "Edit" [ref=e463]:
+                    - img
+                  - button "Delete" [ref=e464]:
+                    - img
+            - row "273 Meta Platforms Ireland Limited FBADS-125-105401721 31.01.2026 95,13 RON AUTOWORLD S.R.L. Aftersales incomplete paid Link" [ref=e465] [cursor=pointer]:
+              - cell [ref=e466]:
+                - checkbox [ref=e467]
+              - cell "273" [ref=e468]:
+                - generic [ref=e469]:
+                  - img [ref=e470]
+                  - text: "273"
+              - cell "Meta Platforms Ireland Limited" [ref=e472]:
+                - generic [ref=e473]: Meta Platforms Ireland Limited
+              - cell "FBADS-125-105401721" [ref=e474]
+              - cell "31.01.2026" [ref=e475]
+              - cell "95,13 RON" [ref=e476]:
+                - generic [ref=e478]: 95,13 RON
+              - cell "AUTOWORLD S.R.L." [ref=e479]
+              - cell "Aftersales" [ref=e480]
+              - cell "incomplete" [ref=e481]:
+                - generic [ref=e482]: incomplete
+              - cell "paid" [ref=e483]:
+                - generic [ref=e484]: paid
+              - cell "Link" [ref=e485]:
+                - link "Link" [ref=e486]:
+                  - /url: https://drive.google.com/file/d/1T11yZfnduqtAbD68cpkMgSqb5vpeKGA1/view?usp=drivesdk
+              - cell [ref=e487]:
+                - generic [ref=e488]:
+                  - button "Edit" [ref=e489]:
+                    - img
+                  - button "Delete" [ref=e490]:
+                    - img
+            - row "272 Anthropic, PBC RLOPHA9P-0004 02.11.2025 90,00 EUR AUTOWORLD S.R.L. Conducere new paid Link" [ref=e491] [cursor=pointer]:
+              - cell [ref=e492]:
+                - checkbox [ref=e493]
+              - cell "272" [ref=e494]:
+                - generic [ref=e495]:
+                  - img [ref=e496]
+                  - text: "272"
+              - cell "Anthropic, PBC" [ref=e498]:
+                - generic [ref=e499]: Anthropic, PBC
+              - cell "RLOPHA9P-0004" [ref=e500]
+              - cell "02.11.2025" [ref=e501]
+              - cell "90,00 EUR" [ref=e502]:
+                - generic [ref=e504]: 90,00 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e505]
+              - cell "Conducere" [ref=e506]
+              - cell "new" [ref=e507]:
+                - generic [ref=e508]: new
+              - cell "paid" [ref=e509]:
+                - generic [ref=e510]: paid
+              - cell "Link" [ref=e511]:
+                - link "Link" [ref=e512]:
+                  - /url: https://drive.google.com/file/d/1TwSkA6qLLh2YPmki8JkCerad_R32YjkF/view?usp=drivesdk
+              - cell [ref=e513]:
+                - generic [ref=e514]:
+                  - button "Edit" [ref=e515]:
+                    - img
+                  - button "Delete" [ref=e516]:
+                    - img
+            - row "271 eleFant.ro 100332443 21.01.2026 724,62 RON Autoworld PRESTIGE S.R.L. Sales processed paid Link" [ref=e517] [cursor=pointer]:
+              - cell [ref=e518]:
+                - checkbox [ref=e519]
+              - cell "271" [ref=e520]:
+                - generic [ref=e521]:
+                  - img [ref=e522]
+                  - text: "271"
+              - cell "eleFant.ro" [ref=e524]:
+                - generic [ref=e525]: eleFant.ro
+              - cell "100332443" [ref=e526]
+              - cell "21.01.2026" [ref=e527]
+              - cell "724,62 RON" [ref=e528]:
+                - generic [ref=e530]: 724,62 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e531]
+              - cell "Sales" [ref=e532]
+              - cell "processed" [ref=e533]:
+                - generic [ref=e534]: processed
+              - cell "paid" [ref=e535]:
+                - generic [ref=e536]: paid
+              - cell "Link" [ref=e537]:
+                - link "Link" [ref=e538]:
+                  - /url: https://drive.google.com/file/d/1nql9Smt1pWRIV60CvyBImPGXvKBlsyYr/view?usp=drivesdk
+              - cell [ref=e539]:
+                - generic [ref=e540]:
+                  - button "Edit" [ref=e541]:
+                    - img
+                  - button "Delete" [ref=e542]:
+                    - img
+            - row "270 Meta Platforms Ireland Limited FBADS-271-105309872 25.01.2026 218,76 RON Autoworld PLUS S.R.L. Aftersales processed paid Link" [ref=e543] [cursor=pointer]:
+              - cell [ref=e544]:
+                - checkbox [ref=e545]
+              - cell "270" [ref=e546]:
+                - generic [ref=e547]:
+                  - img [ref=e548]
+                  - text: "270"
+              - cell "Meta Platforms Ireland Limited" [ref=e550]:
+                - generic [ref=e551]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105309872" [ref=e552]
+              - cell "25.01.2026" [ref=e553]
+              - cell "218,76 RON" [ref=e554]:
+                - generic [ref=e556]: 218,76 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e557]
+              - cell "Aftersales" [ref=e558]
+              - cell "processed" [ref=e559]:
+                - generic [ref=e560]: processed
+              - cell "paid" [ref=e561]:
+                - generic [ref=e562]: paid
+              - cell "Link" [ref=e563]:
+                - link "Link" [ref=e564]:
+                  - /url: https://drive.google.com/file/d/1R32FamQwuY8R13aM3X85qrUDiKHj1mCL/view?usp=drivesdk
+              - cell [ref=e565]:
+                - generic [ref=e566]:
+                  - button "Edit" [ref=e567]:
+                    - img
+                  - button "Delete" [ref=e568]:
+                    - img
+            - row "269 Meta Platforms Ireland Limited FBADS-271-105309873 25.01.2026 437,52 RON Autoworld PLUS S.R.L. Aftersales processed paid Link" [ref=e569] [cursor=pointer]:
+              - cell [ref=e570]:
+                - checkbox [ref=e571]
+              - cell "269" [ref=e572]:
+                - generic [ref=e573]:
+                  - img [ref=e574]
+                  - text: "269"
+              - cell "Meta Platforms Ireland Limited" [ref=e576]:
+                - generic [ref=e577]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105309873" [ref=e578]
+              - cell "25.01.2026" [ref=e579]
+              - cell "437,52 RON" [ref=e580]:
+                - generic [ref=e582]: 437,52 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e583]
+              - cell "Aftersales" [ref=e584]
+              - cell "processed" [ref=e585]:
+                - generic [ref=e586]: processed
+              - cell "paid" [ref=e587]:
+                - generic [ref=e588]: paid
+              - cell "Link" [ref=e589]:
+                - link "Link" [ref=e590]:
+                  - /url: https://drive.google.com/file/d/1Kes74YzATQCEL4zdJnPVMLEZ9gMqIIf_/view?usp=drivesdk
+              - cell [ref=e591]:
+                - generic [ref=e592]:
+                  - button "Edit" [ref=e593]:
+                    - img
+                  - button "Delete" [ref=e594]:
+                    - img
+            - row "268 Meta Platforms Ireland Limited FBADS-271-105313345 26.01.2026 2.850,67 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e595] [cursor=pointer]:
+              - cell [ref=e596]:
+                - checkbox [ref=e597]
+              - cell "268" [ref=e598]:
+                - generic [ref=e599]:
+                  - img [ref=e600]
+                  - text: "268"
+              - cell "Meta Platforms Ireland Limited" [ref=e602]:
+                - generic [ref=e603]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105313345" [ref=e604]
+              - cell "26.01.2026" [ref=e605]
+              - cell "2.850,67 RON" [ref=e606]:
+                - generic [ref=e608]: 2.850,67 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e609]
+              - cell "Sales" [ref=e610]
+              - cell "processed" [ref=e611]:
+                - generic [ref=e612]: processed
+              - cell "paid" [ref=e613]:
+                - generic [ref=e614]: paid
+              - cell "Link" [ref=e615]:
+                - link "Link" [ref=e616]:
+                  - /url: https://drive.google.com/file/d/1HqOeLGW6yUEE7ZsBa2vzV4AmjqhCh8W-/view?usp=drivesdk
+              - cell [ref=e617]:
+                - generic [ref=e618]:
+                  - button "Edit" [ref=e619]:
+                    - img
+                  - button "Delete" [ref=e620]:
+                    - img
+            - row "267 Meta Platforms Ireland Limited FBADS-271-105320429 28.01.2026 427,75 RON Autoworld PLUS S.R.L. Aftersales processed paid Link" [ref=e621] [cursor=pointer]:
+              - cell [ref=e622]:
+                - checkbox [ref=e623]
+              - cell "267" [ref=e624]:
+                - generic [ref=e625]:
+                  - img [ref=e626]
+                  - text: "267"
+              - cell "Meta Platforms Ireland Limited" [ref=e628]:
+                - generic [ref=e629]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105320429" [ref=e630]
+              - cell "28.01.2026" [ref=e631]
+              - cell "427,75 RON" [ref=e632]:
+                - generic [ref=e634]: 427,75 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e635]
+              - cell "Aftersales" [ref=e636]
+              - cell "processed" [ref=e637]:
+                - generic [ref=e638]: processed
+              - cell "paid" [ref=e639]:
+                - generic [ref=e640]: paid
+              - cell "Link" [ref=e641]:
+                - link "Link" [ref=e642]:
+                  - /url: https://drive.google.com/file/d/19yrcsZUaeBuJ05mJQZUUAGjhbBBdgQw_/view?usp=drivesdk
+              - cell [ref=e643]:
+                - generic [ref=e644]:
+                  - button "Edit" [ref=e645]:
+                    - img
+                  - button "Delete" [ref=e646]:
+                    - img
+            - row "266 Meta Platforms Ireland Limited FBADS-733-105407337 26.01.2026 1.375,47 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e647] [cursor=pointer]:
+              - cell [ref=e648]:
+                - checkbox [ref=e649]
+              - cell "266" [ref=e650]:
+                - generic [ref=e651]:
+                  - img [ref=e652]
+                  - text: "266"
+              - cell "Meta Platforms Ireland Limited" [ref=e654]:
+                - generic [ref=e655]: Meta Platforms Ireland Limited
+              - cell "FBADS-733-105407337" [ref=e656]
+              - cell "26.01.2026" [ref=e657]
+              - cell "1.375,47 RON" [ref=e658]:
+                - generic [ref=e660]: 1.375,47 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e661]
+              - cell "Sales" [ref=e662]
+              - cell "processed" [ref=e663]:
+                - generic [ref=e664]: processed
+              - cell "paid" [ref=e665]:
+                - generic [ref=e666]: paid
+              - cell "Link" [ref=e667]:
+                - link "Link" [ref=e668]:
+                  - /url: https://drive.google.com/file/d/1x4GVQOm3imc-zPXUJKduKPQ-pBPAmeQ3/view?usp=drivesdk
+              - cell [ref=e669]:
+                - generic [ref=e670]:
+                  - button "Edit" [ref=e671]:
+                    - img
+                  - button "Delete" [ref=e672]:
+                    - img
+            - row "265 VGS ROMANIA SRL VGSR 3474 23.01.2026 591,81 RON Autoworld PLUS S.R.L. Sales processed not_paid Link" [ref=e673] [cursor=pointer]:
+              - cell [ref=e674]:
+                - checkbox [ref=e675]
+              - cell "265" [ref=e676]:
+                - generic [ref=e677]:
+                  - img [ref=e678]
+                  - text: "265"
+              - cell "VGS ROMANIA SRL" [ref=e680]:
+                - generic [ref=e681]: VGS ROMANIA SRL
+              - cell "VGSR 3474" [ref=e682]
+              - cell "23.01.2026" [ref=e683]
+              - cell "591,81 RON" [ref=e684]:
+                - generic [ref=e686]: 591,81 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e687]
+              - cell "Sales" [ref=e688]
+              - cell "processed" [ref=e689]:
+                - generic [ref=e690]: processed
+              - cell "not_paid" [ref=e691]:
+                - generic [ref=e692]: not_paid
+              - cell "Link" [ref=e693]:
+                - link "Link" [ref=e694]:
+                  - /url: https://drive.google.com/file/d/1pluMA4vseJXUH9FelTqc3dj2DnTe6qga/view?usp=drivesdk
+              - cell [ref=e695]:
+                - generic [ref=e696]:
+                  - button "Edit" [ref=e697]:
+                    - img
+                  - button "Delete" [ref=e698]:
+                    - img
+            - row "264 VGS ROMANIA SRL VGSR-3436 13.01.2026 323,07 RON Autoworld ONE S.R.L. Aftersales processed paid Link" [ref=e699] [cursor=pointer]:
+              - cell [ref=e700]:
+                - checkbox [ref=e701]
+              - cell "264" [ref=e702]:
+                - generic [ref=e703]:
+                  - img [ref=e704]
+                  - text: "264"
+              - cell "VGS ROMANIA SRL" [ref=e706]:
+                - generic [ref=e707]: VGS ROMANIA SRL
+              - cell "VGSR-3436" [ref=e708]
+              - cell "13.01.2026" [ref=e709]
+              - cell "323,07 RON" [ref=e710]:
+                - generic [ref=e712]: 323,07 RON
+              - cell "Autoworld ONE S.R.L." [ref=e713]
+              - cell "Aftersales" [ref=e714]
+              - cell "processed" [ref=e715]:
+                - generic [ref=e716]: processed
+              - cell "paid" [ref=e717]:
+                - generic [ref=e718]: paid
+              - cell "Link" [ref=e719]:
+                - link "Link" [ref=e720]:
+                  - /url: https://drive.google.com/file/d/1NqggtH5nkg_QRiBmCtEck43YvKoJ88XJ/view?usp=drivesdk
+              - cell [ref=e721]:
+                - generic [ref=e722]:
+                  - button "Edit" [ref=e723]:
+                    - img
+                  - button "Delete" [ref=e724]:
+                    - img
+            - row "263 Meta Platforms Ireland Limited FBADS-416-105296518 16.01.2026 3.499,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e725] [cursor=pointer]:
+              - cell [ref=e726]:
+                - checkbox [ref=e727]
+              - cell "263" [ref=e728]:
+                - generic [ref=e729]:
+                  - img [ref=e730]
+                  - text: "263"
+              - cell "Meta Platforms Ireland Limited" [ref=e732]:
+                - generic [ref=e733]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105296518" [ref=e734]
+              - cell "16.01.2026" [ref=e735]
+              - cell "3.499,00 RON" [ref=e736]:
+                - generic [ref=e738]: 3.499,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e739]
+              - cell "Sales" [ref=e740]
+              - cell "processed" [ref=e741]:
+                - generic [ref=e742]: processed
+              - cell "paid" [ref=e743]:
+                - generic [ref=e744]: paid
+              - cell "Link" [ref=e745]:
+                - link "Link" [ref=e746]:
+                  - /url: https://drive.google.com/file/d/1Bkte6jmqIL9mERdq9vNTirmgrX4vZg3B/view?usp=drivesdk
+              - cell [ref=e747]:
+                - generic [ref=e748]:
+                  - button "Edit" [ref=e749]:
+                    - img
+                  - button "Delete" [ref=e750]:
+                    - img
+            - row "262 Meta Platforms Ireland Limited FBADS-416-105345628 28.01.2026 218,73 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e751] [cursor=pointer]:
+              - cell [ref=e752]:
+                - checkbox [ref=e753]
+              - cell "262" [ref=e754]:
+                - generic [ref=e755]:
+                  - img [ref=e756]
+                  - text: "262"
+              - cell "Meta Platforms Ireland Limited" [ref=e758]:
+                - generic [ref=e759]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105345628" [ref=e760]
+              - cell "28.01.2026" [ref=e761]
+              - cell "218,73 RON" [ref=e762]:
+                - generic [ref=e764]: 218,73 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e765]
+              - cell "Sales" [ref=e766]
+              - cell "processed" [ref=e767]:
+                - generic [ref=e768]: processed
+              - cell "paid" [ref=e769]:
+                - generic [ref=e770]: paid
+              - cell "Link" [ref=e771]:
+                - link "Link" [ref=e772]:
+                  - /url: https://drive.google.com/file/d/1xchQpj24wT0eYzYTwvbSRATUDT_Ty-bM/view?usp=drivesdk
+              - cell [ref=e773]:
+                - generic [ref=e774]:
+                  - button "Edit" [ref=e775]:
+                    - img
+                  - button "Delete" [ref=e776]:
+                    - img
+            - row "261 Meta Platforms Ireland Limited FBADS-416-105345629 28.01.2026 437,46 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e777] [cursor=pointer]:
+              - cell [ref=e778]:
+                - checkbox [ref=e779]
+              - cell "261" [ref=e780]:
+                - generic [ref=e781]:
+                  - img [ref=e782]
+                  - text: "261"
+              - cell "Meta Platforms Ireland Limited" [ref=e784]:
+                - generic [ref=e785]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105345629" [ref=e786]
+              - cell "28.01.2026" [ref=e787]
+              - cell "437,46 RON" [ref=e788]:
+                - generic [ref=e790]: 437,46 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e791]
+              - cell "Sales" [ref=e792]
+              - cell "processed" [ref=e793]:
+                - generic [ref=e794]: processed
+              - cell "paid" [ref=e795]:
+                - generic [ref=e796]: paid
+              - cell "Link" [ref=e797]:
+                - link "Link" [ref=e798]:
+                  - /url: https://drive.google.com/file/d/1x1xqxi2kBVA1Ccr6eDRSV3BzSWyY7k5e/view?usp=drivesdk
+              - cell [ref=e799]:
+                - generic [ref=e800]:
+                  - button "Edit" [ref=e801]:
+                    - img
+                  - button "Delete" [ref=e802]:
+                    - img
+            - row "228 VGS ROMANIA SRL VGSR 3470 13.01.2026 837,03 RON Autoworld INTERNATIONAL S.R.L. Aftersales processed not_paid Link" [ref=e803] [cursor=pointer]:
+              - cell [ref=e804]:
+                - checkbox [ref=e805]
+              - cell "228" [ref=e806]:
+                - generic [ref=e807]:
+                  - img [ref=e808]
+                  - text: "228"
+              - cell "VGS ROMANIA SRL" [ref=e810]:
+                - generic [ref=e811]: VGS ROMANIA SRL
+              - cell "VGSR 3470" [ref=e812]
+              - cell "13.01.2026" [ref=e813]
+              - cell "837,03 RON" [ref=e814]:
+                - generic [ref=e816]: 837,03 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e817]
+              - cell "Aftersales" [ref=e818]
+              - cell "processed" [ref=e819]:
+                - generic [ref=e820]: processed
+              - cell "not_paid" [ref=e821]:
+                - generic [ref=e822]: not_paid
+              - cell "Link" [ref=e823]:
+                - link "Link" [ref=e824]:
+                  - /url: https://drive.google.com/file/d/1CYUMKdIxtcugjMGr0wVLM-P5S1M8jj4t/view?usp=drivesdk
+              - cell [ref=e825]:
+                - generic [ref=e826]:
+                  - button "Edit" [ref=e827]:
+                    - img
+                  - button "Delete" [ref=e828]:
+                    - img
+            - row "227 OLX Online Services SRL 2026120235302 16.01.2026 3.483,22 RON Autoworld INTERNATIONAL S.R.L. Sales processed not_paid Link" [ref=e829] [cursor=pointer]:
+              - cell [ref=e830]:
+                - checkbox [ref=e831]
+              - cell "227" [ref=e832]:
+                - generic [ref=e833]:
+                  - img [ref=e834]
+                  - text: "227"
+              - cell "OLX Online Services SRL" [ref=e836]:
+                - generic [ref=e837]: OLX Online Services SRL
+              - cell "2026120235302" [ref=e838]
+              - cell "16.01.2026" [ref=e839]
+              - cell "3.483,22 RON" [ref=e840]:
+                - generic [ref=e842]: 3.483,22 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e843]
+              - cell "Sales" [ref=e844]
+              - cell "processed" [ref=e845]:
+                - generic [ref=e846]: processed
+              - cell "not_paid" [ref=e847]:
+                - generic [ref=e848]: not_paid
+              - cell "Link" [ref=e849]:
+                - link "Link" [ref=e850]:
+                  - /url: https://drive.google.com/file/d/17RR7NAm1jn6Y7aKOn2KWXO1wGriuxyX-/view?usp=drivesdk
+              - cell [ref=e851]:
+                - generic [ref=e852]:
+                  - button "Edit" [ref=e853]:
+                    - img
+                  - button "Delete" [ref=e854]:
+                    - img
+            - row "226 Shopify International Limited 480095838 27.01.2026 34,65 EUR Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e855] [cursor=pointer]:
+              - cell [ref=e856]:
+                - checkbox [ref=e857]
+              - cell "226" [ref=e858]:
+                - generic [ref=e859]:
+                  - img [ref=e860]
+                  - text: "226"
+              - cell "Shopify International Limited" [ref=e862]:
+                - generic [ref=e863]: Shopify International Limited
+              - cell "480095838" [ref=e864]
+              - cell "27.01.2026" [ref=e865]
+              - cell "34,65 EUR" [ref=e866]:
+                - generic [ref=e868]: 34,65 EUR
+              - cell "Autoworld PLUS S.R.L." [ref=e869]
+              - cell "Sales" [ref=e870]
+              - cell "processed" [ref=e871]:
+                - generic [ref=e872]: processed
+              - cell "paid" [ref=e873]:
+                - generic [ref=e874]: paid
+              - cell "Link" [ref=e875]:
+                - link "Link" [ref=e876]:
+                  - /url: https://drive.google.com/file/d/1Ccg1QY12PclAtkgOu4B5Hhar8ffQugjy/view?usp=drivesdk
+              - cell [ref=e877]:
+                - generic [ref=e878]:
+                  - button "Edit" [ref=e879]:
+                    - img
+                  - button "Delete" [ref=e880]:
+                    - img
+            - row "225 MERAKI SOLUTIONS SRL CPY nr. 15715 08.01.2026 3.693,23 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e881] [cursor=pointer]:
+              - cell [ref=e882]:
+                - checkbox [ref=e883]
+              - cell "225" [ref=e884]:
+                - generic [ref=e885]:
+                  - img [ref=e886]
+                  - text: "225"
+              - cell "MERAKI SOLUTIONS SRL" [ref=e888]:
+                - generic [ref=e889]: MERAKI SOLUTIONS SRL
+              - cell "CPY nr. 15715" [ref=e890]
+              - cell "08.01.2026" [ref=e891]
+              - cell "3.693,23 RON" [ref=e892]:
+                - generic [ref=e894]: 3.693,23 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e895]
+              - cell "Sales" [ref=e896]
+              - cell "processed" [ref=e897]:
+                - generic [ref=e898]: processed
+              - cell "paid" [ref=e899]:
+                - generic [ref=e900]: paid
+              - cell "Link" [ref=e901]:
+                - link "Link" [ref=e902]:
+                  - /url: https://drive.google.com/file/d/1-dN7zsDeHtiOx6894198A5wooKLNxpKq/view?usp=drivesdk
+              - cell [ref=e903]:
+                - generic [ref=e904]:
+                  - button "Edit" [ref=e905]:
+                    - img
+                  - button "Delete" [ref=e906]:
+                    - img
+            - row "224 SOFTIMPERA SRL SI10456 26.01.2026 400,67 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e907] [cursor=pointer]:
+              - cell [ref=e908]:
+                - checkbox [ref=e909]
+              - cell "224" [ref=e910]:
+                - generic [ref=e911]:
+                  - img [ref=e912]
+                  - text: "224"
+              - cell "SOFTIMPERA SRL" [ref=e914]:
+                - generic [ref=e915]: SOFTIMPERA SRL
+              - cell "SI10456" [ref=e916]
+              - cell "26.01.2026" [ref=e917]
+              - cell "400,67 RON" [ref=e918]:
+                - generic [ref=e920]: 400,67 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e921]
+              - cell "Sales" [ref=e922]
+              - cell "processed" [ref=e923]:
+                - generic [ref=e924]: processed
+              - cell "paid" [ref=e925]:
+                - generic [ref=e926]: paid
+              - cell "Link" [ref=e927]:
+                - link "Link" [ref=e928]:
+                  - /url: https://drive.google.com/file/d/1B8RvuJfBHlj6uny6vUnB9bQOh_OPmWqQ/view?usp=drivesdk
+              - cell [ref=e929]:
+                - generic [ref=e930]:
+                  - button "Edit" [ref=e931]:
+                    - img
+                  - button "Delete" [ref=e932]:
+                    - img
+            - row "223 SERV COMPANY SRL 571 23.01.2026 847,00 RON AUTOWORLD S.R.L. Marketing processed not_paid Link" [ref=e933] [cursor=pointer]:
+              - cell [ref=e934]:
+                - checkbox [ref=e935]
+              - cell "223" [ref=e936]:
+                - generic [ref=e937]:
+                  - img [ref=e938]
+                  - text: "223"
+              - cell "SERV COMPANY SRL" [ref=e940]:
+                - generic [ref=e941]: SERV COMPANY SRL
+              - cell "571" [ref=e942]
+              - cell "23.01.2026" [ref=e943]
+              - cell "847,00 RON" [ref=e944]:
+                - generic [ref=e946]: 847,00 RON
+              - cell "AUTOWORLD S.R.L." [ref=e947]
+              - cell "Marketing" [ref=e948]
+              - cell "processed" [ref=e949]:
+                - generic [ref=e950]: processed
+              - cell "not_paid" [ref=e951]:
+                - generic [ref=e952]: not_paid
+              - cell "Link" [ref=e953]:
+                - link "Link" [ref=e954]:
+                  - /url: https://drive.google.com/file/d/1pS_kvNXROmMN_NorbJT-ZGOfb9LkaMh6/view?usp=drivesdk
+              - cell [ref=e955]:
+                - generic [ref=e956]:
+                  - button "Edit" [ref=e957]:
+                    - img
+                  - button "Delete" [ref=e958]:
+                    - img
+            - row "222 Meta Platforms Ireland Limited FBADS-125-105364904 23.01.2026 359,00 RON AUTOWORLD S.R.L. Aftersales incomplete paid Link" [ref=e959] [cursor=pointer]:
+              - cell [ref=e960]:
+                - checkbox [ref=e961]
+              - cell "222" [ref=e962]:
+                - generic [ref=e963]:
+                  - img [ref=e964]
+                  - text: "222"
+              - cell "Meta Platforms Ireland Limited" [ref=e966]:
+                - generic [ref=e967]: Meta Platforms Ireland Limited
+              - cell "FBADS-125-105364904" [ref=e968]
+              - cell "23.01.2026" [ref=e969]
+              - cell "359,00 RON" [ref=e970]:
+                - generic [ref=e972]: 359,00 RON
+              - cell "AUTOWORLD S.R.L." [ref=e973]
+              - cell "Aftersales" [ref=e974]
+              - cell "incomplete" [ref=e975]:
+                - generic [ref=e976]: incomplete
+              - cell "paid" [ref=e977]:
+                - generic [ref=e978]: paid
+              - cell "Link" [ref=e979]:
+                - link "Link" [ref=e980]:
+                  - /url: https://drive.google.com/file/d/1AyJPMtdVESdbi07JNJo_9oZ_imn5ypy1/view?usp=drivesdk
+              - cell [ref=e981]:
+                - generic [ref=e982]:
+                  - button "Edit" [ref=e983]:
+                    - img
+                  - button "Delete" [ref=e984]:
+                    - img
+            - row "221 Meta Platforms Ireland Limited FBADS-125-105336210 17.01.2026 337,00 RON AUTOWORLD S.R.L. Aftersales incomplete paid Link" [ref=e985] [cursor=pointer]:
+              - cell [ref=e986]:
+                - checkbox [ref=e987]
+              - cell "221" [ref=e988]:
+                - generic [ref=e989]:
+                  - img [ref=e990]
+                  - text: "221"
+              - cell "Meta Platforms Ireland Limited" [ref=e992]:
+                - generic [ref=e993]: Meta Platforms Ireland Limited
+              - cell "FBADS-125-105336210" [ref=e994]
+              - cell "17.01.2026" [ref=e995]
+              - cell "337,00 RON" [ref=e996]:
+                - generic [ref=e998]: 337,00 RON
+              - cell "AUTOWORLD S.R.L." [ref=e999]
+              - cell "Aftersales" [ref=e1000]
+              - cell "incomplete" [ref=e1001]:
+                - generic [ref=e1002]: incomplete
+              - cell "paid" [ref=e1003]:
+                - generic [ref=e1004]: paid
+              - cell "Link" [ref=e1005]:
+                - link "Link" [ref=e1006]:
+                  - /url: https://drive.google.com/file/d/1RhYlvpLoMxF3S09gM49OfS_EQRHXQ30P/view?usp=drivesdk
+              - cell [ref=e1007]:
+                - generic [ref=e1008]:
+                  - button "Edit" [ref=e1009]:
+                    - img
+                  - button "Delete" [ref=e1010]:
+                    - img
+            - row "220 Shopify International Limited 66749071642-15 05.01.2026 1.086,62 RON AUTOWORLD S.R.L. Aftersales new paid Link" [ref=e1011] [cursor=pointer]:
+              - cell [ref=e1012]:
+                - checkbox [ref=e1013]
+              - cell "220" [ref=e1014]:
+                - generic [ref=e1015]:
+                  - img [ref=e1016]
+                  - text: "220"
+              - cell "Shopify International Limited" [ref=e1018]:
+                - generic [ref=e1019]: Shopify International Limited
+              - cell "66749071642-15" [ref=e1020]
+              - cell "05.01.2026" [ref=e1021]
+              - cell "1.086,62 RON" [ref=e1022]:
+                - generic [ref=e1024]: 1.086,62 RON
+              - cell "AUTOWORLD S.R.L." [ref=e1025]
+              - cell "Aftersales" [ref=e1026]
+              - cell "new" [ref=e1027]:
+                - generic [ref=e1028]: new
+              - cell "paid" [ref=e1029]:
+                - generic [ref=e1030]: paid
+              - cell "Link" [ref=e1031]:
+                - link "Link" [ref=e1032]:
+                  - /url: https://drive.google.com/file/d/11IiFF2cGJCXMscXw6bEtuouF6zN8YCwi/view?usp=drivesdk
+              - cell [ref=e1033]:
+                - generic [ref=e1034]:
+                  - button "Edit" [ref=e1035]:
+                    - img
+                  - button "Delete" [ref=e1036]:
+                    - img
+            - row "219 Shopify International Limited 478776612 24.01.2026 247,73 EUR Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e1037] [cursor=pointer]:
+              - cell [ref=e1038]:
+                - checkbox [ref=e1039]
+              - cell "219" [ref=e1040]:
+                - generic [ref=e1041]:
+                  - img [ref=e1042]
+                  - text: "219"
+              - cell "Shopify International Limited" [ref=e1044]:
+                - generic [ref=e1045]: Shopify International Limited
+              - cell "478776612" [ref=e1046]
+              - cell "24.01.2026" [ref=e1047]
+              - cell "247,73 EUR" [ref=e1048]:
+                - generic [ref=e1050]: 247,73 EUR
+              - cell "Autoworld NEXT S.R.L." [ref=e1051]
+              - cell "Sales" [ref=e1052]
+              - cell "processed" [ref=e1053]:
+                - generic [ref=e1054]: processed
+              - cell "paid" [ref=e1055]:
+                - generic [ref=e1056]: paid
+              - cell "Link" [ref=e1057]:
+                - link "Link" [ref=e1058]:
+                  - /url: https://drive.google.com/file/d/1GgiLddw3CHhE8uIEyYB947vqiH2jiHwL/view?usp=drivesdk
+              - cell [ref=e1059]:
+                - generic [ref=e1060]:
+                  - button "Edit" [ref=e1061]:
+                    - img
+                  - button "Delete" [ref=e1062]:
+                    - img
+            - row "218 CV Group, UAB CVC-248353 23.01.2026 3.950,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e1063] [cursor=pointer]:
+              - cell [ref=e1064]:
+                - checkbox [ref=e1065]
+              - cell "218" [ref=e1066]:
+                - generic [ref=e1067]:
+                  - img [ref=e1068]
+                  - text: "218"
+              - cell "CV Group, UAB" [ref=e1070]:
+                - generic [ref=e1071]: CV Group, UAB
+              - cell "CVC-248353" [ref=e1072]
+              - cell "23.01.2026" [ref=e1073]
+              - cell "3.950,00 RON" [ref=e1074]:
+                - generic [ref=e1076]: 3.950,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e1077]
+              - cell "Sales" [ref=e1078]
+              - cell "processed" [ref=e1079]:
+                - generic [ref=e1080]: processed
+              - cell "paid" [ref=e1081]:
+                - generic [ref=e1082]: paid
+              - cell "Link" [ref=e1083]:
+                - link "Link" [ref=e1084]:
+                  - /url: https://drive.google.com/file/d/1bBjqk73bRCOrXKTyIDNI1_t-GfXM37QO/view?usp=drivesdk
+              - cell [ref=e1085]:
+                - generic [ref=e1086]:
+                  - button "Edit" [ref=e1087]:
+                    - img
+                  - button "Delete" [ref=e1088]:
+                    - img
+            - row "217 OLX Online Services SRL 2026/1200239985 22.01.2026 3.883,35 RON Autoworld PRESTIGE S.R.L. Sales new not_paid Link" [ref=e1089] [cursor=pointer]:
+              - cell [ref=e1090]:
+                - checkbox [ref=e1091]
+              - cell "217" [ref=e1092]:
+                - generic [ref=e1093]:
+                  - img [ref=e1094]
+                  - text: "217"
+              - cell "OLX Online Services SRL" [ref=e1096]:
+                - generic [ref=e1097]: OLX Online Services SRL
+              - cell "2026/1200239985" [ref=e1098]
+              - cell "22.01.2026" [ref=e1099]
+              - cell "3.883,35 RON" [ref=e1100]:
+                - generic [ref=e1102]: 3.883,35 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e1103]
+              - cell "Sales" [ref=e1104]
+              - cell "new" [ref=e1105]:
+                - generic [ref=e1106]: new
+              - cell "not_paid" [ref=e1107]:
+                - generic [ref=e1108]: not_paid
+              - cell "Link" [ref=e1109]:
+                - link "Link" [ref=e1110]:
+                  - /url: https://drive.google.com/file/d/1mkaiyn5igPFO7LHHnoBGRRfzMFjG9LZS/view?usp=drivesdk
+              - cell [ref=e1111]:
+                - generic [ref=e1112]:
+                  - button "Edit" [ref=e1113]:
+                    - img
+                  - button "Delete" [ref=e1114]:
+                    - img
+            - row "216 OLX Online Services SRL 2026/1200225695 03.01.2026 9.354,83 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e1115] [cursor=pointer]:
+              - cell [ref=e1116]:
+                - checkbox [ref=e1117]
+              - cell "216" [ref=e1118]:
+                - generic [ref=e1119]:
+                  - img [ref=e1120]
+                  - text: "216"
+              - cell "OLX Online Services SRL" [ref=e1122]:
+                - generic [ref=e1123]: OLX Online Services SRL
+              - cell "2026/1200225695" [ref=e1124]
+              - cell "03.01.2026" [ref=e1125]
+              - cell "9.354,83 RON" [ref=e1126]:
+                - generic [ref=e1128]: 9.354,83 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e1129]
+              - cell "Sales" [ref=e1130]
+              - cell "processed" [ref=e1131]:
+                - generic [ref=e1132]: processed
+              - cell "paid" [ref=e1133]:
+                - generic [ref=e1134]: paid
+              - cell "Link" [ref=e1135]:
+                - link "Link" [ref=e1136]:
+                  - /url: https://drive.google.com/file/d/1kmb0Uo9QEZ1lF9ffTIWJrOtk8TJeBbka/view?usp=drivesdk
+              - cell [ref=e1137]:
+                - generic [ref=e1138]:
+                  - button "Edit" [ref=e1139]:
+                    - img
+                  - button "Delete" [ref=e1140]:
+                    - img
+            - row "215 SKYTA ECO CLEAN SRL 045 20.01.2026 1.000,00 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e1141] [cursor=pointer]:
+              - cell [ref=e1142]:
+                - checkbox [ref=e1143]
+              - cell "215" [ref=e1144]:
+                - generic [ref=e1145]:
+                  - img [ref=e1146]
+                  - text: "215"
+              - cell "SKYTA ECO CLEAN SRL" [ref=e1148]:
+                - generic [ref=e1149]: SKYTA ECO CLEAN SRL
+              - cell "045" [ref=e1150]
+              - cell "20.01.2026" [ref=e1151]
+              - cell "1.000,00 RON" [ref=e1152]:
+                - generic [ref=e1154]: 1.000,00 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e1155]
+              - cell "Sales" [ref=e1156]
+              - cell "processed" [ref=e1157]:
+                - generic [ref=e1158]: processed
+              - cell "paid" [ref=e1159]:
+                - generic [ref=e1160]: paid
+              - cell "Link" [ref=e1161]:
+                - link "Link" [ref=e1162]:
+                  - /url: https://drive.google.com/file/d/19nKPuHSzYrZvdcbGo8SpWp1ZFNLc25n9/view?usp=drivesdk
+              - cell [ref=e1163]:
+                - generic [ref=e1164]:
+                  - button "Edit" [ref=e1165]:
+                    - img
+                  - button "Delete" [ref=e1166]:
+                    - img
+            - row "214 Shopify International Limited 452754127 30.11.2025 1,00 RON Autoworld INTERNATIONAL S.R.L. Sales new paid Link" [ref=e1167] [cursor=pointer]:
+              - cell [ref=e1168]:
+                - checkbox [ref=e1169]
+              - cell "214" [ref=e1170]:
+                - generic [ref=e1171]:
+                  - img [ref=e1172]
+                  - text: "214"
+              - cell "Shopify International Limited" [ref=e1174]:
+                - generic [ref=e1175]: Shopify International Limited
+              - cell "452754127" [ref=e1176]
+              - cell "30.11.2025" [ref=e1177]
+              - cell "1,00 RON" [ref=e1178]:
+                - generic [ref=e1180]: 1,00 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e1181]
+              - cell "Sales" [ref=e1182]
+              - cell "new" [ref=e1183]:
+                - generic [ref=e1184]: new
+              - cell "paid" [ref=e1185]:
+                - generic [ref=e1186]: paid
+              - cell "Link" [ref=e1187]:
+                - link "Link" [ref=e1188]:
+                  - /url: https://drive.google.com/file/d/1RRZz0QJ9z0SUyDxutFAqr_PC4IzFHqg9/view?usp=drivesdk
+              - cell [ref=e1189]:
+                - generic [ref=e1190]:
+                  - button "Edit" [ref=e1191]:
+                    - img
+                  - button "Delete" [ref=e1192]:
+                    - img
+            - row "213 Dreamstime LLC 28714762 03.01.2026 114,00 RON AUTOWORLD S.R.L. Conducere new not_paid Link" [ref=e1193] [cursor=pointer]:
+              - cell [ref=e1194]:
+                - checkbox [ref=e1195]
+              - cell "213" [ref=e1196]:
+                - generic [ref=e1197]:
+                  - img [ref=e1198]
+                  - text: "213"
+              - cell "Dreamstime LLC" [ref=e1200]:
+                - generic [ref=e1201]: Dreamstime LLC
+              - cell "28714762" [ref=e1202]
+              - cell "03.01.2026" [ref=e1203]
+              - cell "114,00 RON" [ref=e1204]:
+                - generic [ref=e1206]: 114,00 RON
+              - cell "AUTOWORLD S.R.L." [ref=e1207]
+              - cell "Conducere" [ref=e1208]
+              - cell "new" [ref=e1209]:
+                - generic [ref=e1210]: new
+              - cell "not_paid" [ref=e1211]:
+                - generic [ref=e1212]: not_paid
+              - cell "Link" [ref=e1213]:
+                - link "Link" [ref=e1214]:
+                  - /url: https://drive.google.com/file/d/1OWYBBEVBbJY6m6MjhiABERLNXWIfrQmG/view?usp=drivesdk
+              - cell [ref=e1215]:
+                - generic [ref=e1216]:
+                  - button "Edit" [ref=e1217]:
+                    - img
+                  - button "Delete" [ref=e1218]:
+                    - img
+            - row "212 Mailchimp c/o The Rocket Science Group, LLC MC22448035 14.01.2026 99,14 EUR Autoworld INTERNATIONAL S.R.L. Aftersales new paid Link" [ref=e1219] [cursor=pointer]:
+              - cell [ref=e1220]:
+                - checkbox [ref=e1221]
+              - cell "212" [ref=e1222]:
+                - generic [ref=e1223]:
+                  - img [ref=e1224]
+                  - text: "212"
+              - cell "Mailchimp c/o The Rocket Science Group, LLC" [ref=e1226]:
+                - generic [ref=e1227]: Mailchimp c/o The Rocket Science Group, LLC
+              - cell "MC22448035" [ref=e1228]
+              - cell "14.01.2026" [ref=e1229]
+              - cell "99,14 EUR" [ref=e1230]:
+                - generic [ref=e1232]: 99,14 EUR
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e1233]
+              - cell "Aftersales" [ref=e1234]
+              - cell "new" [ref=e1235]:
+                - generic [ref=e1236]: new
+              - cell "paid" [ref=e1237]:
+                - generic [ref=e1238]: paid
+              - cell "Link" [ref=e1239]:
+                - link "Link" [ref=e1240]:
+                  - /url: https://drive.google.com/file/d/17RBOqA3Q95-vifKQL6zfVmmd8huxjq_v/view?usp=drivesdk
+              - cell [ref=e1241]:
+                - generic [ref=e1242]:
+                  - button "Edit" [ref=e1243]:
+                    - img
+                  - button "Delete" [ref=e1244]:
+                    - img
+            - row "211 OpenAI Ireland Limited YMXK2Z5B-0005 14.01.2026 19,01 EUR Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e1245] [cursor=pointer]:
+              - cell [ref=e1246]:
+                - checkbox [ref=e1247]
+              - cell "211" [ref=e1248]:
+                - generic [ref=e1249]:
+                  - img [ref=e1250]
+                  - text: "211"
+              - cell "OpenAI Ireland Limited" [ref=e1252]:
+                - generic [ref=e1253]: OpenAI Ireland Limited
+              - cell "YMXK2Z5B-0005" [ref=e1254]
+              - cell "14.01.2026" [ref=e1255]
+              - cell "19,01 EUR" [ref=e1256]:
+                - generic [ref=e1258]: 19,01 EUR
+              - cell "Autoworld PREMIUM S.R.L." [ref=e1259]
+              - cell "Sales" [ref=e1260]
+              - cell "processed" [ref=e1261]:
+                - generic [ref=e1262]: processed
+              - cell "paid" [ref=e1263]:
+                - generic [ref=e1264]: paid
+              - cell "Link" [ref=e1265]:
+                - link "Link" [ref=e1266]:
+                  - /url: https://drive.google.com/file/d/1ksNHY3jtcbayG3vr-gYMyqKESXP7awIt/view?usp=drivesdk
+              - cell [ref=e1267]:
+                - generic [ref=e1268]:
+                  - button "Edit" [ref=e1269]:
+                    - img
+                  - button "Delete" [ref=e1270]:
+                    - img
+            - row "210 DigitalOcean LLC 536081592 01.01.2026 30,05 USD AUTOWORLD S.R.L. Conducere processed not_paid Link" [ref=e1271] [cursor=pointer]:
+              - cell [ref=e1272]:
+                - checkbox [ref=e1273]
+              - cell "210" [ref=e1274]:
+                - generic [ref=e1275]:
+                  - img [ref=e1276]
+                  - text: "210"
+              - cell "DigitalOcean LLC" [ref=e1278]:
+                - generic [ref=e1279]: DigitalOcean LLC
+              - cell "536081592" [ref=e1280]
+              - cell "01.01.2026" [ref=e1281]
+              - cell "30,05 USD" [ref=e1282]:
+                - generic [ref=e1284]: 30,05 USD
+              - cell "AUTOWORLD S.R.L." [ref=e1285]
+              - cell "Conducere" [ref=e1286]
+              - cell "processed" [ref=e1287]:
+                - generic [ref=e1288]: processed
+              - cell "not_paid" [ref=e1289]:
+                - generic [ref=e1290]: not_paid
+              - cell "Link" [ref=e1291]:
+                - link "Link" [ref=e1292]:
+                  - /url: https://drive.google.com/file/d/1ETFBhr-mwIn-ncXx5lW4ZUTbGHKUsDqq/view?usp=drivesdk
+              - cell [ref=e1293]:
+                - generic [ref=e1294]:
+                  - button "Edit" [ref=e1295]:
+                    - img
+                  - button "Delete" [ref=e1296]:
+                    - img
+            - row "178 ASTINVEST COM SRL 30068 19.01.2026 468,02 RON Autoworld INTERNATIONAL S.R.L. Aftersales processed not_paid Link" [ref=e1297] [cursor=pointer]:
+              - cell [ref=e1298]:
+                - checkbox [ref=e1299]
+              - cell "178" [ref=e1300]:
+                - generic [ref=e1301]:
+                  - img [ref=e1302]
+                  - text: "178"
+              - cell "ASTINVEST COM SRL" [ref=e1304]:
+                - generic [ref=e1305]: ASTINVEST COM SRL
+              - cell "30068" [ref=e1306]
+              - cell "19.01.2026" [ref=e1307]
+              - cell "468,02 RON" [ref=e1308]:
+                - generic [ref=e1310]: 468,02 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e1311]
+              - cell "Aftersales" [ref=e1312]
+              - cell "processed" [ref=e1313]:
+                - generic [ref=e1314]: processed
+              - cell "not_paid" [ref=e1315]:
+                - generic [ref=e1316]: not_paid
+              - cell "Link" [ref=e1317]:
+                - link "Link" [ref=e1318]:
+                  - /url: https://drive.google.com/file/d/1fVV8v0uXj31BJjx91gYB3dPIxaKtYoES/view?usp=drivesdk
+              - cell [ref=e1319]:
+                - generic [ref=e1320]:
+                  - button "Edit" [ref=e1321]:
+                    - img
+                  - button "Delete" [ref=e1322]:
+                    - img
+            - row "177 ASTINVEST COM SRL 30067 19.01.2026 351,02 RON Autoworld PREMIUM S.R.L. Aftersales processed paid Link" [ref=e1323] [cursor=pointer]:
+              - cell [ref=e1324]:
+                - checkbox [ref=e1325]
+              - cell "177" [ref=e1326]:
+                - generic [ref=e1327]:
+                  - img [ref=e1328]
+                  - text: "177"
+              - cell "ASTINVEST COM SRL" [ref=e1330]:
+                - generic [ref=e1331]: ASTINVEST COM SRL
+              - cell "30067" [ref=e1332]
+              - cell "19.01.2026" [ref=e1333]
+              - cell "351,02 RON" [ref=e1334]:
+                - generic [ref=e1336]: 351,02 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e1337]
+              - cell "Aftersales" [ref=e1338]
+              - cell "processed" [ref=e1339]:
+                - generic [ref=e1340]: processed
+              - cell "paid" [ref=e1341]:
+                - generic [ref=e1342]: paid
+              - cell "Link" [ref=e1343]:
+                - link "Link" [ref=e1344]:
+                  - /url: https://drive.google.com/file/d/1Mefn0WMqB14S9RNOYW1GT-Zjv1AcaPbP/view?usp=drivesdk
+              - cell [ref=e1345]:
+                - generic [ref=e1346]:
+                  - button "Edit" [ref=e1347]:
+                    - img
+                  - button "Delete" [ref=e1348]:
+                    - img
+            - row "176 Alaio Cloud Limited 76205845-151955781 19.01.2026 476,71 EUR Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e1349] [cursor=pointer]:
+              - cell [ref=e1350]:
+                - checkbox [ref=e1351]
+              - cell "176" [ref=e1352]:
+                - generic [ref=e1353]:
+                  - img [ref=e1354]
+                  - text: "176"
+              - cell "Alaio Cloud Limited" [ref=e1356]:
+                - generic [ref=e1357]: Alaio Cloud Limited
+              - cell "76205845-151955781" [ref=e1358]
+              - cell "19.01.2026" [ref=e1359]
+              - cell "476,71 EUR" [ref=e1360]:
+                - generic [ref=e1362]: 476,71 EUR
+              - cell "Autoworld NEXT S.R.L." [ref=e1363]
+              - cell "Sales" [ref=e1364]
+              - cell "processed" [ref=e1365]:
+                - generic [ref=e1366]: processed
+              - cell "paid" [ref=e1367]:
+                - generic [ref=e1368]: paid
+              - cell "Link" [ref=e1369]:
+                - link "Link" [ref=e1370]:
+                  - /url: https://drive.google.com/file/d/1Y-lIiYpEGciISweKs0XGG_sELqe6Iqqx/view?usp=drivesdk
+              - cell [ref=e1371]:
+                - generic [ref=e1372]:
+                  - button "Edit" [ref=e1373]:
+                    - img
+                  - button "Delete" [ref=e1374]:
+                    - img
+            - row "175 Meta Platforms Ireland Limited FBADS-167-104773906 22.08.2025 1.049,58 RON AUTOWORLD S.R.L. Marketing processed paid Link" [ref=e1375] [cursor=pointer]:
+              - cell [ref=e1376]:
+                - checkbox [ref=e1377]
+              - cell "175" [ref=e1378]:
+                - generic [ref=e1379]:
+                  - img [ref=e1380]
+                  - text: "175"
+              - cell "Meta Platforms Ireland Limited" [ref=e1382]:
+                - generic [ref=e1383]: Meta Platforms Ireland Limited
+              - cell "FBADS-167-104773906" [ref=e1384]
+              - cell "22.08.2025" [ref=e1385]
+              - cell "1.049,58 RON" [ref=e1386]:
+                - generic [ref=e1388]: 1.049,58 RON
+              - cell "AUTOWORLD S.R.L." [ref=e1389]
+              - cell "Marketing" [ref=e1390]
+              - cell "processed" [ref=e1391]:
+                - generic [ref=e1392]: processed
+              - cell "paid" [ref=e1393]:
+                - generic [ref=e1394]: paid
+              - cell "Link" [ref=e1395]:
+                - link "Link" [ref=e1396]:
+                  - /url: https://drive.google.com/file/d/1gYvmOtT4fvtFBONRuMP6y_dEco17AEvR/view?usp=drivesdk
+              - cell [ref=e1397]:
+                - generic [ref=e1398]:
+                  - button "Edit" [ref=e1399]:
+                    - img
+                  - button "Delete" [ref=e1400]:
+                    - img
+            - row "174 Shopify International Limited 452751407 30.11.2025 1,00 EUR Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e1401] [cursor=pointer]:
+              - cell [ref=e1402]:
+                - checkbox [ref=e1403]
+              - cell "174" [ref=e1404]:
+                - generic [ref=e1405]:
+                  - img [ref=e1406]
+                  - text: "174"
+              - cell "Shopify International Limited" [ref=e1408]:
+                - generic [ref=e1409]: Shopify International Limited
+              - cell "452751407" [ref=e1410]
+              - cell "30.11.2025" [ref=e1411]
+              - cell "1,00 EUR" [ref=e1412]:
+                - generic [ref=e1414]: 1,00 EUR
+              - cell "Autoworld PREMIUM S.R.L." [ref=e1415]
+              - cell "Sales" [ref=e1416]
+              - cell "processed" [ref=e1417]:
+                - generic [ref=e1418]: processed
+              - cell "paid" [ref=e1419]:
+                - generic [ref=e1420]: paid
+              - cell "Link" [ref=e1421]:
+                - link "Link" [ref=e1422]:
+                  - /url: https://drive.google.com/file/d/1nK0Rdp7JM9zlBYAwwNqd2ZWCBPVqa6Ht/view?usp=drivesdk
+              - cell [ref=e1423]:
+                - generic [ref=e1424]:
+                  - button "Edit" [ref=e1425]:
+                    - img
+                  - button "Delete" [ref=e1426]:
+                    - img
+            - row "173 X AI LLC 371-536-126-069 15.10.2025 30,00 USD AUTOWORLD S.R.L. Conducere processed not_paid Link" [ref=e1427] [cursor=pointer]:
+              - cell [ref=e1428]:
+                - checkbox [ref=e1429]
+              - cell "173" [ref=e1430]:
+                - generic [ref=e1431]:
+                  - img [ref=e1432]
+                  - text: "173"
+              - cell "X AI LLC" [ref=e1434]:
+                - generic [ref=e1435]: X AI LLC
+              - cell "371-536-126-069" [ref=e1436]
+              - cell "15.10.2025" [ref=e1437]
+              - cell "30,00 USD" [ref=e1438]:
+                - generic [ref=e1440]: 30,00 USD
+              - cell "AUTOWORLD S.R.L." [ref=e1441]
+              - cell "Conducere" [ref=e1442]
+              - cell "processed" [ref=e1443]:
+                - generic [ref=e1444]: processed
+              - cell "not_paid" [ref=e1445]:
+                - generic [ref=e1446]: not_paid
+              - cell "Link" [ref=e1447]:
+                - link "Link" [ref=e1448]:
+                  - /url: https://drive.google.com/file/d/1HvlovZNInc_xmA14sV68E9Hteun9Ikso/view?usp=drivesdk
+              - cell [ref=e1449]:
+                - generic [ref=e1450]:
+                  - button "Edit" [ref=e1451]:
+                    - img
+                  - button "Delete" [ref=e1452]:
+                    - img
+            - row "172 Anthropic, PBC RLOPHA9P-0003 02.10.2025 5,67 EUR AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e1453] [cursor=pointer]:
+              - cell [ref=e1454]:
+                - checkbox [ref=e1455]
+              - cell "172" [ref=e1456]:
+                - generic [ref=e1457]:
+                  - img [ref=e1458]
+                  - text: "172"
+              - cell "Anthropic, PBC" [ref=e1460]:
+                - generic [ref=e1461]: Anthropic, PBC
+              - cell "RLOPHA9P-0003" [ref=e1462]
+              - cell "02.10.2025" [ref=e1463]
+              - cell "5,67 EUR" [ref=e1464]:
+                - generic [ref=e1466]: 5,67 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e1467]
+              - cell "Conducere" [ref=e1468]
+              - cell "processed" [ref=e1469]:
+                - generic [ref=e1470]: processed
+              - cell "paid" [ref=e1471]:
+                - generic [ref=e1472]: paid
+              - cell "Link" [ref=e1473]:
+                - link "Link" [ref=e1474]:
+                  - /url: https://drive.google.com/file/d/1DE777dgs1VnOeyhcAhdv8dp4iZOphVPv/view?usp=drivesdk
+              - cell [ref=e1475]:
+                - generic [ref=e1476]:
+                  - button "Edit" [ref=e1477]:
+                    - img
+                  - button "Delete" [ref=e1478]:
+                    - img
+            - row "171 Anthropic, PBC RLOPHA9P-0007 08.01.2026 180,00 EUR AUTOWORLD S.R.L. Conducere new paid Link" [ref=e1479] [cursor=pointer]:
+              - cell [ref=e1480]:
+                - checkbox [ref=e1481]
+              - cell "171" [ref=e1482]:
+                - generic [ref=e1483]:
+                  - img [ref=e1484]
+                  - text: "171"
+              - cell "Anthropic, PBC" [ref=e1486]:
+                - generic [ref=e1487]: Anthropic, PBC
+              - cell "RLOPHA9P-0007" [ref=e1488]
+              - cell "08.01.2026" [ref=e1489]
+              - cell "180,00 EUR" [ref=e1490]:
+                - generic [ref=e1492]: 180,00 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e1493]
+              - cell "Conducere" [ref=e1494]
+              - cell "new" [ref=e1495]:
+                - generic [ref=e1496]: new
+              - cell "paid" [ref=e1497]:
+                - generic [ref=e1498]: paid
+              - cell "Link" [ref=e1499]:
+                - link "Link" [ref=e1500]:
+                  - /url: https://drive.google.com/file/d/1XuW-SL885uaxd8pG4rq5o1ZhhwJYyhK9/view?usp=drivesdk
+              - cell [ref=e1501]:
+                - generic [ref=e1502]:
+                  - button "Edit" [ref=e1503]:
+                    - img
+                  - button "Delete" [ref=e1504]:
+                    - img
+            - row "170 Anthropic, PBC RLOPHA9P-0006 08.12.2025 108,17 EUR AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e1505] [cursor=pointer]:
+              - cell [ref=e1506]:
+                - checkbox [ref=e1507]
+              - cell "170" [ref=e1508]:
+                - generic [ref=e1509]:
+                  - img [ref=e1510]
+                  - text: "170"
+              - cell "Anthropic, PBC" [ref=e1512]:
+                - generic [ref=e1513]: Anthropic, PBC
+              - cell "RLOPHA9P-0006" [ref=e1514]
+              - cell "08.12.2025" [ref=e1515]
+              - cell "108,17 EUR" [ref=e1516]:
+                - generic [ref=e1518]: 108,17 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e1519]
+              - cell "Conducere" [ref=e1520]
+              - cell "processed" [ref=e1521]:
+                - generic [ref=e1522]: processed
+              - cell "paid" [ref=e1523]:
+                - generic [ref=e1524]: paid
+              - cell "Link" [ref=e1525]:
+                - link "Link" [ref=e1526]:
+                  - /url: https://drive.google.com/file/d/1AD0kRwRzt669jAcce5QaCZQz9TticUE3/view?usp=drivesdk
+              - cell [ref=e1527]:
+                - generic [ref=e1528]:
+                  - button "Edit" [ref=e1529]:
+                    - img
+                  - button "Delete" [ref=e1530]:
+                    - img
+            - row "169 Anthropic, PBC RLQPHA9P-0005 02.12.2025 90,00 EUR AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e1531] [cursor=pointer]:
+              - cell [ref=e1532]:
+                - checkbox [ref=e1533]
+              - cell "169" [ref=e1534]:
+                - generic [ref=e1535]:
+                  - img [ref=e1536]
+                  - text: "169"
+              - cell "Anthropic, PBC" [ref=e1538]:
+                - generic [ref=e1539]: Anthropic, PBC
+              - cell "RLQPHA9P-0005" [ref=e1540]
+              - cell "02.12.2025" [ref=e1541]
+              - cell "90,00 EUR" [ref=e1542]:
+                - generic [ref=e1544]: 90,00 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e1545]
+              - cell "Conducere" [ref=e1546]
+              - cell "processed" [ref=e1547]:
+                - generic [ref=e1548]: processed
+              - cell "paid" [ref=e1549]:
+                - generic [ref=e1550]: paid
+              - cell "Link" [ref=e1551]:
+                - link "Link" [ref=e1552]:
+                  - /url: https://drive.google.com/file/d/1PrMcDB8Tz96ByEX_0XpHEPtEFQUnZyHl/view?usp=drivesdk
+              - cell [ref=e1553]:
+                - generic [ref=e1554]:
+                  - button "Edit" [ref=e1555]:
+                    - img
+                  - button "Delete" [ref=e1556]:
+                    - img
+            - 'row "168 Alaio Inc. #74340440-145890370 17.09.2025 124,00 USD AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e1557] [cursor=pointer]':
+              - cell [ref=e1558]:
+                - checkbox [ref=e1559]
+              - cell "168" [ref=e1560]:
+                - generic [ref=e1561]:
+                  - img [ref=e1562]
+                  - text: "168"
+              - cell "Alaio Inc." [ref=e1564]:
+                - generic [ref=e1565]: Alaio Inc.
+              - cell "#74340440-145890370" [ref=e1566]
+              - cell "17.09.2025" [ref=e1567]
+              - cell "124,00 USD" [ref=e1568]:
+                - generic [ref=e1570]: 124,00 USD
+              - cell "AUTOWORLD S.R.L." [ref=e1571]
+              - cell "Conducere" [ref=e1572]
+              - cell "processed" [ref=e1573]:
+                - generic [ref=e1574]: processed
+              - cell "paid" [ref=e1575]:
+                - generic [ref=e1576]: paid
+              - cell "Link" [ref=e1577]:
+                - link "Link" [ref=e1578]:
+                  - /url: https://drive.google.com/file/d/1GjWUE1K07oUJy9FIQk2wEtWH7WNg5jF3/view?usp=drivesdk
+              - cell [ref=e1579]:
+                - generic [ref=e1580]:
+                  - button "Edit" [ref=e1581]:
+                    - img
+                  - button "Delete" [ref=e1582]:
+                    - img
+            - row "167 Alaio Inc. 74340440-148373552 17.10.2025 124,00 USD AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e1583] [cursor=pointer]:
+              - cell [ref=e1584]:
+                - checkbox [ref=e1585]
+              - cell "167" [ref=e1586]:
+                - generic [ref=e1587]:
+                  - img [ref=e1588]
+                  - text: "167"
+              - cell "Alaio Inc." [ref=e1590]:
+                - generic [ref=e1591]: Alaio Inc.
+              - cell "74340440-148373552" [ref=e1592]
+              - cell "17.10.2025" [ref=e1593]
+              - cell "124,00 USD" [ref=e1594]:
+                - generic [ref=e1596]: 124,00 USD
+              - cell "AUTOWORLD S.R.L." [ref=e1597]
+              - cell "Conducere" [ref=e1598]
+              - cell "processed" [ref=e1599]:
+                - generic [ref=e1600]: processed
+              - cell "paid" [ref=e1601]:
+                - generic [ref=e1602]: paid
+              - cell "Link" [ref=e1603]:
+                - link "Link" [ref=e1604]:
+                  - /url: https://drive.google.com/file/d/1I-6CyHNVKmlNLyJMUhLP7O3zOJpqqJpt/view?usp=drivesdk
+              - cell [ref=e1605]:
+                - generic [ref=e1606]:
+                  - button "Edit" [ref=e1607]:
+                    - img
+                  - button "Delete" [ref=e1608]:
+                    - img
+            - row "166 Cursor KXNTXJYM-0002 07.09.2025 192,00 USD AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e1609] [cursor=pointer]:
+              - cell [ref=e1610]:
+                - checkbox [ref=e1611]
+              - cell "166" [ref=e1612]:
+                - generic [ref=e1613]:
+                  - img [ref=e1614]
+                  - text: "166"
+              - cell "Cursor" [ref=e1616]:
+                - generic [ref=e1617]: Cursor
+              - cell "KXNTXJYM-0002" [ref=e1618]
+              - cell "07.09.2025" [ref=e1619]
+              - cell "192,00 USD" [ref=e1620]:
+                - generic [ref=e1622]: 192,00 USD
+              - cell "AUTOWORLD S.R.L." [ref=e1623]
+              - cell "Conducere" [ref=e1624]
+              - cell "processed" [ref=e1625]:
+                - generic [ref=e1626]: processed
+              - cell "paid" [ref=e1627]:
+                - generic [ref=e1628]: paid
+              - cell "Link" [ref=e1629]:
+                - link "Link" [ref=e1630]:
+                  - /url: https://drive.google.com/file/d/1wO66ePolmkiFbWw5mOhWWisncZUtQYsK/view?usp=drivesdk
+              - cell [ref=e1631]:
+                - generic [ref=e1632]:
+                  - button "Edit" [ref=e1633]:
+                    - img
+                  - button "Delete" [ref=e1634]:
+                    - img
+            - row "165 Google Cloud EMEA Limited 5355399164 31.08.2025 82,31 USD AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e1635] [cursor=pointer]:
+              - cell [ref=e1636]:
+                - checkbox [ref=e1637]
+              - cell "165" [ref=e1638]:
+                - generic [ref=e1639]:
+                  - img [ref=e1640]
+                  - text: "165"
+              - cell "Google Cloud EMEA Limited" [ref=e1642]:
+                - generic [ref=e1643]: Google Cloud EMEA Limited
+              - cell "5355399164" [ref=e1644]
+              - cell "31.08.2025" [ref=e1645]
+              - cell "82,31 USD" [ref=e1646]:
+                - generic [ref=e1648]: 82,31 USD
+              - cell "AUTOWORLD S.R.L." [ref=e1649]
+              - cell "Conducere" [ref=e1650]
+              - cell "processed" [ref=e1651]:
+                - generic [ref=e1652]: processed
+              - cell "paid" [ref=e1653]:
+                - generic [ref=e1654]: paid
+              - cell "Link" [ref=e1655]:
+                - link "Link" [ref=e1656]:
+                  - /url: https://drive.google.com/file/d/1DcN2bALM8FX1ipZ2LS5fOMGlpRJyIaji/view?usp=drivesdk
+              - cell [ref=e1657]:
+                - generic [ref=e1658]:
+                  - button "Edit" [ref=e1659]:
+                    - img
+                  - button "Delete" [ref=e1660]:
+                    - img
+            - row "164 OpenAI Ireland Limited RIICX51Z-0004 16.09.2025 192,44 EUR AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e1661] [cursor=pointer]:
+              - cell [ref=e1662]:
+                - checkbox [ref=e1663]
+              - cell "164" [ref=e1664]:
+                - generic [ref=e1665]:
+                  - img [ref=e1666]
+                  - text: "164"
+              - cell "OpenAI Ireland Limited" [ref=e1668]:
+                - generic [ref=e1669]: OpenAI Ireland Limited
+              - cell "RIICX51Z-0004" [ref=e1670]
+              - cell "16.09.2025" [ref=e1671]
+              - cell "192,44 EUR" [ref=e1672]:
+                - generic [ref=e1674]: 192,44 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e1675]
+              - cell "Conducere" [ref=e1676]
+              - cell "processed" [ref=e1677]:
+                - generic [ref=e1678]: processed
+              - cell "paid" [ref=e1679]:
+                - generic [ref=e1680]: paid
+              - cell "Link" [ref=e1681]:
+                - link "Link" [ref=e1682]:
+                  - /url: https://drive.google.com/file/d/1_G0BSjzylBdBOvrrx3wGJQQWgirqXdhv/view?usp=drivesdk
+              - cell [ref=e1683]:
+                - generic [ref=e1684]:
+                  - button "Edit" [ref=e1685]:
+                    - img
+                  - button "Delete" [ref=e1686]:
+                    - img
+            - row "163 OpenAI Ireland Limited RIICX51Z-0003 16.08.2025 192,44 EUR AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e1687] [cursor=pointer]:
+              - cell [ref=e1688]:
+                - checkbox [ref=e1689]
+              - cell "163" [ref=e1690]:
+                - generic [ref=e1691]:
+                  - img [ref=e1692]
+                  - text: "163"
+              - cell "OpenAI Ireland Limited" [ref=e1694]:
+                - generic [ref=e1695]: OpenAI Ireland Limited
+              - cell "RIICX51Z-0003" [ref=e1696]
+              - cell "16.08.2025" [ref=e1697]
+              - cell "192,44 EUR" [ref=e1698]:
+                - generic [ref=e1700]: 192,44 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e1701]
+              - cell "Conducere" [ref=e1702]
+              - cell "processed" [ref=e1703]:
+                - generic [ref=e1704]: processed
+              - cell "paid" [ref=e1705]:
+                - generic [ref=e1706]: paid
+              - cell "Link" [ref=e1707]:
+                - link "Link" [ref=e1708]:
+                  - /url: https://drive.google.com/file/d/15G60dd0o2Ue7aQ8oQvHvZ9A_l2ZGR6qr/view?usp=drivesdk
+              - cell [ref=e1709]:
+                - generic [ref=e1710]:
+                  - button "Edit" [ref=e1711]:
+                    - img
+                  - button "Delete" [ref=e1712]:
+                    - img
+            - row "162 OpenAI Ireland Limited L8ASBX7X-0003 10.01.2026 57,14 EUR AUTOWORLD S.R.L. Contabilitate new paid Link" [ref=e1713] [cursor=pointer]:
+              - cell [ref=e1714]:
+                - checkbox [ref=e1715]
+              - cell "162" [ref=e1716]:
+                - generic [ref=e1717]:
+                  - img [ref=e1718]
+                  - text: "162"
+              - cell "OpenAI Ireland Limited" [ref=e1720]:
+                - generic [ref=e1721]: OpenAI Ireland Limited
+              - cell "L8ASBX7X-0003" [ref=e1722]
+              - cell "10.01.2026" [ref=e1723]
+              - cell "57,14 EUR" [ref=e1724]:
+                - generic [ref=e1726]: 57,14 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e1727]
+              - cell "Contabilitate" [ref=e1728]
+              - cell "new" [ref=e1729]:
+                - generic [ref=e1730]: new
+              - cell "paid" [ref=e1731]:
+                - generic [ref=e1732]: paid
+              - cell "Link" [ref=e1733]:
+                - link "Link" [ref=e1734]:
+                  - /url: https://drive.google.com/file/d/1NBaN1aZYzH0H8UCYqZxyIlobBUt69-uD/view?usp=drivesdk
+              - cell [ref=e1735]:
+                - generic [ref=e1736]:
+                  - button "Edit" [ref=e1737]:
+                    - img
+                  - button "Delete" [ref=e1738]:
+                    - img
+            - row "161 Meta Platforms Ireland Limited FBADS-125-105271839 01.01.2026 454,59 RON AUTOWORLD S.R.L. Aftersales incomplete paid Link" [ref=e1739] [cursor=pointer]:
+              - cell [ref=e1740]:
+                - checkbox [ref=e1741]
+              - cell "161" [ref=e1742]:
+                - generic [ref=e1743]:
+                  - img [ref=e1744]
+                  - text: "161"
+              - cell "Meta Platforms Ireland Limited" [ref=e1746]:
+                - generic [ref=e1747]: Meta Platforms Ireland Limited
+              - cell "FBADS-125-105271839" [ref=e1748]
+              - cell "01.01.2026" [ref=e1749]
+              - cell "454,59 RON" [ref=e1750]:
+                - generic [ref=e1752]: 454,59 RON
+              - cell "AUTOWORLD S.R.L." [ref=e1753]
+              - cell "Aftersales" [ref=e1754]
+              - cell "incomplete" [ref=e1755]:
+                - generic [ref=e1756]: incomplete
+              - cell "paid" [ref=e1757]:
+                - generic [ref=e1758]: paid
+              - cell "Link" [ref=e1759]:
+                - link "Link" [ref=e1760]:
+                  - /url: https://drive.google.com/file/d/1szr-Azg6d1BsE0j3tuZ1YqdPAK-5-LGy/view?usp=drivesdk
+              - cell [ref=e1761]:
+                - generic [ref=e1762]:
+                  - button "Edit" [ref=e1763]:
+                    - img
+                  - button "Delete" [ref=e1764]:
+                    - img
+            - row "160 Meta Platforms Ireland Limited FBADS-125-105277202 03.01.2026 170,33 RON AUTOWORLD S.R.L. Aftersales incomplete paid Link" [ref=e1765] [cursor=pointer]:
+              - cell [ref=e1766]:
+                - checkbox [ref=e1767]
+              - cell "160" [ref=e1768]:
+                - generic [ref=e1769]:
+                  - img [ref=e1770]
+                  - text: "160"
+              - cell "Meta Platforms Ireland Limited" [ref=e1772]:
+                - generic [ref=e1773]: Meta Platforms Ireland Limited
+              - cell "FBADS-125-105277202" [ref=e1774]
+              - cell "03.01.2026" [ref=e1775]
+              - cell "170,33 RON" [ref=e1776]:
+                - generic [ref=e1778]: 170,33 RON
+              - cell "AUTOWORLD S.R.L." [ref=e1779]
+              - cell "Aftersales" [ref=e1780]
+              - cell "incomplete" [ref=e1781]:
+                - generic [ref=e1782]: incomplete
+              - cell "paid" [ref=e1783]:
+                - generic [ref=e1784]: paid
+              - cell "Link" [ref=e1785]:
+                - link "Link" [ref=e1786]:
+                  - /url: https://drive.google.com/file/d/1937T7_jsF8HJaRFPXvjjvTOdMX0rdT7b/view?usp=drivesdk
+              - cell [ref=e1787]:
+                - generic [ref=e1788]:
+                  - button "Edit" [ref=e1789]:
+                    - img
+                  - button "Delete" [ref=e1790]:
+                    - img
+            - row "159 Meta Platforms Ireland Limited FBADS-125-105315570 12.01.2026 317,00 RON AUTOWORLD S.R.L. Aftersales incomplete paid Link" [ref=e1791] [cursor=pointer]:
+              - cell [ref=e1792]:
+                - checkbox [ref=e1793]
+              - cell "159" [ref=e1794]:
+                - generic [ref=e1795]:
+                  - img [ref=e1796]
+                  - text: "159"
+              - cell "Meta Platforms Ireland Limited" [ref=e1798]:
+                - generic [ref=e1799]: Meta Platforms Ireland Limited
+              - cell "FBADS-125-105315570" [ref=e1800]
+              - cell "12.01.2026" [ref=e1801]
+              - cell "317,00 RON" [ref=e1802]:
+                - generic [ref=e1804]: 317,00 RON
+              - cell "AUTOWORLD S.R.L." [ref=e1805]
+              - cell "Aftersales" [ref=e1806]
+              - cell "incomplete" [ref=e1807]:
+                - generic [ref=e1808]: incomplete
+              - cell "paid" [ref=e1809]:
+                - generic [ref=e1810]: paid
+              - cell "Link" [ref=e1811]:
+                - link "Link" [ref=e1812]:
+                  - /url: https://drive.google.com/file/d/1NWBbifjIYzGb0Le1KqJzqmyFKcQCmU_p/view?usp=drivesdk
+              - cell [ref=e1813]:
+                - generic [ref=e1814]:
+                  - button "Edit" [ref=e1815]:
+                    - img
+                  - button "Delete" [ref=e1816]:
+                    - img
+            - row "158 Meta Platforms Ireland Limited FBADS-125-105296286 08.01.2026 297,00 RON AUTOWORLD S.R.L. Aftersales incomplete paid Link" [ref=e1817] [cursor=pointer]:
+              - cell [ref=e1818]:
+                - checkbox [ref=e1819]
+              - cell "158" [ref=e1820]:
+                - generic [ref=e1821]:
+                  - img [ref=e1822]
+                  - text: "158"
+              - cell "Meta Platforms Ireland Limited" [ref=e1824]:
+                - generic [ref=e1825]: Meta Platforms Ireland Limited
+              - cell "FBADS-125-105296286" [ref=e1826]
+              - cell "08.01.2026" [ref=e1827]
+              - cell "297,00 RON" [ref=e1828]:
+                - generic [ref=e1830]: 297,00 RON
+              - cell "AUTOWORLD S.R.L." [ref=e1831]
+              - cell "Aftersales" [ref=e1832]
+              - cell "incomplete" [ref=e1833]:
+                - generic [ref=e1834]: incomplete
+              - cell "paid" [ref=e1835]:
+                - generic [ref=e1836]: paid
+              - cell "Link" [ref=e1837]:
+                - link "Link" [ref=e1838]:
+                  - /url: https://drive.google.com/file/d/1njMYSvzDr8SL5Ml66Xo76vGJ1a_bdgvn/view?usp=drivesdk
+              - cell [ref=e1839]:
+                - generic [ref=e1840]:
+                  - button "Edit" [ref=e1841]:
+                    - img
+                  - button "Delete" [ref=e1842]:
+                    - img
+            - row "157 Shopify International Limited 468557001 04.01.2026 17,29 EUR AUTOWORLD S.R.L. Aftersales new paid Link" [ref=e1843] [cursor=pointer]:
+              - cell [ref=e1844]:
+                - checkbox [ref=e1845]
+              - cell "157" [ref=e1846]:
+                - generic [ref=e1847]:
+                  - img [ref=e1848]
+                  - text: "157"
+              - cell "Shopify International Limited" [ref=e1850]:
+                - generic [ref=e1851]: Shopify International Limited
+              - cell "468557001" [ref=e1852]
+              - cell "04.01.2026" [ref=e1853]
+              - cell "17,29 EUR" [ref=e1854]:
+                - generic [ref=e1856]: 17,29 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e1857]
+              - cell "Aftersales" [ref=e1858]
+              - cell "new" [ref=e1859]:
+                - generic [ref=e1860]: new
+              - cell "paid" [ref=e1861]:
+                - generic [ref=e1862]: paid
+              - cell "Link" [ref=e1863]:
+                - link "Link" [ref=e1864]:
+                  - /url: https://drive.google.com/file/d/1GAWf4_DWiTiS77nYpv5exzTQSQMOdI8g/view?usp=drivesdk
+              - cell [ref=e1865]:
+                - generic [ref=e1866]:
+                  - button "Edit" [ref=e1867]:
+                    - img
+                  - button "Delete" [ref=e1868]:
+                    - img
+            - row "156 Shopify International Limited 474248795 15.01.2026 4,36 EUR AUTOWORLD S.R.L. Aftersales new paid Link" [ref=e1869] [cursor=pointer]:
+              - cell [ref=e1870]:
+                - checkbox [ref=e1871]
+              - cell "156" [ref=e1872]:
+                - generic [ref=e1873]:
+                  - img [ref=e1874]
+                  - text: "156"
+              - cell "Shopify International Limited" [ref=e1876]:
+                - generic [ref=e1877]: Shopify International Limited
+              - cell "474248795" [ref=e1878]
+              - cell "15.01.2026" [ref=e1879]
+              - cell "4,36 EUR" [ref=e1880]:
+                - generic [ref=e1882]: 4,36 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e1883]
+              - cell "Aftersales" [ref=e1884]
+              - cell "new" [ref=e1885]:
+                - generic [ref=e1886]: new
+              - cell "paid" [ref=e1887]:
+                - generic [ref=e1888]: paid
+              - cell "Link" [ref=e1889]:
+                - link "Link" [ref=e1890]:
+                  - /url: https://drive.google.com/file/d/1Y_qBrWJWbpj2ZdNcb-fb_gOB6iQnIhOm/view?usp=drivesdk
+              - cell [ref=e1891]:
+                - generic [ref=e1892]:
+                  - button "Edit" [ref=e1893]:
+                    - img
+                  - button "Delete" [ref=e1894]:
+                    - img
+            - row "155 Google Cloud EMEA Limited 5326102266 31.07.2025 82,31 USD AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e1895] [cursor=pointer]:
+              - cell [ref=e1896]:
+                - checkbox [ref=e1897]
+              - cell "155" [ref=e1898]:
+                - generic [ref=e1899]:
+                  - img [ref=e1900]
+                  - text: "155"
+              - cell "Google Cloud EMEA Limited" [ref=e1902]:
+                - generic [ref=e1903]: Google Cloud EMEA Limited
+              - cell "5326102266" [ref=e1904]
+              - cell "31.07.2025" [ref=e1905]
+              - cell "82,31 USD" [ref=e1906]:
+                - generic [ref=e1908]: 82,31 USD
+              - cell "AUTOWORLD S.R.L." [ref=e1909]
+              - cell "Conducere" [ref=e1910]
+              - cell "processed" [ref=e1911]:
+                - generic [ref=e1912]: processed
+              - cell "paid" [ref=e1913]:
+                - generic [ref=e1914]: paid
+              - cell "Link" [ref=e1915]:
+                - link "Link" [ref=e1916]:
+                  - /url: https://drive.google.com/file/d/1G9Mj9DPjGiNt3SOQrHSpKbaYk-5EeYii/view?usp=drivesdk
+              - cell [ref=e1917]:
+                - generic [ref=e1918]:
+                  - button "Edit" [ref=e1919]:
+                    - img
+                  - button "Delete" [ref=e1920]:
+                    - img
+            - row "154 Fiverr International Ltd. FI80176620325 30.07.2025 134,22 EUR AUTOWORLD S.R.L. Marketing processed paid Link" [ref=e1921] [cursor=pointer]:
+              - cell [ref=e1922]:
+                - checkbox [ref=e1923]
+              - cell "154" [ref=e1924]:
+                - generic [ref=e1925]:
+                  - img [ref=e1926]
+                  - text: "154"
+              - cell "Fiverr International Ltd." [ref=e1928]:
+                - generic [ref=e1929]: Fiverr International Ltd.
+              - cell "FI80176620325" [ref=e1930]
+              - cell "30.07.2025" [ref=e1931]
+              - cell "134,22 EUR" [ref=e1932]:
+                - generic [ref=e1934]: 134,22 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e1935]
+              - cell "Marketing" [ref=e1936]
+              - cell "processed" [ref=e1937]:
+                - generic [ref=e1938]: processed
+              - cell "paid" [ref=e1939]:
+                - generic [ref=e1940]: paid
+              - cell "Link" [ref=e1941]:
+                - link "Link" [ref=e1942]:
+                  - /url: https://drive.google.com/file/d/12w-xK7pFGT9ies7Fs9Rm124e5g3sGMAr/view?usp=drivesdk
+              - cell [ref=e1943]:
+                - generic [ref=e1944]:
+                  - button "Edit" [ref=e1945]:
+                    - img
+                  - button "Delete" [ref=e1946]:
+                    - img
+            - row "153 Meta Platforms Ireland Limited FBADS-215-105273987 14.01.2026 2.355,73 RON Autoworld PRESTIGE S.R.L. Sales new paid Link" [ref=e1947] [cursor=pointer]:
+              - cell [ref=e1948]:
+                - checkbox [ref=e1949]
+              - cell "153" [ref=e1950]:
+                - generic [ref=e1951]:
+                  - img [ref=e1952]
+                  - text: "153"
+              - cell "Meta Platforms Ireland Limited" [ref=e1954]:
+                - generic [ref=e1955]: Meta Platforms Ireland Limited
+              - cell "FBADS-215-105273987" [ref=e1956]
+              - cell "14.01.2026" [ref=e1957]
+              - cell "2.355,73 RON" [ref=e1958]:
+                - generic [ref=e1960]: 2.355,73 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e1961]
+              - cell "Sales" [ref=e1962]
+              - cell "new" [ref=e1963]:
+                - generic [ref=e1964]: new
+              - cell "paid" [ref=e1965]:
+                - generic [ref=e1966]: paid
+              - cell "Link" [ref=e1967]:
+                - link "Link" [ref=e1968]:
+                  - /url: https://drive.google.com/file/d/1KgzN-2XOrAU2h7dYQLQubM7bjJgklz16/view?usp=drivesdk
+              - cell [ref=e1969]:
+                - generic [ref=e1970]:
+                  - button "Edit" [ref=e1971]:
+                    - img
+                  - button "Delete" [ref=e1972]:
+                    - img
+            - row "152 OLX Online Services SRL 2026/1200233589 14.01.2026 7.354,01 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e1973] [cursor=pointer]:
+              - cell [ref=e1974]:
+                - checkbox [ref=e1975]
+              - cell "152" [ref=e1976]:
+                - generic [ref=e1977]:
+                  - img [ref=e1978]
+                  - text: "152"
+              - cell "OLX Online Services SRL" [ref=e1980]:
+                - generic [ref=e1981]: OLX Online Services SRL
+              - cell "2026/1200233589" [ref=e1982]
+              - cell "14.01.2026" [ref=e1983]
+              - cell "7.354,01 RON" [ref=e1984]:
+                - generic [ref=e1986]: 7.354,01 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e1987]
+              - cell "Sales" [ref=e1988]
+              - cell "processed" [ref=e1989]:
+                - generic [ref=e1990]: processed
+              - cell "paid" [ref=e1991]:
+                - generic [ref=e1992]: paid
+              - cell "Link" [ref=e1993]:
+                - link "Link" [ref=e1994]:
+                  - /url: https://drive.google.com/file/d/1RGjABAjFIAyHpYiDKBu88NMe6bnwybHc/view?usp=drivesdk
+              - cell [ref=e1995]:
+                - generic [ref=e1996]:
+                  - button "Edit" [ref=e1997]:
+                    - img
+                  - button "Delete" [ref=e1998]:
+                    - img
+            - row "151 Google Ireland Limited 5433853933 30.11.2025 1.191,25 RON Autoworld INTERNATIONAL S.R.L. Sales processed paid Link" [ref=e1999] [cursor=pointer]:
+              - cell [ref=e2000]:
+                - checkbox [ref=e2001]
+              - cell "151" [ref=e2002]:
+                - generic [ref=e2003]:
+                  - img [ref=e2004]
+                  - text: "151"
+              - cell "Google Ireland Limited" [ref=e2006]:
+                - generic [ref=e2007]: Google Ireland Limited
+              - cell "5433853933" [ref=e2008]
+              - cell "30.11.2025" [ref=e2009]
+              - cell "1.191,25 RON" [ref=e2010]:
+                - generic [ref=e2012]: 1.191,25 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e2013]
+              - cell "Sales" [ref=e2014]
+              - cell "processed" [ref=e2015]:
+                - generic [ref=e2016]: processed
+              - cell "paid" [ref=e2017]:
+                - generic [ref=e2018]: paid
+              - cell "Link" [ref=e2019]:
+                - link "Link" [ref=e2020]:
+                  - /url: https://drive.google.com/file/d/1HGig20UMQQZPWJNRD0lAo_6tmspIr75g/view?usp=drivesdk
+              - cell [ref=e2021]:
+                - generic [ref=e2022]:
+                  - button "Edit" [ref=e2023]:
+                    - img
+                  - button "Delete" [ref=e2024]:
+                    - img
+            - row "150 Google Ireland Limited 5459006386 31.12.2025 841,06 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e2025] [cursor=pointer]:
+              - cell [ref=e2026]:
+                - checkbox [ref=e2027]
+              - cell "150" [ref=e2028]:
+                - generic [ref=e2029]:
+                  - img [ref=e2030]
+                  - text: "150"
+              - cell "Google Ireland Limited" [ref=e2032]:
+                - generic [ref=e2033]: Google Ireland Limited
+              - cell "5459006386" [ref=e2034]
+              - cell "31.12.2025" [ref=e2035]
+              - cell "841,06 RON" [ref=e2036]:
+                - generic [ref=e2038]: 841,06 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e2039]
+              - cell "Sales" [ref=e2040]
+              - cell "processed" [ref=e2041]:
+                - generic [ref=e2042]: processed
+              - cell "paid" [ref=e2043]:
+                - generic [ref=e2044]: paid
+              - cell "Link" [ref=e2045]:
+                - link "Link" [ref=e2046]:
+                  - /url: https://drive.google.com/file/d/1k12CEP1OvdW6BHRlOin9Mc6lxAY_-4ct/view?usp=drivesdk
+              - cell [ref=e2047]:
+                - generic [ref=e2048]:
+                  - button "Edit" [ref=e2049]:
+                    - img
+                  - button "Delete" [ref=e2050]:
+                    - img
+            - row "149 RACEPOINT CAFE S.R.L. RACE0001 07.12.2025 891,10 RON Autoworld PRESTIGE S.R.L. Sales new not_paid Link" [ref=e2051] [cursor=pointer]:
+              - cell [ref=e2052]:
+                - checkbox [ref=e2053]
+              - cell "149" [ref=e2054]:
+                - generic [ref=e2055]:
+                  - img [ref=e2056]
+                  - text: "149"
+              - cell "RACEPOINT CAFE S.R.L." [ref=e2058]:
+                - generic [ref=e2059]: RACEPOINT CAFE S.R.L.
+              - cell "RACE0001" [ref=e2060]
+              - cell "07.12.2025" [ref=e2061]
+              - cell "891,10 RON" [ref=e2062]:
+                - generic [ref=e2064]: 891,10 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e2065]
+              - cell "Sales" [ref=e2066]
+              - cell "new" [ref=e2067]:
+                - generic [ref=e2068]: new
+              - cell "not_paid" [ref=e2069]:
+                - generic [ref=e2070]: not_paid
+              - cell "Link" [ref=e2071]:
+                - link "Link" [ref=e2072]:
+                  - /url: https://drive.google.com/file/d/1UcsR-es_589uHvMkaIG4rBiZXWRkMJFL/view?usp=drivesdk
+              - cell [ref=e2073]:
+                - generic [ref=e2074]:
+                  - button "Edit" [ref=e2075]:
+                    - img
+                  - button "Delete" [ref=e2076]:
+                    - img
+            - row "148 Meta Platforms Ireland Limited FBADS-528-105206037 12.12.2025 103,32 RON Autoworld INTERNATIONAL S.R.L. Sales processed paid Link" [ref=e2077] [cursor=pointer]:
+              - cell [ref=e2078]:
+                - checkbox [ref=e2079]
+              - cell "148" [ref=e2080]:
+                - generic [ref=e2081]:
+                  - img [ref=e2082]
+                  - text: "148"
+              - cell "Meta Platforms Ireland Limited" [ref=e2084]:
+                - generic [ref=e2085]: Meta Platforms Ireland Limited
+              - cell "FBADS-528-105206037" [ref=e2086]
+              - cell "12.12.2025" [ref=e2087]
+              - cell "103,32 RON" [ref=e2088]:
+                - generic [ref=e2090]: 103,32 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e2091]
+              - cell "Sales" [ref=e2092]
+              - cell "processed" [ref=e2093]:
+                - generic [ref=e2094]: processed
+              - cell "paid" [ref=e2095]:
+                - generic [ref=e2096]: paid
+              - cell "Link" [ref=e2097]:
+                - link "Link" [ref=e2098]:
+                  - /url: https://drive.google.com/file/d/1AazVin4qkGtvf7-gu1DxQgYJHmFG_qro/view?usp=drivesdk
+              - cell [ref=e2099]:
+                - generic [ref=e2100]:
+                  - button "Edit" [ref=e2101]:
+                    - img
+                  - button "Delete" [ref=e2102]:
+                    - img
+            - row "147 Meta Platforms Ireland Limited FBADS-528-105205218 12.12.2025 117,98 RON Autoworld INTERNATIONAL S.R.L. Sales processed paid Link" [ref=e2103] [cursor=pointer]:
+              - cell [ref=e2104]:
+                - checkbox [ref=e2105]
+              - cell "147" [ref=e2106]:
+                - generic [ref=e2107]:
+                  - img [ref=e2108]
+                  - text: "147"
+              - cell "Meta Platforms Ireland Limited" [ref=e2110]:
+                - generic [ref=e2111]: Meta Platforms Ireland Limited
+              - cell "FBADS-528-105205218" [ref=e2112]
+              - cell "12.12.2025" [ref=e2113]
+              - cell "117,98 RON" [ref=e2114]:
+                - generic [ref=e2116]: 117,98 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e2117]
+              - cell "Sales" [ref=e2118]
+              - cell "processed" [ref=e2119]:
+                - generic [ref=e2120]: processed
+              - cell "paid" [ref=e2121]:
+                - generic [ref=e2122]: paid
+              - cell "Link" [ref=e2123]:
+                - link "Link" [ref=e2124]:
+                  - /url: https://drive.google.com/file/d/1WOeM7tiIYq3uziMqyMXcpAhDpFjbKPUC/view?usp=drivesdk
+              - cell [ref=e2125]:
+                - generic [ref=e2126]:
+                  - button "Edit" [ref=e2127]:
+                    - img
+                  - button "Delete" [ref=e2128]:
+                    - img
+            - row "146 Meta Platforms Ireland Limited FBADS-528-105202072 11.12.2025 377,54 RON Autoworld INTERNATIONAL S.R.L. Sales processed paid Link" [ref=e2129] [cursor=pointer]:
+              - cell [ref=e2130]:
+                - checkbox [ref=e2131]
+              - cell "146" [ref=e2132]:
+                - generic [ref=e2133]:
+                  - img [ref=e2134]
+                  - text: "146"
+              - cell "Meta Platforms Ireland Limited" [ref=e2136]:
+                - generic [ref=e2137]: Meta Platforms Ireland Limited
+              - cell "FBADS-528-105202072" [ref=e2138]
+              - cell "11.12.2025" [ref=e2139]
+              - cell "377,54 RON" [ref=e2140]:
+                - generic [ref=e2142]: 377,54 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e2143]
+              - cell "Sales" [ref=e2144]
+              - cell "processed" [ref=e2145]:
+                - generic [ref=e2146]: processed
+              - cell "paid" [ref=e2147]:
+                - generic [ref=e2148]: paid
+              - cell "Link" [ref=e2149]:
+                - link "Link" [ref=e2150]:
+                  - /url: https://drive.google.com/file/d/1kwLt5vbpnkaqGeBEVwAXlbeRmZXHG_uW/view?usp=drivesdk
+              - cell [ref=e2151]:
+                - generic [ref=e2152]:
+                  - button "Edit" [ref=e2153]:
+                    - img
+                  - button "Delete" [ref=e2154]:
+                    - img
+            - row "145 Meta Platforms Ireland Limited FBADS-528-105202071 11.12.2025 188,77 RON Autoworld INTERNATIONAL S.R.L. Sales processed paid Link" [ref=e2155] [cursor=pointer]:
+              - cell [ref=e2156]:
+                - checkbox [ref=e2157]
+              - cell "145" [ref=e2158]:
+                - generic [ref=e2159]:
+                  - img [ref=e2160]
+                  - text: "145"
+              - cell "Meta Platforms Ireland Limited" [ref=e2162]:
+                - generic [ref=e2163]: Meta Platforms Ireland Limited
+              - cell "FBADS-528-105202071" [ref=e2164]
+              - cell "11.12.2025" [ref=e2165]
+              - cell "188,77 RON" [ref=e2166]:
+                - generic [ref=e2168]: 188,77 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e2169]
+              - cell "Sales" [ref=e2170]
+              - cell "processed" [ref=e2171]:
+                - generic [ref=e2172]: processed
+              - cell "paid" [ref=e2173]:
+                - generic [ref=e2174]: paid
+              - cell "Link" [ref=e2175]:
+                - link "Link" [ref=e2176]:
+                  - /url: https://drive.google.com/file/d/1b4GC6l_VfJ3oQqVXXZHaaY9NBpwIRhOl/view?usp=drivesdk
+              - cell [ref=e2177]:
+                - generic [ref=e2178]:
+                  - button "Edit" [ref=e2179]:
+                    - img
+                  - button "Delete" [ref=e2180]:
+                    - img
+            - row "144 Meta Platforms Ireland Limited FBADS-167-104809153 01.09.2025 1.247,72 RON AUTOWORLD S.R.L. Marketing processed paid Link" [ref=e2181] [cursor=pointer]:
+              - cell [ref=e2182]:
+                - checkbox [ref=e2183]
+              - cell "144" [ref=e2184]:
+                - generic [ref=e2185]:
+                  - img [ref=e2186]
+                  - text: "144"
+              - cell "Meta Platforms Ireland Limited" [ref=e2188]:
+                - generic [ref=e2189]: Meta Platforms Ireland Limited
+              - cell "FBADS-167-104809153" [ref=e2190]
+              - cell "01.09.2025" [ref=e2191]
+              - cell "1.247,72 RON" [ref=e2192]:
+                - generic [ref=e2194]: 1.247,72 RON
+              - cell "AUTOWORLD S.R.L." [ref=e2195]
+              - cell "Marketing" [ref=e2196]
+              - cell "processed" [ref=e2197]:
+                - generic [ref=e2198]: processed
+              - cell "paid" [ref=e2199]:
+                - generic [ref=e2200]: paid
+              - cell "Link" [ref=e2201]:
+                - link "Link" [ref=e2202]:
+                  - /url: https://drive.google.com/file/d/18t3UVxnrQ_tcyOTj9baVFMNT7OQ4SFkV/view?usp=drivesdk
+              - cell [ref=e2203]:
+                - generic [ref=e2204]:
+                  - button "Edit" [ref=e2205]:
+                    - img
+                  - button "Delete" [ref=e2206]:
+                    - img
+            - row "143 Google Cloud EMEA Limited 5461397540 31.12.2025 82,30 USD AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e2207] [cursor=pointer]:
+              - cell [ref=e2208]:
+                - checkbox [ref=e2209]
+              - cell "143" [ref=e2210]:
+                - generic [ref=e2211]:
+                  - img [ref=e2212]
+                  - text: "143"
+              - cell "Google Cloud EMEA Limited" [ref=e2214]:
+                - generic [ref=e2215]: Google Cloud EMEA Limited
+              - cell "5461397540" [ref=e2216]
+              - cell "31.12.2025" [ref=e2217]
+              - cell "82,30 USD" [ref=e2218]:
+                - generic [ref=e2220]: 82,30 USD
+              - cell "AUTOWORLD S.R.L." [ref=e2221]
+              - cell "Conducere" [ref=e2222]
+              - cell "processed" [ref=e2223]:
+                - generic [ref=e2224]: processed
+              - cell "paid" [ref=e2225]:
+                - generic [ref=e2226]: paid
+              - cell "Link" [ref=e2227]:
+                - link "Link" [ref=e2228]:
+                  - /url: https://drive.google.com/file/d/1Jh6GckDCWSBwteiBcTjgk06jBFKYmLdy/view?usp=drivesdk
+              - cell [ref=e2229]:
+                - generic [ref=e2230]:
+                  - button "Edit" [ref=e2231]:
+                    - img
+                  - button "Delete" [ref=e2232]:
+                    - img
+            - row "142 Hetzner Online GmbH 086000539734 22.11.2025 181,65 EUR AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e2233] [cursor=pointer]:
+              - cell [ref=e2234]:
+                - checkbox [ref=e2235]
+              - cell "142" [ref=e2236]:
+                - generic [ref=e2237]:
+                  - img [ref=e2238]
+                  - text: "142"
+              - cell "Hetzner Online GmbH" [ref=e2240]:
+                - generic [ref=e2241]: Hetzner Online GmbH
+              - cell "086000539734" [ref=e2242]
+              - cell "22.11.2025" [ref=e2243]
+              - cell "181,65 EUR" [ref=e2244]:
+                - generic [ref=e2246]: 181,65 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e2247]
+              - cell "Conducere" [ref=e2248]
+              - cell "processed" [ref=e2249]:
+                - generic [ref=e2250]: processed
+              - cell "paid" [ref=e2251]:
+                - generic [ref=e2252]: paid
+              - cell "Link" [ref=e2253]:
+                - link "Link" [ref=e2254]:
+                  - /url: https://drive.google.com/file/d/1FxiGENMFGgIKTvXHVxVqcBMBzlJO9n-j/view?usp=drivesdk
+              - cell [ref=e2255]:
+                - generic [ref=e2256]:
+                  - button "Edit" [ref=e2257]:
+                    - img
+                  - button "Delete" [ref=e2258]:
+                    - img
+            - row "141 Hetzner Online GmbH 088000662705 22.12.2025 179,91 EUR AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e2259] [cursor=pointer]:
+              - cell [ref=e2260]:
+                - checkbox [ref=e2261]
+              - cell "141" [ref=e2262]:
+                - generic [ref=e2263]:
+                  - img [ref=e2264]
+                  - text: "141"
+              - cell "Hetzner Online GmbH" [ref=e2266]:
+                - generic [ref=e2267]: Hetzner Online GmbH
+              - cell "088000662705" [ref=e2268]
+              - cell "22.12.2025" [ref=e2269]
+              - cell "179,91 EUR" [ref=e2270]:
+                - generic [ref=e2272]: 179,91 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e2273]
+              - cell "Conducere" [ref=e2274]
+              - cell "processed" [ref=e2275]:
+                - generic [ref=e2276]: processed
+              - cell "paid" [ref=e2277]:
+                - generic [ref=e2278]: paid
+              - cell "Link" [ref=e2279]:
+                - link "Link" [ref=e2280]:
+                  - /url: https://drive.google.com/file/d/1SVqkuZUVe2CwXirNAkkRXNMTWDFTXyTF/view?usp=drivesdk
+              - cell [ref=e2281]:
+                - generic [ref=e2282]:
+                  - button "Edit" [ref=e2283]:
+                    - img
+                  - button "Delete" [ref=e2284]:
+                    - img
+            - row "140 Polus Transilvania Companie de Investitii S.A. R045-4115012258 02.12.2025 2.642,66 RON AUTOWORLD S.R.L. Conducere processed not_paid Link" [ref=e2285] [cursor=pointer]:
+              - cell [ref=e2286]:
+                - checkbox [ref=e2287]
+              - cell "140" [ref=e2288]:
+                - generic [ref=e2289]:
+                  - img [ref=e2290]
+                  - text: "140"
+              - cell "Polus Transilvania Companie de Investitii S.A." [ref=e2292]:
+                - generic [ref=e2293]: Polus Transilvania Companie de Investitii S.A.
+              - cell "R045-4115012258" [ref=e2294]
+              - cell "02.12.2025" [ref=e2295]
+              - cell "2.642,66 RON" [ref=e2296]:
+                - generic [ref=e2298]: 2.642,66 RON
+              - cell "AUTOWORLD S.R.L." [ref=e2299]
+              - cell "Conducere" [ref=e2300]
+              - cell "processed" [ref=e2301]:
+                - generic [ref=e2302]: processed
+              - cell "not_paid" [ref=e2303]:
+                - generic [ref=e2304]: not_paid
+              - cell "Link" [ref=e2305]:
+                - link "Link" [ref=e2306]:
+                  - /url: https://drive.google.com/file/d/1AjxUY3KVe5RKHyy_JOpr2sFetLDIdZvU/view?usp=drivesdk
+              - cell [ref=e2307]:
+                - generic [ref=e2308]:
+                  - button "Edit" [ref=e2309]:
+                    - img
+                  - button "Delete" [ref=e2310]:
+                    - img
+            - row "139 MERAKI SOLUTIONS SRL CPY nr. 15683 08.01.2026 3.385,47 RON Autoworld PRESTIGE S.R.L. Sales new not_paid Link" [ref=e2311] [cursor=pointer]:
+              - cell [ref=e2312]:
+                - checkbox [ref=e2313]
+              - cell "139" [ref=e2314]:
+                - generic [ref=e2315]:
+                  - img [ref=e2316]
+                  - text: "139"
+              - cell "MERAKI SOLUTIONS SRL" [ref=e2318]:
+                - generic [ref=e2319]: MERAKI SOLUTIONS SRL
+              - cell "CPY nr. 15683" [ref=e2320]
+              - cell "08.01.2026" [ref=e2321]
+              - cell "3.385,47 RON" [ref=e2322]:
+                - generic [ref=e2324]: 3.385,47 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e2325]
+              - cell "Sales" [ref=e2326]
+              - cell "new" [ref=e2327]:
+                - generic [ref=e2328]: new
+              - cell "not_paid" [ref=e2329]:
+                - generic [ref=e2330]: not_paid
+              - cell "Link" [ref=e2331]:
+                - link "Link" [ref=e2332]:
+                  - /url: https://drive.google.com/file/d/1bzFVNqBi_D3byF6TApVJENLdjHefZxbh/view?usp=drivesdk
+              - cell [ref=e2333]:
+                - generic [ref=e2334]:
+                  - button "Edit" [ref=e2335]:
+                    - img
+                  - button "Delete" [ref=e2336]:
+                    - img
+            - row "138 CRUSH DISTRIBUTION SRL CRD-F2600193 09.01.2026 1.254,72 RON Autoworld PRESTIGE S.R.L. Sales new not_paid Link" [ref=e2337] [cursor=pointer]:
+              - cell [ref=e2338]:
+                - checkbox [ref=e2339]
+              - cell "138" [ref=e2340]:
+                - generic [ref=e2341]:
+                  - img [ref=e2342]
+                  - text: "138"
+              - cell "CRUSH DISTRIBUTION SRL" [ref=e2344]:
+                - generic [ref=e2345]: CRUSH DISTRIBUTION SRL
+              - cell "CRD-F2600193" [ref=e2346]
+              - cell "09.01.2026" [ref=e2347]
+              - cell "1.254,72 RON" [ref=e2348]:
+                - generic [ref=e2350]: 1.254,72 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e2351]
+              - cell "Sales" [ref=e2352]
+              - cell "new" [ref=e2353]:
+                - generic [ref=e2354]: new
+              - cell "not_paid" [ref=e2355]:
+                - generic [ref=e2356]: not_paid
+              - cell "Link" [ref=e2357]:
+                - link "Link" [ref=e2358]:
+                  - /url: https://drive.google.com/file/d/1U3SSQIJ6NCSwiM9u2S-qfUHUiRFyM4Yj/view?usp=drivesdk
+              - cell [ref=e2359]:
+                - generic [ref=e2360]:
+                  - button "Edit" [ref=e2361]:
+                    - img
+                  - button "Delete" [ref=e2362]:
+                    - img
+            - row "136 Meta Platforms Ireland Limited FBADS-271-105149910 16.12.2025 364,97 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e2363] [cursor=pointer]:
+              - cell [ref=e2364]:
+                - checkbox [ref=e2365]
+              - cell "136" [ref=e2366]:
+                - generic [ref=e2367]:
+                  - img [ref=e2368]
+                  - text: "136"
+              - cell "Meta Platforms Ireland Limited" [ref=e2370]:
+                - generic [ref=e2371]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105149910" [ref=e2372]
+              - cell "16.12.2025" [ref=e2373]
+              - cell "364,97 RON" [ref=e2374]:
+                - generic [ref=e2376]: 364,97 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e2377]
+              - cell "Sales" [ref=e2378]
+              - cell "processed" [ref=e2379]:
+                - generic [ref=e2380]: processed
+              - cell "paid" [ref=e2381]:
+                - generic [ref=e2382]: paid
+              - cell "Link" [ref=e2383]:
+                - link "Link" [ref=e2384]:
+                  - /url: https://drive.google.com/file/d/13TM-OA5hWc9QCOwA97VlQn6CXCzl6QBx/view?usp=drivesdk
+              - cell [ref=e2385]:
+                - generic [ref=e2386]:
+                  - button "Edit" [ref=e2387]:
+                    - img
+                  - button "Delete" [ref=e2388]:
+                    - img
+            - row "135 CRUSH DISTRIBUTION SRL CRD-F2521773 19.12.2025 4.208,47 RON Autoworld INTERNATIONAL S.R.L. Sales processed not_paid Link" [ref=e2389] [cursor=pointer]:
+              - cell [ref=e2390]:
+                - checkbox [ref=e2391]
+              - cell "135" [ref=e2392]:
+                - generic [ref=e2393]:
+                  - img [ref=e2394]
+                  - text: "135"
+              - cell "CRUSH DISTRIBUTION SRL" [ref=e2396]:
+                - generic [ref=e2397]: CRUSH DISTRIBUTION SRL
+              - cell "CRD-F2521773" [ref=e2398]
+              - cell "19.12.2025" [ref=e2399]
+              - cell "4.208,47 RON" [ref=e2400]:
+                - generic [ref=e2402]: 4.208,47 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e2403]
+              - cell "Sales" [ref=e2404]
+              - cell "processed" [ref=e2405]:
+                - generic [ref=e2406]: processed
+              - cell "not_paid" [ref=e2407]:
+                - generic [ref=e2408]: not_paid
+              - cell "Link" [ref=e2409]:
+                - link "Link" [ref=e2410]:
+                  - /url: https://drive.google.com/file/d/1HqpxbvfMVmEMeWwL1CtCdjvHCrAqdLgc/view?usp=drivesdk
+              - cell [ref=e2411]:
+                - generic [ref=e2412]:
+                  - button "Edit" [ref=e2413]:
+                    - img
+                  - button "Delete" [ref=e2414]:
+                    - img
+            - row "134 TikTok Information Technologies UK Limited BDUK20253368656 15.09.2025 22,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e2415] [cursor=pointer]:
+              - cell [ref=e2416]:
+                - checkbox [ref=e2417]
+              - cell "134" [ref=e2418]:
+                - generic [ref=e2419]:
+                  - img [ref=e2420]
+                  - text: "134"
+              - cell "TikTok Information Technologies UK Limited" [ref=e2422]:
+                - generic [ref=e2423]: TikTok Information Technologies UK Limited
+              - cell "BDUK20253368656" [ref=e2424]
+              - cell "15.09.2025" [ref=e2425]
+              - cell "22,00 RON" [ref=e2426]:
+                - generic [ref=e2428]: 22,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e2429]
+              - cell "Sales" [ref=e2430]
+              - cell "processed" [ref=e2431]:
+                - generic [ref=e2432]: processed
+              - cell "paid" [ref=e2433]:
+                - generic [ref=e2434]: paid
+              - cell "Link" [ref=e2435]:
+                - link "Link" [ref=e2436]:
+                  - /url: https://drive.google.com/file/d/1amDUU5Bk9Le-mQQn5F5K1HcjTt9RFlHb/view?usp=drivesdk
+              - cell [ref=e2437]:
+                - generic [ref=e2438]:
+                  - button "Edit" [ref=e2439]:
+                    - img
+                  - button "Delete" [ref=e2440]:
+                    - img
+            - row "133 TikTok Information Technologies UK Limited BDUK20253382429 16.09.2025 40,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e2441] [cursor=pointer]:
+              - cell [ref=e2442]:
+                - checkbox [ref=e2443]
+              - cell "133" [ref=e2444]:
+                - generic [ref=e2445]:
+                  - img [ref=e2446]
+                  - text: "133"
+              - cell "TikTok Information Technologies UK Limited" [ref=e2448]:
+                - generic [ref=e2449]: TikTok Information Technologies UK Limited
+              - cell "BDUK20253382429" [ref=e2450]
+              - cell "16.09.2025" [ref=e2451]
+              - cell "40,00 RON" [ref=e2452]:
+                - generic [ref=e2454]: 40,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e2455]
+              - cell "Sales" [ref=e2456]
+              - cell "processed" [ref=e2457]:
+                - generic [ref=e2458]: processed
+              - cell "paid" [ref=e2459]:
+                - generic [ref=e2460]: paid
+              - cell "Link" [ref=e2461]:
+                - link "Link" [ref=e2462]:
+                  - /url: https://drive.google.com/file/d/1OxOks1DXR1X-k1cMCYfPyGK7SPliuQg3/view?usp=drivesdk
+              - cell [ref=e2463]:
+                - generic [ref=e2464]:
+                  - button "Edit" [ref=e2465]:
+                    - img
+                  - button "Delete" [ref=e2466]:
+                    - img
+            - row "132 TikTok Information Technologies UK Limited BDUK20253372566 16.09.2025 22,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e2467] [cursor=pointer]:
+              - cell [ref=e2468]:
+                - checkbox [ref=e2469]
+              - cell "132" [ref=e2470]:
+                - generic [ref=e2471]:
+                  - img [ref=e2472]
+                  - text: "132"
+              - cell "TikTok Information Technologies UK Limited" [ref=e2474]:
+                - generic [ref=e2475]: TikTok Information Technologies UK Limited
+              - cell "BDUK20253372566" [ref=e2476]
+              - cell "16.09.2025" [ref=e2477]
+              - cell "22,00 RON" [ref=e2478]:
+                - generic [ref=e2480]: 22,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e2481]
+              - cell "Sales" [ref=e2482]
+              - cell "processed" [ref=e2483]:
+                - generic [ref=e2484]: processed
+              - cell "paid" [ref=e2485]:
+                - generic [ref=e2486]: paid
+              - cell "Link" [ref=e2487]:
+                - link "Link" [ref=e2488]:
+                  - /url: https://drive.google.com/file/d/1Oa1tdaXCqfc3s4UbdHP6qfLsUBpgbsW3/view?usp=drivesdk
+              - cell [ref=e2489]:
+                - generic [ref=e2490]:
+                  - button "Edit" [ref=e2491]:
+                    - img
+                  - button "Delete" [ref=e2492]:
+                    - img
+            - row "131 TikTok Information Technologies UK Limited BDUK2025394960 17.09.2025 40,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e2493] [cursor=pointer]:
+              - cell [ref=e2494]:
+                - checkbox [ref=e2495]
+              - cell "131" [ref=e2496]:
+                - generic [ref=e2497]:
+                  - img [ref=e2498]
+                  - text: "131"
+              - cell "TikTok Information Technologies UK Limited" [ref=e2500]:
+                - generic [ref=e2501]: TikTok Information Technologies UK Limited
+              - cell "BDUK2025394960" [ref=e2502]
+              - cell "17.09.2025" [ref=e2503]
+              - cell "40,00 RON" [ref=e2504]:
+                - generic [ref=e2506]: 40,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e2507]
+              - cell "Sales" [ref=e2508]
+              - cell "processed" [ref=e2509]:
+                - generic [ref=e2510]: processed
+              - cell "paid" [ref=e2511]:
+                - generic [ref=e2512]: paid
+              - cell "Link" [ref=e2513]:
+                - link "Link" [ref=e2514]:
+                  - /url: https://drive.google.com/file/d/1IdkMLRMrMampKMdXkttg86LgwwKDNue1/view?usp=drivesdk
+              - cell [ref=e2515]:
+                - generic [ref=e2516]:
+                  - button "Edit" [ref=e2517]:
+                    - img
+                  - button "Delete" [ref=e2518]:
+                    - img
+            - row "130 TikTok Information Technologies UK Limited BDUK2025342607 18.09.2025 48,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e2519] [cursor=pointer]:
+              - cell [ref=e2520]:
+                - checkbox [ref=e2521]
+              - cell "130" [ref=e2522]:
+                - generic [ref=e2523]:
+                  - img [ref=e2524]
+                  - text: "130"
+              - cell "TikTok Information Technologies UK Limited" [ref=e2526]:
+                - generic [ref=e2527]: TikTok Information Technologies UK Limited
+              - cell "BDUK2025342607" [ref=e2528]
+              - cell "18.09.2025" [ref=e2529]
+              - cell "48,00 RON" [ref=e2530]:
+                - generic [ref=e2532]: 48,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e2533]
+              - cell "Sales" [ref=e2534]
+              - cell "processed" [ref=e2535]:
+                - generic [ref=e2536]: processed
+              - cell "paid" [ref=e2537]:
+                - generic [ref=e2538]: paid
+              - cell "Link" [ref=e2539]:
+                - link "Link" [ref=e2540]:
+                  - /url: https://drive.google.com/file/d/1DAdQ0RIWbnuRY_cIz9H5Mt_9o8aKcfoq/view?usp=drivesdk
+              - cell [ref=e2541]:
+                - generic [ref=e2542]:
+                  - button "Edit" [ref=e2543]:
+                    - img
+                  - button "Delete" [ref=e2544]:
+                    - img
+            - row "129 TikTok Information Technologies UK Limited BDUK20253412070 18.09.2025 60,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e2545] [cursor=pointer]:
+              - cell [ref=e2546]:
+                - checkbox [ref=e2547]
+              - cell "129" [ref=e2548]:
+                - generic [ref=e2549]:
+                  - img [ref=e2550]
+                  - text: "129"
+              - cell "TikTok Information Technologies UK Limited" [ref=e2552]:
+                - generic [ref=e2553]: TikTok Information Technologies UK Limited
+              - cell "BDUK20253412070" [ref=e2554]
+              - cell "18.09.2025" [ref=e2555]
+              - cell "60,00 RON" [ref=e2556]:
+                - generic [ref=e2558]: 60,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e2559]
+              - cell "Sales" [ref=e2560]
+              - cell "processed" [ref=e2561]:
+                - generic [ref=e2562]: processed
+              - cell "paid" [ref=e2563]:
+                - generic [ref=e2564]: paid
+              - cell "Link" [ref=e2565]:
+                - link "Link" [ref=e2566]:
+                  - /url: https://drive.google.com/file/d/1dBgNqQObGN81VCeEUfM-kUZmHPG28rlf/view?usp=drivesdk
+              - cell [ref=e2567]:
+                - generic [ref=e2568]:
+                  - button "Edit" [ref=e2569]:
+                    - img
+                  - button "Delete" [ref=e2570]:
+                    - img
+            - row "128 TikTok Information Technologies UK Limited BDUK2025344182 19.09.2025 48,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e2571] [cursor=pointer]:
+              - cell [ref=e2572]:
+                - checkbox [ref=e2573]
+              - cell "128" [ref=e2574]:
+                - generic [ref=e2575]:
+                  - img [ref=e2576]
+                  - text: "128"
+              - cell "TikTok Information Technologies UK Limited" [ref=e2578]:
+                - generic [ref=e2579]: TikTok Information Technologies UK Limited
+              - cell "BDUK2025344182" [ref=e2580]
+              - cell "19.09.2025" [ref=e2581]
+              - cell "48,00 RON" [ref=e2582]:
+                - generic [ref=e2584]: 48,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e2585]
+              - cell "Sales" [ref=e2586]
+              - cell "processed" [ref=e2587]:
+                - generic [ref=e2588]: processed
+              - cell "paid" [ref=e2589]:
+                - generic [ref=e2590]: paid
+              - cell "Link" [ref=e2591]:
+                - link "Link" [ref=e2592]:
+                  - /url: https://drive.google.com/file/d/1gdtj9D7j-NTjResl3aUBzrNMEZcpDxCQ/view?usp=drivesdk
+              - cell [ref=e2593]:
+                - generic [ref=e2594]:
+                  - button "Edit" [ref=e2595]:
+                    - img
+                  - button "Delete" [ref=e2596]:
+                    - img
+            - row "127 TikTok Information Technologies UK Limited BDUK2025463735 21.09.2025 80,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e2597] [cursor=pointer]:
+              - cell [ref=e2598]:
+                - checkbox [ref=e2599]
+              - cell "127" [ref=e2600]:
+                - generic [ref=e2601]:
+                  - img [ref=e2602]
+                  - text: "127"
+              - cell "TikTok Information Technologies UK Limited" [ref=e2604]:
+                - generic [ref=e2605]: TikTok Information Technologies UK Limited
+              - cell "BDUK2025463735" [ref=e2606]
+              - cell "21.09.2025" [ref=e2607]
+              - cell "80,00 RON" [ref=e2608]:
+                - generic [ref=e2610]: 80,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e2611]
+              - cell "Sales" [ref=e2612]
+              - cell "processed" [ref=e2613]:
+                - generic [ref=e2614]: processed
+              - cell "paid" [ref=e2615]:
+                - generic [ref=e2616]: paid
+              - cell "Link" [ref=e2617]:
+                - link "Link" [ref=e2618]:
+                  - /url: https://drive.google.com/file/d/1-DT7F_cd75iGRrFerjdgF6AOaRlPR0Pn/view?usp=drivesdk
+              - cell [ref=e2619]:
+                - generic [ref=e2620]:
+                  - button "Edit" [ref=e2621]:
+                    - img
+                  - button "Delete" [ref=e2622]:
+                    - img
+            - row "126 TikTok Information Technologies UK Limited BDUK20253475989 22.09.2025 80,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e2623] [cursor=pointer]:
+              - cell [ref=e2624]:
+                - checkbox [ref=e2625]
+              - cell "126" [ref=e2626]:
+                - generic [ref=e2627]:
+                  - img [ref=e2628]
+                  - text: "126"
+              - cell "TikTok Information Technologies UK Limited" [ref=e2630]:
+                - generic [ref=e2631]: TikTok Information Technologies UK Limited
+              - cell "BDUK20253475989" [ref=e2632]
+              - cell "22.09.2025" [ref=e2633]
+              - cell "80,00 RON" [ref=e2634]:
+                - generic [ref=e2636]: 80,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e2637]
+              - cell "Sales" [ref=e2638]
+              - cell "processed" [ref=e2639]:
+                - generic [ref=e2640]: processed
+              - cell "paid" [ref=e2641]:
+                - generic [ref=e2642]: paid
+              - cell "Link" [ref=e2643]:
+                - link "Link" [ref=e2644]:
+                  - /url: https://drive.google.com/file/d/1XYMlhEQb-LkbU_8GPLlNEYuXHjrVVfTT/view?usp=drivesdk
+              - cell [ref=e2645]:
+                - generic [ref=e2646]:
+                  - button "Edit" [ref=e2647]:
+                    - img
+                  - button "Delete" [ref=e2648]:
+                    - img
+            - row "125 TikTok Information Technologies UK Limited BDUK20253636260 01.10.2025 6,41 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e2649] [cursor=pointer]:
+              - cell [ref=e2650]:
+                - checkbox [ref=e2651]
+              - cell "125" [ref=e2652]:
+                - generic [ref=e2653]:
+                  - img [ref=e2654]
+                  - text: "125"
+              - cell "TikTok Information Technologies UK Limited" [ref=e2656]:
+                - generic [ref=e2657]: TikTok Information Technologies UK Limited
+              - cell "BDUK20253636260" [ref=e2658]
+              - cell "01.10.2025" [ref=e2659]
+              - cell "6,41 RON" [ref=e2660]:
+                - generic [ref=e2662]: 6,41 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e2663]
+              - cell "Sales" [ref=e2664]
+              - cell "processed" [ref=e2665]:
+                - generic [ref=e2666]: processed
+              - cell "paid" [ref=e2667]:
+                - generic [ref=e2668]: paid
+              - cell "Link" [ref=e2669]:
+                - link "Link" [ref=e2670]:
+                  - /url: https://drive.google.com/file/d/1VSfckafKQHR2Pj4J5UKzMKM2isrMWHSv/view?usp=drivesdk
+              - cell [ref=e2671]:
+                - generic [ref=e2672]:
+                  - button "Edit" [ref=e2673]:
+                    - img
+                  - button "Delete" [ref=e2674]:
+                    - img
+            - row "124 Shopify International Limited 464031740 24.12.2025 245,76 EUR Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e2675] [cursor=pointer]:
+              - cell [ref=e2676]:
+                - checkbox [ref=e2677]
+              - cell "124" [ref=e2678]:
+                - generic [ref=e2679]:
+                  - img [ref=e2680]
+                  - text: "124"
+              - cell "Shopify International Limited" [ref=e2682]:
+                - generic [ref=e2683]: Shopify International Limited
+              - cell "464031740" [ref=e2684]
+              - cell "24.12.2025" [ref=e2685]
+              - cell "245,76 EUR" [ref=e2686]:
+                - generic [ref=e2688]: 245,76 EUR
+              - cell "Autoworld NEXT S.R.L." [ref=e2689]
+              - cell "Sales" [ref=e2690]
+              - cell "processed" [ref=e2691]:
+                - generic [ref=e2692]: processed
+              - cell "paid" [ref=e2693]:
+                - generic [ref=e2694]: paid
+              - cell "Link" [ref=e2695]:
+                - link "Link" [ref=e2696]:
+                  - /url: https://drive.google.com/file/d/1ZXpoSMGyOzzZKR1VqH7D1A76R1RTvlE-/view?usp=drivesdk
+              - cell [ref=e2697]:
+                - generic [ref=e2698]:
+                  - button "Edit" [ref=e2699]:
+                    - img
+                  - button "Delete" [ref=e2700]:
+                    - img
+            - row "123 VGS ROMANIA SRL VGSR 3453 25.12.2025 1.295,43 RON Autoworld INTERNATIONAL S.R.L. Aftersales processed not_paid Link" [ref=e2701] [cursor=pointer]:
+              - cell [ref=e2702]:
+                - checkbox [ref=e2703]
+              - cell "123" [ref=e2704]:
+                - generic [ref=e2705]:
+                  - img [ref=e2706]
+                  - text: "123"
+              - cell "VGS ROMANIA SRL" [ref=e2708]:
+                - generic [ref=e2709]: VGS ROMANIA SRL
+              - cell "VGSR 3453" [ref=e2710]
+              - cell "25.12.2025" [ref=e2711]
+              - cell "1.295,43 RON" [ref=e2712]:
+                - generic [ref=e2714]: 1.295,43 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e2715]
+              - cell "Aftersales" [ref=e2716]
+              - cell "processed" [ref=e2717]:
+                - generic [ref=e2718]: processed
+              - cell "not_paid" [ref=e2719]:
+                - generic [ref=e2720]: not_paid
+              - cell "Link" [ref=e2721]:
+                - link "Link" [ref=e2722]:
+                  - /url: https://drive.google.com/file/d/1D5S5Ifi8lukQ1FuWCt-ogc5QW8kRAC6N/view?usp=drivesdk
+              - cell [ref=e2723]:
+                - generic [ref=e2724]:
+                  - button "Edit" [ref=e2725]:
+                    - img
+                  - button "Delete" [ref=e2726]:
+                    - img
+            - row "122 Meta Platforms Ireland Limited FBADS-215-105249506 09.01.2026 6.432,92 RON Autoworld PRESTIGE S.R.L. Sales processed paid Link" [ref=e2727] [cursor=pointer]:
+              - cell [ref=e2728]:
+                - checkbox [ref=e2729]
+              - cell "122" [ref=e2730]:
+                - generic [ref=e2731]:
+                  - img [ref=e2732]
+                  - text: "122"
+              - cell "Meta Platforms Ireland Limited" [ref=e2734]:
+                - generic [ref=e2735]: Meta Platforms Ireland Limited
+              - cell "FBADS-215-105249506" [ref=e2736]
+              - cell "09.01.2026" [ref=e2737]
+              - cell "6.432,92 RON" [ref=e2738]:
+                - generic [ref=e2740]: 6.432,92 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e2741]
+              - cell "Sales" [ref=e2742]
+              - cell "processed" [ref=e2743]:
+                - generic [ref=e2744]: processed
+              - cell "paid" [ref=e2745]:
+                - generic [ref=e2746]: paid
+              - cell "Link" [ref=e2747]:
+                - link "Link" [ref=e2748]:
+                  - /url: https://drive.google.com/file/d/1DJIS8m44R_j7pH3MxDHNqylrg2cc5Dwh/view?usp=drivesdk
+              - cell [ref=e2749]:
+                - generic [ref=e2750]:
+                  - button "Edit" [ref=e2751]:
+                    - img
+                  - button "Delete" [ref=e2752]:
+                    - img
+            - row "121 Meta Platforms Ireland Limited FBADS-215-105141145 10.12.2025 5.128,48 RON Autoworld PRESTIGE S.R.L. Sales processed paid Link" [ref=e2753] [cursor=pointer]:
+              - cell [ref=e2754]:
+                - checkbox [ref=e2755]
+              - cell "121" [ref=e2756]:
+                - generic [ref=e2757]:
+                  - img [ref=e2758]
+                  - text: "121"
+              - cell "Meta Platforms Ireland Limited" [ref=e2760]:
+                - generic [ref=e2761]: Meta Platforms Ireland Limited
+              - cell "FBADS-215-105141145" [ref=e2762]
+              - cell "10.12.2025" [ref=e2763]
+              - cell "5.128,48 RON" [ref=e2764]:
+                - generic [ref=e2766]: 5.128,48 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e2767]
+              - cell "Sales" [ref=e2768]
+              - cell "processed" [ref=e2769]:
+                - generic [ref=e2770]: processed
+              - cell "paid" [ref=e2771]:
+                - generic [ref=e2772]: paid
+              - cell "Link" [ref=e2773]:
+                - link "Link" [ref=e2774]:
+                  - /url: https://drive.google.com/file/d/1sGoER42WJBwiwiacRsLbm6AR8Bd7QRi6/view?usp=drivesdk
+              - cell [ref=e2775]:
+                - generic [ref=e2776]:
+                  - button "Edit" [ref=e2777]:
+                    - img
+                  - button "Delete" [ref=e2778]:
+                    - img
+            - row "120 Google Ireland Limited 5457633052 31.12.2025 2.446,90 RON Autoworld PRESTIGE S.R.L. Sales processed paid Link" [ref=e2779] [cursor=pointer]:
+              - cell [ref=e2780]:
+                - checkbox [ref=e2781]
+              - cell "120" [ref=e2782]:
+                - generic [ref=e2783]:
+                  - img [ref=e2784]
+                  - text: "120"
+              - cell "Google Ireland Limited" [ref=e2786]:
+                - generic [ref=e2787]: Google Ireland Limited
+              - cell "5457633052" [ref=e2788]
+              - cell "31.12.2025" [ref=e2789]
+              - cell "2.446,90 RON" [ref=e2790]:
+                - generic [ref=e2792]: 2.446,90 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e2793]
+              - cell "Sales" [ref=e2794]
+              - cell "processed" [ref=e2795]:
+                - generic [ref=e2796]: processed
+              - cell "paid" [ref=e2797]:
+                - generic [ref=e2798]: paid
+              - cell "Link" [ref=e2799]:
+                - link "Link" [ref=e2800]:
+                  - /url: https://drive.google.com/file/d/14J3iu9B7nEbJkxZb6fclLdAInMVy7hte/view?usp=drivesdk
+              - cell [ref=e2801]:
+                - generic [ref=e2802]:
+                  - button "Edit" [ref=e2803]:
+                    - img
+                  - button "Delete" [ref=e2804]:
+                    - img
+            - row "119 Google Ireland Limited 5457901727 31.12.2025 -7,46 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e2805] [cursor=pointer]:
+              - cell [ref=e2806]:
+                - checkbox [ref=e2807]
+              - cell "119" [ref=e2808]:
+                - generic [ref=e2809]:
+                  - img [ref=e2810]
+                  - text: "119"
+              - cell "Google Ireland Limited" [ref=e2812]:
+                - generic [ref=e2813]: Google Ireland Limited
+              - cell "5457901727" [ref=e2814]
+              - cell "31.12.2025" [ref=e2815]
+              - cell "-7,46 RON" [ref=e2816]:
+                - generic [ref=e2818]: "-7,46 RON"
+              - cell "Autoworld PLUS S.R.L." [ref=e2819]
+              - cell "Sales" [ref=e2820]
+              - cell "processed" [ref=e2821]:
+                - generic [ref=e2822]: processed
+              - cell "paid" [ref=e2823]:
+                - generic [ref=e2824]: paid
+              - cell "Link" [ref=e2825]:
+                - link "Link" [ref=e2826]:
+                  - /url: https://drive.google.com/file/d/1NATrame6lYJZoW2Cq_uS-phYBv6lI9ss/view?usp=drivesdk
+              - cell [ref=e2827]:
+                - generic [ref=e2828]:
+                  - button "Edit" [ref=e2829]:
+                    - img
+                  - button "Delete" [ref=e2830]:
+                    - img
+            - row "118 Google Ireland Limited 5456072388 31.12.2025 3.179,11 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e2831] [cursor=pointer]:
+              - cell [ref=e2832]:
+                - checkbox [ref=e2833]
+              - cell "118" [ref=e2834]:
+                - generic [ref=e2835]:
+                  - img [ref=e2836]
+                  - text: "118"
+              - cell "Google Ireland Limited" [ref=e2838]:
+                - generic [ref=e2839]: Google Ireland Limited
+              - cell "5456072388" [ref=e2840]
+              - cell "31.12.2025" [ref=e2841]
+              - cell "3.179,11 RON" [ref=e2842]:
+                - generic [ref=e2844]: 3.179,11 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e2845]
+              - cell "Sales" [ref=e2846]
+              - cell "processed" [ref=e2847]:
+                - generic [ref=e2848]: processed
+              - cell "paid" [ref=e2849]:
+                - generic [ref=e2850]: paid
+              - cell "Link" [ref=e2851]:
+                - link "Link" [ref=e2852]:
+                  - /url: https://drive.google.com/file/d/19rLdB7i6jW-2l4hHTpdOLHDjQWAFFL0a/view?usp=drivesdk
+              - cell [ref=e2853]:
+                - generic [ref=e2854]:
+                  - button "Edit" [ref=e2855]:
+                    - img
+                  - button "Delete" [ref=e2856]:
+                    - img
+            - row "117 Meta Platforms Ireland Limited FBADS-733-105205142 06.12.2025 539,52 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e2857] [cursor=pointer]:
+              - cell [ref=e2858]:
+                - checkbox [ref=e2859]
+              - cell "117" [ref=e2860]:
+                - generic [ref=e2861]:
+                  - img [ref=e2862]
+                  - text: "117"
+              - cell "Meta Platforms Ireland Limited" [ref=e2864]:
+                - generic [ref=e2865]: Meta Platforms Ireland Limited
+              - cell "FBADS-733-105205142" [ref=e2866]
+              - cell "06.12.2025" [ref=e2867]
+              - cell "539,52 RON" [ref=e2868]:
+                - generic [ref=e2870]: 539,52 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e2871]
+              - cell "Sales" [ref=e2872]
+              - cell "processed" [ref=e2873]:
+                - generic [ref=e2874]: processed
+              - cell "paid" [ref=e2875]:
+                - generic [ref=e2876]: paid
+              - cell "Link" [ref=e2877]:
+                - link "Link" [ref=e2878]:
+                  - /url: https://drive.google.com/file/d/1Ch4tWBlkyZLysQq8QfeSYPyVJ1b6kJ2y/view?usp=drivesdk
+              - cell [ref=e2879]:
+                - generic [ref=e2880]:
+                  - button "Edit" [ref=e2881]:
+                    - img
+                  - button "Delete" [ref=e2882]:
+                    - img
+            - row "116 Meta Platforms Ireland Limited FBADS-271-105237788 09.01.2026 306,49 RON Autoworld PLUS S.R.L. Aftersales processed paid Link" [ref=e2883] [cursor=pointer]:
+              - cell [ref=e2884]:
+                - checkbox [ref=e2885]
+              - cell "116" [ref=e2886]:
+                - generic [ref=e2887]:
+                  - img [ref=e2888]
+                  - text: "116"
+              - cell "Meta Platforms Ireland Limited" [ref=e2890]:
+                - generic [ref=e2891]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105237788" [ref=e2892]
+              - cell "09.01.2026" [ref=e2893]
+              - cell "306,49 RON" [ref=e2894]:
+                - generic [ref=e2896]: 306,49 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e2897]
+              - cell "Aftersales" [ref=e2898]
+              - cell "processed" [ref=e2899]:
+                - generic [ref=e2900]: processed
+              - cell "paid" [ref=e2901]:
+                - generic [ref=e2902]: paid
+              - cell "Link" [ref=e2903]:
+                - link "Link" [ref=e2904]:
+                  - /url: https://drive.google.com/file/d/1Iyj_f8rbKPMyKnrnNmLs1fTYmQGV9qnV/view?usp=drivesdk
+              - cell [ref=e2905]:
+                - generic [ref=e2906]:
+                  - button "Edit" [ref=e2907]:
+                    - img
+                  - button "Delete" [ref=e2908]:
+                    - img
+            - row "115 Meta Platforms Ireland Limited FBADS-271-105237812 09.01.2026 536,36 RON Autoworld PLUS S.R.L. Aftersales processed paid Link" [ref=e2909] [cursor=pointer]:
+              - cell [ref=e2910]:
+                - checkbox [ref=e2911]
+              - cell "115" [ref=e2912]:
+                - generic [ref=e2913]:
+                  - img [ref=e2914]
+                  - text: "115"
+              - cell "Meta Platforms Ireland Limited" [ref=e2916]:
+                - generic [ref=e2917]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105237812" [ref=e2918]
+              - cell "09.01.2026" [ref=e2919]
+              - cell "536,36 RON" [ref=e2920]:
+                - generic [ref=e2922]: 536,36 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e2923]
+              - cell "Aftersales" [ref=e2924]
+              - cell "processed" [ref=e2925]:
+                - generic [ref=e2926]: processed
+              - cell "paid" [ref=e2927]:
+                - generic [ref=e2928]: paid
+              - cell "Link" [ref=e2929]:
+                - link "Link" [ref=e2930]:
+                  - /url: https://drive.google.com/file/d/1tWWTWH0tMNWosF1DyEB_v9ScVBBDLuW9/view?usp=drivesdk
+              - cell [ref=e2931]:
+                - generic [ref=e2932]:
+                  - button "Edit" [ref=e2933]:
+                    - img
+                  - button "Delete" [ref=e2934]:
+                    - img
+            - row "114 Meta Platforms Ireland Limited FBADS-271-105237838 09.01.2026 804,55 RON Autoworld PLUS S.R.L. Aftersales processed paid Link" [ref=e2935] [cursor=pointer]:
+              - cell [ref=e2936]:
+                - checkbox [ref=e2937]
+              - cell "114" [ref=e2938]:
+                - generic [ref=e2939]:
+                  - img [ref=e2940]
+                  - text: "114"
+              - cell "Meta Platforms Ireland Limited" [ref=e2942]:
+                - generic [ref=e2943]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105237838" [ref=e2944]
+              - cell "09.01.2026" [ref=e2945]
+              - cell "804,55 RON" [ref=e2946]:
+                - generic [ref=e2948]: 804,55 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e2949]
+              - cell "Aftersales" [ref=e2950]
+              - cell "processed" [ref=e2951]:
+                - generic [ref=e2952]: processed
+              - cell "paid" [ref=e2953]:
+                - generic [ref=e2954]: paid
+              - cell "Link" [ref=e2955]:
+                - link "Link" [ref=e2956]:
+                  - /url: https://drive.google.com/file/d/1TiUAlUIaolMHJFOjsAYyDUyX4QUVtPm6/view?usp=drivesdk
+              - cell [ref=e2957]:
+                - generic [ref=e2958]:
+                  - button "Edit" [ref=e2959]:
+                    - img
+                  - button "Delete" [ref=e2960]:
+                    - img
+            - row "113 Meta Platforms Ireland Limited FBADS-271-105237862 09.01.2026 804,54 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e2961] [cursor=pointer]:
+              - cell [ref=e2962]:
+                - checkbox [ref=e2963]
+              - cell "113" [ref=e2964]:
+                - generic [ref=e2965]:
+                  - img [ref=e2966]
+                  - text: "113"
+              - cell "Meta Platforms Ireland Limited" [ref=e2968]:
+                - generic [ref=e2969]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105237862" [ref=e2970]
+              - cell "09.01.2026" [ref=e2971]
+              - cell "804,54 RON" [ref=e2972]:
+                - generic [ref=e2974]: 804,54 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e2975]
+              - cell "Sales" [ref=e2976]
+              - cell "processed" [ref=e2977]:
+                - generic [ref=e2978]: processed
+              - cell "paid" [ref=e2979]:
+                - generic [ref=e2980]: paid
+              - cell "Link" [ref=e2981]:
+                - link "Link" [ref=e2982]:
+                  - /url: https://drive.google.com/file/d/1u6f8qIcBpcpmESQarLRaiLWCAOrg6PTm/view?usp=drivesdk
+              - cell [ref=e2983]:
+                - generic [ref=e2984]:
+                  - button "Edit" [ref=e2985]:
+                    - img
+                  - button "Delete" [ref=e2986]:
+                    - img
+            - row "112 Meta Platforms Ireland Limited FBADS-271-105142069 14.12.2025 218,75 RON Autoworld PLUS S.R.L. Aftersales processed paid Link" [ref=e2987] [cursor=pointer]:
+              - cell [ref=e2988]:
+                - checkbox [ref=e2989]
+              - cell "112" [ref=e2990]:
+                - generic [ref=e2991]:
+                  - img [ref=e2992]
+                  - text: "112"
+              - cell "Meta Platforms Ireland Limited" [ref=e2994]:
+                - generic [ref=e2995]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105142069" [ref=e2996]
+              - cell "14.12.2025" [ref=e2997]
+              - cell "218,75 RON" [ref=e2998]:
+                - generic [ref=e3000]: 218,75 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3001]
+              - cell "Aftersales" [ref=e3002]
+              - cell "processed" [ref=e3003]:
+                - generic [ref=e3004]: processed
+              - cell "paid" [ref=e3005]:
+                - generic [ref=e3006]: paid
+              - cell "Link" [ref=e3007]:
+                - link "Link" [ref=e3008]:
+                  - /url: https://drive.google.com/file/d/110oIjB3YzWlZTRjKkmTjDCSPo1FDF6ED/view?usp=drivesdk
+              - cell [ref=e3009]:
+                - generic [ref=e3010]:
+                  - button "Edit" [ref=e3011]:
+                    - img
+                  - button "Delete" [ref=e3012]:
+                    - img
+            - row "111 Meta Platforms Ireland Limited FBADS-271-105142070 14.12.2025 437,50 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e3013] [cursor=pointer]:
+              - cell [ref=e3014]:
+                - checkbox [ref=e3015]
+              - cell "111" [ref=e3016]:
+                - generic [ref=e3017]:
+                  - img [ref=e3018]
+                  - text: "111"
+              - cell "Meta Platforms Ireland Limited" [ref=e3020]:
+                - generic [ref=e3021]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105142070" [ref=e3022]
+              - cell "14.12.2025" [ref=e3023]
+              - cell "437,50 RON" [ref=e3024]:
+                - generic [ref=e3026]: 437,50 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3027]
+              - cell "Sales" [ref=e3028]
+              - cell "processed" [ref=e3029]:
+                - generic [ref=e3030]: processed
+              - cell "paid" [ref=e3031]:
+                - generic [ref=e3032]: paid
+              - cell "Link" [ref=e3033]:
+                - link "Link" [ref=e3034]:
+                  - /url: https://drive.google.com/file/d/1N2jesfZbkjTIjqKFBS72pdxblFaJydjM/view?usp=drivesdk
+              - cell [ref=e3035]:
+                - generic [ref=e3036]:
+                  - button "Edit" [ref=e3037]:
+                    - img
+                  - button "Delete" [ref=e3038]:
+                    - img
+            - row "110 Meta Platforms Ireland Limited FBADS-271-105142071 14.12.2025 875,00 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e3039] [cursor=pointer]:
+              - cell [ref=e3040]:
+                - checkbox [ref=e3041]
+              - cell "110" [ref=e3042]:
+                - generic [ref=e3043]:
+                  - img [ref=e3044]
+                  - text: "110"
+              - cell "Meta Platforms Ireland Limited" [ref=e3046]:
+                - generic [ref=e3047]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105142071" [ref=e3048]
+              - cell "14.12.2025" [ref=e3049]
+              - cell "875,00 RON" [ref=e3050]:
+                - generic [ref=e3052]: 875,00 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3053]
+              - cell "Sales" [ref=e3054]
+              - cell "processed" [ref=e3055]:
+                - generic [ref=e3056]: processed
+              - cell "paid" [ref=e3057]:
+                - generic [ref=e3058]: paid
+              - cell "Link" [ref=e3059]:
+                - link "Link" [ref=e3060]:
+                  - /url: https://drive.google.com/file/d/1Opnr0Y6EgeQ0dNId5Nhq1h4oJY6nL2hS/view?usp=drivesdk
+              - cell [ref=e3061]:
+                - generic [ref=e3062]:
+                  - button "Edit" [ref=e3063]:
+                    - img
+                  - button "Delete" [ref=e3064]:
+                    - img
+            - row "109 Meta Platforms Ireland Limited FBADS-271-105144540 15.12.2025 123,04 RON Autoworld PLUS S.R.L. Aftersales processed paid Link" [ref=e3065] [cursor=pointer]:
+              - cell [ref=e3066]:
+                - checkbox [ref=e3067]
+              - cell "109" [ref=e3068]:
+                - generic [ref=e3069]:
+                  - img [ref=e3070]
+                  - text: "109"
+              - cell "Meta Platforms Ireland Limited" [ref=e3072]:
+                - generic [ref=e3073]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105144540" [ref=e3074]
+              - cell "15.12.2025" [ref=e3075]
+              - cell "123,04 RON" [ref=e3076]:
+                - generic [ref=e3078]: 123,04 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3079]
+              - cell "Aftersales" [ref=e3080]
+              - cell "processed" [ref=e3081]:
+                - generic [ref=e3082]: processed
+              - cell "paid" [ref=e3083]:
+                - generic [ref=e3084]: paid
+              - cell "Link" [ref=e3085]:
+                - link "Link" [ref=e3086]:
+                  - /url: https://drive.google.com/file/d/1Cm-hIaXNqaoZptr4AzAcGgl2j7OE_Ed0/view?usp=drivesdk
+              - cell [ref=e3087]:
+                - generic [ref=e3088]:
+                  - button "Edit" [ref=e3089]:
+                    - img
+                  - button "Delete" [ref=e3090]:
+                    - img
+            - row "108 Meta Platforms Ireland Limited FBADS-271-105144541 15.12.2025 246,08 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e3091] [cursor=pointer]:
+              - cell [ref=e3092]:
+                - checkbox [ref=e3093]
+              - cell "108" [ref=e3094]:
+                - generic [ref=e3095]:
+                  - img [ref=e3096]
+                  - text: "108"
+              - cell "Meta Platforms Ireland Limited" [ref=e3098]:
+                - generic [ref=e3099]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105144541" [ref=e3100]
+              - cell "15.12.2025" [ref=e3101]
+              - cell "246,08 RON" [ref=e3102]:
+                - generic [ref=e3104]: 246,08 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3105]
+              - cell "Sales" [ref=e3106]
+              - cell "processed" [ref=e3107]:
+                - generic [ref=e3108]: processed
+              - cell "paid" [ref=e3109]:
+                - generic [ref=e3110]: paid
+              - cell "Link" [ref=e3111]:
+                - link "Link" [ref=e3112]:
+                  - /url: https://drive.google.com/file/d/14_kuI-phfL1XZpLsdldQ6CxIGH_dZfqU/view?usp=drivesdk
+              - cell [ref=e3113]:
+                - generic [ref=e3114]:
+                  - button "Edit" [ref=e3115]:
+                    - img
+                  - button "Delete" [ref=e3116]:
+                    - img
+            - row "107 Meta Platforms Ireland Limited FBADS-271-105144542 15.12.2025 492,16 RON Autoworld PLUS S.R.L. Aftersales processed paid Link" [ref=e3117] [cursor=pointer]:
+              - cell [ref=e3118]:
+                - checkbox [ref=e3119]
+              - cell "107" [ref=e3120]:
+                - generic [ref=e3121]:
+                  - img [ref=e3122]
+                  - text: "107"
+              - cell "Meta Platforms Ireland Limited" [ref=e3124]:
+                - generic [ref=e3125]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105144542" [ref=e3126]
+              - cell "15.12.2025" [ref=e3127]
+              - cell "492,16 RON" [ref=e3128]:
+                - generic [ref=e3130]: 492,16 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3131]
+              - cell "Aftersales" [ref=e3132]
+              - cell "processed" [ref=e3133]:
+                - generic [ref=e3134]: processed
+              - cell "paid" [ref=e3135]:
+                - generic [ref=e3136]: paid
+              - cell "Link" [ref=e3137]:
+                - link "Link" [ref=e3138]:
+                  - /url: https://drive.google.com/file/d/14H0QV-p1u6RdHEKNtqBA4Z4oXzhhwYRK/view?usp=drivesdk
+              - cell [ref=e3139]:
+                - generic [ref=e3140]:
+                  - button "Edit" [ref=e3141]:
+                    - img
+                  - button "Delete" [ref=e3142]:
+                    - img
+            - row "106 Meta Platforms Ireland Limited FBADS-271-105149887 16.12.2025 139,04 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e3143] [cursor=pointer]:
+              - cell [ref=e3144]:
+                - checkbox [ref=e3145]
+              - cell "106" [ref=e3146]:
+                - generic [ref=e3147]:
+                  - img [ref=e3148]
+                  - text: "106"
+              - cell "Meta Platforms Ireland Limited" [ref=e3150]:
+                - generic [ref=e3151]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105149887" [ref=e3152]
+              - cell "16.12.2025" [ref=e3153]
+              - cell "139,04 RON" [ref=e3154]:
+                - generic [ref=e3156]: 139,04 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3157]
+              - cell "Sales" [ref=e3158]
+              - cell "processed" [ref=e3159]:
+                - generic [ref=e3160]: processed
+              - cell "paid" [ref=e3161]:
+                - generic [ref=e3162]: paid
+              - cell "Link" [ref=e3163]:
+                - link "Link" [ref=e3164]:
+                  - /url: https://drive.google.com/file/d/1Rb0QA6U3voZE08hZjOhQIHEn_OaLUCDs/view?usp=drivesdk
+              - cell [ref=e3165]:
+                - generic [ref=e3166]:
+                  - button "Edit" [ref=e3167]:
+                    - img
+                  - button "Delete" [ref=e3168]:
+                    - img
+            - row "105 Meta Platforms Ireland Limited FBADS-271-105149896 16.12.2025 243,31 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e3169] [cursor=pointer]:
+              - cell [ref=e3170]:
+                - checkbox [ref=e3171]
+              - cell "105" [ref=e3172]:
+                - generic [ref=e3173]:
+                  - img [ref=e3174]
+                  - text: "105"
+              - cell "Meta Platforms Ireland Limited" [ref=e3176]:
+                - generic [ref=e3177]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105149896" [ref=e3178]
+              - cell "16.12.2025" [ref=e3179]
+              - cell "243,31 RON" [ref=e3180]:
+                - generic [ref=e3182]: 243,31 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3183]
+              - cell "Sales" [ref=e3184]
+              - cell "processed" [ref=e3185]:
+                - generic [ref=e3186]: processed
+              - cell "paid" [ref=e3187]:
+                - generic [ref=e3188]: paid
+              - cell "Link" [ref=e3189]:
+                - link "Link" [ref=e3190]:
+                  - /url: https://drive.google.com/file/d/1BlVGHOXtHt6Ch6Q2aRooCfbWAWp7LTBC/view?usp=drivesdk
+              - cell [ref=e3191]:
+                - generic [ref=e3192]:
+                  - button "Edit" [ref=e3193]:
+                    - img
+                  - button "Delete" [ref=e3194]:
+                    - img
+            - row "104 Meta Platforms Ireland Limited FBADS-271-105149915 16.12.2025 364,96 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e3195] [cursor=pointer]:
+              - cell [ref=e3196]:
+                - checkbox [ref=e3197]
+              - cell "104" [ref=e3198]:
+                - generic [ref=e3199]:
+                  - img [ref=e3200]
+                  - text: "104"
+              - cell "Meta Platforms Ireland Limited" [ref=e3202]:
+                - generic [ref=e3203]: Meta Platforms Ireland Limited
+              - cell "FBADS-271-105149915" [ref=e3204]
+              - cell "16.12.2025" [ref=e3205]
+              - cell "364,96 RON" [ref=e3206]:
+                - generic [ref=e3208]: 364,96 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3209]
+              - cell "Sales" [ref=e3210]
+              - cell "processed" [ref=e3211]:
+                - generic [ref=e3212]: processed
+              - cell "paid" [ref=e3213]:
+                - generic [ref=e3214]: paid
+              - cell "Link" [ref=e3215]:
+                - link "Link" [ref=e3216]:
+                  - /url: https://drive.google.com/file/d/1uMAKyVFbDYUzuqsmK-oQrhivqN_akJpJ/view?usp=drivesdk
+              - cell [ref=e3217]:
+                - generic [ref=e3218]:
+                  - button "Edit" [ref=e3219]:
+                    - img
+                  - button "Delete" [ref=e3220]:
+                    - img
+            - row "103 VGS ROMANIA SRL VGSR 3443 04.12.2025 608,63 RON Autoworld PRESTIGE S.R.L. Sales processed paid Link" [ref=e3221] [cursor=pointer]:
+              - cell [ref=e3222]:
+                - checkbox [ref=e3223]
+              - cell "103" [ref=e3224]:
+                - generic [ref=e3225]:
+                  - img [ref=e3226]
+                  - text: "103"
+              - cell "VGS ROMANIA SRL" [ref=e3228]:
+                - generic [ref=e3229]: VGS ROMANIA SRL
+              - cell "VGSR 3443" [ref=e3230]
+              - cell "04.12.2025" [ref=e3231]
+              - cell "608,63 RON" [ref=e3232]:
+                - generic [ref=e3234]: 608,63 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e3235]
+              - cell "Sales" [ref=e3236]
+              - cell "processed" [ref=e3237]:
+                - generic [ref=e3238]: processed
+              - cell "paid" [ref=e3239]:
+                - generic [ref=e3240]: paid
+              - cell "Link" [ref=e3241]:
+                - link "Link" [ref=e3242]:
+                  - /url: https://drive.google.com/file/d/1Msvn87cXlmfQKI4HrHGsmxuj2F1n7gta/view?usp=drivesdk
+              - cell [ref=e3243]:
+                - generic [ref=e3244]:
+                  - button "Edit" [ref=e3245]:
+                    - img
+                  - button "Delete" [ref=e3246]:
+                    - img
+            - row "102 VGS ROMANIA SRL VGSR 3457 26.12.2025 708,29 RON Autoworld PRESTIGE S.R.L. Aftersales processed paid Link" [ref=e3247] [cursor=pointer]:
+              - cell [ref=e3248]:
+                - checkbox [ref=e3249]
+              - cell "102" [ref=e3250]:
+                - generic [ref=e3251]:
+                  - img [ref=e3252]
+                  - text: "102"
+              - cell "VGS ROMANIA SRL" [ref=e3254]:
+                - generic [ref=e3255]: VGS ROMANIA SRL
+              - cell "VGSR 3457" [ref=e3256]
+              - cell "26.12.2025" [ref=e3257]
+              - cell "708,29 RON" [ref=e3258]:
+                - generic [ref=e3260]: 708,29 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e3261]
+              - cell "Aftersales" [ref=e3262]
+              - cell "processed" [ref=e3263]:
+                - generic [ref=e3264]: processed
+              - cell "paid" [ref=e3265]:
+                - generic [ref=e3266]: paid
+              - cell "Link" [ref=e3267]:
+                - link "Link" [ref=e3268]:
+                  - /url: https://drive.google.com/file/d/1ByDJz_CZRWos8Vugpg2YOOaBbsCUEp6n/view?usp=drivesdk
+              - cell [ref=e3269]:
+                - generic [ref=e3270]:
+                  - button "Edit" [ref=e3271]:
+                    - img
+                  - button "Delete" [ref=e3272]:
+                    - img
+            - row "101 VGS ROMANIA SRL VGSR 3442 04.12.2025 647,35 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e3273] [cursor=pointer]:
+              - cell [ref=e3274]:
+                - checkbox [ref=e3275]
+              - cell "101" [ref=e3276]:
+                - generic [ref=e3277]:
+                  - img [ref=e3278]
+                  - text: "101"
+              - cell "VGS ROMANIA SRL" [ref=e3280]:
+                - generic [ref=e3281]: VGS ROMANIA SRL
+              - cell "VGSR 3442" [ref=e3282]
+              - cell "04.12.2025" [ref=e3283]
+              - cell "647,35 RON" [ref=e3284]:
+                - generic [ref=e3286]: 647,35 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3287]
+              - cell "Sales" [ref=e3288]
+              - cell "processed" [ref=e3289]:
+                - generic [ref=e3290]: processed
+              - cell "paid" [ref=e3291]:
+                - generic [ref=e3292]: paid
+              - cell "Link" [ref=e3293]:
+                - link "Link" [ref=e3294]:
+                  - /url: https://drive.google.com/file/d/1PeW-AZnaq6EhQfO0N6tdbbu-bvSjIQ4s/view?usp=drivesdk
+              - cell [ref=e3295]:
+                - generic [ref=e3296]:
+                  - button "Edit" [ref=e3297]:
+                    - img
+                  - button "Delete" [ref=e3298]:
+                    - img
+            - row "100 VGS ROMANIA SRL VGSR 3458 26.12.2025 906,18 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e3299] [cursor=pointer]:
+              - cell [ref=e3300]:
+                - checkbox [ref=e3301]
+              - cell "100" [ref=e3302]:
+                - generic [ref=e3303]:
+                  - img [ref=e3304]
+                  - text: "100"
+              - cell "VGS ROMANIA SRL" [ref=e3306]:
+                - generic [ref=e3307]: VGS ROMANIA SRL
+              - cell "VGSR 3458" [ref=e3308]
+              - cell "26.12.2025" [ref=e3309]
+              - cell "906,18 RON" [ref=e3310]:
+                - generic [ref=e3312]: 906,18 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3313]
+              - cell "Sales" [ref=e3314]
+              - cell "processed" [ref=e3315]:
+                - generic [ref=e3316]: processed
+              - cell "paid" [ref=e3317]:
+                - generic [ref=e3318]: paid
+              - cell "Link" [ref=e3319]:
+                - link "Link" [ref=e3320]:
+                  - /url: https://drive.google.com/file/d/1W-tZp2OztdNReBqxvj6UOPg7ikg7OHVk/view?usp=drivesdk
+              - cell [ref=e3321]:
+                - generic [ref=e3322]:
+                  - button "Edit" [ref=e3323]:
+                    - img
+                  - button "Delete" [ref=e3324]:
+                    - img
+            - row "99 LUNA CLEANING MAGIC S.R.L. LUNA nr. 2822 29.12.2025 1.139,40 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e3325] [cursor=pointer]:
+              - cell [ref=e3326]:
+                - checkbox [ref=e3327]
+              - cell "99" [ref=e3328]:
+                - generic [ref=e3329]:
+                  - img [ref=e3330]
+                  - text: "99"
+              - cell "LUNA CLEANING MAGIC S.R.L." [ref=e3332]:
+                - generic [ref=e3333]: LUNA CLEANING MAGIC S.R.L.
+              - cell "LUNA nr. 2822" [ref=e3334]
+              - cell "29.12.2025" [ref=e3335]
+              - cell "1.139,40 RON" [ref=e3336]:
+                - generic [ref=e3338]: 1.139,40 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3339]
+              - cell "Sales" [ref=e3340]
+              - cell "processed" [ref=e3341]:
+                - generic [ref=e3342]: processed
+              - cell "paid" [ref=e3343]:
+                - generic [ref=e3344]: paid
+              - cell "Link" [ref=e3345]:
+                - link "Link" [ref=e3346]:
+                  - /url: https://drive.google.com/file/d/1YRh8RB3wTGPPEIpXuUM-0ikk13ptcUB-/view?usp=drivesdk
+              - cell [ref=e3347]:
+                - generic [ref=e3348]:
+                  - button "Edit" [ref=e3349]:
+                    - img
+                  - button "Delete" [ref=e3350]:
+                    - img
+            - row "98 Google Ireland Limited 5459181905 31.12.2025 4.343,14 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e3351] [cursor=pointer]:
+              - cell [ref=e3352]:
+                - checkbox [ref=e3353]
+              - cell "98" [ref=e3354]:
+                - generic [ref=e3355]:
+                  - img [ref=e3356]
+                  - text: "98"
+              - cell "Google Ireland Limited" [ref=e3358]:
+                - generic [ref=e3359]: Google Ireland Limited
+              - cell "5459181905" [ref=e3360]
+              - cell "31.12.2025" [ref=e3361]
+              - cell "4.343,14 RON" [ref=e3362]:
+                - generic [ref=e3364]: 4.343,14 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e3365]
+              - cell "Sales" [ref=e3366]
+              - cell "processed" [ref=e3367]:
+                - generic [ref=e3368]: processed
+              - cell "paid" [ref=e3369]:
+                - generic [ref=e3370]: paid
+              - cell "Link" [ref=e3371]:
+                - link "Link" [ref=e3372]:
+                  - /url: https://drive.google.com/file/d/161liLkeiGwJuRoIkeDTDugIVobWjW_C3/view?usp=drivesdk
+              - cell [ref=e3373]:
+                - generic [ref=e3374]:
+                  - button "Edit" [ref=e3375]:
+                    - img
+                  - button "Delete" [ref=e3376]:
+                    - img
+            - row "97 Meta Platforms Ireland Limited FBADS-528-105315964 11.01.2026 103,50 RON Autoworld INTERNATIONAL S.R.L. Sales processed paid Link" [ref=e3377] [cursor=pointer]:
+              - cell [ref=e3378]:
+                - checkbox [ref=e3379]
+              - cell "97" [ref=e3380]:
+                - generic [ref=e3381]:
+                  - img [ref=e3382]
+                  - text: "97"
+              - cell "Meta Platforms Ireland Limited" [ref=e3384]:
+                - generic [ref=e3385]: Meta Platforms Ireland Limited
+              - cell "FBADS-528-105315964" [ref=e3386]
+              - cell "11.01.2026" [ref=e3387]
+              - cell "103,50 RON" [ref=e3388]:
+                - generic [ref=e3390]: 103,50 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e3391]
+              - cell "Sales" [ref=e3392]
+              - cell "processed" [ref=e3393]:
+                - generic [ref=e3394]: processed
+              - cell "paid" [ref=e3395]:
+                - generic [ref=e3396]: paid
+              - cell "Link" [ref=e3397]:
+                - link "Link" [ref=e3398]:
+                  - /url: https://drive.google.com/file/d/1JlN_KNnnhWt0CeGSuQ1S4PqyRiuibdas/view?usp=drivesdk
+              - cell [ref=e3399]:
+                - generic [ref=e3400]:
+                  - button "Edit" [ref=e3401]:
+                    - img
+                  - button "Delete" [ref=e3402]:
+                    - img
+            - row "96 Meta Platforms Ireland Limited FBADS-416-105234039 31.12.2025 489,45 RON Autoworld ONE S.R.L. Aftersales processed paid Link" [ref=e3403] [cursor=pointer]:
+              - cell [ref=e3404]:
+                - checkbox [ref=e3405]
+              - cell "96" [ref=e3406]:
+                - generic [ref=e3407]:
+                  - img [ref=e3408]
+                  - text: "96"
+              - cell "Meta Platforms Ireland Limited" [ref=e3410]:
+                - generic [ref=e3411]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105234039" [ref=e3412]
+              - cell "31.12.2025" [ref=e3413]
+              - cell "489,45 RON" [ref=e3414]:
+                - generic [ref=e3416]: 489,45 RON
+              - cell "Autoworld ONE S.R.L." [ref=e3417]
+              - cell "Aftersales" [ref=e3418]
+              - cell "processed" [ref=e3419]:
+                - generic [ref=e3420]: processed
+              - cell "paid" [ref=e3421]:
+                - generic [ref=e3422]: paid
+              - cell "Link" [ref=e3423]:
+                - link "Link" [ref=e3424]:
+                  - /url: https://drive.google.com/file/d/1nODdvqBJuj4j9ikyA9HxEs9cVMOe_lPc/view?usp=drivesdk
+              - cell [ref=e3425]:
+                - generic [ref=e3426]:
+                  - button "Edit" [ref=e3427]:
+                    - img
+                  - button "Delete" [ref=e3428]:
+                    - img
+            - row "95 Meta Platforms Ireland Limited FBADS-416-105191330 18.12.2025 657,50 RON Autoworld ONE S.R.L. Sales processed paid Link" [ref=e3429] [cursor=pointer]:
+              - cell [ref=e3430]:
+                - checkbox [ref=e3431]
+              - cell "95" [ref=e3432]:
+                - generic [ref=e3433]:
+                  - img [ref=e3434]
+                  - text: "95"
+              - cell "Meta Platforms Ireland Limited" [ref=e3436]:
+                - generic [ref=e3437]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105191330" [ref=e3438]
+              - cell "18.12.2025" [ref=e3439]
+              - cell "657,50 RON" [ref=e3440]:
+                - generic [ref=e3442]: 657,50 RON
+              - cell "Autoworld ONE S.R.L." [ref=e3443]
+              - cell "Sales" [ref=e3444]
+              - cell "processed" [ref=e3445]:
+                - generic [ref=e3446]: processed
+              - cell "paid" [ref=e3447]:
+                - generic [ref=e3448]: paid
+              - cell "Link" [ref=e3449]:
+                - link "Link" [ref=e3450]:
+                  - /url: https://drive.google.com/file/d/1dcmB1Qcw_RQ9D4gL2UAtvPoggsG1hIV_/view?usp=drivesdk
+              - cell [ref=e3451]:
+                - generic [ref=e3452]:
+                  - button "Edit" [ref=e3453]:
+                    - img
+                  - button "Delete" [ref=e3454]:
+                    - img
+            - row "94 Meta Platforms Ireland Limited FBADS-569-105267260 27.12.2025 92,74 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e3455] [cursor=pointer]:
+              - cell [ref=e3456]:
+                - checkbox [ref=e3457]
+              - cell "94" [ref=e3458]:
+                - generic [ref=e3459]:
+                  - img [ref=e3460]
+                  - text: "94"
+              - cell "Meta Platforms Ireland Limited" [ref=e3462]:
+                - generic [ref=e3463]: Meta Platforms Ireland Limited
+              - cell "FBADS-569-105267260" [ref=e3464]
+              - cell "27.12.2025" [ref=e3465]
+              - cell "92,74 RON" [ref=e3466]:
+                - generic [ref=e3468]: 92,74 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e3469]
+              - cell "Sales" [ref=e3470]
+              - cell "processed" [ref=e3471]:
+                - generic [ref=e3472]: processed
+              - cell "paid" [ref=e3473]:
+                - generic [ref=e3474]: paid
+              - cell "Link" [ref=e3475]:
+                - link "Link" [ref=e3476]:
+                  - /url: https://drive.google.com/file/d/1xNgYWJylQpPNOvcg24BQStAZB425Gk7G/view?usp=drivesdk
+              - cell [ref=e3477]:
+                - generic [ref=e3478]:
+                  - button "Edit" [ref=e3479]:
+                    - img
+                  - button "Delete" [ref=e3480]:
+                    - img
+            - row "93 Meta Platforms Ireland Limited FBADS-416-105269415 10.01.2026 2.457,57 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e3481] [cursor=pointer]:
+              - cell [ref=e3482]:
+                - checkbox [ref=e3483]
+              - cell "93" [ref=e3484]:
+                - generic [ref=e3485]:
+                  - img [ref=e3486]
+                  - text: "93"
+              - cell "Meta Platforms Ireland Limited" [ref=e3488]:
+                - generic [ref=e3489]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105269415" [ref=e3490]
+              - cell "10.01.2026" [ref=e3491]
+              - cell "2.457,57 RON" [ref=e3492]:
+                - generic [ref=e3494]: 2.457,57 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e3495]
+              - cell "Sales" [ref=e3496]
+              - cell "processed" [ref=e3497]:
+                - generic [ref=e3498]: processed
+              - cell "paid" [ref=e3499]:
+                - generic [ref=e3500]: paid
+              - cell "Link" [ref=e3501]:
+                - link "Link" [ref=e3502]:
+                  - /url: https://drive.google.com/file/d/1AYAuR-jJVATfLe1UXbv5o0kN2qWNrf_G/view?usp=drivesdk
+              - cell [ref=e3503]:
+                - generic [ref=e3504]:
+                  - button "Edit" [ref=e3505]:
+                    - img
+                  - button "Delete" [ref=e3506]:
+                    - img
+            - row "92 Meta Platforms Ireland Limited FBADS-416-105195236 19.12.2025 3.499,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e3507] [cursor=pointer]:
+              - cell [ref=e3508]:
+                - checkbox [ref=e3509]
+              - cell "92" [ref=e3510]:
+                - generic [ref=e3511]:
+                  - img [ref=e3512]
+                  - text: "92"
+              - cell "Meta Platforms Ireland Limited" [ref=e3514]:
+                - generic [ref=e3515]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105195236" [ref=e3516]
+              - cell "19.12.2025" [ref=e3517]
+              - cell "3.499,00 RON" [ref=e3518]:
+                - generic [ref=e3520]: 3.499,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e3521]
+              - cell "Sales" [ref=e3522]
+              - cell "processed" [ref=e3523]:
+                - generic [ref=e3524]: processed
+              - cell "paid" [ref=e3525]:
+                - generic [ref=e3526]: paid
+              - cell "Link" [ref=e3527]:
+                - link "Link" [ref=e3528]:
+                  - /url: https://drive.google.com/file/d/1SP2M4TpSttSln1v-BaSXwNomlnInkXHh/view?usp=drivesdk
+              - cell [ref=e3529]:
+                - generic [ref=e3530]:
+                  - button "Edit" [ref=e3531]:
+                    - img
+                  - button "Delete" [ref=e3532]:
+                    - img
+            - row "91 Meta Platforms Ireland Limited FBADS-416-105187620 17.12.2025 4.583,61 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e3533] [cursor=pointer]:
+              - cell [ref=e3534]:
+                - checkbox [ref=e3535]
+              - cell "91" [ref=e3536]:
+                - generic [ref=e3537]:
+                  - img [ref=e3538]
+                  - text: "91"
+              - cell "Meta Platforms Ireland Limited" [ref=e3540]:
+                - generic [ref=e3541]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105187620" [ref=e3542]
+              - cell "17.12.2025" [ref=e3543]
+              - cell "4.583,61 RON" [ref=e3544]:
+                - generic [ref=e3546]: 4.583,61 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e3547]
+              - cell "Sales" [ref=e3548]
+              - cell "processed" [ref=e3549]:
+                - generic [ref=e3550]: processed
+              - cell "paid" [ref=e3551]:
+                - generic [ref=e3552]: paid
+              - cell "Link" [ref=e3553]:
+                - link "Link" [ref=e3554]:
+                  - /url: https://drive.google.com/file/d/1RIm51iFTbdeb65E_7yghyxUtCfo681TK/view?usp=drivesdk
+              - cell [ref=e3555]:
+                - generic [ref=e3556]:
+                  - button "Edit" [ref=e3557]:
+                    - img
+                  - button "Delete" [ref=e3558]:
+                    - img
+            - row "90 Meta Platforms Ireland Limited FBADS-569-105264679 26.12.2025 296,76 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e3559] [cursor=pointer]:
+              - cell [ref=e3560]:
+                - checkbox [ref=e3561]
+              - cell "90" [ref=e3562]:
+                - generic [ref=e3563]:
+                  - img [ref=e3564]
+                  - text: "90"
+              - cell "Meta Platforms Ireland Limited" [ref=e3566]:
+                - generic [ref=e3567]: Meta Platforms Ireland Limited
+              - cell "FBADS-569-105264679" [ref=e3568]
+              - cell "26.12.2025" [ref=e3569]
+              - cell "296,76 RON" [ref=e3570]:
+                - generic [ref=e3572]: 296,76 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e3573]
+              - cell "Sales" [ref=e3574]
+              - cell "processed" [ref=e3575]:
+                - generic [ref=e3576]: processed
+              - cell "paid" [ref=e3577]:
+                - generic [ref=e3578]: paid
+              - cell "Link" [ref=e3579]:
+                - link "Link" [ref=e3580]:
+                  - /url: https://drive.google.com/file/d/1SeYBvbBaVweJZGNe7BvpcelHmz72A3jx/view?usp=drivesdk
+              - cell [ref=e3581]:
+                - generic [ref=e3582]:
+                  - button "Edit" [ref=e3583]:
+                    - img
+                  - button "Delete" [ref=e3584]:
+                    - img
+            - row "89 Meta Platforms Ireland Limited FBADS-569-105264677 26.12.2025 148,38 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e3585] [cursor=pointer]:
+              - cell [ref=e3586]:
+                - checkbox [ref=e3587]
+              - cell "89" [ref=e3588]:
+                - generic [ref=e3589]:
+                  - img [ref=e3590]
+                  - text: "89"
+              - cell "Meta Platforms Ireland Limited" [ref=e3592]:
+                - generic [ref=e3593]: Meta Platforms Ireland Limited
+              - cell "FBADS-569-105264677" [ref=e3594]
+              - cell "26.12.2025" [ref=e3595]
+              - cell "148,38 RON" [ref=e3596]:
+                - generic [ref=e3598]: 148,38 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e3599]
+              - cell "Sales" [ref=e3600]
+              - cell "processed" [ref=e3601]:
+                - generic [ref=e3602]: processed
+              - cell "paid" [ref=e3603]:
+                - generic [ref=e3604]: paid
+              - cell "Link" [ref=e3605]:
+                - link "Link" [ref=e3606]:
+                  - /url: https://drive.google.com/file/d/1klvt7mBBLyRS3nSeyRf-qv0IoEGs9owD/view?usp=drivesdk
+              - cell [ref=e3607]:
+                - generic [ref=e3608]:
+                  - button "Edit" [ref=e3609]:
+                    - img
+                  - button "Delete" [ref=e3610]:
+                    - img
+            - row "88 Meta Platforms Ireland Limited FBADS-416-105174343 14.12.2025 165,67 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e3611] [cursor=pointer]:
+              - cell [ref=e3612]:
+                - checkbox [ref=e3613]
+              - cell "88" [ref=e3614]:
+                - generic [ref=e3615]:
+                  - img [ref=e3616]
+                  - text: "88"
+              - cell "Meta Platforms Ireland Limited" [ref=e3618]:
+                - generic [ref=e3619]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105174343" [ref=e3620]
+              - cell "14.12.2025" [ref=e3621]
+              - cell "165,67 RON" [ref=e3622]:
+                - generic [ref=e3624]: 165,67 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e3625]
+              - cell "Sales" [ref=e3626]
+              - cell "processed" [ref=e3627]:
+                - generic [ref=e3628]: processed
+              - cell "paid" [ref=e3629]:
+                - generic [ref=e3630]: paid
+              - cell "Link" [ref=e3631]:
+                - link "Link" [ref=e3632]:
+                  - /url: https://drive.google.com/file/d/1toxKIjzfneWQht6QL7aDy7zD_YlRwLZC/view?usp=drivesdk
+              - cell [ref=e3633]:
+                - generic [ref=e3634]:
+                  - button "Edit" [ref=e3635]:
+                    - img
+                  - button "Delete" [ref=e3636]:
+                    - img
+            - row "87 Zalau Value Centre SRL PK20260057 12.01.2026 5.541,59 RON AUTOWORLD S.R.L. Marketing processed not_paid Link" [ref=e3637] [cursor=pointer]:
+              - cell [ref=e3638]:
+                - checkbox [ref=e3639]
+              - cell "87" [ref=e3640]:
+                - generic [ref=e3641]:
+                  - img [ref=e3642]
+                  - text: "87"
+              - cell "Zalau Value Centre SRL" [ref=e3644]:
+                - generic [ref=e3645]: Zalau Value Centre SRL
+              - cell "PK20260057" [ref=e3646]
+              - cell "12.01.2026" [ref=e3647]
+              - cell "5.541,59 RON" [ref=e3648]:
+                - generic [ref=e3650]: 5.541,59 RON
+              - cell "AUTOWORLD S.R.L." [ref=e3651]
+              - cell "Marketing" [ref=e3652]
+              - cell "processed" [ref=e3653]:
+                - generic [ref=e3654]: processed
+              - cell "not_paid" [ref=e3655]:
+                - generic [ref=e3656]: not_paid
+              - cell "Link" [ref=e3657]:
+                - link "Link" [ref=e3658]:
+                  - /url: https://drive.google.com/file/d/1ivhFWfvWlNfocu7QrrPsZyLpG5uJp2dH/view?usp=drivesdk
+              - cell [ref=e3659]:
+                - generic [ref=e3660]:
+                  - button "Edit" [ref=e3661]:
+                    - img
+                  - button "Delete" [ref=e3662]:
+                    - img
+            - row "86 Google Ireland Limited 5457877229 31.12.2025 2.504,91 RON Autoworld ONE S.R.L. Aftersales processed paid Link" [ref=e3663] [cursor=pointer]:
+              - cell [ref=e3664]:
+                - checkbox [ref=e3665]
+              - cell "86" [ref=e3666]:
+                - generic [ref=e3667]:
+                  - img [ref=e3668]
+                  - text: "86"
+              - cell "Google Ireland Limited" [ref=e3670]:
+                - generic [ref=e3671]: Google Ireland Limited
+              - cell "5457877229" [ref=e3672]
+              - cell "31.12.2025" [ref=e3673]
+              - cell "2.504,91 RON" [ref=e3674]:
+                - generic [ref=e3676]: 2.504,91 RON
+              - cell "Autoworld ONE S.R.L." [ref=e3677]
+              - cell "Aftersales" [ref=e3678]
+              - cell "processed" [ref=e3679]:
+                - generic [ref=e3680]: processed
+              - cell "paid" [ref=e3681]:
+                - generic [ref=e3682]: paid
+              - cell "Link" [ref=e3683]:
+                - link "Link" [ref=e3684]:
+                  - /url: https://drive.google.com/file/d/1kP_3TRG5XPFFMxsE2SvjIyk-u_x8xre7/view?usp=drivesdk
+              - cell [ref=e3685]:
+                - generic [ref=e3686]:
+                  - button "Edit" [ref=e3687]:
+                    - img
+                  - button "Delete" [ref=e3688]:
+                    - img
+            - row "85 VGS ROMANIA SRL VGSR 3459 26.12.2025 119,03 RON Autoworld PREMIUM S.R.L. Aftersales processed paid Link" [ref=e3689] [cursor=pointer]:
+              - cell [ref=e3690]:
+                - checkbox [ref=e3691]
+              - cell "85" [ref=e3692]:
+                - generic [ref=e3693]:
+                  - img [ref=e3694]
+                  - text: "85"
+              - cell "VGS ROMANIA SRL" [ref=e3696]:
+                - generic [ref=e3697]: VGS ROMANIA SRL
+              - cell "VGSR 3459" [ref=e3698]
+              - cell "26.12.2025" [ref=e3699]
+              - cell "119,03 RON" [ref=e3700]:
+                - generic [ref=e3702]: 119,03 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e3703]
+              - cell "Aftersales" [ref=e3704]
+              - cell "processed" [ref=e3705]:
+                - generic [ref=e3706]: processed
+              - cell "paid" [ref=e3707]:
+                - generic [ref=e3708]: paid
+              - cell "Link" [ref=e3709]:
+                - link "Link" [ref=e3710]:
+                  - /url: https://drive.google.com/file/d/1z3y3eGAV1wrxfNGmE8K1MpDGAB3LlMOI/view?usp=drivesdk
+              - cell [ref=e3711]:
+                - generic [ref=e3712]:
+                  - button "Edit" [ref=e3713]:
+                    - img
+                  - button "Delete" [ref=e3714]:
+                    - img
+            - row "84 OLX Online Services SRL 2026120025486 16.12.2025 4.889,64 RON Autoworld INTERNATIONAL S.R.L. Sales processed not_paid Link" [ref=e3715] [cursor=pointer]:
+              - cell [ref=e3716]:
+                - checkbox [ref=e3717]
+              - cell "84" [ref=e3718]:
+                - generic [ref=e3719]:
+                  - img [ref=e3720]
+                  - text: "84"
+              - cell "OLX Online Services SRL" [ref=e3722]:
+                - generic [ref=e3723]: OLX Online Services SRL
+              - cell "2026120025486" [ref=e3724]
+              - cell "16.12.2025" [ref=e3725]
+              - cell "4.889,64 RON" [ref=e3726]:
+                - generic [ref=e3728]: 4.889,64 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e3729]
+              - cell "Sales" [ref=e3730]
+              - cell "processed" [ref=e3731]:
+                - generic [ref=e3732]: processed
+              - cell "not_paid" [ref=e3733]:
+                - generic [ref=e3734]: not_paid
+              - cell "Link" [ref=e3735]:
+                - link "Link" [ref=e3736]:
+                  - /url: https://drive.google.com/file/d/1uWnjMTa-hVe7BbJRxiBopE0YPID32DsY/view?usp=drivesdk
+              - cell [ref=e3737]:
+                - generic [ref=e3738]:
+                  - button "Edit" [ref=e3739]:
+                    - img
+                  - button "Delete" [ref=e3740]:
+                    - img
+            - row "83 CRUSH DISTRIBUTION SRL CRD-F2519988 28.11.2025 4.687,63 RON Autoworld INTERNATIONAL S.R.L. Sales processed not_paid Link" [ref=e3741] [cursor=pointer]:
+              - cell [ref=e3742]:
+                - checkbox [ref=e3743]
+              - cell "83" [ref=e3744]:
+                - generic [ref=e3745]:
+                  - img [ref=e3746]
+                  - text: "83"
+              - cell "CRUSH DISTRIBUTION SRL" [ref=e3748]:
+                - generic [ref=e3749]: CRUSH DISTRIBUTION SRL
+              - cell "CRD-F2519988" [ref=e3750]
+              - cell "28.11.2025" [ref=e3751]
+              - cell "4.687,63 RON" [ref=e3752]:
+                - generic [ref=e3754]: 4.687,63 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e3755]
+              - cell "Sales" [ref=e3756]
+              - cell "processed" [ref=e3757]:
+                - generic [ref=e3758]: processed
+              - cell "not_paid" [ref=e3759]:
+                - generic [ref=e3760]: not_paid
+              - cell "Link" [ref=e3761]:
+                - link "Link" [ref=e3762]:
+                  - /url: https://drive.google.com/file/d/1hgiA-8S3RxXo9Sn2NmvR5ZfpSvth9k-6/view?usp=drivesdk
+              - cell [ref=e3763]:
+                - generic [ref=e3764]:
+                  - button "Edit" [ref=e3765]:
+                    - img
+                  - button "Delete" [ref=e3766]:
+                    - img
+            - row "82 OLX Online Services SRL 2026/1200226916 05.01.2026 3.326,13 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e3767] [cursor=pointer]:
+              - cell [ref=e3768]:
+                - checkbox [ref=e3769]
+              - cell "82" [ref=e3770]:
+                - generic [ref=e3771]:
+                  - img [ref=e3772]
+                  - text: "82"
+              - cell "OLX Online Services SRL" [ref=e3774]:
+                - generic [ref=e3775]: OLX Online Services SRL
+              - cell "2026/1200226916" [ref=e3776]
+              - cell "05.01.2026" [ref=e3777]
+              - cell "3.326,13 RON" [ref=e3778]:
+                - generic [ref=e3780]: 3.326,13 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3781]
+              - cell "Sales" [ref=e3782]
+              - cell "processed" [ref=e3783]:
+                - generic [ref=e3784]: processed
+              - cell "paid" [ref=e3785]:
+                - generic [ref=e3786]: paid
+              - cell "Link" [ref=e3787]:
+                - link "Link" [ref=e3788]:
+                  - /url: https://drive.google.com/file/d/1EZN2sSbmS20BPhG4puSuw67w89EqvRdr/view?usp=drivesdk
+              - cell [ref=e3789]:
+                - generic [ref=e3790]:
+                  - button "Edit" [ref=e3791]:
+                    - img
+                  - button "Delete" [ref=e3792]:
+                    - img
+            - row "81 OLX Online Services SRL 2026/1200225660 03.01.2026 15.655,90 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e3793] [cursor=pointer]:
+              - cell [ref=e3794]:
+                - checkbox [ref=e3795]
+              - cell "81" [ref=e3796]:
+                - generic [ref=e3797]:
+                  - img [ref=e3798]
+                  - text: "81"
+              - cell "OLX Online Services SRL" [ref=e3800]:
+                - generic [ref=e3801]: OLX Online Services SRL
+              - cell "2026/1200225660" [ref=e3802]
+              - cell "03.01.2026" [ref=e3803]
+              - cell "15.655,90 RON" [ref=e3804]:
+                - generic [ref=e3806]: 15.655,90 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e3807]
+              - cell "Sales" [ref=e3808]
+              - cell "processed" [ref=e3809]:
+                - generic [ref=e3810]: processed
+              - cell "paid" [ref=e3811]:
+                - generic [ref=e3812]: paid
+              - cell "Link" [ref=e3813]:
+                - link "Link" [ref=e3814]:
+                  - /url: https://drive.google.com/file/d/1D_thMHMaX6GOr_Iu22CCRVf0eY05Cb1H/view?usp=drivesdk
+              - cell [ref=e3815]:
+                - generic [ref=e3816]:
+                  - button "Edit" [ref=e3817]:
+                    - img
+                  - button "Delete" [ref=e3818]:
+                    - img
+            - row "80 OLX Online Services SRL 2026/1200225655 03.01.2026 4.995,45 RON Autoworld PREMIUM S.R.L. Sales eronata paid Link" [ref=e3819] [cursor=pointer]:
+              - cell [ref=e3820]:
+                - checkbox [ref=e3821]
+              - cell "80" [ref=e3822]:
+                - generic [ref=e3823]:
+                  - img [ref=e3824]
+                  - text: "80"
+              - cell "OLX Online Services SRL" [ref=e3826]:
+                - generic [ref=e3827]: OLX Online Services SRL
+              - cell "2026/1200225655" [ref=e3828]
+              - cell "03.01.2026" [ref=e3829]
+              - cell "4.995,45 RON" [ref=e3830]:
+                - generic [ref=e3832]: 4.995,45 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e3833]
+              - cell "Sales" [ref=e3834]
+              - cell "eronata" [ref=e3835]:
+                - generic [ref=e3836]: eronata
+              - cell "paid" [ref=e3837]:
+                - generic [ref=e3838]: paid
+              - cell "Link" [ref=e3839]:
+                - link "Link" [ref=e3840]:
+                  - /url: https://drive.google.com/file/d/1aghl6PbKFvMM7KCSLymo2-i4x-WzNNLy/view?usp=drivesdk
+              - cell [ref=e3841]:
+                - generic [ref=e3842]:
+                  - button "Edit" [ref=e3843]:
+                    - img
+                  - button "Delete" [ref=e3844]:
+                    - img
+            - row "79 OLX Online Services SRL 2026/1200219759 22.12.2025 3.843,91 RON Autoworld PRESTIGE S.R.L. Sales processed not_paid Link" [ref=e3845] [cursor=pointer]:
+              - cell [ref=e3846]:
+                - checkbox [ref=e3847]
+              - cell "79" [ref=e3848]:
+                - generic [ref=e3849]:
+                  - img [ref=e3850]
+                  - text: "79"
+              - cell "OLX Online Services SRL" [ref=e3852]:
+                - generic [ref=e3853]: OLX Online Services SRL
+              - cell "2026/1200219759" [ref=e3854]
+              - cell "22.12.2025" [ref=e3855]
+              - cell "3.843,91 RON" [ref=e3856]:
+                - generic [ref=e3858]: 3.843,91 RON
+              - cell "Autoworld PRESTIGE S.R.L." [ref=e3859]
+              - cell "Sales" [ref=e3860]
+              - cell "processed" [ref=e3861]:
+                - generic [ref=e3862]: processed
+              - cell "not_paid" [ref=e3863]:
+                - generic [ref=e3864]: not_paid
+              - cell "Link" [ref=e3865]:
+                - link "Link" [ref=e3866]:
+                  - /url: https://drive.google.com/file/d/1ml4XYg9iYJA0vwijraJRUDEHtGZLevfX/view?usp=drivesdk
+              - cell [ref=e3867]:
+                - generic [ref=e3868]:
+                  - button "Edit" [ref=e3869]:
+                    - img
+                  - button "Delete" [ref=e3870]:
+                    - img
+            - row "78 Shopify International Limited 469842557 07.01.2026 322,95 USD Autoworld ONE S.R.L. Sales processed paid Link" [ref=e3871] [cursor=pointer]:
+              - cell [ref=e3872]:
+                - checkbox [ref=e3873]
+              - cell "78" [ref=e3874]:
+                - generic [ref=e3875]:
+                  - img [ref=e3876]
+                  - text: "78"
+              - cell "Shopify International Limited" [ref=e3878]:
+                - generic [ref=e3879]: Shopify International Limited
+              - cell "469842557" [ref=e3880]
+              - cell "07.01.2026" [ref=e3881]
+              - cell "322,95 USD" [ref=e3882]:
+                - generic [ref=e3884]: 322,95 USD
+              - cell "Autoworld ONE S.R.L." [ref=e3885]
+              - cell "Sales" [ref=e3886]
+              - cell "processed" [ref=e3887]:
+                - generic [ref=e3888]: processed
+              - cell "paid" [ref=e3889]:
+                - generic [ref=e3890]: paid
+              - cell "Link" [ref=e3891]:
+                - link "Link" [ref=e3892]:
+                  - /url: https://drive.google.com/file/d/1B2MsVpkfeT0OxDRqfxIUA8u9iop9Nh5T/view?usp=drivesdk
+              - cell [ref=e3893]:
+                - generic [ref=e3894]:
+                  - button "Edit" [ref=e3895]:
+                    - img
+                  - button "Delete" [ref=e3896]:
+                    - img
+            - row "77 Awesome Projects SRL FF-348515 01.01.2026 113,14 RON AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e3897] [cursor=pointer]:
+              - cell [ref=e3898]:
+                - checkbox [ref=e3899]
+              - cell "77" [ref=e3900]:
+                - generic [ref=e3901]:
+                  - img [ref=e3902]
+                  - text: "77"
+              - cell "Awesome Projects SRL" [ref=e3904]:
+                - generic [ref=e3905]: Awesome Projects SRL
+              - cell "FF-348515" [ref=e3906]
+              - cell "01.01.2026" [ref=e3907]
+              - cell "113,14 RON" [ref=e3908]:
+                - generic [ref=e3910]: 113,14 RON
+              - cell "AUTOWORLD S.R.L." [ref=e3911]
+              - cell "Conducere" [ref=e3912]
+              - cell "processed" [ref=e3913]:
+                - generic [ref=e3914]: processed
+              - cell "paid" [ref=e3915]:
+                - generic [ref=e3916]: paid
+              - cell "Link" [ref=e3917]:
+                - link "Link" [ref=e3918]:
+                  - /url: https://drive.google.com/file/d/1KPK1R-20IF7sROmR_7Z7p6ASuuIlioH2/view?usp=drivesdk
+              - cell [ref=e3919]:
+                - generic [ref=e3920]:
+                  - button "Edit" [ref=e3921]:
+                    - img
+                  - button "Delete" [ref=e3922]:
+                    - img
+            - row "76 Google Ireland Limited 5456946208 31.12.2025 1.198,21 RON Autoworld INTERNATIONAL S.R.L. Sales processed paid Link" [ref=e3923] [cursor=pointer]:
+              - cell [ref=e3924]:
+                - checkbox [ref=e3925]
+              - cell "76" [ref=e3926]:
+                - generic [ref=e3927]:
+                  - img [ref=e3928]
+                  - text: "76"
+              - cell "Google Ireland Limited" [ref=e3930]:
+                - generic [ref=e3931]: Google Ireland Limited
+              - cell "5456946208" [ref=e3932]
+              - cell "31.12.2025" [ref=e3933]
+              - cell "1.198,21 RON" [ref=e3934]:
+                - generic [ref=e3936]: 1.198,21 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e3937]
+              - cell "Sales" [ref=e3938]
+              - cell "processed" [ref=e3939]:
+                - generic [ref=e3940]: processed
+              - cell "paid" [ref=e3941]:
+                - generic [ref=e3942]: paid
+              - cell "Link" [ref=e3943]:
+                - link "Link" [ref=e3944]:
+                  - /url: https://drive.google.com/file/d/19VC6dj01JZtLYbY-bJybjxZ7Greg_hWi/view?usp=drivesdk
+              - cell [ref=e3945]:
+                - generic [ref=e3946]:
+                  - button "Edit" [ref=e3947]:
+                    - img
+                  - button "Delete" [ref=e3948]:
+                    - img
+            - row "75 SC FIRSTCLEAN SRL FCL 2731 05.01.2026 326,70 RON Autoworld PLUS S.R.L. Sales processed paid Link" [ref=e3949] [cursor=pointer]:
+              - cell [ref=e3950]:
+                - checkbox [ref=e3951]
+              - cell "75" [ref=e3952]:
+                - generic [ref=e3953]:
+                  - img [ref=e3954]
+                  - text: "75"
+              - cell "SC FIRSTCLEAN SRL" [ref=e3956]:
+                - generic [ref=e3957]: SC FIRSTCLEAN SRL
+              - cell "FCL 2731" [ref=e3958]
+              - cell "05.01.2026" [ref=e3959]
+              - cell "326,70 RON" [ref=e3960]:
+                - generic [ref=e3962]: 326,70 RON
+              - cell "Autoworld PLUS S.R.L." [ref=e3963]
+              - cell "Sales" [ref=e3964]
+              - cell "processed" [ref=e3965]:
+                - generic [ref=e3966]: processed
+              - cell "paid" [ref=e3967]:
+                - generic [ref=e3968]: paid
+              - cell "Link" [ref=e3969]:
+                - link "Link" [ref=e3970]:
+                  - /url: https://drive.google.com/file/d/1PAbqGKKGeO9OCviwFus8hMB7E2sXcwWI/view?usp=drivesdk
+              - cell [ref=e3971]:
+                - generic [ref=e3972]:
+                  - button "Edit" [ref=e3973]:
+                    - img
+                  - button "Delete" [ref=e3974]:
+                    - img
+            - row "74 LUCI DETAILING AND COSMETIC AUTO SRL 3 05.01.2026 270,00 RON AUTOWORLD S.R.L. Marketing incomplete not_paid Link" [ref=e3975] [cursor=pointer]:
+              - cell [ref=e3976]:
+                - checkbox [ref=e3977]
+              - cell "74" [ref=e3978]:
+                - generic [ref=e3979]:
+                  - img [ref=e3980]
+                  - text: "74"
+              - cell "LUCI DETAILING AND COSMETIC AUTO SRL" [ref=e3982]:
+                - generic [ref=e3983]: LUCI DETAILING AND COSMETIC AUTO SRL
+              - cell "3" [ref=e3984]
+              - cell "05.01.2026" [ref=e3985]
+              - cell "270,00 RON" [ref=e3986]:
+                - generic [ref=e3988]: 270,00 RON
+              - cell "AUTOWORLD S.R.L." [ref=e3989]
+              - cell "Marketing" [ref=e3990]
+              - cell "incomplete" [ref=e3991]:
+                - generic [ref=e3992]: incomplete
+              - cell "not_paid" [ref=e3993]:
+                - generic [ref=e3994]: not_paid
+              - cell "Link" [ref=e3995]:
+                - link "Link" [ref=e3996]:
+                  - /url: https://drive.google.com/file/d/1xBezs5kvQxuPVOp6aTx_tXbWJyHKjuYS/view?usp=drivesdk
+              - cell [ref=e3997]:
+                - generic [ref=e3998]:
+                  - button "Edit" [ref=e3999]:
+                    - img
+                  - button "Delete" [ref=e4000]:
+                    - img
+            - row "73 SOFTIMPERA SRL SI10391 26.12.2025 400,26 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e4001] [cursor=pointer]:
+              - cell [ref=e4002]:
+                - checkbox [ref=e4003]
+              - cell "73" [ref=e4004]:
+                - generic [ref=e4005]:
+                  - img [ref=e4006]
+                  - text: "73"
+              - cell "SOFTIMPERA SRL" [ref=e4008]:
+                - generic [ref=e4009]: SOFTIMPERA SRL
+              - cell "SI10391" [ref=e4010]
+              - cell "26.12.2025" [ref=e4011]
+              - cell "400,26 RON" [ref=e4012]:
+                - generic [ref=e4014]: 400,26 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e4015]
+              - cell "Sales" [ref=e4016]
+              - cell "processed" [ref=e4017]:
+                - generic [ref=e4018]: processed
+              - cell "paid" [ref=e4019]:
+                - generic [ref=e4020]: paid
+              - cell "Link" [ref=e4021]:
+                - link "Link" [ref=e4022]:
+                  - /url: https://drive.google.com/file/d/1xBezs5kvQxuPVOp6aTx_tXbWJyHKjuYS/view?usp=drivesdk
+              - cell [ref=e4023]:
+                - generic [ref=e4024]:
+                  - button "Edit" [ref=e4025]:
+                    - img
+                  - button "Delete" [ref=e4026]:
+                    - img
+            - row "72 PK TOPAZ S.R.L. PK20260012 05.01.2026 4.935,35 RON AUTOWORLD S.R.L. Marketing processed not_paid Link" [ref=e4027] [cursor=pointer]:
+              - cell [ref=e4028]:
+                - checkbox [ref=e4029]
+              - cell "72" [ref=e4030]:
+                - generic [ref=e4031]:
+                  - img [ref=e4032]
+                  - text: "72"
+              - cell "PK TOPAZ S.R.L." [ref=e4034]:
+                - generic [ref=e4035]: PK TOPAZ S.R.L.
+              - cell "PK20260012" [ref=e4036]
+              - cell "05.01.2026" [ref=e4037]
+              - cell "4.935,35 RON" [ref=e4038]:
+                - generic [ref=e4040]: 4.935,35 RON
+              - cell "AUTOWORLD S.R.L." [ref=e4041]
+              - cell "Marketing" [ref=e4042]
+              - cell "processed" [ref=e4043]:
+                - generic [ref=e4044]: processed
+              - cell "not_paid" [ref=e4045]:
+                - generic [ref=e4046]: not_paid
+              - cell "Link" [ref=e4047]:
+                - link "Link" [ref=e4048]:
+                  - /url: https://drive.google.com/file/d/1K9lE1CptUwxlEnYrGnSMJG0dkZ0hYRTE/view?usp=drivesdk
+              - cell [ref=e4049]:
+                - generic [ref=e4050]:
+                  - button "Edit" [ref=e4051]:
+                    - img
+                  - button "Delete" [ref=e4052]:
+                    - img
+            - 'row "71 NEPI Investment Management SRL RNEP nr: 2025003243 23.12.2025 5.771,81 RON AUTOWORLD S.R.L. Marketing processed not_paid Link" [ref=e4053] [cursor=pointer]':
+              - cell [ref=e4054]:
+                - checkbox [ref=e4055]
+              - cell "71" [ref=e4056]:
+                - generic [ref=e4057]:
+                  - img [ref=e4058]
+                  - text: "71"
+              - cell "NEPI Investment Management SRL" [ref=e4060]:
+                - generic [ref=e4061]: NEPI Investment Management SRL
+              - 'cell "RNEP nr: 2025003243" [ref=e4062]'
+              - cell "23.12.2025" [ref=e4063]
+              - cell "5.771,81 RON" [ref=e4064]:
+                - generic [ref=e4066]: 5.771,81 RON
+              - cell "AUTOWORLD S.R.L." [ref=e4067]
+              - cell "Marketing" [ref=e4068]
+              - cell "processed" [ref=e4069]:
+                - generic [ref=e4070]: processed
+              - cell "not_paid" [ref=e4071]:
+                - generic [ref=e4072]: not_paid
+              - cell "Link" [ref=e4073]:
+                - link "Link" [ref=e4074]:
+                  - /url: https://drive.google.com/file/d/17-CqDhJZs3jIft-AKm9lmpmee1O-i8LN/view?usp=drivesdk
+              - cell [ref=e4075]:
+                - generic [ref=e4076]:
+                  - button "Edit" [ref=e4077]:
+                    - img
+                  - button "Delete" [ref=e4078]:
+                    - img
+            - 'row "70 NEPI Investment Management SRL RNEP nr: 2025002880 27.11.2025 5.774,31 RON AUTOWORLD S.R.L. Marketing processed not_paid Link" [ref=e4079] [cursor=pointer]':
+              - cell [ref=e4080]:
+                - checkbox [ref=e4081]
+              - cell "70" [ref=e4082]:
+                - generic [ref=e4083]:
+                  - img [ref=e4084]
+                  - text: "70"
+              - cell "NEPI Investment Management SRL" [ref=e4086]:
+                - generic [ref=e4087]: NEPI Investment Management SRL
+              - 'cell "RNEP nr: 2025002880" [ref=e4088]'
+              - cell "27.11.2025" [ref=e4089]
+              - cell "5.774,31 RON" [ref=e4090]:
+                - generic [ref=e4092]: 5.774,31 RON
+              - cell "AUTOWORLD S.R.L." [ref=e4093]
+              - cell "Marketing" [ref=e4094]
+              - cell "processed" [ref=e4095]:
+                - generic [ref=e4096]: processed
+              - cell "not_paid" [ref=e4097]:
+                - generic [ref=e4098]: not_paid
+              - cell "Link" [ref=e4099]:
+                - link "Link" [ref=e4100]:
+                  - /url: https://drive.google.com/file/d/17-CqDhJZs3jIft-AKm9lmpmee1O-i8LN/view?usp=drivesdk
+              - cell [ref=e4101]:
+                - generic [ref=e4102]:
+                  - button "Edit" [ref=e4103]:
+                    - img
+                  - button "Delete" [ref=e4104]:
+                    - img
+            - row "69 OpenAI, LLC 2943F109-0009 23.12.2025 100,00 USD AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e4105] [cursor=pointer]:
+              - cell [ref=e4106]:
+                - checkbox [ref=e4107]
+              - cell "69" [ref=e4108]:
+                - generic [ref=e4109]:
+                  - img [ref=e4110]
+                  - text: "69"
+              - cell "OpenAI, LLC" [ref=e4112]:
+                - generic [ref=e4113]: OpenAI, LLC
+              - cell "2943F109-0009" [ref=e4114]
+              - cell "23.12.2025" [ref=e4115]
+              - cell "100,00 USD" [ref=e4116]:
+                - generic [ref=e4118]: 100,00 USD
+              - cell "AUTOWORLD S.R.L." [ref=e4119]
+              - cell "Conducere" [ref=e4120]
+              - cell "processed" [ref=e4121]:
+                - generic [ref=e4122]: processed
+              - cell "paid" [ref=e4123]:
+                - generic [ref=e4124]: paid
+              - cell "Link" [ref=e4125]:
+                - link "Link" [ref=e4126]:
+                  - /url: https://drive.google.com/file/d/1bC-DtVtH9fPkpPcK1o81PSeYXSXVBAV6/view?usp=drivesdk
+              - cell [ref=e4127]:
+                - generic [ref=e4128]:
+                  - button "Edit" [ref=e4129]:
+                    - img
+                  - button "Delete" [ref=e4130]:
+                    - img
+            - row "68 Mailchimp c/o The Rocket Science Group, LLC MC22270407 16.12.2025 98,41 EUR Autoworld INTERNATIONAL S.R.L. Aftersales processed paid Link" [ref=e4131] [cursor=pointer]:
+              - cell [ref=e4132]:
+                - checkbox [ref=e4133]
+              - cell "68" [ref=e4134]:
+                - generic [ref=e4135]:
+                  - img [ref=e4136]
+                  - text: "68"
+              - cell "Mailchimp c/o The Rocket Science Group, LLC" [ref=e4138]:
+                - generic [ref=e4139]: Mailchimp c/o The Rocket Science Group, LLC
+              - cell "MC22270407" [ref=e4140]
+              - cell "16.12.2025" [ref=e4141]
+              - cell "98,41 EUR" [ref=e4142]:
+                - generic [ref=e4144]: 98,41 EUR
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e4145]
+              - cell "Aftersales" [ref=e4146]
+              - cell "processed" [ref=e4147]:
+                - generic [ref=e4148]: processed
+              - cell "paid" [ref=e4149]:
+                - generic [ref=e4150]: paid
+              - cell "Link" [ref=e4151]:
+                - link "Link" [ref=e4152]:
+                  - /url: https://drive.google.com/file/d/12feFiitBNUYTAy1xpmzwExOizZGMnSoB/view?usp=drivesdk
+              - cell [ref=e4153]:
+                - generic [ref=e4154]:
+                  - button "Edit" [ref=e4155]:
+                    - img
+                  - button "Delete" [ref=e4156]:
+                    - img
+            - row "67 Meta Platforms Ireland Limited FBADS-528-105219425 15.12.2025 723,25 RON Autoworld INTERNATIONAL S.R.L. Sales processed paid Link" [ref=e4157] [cursor=pointer]:
+              - cell [ref=e4158]:
+                - checkbox [ref=e4159]
+              - cell "67" [ref=e4160]:
+                - generic [ref=e4161]:
+                  - img [ref=e4162]
+                  - text: "67"
+              - cell "Meta Platforms Ireland Limited" [ref=e4164]:
+                - generic [ref=e4165]: Meta Platforms Ireland Limited
+              - cell "FBADS-528-105219425" [ref=e4166]
+              - cell "15.12.2025" [ref=e4167]
+              - cell "723,25 RON" [ref=e4168]:
+                - generic [ref=e4170]: 723,25 RON
+              - cell "Autoworld INTERNATIONAL S.R.L." [ref=e4171]
+              - cell "Sales" [ref=e4172]
+              - cell "processed" [ref=e4173]:
+                - generic [ref=e4174]: processed
+              - cell "paid" [ref=e4175]:
+                - generic [ref=e4176]: paid
+              - cell "Link" [ref=e4177]:
+                - link "Link" [ref=e4178]:
+                  - /url: https://drive.google.com/file/d/1RPsB-y7bAybVkD6_jBYyISCVr0auheZq/view?usp=drivesdk
+              - cell [ref=e4179]:
+                - generic [ref=e4180]:
+                  - button "Edit" [ref=e4181]:
+                    - img
+                  - button "Delete" [ref=e4182]:
+                    - img
+            - row "66 SERV COMPANY SRL 560 19.12.2025 847,00 RON AUTOWORLD S.R.L. Marketing processed not_paid Link" [ref=e4183] [cursor=pointer]:
+              - cell [ref=e4184]:
+                - checkbox [ref=e4185]
+              - cell "66" [ref=e4186]:
+                - generic [ref=e4187]:
+                  - img [ref=e4188]
+                  - text: "66"
+              - cell "SERV COMPANY SRL" [ref=e4190]:
+                - generic [ref=e4191]: SERV COMPANY SRL
+              - cell "560" [ref=e4192]
+              - cell "19.12.2025" [ref=e4193]
+              - cell "847,00 RON" [ref=e4194]:
+                - generic [ref=e4196]: 847,00 RON
+              - cell "AUTOWORLD S.R.L." [ref=e4197]
+              - cell "Marketing" [ref=e4198]
+              - cell "processed" [ref=e4199]:
+                - generic [ref=e4200]: processed
+              - cell "not_paid" [ref=e4201]:
+                - generic [ref=e4202]: not_paid
+              - cell "Link" [ref=e4203]:
+                - link "Link" [ref=e4204]:
+                  - /url: https://drive.google.com/file/d/1FpYtumACWpbmYQFMc0eDBLGFmy7SXPAT/view?usp=drivesdk
+              - cell [ref=e4205]:
+                - generic [ref=e4206]:
+                  - button "Edit" [ref=e4207]:
+                    - img
+                  - button "Delete" [ref=e4208]:
+                    - img
+            - row "65 SKYTA ECO CLEAN SRL 041 18.12.2025 1.400,00 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e4209] [cursor=pointer]:
+              - cell [ref=e4210]:
+                - checkbox [ref=e4211]
+              - cell "65" [ref=e4212]:
+                - generic [ref=e4213]:
+                  - img [ref=e4214]
+                  - text: "65"
+              - cell "SKYTA ECO CLEAN SRL" [ref=e4216]:
+                - generic [ref=e4217]: SKYTA ECO CLEAN SRL
+              - cell "041" [ref=e4218]
+              - cell "18.12.2025" [ref=e4219]
+              - cell "1.400,00 RON" [ref=e4220]:
+                - generic [ref=e4222]: 1.400,00 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e4223]
+              - cell "Sales" [ref=e4224]
+              - cell "processed" [ref=e4225]:
+                - generic [ref=e4226]: processed
+              - cell "paid" [ref=e4227]:
+                - generic [ref=e4228]: paid
+              - cell "Link" [ref=e4229]:
+                - link "Link" [ref=e4230]:
+                  - /url: https://drive.google.com/file/d/1dkla-r7pTDuGZp6Zt9znPxOutZkqbnzH/view?usp=drivesdk
+              - cell [ref=e4231]:
+                - generic [ref=e4232]:
+                  - button "Edit" [ref=e4233]:
+                    - img
+                  - button "Delete" [ref=e4234]:
+                    - img
+            - row "64 OLX Online Services SRL 2026/1200213871 14.12.2025 8.512,97 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e4235] [cursor=pointer]:
+              - cell [ref=e4236]:
+                - checkbox [ref=e4237]
+              - cell "64" [ref=e4238]:
+                - generic [ref=e4239]:
+                  - img [ref=e4240]
+                  - text: "64"
+              - cell "OLX Online Services SRL" [ref=e4242]:
+                - generic [ref=e4243]: OLX Online Services SRL
+              - cell "2026/1200213871" [ref=e4244]
+              - cell "14.12.2025" [ref=e4245]
+              - cell "8.512,97 RON" [ref=e4246]:
+                - generic [ref=e4248]: 8.512,97 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e4249]
+              - cell "Sales" [ref=e4250]
+              - cell "processed" [ref=e4251]:
+                - generic [ref=e4252]: processed
+              - cell "paid" [ref=e4253]:
+                - generic [ref=e4254]: paid
+              - cell "Link" [ref=e4255]:
+                - link "Link" [ref=e4256]:
+                  - /url: https://drive.google.com/file/d/1q4Q8hlwaW5-mibMW7lMIckk-HWsu6Iju/view?usp=drivesdk
+              - cell [ref=e4257]:
+                - generic [ref=e4258]:
+                  - button "Edit" [ref=e4259]:
+                    - img
+                  - button "Delete" [ref=e4260]:
+                    - img
+            - row "63 Anthropic, PBC RLOPHA9P 0006 08.12.2025 108,17 EUR AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e4261] [cursor=pointer]:
+              - cell [ref=e4262]:
+                - checkbox [ref=e4263]
+              - cell "63" [ref=e4264]:
+                - generic [ref=e4265]:
+                  - img [ref=e4266]
+                  - text: "63"
+              - cell "Anthropic, PBC" [ref=e4268]:
+                - generic [ref=e4269]: Anthropic, PBC
+              - cell "RLOPHA9P 0006" [ref=e4270]
+              - cell "08.12.2025" [ref=e4271]
+              - cell "108,17 EUR" [ref=e4272]:
+                - generic [ref=e4274]: 108,17 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e4275]
+              - cell "Conducere" [ref=e4276]
+              - cell "processed" [ref=e4277]:
+                - generic [ref=e4278]: processed
+              - cell "paid" [ref=e4279]:
+                - generic [ref=e4280]: paid
+              - cell "Link" [ref=e4281]:
+                - link "Link" [ref=e4282]:
+                  - /url: https://drive.google.com/file/d/12TZb0mIyHotRF_nLE0bZoyfBtryn2qeH/view?usp=drivesdk
+              - cell [ref=e4283]:
+                - generic [ref=e4284]:
+                  - button "Edit" [ref=e4285]:
+                    - img
+                  - button "Delete" [ref=e4286]:
+                    - img
+            - row "62 Anthropic, PBC RLOPHA9P 0005 02.12.2025 90,00 EUR AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e4287] [cursor=pointer]:
+              - cell [ref=e4288]:
+                - checkbox [ref=e4289]
+              - cell "62" [ref=e4290]:
+                - generic [ref=e4291]:
+                  - img [ref=e4292]
+                  - text: "62"
+              - cell "Anthropic, PBC" [ref=e4294]:
+                - generic [ref=e4295]: Anthropic, PBC
+              - cell "RLOPHA9P 0005" [ref=e4296]
+              - cell "02.12.2025" [ref=e4297]
+              - cell "90,00 EUR" [ref=e4298]:
+                - generic [ref=e4300]: 90,00 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e4301]
+              - cell "Conducere" [ref=e4302]
+              - cell "processed" [ref=e4303]:
+                - generic [ref=e4304]: processed
+              - cell "paid" [ref=e4305]:
+                - generic [ref=e4306]: paid
+              - cell "Link" [ref=e4307]:
+                - link "Link" [ref=e4308]:
+                  - /url: https://drive.google.com/file/d/1UXCA2NbxprRLqFphIjoqhT1IencczrAV/view?usp=drivesdk
+              - cell [ref=e4309]:
+                - generic [ref=e4310]:
+                  - button "Edit" [ref=e4311]:
+                    - img
+                  - button "Delete" [ref=e4312]:
+                    - img
+            - row "61 OpenAI Ireland Limited L8ASBX7X-0002 10.12.2025 79,05 EUR AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e4313] [cursor=pointer]:
+              - cell [ref=e4314]:
+                - checkbox [ref=e4315]
+              - cell "61" [ref=e4316]:
+                - generic [ref=e4317]:
+                  - img [ref=e4318]
+                  - text: "61"
+              - cell "OpenAI Ireland Limited" [ref=e4320]:
+                - generic [ref=e4321]: OpenAI Ireland Limited
+              - cell "L8ASBX7X-0002" [ref=e4322]
+              - cell "10.12.2025" [ref=e4323]
+              - cell "79,05 EUR" [ref=e4324]:
+                - generic [ref=e4326]: 79,05 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e4327]
+              - cell "Conducere" [ref=e4328]
+              - cell "processed" [ref=e4329]:
+                - generic [ref=e4330]: processed
+              - cell "paid" [ref=e4331]:
+                - generic [ref=e4332]: paid
+              - cell "Link" [ref=e4333]:
+                - link "Link" [ref=e4334]:
+                  - /url: https://drive.google.com/file/d/1YzcpGfalVNVUqb1ftf3D2eMfbe8jwRaQ/view?usp=drivesdk
+              - cell [ref=e4335]:
+                - generic [ref=e4336]:
+                  - button "Edit" [ref=e4337]:
+                    - img
+                  - button "Delete" [ref=e4338]:
+                    - img
+            - row "60 MERAKI SOLUTIONS SRL CPY15597 02.12.2025 1.601,10 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e4339] [cursor=pointer]:
+              - cell [ref=e4340]:
+                - checkbox [ref=e4341]
+              - cell "60" [ref=e4342]:
+                - generic [ref=e4343]:
+                  - img [ref=e4344]
+                  - text: "60"
+              - cell "MERAKI SOLUTIONS SRL" [ref=e4346]:
+                - generic [ref=e4347]: MERAKI SOLUTIONS SRL
+              - cell "CPY15597" [ref=e4348]
+              - cell "02.12.2025" [ref=e4349]
+              - cell "1.601,10 RON" [ref=e4350]:
+                - generic [ref=e4352]: 1.601,10 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e4353]
+              - cell "Sales" [ref=e4354]
+              - cell "processed" [ref=e4355]:
+                - generic [ref=e4356]: processed
+              - cell "paid" [ref=e4357]:
+                - generic [ref=e4358]: paid
+              - cell "Link" [ref=e4359]:
+                - link "Link" [ref=e4360]:
+                  - /url: https://drive.google.com/file/d/1D8rm3TIi16SKUuBEmQGabJTsK2c5w36w/view?usp=drivesdk
+              - cell [ref=e4361]:
+                - generic [ref=e4362]:
+                  - button "Edit" [ref=e4363]:
+                    - img
+                  - button "Delete" [ref=e4364]:
+                    - img
+            - row "59 Globo Software Solution., JSC 20251511 17.07.2025 114,00 USD AUTOWORLD S.R.L. Marketing processed paid Link" [ref=e4365] [cursor=pointer]:
+              - cell [ref=e4366]:
+                - checkbox [ref=e4367]
+              - cell "59" [ref=e4368]:
+                - generic [ref=e4369]:
+                  - img [ref=e4370]
+                  - text: "59"
+              - cell "Globo Software Solution., JSC" [ref=e4372]:
+                - generic [ref=e4373]: Globo Software Solution., JSC
+              - cell "20251511" [ref=e4374]
+              - cell "17.07.2025" [ref=e4375]
+              - cell "114,00 USD" [ref=e4376]:
+                - generic [ref=e4378]: 114,00 USD
+              - cell "AUTOWORLD S.R.L." [ref=e4379]
+              - cell "Marketing" [ref=e4380]
+              - cell "processed" [ref=e4381]:
+                - generic [ref=e4382]: processed
+              - cell "paid" [ref=e4383]:
+                - generic [ref=e4384]: paid
+              - cell "Link" [ref=e4385]:
+                - link "Link" [ref=e4386]:
+                  - /url: https://drive.google.com/file/d/1azgEtVNubhVdg-XnDhBkuSGgXIA074sZ/view?usp=drivesdk
+              - cell [ref=e4387]:
+                - generic [ref=e4388]:
+                  - button "Edit" [ref=e4389]:
+                    - img
+                  - button "Delete" [ref=e4390]:
+                    - img
+            - row "56 Meta Platforms Ireland Limited FBADS-416-105169443 12.12.2025 437,64 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e4391] [cursor=pointer]:
+              - cell [ref=e4392]:
+                - checkbox [ref=e4393]
+              - cell "56" [ref=e4394]:
+                - generic [ref=e4395]:
+                  - img [ref=e4396]
+                  - text: "56"
+              - cell "Meta Platforms Ireland Limited" [ref=e4398]:
+                - generic [ref=e4399]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105169443" [ref=e4400]
+              - cell "12.12.2025" [ref=e4401]
+              - cell "437,64 RON" [ref=e4402]:
+                - generic [ref=e4404]: 437,64 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e4405]
+              - cell "Sales" [ref=e4406]
+              - cell "processed" [ref=e4407]:
+                - generic [ref=e4408]: processed
+              - cell "paid" [ref=e4409]:
+                - generic [ref=e4410]: paid
+              - cell "Link" [ref=e4411]:
+                - link "Link" [ref=e4412]:
+                  - /url: https://drive.google.com/file/d/1W3_rFTK4D3KT_0eaJwTV_YPraHt_xyfD/view?usp=drivesdk
+              - cell [ref=e4413]:
+                - generic [ref=e4414]:
+                  - button "Edit" [ref=e4415]:
+                    - img
+                  - button "Delete" [ref=e4416]:
+                    - img
+            - row "55 Meta Platforms Ireland Limited FBADS-416-105169441 12.12.2025 218,82 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e4417] [cursor=pointer]:
+              - cell [ref=e4418]:
+                - checkbox [ref=e4419]
+              - cell "55" [ref=e4420]:
+                - generic [ref=e4421]:
+                  - img [ref=e4422]
+                  - text: "55"
+              - cell "Meta Platforms Ireland Limited" [ref=e4424]:
+                - generic [ref=e4425]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105169441" [ref=e4426]
+              - cell "12.12.2025" [ref=e4427]
+              - cell "218,82 RON" [ref=e4428]:
+                - generic [ref=e4430]: 218,82 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e4431]
+              - cell "Sales" [ref=e4432]
+              - cell "processed" [ref=e4433]:
+                - generic [ref=e4434]: processed
+              - cell "paid" [ref=e4435]:
+                - generic [ref=e4436]: paid
+              - cell "Link" [ref=e4437]:
+                - link "Link" [ref=e4438]:
+                  - /url: https://drive.google.com/file/d/162tqswv0W5gloSPtEB6-iVuTxWDkbvdt/view?usp=drivesdk
+              - cell [ref=e4439]:
+                - generic [ref=e4440]:
+                  - button "Edit" [ref=e4441]:
+                    - img
+                  - button "Delete" [ref=e4442]:
+                    - img
+            - row "54 Meta Platforms Ireland Limited FBADS-416-105169444 12.12.2025 875,28 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e4443] [cursor=pointer]:
+              - cell [ref=e4444]:
+                - checkbox [ref=e4445]
+              - cell "54" [ref=e4446]:
+                - generic [ref=e4447]:
+                  - img [ref=e4448]
+                  - text: "54"
+              - cell "Meta Platforms Ireland Limited" [ref=e4450]:
+                - generic [ref=e4451]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105169444" [ref=e4452]
+              - cell "12.12.2025" [ref=e4453]
+              - cell "875,28 RON" [ref=e4454]:
+                - generic [ref=e4456]: 875,28 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e4457]
+              - cell "Sales" [ref=e4458]
+              - cell "processed" [ref=e4459]:
+                - generic [ref=e4460]: processed
+              - cell "paid" [ref=e4461]:
+                - generic [ref=e4462]: paid
+              - cell "Link" [ref=e4463]:
+                - link "Link" [ref=e4464]:
+                  - /url: https://drive.google.com/file/d/1fvqrxlvxOr_g3_FFWoOhJPmjI-H12R9u/view?usp=drivesdk
+              - cell [ref=e4465]:
+                - generic [ref=e4466]:
+                  - button "Edit" [ref=e4467]:
+                    - img
+                  - button "Delete" [ref=e4468]:
+                    - img
+            - row "53 Meta Platforms Ireland Limited FBADS-416-105158618 09.12.2025 3.499,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e4469] [cursor=pointer]:
+              - cell [ref=e4470]:
+                - checkbox [ref=e4471]
+              - cell "53" [ref=e4472]:
+                - generic [ref=e4473]:
+                  - img [ref=e4474]
+                  - text: "53"
+              - cell "Meta Platforms Ireland Limited" [ref=e4476]:
+                - generic [ref=e4477]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105158618" [ref=e4478]
+              - cell "09.12.2025" [ref=e4479]
+              - cell "3.499,00 RON" [ref=e4480]:
+                - generic [ref=e4482]: 3.499,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e4483]
+              - cell "Sales" [ref=e4484]
+              - cell "processed" [ref=e4485]:
+                - generic [ref=e4486]: processed
+              - cell "paid" [ref=e4487]:
+                - generic [ref=e4488]: paid
+              - cell "Link" [ref=e4489]:
+                - link "Link" [ref=e4490]:
+                  - /url: https://drive.google.com/file/d/1dr-OLSXzGOgqlS9-tXcQwLrNbYdTcYWK/view?usp=drivesdk
+              - cell [ref=e4491]:
+                - generic [ref=e4492]:
+                  - button "Edit" [ref=e4493]:
+                    - img
+                  - button "Delete" [ref=e4494]:
+                    - img
+            - row "52 Meta Platforms Ireland Limited FBADS-416-105149904 07.12.2025 3.499,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e4495] [cursor=pointer]:
+              - cell [ref=e4496]:
+                - checkbox [ref=e4497]
+              - cell "52" [ref=e4498]:
+                - generic [ref=e4499]:
+                  - img [ref=e4500]
+                  - text: "52"
+              - cell "Meta Platforms Ireland Limited" [ref=e4502]:
+                - generic [ref=e4503]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105149904" [ref=e4504]
+              - cell "07.12.2025" [ref=e4505]
+              - cell "3.499,00 RON" [ref=e4506]:
+                - generic [ref=e4508]: 3.499,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e4509]
+              - cell "Sales" [ref=e4510]
+              - cell "processed" [ref=e4511]:
+                - generic [ref=e4512]: processed
+              - cell "paid" [ref=e4513]:
+                - generic [ref=e4514]: paid
+              - cell "Link" [ref=e4515]:
+                - link "Link" [ref=e4516]:
+                  - /url: https://drive.google.com/file/d/1S-zd_0WvKgIUewUidVPR0rwyeAmbeLyE/view?usp=drivesdk
+              - cell [ref=e4517]:
+                - generic [ref=e4518]:
+                  - button "Edit" [ref=e4519]:
+                    - img
+                  - button "Delete" [ref=e4520]:
+                    - img
+            - row "50 Meta Platforms Ireland Limited FBADS-416-105141782 05.12.2025 3.499,00 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e4521] [cursor=pointer]:
+              - cell [ref=e4522]:
+                - checkbox [ref=e4523]
+              - cell "50" [ref=e4524]:
+                - generic [ref=e4525]:
+                  - img [ref=e4526]
+                  - text: "50"
+              - cell "Meta Platforms Ireland Limited" [ref=e4528]:
+                - generic [ref=e4529]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105141782" [ref=e4530]
+              - cell "05.12.2025" [ref=e4531]
+              - cell "3.499,00 RON" [ref=e4532]:
+                - generic [ref=e4534]: 3.499,00 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e4535]
+              - cell "Sales" [ref=e4536]
+              - cell "processed" [ref=e4537]:
+                - generic [ref=e4538]: processed
+              - cell "paid" [ref=e4539]:
+                - generic [ref=e4540]: paid
+              - cell "Link" [ref=e4541]:
+                - link "Link" [ref=e4542]:
+                  - /url: https://drive.google.com/file/d/1MzH5ni6Y6cJWK2d-tgIzmsBvSrtjor42/view?usp=drivesdk
+              - cell [ref=e4543]:
+                - generic [ref=e4544]:
+                  - button "Edit" [ref=e4545]:
+                    - img
+                  - button "Delete" [ref=e4546]:
+                    - img
+            - row "49 Meta Platforms Ireland Limited FBADS-416-105139379 04.12.2025 3.707,15 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e4547] [cursor=pointer]:
+              - cell [ref=e4548]:
+                - checkbox [ref=e4549]
+              - cell "49" [ref=e4550]:
+                - generic [ref=e4551]:
+                  - img [ref=e4552]
+                  - text: "49"
+              - cell "Meta Platforms Ireland Limited" [ref=e4554]:
+                - generic [ref=e4555]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105139379" [ref=e4556]
+              - cell "04.12.2025" [ref=e4557]
+              - cell "3.707,15 RON" [ref=e4558]:
+                - generic [ref=e4560]: 3.707,15 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e4561]
+              - cell "Sales" [ref=e4562]
+              - cell "processed" [ref=e4563]:
+                - generic [ref=e4564]: processed
+              - cell "paid" [ref=e4565]:
+                - generic [ref=e4566]: paid
+              - cell "Link" [ref=e4567]:
+                - link "Link" [ref=e4568]:
+                  - /url: https://drive.google.com/file/d/1J5lHqkgziCiJWw9yNZza2DQ1inhVHtJD/view?usp=drivesdk
+              - cell [ref=e4569]:
+                - generic [ref=e4570]:
+                  - button "Edit" [ref=e4571]:
+                    - img
+                  - button "Delete" [ref=e4572]:
+                    - img
+            - row "47 Meta Platforms Ireland Limited FBADS-416-105183180 16.12.2025 657,50 RON Autoworld ONE S.R.L. Aftersales eronata paid Link" [ref=e4573] [cursor=pointer]:
+              - cell [ref=e4574]:
+                - checkbox [ref=e4575]
+              - cell "47" [ref=e4576]:
+                - generic [ref=e4577]:
+                  - img [ref=e4578]
+                  - text: "47"
+              - cell "Meta Platforms Ireland Limited" [ref=e4580]:
+                - generic [ref=e4581]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105183180" [ref=e4582]
+              - cell "16.12.2025" [ref=e4583]
+              - cell "657,50 RON" [ref=e4584]:
+                - generic [ref=e4586]: 657,50 RON
+              - cell "Autoworld ONE S.R.L." [ref=e4587]
+              - cell "Aftersales" [ref=e4588]
+              - cell "eronata" [ref=e4589]:
+                - generic [ref=e4590]: eronata
+              - cell "paid" [ref=e4591]:
+                - generic [ref=e4592]: paid
+              - cell "Link" [ref=e4593]:
+                - link "Link" [ref=e4594]:
+                  - /url: https://drive.google.com/file/d/1F45wBpH-dRz5KL_yzVrD2Y-BZdy2r6Wx/view?usp=drivesdk
+              - cell [ref=e4595]:
+                - generic [ref=e4596]:
+                  - button "Edit" [ref=e4597]:
+                    - img
+                  - button "Delete" [ref=e4598]:
+                    - img
+            - row "46 Meta Platforms Ireland Limited FBADS-416-105183170 16.12.2025 438,33 RON Autoworld ONE S.R.L. Aftersales new paid Link" [ref=e4599] [cursor=pointer]:
+              - cell [ref=e4600]:
+                - checkbox [ref=e4601]
+              - cell "46" [ref=e4602]:
+                - generic [ref=e4603]:
+                  - img [ref=e4604]
+                  - text: "46"
+              - cell "Meta Platforms Ireland Limited" [ref=e4606]:
+                - generic [ref=e4607]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105183170" [ref=e4608]
+              - cell "16.12.2025" [ref=e4609]
+              - cell "438,33 RON" [ref=e4610]:
+                - generic [ref=e4612]: 438,33 RON
+              - cell "Autoworld ONE S.R.L." [ref=e4613]
+              - cell "Aftersales" [ref=e4614]
+              - cell "new" [ref=e4615]:
+                - generic [ref=e4616]: new
+              - cell "paid" [ref=e4617]:
+                - generic [ref=e4618]: paid
+              - cell "Link" [ref=e4619]:
+                - link "Link" [ref=e4620]:
+                  - /url: https://drive.google.com/file/d/1EHN3uiELxUksZg64uW9Wp9pIZyl5l838/view?usp=drivesdk
+              - cell [ref=e4621]:
+                - generic [ref=e4622]:
+                  - button "Edit" [ref=e4623]:
+                    - img
+                  - button "Delete" [ref=e4624]:
+                    - img
+            - row "45 Meta Platforms Ireland Limited FBADS-416-105183158 16.12.2025 250,48 RON Autoworld ONE S.R.L. Aftersales processed paid Link" [ref=e4625] [cursor=pointer]:
+              - cell [ref=e4626]:
+                - checkbox [ref=e4627]
+              - cell "45" [ref=e4628]:
+                - generic [ref=e4629]:
+                  - img [ref=e4630]
+                  - text: "45"
+              - cell "Meta Platforms Ireland Limited" [ref=e4632]:
+                - generic [ref=e4633]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105183158" [ref=e4634]
+              - cell "16.12.2025" [ref=e4635]
+              - cell "250,48 RON" [ref=e4636]:
+                - generic [ref=e4638]: 250,48 RON
+              - cell "Autoworld ONE S.R.L." [ref=e4639]
+              - cell "Aftersales" [ref=e4640]
+              - cell "processed" [ref=e4641]:
+                - generic [ref=e4642]: processed
+              - cell "paid" [ref=e4643]:
+                - generic [ref=e4644]: paid
+              - cell "Link" [ref=e4645]:
+                - link "Link" [ref=e4646]:
+                  - /url: https://drive.google.com/file/d/1MCqmFLd23VMQ1JlYqtIT3KkXk-BEdgoQ/view?usp=drivesdk
+              - cell [ref=e4647]:
+                - generic [ref=e4648]:
+                  - button "Edit" [ref=e4649]:
+                    - img
+                  - button "Delete" [ref=e4650]:
+                    - img
+            - row "44 Meta Platforms Ireland Limited FBADS-569-105210367 13.12.2025 274,49 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e4651] [cursor=pointer]:
+              - cell [ref=e4652]:
+                - checkbox [ref=e4653]
+              - cell "44" [ref=e4654]:
+                - generic [ref=e4655]:
+                  - img [ref=e4656]
+                  - text: "44"
+              - cell "Meta Platforms Ireland Limited" [ref=e4658]:
+                - generic [ref=e4659]: Meta Platforms Ireland Limited
+              - cell "FBADS-569-105210367" [ref=e4660]
+              - cell "13.12.2025" [ref=e4661]
+              - cell "274,49 RON" [ref=e4662]:
+                - generic [ref=e4664]: 274,49 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e4665]
+              - cell "Sales" [ref=e4666]
+              - cell "processed" [ref=e4667]:
+                - generic [ref=e4668]: processed
+              - cell "paid" [ref=e4669]:
+                - generic [ref=e4670]: paid
+              - cell "Link" [ref=e4671]:
+                - link "Link" [ref=e4672]:
+                  - /url: https://drive.google.com/file/d/1BHZe4Xz3EYxlxgaF2wDLTGHKNLo7r5G9/view?usp=drivesdk
+              - cell [ref=e4673]:
+                - generic [ref=e4674]:
+                  - button "Edit" [ref=e4675]:
+                    - img
+                  - button "Delete" [ref=e4676]:
+                    - img
+            - row "43 Meta Platforms Ireland Limited FBADS-569-105210366 13.12.2025 1.097,72 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e4677] [cursor=pointer]:
+              - cell [ref=e4678]:
+                - checkbox [ref=e4679]
+              - cell "43" [ref=e4680]:
+                - generic [ref=e4681]:
+                  - img [ref=e4682]
+                  - text: "43"
+              - cell "Meta Platforms Ireland Limited" [ref=e4684]:
+                - generic [ref=e4685]: Meta Platforms Ireland Limited
+              - cell "FBADS-569-105210366" [ref=e4686]
+              - cell "13.12.2025" [ref=e4687]
+              - cell "1.097,72 RON" [ref=e4688]:
+                - generic [ref=e4690]: 1.097,72 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e4691]
+              - cell "Sales" [ref=e4692]
+              - cell "processed" [ref=e4693]:
+                - generic [ref=e4694]: processed
+              - cell "paid" [ref=e4695]:
+                - generic [ref=e4696]: paid
+              - cell "Link" [ref=e4697]:
+                - link "Link" [ref=e4698]:
+                  - /url: https://drive.google.com/file/d/1CRQyVdBers1324tXn0-lcSu1dqxI1HW5/view?usp=drivesdk
+              - cell [ref=e4699]:
+                - generic [ref=e4700]:
+                  - button "Edit" [ref=e4701]:
+                    - img
+                  - button "Delete" [ref=e4702]:
+                    - img
+            - row "42 Meta Platforms Ireland Limited FBADS-569-105210365 13.12.2025 548,86 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e4703] [cursor=pointer]:
+              - cell [ref=e4704]:
+                - checkbox [ref=e4705]
+              - cell "42" [ref=e4706]:
+                - generic [ref=e4707]:
+                  - img [ref=e4708]
+                  - text: "42"
+              - cell "Meta Platforms Ireland Limited" [ref=e4710]:
+                - generic [ref=e4711]: Meta Platforms Ireland Limited
+              - cell "FBADS-569-105210365" [ref=e4712]
+              - cell "13.12.2025" [ref=e4713]
+              - cell "548,86 RON" [ref=e4714]:
+                - generic [ref=e4716]: 548,86 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e4717]
+              - cell "Sales" [ref=e4718]
+              - cell "processed" [ref=e4719]:
+                - generic [ref=e4720]: processed
+              - cell "paid" [ref=e4721]:
+                - generic [ref=e4722]: paid
+              - cell "Link" [ref=e4723]:
+                - link "Link" [ref=e4724]:
+                  - /url: https://drive.google.com/file/d/1ntIRQ3KbRRHxnKFoUIFBqPRdfOelhbM_/view?usp=drivesdk
+              - cell [ref=e4725]:
+                - generic [ref=e4726]:
+                  - button "Edit" [ref=e4727]:
+                    - img
+                  - button "Delete" [ref=e4728]:
+                    - img
+            - row "41 Meta Platforms Ireland Limited FBADS-569-105210364 13.12.2025 274,43 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e4729] [cursor=pointer]:
+              - cell [ref=e4730]:
+                - checkbox [ref=e4731]
+              - cell "41" [ref=e4732]:
+                - generic [ref=e4733]:
+                  - img [ref=e4734]
+                  - text: "41"
+              - cell "Meta Platforms Ireland Limited" [ref=e4736]:
+                - generic [ref=e4737]: Meta Platforms Ireland Limited
+              - cell "FBADS-569-105210364" [ref=e4738]
+              - cell "13.12.2025" [ref=e4739]
+              - cell "274,43 RON" [ref=e4740]:
+                - generic [ref=e4742]: 274,43 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e4743]
+              - cell "Sales" [ref=e4744]
+              - cell "processed" [ref=e4745]:
+                - generic [ref=e4746]: processed
+              - cell "paid" [ref=e4747]:
+                - generic [ref=e4748]: paid
+              - cell "Link" [ref=e4749]:
+                - link "Link" [ref=e4750]:
+                  - /url: https://drive.google.com/file/d/1klQuFrutTbpjnZ3P1Glqckfv4AAOmSXa/view?usp=drivesdk
+              - cell [ref=e4751]:
+                - generic [ref=e4752]:
+                  - button "Edit" [ref=e4753]:
+                    - img
+                  - button "Delete" [ref=e4754]:
+                    - img
+            - row "40 Meta Platforms Ireland Limited FBADS-569-105205350 11.12.2025 875,10 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e4755] [cursor=pointer]:
+              - cell [ref=e4756]:
+                - checkbox [ref=e4757]
+              - cell "40" [ref=e4758]:
+                - generic [ref=e4759]:
+                  - img [ref=e4760]
+                  - text: "40"
+              - cell "Meta Platforms Ireland Limited" [ref=e4762]:
+                - generic [ref=e4763]: Meta Platforms Ireland Limited
+              - cell "FBADS-569-105205350" [ref=e4764]
+              - cell "11.12.2025" [ref=e4765]
+              - cell "875,10 RON" [ref=e4766]:
+                - generic [ref=e4768]: 875,10 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e4769]
+              - cell "Sales" [ref=e4770]
+              - cell "processed" [ref=e4771]:
+                - generic [ref=e4772]: processed
+              - cell "paid" [ref=e4773]:
+                - generic [ref=e4774]: paid
+              - cell "Link" [ref=e4775]:
+                - link "Link" [ref=e4776]:
+                  - /url: https://drive.google.com/file/d/1NEAV6MGEP4mRnG_eS_9b_5nqHrvD-_14/view?usp=drivesdk
+              - cell [ref=e4777]:
+                - generic [ref=e4778]:
+                  - button "Edit" [ref=e4779]:
+                    - img
+                  - button "Delete" [ref=e4780]:
+                    - img
+            - row "39 Meta Platforms Ireland Limited FBADS-569-105205349 11.12.2025 437,55 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e4781] [cursor=pointer]:
+              - cell [ref=e4782]:
+                - checkbox [ref=e4783]
+              - cell "39" [ref=e4784]:
+                - generic [ref=e4785]:
+                  - img [ref=e4786]
+                  - text: "39"
+              - cell "Meta Platforms Ireland Limited" [ref=e4788]:
+                - generic [ref=e4789]: Meta Platforms Ireland Limited
+              - cell "FBADS-569-105205349" [ref=e4790]
+              - cell "11.12.2025" [ref=e4791]
+              - cell "437,55 RON" [ref=e4792]:
+                - generic [ref=e4794]: 437,55 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e4795]
+              - cell "Sales" [ref=e4796]
+              - cell "processed" [ref=e4797]:
+                - generic [ref=e4798]: processed
+              - cell "paid" [ref=e4799]:
+                - generic [ref=e4800]: paid
+              - cell "Link" [ref=e4801]:
+                - link "Link" [ref=e4802]:
+                  - /url: https://drive.google.com/file/d/1Lgzj45evw4S7pYdX4SuAYvLqydpkSUvU/view?usp=drivesdk
+              - cell [ref=e4803]:
+                - generic [ref=e4804]:
+                  - button "Edit" [ref=e4805]:
+                    - img
+                  - button "Delete" [ref=e4806]:
+                    - img
+            - row "38 Apify Technologies s.r.o. 202507140663 14.07.2025 421,20 USD AUTOWORLD S.R.L. Marketing processed paid Link" [ref=e4807] [cursor=pointer]:
+              - cell [ref=e4808]:
+                - checkbox [ref=e4809]
+              - cell "38" [ref=e4810]:
+                - generic [ref=e4811]:
+                  - img [ref=e4812]
+                  - text: "38"
+              - cell "Apify Technologies s.r.o." [ref=e4814]:
+                - generic [ref=e4815]: Apify Technologies s.r.o.
+              - cell "202507140663" [ref=e4816]
+              - cell "14.07.2025" [ref=e4817]
+              - cell "421,20 USD" [ref=e4818]:
+                - generic [ref=e4820]: 421,20 USD
+              - cell "AUTOWORLD S.R.L." [ref=e4821]
+              - cell "Marketing" [ref=e4822]
+              - cell "processed" [ref=e4823]:
+                - generic [ref=e4824]: processed
+              - cell "paid" [ref=e4825]:
+                - generic [ref=e4826]: paid
+              - cell "Link" [ref=e4827]:
+                - link "Link" [ref=e4828]:
+                  - /url: https://drive.google.com/file/d/1FcNlmaYX2RNBcMd4ev54rvsvwdwMz8MY/view?usp=drivesdk
+              - cell [ref=e4829]:
+                - generic [ref=e4830]:
+                  - button "Edit" [ref=e4831]:
+                    - img
+                  - button "Delete" [ref=e4832]:
+                    - img
+            - row "37 CRUSH DISTRIBUTION SRL CRD-F2520703 10.12.2025 3.841,83 RON AUTOWORLD S.R.L. Conducere processed not_paid Link" [ref=e4833] [cursor=pointer]:
+              - cell [ref=e4834]:
+                - checkbox [ref=e4835]
+              - cell "37" [ref=e4836]:
+                - generic [ref=e4837]:
+                  - img [ref=e4838]
+                  - text: "37"
+              - cell "CRUSH DISTRIBUTION SRL" [ref=e4840]:
+                - generic [ref=e4841]: CRUSH DISTRIBUTION SRL
+              - cell "CRD-F2520703" [ref=e4842]
+              - cell "10.12.2025" [ref=e4843]
+              - cell "3.841,83 RON" [ref=e4844]:
+                - generic [ref=e4846]: 3.841,83 RON
+              - cell "AUTOWORLD S.R.L." [ref=e4847]
+              - cell "Conducere" [ref=e4848]
+              - cell "processed" [ref=e4849]:
+                - generic [ref=e4850]: processed
+              - cell "not_paid" [ref=e4851]:
+                - generic [ref=e4852]: not_paid
+              - cell "Link" [ref=e4853]:
+                - link "Link" [ref=e4854]:
+                  - /url: https://drive.google.com/file/d/1b7VxIBkXsDCBwVdC5hrqM6jFJS38XuyS/view?usp=drivesdk
+              - cell [ref=e4855]:
+                - generic [ref=e4856]:
+                  - button "Edit" [ref=e4857]:
+                    - img
+                  - button "Delete" [ref=e4858]:
+                    - img
+            - row "36 VGS ROMANIA SRL VGSR 3449 05.12.2025 140,36 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e4859] [cursor=pointer]:
+              - cell [ref=e4860]:
+                - checkbox [ref=e4861]
+              - cell "36" [ref=e4862]:
+                - generic [ref=e4863]:
+                  - img [ref=e4864]
+                  - text: "36"
+              - cell "VGS ROMANIA SRL" [ref=e4866]:
+                - generic [ref=e4867]: VGS ROMANIA SRL
+              - cell "VGSR 3449" [ref=e4868]
+              - cell "05.12.2025" [ref=e4869]
+              - cell "140,36 RON" [ref=e4870]:
+                - generic [ref=e4872]: 140,36 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e4873]
+              - cell "Sales" [ref=e4874]
+              - cell "processed" [ref=e4875]:
+                - generic [ref=e4876]: processed
+              - cell "paid" [ref=e4877]:
+                - generic [ref=e4878]: paid
+              - cell "Link" [ref=e4879]:
+                - link "Link" [ref=e4880]:
+                  - /url: https://drive.google.com/file/d/1zOJP0UmpsZru0Upj3cMp0EJKLKqnOS-Z/view?usp=drivesdk
+              - cell [ref=e4881]:
+                - generic [ref=e4882]:
+                  - button "Edit" [ref=e4883]:
+                    - img
+                  - button "Delete" [ref=e4884]:
+                    - img
+            - row "35 ASTINVEST COM SRL 29699 15.12.2025 702,18 RON AUTOWORLD S.R.L. Marketing processed not_paid Link" [ref=e4885] [cursor=pointer]:
+              - cell [ref=e4886]:
+                - checkbox [ref=e4887]
+              - cell "35" [ref=e4888]:
+                - generic [ref=e4889]:
+                  - img [ref=e4890]
+                  - text: "35"
+              - cell "ASTINVEST COM SRL" [ref=e4892]:
+                - generic [ref=e4893]: ASTINVEST COM SRL
+              - cell "29699" [ref=e4894]
+              - cell "15.12.2025" [ref=e4895]
+              - cell "702,18 RON" [ref=e4896]:
+                - generic [ref=e4898]: 702,18 RON
+              - cell "AUTOWORLD S.R.L." [ref=e4899]
+              - cell "Marketing" [ref=e4900]
+              - cell "processed" [ref=e4901]:
+                - generic [ref=e4902]: processed
+              - cell "not_paid" [ref=e4903]:
+                - generic [ref=e4904]: not_paid
+              - cell "Link" [ref=e4905]:
+                - link "Link" [ref=e4906]:
+                  - /url: https://drive.google.com/file/d/1Q6vdv7eZpQZy07UgoZdmpRFqTG-0ZwGC/view?usp=drivesdk
+              - cell [ref=e4907]:
+                - generic [ref=e4908]:
+                  - button "Edit" [ref=e4909]:
+                    - img
+                  - button "Delete" [ref=e4910]:
+                    - img
+            - row "33 Zalau Value Centre SRL PK20252361 11.12.2025 5.542,36 RON AUTOWORLD S.R.L. Marketing processed not_paid Link" [ref=e4911] [cursor=pointer]:
+              - cell [ref=e4912]:
+                - checkbox [ref=e4913]
+              - cell "33" [ref=e4914]:
+                - generic [ref=e4915]:
+                  - img [ref=e4916]
+                  - text: "33"
+              - cell "Zalau Value Centre SRL" [ref=e4918]:
+                - generic [ref=e4919]: Zalau Value Centre SRL
+              - cell "PK20252361" [ref=e4920]
+              - cell "11.12.2025" [ref=e4921]
+              - cell "5.542,36 RON" [ref=e4922]:
+                - generic [ref=e4924]: 5.542,36 RON
+              - cell "AUTOWORLD S.R.L." [ref=e4925]
+              - cell "Marketing" [ref=e4926]
+              - cell "processed" [ref=e4927]:
+                - generic [ref=e4928]: processed
+              - cell "not_paid" [ref=e4929]:
+                - generic [ref=e4930]: not_paid
+              - cell "Link" [ref=e4931]:
+                - link "Link" [ref=e4932]:
+                  - /url: https://drive.google.com/file/d/1zGCxfyXNyvEz6Omh4A05k7DTCYTMluRo/view?usp=drivesdk
+              - cell [ref=e4933]:
+                - generic [ref=e4934]:
+                  - button "Edit" [ref=e4935]:
+                    - img
+                  - button "Delete" [ref=e4936]:
+                    - img
+            - row "32 SENDSMS SOLUTIONS S.R.L. AMD 30733 02.12.2025 55,53 RON AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e4937] [cursor=pointer]:
+              - cell [ref=e4938]:
+                - checkbox [ref=e4939]
+              - cell "32" [ref=e4940]:
+                - generic [ref=e4941]:
+                  - img [ref=e4942]
+                  - text: "32"
+              - cell "SENDSMS SOLUTIONS S.R.L." [ref=e4944]:
+                - generic [ref=e4945]: SENDSMS SOLUTIONS S.R.L.
+              - cell "AMD 30733" [ref=e4946]
+              - cell "02.12.2025" [ref=e4947]
+              - cell "55,53 RON" [ref=e4948]:
+                - generic [ref=e4950]: 55,53 RON
+              - cell "AUTOWORLD S.R.L." [ref=e4951]
+              - cell "Conducere" [ref=e4952]
+              - cell "processed" [ref=e4953]:
+                - generic [ref=e4954]: processed
+              - cell "paid" [ref=e4955]:
+                - generic [ref=e4956]: paid
+              - cell "Link" [ref=e4957]:
+                - link "Link" [ref=e4958]:
+                  - /url: https://drive.google.com/file/d/17SZweZJiWEQVQ72r71r9eEFycNF37wK7/view?usp=drivesdk
+              - cell [ref=e4959]:
+                - generic [ref=e4960]:
+                  - button "Edit" [ref=e4961]:
+                    - img
+                  - button "Delete" [ref=e4962]:
+                    - img
+            - row "31 Rubikdesign S.R.L. Rt-01-22 nr. 0177 11.12.2025 3.387,07 RON Autoworld PREMIUM S.R.L. Sales processed paid Link" [ref=e4963] [cursor=pointer]:
+              - cell [ref=e4964]:
+                - checkbox [ref=e4965]
+              - cell "31" [ref=e4966]:
+                - generic [ref=e4967]:
+                  - img [ref=e4968]
+                  - text: "31"
+              - cell "Rubikdesign S.R.L." [ref=e4970]:
+                - generic [ref=e4971]: Rubikdesign S.R.L.
+              - cell "Rt-01-22 nr. 0177" [ref=e4972]
+              - cell "11.12.2025" [ref=e4973]
+              - cell "3.387,07 RON" [ref=e4974]:
+                - generic [ref=e4976]: 3.387,07 RON
+              - cell "Autoworld PREMIUM S.R.L." [ref=e4977]
+              - cell "Sales" [ref=e4978]
+              - cell "processed" [ref=e4979]:
+                - generic [ref=e4980]: processed
+              - cell "paid" [ref=e4981]:
+                - generic [ref=e4982]: paid
+              - cell "Link" [ref=e4983]:
+                - link "Link" [ref=e4984]:
+                  - /url: https://drive.google.com/file/d/1KhYkf44WvU9-nXVHSRyiRbNX_dFe_j8l/view?usp=drivesdk
+              - cell [ref=e4985]:
+                - generic [ref=e4986]:
+                  - button "Edit" [ref=e4987]:
+                    - img
+                  - button "Delete" [ref=e4988]:
+                    - img
+            - row "30 Google Ireland Limited 5431698595 30.11.2025 6.986,88 RON Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e4989] [cursor=pointer]:
+              - cell [ref=e4990]:
+                - checkbox [ref=e4991]
+              - cell "30" [ref=e4992]:
+                - generic [ref=e4993]:
+                  - img [ref=e4994]
+                  - text: "30"
+              - cell "Google Ireland Limited" [ref=e4996]:
+                - generic [ref=e4997]: Google Ireland Limited
+              - cell "5431698595" [ref=e4998]
+              - cell "30.11.2025" [ref=e4999]
+              - cell "6.986,88 RON" [ref=e5000]:
+                - generic [ref=e5002]: 6.986,88 RON
+              - cell "Autoworld NEXT S.R.L." [ref=e5003]
+              - cell "Sales" [ref=e5004]
+              - cell "processed" [ref=e5005]:
+                - generic [ref=e5006]: processed
+              - cell "paid" [ref=e5007]:
+                - generic [ref=e5008]: paid
+              - cell "Link" [ref=e5009]:
+                - link "Link" [ref=e5010]:
+                  - /url: https://drive.google.com/file/d/1FIPMp8_3vEqSL1Ewc4uvn88LkUJ7cgDv/view?usp=drivesdk
+              - cell [ref=e5011]:
+                - generic [ref=e5012]:
+                  - button "Edit" [ref=e5013]:
+                    - img
+                  - button "Delete" [ref=e5014]:
+                    - img
+            - row "28 Shopify International Limited 455531737 07.12.2025 34,95 USD Autoworld ONE S.R.L. Sales processed paid Link" [ref=e5015] [cursor=pointer]:
+              - cell [ref=e5016]:
+                - checkbox [ref=e5017]
+              - cell "28" [ref=e5018]:
+                - generic [ref=e5019]:
+                  - img [ref=e5020]
+                  - text: "28"
+              - cell "Shopify International Limited" [ref=e5022]:
+                - generic [ref=e5023]: Shopify International Limited
+              - cell "455531737" [ref=e5024]
+              - cell "07.12.2025" [ref=e5025]
+              - cell "34,95 USD" [ref=e5026]:
+                - generic [ref=e5028]: 34,95 USD
+              - cell "Autoworld ONE S.R.L." [ref=e5029]
+              - cell "Sales" [ref=e5030]
+              - cell "processed" [ref=e5031]:
+                - generic [ref=e5032]: processed
+              - cell "paid" [ref=e5033]:
+                - generic [ref=e5034]: paid
+              - cell "Link" [ref=e5035]:
+                - link "Link" [ref=e5036]:
+                  - /url: https://drive.google.com/file/d/1PgjLZ6Yv8jfHYvgnUzPra2dUQqQulfeD/view?usp=drivesdk
+              - cell [ref=e5037]:
+                - generic [ref=e5038]:
+                  - button "Edit" [ref=e5039]:
+                    - img
+                  - button "Delete" [ref=e5040]:
+                    - img
+            - row "27 EFECTRO SRL EFE-P202512166 11.12.2025 732,26 RON AUTOWORLD S.R.L. Conducere eronata not_paid Link" [ref=e5041] [cursor=pointer]:
+              - cell [ref=e5042]:
+                - checkbox [ref=e5043]
+              - cell "27" [ref=e5044]:
+                - generic [ref=e5045]:
+                  - img [ref=e5046]
+                  - text: "27"
+              - cell "EFECTRO SRL" [ref=e5048]:
+                - generic [ref=e5049]: EFECTRO SRL
+              - cell "EFE-P202512166" [ref=e5050]
+              - cell "11.12.2025" [ref=e5051]
+              - cell "732,26 RON" [ref=e5052]:
+                - generic [ref=e5054]: 732,26 RON
+              - cell "AUTOWORLD S.R.L." [ref=e5055]
+              - cell "Conducere" [ref=e5056]
+              - cell "eronata" [ref=e5057]:
+                - generic [ref=e5058]: eronata
+              - cell "not_paid" [ref=e5059]:
+                - generic [ref=e5060]: not_paid
+              - cell "Link" [ref=e5061]:
+                - link "Link" [ref=e5062]:
+                  - /url: https://drive.google.com/file/d/1ys-8foIZ-Re40VLDJuqoT_N5e8L4cIL7/view?usp=drivesdk
+              - cell [ref=e5063]:
+                - generic [ref=e5064]:
+                  - button "Edit" [ref=e5065]:
+                    - img
+                  - button "Delete" [ref=e5066]:
+                    - img
+            - row "26 Anthropic, PBC KCSFWF6E-0001 04.12.2025 50,00 USD Autoworld NEXT S.R.L. Sales processed paid Link" [ref=e5067] [cursor=pointer]:
+              - cell [ref=e5068]:
+                - checkbox [ref=e5069]
+              - cell "26" [ref=e5070]:
+                - generic [ref=e5071]:
+                  - img [ref=e5072]
+                  - text: "26"
+              - cell "Anthropic, PBC" [ref=e5074]:
+                - generic [ref=e5075]: Anthropic, PBC
+              - cell "KCSFWF6E-0001" [ref=e5076]
+              - cell "04.12.2025" [ref=e5077]
+              - cell "50,00 USD" [ref=e5078]:
+                - generic [ref=e5080]: 50,00 USD
+              - cell "Autoworld NEXT S.R.L." [ref=e5081]
+              - cell "Sales" [ref=e5082]
+              - cell "processed" [ref=e5083]:
+                - generic [ref=e5084]: processed
+              - cell "paid" [ref=e5085]:
+                - generic [ref=e5086]: paid
+              - cell "Link" [ref=e5087]:
+                - link "Link" [ref=e5088]:
+                  - /url: https://drive.google.com/file/d/1fAbqIQNhEhexPBuvQp4x7lGJdtMz1uQr/view?usp=drivesdk
+              - cell [ref=e5089]:
+                - generic [ref=e5090]:
+                  - button "Edit" [ref=e5091]:
+                    - img
+                  - button "Delete" [ref=e5092]:
+                    - img
+            - row "25 Slack Technologies Limited SBIE-10163068 26.11.2025 486,00 EUR AUTOWORLD S.R.L. Conducere processed paid Link" [ref=e5093] [cursor=pointer]:
+              - cell [ref=e5094]:
+                - checkbox [ref=e5095]
+              - cell "25" [ref=e5096]:
+                - generic [ref=e5097]:
+                  - img [ref=e5098]
+                  - text: "25"
+              - cell "Slack Technologies Limited" [ref=e5100]:
+                - generic [ref=e5101]: Slack Technologies Limited
+              - cell "SBIE-10163068" [ref=e5102]
+              - cell "26.11.2025" [ref=e5103]
+              - cell "486,00 EUR" [ref=e5104]:
+                - generic [ref=e5106]: 486,00 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e5107]
+              - cell "Conducere" [ref=e5108]
+              - cell "processed" [ref=e5109]:
+                - generic [ref=e5110]: processed
+              - cell "paid" [ref=e5111]:
+                - generic [ref=e5112]: paid
+              - cell "Link" [ref=e5113]:
+                - link "Link" [ref=e5114]:
+                  - /url: https://drive.google.com/file/d/11GkZq0Lszoq0QZqtXsr7_5zYBNmlOL7w/view?usp=drivesdk
+              - cell [ref=e5115]:
+                - generic [ref=e5116]:
+                  - button "Edit" [ref=e5117]:
+                    - img
+                  - button "Delete" [ref=e5118]:
+                    - img
+            - row "24 Shopify International Limited 454249619 04.12.2025 17,52 EUR AUTOWORLD S.R.L. Aftersales processed paid Link" [ref=e5119] [cursor=pointer]:
+              - cell [ref=e5120]:
+                - checkbox [ref=e5121]
+              - cell "24" [ref=e5122]:
+                - generic [ref=e5123]:
+                  - img [ref=e5124]
+                  - text: "24"
+              - cell "Shopify International Limited" [ref=e5126]:
+                - generic [ref=e5127]: Shopify International Limited
+              - cell "454249619" [ref=e5128]
+              - cell "04.12.2025" [ref=e5129]
+              - cell "17,52 EUR" [ref=e5130]:
+                - generic [ref=e5132]: 17,52 EUR
+              - cell "AUTOWORLD S.R.L." [ref=e5133]
+              - cell "Aftersales" [ref=e5134]
+              - cell "processed" [ref=e5135]:
+                - generic [ref=e5136]: processed
+              - cell "paid" [ref=e5137]:
+                - generic [ref=e5138]: paid
+              - cell "Link" [ref=e5139]:
+                - link "Link" [ref=e5140]:
+                  - /url: https://drive.google.com/file/d/1rLEDTtczDc3Wh3hryF8ni08GsWIKZ3po/view?usp=drivesdk
+              - cell [ref=e5141]:
+                - generic [ref=e5142]:
+                  - button "Edit" [ref=e5143]:
+                    - img
+                  - button "Delete" [ref=e5144]:
+                    - img
+            - row "23 Meta Platforms Ireland Limited FBADS-416-105122906 30.11.2025 891,66 RON Autoworld ONE S.R.L. Aftersales processed paid Link" [ref=e5145] [cursor=pointer]:
+              - cell [ref=e5146]:
+                - checkbox [ref=e5147]
+              - cell "23" [ref=e5148]:
+                - generic [ref=e5149]:
+                  - img [ref=e5150]
+                  - text: "23"
+              - cell "Meta Platforms Ireland Limited" [ref=e5152]:
+                - generic [ref=e5153]: Meta Platforms Ireland Limited
+              - cell "FBADS-416-105122906" [ref=e5154]
+              - cell "30.11.2025" [ref=e5155]
+              - cell "891,66 RON" [ref=e5156]:
+                - generic [ref=e5158]: 891,66 RON
+              - cell "Autoworld ONE S.R.L." [ref=e5159]
+              - cell "Aftersales" [ref=e5160]
+              - cell "processed" [ref=e5161]:
+                - generic [ref=e5162]: processed
+              - cell "paid" [ref=e5163]:
+                - generic [ref=e5164]: paid
+              - cell "Link" [ref=e5165]:
+                - link "Link" [ref=e5166]:
+                  - /url: https://drive.google.com/file/d/1yCZ7VcGIL3Lbl81vmnV4Hn_yibkMvNZ9/view?usp=drivesdk
+              - cell [ref=e5167]:
+                - generic [ref=e5168]:
+                  - button "Edit" [ref=e5169]:
+                    - img
+                  - button "Delete" [ref=e5170]:
+                    - img
+        - generic [ref=e5171]: 192 invoices
+  - region "Notifications alt+T"

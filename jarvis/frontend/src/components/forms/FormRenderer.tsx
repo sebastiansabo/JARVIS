@@ -1,4 +1,4 @@
-import { useState, useRef, lazy, Suspense } from 'react'
+import { useState, useRef, lazy, Suspense, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { crmApi } from '@/api/crm'
 import { organizationApi } from '@/api/organization'
 import { vouchersApi } from '@/api/vouchers'
+import { foiParcursApi } from '@/api/foiParcurs'
 import type { FormField } from '@/types/forms'
 import type { ServiceCatalogCompanyItem } from '@/types/vouchers'
 
@@ -437,6 +438,161 @@ function ServiceCatalogField({ field, value, error, onChange }: FieldProps) {
   )
 }
 
+function FpVehicleField({ field, value, error, onChange, allAnswers }: FieldProps) {
+  const companyFieldId = (field.config as Record<string, unknown> | undefined)?.companyField as string || 'f_company'
+  const companyName = (allAnswers?.[companyFieldId] as string) || ''
+
+  const { data: vehicleData } = useQuery({
+    queryKey: ['fp-vehicles-active'],
+    queryFn: () => foiParcursApi.getVehicles(true),
+    staleTime: 60_000,
+  })
+
+  const allVehicles = vehicleData?.vehicles ?? []
+  const filtered = companyName
+    ? allVehicles.filter((v: { company_name?: string }) => v.company_name === companyName)
+    : allVehicles
+
+  const selectedId = value ? String(value) : ''
+  const selectedVehicle = allVehicles.find((v: { id: number }) => String(v.id) === selectedId) as Record<string, unknown> | undefined
+
+  const { data: inspectionData } = useQuery({
+    queryKey: ['fp-inspection', selectedId],
+    queryFn: () => foiParcursApi.getLatestInspection(Number(selectedId)),
+    enabled: !!selectedId,
+  })
+  const latestInspection = inspectionData?.inspection ?? null
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+        <Select value={selectedId} onValueChange={onChange}>
+          <SelectTrigger>
+            <SelectValue placeholder={companyName ? 'Selectati vehiculul...' : 'Selectati compania intai'} />
+          </SelectTrigger>
+          <SelectContent>
+            {filtered.map((v: { id: number; mark: string; model: string; vin: string; registration_number?: string }) => (
+              <SelectItem key={v.id} value={String(v.id)}>
+                {v.mark} {v.model} — {v.registration_number || v.vin}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+      {selectedVehicle && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm space-y-1">
+          <p><span className="text-muted-foreground">VIN:</span> {String(selectedVehicle.vin)}</p>
+          <p><span className="text-muted-foreground">Nr. inmatriculare:</span> {String(selectedVehicle.registration_number || '—')}</p>
+          <p><span className="text-muted-foreground">Combustibil:</span> {String(selectedVehicle.fuel_type)} — {String(selectedVehicle.fuel_tank_capacity_liters)}L</p>
+        </div>
+      )}
+      {latestInspection && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm">
+          <p className="font-medium text-xs text-amber-700 dark:text-amber-400">Ultima inspectie: {latestInspection.inspection_date}</p>
+          {latestInspection.condition_notes && (
+            <p className="text-muted-foreground mt-1">{latestInspection.condition_notes}</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FpClientField({ field, value, error, onChange }: FieldProps) {
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [selectedName, setSelectedName] = useState('')
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
+
+  const handleSearchChange = (val: string) => {
+    setSearch(val)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(val)
+      if (val.length >= 2) setShowDropdown(true)
+    }, 300)
+  }
+
+  const { data: clientData, isFetching } = useQuery({
+    queryKey: ['fp-clients-search', debouncedSearch],
+    queryFn: () => foiParcursApi.searchClients(debouncedSearch, 10),
+    enabled: debouncedSearch.length >= 2 && !value,
+    staleTime: 10_000,
+  })
+  const clients = clientData?.clients ?? []
+
+  const clearSelection = () => {
+    onChange('')
+    setSelectedName('')
+    setSearch('')
+    setDebouncedSearch('')
+  }
+
+  return (
+    <div className="space-y-1">
+      <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+      {value && (selectedName || value) ? (
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center rounded-md border px-3 py-1.5 text-sm font-medium">
+            {selectedName || `Client #${value}`}
+          </span>
+          <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={clearSelection}>
+            Schimba
+          </button>
+        </div>
+      ) : (
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            className="pl-9"
+            placeholder="Cauta dupa nume sau telefon..."
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            onFocus={() => { if (debouncedSearch.length >= 2) setShowDropdown(true) }}
+          />
+          {isFetching && (
+            <div className="absolute right-2.5 top-2.5 h-4 w-4 border-2 border-muted-foreground border-t-transparent rounded-full animate-spin" />
+          )}
+          {showDropdown && debouncedSearch.length >= 2 && (
+            <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-48 overflow-y-auto">
+              {clients.length === 0 && !isFetching ? (
+                <div className="p-3 text-sm text-muted-foreground text-center">Niciun client gasit</div>
+              ) : (
+                clients.map((c: { id: number; name: string; phone: string }) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="w-full text-left px-3 py-2 hover:bg-accent text-sm"
+                    onClick={() => {
+                      onChange(String(c.id))
+                      setSelectedName(c.name)
+                      setShowDropdown(false)
+                      setSearch('')
+                    }}
+                  >
+                    <span className="font-medium">{c.name}</span>
+                    {c.phone && <span className="text-muted-foreground ml-2">{c.phone}</span>}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  )
+}
+
 function FieldComponent({ field, value, error, onChange, onSetField, allAnswers }: FieldProps) {
   switch (field.type) {
     case 'heading':
@@ -450,6 +606,12 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
 
     case 'crm_client':
       return <CrmClientField field={field} value={value} error={error} onChange={onChange} onSetField={onSetField} />
+
+    case 'fp_vehicle':
+      return <FpVehicleField field={field} value={value} error={error} onChange={onChange} allAnswers={allAnswers} />
+
+    case 'fp_client':
+      return <FpClientField field={field} value={value} error={error} onChange={onChange} />
 
     case 'short_text':
     case 'email':
@@ -501,6 +663,19 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
           <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
           <Input
             type="date"
+            value={(value as string) ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+      )
+
+    case 'datetime':
+      return (
+        <div className="space-y-1">
+          <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+          <Input
+            type="datetime-local"
             value={(value as string) ?? ''}
             onChange={(e) => onChange(e.target.value)}
           />
