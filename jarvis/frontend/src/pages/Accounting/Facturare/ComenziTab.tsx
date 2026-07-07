@@ -2167,8 +2167,14 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
     } catch (err: any) { toast.error(err.message) }
   }
 
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
-  const toggleGroup = (key: string) => setExpandedGroups(prev => {
+  const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set())
+  const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set())
+  const toggleCompany = (key: string) => setExpandedCompanies(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
+  const toggleClient = (key: string) => setExpandedClients(prev => {
     const next = new Set(prev)
     next.has(key) ? next.delete(key) : next.add(key)
     return next
@@ -2189,18 +2195,44 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
     return true
   })
 
-  // Group by Company + Client
-  const grouped = filtered.reduce<Record<string, { supplier: string; client: string; contracts: ContractSummary[] }>>((acc, c) => {
-    const key = `${c.supplier_name}|||${c.customer_name}`
-    if (!acc[key]) acc[key] = { supplier: c.supplier_name, client: c.customer_name, contracts: [] }
-    acc[key].contracts.push(c)
+  // Build 3-level hierarchy: Company → Client → Contracts
+  const companyGrouped = filtered.reduce<Record<string, Record<string, ContractSummary[]>>>((acc, c) => {
+    if (!acc[c.supplier_name]) acc[c.supplier_name] = {}
+    if (!acc[c.supplier_name][c.customer_name]) acc[c.supplier_name][c.customer_name] = []
+    acc[c.supplier_name][c.customer_name].push(c)
     return acc
   }, {})
-  const groups = Object.entries(grouped).sort(([, a], [, b]) => {
-    const latestA = Math.max(...a.contracts.map(c => c.created_at ? new Date(c.created_at).getTime() : 0))
-    const latestB = Math.max(...b.contracts.map(c => c.created_at ? new Date(c.created_at).getTime() : 0))
-    return latestB - latestA
-  })
+  const companyGroups = Object.entries(companyGrouped)
+    .map(([supplier, clientMap]) => ({
+      supplier,
+      clients: Object.entries(clientMap)
+        .map(([client, contracts]) => ({
+          client,
+          contracts: contracts.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')),
+        }))
+        .sort((a, b) => {
+          const latA = Math.max(...a.contracts.map(c => c.created_at ? new Date(c.created_at).getTime() : 0))
+          const latB = Math.max(...b.contracts.map(c => c.created_at ? new Date(c.created_at).getTime() : 0))
+          return latB - latA
+        }),
+    }))
+    .sort((a, b) => {
+      const latA = Math.max(...a.clients.flatMap(cl => cl.contracts.map(c => c.created_at ? new Date(c.created_at).getTime() : 0)))
+      const latB = Math.max(...b.clients.flatMap(cl => cl.contracts.map(c => c.created_at ? new Date(c.created_at).getTime() : 0)))
+      return latB - latA
+    })
+
+  const isSearching = searchQuery.trim().length > 0
+  const allExpanded = companyGroups.length > 0 && companyGroups.every(g => expandedCompanies.has(g.supplier))
+  const handleExpandCollapseAll = () => {
+    if (allExpanded) {
+      setExpandedCompanies(new Set())
+      setExpandedClients(new Set())
+    } else {
+      setExpandedCompanies(new Set(companyGroups.map(g => g.supplier)))
+      setExpandedClients(new Set(companyGroups.flatMap(g => g.clients.map(cl => `${g.supplier}|||${cl.client}`))))
+    }
+  }
 
   return (
     <>
@@ -2371,133 +2403,146 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                   </SelectContent>
                 </Select>
               </div>
-              <Button onClick={() => setCreateContractOpen(true)}><Plus className="h-4 w-4 mr-1" /> New Contract</Button>
+              <div className="flex items-center gap-2">
+                {companyGroups.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={handleExpandCollapseAll}>
+                    {allExpanded ? 'Collapse All' : 'Expand All'}
+                  </Button>
+                )}
+                <Button onClick={() => setCreateContractOpen(true)}><Plus className="h-4 w-4 mr-1" /> New Contract</Button>
+              </div>
             </div>
 
             <Card>
-              <CardContent className="p-0 overflow-x-auto">
-                <table className="w-full text-sm min-w-[900px]">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="w-8"></th>
-                      <th className="text-left px-3 py-2.5 font-medium">Company</th>
-                      <th className="text-left px-3 py-2.5 font-medium">Client</th>
-                      <th className="text-left px-3 py-2.5 font-medium">Contracts</th>
-                      <th className="text-center px-3 py-2.5 font-medium">Anexe</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">Total EUR</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">Invoiced</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">Remaining</th>
-                      <th className="text-center px-3 py-2.5 font-medium w-24">%</th>
-                      <th className="w-8"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading && <tr><td colSpan={10} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></td></tr>}
-                    {!loading && groups.length === 0 && <tr><td colSpan={10} className="text-center py-8 text-muted-foreground">No contracts yet</td></tr>}
-                    {groups.map(([key, g]) => {
-                      const expanded = expandedGroups.has(key)
-                      const totalVal = g.contracts.reduce((s, c) => s + c.total_value, 0)
-                      const totalInv = g.contracts.reduce((s, c) => s + c.invoiced_total, 0)
-                      const totalAnexe = g.contracts.reduce((s, c) => s + c.anexa_count, 0)
-                      const remaining = totalVal - totalInv
-                      return (
-                        <React.Fragment key={key}>
-                          {/* Group header row */}
-                          <tr className="border-b hover:bg-muted/30 cursor-pointer" onClick={() => toggleGroup(key)}>
-                            <td className="px-2 py-2.5 text-center">
-                              {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                            </td>
-                            <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[160px] truncate">{g.supplier}</td>
-                            <td className="px-3 py-2.5 font-medium max-w-[180px] truncate">{g.client}</td>
-                            <td className="px-3 py-2.5">
-                              <Badge variant="outline" className="text-xs">{g.contracts.length}</Badge>
-                            </td>
-                            <td className="px-3 py-2.5 text-center"><Badge variant="outline" className="text-xs">{totalAnexe}</Badge></td>
-                            <td className="px-3 py-2.5 text-right font-mono text-xs">{fmtEur(totalVal)}</td>
-                            <td className="px-3 py-2.5 text-right font-mono text-xs text-emerald-600">{totalInv > 0 ? fmtEur(totalInv) : '—'}</td>
-                            <td className="px-3 py-2.5 text-right font-mono text-xs">
-                              {remaining > 0
-                                ? <span className="text-amber-600">{fmtEur(remaining)}</span>
-                                : <span className="text-emerald-600">0,00</span>}
-                            </td>
-                            <td className="px-3 py-2.5 text-center">
-                              {totalVal > 0 && (
-                                <div className="flex items-center gap-1 justify-center">
-                                  <div className="w-12 h-2 bg-muted rounded-full overflow-hidden">
-                                    <div className={`h-full rounded-full ${totalInv >= totalVal ? 'bg-emerald-500' : totalInv >= totalVal * 0.5 ? 'bg-amber-400' : 'bg-blue-400'}`}
-                                      style={{ width: `${Math.min(Math.round(totalInv / totalVal * 100), 100)}%` }} />
-                                  </div>
-                                  <span className="text-xs text-muted-foreground">{Math.round(totalInv / totalVal * 100)}%</span>
-                                </div>
-                              )}
-                            </td>
-                            <td></td>
-                          </tr>
-                          {/* Expanded contract rows */}
-                          {expanded && g.contracts.map(c => {
-                            const isEditing = editingContractId === c.id
-                            return (
-                            <tr key={c.id} className="border-b hover:bg-primary/5 cursor-pointer bg-muted/40" onClick={() => !isEditing && loadAnexas(c)}>
-                              <td></td>
-                              {isEditing ? (
-                                <td className="px-3 py-1.5 text-xs" colSpan={3} onClick={e => e.stopPropagation()}>
-                                  <div className="flex items-center gap-2">
-                                    <Input className="h-7 w-28 text-xs font-medium" value={editRef} onChange={e => setEditRef(e.target.value)} placeholder="CTR-..." />
-                                    <Input type="date" className="h-7 w-32 text-xs" value={editDate} onChange={e => setEditDate(e.target.value)} />
-                                    <Input className="h-7 w-36 text-xs" value={editResponsible} onChange={e => setEditResponsible(e.target.value)} placeholder="Responsible" />
-                                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={saveContract}><Check className="h-3.5 w-3.5 text-emerald-600" /></Button>
-                                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setEditingContractId(null)}><X className="h-3.5 w-3.5 text-muted-foreground" /></Button>
-                                  </div>
-                                </td>
-                              ) : (
-                                <td className="px-3 py-2 text-xs text-muted-foreground" colSpan={3}>
-                                  <span className="font-medium text-foreground">{c.contract_ref}</span>
-                                  <span className="ml-2 text-muted-foreground">{c.contract_date ? new Date(c.contract_date).toLocaleDateString('ro-RO') : ''}</span>
-                                  {c.responsible && <span className="ml-2 text-muted-foreground">· {c.responsible}</span>}
-                                </td>
-                              )}
-                              <td className="px-3 py-2 text-center"><Badge variant="outline" className="text-xs">{c.anexa_count}</Badge></td>
-                              <td className="px-3 py-2 text-right font-mono text-xs">{fmtEur(c.total_value)}</td>
-                              <td className="px-3 py-2 text-right font-mono text-xs text-emerald-600">{c.invoiced_total > 0 ? fmtEur(c.invoiced_total) : '—'}</td>
-                              <td className="px-3 py-2 text-right font-mono text-xs">
-                                {c.total_value - c.invoiced_total > 0
-                                  ? <span className="text-amber-600">{fmtEur(c.total_value - c.invoiced_total)}</span>
-                                  : <span className="text-emerald-600">0,00</span>}
-                              </td>
-                              <td className="px-3 py-2 text-center text-xs text-muted-foreground">
-                                {c.total_value > 0 ? `${Math.round(c.invoiced_total / c.total_value * 100)}%` : '—'}
-                              </td>
-                              <td className="px-1 py-2" onClick={e => e.stopPropagation()}>
-                                {!isEditing && (
-                                  <div className="flex items-center gap-0.5">
-                                    <Button variant="ghost" size="icon" className="h-6 w-6" title="Edit contract"
-                                      onClick={() => startEditContract(c)}>
-                                      <Pencil className="h-3 w-3 text-muted-foreground hover:text-blue-500" />
-                                    </Button>
-                                    {c.anexa_count === 0 && (
-                                      <Button variant="ghost" size="icon" className="h-6 w-6" title="Delete contract"
-                                        onClick={async () => {
-                                          if (!confirm(`Delete contract ${c.contract_ref}?`)) return
-                                          try {
-                                            const res = await fetch(`/facturare/api/contracts/${c.id}`, { method: 'DELETE' })
-                                            if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed') }
-                                            toast.success('Contract deleted'); loadContracts()
-                                          } catch (err: any) { toast.error(err.message) }
-                                        }}>
-                                        <Trash2 className="h-3 w-3 text-muted-foreground hover:text-red-500" />
-                                      </Button>
-                                    )}
+              <CardContent className="p-0">
+                {loading && <div className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></div>}
+                {!loading && companyGroups.length === 0 && <div className="text-center py-8 text-muted-foreground">No contracts yet</div>}
+                {companyGroups.map(cg => {
+                  const companyExpanded = isSearching || expandedCompanies.has(cg.supplier)
+                  const totalClients = cg.clients.length
+                  const totalContracts = cg.clients.reduce((s, cl) => s + cl.contracts.length, 0)
+                  const totalValue = cg.clients.reduce((s, cl) => s + cl.contracts.reduce((s2, c) => s2 + c.total_value, 0), 0)
+                  const totalInvoiced = cg.clients.reduce((s, cl) => s + cl.contracts.reduce((s2, c) => s2 + c.invoiced_total, 0), 0)
+                  return (
+                    <div key={cg.supplier}>
+                      {/* L1: Company */}
+                      <div className="flex items-center justify-between px-3 py-2.5 border-b bg-muted/60 cursor-pointer hover:bg-muted/80"
+                        onClick={() => toggleCompany(cg.supplier)}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          {companyExpanded
+                            ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                            : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+                          <span className="font-semibold text-sm truncate">{cg.supplier}</span>
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            {totalClients} client{totalClients !== 1 ? 's' : ''} · {totalContracts} contract{totalContracts !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs shrink-0">
+                          <span className="font-mono">{fmtEur(totalValue)} EUR</span>
+                          {totalValue > 0 && (
+                            <div className="flex items-center gap-1">
+                              <div className="w-14 h-2 bg-background rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${totalInvoiced >= totalValue ? 'bg-emerald-500' : totalInvoiced >= totalValue * 0.5 ? 'bg-amber-400' : 'bg-blue-400'}`}
+                                  style={{ width: `${Math.min(Math.round(totalInvoiced / totalValue * 100), 100)}%` }} />
+                              </div>
+                              <span className="text-muted-foreground w-8 text-right">{Math.round(totalInvoiced / totalValue * 100)}%</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {companyExpanded && cg.clients.map(cl => {
+                        const clientKey = `${cg.supplier}|||${cl.client}`
+                        const clientExpanded = isSearching || expandedClients.has(clientKey)
+                        const clTotalValue = cl.contracts.reduce((s, c) => s + c.total_value, 0)
+                        const clTotalInvoiced = cl.contracts.reduce((s, c) => s + c.invoiced_total, 0)
+                        return (
+                          <div key={clientKey}>
+                            {/* L2: Client */}
+                            <div className="flex items-center justify-between px-3 py-2 pl-9 border-b bg-muted/30 cursor-pointer hover:bg-muted/50"
+                              onClick={() => toggleClient(clientKey)}>
+                              <div className="flex items-center gap-2 min-w-0">
+                                {clientExpanded
+                                  ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                                <span className="font-medium text-sm truncate">{cl.client}</span>
+                                <Badge variant="outline" className="text-[10px] shrink-0">{cl.contracts.length} contract{cl.contracts.length !== 1 ? 's' : ''}</Badge>
+                              </div>
+                              <div className="flex items-center gap-4 text-xs shrink-0">
+                                <span className="font-mono">{fmtEur(clTotalValue)} EUR</span>
+                                {clTotalValue > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <div className="w-14 h-2 bg-background rounded-full overflow-hidden">
+                                      <div className={`h-full rounded-full ${clTotalInvoiced >= clTotalValue ? 'bg-emerald-500' : clTotalInvoiced >= clTotalValue * 0.5 ? 'bg-amber-400' : 'bg-blue-400'}`}
+                                        style={{ width: `${Math.min(Math.round(clTotalInvoiced / clTotalValue * 100), 100)}%` }} />
+                                    </div>
+                                    <span className="text-muted-foreground w-8 text-right">{Math.round(clTotalInvoiced / clTotalValue * 100)}%</span>
                                   </div>
                                 )}
-                              </td>
-                            </tr>
-                            )
-                          })}
-                        </React.Fragment>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                              </div>
+                            </div>
+
+                            {/* L3: Contracts */}
+                            {clientExpanded && cl.contracts.map(c => {
+                              const isEditing = editingContractId === c.id
+                              return (
+                                <div key={c.id}
+                                  className={`flex items-center justify-between px-3 py-2 pl-16 border-b cursor-pointer ${isEditing ? '' : 'hover:bg-primary/5'}`}
+                                  onClick={() => !isEditing && loadAnexas(c)}>
+                                  {isEditing ? (
+                                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                      <Input className="h-7 w-28 text-xs font-medium" value={editRef} onChange={e => setEditRef(e.target.value)} placeholder="CTR-..." />
+                                      <Input type="date" className="h-7 w-32 text-xs" value={editDate} onChange={e => setEditDate(e.target.value)} />
+                                      <Input className="h-7 w-36 text-xs" value={editResponsible} onChange={e => setEditResponsible(e.target.value)} placeholder="Responsible" />
+                                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={saveContract}><Check className="h-3.5 w-3.5 text-emerald-600" /></Button>
+                                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setEditingContractId(null)}><X className="h-3.5 w-3.5 text-muted-foreground" /></Button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-2 min-w-0 text-sm">
+                                      <span className="font-medium">{c.contract_ref}</span>
+                                      {c.contract_date && <span className="text-xs text-muted-foreground">{new Date(c.contract_date).toLocaleDateString('ro-RO')}</span>}
+                                      {c.responsible && <span className="text-xs text-muted-foreground">· {c.responsible}</span>}
+                                    </div>
+                                  )}
+                                  <div className="flex items-center gap-3 shrink-0">
+                                    <Badge variant="outline" className="text-[10px]">{c.anexa_count} anexe</Badge>
+                                    <span className="font-mono text-xs w-24 text-right">{fmtEur(c.total_value)}</span>
+                                    {c.total_value > 0 && (
+                                      <span className="text-xs text-muted-foreground w-10 text-right">
+                                        {Math.round(c.invoiced_total / c.total_value * 100)}%
+                                      </span>
+                                    )}
+                                    {!isEditing && (
+                                      <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6" title="Edit contract"
+                                          onClick={() => startEditContract(c)}>
+                                          <Pencil className="h-3 w-3 text-muted-foreground hover:text-blue-500" />
+                                        </Button>
+                                        {c.anexa_count === 0 && (
+                                          <Button variant="ghost" size="icon" className="h-6 w-6" title="Delete contract"
+                                            onClick={async () => {
+                                              if (!confirm(`Delete contract ${c.contract_ref}?`)) return
+                                              try {
+                                                const res = await fetch(`/facturare/api/contracts/${c.id}`, { method: 'DELETE' })
+                                                if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed') }
+                                                toast.success('Contract deleted'); loadContracts()
+                                              } catch (err: any) { toast.error(err.message) }
+                                            }}>
+                                            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-red-500" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
               </CardContent>
             </Card>
 
