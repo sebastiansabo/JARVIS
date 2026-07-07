@@ -145,3 +145,49 @@ def module_label(scope):
     """Human-readable module label derived from the mapped workstream."""
     workstream, _ = route_for_scope(scope)
     return WORKSTREAM_LABEL.get(workstream, "General")
+
+
+def effective_scope(commit):
+    """Best scope for a commit: subject scope, else path hint, else '__default__'."""
+    return (
+        parse_commit_scope(commit.get("subject", ""))
+        or path_hint_scope(commit.get("files", []))
+        or "__default__"
+    )
+
+
+def group_commits(commits):
+    """Group commits into an insertion-ordered dict keyed by effective scope."""
+    groups = {}
+    for c in commits:
+        groups.setdefault(effective_scope(c), []).append(c)
+    return groups
+
+
+def build_summary(scope, commits, now_str):
+    """Build a <=80 char Task summary."""
+    n = len(commits)
+    plural = "s" if n != 1 else ""
+    summary = f"[{module_label(scope)}] {n} commit{plural} — {now_str}"
+    return summary[:80]
+
+
+def build_description_adf(scope, commits, branch, now_str):
+    """Build an Atlassian Document Format description body."""
+    lines = [
+        f"Auto-synced from git push — {now_str}",
+        f"Branch: {branch}",
+        f"Scope: {scope}",
+        "",
+        "Commits:",
+    ]
+    for c in commits:
+        lines.append(f"- {c['sha'][:7]} {c['subject']}")
+    text = "\n".join(lines)
+    return {
+        "type": "doc",
+        "version": 1,
+        "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": text}]}
+        ],
+    }
