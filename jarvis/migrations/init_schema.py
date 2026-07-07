@@ -74,3 +74,10 @@ def create_schema(conn, cursor):
         ensure_voucher_form()
     except Exception:
         pass  # May fail during initial import chain; app.py will retry
+
+    # Seed test drive form (idempotent, needs forms table to exist)
+    try:
+        from foi_parcurs.form_seed import ensure_test_drive_form
+        ensure_test_drive_form()
+    except Exception:
+        pass  # May fail during initial import chain; app.py will retry
