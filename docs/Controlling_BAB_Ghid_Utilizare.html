@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controlling — BAB | Ghid de utilizare</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a1a; background: #f8f9fa; line-height: 1.6; }
+    .container { max-width: 800px; margin: 0 auto; padding: 40px 24px; }
+    h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { font-size: 15px; color: #6b7280; margin-bottom: 32px; }
+    .nav-path { display: inline-block; background: #e5e7eb; color: #374151; font-size: 13px; font-weight: 500; padding: 4px 12px; border-radius: 6px; margin-bottom: 32px; }
+    h2 { font-size: 20px; font-weight: 600; margin-top: 40px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #e5e7eb; }
+    h2 span.num { color: #6366f1; margin-right: 8px; }
+    p { margin-bottom: 12px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 20px 24px; margin-bottom: 16px; }
+    .card-title { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+    table.fields { width: 100%; border-collapse: collapse; font-size: 14px; }
+    table.fields td { padding: 8px 12px; vertical-align: top; border-bottom: 1px solid #f0f0f0; }
+    table.fields td:first-child { font-weight: 600; white-space: nowrap; width: 120px; color: #4b5563; }
+    .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 12px; }
+    .badge-sum { background: #dbeafe; color: #1d4ed8; }
+    .badge-subtotal { background: #ede9fe; color: #6d28d9; }
+    .badge-star { background: #fef3c7; color: #b45309; }
+    .example { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; overflow-x: auto; margin: 12px 0; }
+    .example .row { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid #f0f0f0; }
+    .example .row:last-child { border-bottom: none; }
+    .example .cell { white-space: nowrap; }
+    .example .cell.ord { width: 70px; color: #6b7280; }
+    .example .cell.kst { width: 60px; font-weight: 600; }
+    .example .cell.grp { width: 200px; }
+    .example .cell.ind { width: 180px; }
+    .example .cell.tip { width: 80px; }
+    .example .cell.cnt { color: #6366f1; }
+    ol.steps { padding-left: 0; list-style: none; counter-reset: step; }
+    ol.steps li { counter-increment: step; padding: 10px 0 10px 40px; position: relative; border-left: 2px solid #e5e7eb; margin-left: 14px; }
+    ol.steps li:last-child { border-left: 2px solid transparent; }
+    ol.steps li::before { content: counter(step); position: absolute; left: -15px; top: 8px; width: 28px; height: 28px; background: #6366f1; color: #fff; border-radius: 50%; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+    .actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .action-item { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 16px; }
+    .action-item .icon { font-size: 18px; margin-bottom: 4px; }
+    .action-item .name { font-weight: 600; font-size: 14px; }
+    .action-item .desc { font-size: 13px; color: #6b7280; }
+    .breakdown { margin: 16px 0; }
+    .breakdown .bk-row { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-radius: 6px; font-size: 14px; margin-bottom: 4px; }
+    .bk-section { background: #f3f4f6; color: #6b7280; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .bk-sum { padding-left: 40px; }
+    .bk-subtotal { background: #eef2ff; font-weight: 600; color: #4338ca; }
+    .flow { display: flex; align-items: center; gap: 0; flex-wrap: wrap; justify-content: center; margin: 24px 0; }
+    .flow .step { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 500; }
+    .flow .arrow { color: #6366f1; font-size: 20px; padding: 0 8px; }
+    .note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #92400e; margin: 12px 0; }
+    @media (max-width: 600px) {
+      .actions-grid { grid-template-columns: 1fr; }
+      .flow { flex-direction: column; gap: 8px; }
+      .flow .arrow { transform: rotate(90deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Controlling — BAB</h1>
+    <p class="subtitle">Betriebsabrechnungsbogen &middot; Ghid de utilizare</p>
+    <div class="nav-path">Sidebar &rarr; Accounting &rarr; Controlling</div>
+
+    <!-- 1. Selectarea companiei -->
+    <h2><span class="num">1</span> Selectarea companiei</h2>
+    <p>In coltul din dreapta sus se afla selectorul de companie. Alege compania pentru care vrei sa lucrezi.</p>
+    <p>Selectia se pastreaza in URL — daca dai refresh, ramane pe aceeasi companie.</p>
+
+    <!-- 2. Configurare -->
+    <h2><span class="num">2</span> Configurare <span style="font-weight:400; font-size:14px; color:#6b7280;">(tab-ul "Configurare")</span></h2>
+    <p><strong>Incepe intotdeauna de aici</strong> — definesti structura raportului de marja inainte de a importa date.</p>
+
+    <div class="card">
+      <div class="card-title">Campurile unui rand de configurare</div>
+      <table class="fields">
+        <tr><td>Ordine</td><td>Numarul de sortare (10, 20, 30...) care determina ordinea afisarii</td></tr>
+        <tr><td>KST</td><td>Centrul de cost (ex: 211, 215)</td></tr>
+        <tr><td>Grup</td><td>Numele grupului (ex: "VW PKW INTERN (retail)", "Bonus &amp; Discount")</td></tr>
+        <tr><td>Indicator</td><td>Denumirea indicatorului (ex: "Venit Sales realizat", "Marja Bruta realizata")</td></tr>
+        <tr><td>Tip</td><td>
+          <span class="badge badge-sum">Sum</span> — sumeaza conturile specificate din BAB. Se completeaza campul "Conturi" cu numerele de cont separate prin virgula (ex: <code>707111,707116,607111</code>)<br><br>
+          <span class="badge badge-subtotal">Subtotal</span> — sumeaza alti indicatori. La selectare apare un picker cu chips-uri grupate pe care le poti bifa/debifa
+        </td></tr>
+        <tr><td>Total principal</td><td>
+          <span class="badge badge-star">&#9733; Starred</span> — bifeaza pe randurile de tip Subtotal care contribuie la <strong>Marja Finala</strong> afisata pe linia principala din tab-ul Marja. Poti avea mai multe subtotaluri starred — valorile lor se aduna automat.
+        </td></tr>
+      </table>
+    </div>
+
+    <p><strong>Exemplu de structura:</strong></p>
+    <div class="example">
+      <div class="row">
+        <div class="cell ord">Ord. 10</div>
+        <div class="cell kst">211</div>
+        <div class="cell grp">VW PKW INTERN (retail)</div>
+        <div class="cell ind">Venit Sales realizat</div>
+        <div class="cell tip"><span class="badge badge-sum">Sum</span></div>
+        <div class="cell cnt">707111, 707116</div>
+      </div>
+      <div class="row">
+        <div class="cell ord">Ord. 20</div>
+        <div class="cell kst">211</div>
+        <div class="cell grp">VW PKW INTERN (retail)</div>
+        <div class="cell ind">Marja Bruta realizata</div>
+        <div class="cell tip"><span class="badge badge-sum">Sum</span></div>
+        <div class="cell cnt">707111, 707116, 607111</div>
+      </div>
+      <div class="row">
+        <div class="cell ord">Ord. 30</div>
+        <div class="cell kst">211</div>
+        <div class="cell grp">VW PKW INTERN (retail)</div>
+        <div class="cell ind">Bonus trimestrial</div>
+        <div class="cell tip"><span class="badge badge-sum">Sum</span></div>
+        <div class="cell cnt">609010</div>
+      </div>
+      <div class="row">
+        <div class="cell ord">Ord. 110</div>
+        <div class="cell kst">211</div>
+        <div class="cell grp">MARJA FINALA PKW</div>
+        <div class="cell ind">MARJA FINALA</div>
+        <div class="cell tip"><span class="badge badge-subtotal">Subtotal &#9733;</span></div>
+        <div class="cell cnt">[chips selectate]</div>
+      </div>
+    </div>
+
+    <p>Actiuni disponibile: editare (creion), stergere (cos), adaugare rand nou (buton "+ Adauga rand").</p>
+
+    <!-- 3. Import -->
+    <h2><span class="num">3</span> Import perioada <span style="font-weight:400; font-size:14px; color:#6b7280;">(tab-ul "Marja")</span></h2>
+
+    <ol class="steps">
+      <li>Click pe butonul <strong>"Import perioada"</strong> din header</li>
+      <li>Selecteaza <strong>luna</strong> si <strong>anul</strong></li>
+      <li><strong>Cursul EUR</strong> se preia automat de la BNR (ultima zi a lunii). Poate fi modificat manual</li>
+      <li><strong>Drag &amp; drop</strong> fisierul <code>.xlsx</code> exportat din ERP (sau click pentru browse)</li>
+      <li>Click <strong>"Importa BAB"</strong></li>
+    </ol>
+
+    <div class="note">
+      La re-import pe o perioada existenta: datele vechi sunt inlocuite. Se afiseaza un warning galben de confirmare.
+    </div>
+
+    <!-- 4. Vizualizare -->
+    <h2><span class="num">4</span> Vizualizare raport <span style="font-weight:400; font-size:14px; color:#6b7280;">(tab-ul "Marja")</span></h2>
+    <p>Tabelul principal arata toate perioadele importate cu coloanele:</p>
+
+    <div class="card">
+      <table class="fields">
+        <tr><td>An / Perioada</td><td>Luna si anul</td></tr>
+        <tr><td>Status</td><td>Importat (verde) sau Blocat (albastru)</td></tr>
+        <tr><td>Marja Finala LEI</td><td>Totalul calculat din subtotalurile starred</td></tr>
+        <tr><td>Marja Finala EUR</td><td>Echivalentul in EUR la cursul BNR</td></tr>
+      </table>
+    </div>
+
+    <p><strong>Click pe un rand</strong> &rarr; se expandeaza si afiseaza breakdown-ul complet:</p>
+
+    <div class="breakdown">
+      <div class="bk-row bk-section">VW PKW INTERN (retail) — KST 211</div>
+      <div class="bk-row bk-sum">Venit Sales realizat &nbsp;&nbsp; 1.234.567,89 LEI</div>
+      <div class="bk-row bk-sum">Marja Bruta realizata &nbsp;&nbsp; 456.789,12 LEI</div>
+      <div class="bk-row bk-sum">Bonus trimestrial &nbsp;&nbsp; 23.456,78 LEI</div>
+      <div class="bk-row bk-subtotal">MARJA FINALA &nbsp;&nbsp; 1.038.751,46 LEI</div>
+    </div>
+
+    <p>Valorile negative apar in <span style="color:#dc2626; font-weight:600;">rosu</span>.</p>
+
+    <!-- 5. Actiuni -->
+    <h2><span class="num">5</span> Actiuni pe perioada</h2>
+
+    <div class="actions-grid">
+      <div class="action-item">
+        <div class="icon">&#8593;</div>
+        <div class="name">Re-import</div>
+        <div class="desc">Inlocuieste datele cu un fisier nou</div>
+      </div>
+      <div class="action-item">
+        <div class="icon">&#128274;</div>
+        <div class="name">Blocheaza</div>
+        <div class="desc">Marcheaza perioada ca finalizata. Reversibil</div>
+      </div>
+      <div class="action-item">
+        <div class="icon">&#128275;</div>
+        <div class="name">Deblocheaza</div>
+        <div class="desc">Apare doar pe perioade blocate</div>
+      </div>
+      <div class="action-item">
+        <div class="icon">&#8595;</div>
+        <div class="name">Export XLSX</div>
+        <div class="desc">Descarca raportul de marja ca fisier Excel</div>
+      </div>
+    </div>
+
+    <!-- 6. Verificare -->
+    <h2><span class="num">6</span> Verificare <span style="font-weight:400; font-size:14px; color:#6b7280;">(tab-ul "Verificare")</span></h2>
+    <p>Afiseaza datele brute importate din BAB, grupate pe cont:</p>
+
+    <ol class="steps">
+      <li>Selecteaza <strong>perioada</strong> din dropdown</li>
+      <li>Filtreaza optional pe <strong>Centru de cost (KST)</strong></li>
+      <li>Fiecare cont poate fi <strong>expandat</strong> (click) pentru a vedea liniile individuale cu KST, denumire centru cost si saldo</li>
+    </ol>
+
+    <p>Util pentru audit si reconciliere cu ERP-ul.</p>
+
+    <!-- Flux recomandat -->
+    <h2>Flux recomandat</h2>
+    <div class="flow">
+      <div class="step">Configurare</div>
+      <div class="arrow">&rarr;</div>
+      <div class="step">Import BAB</div>
+      <div class="arrow">&rarr;</div>
+      <div class="step">Verificare date</div>
+      <div class="arrow">&rarr;</div>
+      <div class="step">Vizualizare Marja</div>
+      <div class="arrow">&rarr;</div>
+      <div class="step">Blocare perioada</div>
+    </div>
+
+  </div>
+</body>
+</html>
