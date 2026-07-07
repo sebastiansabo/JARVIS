@@ -216,29 +216,3 @@ export interface FpVehicleInspection {
   created_by: number | null
   created_at: string
 }
-
-// ── Test Drive Form Payload ──
-export interface TestDriveFormPayload {
-  company_id: number
-  vin: string
-  registration_number: string
-  client_id: number
-  odometer_start: number
-  odometer_end?: number
-  estimated_km: number
-  fuel_tank_capacity_liters: number
-  fuel_gauge_start_level: FuelGaugeLevel
-  fuel_gauge_end_level?: FuelGaugeLevel
-  fuel_start_liters?: number
-  fuel_end_liters?: number
-  fuel_consumed_liters?: number
-  itinerary: string
-  departure_datetime: string
-  return_datetime?: string
-  advisor_name: string
-  advisor_signature: string
-  client_signature: string
-  gdpr_consent: boolean
-  inspection_acceptance: boolean
-  inspection_id?: number
-}
