@@ -205,7 +205,15 @@ class Ledger:
         try:
             with open(self.path) as f:
                 data = json.load(f)
+        except FileNotFoundError:
+            data = {}
         except Exception:
+            # Corrupt ledger: preserve it for inspection instead of silently
+            # discarding it, then fall back to an empty ledger.
+            try:
+                os.replace(self.path, self.path + ".corrupt")
+            except Exception:
+                pass
             data = {}
         data.setdefault("commits", {})
         data.setdefault("stories", {})
@@ -225,8 +233,10 @@ class Ledger:
 
     def save(self):
         try:
-            with open(self.path, "w") as f:
+            tmp = self.path + ".tmp"
+            with open(tmp, "w") as f:
                 json.dump(self.data, f, indent=2)
+            os.replace(tmp, self.path)
         except Exception:
             pass
 
@@ -264,7 +274,7 @@ class JiraClient:
             return {"_error": str(e)}
 
     def find_story(self, workstream_key, title):
-        safe = title.replace('"', " ")
+        safe = title.replace("\\", " ").replace('"', " ")
         jql = (
             f'project={PROJECT_KEY} AND issuetype="Activitate" '
             f'AND parent={workstream_key} AND summary~"{safe}"'
@@ -317,7 +327,8 @@ def resolve_story(client, ledger, scope, route):
     cached = ledger.story_for(scope)
     if cached:
         return cached
-    title = AUTOCREATE_STORY_TITLE.get(scope, f"{scope.capitalize()} work")
+    safe_scope = re.sub(r"[^\w \-]", "", scope or "")
+    title = AUTOCREATE_STORY_TITLE.get(scope, f"{safe_scope.capitalize()} work")
     key = client.find_story(workstream, title) or client.create_story(workstream, title)
     if key:
         ledger.set_story(scope, key)
@@ -379,7 +390,7 @@ def get_pushed_commits(stdin_text, run_git=None):
 
 def ledger_path(run_git=None):
     run_git = run_git or _run_git
-    gitdir = run_git(["rev-parse", "--git-dir"]).strip() or ".git"
+    gitdir = run_git(["rev-parse", "--git-common-dir"]).strip() or ".git"
     if not os.path.isabs(gitdir):
         gitdir = os.path.join(PROJECT_DIR, gitdir)
     return os.path.join(gitdir, "jira-sync-ledger.json")
@@ -423,6 +434,7 @@ def main(argv, stdin_text=None, overrides=None):
                 client.transition_in_progress(key)
                 for c in group:
                     ledger.mark_commit(c["sha"], key)
+                ledger.save()
                 print(f"Jira: {key} ← {len(group)} commit(s) [{scope}] under {story}")
             else:
                 print(f"Jira: failed to create task for scope '{scope}'")

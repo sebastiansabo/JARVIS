@@ -1,4 +1,4 @@
-import importlib.util, pathlib
+import importlib.util, os, pathlib
 
 _MOD = pathlib.Path(__file__).resolve().parent.parent / ".claude/hooks/jira_commit_sync.py"
 _spec = importlib.util.spec_from_file_location("jira_commit_sync", _MOD)
@@ -101,6 +101,30 @@ def test_ledger_handles_missing_and_corrupt(tmp_path):
     led.save()  # must not raise
 
 
+def test_ledger_corrupt_file_is_preserved_aside(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text("{ not json")
+    led = jcs.Ledger(str(bad))
+    assert led.is_synced("x") is False
+    corrupt = tmp_path / "bad.json.corrupt"
+    assert corrupt.exists()
+    assert corrupt.read_text() == "{ not json"
+    # a missing file must NOT create a .corrupt sidecar
+    assert not (tmp_path / "nope.json.corrupt").exists()
+
+
+def test_ledger_save_is_atomic_and_reloadable(tmp_path):
+    p = tmp_path / "ledger.json"
+    led = jcs.Ledger(str(p))
+    led.mark_commit("shaZ", "JAR-999")
+    led.save()
+    tmp_file = tmp_path / "ledger.json.tmp"
+    assert not tmp_file.exists()  # temp file cleaned up via os.replace
+    reloaded = jcs.Ledger(str(p))
+    assert reloaded.is_synced("shaZ") is True
+    assert reloaded.data["commits"]["shaZ"] == "JAR-999"
+
+
 class FakeTransport:
     """Records calls; mints JAR-9NN keys for POST /issue; canned search."""
 
@@ -175,6 +199,51 @@ def test_resolve_story_finds_existing_before_creating(tmp_path):
     assert key == "JAR-300"
     assert led.story_for("connecteam") == "JAR-300"
     assert all(c[0:2] != ("POST", "/issue") for c in ft.calls)  # never created
+
+
+def test_ledger_path_uses_git_common_dir(tmp_path):
+    calls = []
+
+    def run_git(args):
+        calls.append(args)
+        if args == ["rev-parse", "--git-common-dir"]:
+            return "/repo/.git"
+        return ""
+
+    path = jcs.ledger_path(run_git=run_git)
+    assert path == os.path.join("/repo/.git", "jira-sync-ledger.json")
+    assert ["rev-parse", "--git-common-dir"] in calls
+    assert ["rev-parse", "--git-dir"] not in calls
+
+
+def test_find_story_escapes_quotes_and_backslashes():
+    ft = FakeTransport(search_issues=[])
+    client = jcs.JiraClient("d", "e", "t", transport=ft)
+    client.find_story("JAR-5", 'evil" OR 1=1 \\ more"')
+    method, endpoint, data = ft.calls[-1]
+    # strip the JQL's own opening/closing quote delimiters; nothing injected
+    # from the title should remain inside them
+    inner = data["jql"].split('summary~"', 1)[1][:-1]
+    assert '"' not in inner
+    assert "\\" not in inner
+
+
+def test_resolve_story_sanitizes_injected_scope_for_fallback_title():
+    ft = FakeTransport(search_issues=[])
+    client = jcs.JiraClient("d", "e", "t", transport=ft)
+    led = jcs.Ledger("/tmp/does-not-matter-unused-2")
+    scope = 'sc"ope\\)'
+    key = jcs.resolve_story(client, led, scope, ("JAR-5", None))
+    assert key == "JAR-901"
+    assert led.story_for(scope) == "JAR-901"
+    create_calls = [c for c in ft.calls if c[1] == "/issue"]
+    summary = create_calls[-1][2]["fields"]["summary"]
+    assert '"' not in summary
+    assert "\\" not in summary
+    search_calls = [c for c in ft.calls if c[1] == "/search/jql"]
+    inner = search_calls[-1][2]["jql"].split('summary~"', 1)[1][:-1]
+    assert '"' not in inner
+    assert "\\" not in inner
 
 
 ZERO = "0" * 40
