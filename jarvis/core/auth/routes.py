@@ -103,6 +103,13 @@ def login():
                 _log_event('login', f'User {email} logged in (trusted device)')
                 return redirect(next_page or url_for('index'))
 
+            # Per-user OTP rate limit — 3 attempts per 10 minutes
+            otp_allowed, otp_retry = _auth_limiter.is_allowed(
+                f'otp:{user.id}', max_requests=3, window_seconds=600)
+            if not otp_allowed:
+                flash(f'Too many verification attempts. Try again in {otp_retry} seconds.', 'error')
+                return render_template('core/login.html')
+
             # Not trusted — generate and send OTP
             otp_id, email_sent, error = auth_svc.generate_and_send_otp(
                 user.id, user.email, user.name, current_app.secret_key)
