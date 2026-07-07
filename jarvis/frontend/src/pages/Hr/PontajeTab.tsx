@@ -413,7 +413,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
       // Collect unique employees keyed by (jarvis_user_id + group) to keep multi-company employees as separate rows
       // Exclude unmapped employees and closed/dismissed groups
       const EXCLUDED_GROUPS = ['contracte inchise', 'practicanti', 'plecati']
-      const employeeMap = new Map<string, { name: string; company: string; group: string; schedule: string; jarvisUserId: number | null; biostarIds: Set<string> }>()
+      const employeeMap = new Map<string, { name: string; company: string; group: string; schedule: string; jarvisUserId: number | null; biostarIds: Set<string>; lunchBreakMinutes: number }>()
       for (const dd of dailyData) {
         for (const s of dd.summaries) {
           if (!s.mapped_jarvis_user_id) continue
@@ -430,6 +430,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               schedule: formatSchedule(s.schedule_start, s.schedule_end),
               jarvisUserId: s.mapped_jarvis_user_id,
               biostarIds: new Set([s.biostar_user_id]),
+              lunchBreakMinutes: s.lunch_break_minutes ?? 30,
             })
           }
         }
@@ -451,6 +452,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             schedule: formatSchedule(r.schedule_start, r.schedule_end),
             jarvisUserId: r.jarvis_user_id,
             biostarIds: new Set([r.biostar_user_id]),
+            lunchBreakMinutes: r.lunch_break_minutes ?? 30,
           })
         }
       }
@@ -517,7 +519,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               const effectiveOut = raw ? iv.last_punch : (iv.adjusted_last_punch ?? iv.last_punch)
               const pIn = effectiveIn ?? null
               const pOut = effectiveOut && effectiveOut !== effectiveIn ? effectiveOut : null
-              const lunchMin = dd.summaries.find(x => emp.biostarIds.has(x.biostar_user_id))?.lunch_break_minutes ?? 60
+              const lunchMin = dd.summaries.find(x => emp.biostarIds.has(x.biostar_user_id))?.lunch_break_minutes ?? emp.lunchBreakMinutes
               let duration = ''
               if (pIn && pOut) {
                 const secs = netSec(timeDiffSec(pIn, pOut), lunchMin)
@@ -528,7 +530,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 `W${dd.weekNum}`,
                 dd.date,
                 dd.dayLabel,
-                emp.group,
+                iv.group_name || emp.group,
                 emp.name,
                 companyShort,
                 pIn ? fmtTime(pIn) : '',
@@ -551,7 +553,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               const effectiveOut = raw ? companyIv.last_punch : (companyIv.adjusted_last_punch ?? companyIv.last_punch)
               const pIn = effectiveIn ?? null
               const pOut = effectiveOut && effectiveOut !== effectiveIn ? effectiveOut : null
-              const lunchMin = dd.summaries.find(x => emp.biostarIds.has(x.biostar_user_id))?.lunch_break_minutes ?? 60
+              const lunchMin = dd.summaries.find(x => emp.biostarIds.has(x.biostar_user_id))?.lunch_break_minutes ?? emp.lunchBreakMinutes
               let duration = ''
               if (pIn && pOut) {
                 const secs = netSec(timeDiffSec(pIn, pOut), lunchMin)
@@ -580,7 +582,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               const punchOut = s?.last_punch ?? null
               const officialIn = punchIn
               const officialOut = punchOut === punchIn ? null : punchOut
-              const lunchMin = s?.lunch_break_minutes ?? 60
+              const lunchMin = s?.lunch_break_minutes ?? emp.lunchBreakMinutes
               let duration = ''
               if (officialIn && officialOut) {
                 const secs = netSec(s?.duration_seconds ?? timeDiffSec(officialIn, officialOut), lunchMin)
@@ -611,7 +613,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
             const punchOut = s ? (raw ? s.last_punch : (s.adjusted_last_punch ?? s.last_punch)) : null
             const officialIn = punchIn
             const officialOut = punchOut === punchIn ? null : punchOut
-            const lunchMin = s?.lunch_break_minutes ?? 60
+            const lunchMin = s?.lunch_break_minutes ?? emp.lunchBreakMinutes
             let duration = ''
             if (officialIn && officialOut) {
               const grossSecs = raw
