@@ -322,3 +322,117 @@ def resolve_story(client, ledger, scope, route):
     if key:
         ledger.set_story(scope, key)
     return key
+
+
+def _run_git(args):
+    try:
+        r = subprocess.run(
+            ["git"] + args, capture_output=True, text=True, cwd=PROJECT_DIR
+        )
+        return r.stdout.strip()
+    except Exception:
+        return ""
+
+
+def _is_zero(sha):
+    return set(sha) == {"0"}
+
+
+def get_pushed_commits(stdin_text, run_git=None):
+    """Parse pre-push stdin into commit dicts (newest-first, no merges)."""
+    run_git = run_git or _run_git
+    ranges = []
+    for line in (stdin_text or "").strip().splitlines():
+        parts = line.split()
+        if len(parts) != 4:
+            continue
+        _local_ref, local_sha, _remote_ref, remote_sha = parts
+        if _is_zero(local_sha):
+            continue  # branch deletion
+        if _is_zero(remote_sha):
+            ranges.append([local_sha, "--not", "--remotes"])
+        else:
+            ranges.append([f"{remote_sha}..{local_sha}"])
+    if not ranges:
+        if (stdin_text or "").strip():
+            return []  # only deletions -> nothing to sync
+        ranges = [["-n", "5", "HEAD"]]  # manual/dry-run fallback
+
+    seen, ordered = set(), []
+    for rng in ranges:
+        for sha in run_git(["rev-list", "--no-merges"] + rng).splitlines():
+            sha = sha.strip()
+            if sha and sha not in seen:
+                seen.add(sha)
+                ordered.append(sha)
+
+    commits = []
+    for sha in ordered:
+        subject = run_git(["show", "-s", "--format=%s", sha]).strip()
+        files = [
+            f for f in run_git(["show", "--name-only", "--format=", sha]).splitlines()
+            if f.strip()
+        ]
+        commits.append({"sha": sha, "subject": subject, "files": files})
+    return commits
+
+
+def ledger_path(run_git=None):
+    run_git = run_git or _run_git
+    gitdir = run_git(["rev-parse", "--git-dir"]).strip() or ".git"
+    if not os.path.isabs(gitdir):
+        gitdir = os.path.join(PROJECT_DIR, gitdir)
+    return os.path.join(gitdir, "jira-sync-ledger.json")
+
+
+def main(argv, stdin_text=None, overrides=None):
+    """Entry point. Always returns 0 — a push must never fail on Jira."""
+    overrides = overrides or {}
+    dry = "--dry-run" in (argv or [])
+    domain = overrides.get("domain", DOMAIN)
+    email = overrides.get("email", EMAIL)
+    token = overrides.get("token", TOKEN)
+    run_git = overrides.get("run_git", _run_git)
+
+    if not all([domain, email, token]):
+        return 0
+    try:
+        commits = get_pushed_commits(stdin_text or "", run_git=run_git)
+        ledger = overrides.get("ledger") or Ledger(ledger_path(run_git))
+        fresh = [c for c in commits if not ledger.is_synced(c["sha"])]
+        if not fresh:
+            return 0
+
+        branch = run_git(["rev-parse", "--abbrev-ref", "HEAD"]).strip() or "?"
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        client = overrides.get("client") or JiraClient(domain, email, token)
+
+        for scope, group in group_commits(fresh).items():
+            route = route_for_scope(scope)
+            summary = build_summary(scope, group, now_str)
+            if dry:
+                story = route[1] or "(auto-create)"
+                print(f"[dry-run] {story} ← {len(group)} commit(s) [{scope}]: {summary}")
+                continue
+            story = resolve_story(client, ledger, scope, route)
+            if not story:
+                print(f"Jira: could not resolve story for scope '{scope}'")
+                continue
+            key = client.create_task(story, summary, build_description_adf(scope, group, branch, now_str))
+            if key:
+                client.transition_in_progress(key)
+                for c in group:
+                    ledger.mark_commit(c["sha"], key)
+                print(f"Jira: {key} ← {len(group)} commit(s) [{scope}] under {story}")
+            else:
+                print(f"Jira: failed to create task for scope '{scope}'")
+        if not dry:
+            ledger.save()
+    except Exception as e:
+        print(f"Jira sync: skipped ({e})")
+    return 0
+
+
+if __name__ == "__main__":
+    _stdin = "" if sys.stdin.isatty() else sys.stdin.read()
+    sys.exit(main(sys.argv[1:], stdin_text=_stdin))
