@@ -402,7 +402,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
         const holRes = await fetch(`/api/holidays/year/${y}`, { credentials: 'same-origin' })
         if (holRes.ok) {
           const holJson = await holRes.json()
-          const holDates = new Set((holJson.data ?? []).map((h: { date: string }) => h.date))
+          const holDates = new Set((holJson.holidays ?? []).map((h: { date: string }) => h.date))
           const filtered = workingDays.filter(wd => !holDates.has(wd.date))
           workingDays.length = 0
           workingDays.push(...filtered)
