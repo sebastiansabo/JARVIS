@@ -1,0 +1,102 @@
+Controlling — BAB (Betriebsabrechnungsbogen)
+Ghid de utilizare
+=================================================
+
+Modulul se acceseaza din sidebar: Accounting > Controlling
+
+
+1. SELECTAREA COMPANIEI
+-------------------------------------------------
+In coltul din dreapta sus se afla selectorul de companie.
+Alege compania pentru care vrei sa lucrezi.
+Selectia se pastreaza in URL — daca dai refresh, ramane pe aceeasi companie.
+
+
+2. CONFIGURARE (tab-ul "Configurare")
+-------------------------------------------------
+Incepe intotdeauna de aici — definesti structura raportului de marja
+inainte de a importa date.
+
+Fiecare rand din configurare are:
+
+  Ordine    — numarul de sortare (10, 20, 30...) care determina ordinea afisarii
+  KST       — centrul de cost (ex: 211, 215)
+  Grup      — numele grupului (ex: "VW PKW INTERN (retail)", "Bonus & Discount")
+  Indicator — denumirea indicatorului (ex: "Venit Sales realizat", "Marja Bruta realizata")
+  Tip       — doua tipuri:
+              Sum      = sumeaza conturile specificate din BAB.
+                         Se completeaza campul "Conturi" cu numerele de cont
+                         separate prin virgula (ex: 707111,707116,607111)
+              Subtotal = sumeaza alti indicatori. La selectare apare un picker
+                         cu chips-uri grupate pe care le poti bifa/debifa
+
+  Total principal (steluta) — bifeaza pe randurile de tip Subtotal care
+              contribuie la Marja Finala afisata pe linia principala din tab-ul Marja.
+              Poti avea mai multe subtotaluri starred — valorile lor se aduna automat.
+
+Exemplu de structura:
+
+  Ordine 10  | KST 211 | VW PKW INTERN (retail) | Venit Sales realizat  | Sum        | 707111,707116
+  Ordine 20  | KST 211 | VW PKW INTERN (retail) | Marja Bruta realizata | Sum        | 707111,707116,607111
+  Ordine 30  | KST 211 | VW PKW INTERN (retail) | Bonus trimestrial     | Sum        | 609010
+  Ordine 110 | KST 211 | MARJA FINALA PKW       | MARJA FINALA          | Subtotal * | [chips selectate]
+
+Actiuni disponibile: editare (creion), stergere (cos), adaugare rand nou (buton "+ Adauga rand").
+
+
+3. IMPORT PERIOADA (tab-ul "Marja")
+-------------------------------------------------
+1. Click pe butonul "Import perioada" din header
+2. Selecteaza luna si anul
+3. Cursul EUR se preia automat de la BNR (ultima zi a lunii). Poate fi modificat manual
+4. Drag & drop fisierul .xlsx exportat din ERP (sau click pentru browse)
+5. Click "Importa BAB"
+
+La re-import pe o perioada existenta: datele vechi sunt inlocuite.
+Se afiseaza un warning galben de confirmare.
+
+
+4. VIZUALIZARE RAPORT (tab-ul "Marja")
+-------------------------------------------------
+Tabelul principal arata toate perioadele importate cu coloanele:
+
+  An / Perioada         — luna si anul
+  Status                — Importat (verde) sau Blocat (albastru)
+  Marja Finala (LEI)    — totalul calculat din subtotalurile starred
+  Marja Finala (EUR)    — echivalentul in EUR la cursul BNR
+
+Click pe un rand → se expandeaza si afiseaza breakdown-ul complet:
+
+  Sectiuni gri (uppercase) = grupurile definite in configurare
+  Randuri indentate        = indicatorii de tip Sum cu valorile din conturi
+  Randuri bold cu fundal   = Subtotaluri
+
+Valorile negative apar in rosu.
+
+
+5. ACTIUNI PE PERIOADA
+-------------------------------------------------
+Pe fiecare rand din tabel ai butoane:
+
+  Re-import   (Upload)   — inlocuieste datele cu un fisier nou
+  Blocheaza   (Lock)     — marcheaza perioada ca finalizata. Blocarea este reversibila
+  Deblocheaza (Unlock)   — apare doar pe perioade blocate
+  Export XLSX (Download)  — descarca raportul de marja ca fisier Excel
+
+
+6. VERIFICARE (tab-ul "Verificare")
+-------------------------------------------------
+Afiseaza datele brute importate din BAB, grupate pe cont:
+
+1. Selecteaza perioada din dropdown
+2. Filtreaza optional pe Centru de cost (KST)
+3. Fiecare cont poate fi expandat (click) pentru a vedea liniile individuale
+   cu KST, denumire centru cost si saldo
+
+Util pentru audit si reconciliere cu ERP-ul.
+
+
+FLUX RECOMANDAT
+=================================================
+
+  Configurare → Import BAB → Verificare date → Vizualizare Marja → Blocare perioada

@@ -1,4 +1,4 @@
-import { useState, useRef, lazy, Suspense } from 'react'
+import { useState, useRef, lazy, Suspense, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -507,6 +507,12 @@ function FpClientField({ field, value, error, onChange }: FieldProps) {
   const [selectedName, setSelectedName] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
+
   const handleSearchChange = (val: string) => {
     setSearch(val)
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -534,10 +540,10 @@ function FpClientField({ field, value, error, onChange }: FieldProps) {
   return (
     <div className="space-y-1">
       <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
-      {value && selectedName ? (
+      {value && (selectedName || value) ? (
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center rounded-md border px-3 py-1.5 text-sm font-medium">
-            {selectedName}
+            {selectedName || `Client #${value}`}
           </span>
           <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={clearSelection}>
             Schimba
