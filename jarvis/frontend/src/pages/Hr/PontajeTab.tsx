@@ -537,7 +537,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 const secs = netSec(timeDiffSec(pIn, pOut), lunchMin)
                 if (secs > 0) duration = fmtDurationHM(secs)
               }
-              const companyShort = iv.group_name || iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() || iv.company
+              const companyShort = iv.company ? iv.company.replace(/\s*S\.R\.L\.?\s*$/i, '').trim() : (iv.group_name || emp.company)
               csvRows.push([
                 `W${dd.weekNum}`,
                 dd.date,
