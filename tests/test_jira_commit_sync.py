@@ -175,3 +175,96 @@ def test_resolve_story_finds_existing_before_creating(tmp_path):
     assert key == "JAR-300"
     assert led.story_for("connecteam") == "JAR-300"
     assert all(c[0:2] != ("POST", "/issue") for c in ft.calls)  # never created
+
+
+ZERO = "0" * 40
+
+
+def _fake_git(rev_list_map, subjects, files_map):
+    """Build a run_git stub. rev_list_map: tuple(args)->newline SHAs."""
+    def run_git(args):
+        if args[:1] == ["rev-list"]:
+            return rev_list_map.get(tuple(args), "")
+        if args[:2] == ["show", "-s"]:
+            return subjects.get(args[-1], "")
+        if args[:1] == ["show"] and "--name-only" in args:
+            return files_map.get(args[-1], "")
+        if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return "dev"
+        return ""
+    return run_git
+
+
+def test_get_pushed_commits_parses_range():
+    remote = "1" * 40
+    local = "2" * 40
+    stdin = f"refs/heads/dev {local} refs/heads/dev {remote}\n"
+    rev_list = {("rev-list", "--no-merges", f"{remote}..{local}"): "shaA\nshaB"}
+    subjects = {"shaA": "fix(hr): a", "shaB": "feat(facturare): b"}
+    files = {"shaA": "", "shaB": ""}
+    commits = jcs.get_pushed_commits(stdin, run_git=_fake_git(rev_list, subjects, files))
+    assert [c["sha"] for c in commits] == ["shaA", "shaB"]
+    assert commits[0]["subject"] == "fix(hr): a"
+
+
+def test_get_pushed_commits_skips_branch_deletion():
+    stdin = f"(delete) {ZERO} refs/heads/old {'3'*40}\n"
+    commits = jcs.get_pushed_commits(stdin, run_git=_fake_git({}, {}, {}))
+    assert commits == []
+
+
+def test_get_pushed_commits_empty_stdin_falls_back_to_head():
+    rev_list = {("rev-list", "--no-merges", "-n", "5", "HEAD"): "shaH"}
+    subjects = {"shaH": "chore: h"}
+    commits = jcs.get_pushed_commits("", run_git=_fake_git(rev_list, subjects, {"shaH": ""}))
+    assert [c["sha"] for c in commits] == ["shaH"]
+
+
+def test_main_dry_run_creates_nothing(capsys):
+    remote = "1" * 40
+    local = "2" * 40
+    stdin = f"refs/heads/dev {local} refs/heads/dev {remote}\n"
+    rev_list = {("rev-list", "--no-merges", f"{remote}..{local}"): "shaA"}
+    run_git = _fake_git(rev_list, {"shaA": "fix(pontaje): x"}, {"shaA": ""})
+    rc = jcs.main(["--dry-run"], stdin_text=stdin,
+                  overrides={"run_git": run_git, "domain": "d", "email": "e", "token": "t"})
+    assert rc == 0
+    assert "dry-run" in capsys.readouterr().out.lower()
+
+
+def test_main_creates_tasks_and_dedups(tmp_path, capsys):
+    remote = "1" * 40
+    local = "2" * 40
+    stdin = f"refs/heads/dev {local} refs/heads/dev {remote}\n"
+    rev_list = {("rev-list", "--no-merges", f"{remote}..{local}"): "shaA\nshaB"}
+    run_git = _fake_git(
+        rev_list,
+        {"shaA": "fix(pontaje): a", "shaB": "feat(facturare): b"},
+        {"shaA": "", "shaB": ""},
+    )
+    ft = FakeTransport(search_issues=[])
+    client = jcs.JiraClient("d", "e", "t", transport=ft)
+    ledger = jcs.Ledger(str(tmp_path / "l.json"))
+
+    rc = jcs.main([], stdin_text=stdin, overrides={
+        "run_git": run_git, "client": client, "ledger": ledger,
+        "domain": "d", "email": "e", "token": "t",
+    })
+    assert rc == 0
+    created = [c for c in ft.calls if c[0:2] == ("POST", "/issue")]
+    # 1 auto-created story (pontaje) + 2 tasks = 3 creates
+    assert len(created) == 3
+    assert ledger.is_synced("shaA") and ledger.is_synced("shaB")
+
+    # second identical push -> everything already synced -> no new creates
+    ft.calls.clear()
+    rc2 = jcs.main([], stdin_text=stdin, overrides={
+        "run_git": run_git, "client": client, "ledger": ledger,
+        "domain": "d", "email": "e", "token": "t",
+    })
+    assert rc2 == 0
+    assert [c for c in ft.calls if c[0:2] == ("POST", "/issue")] == []
+
+
+def test_main_noop_without_creds():
+    assert jcs.main([], stdin_text="", overrides={"domain": "", "email": "", "token": ""}) == 0
