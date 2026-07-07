@@ -395,6 +395,8 @@ class SincronRepository(BaseRepository):
         """Get leave day codes for multiple JARVIS users at once.
 
         Returns rows of (mapped_jarvis_user_id, day, short_code) for all active leave codes.
+        For multi-company employees, prioritizes the base contract and
+        leave codes (CO, CM, etc.) over working codes (OZ, OS).
         """
         if not jarvis_user_ids:
             return []
@@ -409,7 +411,9 @@ class SincronRepository(BaseRepository):
             WHERE se.mapped_jarvis_user_id IN %s
               AND st.year = %s AND st.month = %s
               AND st.short_code IN %s
-            ORDER BY se.mapped_jarvis_user_id, st.day
+            ORDER BY se.mapped_jarvis_user_id, st.day,
+                     se.is_base_contract DESC NULLS LAST,
+                     CASE WHEN st.short_code NOT IN ('OZ', 'OS', 'X') THEN 0 ELSE 1 END
             """,
             (tuple(jarvis_user_ids), year, month, leave_codes),
         )
