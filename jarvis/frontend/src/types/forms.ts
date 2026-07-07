@@ -79,6 +79,7 @@ export interface FormSettings {
   redirect_url?: string
   submission_limit?: number
   limit_message?: string
+  prefill?: Record<string, string>
 }
 
 export interface UtmConfig {
