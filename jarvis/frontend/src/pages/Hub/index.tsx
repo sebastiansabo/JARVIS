@@ -24,6 +24,7 @@ import {
   Pencil,
   LogIn,
   LogOut,
+  Check,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -1504,13 +1505,33 @@ function HubFormsPanel() {
 }
 
 function HubFormModal({ slug, name, onClose, onSubmitted }: { slug: string; name: string; onClose: () => void; onSubmitted: () => void }) {
+  const user = useAuthStore((s) => s.user)
+  const [successData, setSuccessData] = useState<{ thank_you_message?: string; hook_data?: Record<string, string> } | null>(null)
+
   const { data: form, isLoading } = useQuery({
     queryKey: ['public-form', slug],
     queryFn: () => import('@/api/forms').then(m => m.formsApi.getPublicForm(slug)),
   })
 
-  const { schema, defaultValues, submitLabel, needsSignatureSave } =
+  const { schema, defaultValues: voucherDefaults, submitLabel, needsSignatureSave } =
     useVoucherSchema(form?.schema ?? [], slug)
+
+  // Build prefill defaults from form settings
+  const prefillDefaults = useMemo(() => {
+    const prefill = form?.settings?.prefill as Record<string, string> | undefined
+    if (!prefill || !user) return {}
+    const defaults: Record<string, unknown> = {}
+    for (const [fieldId, source] of Object.entries(prefill)) {
+      if (source === 'user.name') defaults[fieldId] = user.name || ''
+      else if (source === 'user.email') defaults[fieldId] = user.email || ''
+    }
+    return defaults
+  }, [form?.settings, user])
+
+  const mergedDefaults = useMemo(
+    () => ({ ...prefillDefaults, ...voucherDefaults }),
+    [prefillDefaults, voucherDefaults],
+  )
 
   const submitMutation = useMutation({
     mutationFn: async (answers: Record<string, unknown>) => {
@@ -1520,7 +1541,13 @@ function HubFormModal({ slug, name, onClose, onSubmitted }: { slug: string; name
       const { f_signature: _, ...formAnswers } = answers
       return import('@/api/forms').then(m => m.formsApi.submitPublicForm(slug, { answers: formAnswers }))
     },
-    onSuccess: () => onSubmitted(),
+    onSuccess: (data) => {
+      setSuccessData({
+        thank_you_message: data?.thank_you_message,
+        hook_data: data?.hook_data,
+      })
+      onSubmitted()
+    },
     onError: () => toast.error('Failed to submit form'),
   })
 
@@ -1540,7 +1567,29 @@ function HubFormModal({ slug, name, onClose, onSubmitted }: { slug: string; name
       {/* Form body */}
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-lg px-5 py-6">
-          {isLoading ? (
+          {successData ? (
+            <div className="text-center space-y-4 py-8">
+              <div className="mx-auto w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                <Check className="h-6 w-6 text-green-600" />
+              </div>
+              <p className="text-sm text-muted-foreground">{successData.thank_you_message || 'Submitted successfully!'}</p>
+              {successData.hook_data?.pdf_legal_url && (
+                <div className="flex flex-col gap-2 pt-2">
+                  <a href={successData.hook_data.pdf_legal_url} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">
+                    Download Legal PDF
+                  </a>
+                  {successData.hook_data.pdf_custom_url && (
+                    <a href={successData.hook_data.pdf_custom_url} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">
+                      Download Custom PDF
+                    </a>
+                  )}
+                </div>
+              )}
+              <Button variant="outline" size="sm" onClick={onClose}>Inchide</Button>
+            </div>
+          ) : isLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
             </div>
@@ -1553,7 +1602,7 @@ function HubFormModal({ slug, name, onClose, onSubmitted }: { slug: string; name
                 onSubmit={(answers) => submitMutation.mutate(answers)}
                 submitting={submitMutation.isPending}
                 submitLabel={submitLabel}
-                defaultValues={defaultValues}
+                defaultValues={mergedDefaults}
               />
             </Suspense>
           )}
