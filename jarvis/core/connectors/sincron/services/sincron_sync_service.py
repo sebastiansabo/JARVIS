@@ -171,8 +171,10 @@ class SincronSyncService:
                 total_employees += result.get('employees', 0)
                 total_records += result.get('records', 0)
 
-                # Deactivate employees missing from current-month API response
-                if is_current_month and result.get('success'):
+                # Deactivate employees missing from current-month API response.
+                # Skip first 5 days of the month — Sincron data may be
+                # incomplete until the accountant enters all timesheets.
+                if is_current_month and now.day > 5 and result.get('success'):
                     deactivated = self._deactivate_missing_employees(
                         comp, result.pop('_synced_ids', set()))
                     result['deactivated'] = deactivated
@@ -195,6 +197,9 @@ class SincronSyncService:
         connector = self.connector_repo.get_by_type('sincron')
         if connector:
             self.connector_repo.update(connector['id'], last_sync=datetime.now())
+
+        # Re-activate JARVIS users whose Sincron records came back
+        total_reactivated = self._reactivate_returned_employees()
 
         # Recalculate base contracts (primary norm per CNP)
         base_marked = 0
@@ -235,6 +240,7 @@ class SincronSyncService:
             'total_employees': total_employees,
             'total_records': total_records,
             'total_deactivated': total_deactivated,
+            'total_reactivated': total_reactivated,
             'base_contracts_marked': base_marked,
             'biostar_schedules_updated': biostar_updated,
             'companies': company_results,
@@ -337,6 +343,28 @@ class SincronSyncService:
                 closed_users += 1
 
         return len(missing_ids)
+
+    def _reactivate_returned_employees(self):
+        """Re-activate JARVIS users whose Sincron records came back.
+
+        When upsert_employee re-activates a sincron_employees record
+        (is_active=TRUE), the mapped JARVIS user may still be stuck
+        as contract_status='closed'. This method fixes that mismatch.
+        """
+        rows = self.repo.query_all('''
+            UPDATE users SET contract_status = 'active', updated_at = NOW()
+            WHERE contract_status = 'closed'
+              AND id IN (
+                  SELECT DISTINCT mapped_jarvis_user_id
+                  FROM sincron_employees
+                  WHERE is_active = TRUE AND mapped_jarvis_user_id IS NOT NULL
+              )
+            RETURNING id, name
+        ''')
+        for r in rows:
+            logger.info(f'Re-activated JARVIS user {r["id"]} ({r["name"]}) '
+                        f'— active Sincron contract found')
+        return len(rows)
 
     def _get_company_id_map(self):
         """Build UPPER(company_name) → company_id lookup from companies table."""
