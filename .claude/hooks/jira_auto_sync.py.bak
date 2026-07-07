@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""
+Auto-sync JARVIS session changes to Jira.
+Runs on Claude Code session Stop event.
+Creates subtasks under existing stories (not top-level tickets).
+"""
+
+import json
+import subprocess
+import os
+import sys
+from datetime import datetime, timedelta
+
+# ── Config ──
+DOMAIN = os.environ.get("JIRA_DOMAIN", "")
+EMAIL = os.environ.get("JIRA_EMAIL", "")
+TOKEN = os.environ.get("JIRA_API_TOKEN", "")
+ACCT_ID = "5bd1c8d1f8460347a10cb16d"
+PROJECT_DIR = "/Users/sebastiansabo/Documents/Git/JARVIS"
+
+if not all([DOMAIN, EMAIL, TOKEN]):
+    # Silent exit if creds not configured
+    sys.exit(0)
+
+# ── Module → Story mapping ──
+MODULE_MAP = {
+    "repos/invoice": "JAR-16",
+    "routes/invoice": "JAR-16",
+    "allocations": "JAR-16",
+    "reinvoice": "JAR-17",
+    "repos/efactura": "JAR-21",
+    "routes/efactura": "JAR-21",
+    "efactura": "JAR-21",
+    "repos/bank_statement": "JAR-26",
+    "routes/bank_statement": "JAR-26",
+    "statements": "JAR-26",
+    "repos/hr": "JAR-28",
+    "routes/hr": "JAR-28",
+    "repos/ai_agent": "JAR-31",
+    "services/ai_agent": "JAR-31",
+    "ai_agent": "JAR-31",
+    "repos/tag": "JAR-43",
+    "routes/tag": "JAR-43",
+    "auto_tag": "JAR-45",
+    "frontend/src": "JAR-36",
+    "routes/auth": "JAR-41",
+    "permissions": "JAR-41",
+    "database.py": "JAR-14",
+    "migrations/": "JAR-14",
+    "notification": "JAR-46",
+}
+
+
+def run_git(args):
+    """Run a git command and return stdout."""
+    try:
+        result = subprocess.run(
+            ["git"] + args,
+            capture_output=True, text=True, cwd=PROJECT_DIR
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
+
+def jira_api(method, endpoint, data=None):
+    """Make a Jira API request using Basic auth header (not -u flag)."""
+    import base64
+    auth = base64.b64encode(f"{EMAIL}:{TOKEN}".encode()).decode()
+    cmd = [
+        "curl", "-s", "-X", method,
+        "-H", f"Authorization: Basic {auth}",
+        "-H", "Content-Type: application/json",
+        f"https://{DOMAIN}/rest/api/3{endpoint}",
+    ]
+    if data:
+        cmd.extend(["-d", json.dumps(data)])
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        return json.loads(result.stdout)
+    except (json.JSONDecodeError, Exception):
+        return {}
+
+
+def detect_parent_story(files):
+    """Detect the best parent story from changed files."""
+    story_hits = {}
+    for f in files:
+        for pattern, story in MODULE_MAP.items():
+            if pattern in f:
+                story_hits[story] = story_hits.get(story, 0) + 1
+    if not story_hits:
+        return None
+    # Return story with most file hits
+    return max(story_hits, key=story_hits.get)
+
+
+def get_module_label(files):
+    """Get human-readable module label from files."""
+    labels = set()
+    label_map = {
+        "invoice": "Accounting",
+        "efactura": "e-Factura",
+        "bank_statement": "Statements",
+        "statements": "Statements",
+        "hr": "HR",
+        "ai_agent": "AI Agent",
+        "auth": "Auth",
+        "frontend": "Frontend",
+        "tag": "Tags",
+        "notification": "Notifications",
+        "database": "Infrastructure",
+        "migrations": "Infrastructure",
+    }
+    for f in files:
+        for key, label in label_map.items():
+            if key in f.lower():
+                labels.add(label)
+    return ", ".join(sorted(labels)) if labels else "General"
+
+
+def main():
+    # Get recent commits (last 4 hours)
+    since = (datetime.now() - timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M:%S")
+    commits_raw = run_git(["log", f"--since={since}", "--oneline", "--no-merges"])
+    commits = [c for c in commits_raw.split("\n") if c.strip()]
+
+    if not commits:
+        sys.exit(0)
+
+    # Get changed files
+    files_raw = run_git(["diff", "--name-only", f"HEAD~{len(commits)}"])
+    files = [f for f in files_raw.split("\n") if f.strip()]
+
+    if not files:
+        files_raw = run_git(["diff", "--name-only", "HEAD~5"])
+        files = [f for f in files_raw.split("\n") if f.strip()]
+
+    # Detect parent story
+    parent = detect_parent_story(files)
+    if not parent:
+        parent = "JAR-14"  # Default to Infrastructure
+
+    # Build summary
+    module_label = get_module_label(files)
+    date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    commit_hashes = " ".join(c.split()[0] for c in commits[:5])
+
+    summary = f"[{module_label}] Session work — {date_str}"
+    if len(summary) > 80:
+        summary = summary[:77] + "..."
+
+    desc_parts = [
+        f"Auto-synced from Claude Code — {date_str}",
+        f"Commits: {commit_hashes}",
+        f"Files changed: {len(files)}",
+        "",
+        "Changes:",
+    ]
+    for c in commits[:10]:
+        desc_parts.append(f"- {c}")
+    if len(commits) > 10:
+        desc_parts.append(f"... and {len(commits) - 10} more")
+
+    description = "\n".join(desc_parts)
+
+    # Create subtask under parent story
+    data = {
+        "fields": {
+            "project": {"key": "JAR"},
+            "issuetype": {"id": "10287"},
+            "parent": {"key": parent},
+            "summary": summary,
+            "description": {
+                "type": "doc",
+                "version": 1,
+                "content": [{
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": description}]
+                }]
+            },
+            "labels": ["claude-code"],
+            "assignee": {"accountId": ACCT_ID}
+        }
+    }
+
+    result = jira_api("POST", "/issue", data)
+    key = result.get("key", "")
+
+    if key:
+        # Transition to In Progress
+        jira_api("POST", f"/issue/{key}/transitions", {"transition": {"id": "31"}})
+        print(f"Jira: Created {key} (under {parent}) — {summary}")
+    else:
+        error = result.get("errors", result.get("errorMessages", "Unknown error"))
+        print(f"Jira: Failed to create subtask — {error}")
+
+
+if __name__ == "__main__":
+    main()
