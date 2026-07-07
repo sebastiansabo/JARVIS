@@ -229,3 +229,96 @@ class Ledger:
                 json.dump(self.data, f, indent=2)
         except Exception:
             pass
+
+
+class JiraClient:
+    """Thin Jira REST v3 client with an injectable transport for testing."""
+
+    def __init__(self, domain, email, token, transport=None, account_id=ACCT_ID):
+        self.domain = domain
+        self.email = email
+        self.token = token
+        self.account_id = account_id
+        self.transport = transport or self._default_transport
+
+    def _default_transport(self, method, endpoint, data=None):
+        url = f"https://{self.domain}/rest/api/3{endpoint}"
+        auth = base64.b64encode(f"{self.email}:{self.token}".encode()).decode()
+        headers = {
+            "Authorization": f"Basic {auth}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        body = json.dumps(data).encode() if data is not None else None
+        req = urllib.request.Request(url, data=body, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw = resp.read().decode()
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as e:
+            try:
+                return json.loads(e.read().decode())
+            except Exception:
+                return {"_error": str(e)}
+        except Exception as e:
+            return {"_error": str(e)}
+
+    def find_story(self, workstream_key, title):
+        safe = title.replace('"', " ")
+        jql = (
+            f'project={PROJECT_KEY} AND issuetype="Activitate" '
+            f'AND parent={workstream_key} AND summary~"{safe}"'
+        )
+        resp = self.transport(
+            "POST", "/search/jql",
+            {"jql": jql, "maxResults": 1, "fields": ["summary"]},
+        )
+        issues = resp.get("issues", []) if isinstance(resp, dict) else []
+        return issues[0]["key"] if issues else None
+
+    def create_story(self, workstream_key, title):
+        data = {
+            "fields": {
+                "project": {"key": PROJECT_KEY},
+                "issuetype": {"id": TYPE_ACTIVITATE},
+                "parent": {"key": workstream_key},
+                "summary": title[:80],
+                "labels": ["claude-code"],
+            }
+        }
+        return self.transport("POST", "/issue", data).get("key")
+
+    def create_task(self, story_key, summary, description_adf):
+        data = {
+            "fields": {
+                "project": {"key": PROJECT_KEY},
+                "issuetype": {"id": TYPE_SUBTASK},
+                "parent": {"key": story_key},
+                "summary": summary,
+                "description": description_adf,
+                "labels": ["claude-code"],
+                "assignee": {"accountId": self.account_id},
+            }
+        }
+        return self.transport("POST", "/issue", data).get("key")
+
+    def transition_in_progress(self, key):
+        self.transport(
+            "POST", f"/issue/{key}/transitions",
+            {"transition": {"id": TRANSITION_IN_PROGRESS}},
+        )
+
+
+def resolve_story(client, ledger, scope, route):
+    """Return the Story key for a scope: preferred -> cached -> find -> create."""
+    workstream, preferred = route
+    if preferred:
+        return preferred
+    cached = ledger.story_for(scope)
+    if cached:
+        return cached
+    title = AUTOCREATE_STORY_TITLE.get(scope, f"{scope.capitalize()} work")
+    key = client.find_story(workstream, title) or client.create_story(workstream, title)
+    if key:
+        ledger.set_story(scope, key)
+    return key

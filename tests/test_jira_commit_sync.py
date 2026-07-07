@@ -99,3 +99,79 @@ def test_ledger_handles_missing_and_corrupt(tmp_path):
     led = jcs.Ledger(str(bad))
     assert led.is_synced("x") is False
     led.save()  # must not raise
+
+
+class FakeTransport:
+    """Records calls; mints JAR-9NN keys for POST /issue; canned search."""
+
+    def __init__(self, search_issues=None):
+        self.calls = []
+        self.search_issues = search_issues or []
+        self._counter = 0
+
+    def __call__(self, method, endpoint, data=None):
+        self.calls.append((method, endpoint, data))
+        if endpoint == "/search/jql":
+            return {"issues": self.search_issues}
+        if endpoint == "/issue" and method == "POST":
+            self._counter += 1
+            return {"key": f"JAR-9{self._counter:02d}"}
+        return {}
+
+
+def test_create_task_payload_shape():
+    ft = FakeTransport()
+    client = jcs.JiraClient("d", "e", "t", transport=ft)
+    key = client.create_task("JAR-28", "[HR] 1 commit — now", {"type": "doc"})
+    assert key == "JAR-901"
+    method, endpoint, data = ft.calls[-1]
+    assert (method, endpoint) == ("POST", "/issue")
+    f = data["fields"]
+    assert f["issuetype"]["id"] == "10287"
+    assert f["parent"]["key"] == "JAR-28"
+    assert f["assignee"]["accountId"] == jcs.ACCT_ID
+    assert f["labels"] == ["claude-code"]
+
+
+def test_resolve_story_uses_preferred():
+    ft = FakeTransport()
+    client = jcs.JiraClient("d", "e", "t", transport=ft)
+    led = jcs.Ledger("/tmp/does-not-matter-unused")
+    key = jcs.resolve_story(client, led, "reinvoice", ("JAR-2", "JAR-17"))
+    assert key == "JAR-17"
+    assert ft.calls == []  # no network when a preferred story exists
+
+
+def test_resolve_story_autocreates_and_caches(tmp_path):
+    ft = FakeTransport(search_issues=[])  # not found -> create
+    client = jcs.JiraClient("d", "e", "t", transport=ft)
+    led = jcs.Ledger(str(tmp_path / "l.json"))
+    key = jcs.resolve_story(client, led, "pontaje", ("JAR-5", None))
+    assert key == "JAR-901"
+    assert led.story_for("pontaje") == "JAR-901"
+    # created a story (Activitate) under JAR-5 with the mapped title
+    create_calls = [c for c in ft.calls if c[1] == "/issue"]
+    fields = create_calls[-1][2]["fields"]
+    assert fields["issuetype"]["id"] == "10286"
+    assert fields["parent"]["key"] == "JAR-5"
+    assert fields["summary"] == "Pontaje & timesheet sync"
+
+
+def test_resolve_story_reuses_ledger_cache():
+    ft = FakeTransport()
+    client = jcs.JiraClient("d", "e", "t", transport=ft)
+    led = jcs.Ledger("/tmp/unused-cache-test")
+    led.set_story("sincron", "JAR-555")
+    key = jcs.resolve_story(client, led, "sincron", ("JAR-5", None))
+    assert key == "JAR-555"
+    assert ft.calls == []  # cache hit, no network
+
+
+def test_resolve_story_finds_existing_before_creating(tmp_path):
+    ft = FakeTransport(search_issues=[{"key": "JAR-300"}])
+    client = jcs.JiraClient("d", "e", "t", transport=ft)
+    led = jcs.Ledger(str(tmp_path / "l.json"))
+    key = jcs.resolve_story(client, led, "connecteam", ("JAR-5", None))
+    assert key == "JAR-300"
+    assert led.story_for("connecteam") == "JAR-300"
+    assert all(c[0:2] != ("POST", "/issue") for c in ft.calls)  # never created
