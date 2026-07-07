@@ -191,3 +191,41 @@ def build_description_adf(scope, commits, branch, now_str):
             {"type": "paragraph", "content": [{"type": "text", "text": text}]}
         ],
     }
+
+
+class Ledger:
+    """Git-local JSON store of synced commit SHAs and auto-created stories."""
+
+    def __init__(self, path):
+        self.path = path
+        self.data = self._load()
+
+    def _load(self):
+        data = {}
+        try:
+            with open(self.path) as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+        data.setdefault("commits", {})
+        data.setdefault("stories", {})
+        return data
+
+    def is_synced(self, sha):
+        return sha in self.data["commits"]
+
+    def mark_commit(self, sha, issue_key):
+        self.data["commits"][sha] = issue_key
+
+    def story_for(self, scope):
+        return self.data["stories"].get(scope)
+
+    def set_story(self, scope, issue_key):
+        self.data["stories"][scope] = issue_key
+
+    def save(self):
+        try:
+            with open(self.path, "w") as f:
+                json.dump(self.data, f, indent=2)
+        except Exception:
+            pass

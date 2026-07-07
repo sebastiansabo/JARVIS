@@ -76,3 +76,26 @@ def test_build_description_adf_lists_commits():
     text = adf["content"][0]["content"][0]["text"]
     assert "Branch: dev" in text
     assert "abcdef1 fix(pontaje): read holidays" in text
+
+
+def test_ledger_roundtrip(tmp_path):
+    p = tmp_path / "ledger.json"
+    led = jcs.Ledger(str(p))
+    assert led.is_synced("sha1") is False
+    led.mark_commit("sha1", "JAR-900")
+    led.set_story("pontaje", "JAR-901")
+    led.save()
+
+    reloaded = jcs.Ledger(str(p))
+    assert reloaded.is_synced("sha1") is True
+    assert reloaded.story_for("pontaje") == "JAR-901"
+    assert reloaded.story_for("missing") is None
+
+
+def test_ledger_handles_missing_and_corrupt(tmp_path):
+    assert jcs.Ledger(str(tmp_path / "nope.json")).is_synced("x") is False
+    bad = tmp_path / "bad.json"
+    bad.write_text("{ not json")
+    led = jcs.Ledger(str(bad))
+    assert led.is_synced("x") is False
+    led.save()  # must not raise
