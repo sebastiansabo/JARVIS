@@ -465,6 +465,8 @@ def export_pontaje():
     group_ids = None
     if not employee_ids and group:
         group_ids = BioStarRepository().get_jarvis_ids_for_group(group)
+        if not group_ids:
+            return jsonify({'success': False, 'error': 'no employees match the selected group'}), 400
 
     allowed = _resolve_manager_filter()
     jarvis_user_ids = pontaje_export_service.resolve_export_ids(allowed, group_ids, employee_ids)
