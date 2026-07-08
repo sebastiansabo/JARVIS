@@ -283,6 +283,31 @@ def _fetch_permits(start, end):
     return permit_map
 
 
+def resolve_export_ids(allowed, group_ids=None, employee_ids=None):
+    """Intersect a requested group/employee filter with the caller's permission scope.
+
+    allowed:      None (see all) | list[int] of permitted jarvis_user_ids | [-1] (deny).
+    group_ids:    list[int] | None — jarvis ids belonging to a chosen group.
+    employee_ids: list[int] | None — explicitly chosen jarvis ids (takes precedence).
+
+    Returns the id list to hand to generate(), or None when no filter is requested and
+    the scope is see-all. An empty list means "filter requested but nothing in scope".
+    """
+    requested = None
+    if employee_ids:
+        requested = list(dict.fromkeys(int(x) for x in employee_ids))
+    elif group_ids:
+        requested = list(dict.fromkeys(int(x) for x in group_ids))
+
+    if requested is None:
+        return allowed  # unchanged behaviour: None=all, [ids], [-1]=deny
+
+    if allowed is None:
+        return requested  # see-all: honour the request as-is
+    allowed_set = set(allowed)
+    return [uid for uid in requested if uid in allowed_set]
+
+
 def generate(start, end, jarvis_user_ids):
     """Fetch + assemble + build workbook. Returns (xlsx_bytes, filename)."""
     from core.connectors.biostar.repositories.biostar_repository import BioStarRepository
