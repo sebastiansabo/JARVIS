@@ -457,7 +457,20 @@ def export_pontaje():
     if (d1 - d0).days > 366:
         return jsonify({'success': False, 'error': 'range too large (max 366 days)'}), 400
 
-    jarvis_user_ids = _resolve_manager_filter()
+    from core.connectors.biostar.repositories.biostar_repository import BioStarRepository
+
+    emp_raw = request.args.get('employee_ids')
+    employee_ids = [int(x) for x in emp_raw.split(',') if x.strip().isdigit()] if emp_raw else None
+    group = request.args.get('group')
+    group_ids = None
+    if not employee_ids and group:
+        group_ids = BioStarRepository().get_jarvis_ids_for_group(group)
+
+    allowed = _resolve_manager_filter()
+    jarvis_user_ids = pontaje_export_service.resolve_export_ids(allowed, group_ids, employee_ids)
+    if jarvis_user_ids is not None and len(jarvis_user_ids) == 0:
+        return jsonify({'success': False, 'error': 'no employees match the selected filter'}), 400
+
     xlsx, filename = pontaje_export_service.generate(start, end, jarvis_user_ids)
     return Response(
         xlsx,
