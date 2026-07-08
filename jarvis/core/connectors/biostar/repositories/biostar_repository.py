@@ -575,6 +575,80 @@ class BioStarRepository(BaseRepository):
             ORDER BY COALESCE(bco.company, co.company, u.company) NULLS LAST, be.name
         ''', params)
 
+    def get_pontaje_rows(self, start_date, end_date, jarvis_user_ids=None):
+        """One row per active BioStar contract per calendar day in [start, end].
+
+        Absent days appear with NULL punches (roster CROSS JOIN generate_series).
+        Company is the contract's mapped company (company_aliases-derived).
+        """
+        user_filter = ''
+        args = [start_date, end_date]           # days generate_series
+        if jarvis_user_ids:
+            user_filter = ' AND be.mapped_jarvis_user_id = ANY(%s)'
+            args.append(jarvis_user_ids)        # scope ANY
+        args += [start_date, end_date]          # deduped BETWEEN
+        return self.query_all(f'''
+            WITH days AS (
+                SELECT generate_series(%s::date, %s::date, interval '1 day')::date AS day
+            ),
+            scope AS (
+                SELECT be.biostar_user_id,
+                       be.mapped_jarvis_user_id AS jarvis_user_id,
+                       COALESCE(u.name, be.name) AS name,
+                       be.user_group_name AS "group",
+                       COALESCE(ca.company_id, be.company_id) AS company_id,
+                       COALESCE(co.company, cob.company, u.company) AS company,
+                       be.schedule_start AS static_start,
+                       be.schedule_end   AS static_end
+                FROM biostar_employees be
+                LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
+                -- Authoritative group -> company mapping table (alias = BioStar group name)
+                LEFT JOIN company_aliases ca
+                       ON lower(ca.alias) = lower(be.user_group_name) AND ca.source = 'biostar'
+                LEFT JOIN companies co  ON co.id = ca.company_id
+                LEFT JOIN companies cob ON cob.id = be.company_id   -- denormalized fallback
+                WHERE be.status = 'active'
+                  AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
+                  AND (be.user_group_name IS NULL
+                       OR (be.user_group_name NOT ILIKE '%%plecati%%'
+                           AND be.user_group_name NOT ILIKE '%%contracte inchise%%'))
+                  AND (be.mapped_jarvis_user_id IS NULL
+                       OR (u.is_active = TRUE AND COALESCE(u.contract_status, 'active') != 'closed'))
+                  {user_filter}
+            ),
+            deduped AS (
+                SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
+                    pl.biostar_user_id, pl.event_datetime,
+                    pl.event_datetime::date AS day
+                FROM biostar_punch_logs pl
+                WHERE pl.event_datetime::date BETWEEN %s::date AND %s::date
+                ORDER BY pl.biostar_user_id, date_trunc('minute', pl.event_datetime), pl.event_datetime ASC
+            ),
+            punches AS (
+                SELECT d.biostar_user_id, d.day,
+                       MIN(d.event_datetime) AS first_punch,
+                       MAX(d.event_datetime) AS last_punch,
+                       COUNT(*) AS total_punches,
+                       EXTRACT(EPOCH FROM (MAX(d.event_datetime) - MIN(d.event_datetime))) AS duration_seconds
+                FROM deduped d
+                GROUP BY d.biostar_user_id, d.day
+            )
+            SELECT s.biostar_user_id, s.jarvis_user_id, s.name, s."group",
+                   s.company_id, s.company, s.static_start, s.static_end,
+                   dd.day,
+                   p.first_punch, p.last_punch,
+                   COALESCE(p.total_punches, 0) AS total_punches,
+                   p.duration_seconds,
+                   adj.adjusted_first_punch, adj.adjusted_last_punch
+            FROM scope s
+            CROSS JOIN days dd
+            LEFT JOIN punches p
+                   ON p.biostar_user_id = s.biostar_user_id AND p.day = dd.day
+            LEFT JOIN biostar_daily_adjustments adj
+                   ON adj.biostar_user_id = s.biostar_user_id AND adj.date = dd.day
+            ORDER BY s.company NULLS LAST, s.name, dd.day, s."group"
+        ''', args)
+
     def get_employee_punches(self, biostar_user_id, date_str):
         """Get all punch events for one employee on a specific date."""
         return self.query_all('''
