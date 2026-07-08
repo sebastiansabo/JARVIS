@@ -1190,7 +1190,7 @@ git commit -m "fix(facturare): FINAL export — venituri rules per line, kostens
 - [ ] **Step 1: Run migration on staging**
 
 ```bash
-PGPASSWORD="AVNS_xGqAdP95HvfqAj1AsUL" psql -h mkt-staging-do-user-24639451-0.k.db.ondigitalocean.com -p 25060 -U doadmin -d defaultdb --set=sslmode=require -f jarvis/accounting/facturare/migrations/006_eurofib_venituri_rules.sql
+PGPASSWORD="<REDACTED-STAGING-DB-PASSWORD>" psql -h mkt-staging-do-user-24639451-0.k.db.ondigitalocean.com -p 25060 -U doadmin -d defaultdb --set=sslmode=require -f jarvis/accounting/facturare/migrations/006_eurofib_venituri_rules.sql
 ```
 
 - [ ] **Step 2: Merge dev → staging and push**
