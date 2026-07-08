@@ -652,6 +652,10 @@ class SincronRepository(BaseRepository):
                 WHERE se.mapped_jarvis_user_id = ANY(%s)
                   AND se.is_active = TRUE
                   AND se.exclude_from_pontaje = FALSE
+                  -- Exclude contracts whose company is unmapped: they cannot be paired to a
+                  -- BioStar row (which also keys on company_id) and would collapse in DISTINCT ON.
+                  -- Such days fall back to the static BioStar schedule downstream.
+                  AND se.company_id IS NOT NULL
             )
             SELECT DISTINCT ON (c.jarvis_user_id, c.company_id, d.day)
                    c.jarvis_user_id, c.company_id, d.day AS day,
