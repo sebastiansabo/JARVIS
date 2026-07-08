@@ -435,6 +435,37 @@ def get_attendance_week():
     return jsonify({'success': True, 'data': data})
 
 
+@biostar_bp.route('/api/attendance/export', methods=['GET'])
+@api_login_required
+def export_pontaje():
+    """Stream a Pontaje XLSX for [start, end], one row per contract per day."""
+    from flask import Response
+    from datetime import date
+    from core.connectors.biostar.services import pontaje_export_service
+
+    start = request.args.get('start')
+    end = request.args.get('end')
+    if not start or not end:
+        return jsonify({'success': False, 'error': 'start and end are required'}), 400
+    try:
+        d0 = date.fromisoformat(start)
+        d1 = date.fromisoformat(end)
+    except ValueError:
+        return jsonify({'success': False, 'error': 'invalid date format (YYYY-MM-DD)'}), 400
+    if d0 > d1:
+        return jsonify({'success': False, 'error': 'start must be on or before end'}), 400
+    if (d1 - d0).days > 366:
+        return jsonify({'success': False, 'error': 'range too large (max 366 days)'}), 400
+
+    jarvis_user_ids = _resolve_manager_filter()
+    xlsx, filename = pontaje_export_service.generate(start, end, jarvis_user_ids)
+    return Response(
+        xlsx,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename={filename}'},
+    )
+
+
 @biostar_bp.route('/api/punch-logs/summary', methods=['GET'])
 @api_login_required
 def get_daily_summary():
