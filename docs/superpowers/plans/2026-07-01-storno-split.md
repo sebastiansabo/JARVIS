@@ -573,7 +573,7 @@ git commit -m "feat(facturare): Split EuroFib button on STORNO with expandable s
 - [ ] **Step 1: Run migration on staging**
 
 ```bash
-PGPASSWORD="AVNS_xGqAdP95HvfqAj1AsUL" psql -h mkt-staging-do-user-24639451-0.k.db.ondigitalocean.com -p 25060 -U doadmin -d defaultdb --set=sslmode=require -f jarvis/accounting/facturare/migrations/007_storno_split.sql
+PGPASSWORD="<REDACTED-STAGING-DB-PASSWORD>" psql -h mkt-staging-do-user-24639451-0.k.db.ondigitalocean.com -p 25060 -U doadmin -d defaultdb --set=sslmode=require -f jarvis/accounting/facturare/migrations/007_storno_split.sql
 ```
 
 - [ ] **Step 2: Merge dev → staging and push**
