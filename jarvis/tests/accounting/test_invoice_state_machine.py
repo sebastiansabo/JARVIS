@@ -16,12 +16,11 @@ JARVIS_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__
 if JARVIS_ROOT not in sys.path:
     sys.path.insert(0, JARVIS_ROOT)
 
-# Set DATABASE_URL to staging if not already set
+# DATABASE_URL must be provided via the environment — never hardcode credentials.
 if not os.environ.get("DATABASE_URL"):
-    os.environ["DATABASE_URL"] = (
-        "postgresql://doadmin:AVNS_xGqAdP95HvfqAj1AsUL"
-        "@mkt-staging-do-user-24639451-0.k.db.ondigitalocean.com:25060"
-        "/defaultdb?sslmode=require"
+    raise RuntimeError(
+        "DATABASE_URL is not set. Export it before running this test, e.g.\n"
+        "  export DATABASE_URL='postgresql://doadmin:<password>@<host>:25060/defaultdb?sslmode=require'"
     )
 
 from decimal import Decimal
