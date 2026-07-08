@@ -629,6 +629,49 @@ class SincronRepository(BaseRepository):
               {excl}
         ''', (jarvis_user_id, date_str, jarvis_user_id))
 
+    def get_day_schedules_for_users(self, jarvis_user_ids, start_date, end_date):
+        """Per-contract schedule + lunch for each day in [start, end].
+
+        One row per (jarvis_user, company, day). Daily OZ/OS program overrides
+        the static contract schedule; lunch = COALESCE(program_break, static_lunch),
+        which may be NULL (caller renders NULL as blank).
+        """
+        if not jarvis_user_ids:
+            return []
+        return self.query_all('''
+            WITH days AS (
+                SELECT generate_series(%s::date, %s::date, interval '1 day')::date AS day
+            ),
+            contracts AS (
+                SELECT se.sincron_employee_id, se.company_name, se.company_id,
+                       se.mapped_jarvis_user_id AS jarvis_user_id,
+                       se.schedule_start AS static_start,
+                       se.schedule_end   AS static_end,
+                       se.lunch_break_minutes AS static_lunch
+                FROM sincron_employees se
+                WHERE se.mapped_jarvis_user_id = ANY(%s)
+                  AND se.is_active = TRUE
+                  AND se.exclude_from_pontaje = FALSE
+                  -- Exclude contracts whose company is unmapped: they cannot be paired to a
+                  -- BioStar row (which also keys on company_id) and would collapse in DISTINCT ON.
+                  -- Such days fall back to the static BioStar schedule downstream.
+                  AND se.company_id IS NOT NULL
+            )
+            SELECT DISTINCT ON (c.jarvis_user_id, c.company_id, d.day)
+                   c.jarvis_user_id, c.company_id, d.day AS day,
+                   COALESCE(to_char(st.program_in, 'HH24:MI'), to_char(c.static_start, 'HH24:MI'))  AS schedule_start,
+                   COALESCE(to_char(st.program_out, 'HH24:MI'), to_char(c.static_end, 'HH24:MI'))   AS schedule_end,
+                   COALESCE(st.program_break, c.static_lunch)                    AS lunch_break_minutes
+            FROM contracts c
+            CROSS JOIN days d
+            LEFT JOIN sincron_timesheets st
+                   ON st.sincron_employee_id = c.sincron_employee_id
+                  AND st.company_name = c.company_name
+                  AND st.day = d.day
+                  AND st.short_code IN ('OZ', 'OS')
+            ORDER BY c.jarvis_user_id, c.company_id, d.day, st.program_in NULLS LAST
+        ''', (start_date, end_date, jarvis_user_ids))
+
     def get_all_full_day_schedules_for_date(self, date_str):
         """Get combined schedule boundaries for ALL mapped employees for a date.
 
