@@ -339,13 +339,17 @@ Param order matches the `%s` order in the SQL: `days` generate_series (start, en
                        be.mapped_jarvis_user_id AS jarvis_user_id,
                        COALESCE(u.name, be.name) AS name,
                        be.user_group_name AS "group",
-                       be.company_id,
-                       COALESCE(co.company, u.company) AS company,
+                       COALESCE(ca.company_id, be.company_id) AS company_id,
+                       COALESCE(co.company, cob.company, u.company) AS company,
                        be.schedule_start AS static_start,
                        be.schedule_end   AS static_end
                 FROM biostar_employees be
                 LEFT JOIN users u ON u.id = be.mapped_jarvis_user_id
-                LEFT JOIN companies co ON co.id = be.company_id
+                -- Authoritative group -> company mapping table (alias = BioStar group name)
+                LEFT JOIN company_aliases ca
+                       ON lower(ca.alias) = lower(be.user_group_name) AND ca.source = 'biostar'
+                LEFT JOIN companies co  ON co.id = ca.company_id
+                LEFT JOIN companies cob ON cob.id = be.company_id   -- denormalized fallback
                 WHERE be.status = 'active'
                   AND (be.is_blacklisted IS NULL OR be.is_blacklisted = FALSE)
                   AND (be.user_group_name IS NULL
