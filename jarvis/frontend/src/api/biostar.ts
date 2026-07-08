@@ -192,8 +192,16 @@ export const biostarApi = {
     return res.data
   },
 
-  exportPontaje: async (start: string, end: string): Promise<boolean> => {
-    const res = await fetch(`${BASE}/attendance/export?start=${start}&end=${end}`, {
+  exportPontaje: async (
+    start: string,
+    end: string,
+    filters?: { group?: string; companyId?: number; employeeIds?: number[] },
+  ): Promise<boolean> => {
+    const params = new URLSearchParams({ start, end })
+    if (filters?.employeeIds?.length) params.set('employee_ids', filters.employeeIds.join(','))
+    else if (filters?.group) params.set('group', filters.group)
+    else if (filters?.companyId) params.set('company_id', String(filters.companyId))
+    const res = await fetch(`${BASE}/attendance/export?${params.toString()}`, {
       credentials: 'same-origin',
     })
     if (!res.ok) return false
