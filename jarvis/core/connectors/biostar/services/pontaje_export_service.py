@@ -29,8 +29,8 @@ def _fmt_time(value):
 def _fmt_hm(total_sec):
     if not total_sec or total_sec <= 0:
         return ''
-    h = int(total_sec // 3600)
-    m = round((total_sec % 3600) / 60)
+    total_min = round(total_sec / 60)
+    h, m = divmod(total_min, 60)
     return f'{h}:{m:02d}'
 
 
@@ -139,6 +139,15 @@ def build_workbook(rows):
     return buf.getvalue()
 
 
+def _build_code_map(code_rows):
+    """First row per (user, day) wins — get_day_codes_for_users returns them
+    pre-ordered by priority (base contract; leave codes before OZ/OS)."""
+    code_map = {}
+    for row in code_rows:
+        code_map.setdefault((row['mapped_jarvis_user_id'], row['day']), row['short_code'])
+    return code_map
+
+
 def _months_between(start, end):
     s = _dt.date.fromisoformat(str(start)[:10])
     e = _dt.date.fromisoformat(str(end)[:10])
@@ -162,13 +171,13 @@ def generate(start, end, jarvis_user_ids):
 
     ids = sorted({r['jarvis_user_id'] for r in punch_rows if r.get('jarvis_user_id')})
     sched_map = {}
-    code_map = {}
+    code_rows = []
     if ids:
         for s in s_repo.get_day_schedules_for_users(ids, start, end):
             sched_map[(s['jarvis_user_id'], s['company_id'], s['day'])] = s
         for (y, m) in _months_between(start, end):
-            for row in s_repo.get_day_codes_for_users(ids, y, m):
-                code_map[(row['mapped_jarvis_user_id'], row['day'])] = row['short_code']
+            code_rows.extend(s_repo.get_day_codes_for_users(ids, y, m))
+    code_map = _build_code_map(code_rows)
 
     rows = build_rows(punch_rows, sched_map, code_map)
     xlsx = build_workbook(rows)

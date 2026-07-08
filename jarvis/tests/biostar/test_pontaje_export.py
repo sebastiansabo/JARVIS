@@ -98,6 +98,24 @@ def test_build_rows_accepts_iso_string_inputs_present():
     assert row_out[pes.HEADERS.index('Checked In')] == '08:03'
     assert row_out[pes.HEADERS.index('Duration')] == '8:39'
 
+def test_build_code_map_first_wins():
+    from core.connectors.biostar.services import pontaje_export_service as pes
+    import datetime as dt
+    rows = [
+        {'mapped_jarvis_user_id': 10, 'day': '2026-07-01', 'short_code': 'CO'},   # base/priority first
+        {'mapped_jarvis_user_id': 10, 'day': '2026-07-01', 'short_code': 'OZ'},   # secondary, must NOT override
+        {'mapped_jarvis_user_id': 11, 'day': '2026-07-01', 'short_code': 'OZ'},
+    ]
+    m = pes._build_code_map(rows)
+    assert m[(10, '2026-07-01')] == 'CO'
+    assert m[(11, '2026-07-01')] == 'OZ'
+
+def test_fmt_hm_carries_rounding():
+    from core.connectors.biostar.services import pontaje_export_service as pes
+    assert pes._fmt_hm(8*3600 + 59*60 + 35) == '9:00'   # was '8:60'
+    assert pes._fmt_hm(8*3600 + 39*60) == '8:39'
+    assert pes._fmt_hm(8*3600) == '8:00'
+
 def test_build_rows_accepts_iso_string_inputs_adjusted():
     r = dict(BASE)
     r.update(
