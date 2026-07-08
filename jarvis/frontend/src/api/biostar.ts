@@ -192,6 +192,25 @@ export const biostarApi = {
     return res.data
   },
 
+  exportPontaje: async (start: string, end: string): Promise<boolean> => {
+    const res = await fetch(`${BASE}/attendance/export?start=${start}&end=${end}`, {
+      credentials: 'same-origin',
+    })
+    if (!res.ok) return false
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download =
+      res.headers.get('content-disposition')?.match(/filename="?(.+?)"?$/)?.[1] ||
+      `pontaje_${start}_${end}.xlsx`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    return true
+  },
+
   getEmployeePunches: async (biostarUserId: string, date: string) => {
     const res = await api.get<{ success: boolean; data: BioStarPunchLog[] }>(
       `${BASE}/punch-logs/employee/${biostarUserId}`,

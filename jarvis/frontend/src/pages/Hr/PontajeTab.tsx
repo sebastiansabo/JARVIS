@@ -350,6 +350,21 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
 
   const [exporting, setExporting] = useState(false)
 
+  const [exportStart, setExportStart] = useState(date.slice(0, 8) + '01')
+  const [exportEnd, setExportEnd] = useState(date)
+
+  const handleExportPontaje = useCallback(async () => {
+    setExporting(true)
+    const toastId = toast.loading('Exporting pontaje…')
+    try {
+      const ok = await biostarApi.exportPontaje(exportStart, exportEnd)
+      if (ok) toast.success('Export complete', { id: toastId })
+      else toast.error('Export failed', { id: toastId })
+    } finally {
+      setExporting(false)
+    }
+  }, [exportStart, exportEnd])
+
   const exportGroups = useMemo(() => {
     const set = new Set<string>()
     rows.forEach(r => {
@@ -826,6 +841,23 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
                 </Button>
               </>
             )}
+
+            {/* Export Pontaje (period) */}
+            <div className="flex items-center gap-1">
+              <DateField
+                mode="range"
+                startDate={exportStart}
+                endDate={exportEnd}
+                onRangeChange={(s, e) => { setExportStart(s); setExportEnd(e) }}
+                showPresets
+                className="h-8"
+              />
+              <Button variant="outline" size="sm" className="h-8" disabled={exporting}
+                      onClick={handleExportPontaje} title="Export Pontaje for the selected period">
+                <Download className={cn('h-4 w-4 mr-1', exporting && 'animate-pulse')} />
+                Export Pontaje
+              </Button>
+            </div>
 
             {/* Export Excel dropdown */}
             <DropdownMenu>
