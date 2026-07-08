@@ -462,14 +462,20 @@ def export_pontaje():
     emp_raw = request.args.get('employee_ids')
     employee_ids = [int(x) for x in emp_raw.split(',') if x.strip().isdigit()] if emp_raw else None
     group = request.args.get('group')
-    group_ids = None
+    company_id = request.args.get('company_id')
+    repo = BioStarRepository()
+    category_ids = None
     if not employee_ids and group:
-        group_ids = BioStarRepository().get_jarvis_ids_for_group(group)
-        if not group_ids:
+        category_ids = repo.get_jarvis_ids_for_group(group)
+        if not category_ids:
             return jsonify({'success': False, 'error': 'no employees match the selected group'}), 400
+    elif not employee_ids and company_id and company_id.isdigit():
+        category_ids = repo.get_jarvis_ids_for_company(int(company_id))
+        if not category_ids:
+            return jsonify({'success': False, 'error': 'no employees match the selected company'}), 400
 
     allowed = _resolve_manager_filter()
-    jarvis_user_ids = pontaje_export_service.resolve_export_ids(allowed, group_ids, employee_ids)
+    jarvis_user_ids = pontaje_export_service.resolve_export_ids(allowed, category_ids, employee_ids)
     if jarvis_user_ids is not None and len(jarvis_user_ids) == 0:
         return jsonify({'success': False, 'error': 'no employees match the selected filter'}), 400
 
