@@ -19,11 +19,13 @@ def test_present_uses_contract_lunch_and_net_duration():
     sched = {(10, 5, dt.date(2026,7,1)): {'schedule_start':'09:00','schedule_end':'12:00','lunch_break_minutes':3}}
     out = pes.build_rows(pr, sched, {})
     r = out[0]
-    assert r[pes.HEADERS.index('Checked In')] == '08:03'
+    assert r[pes.HEADERS.index('Checked In')] == ''      # no adjustment -> blank
+    assert r[pes.HEADERS.index('Actual In')] == '08:03'  # raw punch
     assert r[pes.HEADERS.index('Lunch')] == '3 min'
     assert r[pes.HEADERS.index('Schedule')] == '09:00–12:00'
     # net = 9:09 gross - 3 min = 9:06
     assert r[pes.HEADERS.index('Duration')] == '9:06'
+    assert r[pes.HEADERS.index('Actual Status')] == 'Present'
     assert r[pes.HEADERS.index('Status')] == 'Present'
 
 def test_adjusted_overrides_raw():
@@ -35,12 +37,33 @@ def test_adjusted_overrides_raw():
     assert r[pes.HEADERS.index('Checked In')] == '09:00'   # adjusted
     assert r[pes.HEADERS.index('Actual In')] == '09:14'    # raw
 
+def test_adjustment_only_day_actual_absent_adjusted_present():
+    # Manager entered an adjustment for a day with no physical punch.
+    pr = [row(first_punch=None, last_punch=None, total_punches=0,
+              adjusted_first_punch=_dt(1,'09:00'), adjusted_last_punch=_dt(1,'17:00'))]
+    r = pes.build_rows(pr, {}, {})[0]
+    assert r[pes.HEADERS.index('Checked In')] == '09:00'   # adjustment shown
+    assert r[pes.HEADERS.index('Checked Out')] == '17:00'
+    assert r[pes.HEADERS.index('Actual In')] == ''         # no raw punch
+    assert r[pes.HEADERS.index('Actual Status')] == 'Absent'    # physically absent
+    assert r[pes.HEADERS.index('Status')] == 'Present'  # corrected present
+
+def test_checked_columns_blank_without_adjustment():
+    pr = [row(first_punch=_dt(1,'08:00'), last_punch=_dt(1,'16:00'), total_punches=2,
+              duration_seconds=8*3600)]
+    r = pes.build_rows(pr, {}, {})[0]
+    assert r[pes.HEADERS.index('Checked In')] == ''
+    assert r[pes.HEADERS.index('Checked Out')] == ''
+    assert r[pes.HEADERS.index('Actual In')] == '08:00'
+    assert r[pes.HEADERS.index('Actual Out')] == '16:00'
+
 def test_single_punch_is_not_exited():
     pr = [row(first_punch=_dt(1,'08:12'), last_punch=_dt(1,'08:12'), total_punches=1)]
     sched = {(10,5,dt.date(2026,7,1)): {'schedule_start':'08:00','schedule_end':'16:00','lunch_break_minutes':30}}
     r = pes.build_rows(pr, sched, {})[0]
     assert r[pes.HEADERS.index('Checked Out')] == ''
     assert r[pes.HEADERS.index('Duration')] == ''
+    assert r[pes.HEADERS.index('Actual Status')] == 'Not exited'
     assert r[pes.HEADERS.index('Status')] == 'Not exited'
 
 def test_absent_on_holiday_shows_code_and_absent():
@@ -48,8 +71,72 @@ def test_absent_on_holiday_shows_code_and_absent():
     codes = {(10, dt.date(2026,7,1)): 'CO'}
     r = pes.build_rows(pr, {}, codes)[0]
     assert r[pes.HEADERS.index('Sincron')] == 'CO'
+    assert r[pes.HEADERS.index('Actual Status')] == 'Absent'
     assert r[pes.HEADERS.index('Status')] == 'Absent'
     assert r[pes.HEADERS.index('Punches')] == '0'
+
+def test_weekend_no_punch_marks_weekend():
+    # 2026-07-04 is a Saturday.
+    pr = [row(_d=4)]  # no punches
+    r = pes.build_rows(pr, {}, {})[0]
+    assert r[pes.HEADERS.index('Weekday')] == 'Sat'
+    assert r[pes.HEADERS.index('Actual Status')] == 'Weekend'
+    assert r[pes.HEADERS.index('Status')] == 'Weekend'
+
+def test_weekend_with_punch_stays_present():
+    pr = [row(_d=4, first_punch=_dt(4,'09:00'), last_punch=_dt(4,'13:00'),
+              total_punches=2, duration_seconds=4*3600)]
+    r = pes.build_rows(pr, {}, {})[0]
+    assert r[pes.HEADERS.index('Actual Status')] == 'Present'
+    assert r[pes.HEADERS.index('Status')] == 'Present'
+
+def test_holiday_no_punch_marks_holiday():
+    pr = [row()]  # 2026-07-01 (Wed), no punches
+    holidays = {'2026-07-01'}
+    r = pes.build_rows(pr, {}, {}, holidays)[0]
+    assert r[pes.HEADERS.index('Actual Status')] == 'Holiday'
+    assert r[pes.HEADERS.index('Status')] == 'Holiday'
+
+def test_holiday_takes_precedence_over_weekend():
+    # Saturday that is also a public holiday -> Holiday wins.
+    pr = [row(_d=4)]
+    holidays = {'2026-07-04'}
+    r = pes.build_rows(pr, {}, {}, holidays)[0]
+    assert r[pes.HEADERS.index('Actual Status')] == 'Holiday'
+    assert r[pes.HEADERS.index('Status')] == 'Holiday'
+
+def test_permit_no_punch_marks_permit():
+    pr = [row()]  # 2026-07-01 (Wed), no punches
+    permits = {(10, '2026-07-01'): {'hours': 8.0, 'sources': ['Connecteam']}}
+    r = pes.build_rows(pr, {}, {}, None, permits)[0]
+    assert r[pes.HEADERS.index('Permit')] == '8h (Connecteam)'
+    assert r[pes.HEADERS.index('Actual Status')] == 'Permit'
+    assert r[pes.HEADERS.index('Status')] == 'Permit'
+
+def test_permit_with_punch_stays_present_but_shows_permit():
+    pr = [row(first_punch=_dt(1,'09:00'), last_punch=_dt(1,'15:00'),
+              total_punches=2, duration_seconds=6*3600)]
+    permits = {(10, '2026-07-01'): {'hours': 2.5, 'sources': ['JARVIS']}}
+    r = pes.build_rows(pr, {}, {}, None, permits)[0]
+    assert r[pes.HEADERS.index('Permit')] == '2.5h (JARVIS)'
+    assert r[pes.HEADERS.index('Actual Status')] == 'Present'
+    assert r[pes.HEADERS.index('Status')] == 'Present'
+
+def test_permit_multiple_sources_formatting():
+    pr = [row()]
+    permits = {(10, '2026-07-01'): {'hours': 3.0, 'sources': ['Connecteam', 'JARVIS']}}
+    r = pes.build_rows(pr, {}, {}, None, permits)[0]
+    assert r[pes.HEADERS.index('Permit')] == '3h (Connecteam, JARVIS)'
+
+def test_holiday_and_weekend_outrank_permit():
+    permits = {(10, '2026-07-01'): {'hours': 8.0, 'sources': ['Connecteam']},
+               (10, '2026-07-04'): {'hours': 8.0, 'sources': ['Connecteam']}}
+    # Holiday (Wed 2026-07-01) beats permit
+    r1 = pes.build_rows([row()], {}, {}, {'2026-07-01'}, permits)[0]
+    assert r1[pes.HEADERS.index('Actual Status')] == 'Holiday'
+    # Weekend (Sat 2026-07-04) beats permit
+    r2 = pes.build_rows([row(_d=4)], {}, {}, None, permits)[0]
+    assert r2[pes.HEADERS.index('Actual Status')] == 'Weekend'
 
 def test_null_lunch_stays_blank_and_duration_deducts_zero():
     pr = [row(first_punch=_dt(1,'08:00'), last_punch=_dt(1,'16:00'), total_punches=2,
@@ -65,6 +152,7 @@ def test_work_code_os_is_present_not_leave():
     codes = {(10, dt.date(2026,7,1)): 'OS'}
     r = pes.build_rows(pr, {}, codes)[0]
     assert r[pes.HEADERS.index('Sincron')] == 'OS'
+    assert r[pes.HEADERS.index('Actual Status')] == 'Present'
     assert r[pes.HEADERS.index('Status')] == 'Present'
 
 def test_weekday_and_zero_lunch():
@@ -95,7 +183,8 @@ def test_build_rows_accepts_iso_string_inputs_present():
     row_out = out[0]
     assert row_out[pes.HEADERS.index('Date')] == '2026-07-01'
     assert row_out[pes.HEADERS.index('Weekday')] == 'Wed'
-    assert row_out[pes.HEADERS.index('Checked In')] == '08:03'
+    assert row_out[pes.HEADERS.index('Checked In')] == ''       # no adjustment -> blank
+    assert row_out[pes.HEADERS.index('Actual In')] == '08:03'   # raw punch
     assert row_out[pes.HEADERS.index('Duration')] == '8:39'
 
 def test_build_code_map_first_wins():
