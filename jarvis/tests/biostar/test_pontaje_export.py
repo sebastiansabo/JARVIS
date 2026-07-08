@@ -223,3 +223,25 @@ def test_build_rows_accepts_iso_string_inputs_adjusted():
     assert row_out[pes.HEADERS.index('Actual In')] == '09:14'    # raw
     # gross = 8:30 (adjusted span) - 30 min lunch = 8:00
     assert row_out[pes.HEADERS.index('Duration')] == '8:00'
+
+def test_resolve_export_ids_no_filter_passthrough():
+    assert pes.resolve_export_ids(None) is None
+    assert pes.resolve_export_ids([1, 2]) == [1, 2]
+
+def test_resolve_export_ids_see_all_honours_request():
+    assert pes.resolve_export_ids(None, employee_ids=[2, 9]) == [2, 9]
+
+def test_resolve_export_ids_intersects_with_scope():
+    assert pes.resolve_export_ids([1, 2, 3], employee_ids=[2, 9]) == [2]
+
+def test_resolve_export_ids_deny_strips_everything():
+    assert pes.resolve_export_ids([-1], employee_ids=[2, 3]) == []
+
+def test_resolve_export_ids_group_path():
+    assert pes.resolve_export_ids([1, 2, 3], group_ids=[2, 3, 7]) == [2, 3]
+
+def test_resolve_export_ids_employee_beats_group():
+    assert pes.resolve_export_ids([1, 2, 3], group_ids=[3], employee_ids=[2]) == [2]
+
+def test_resolve_export_ids_dedupes_and_casts():
+    assert pes.resolve_export_ids(None, employee_ids=['2', 2, '5']) == [2, 5]

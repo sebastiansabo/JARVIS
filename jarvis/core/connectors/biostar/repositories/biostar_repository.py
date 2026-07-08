@@ -649,6 +649,28 @@ class BioStarRepository(BaseRepository):
             ORDER BY s.company NULLS LAST, s.name, dd.day, s."group"
         ''', args)
 
+    def get_jarvis_ids_for_group(self, group_name):
+        """Return distinct mapped JARVIS user ids belonging to a BioStar user group."""
+        rows = self.query_all(
+            '''SELECT DISTINCT mapped_jarvis_user_id AS uid
+               FROM biostar_employees
+               WHERE user_group_name = %s
+                 AND mapped_jarvis_user_id IS NOT NULL''',
+            (group_name,),
+        )
+        return [r['uid'] for r in rows]
+
+    def get_jarvis_ids_for_company(self, company_id):
+        """Return distinct mapped JARVIS user ids for a company (via biostar_employees.company_id)."""
+        rows = self.query_all(
+            '''SELECT DISTINCT mapped_jarvis_user_id AS uid
+               FROM biostar_employees
+               WHERE company_id = %s
+                 AND mapped_jarvis_user_id IS NOT NULL''',
+            (company_id,),
+        )
+        return [r['uid'] for r in rows]
+
     def get_employee_punches(self, biostar_user_id, date_str):
         """Get all punch events for one employee on a specific date."""
         return self.query_all('''
