@@ -3,16 +3,12 @@
 No SQL here — callers pass already-fetched rows/maps. Kept pure so the row
 logic is unit-testable under the psycopg2-mocked test harness.
 """
+import datetime as _dt
 from io import BytesIO
 
 HEADERS = ['Date', 'Weekday', 'Name', 'Group', 'Company', 'Checked In', 'Checked Out',
            'Actual In', 'Actual Out', 'Lunch', 'Duration', 'Punches', 'Schedule',
            'Sincron', 'Status']
-
-# Sincron codes that mean the person is NOT at work (absence is motivated).
-LEAVE_CODES = {'CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV'}
-LEAVE_LABELS = {'CO': 'Annual Leave', 'CM': 'Medical', 'CES': 'Unpaid', 'CIC': 'Child Care',
-                'CMS': 'Sick Family', 'DLG': 'Delegation'}
 
 _WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -100,7 +96,7 @@ def build_rows(punch_rows, sched_map, code_map):
             r.get('group') or '',
             r.get('company') or '',
             _fmt_time(eff_in) if eff_in else '',
-            _fmt_time(checked_out) if checked_out else ('' if single_no_adj else ''),
+            _fmt_time(checked_out) if checked_out else '',
             _fmt_time(raw_first) if raw_first else '',
             _fmt_time(raw_last) if (raw_last and raw_last != raw_first) else '',
             _lunch_cell(lunch),
@@ -138,3 +134,40 @@ def build_workbook(rows):
     wb.save(buf)
     buf.seek(0)
     return buf.getvalue()
+
+
+def _months_between(start, end):
+    s = _dt.date.fromisoformat(str(start)[:10])
+    e = _dt.date.fromisoformat(str(end)[:10])
+    out, y, m = [], s.year, s.month
+    while (y, m) <= (e.year, e.month):
+        out.append((y, m))
+        m += 1
+        if m > 12:
+            m = 1; y += 1
+    return out
+
+
+def generate(start, end, jarvis_user_ids):
+    """Fetch + assemble + build workbook. Returns (xlsx_bytes, filename)."""
+    from core.connectors.biostar.repositories.biostar_repository import BioStarRepository
+    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
+    b_repo = BioStarRepository()
+    s_repo = SincronRepository()
+
+    punch_rows = b_repo.get_pontaje_rows(start, end, jarvis_user_ids)
+
+    ids = sorted({r['jarvis_user_id'] for r in punch_rows if r.get('jarvis_user_id')})
+    sched_map = {}
+    code_map = {}
+    if ids:
+        for s in s_repo.get_day_schedules_for_users(ids, start, end):
+            sched_map[(s['jarvis_user_id'], s['company_id'], s['day'])] = s
+        for (y, m) in _months_between(start, end):
+            for row in s_repo.get_day_codes_for_users(ids, y, m):
+                code_map[(row['mapped_jarvis_user_id'], row['day'])] = row['short_code']
+
+    rows = build_rows(punch_rows, sched_map, code_map)
+    xlsx = build_workbook(rows)
+    filename = f'pontaje_{start}_{end}.xlsx'
+    return xlsx, filename

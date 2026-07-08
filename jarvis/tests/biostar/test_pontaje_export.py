@@ -74,3 +74,7 @@ def test_weekday_and_zero_lunch():
     assert r[pes.HEADERS.index('Weekday')] == 'Wed'
     assert r[pes.HEADERS.index('Lunch')] == '0 min'
     assert r[pes.HEADERS.index('Duration')] == '8:00'
+
+def test_months_between_spans_year_boundary():
+    from core.connectors.biostar.services import pontaje_export_service as pes
+    assert pes._months_between('2025-12-20', '2026-02-03') == [(2025,12),(2026,1),(2026,2)]
