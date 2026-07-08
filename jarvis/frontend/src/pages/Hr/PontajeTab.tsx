@@ -32,6 +32,7 @@ import { DateField } from '@/components/ui/date-field'
 import { Skeleton } from '@/components/ui/skeleton'
 import { biostarApi } from '@/api/biostar'
 import { sincronApi } from '@/api/sincron'
+import PontajeExportModal from './PontajeExportModal'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { AttendanceRow, BioStarDayHistory, CompanyInterval } from '@/types/biostar'
@@ -349,21 +350,7 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
   // ── CSV Download (monthly, all employees, official columns only) ──
 
   const [exporting, setExporting] = useState(false)
-
-  const [exportStart, setExportStart] = useState(date.slice(0, 8) + '01')
-  const [exportEnd, setExportEnd] = useState(date)
-
-  const handleExportPontaje = useCallback(async () => {
-    setExporting(true)
-    const toastId = toast.loading('Exporting pontaje…')
-    try {
-      const ok = await biostarApi.exportPontaje(exportStart, exportEnd)
-      if (ok) toast.success('Export complete', { id: toastId })
-      else toast.error('Export failed', { id: toastId })
-    } finally {
-      setExporting(false)
-    }
-  }, [exportStart, exportEnd])
+  const [exportOpen, setExportOpen] = useState(false)
 
   const exportGroups = useMemo(() => {
     const set = new Set<string>()
@@ -842,22 +829,13 @@ export default function PontajeTab({ showFilters = false, managerFilter = false,
               </>
             )}
 
-            {/* Export Pontaje (period) */}
-            <div className="flex items-center gap-1">
-              <DateField
-                mode="range"
-                startDate={exportStart}
-                endDate={exportEnd}
-                onRangeChange={(s, e) => { setExportStart(s); setExportEnd(e) }}
-                showPresets
-                className="h-8"
-              />
-              <Button variant="outline" size="sm" className="h-8" disabled={exporting}
-                      onClick={handleExportPontaje} title="Export Pontaje for the selected period">
-                <Download className={cn('h-4 w-4 mr-1', exporting && 'animate-pulse')} />
-                Export Pontaje
-              </Button>
-            </div>
+            {/* Export Pontaje (filtered modal) */}
+            <Button variant="outline" size="sm" className="h-8"
+                    onClick={() => setExportOpen(true)} title="Export Pontaje">
+              <Download className="h-4 w-4 mr-1" />
+              Export Pontaje
+            </Button>
+            <PontajeExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
 
             {/* Export Excel dropdown */}
             <DropdownMenu>
