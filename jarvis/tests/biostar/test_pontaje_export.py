@@ -78,3 +78,41 @@ def test_weekday_and_zero_lunch():
 def test_months_between_spans_year_boundary():
     from core.connectors.biostar.services import pontaje_export_service as pes
     assert pes._months_between('2025-12-20', '2026-02-03') == [(2025,12),(2026,1),(2026,2)]
+
+def test_build_rows_accepts_iso_string_inputs_present():
+    # Real runtime shape: database.dict_from_row converts date/datetime -> ISO strings.
+    r = dict(BASE)
+    r.update(
+        day='2026-07-01',
+        first_punch='2026-07-01T08:03:00',
+        last_punch='2026-07-01T17:12:00',
+        total_punches=4,
+        duration_seconds=9 * 3600 + 9 * 60,
+    )
+    sched = {(10, 5, '2026-07-01'): {'schedule_start': '09:00', 'schedule_end': '12:00',
+                                     'lunch_break_minutes': 30}}
+    out = pes.build_rows([r], sched, {})
+    row_out = out[0]
+    assert row_out[pes.HEADERS.index('Date')] == '2026-07-01'
+    assert row_out[pes.HEADERS.index('Weekday')] == 'Wed'
+    assert row_out[pes.HEADERS.index('Checked In')] == '08:03'
+    assert row_out[pes.HEADERS.index('Duration')] == '8:39'
+
+def test_build_rows_accepts_iso_string_inputs_adjusted():
+    r = dict(BASE)
+    r.update(
+        day='2026-07-01',
+        first_punch='2026-07-01T09:14:00',
+        last_punch='2026-07-01T17:22:00',
+        total_punches=3,
+        duration_seconds=8 * 3600,
+        adjusted_first_punch='2026-07-01T09:00:00',
+        adjusted_last_punch='2026-07-01T17:30:00',
+    )
+    sched = {(10, 5, '2026-07-01'): {'schedule_start': '09:00', 'schedule_end': '18:00',
+                                     'lunch_break_minutes': 30}}
+    row_out = pes.build_rows([r], sched, {})[0]
+    assert row_out[pes.HEADERS.index('Checked In')] == '09:00'   # adjusted
+    assert row_out[pes.HEADERS.index('Actual In')] == '09:14'    # raw
+    # gross = 8:30 (adjusted span) - 30 min lunch = 8:00
+    assert row_out[pes.HEADERS.index('Duration')] == '8:00'

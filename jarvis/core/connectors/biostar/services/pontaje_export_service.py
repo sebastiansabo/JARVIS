@@ -46,6 +46,8 @@ def _lunch_cell(lunch_min):
 
 
 def _span_seconds(a, b):
+    a = _dt.datetime.fromisoformat(a) if isinstance(a, str) else a
+    b = _dt.datetime.fromisoformat(b) if isinstance(b, str) else b
     if not a or not b:
         return None
     return (b - a).total_seconds()
@@ -60,9 +62,10 @@ def _status(has_punch, has_adj, single_punch_no_adj, code):
 def build_rows(punch_rows, sched_map, code_map):
     out = []
     for r in punch_rows:
-        day = r['day']
+        raw_day = r['day']
+        d = raw_day if hasattr(raw_day, 'weekday') else _dt.date.fromisoformat(str(raw_day)[:10])
         juid = r.get('jarvis_user_id')
-        sched = sched_map.get((juid, r.get('company_id'), day)) or {}
+        sched = sched_map.get((juid, r.get('company_id'), raw_day)) or {}
         lunch = sched.get('lunch_break_minutes')  # None allowed -> blank
         sstart = sched.get('schedule_start') or r.get('static_start')
         send = sched.get('schedule_end') or r.get('static_end')
@@ -86,11 +89,11 @@ def build_rows(punch_rows, sched_map, code_map):
             gross = r.get('duration_seconds')
         duration = '' if (single_no_adj or not eff_in or not checked_out) else _fmt_hm(_net_seconds(gross, lunch))
 
-        code = code_map.get((juid, day), '')
-        wd = _WEEKDAYS[day.weekday()]
+        code = code_map.get((juid, raw_day), '')
+        wd = _WEEKDAYS[d.weekday()]
 
         out.append([
-            day.isoformat(),
+            d.isoformat(),
             wd,
             r.get('name') or '',
             r.get('group') or '',
