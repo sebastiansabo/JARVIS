@@ -1380,7 +1380,9 @@ function MonthHistory({
     if (!sincronData?.data?.days) return map
     for (const [dayKey, codes] of Object.entries(sincronData.data.days)) {
       // dayKey is a full date string like "2026-04-06"
-      const leave = codes.find(c => ['CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV', 'OZ', 'OS', 'X'].includes(c.short_code))
+      // OZ (ore zilnice) and OS (ore suplimentare) are WORKED-day codes, not leave —
+      // they must not suppress punch times / the "Absent" status (see git: regressed in baa4e2d8).
+      const leave = codes.find(c => ['CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV', 'X'].includes(c.short_code))
       if (leave) {
         map.set(dayKey, leave.short_code)
       }
@@ -1609,10 +1611,10 @@ function DayRow({
 
   // Auto-load intervals for multi-contract present/absent days (re-fires after invalidation sets intervals=null)
   useEffect(() => {
-    if (isMultiContract && !day.isWeekend && !day.isHoliday && !isFuture && !leaveCode) {
+    if (isMultiContract && d?.first_punch && !day.isWeekend && !day.isHoliday && !isFuture) {
       loadIntervals()
     }
-  }, [loadIntervals, isMultiContract, day.isWeekend, day.isHoliday, isFuture, leaveCode])
+  }, [loadIntervals, isMultiContract, d?.first_punch, day.isWeekend, day.isHoliday, isFuture])
 
   const handleRevertDay = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -1643,7 +1645,7 @@ function DayRow({
       <div className="flex items-center gap-3 px-3 py-1.5 rounded-md text-sm">
         <span className={cn(
           'inline-block h-2 w-2 rounded-full shrink-0',
-          d ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : leaveCode ? 'bg-yellow-500' : isFuture ? 'bg-muted-foreground/30' : (anyAdj ? 'bg-green-500' : 'bg-red-400'),
+          d?.first_punch ? 'bg-green-500' : day.isWeekend || day.isHoliday ? 'bg-blue-400' : leaveCode ? 'bg-yellow-500' : isFuture ? 'bg-muted-foreground/30' : 'bg-red-400',
         )} />
         <span className="w-44 shrink-0 capitalize text-muted-foreground">
           {day.dayLabel}
@@ -1665,15 +1667,7 @@ function DayRow({
           ) : null}
         </span>
 
-        {day.isWeekend || day.isHoliday || isFuture || leaveCode ? (
-          <>
-            <span className="w-14 shrink-0" />
-            <span className="w-14 shrink-0" />
-            <span className={cn('text-xs', leaveCode ? 'text-yellow-600' : 'text-muted-foreground')}>
-              {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : leaveCode ?? '—'}
-            </span>
-          </>
-        ) : d ? (
+        {d?.first_punch ? (
           <>
             {/* Schedule In/Out — full span across all companies */}
             <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
@@ -1716,13 +1710,11 @@ function DayRow({
           </>
         ) : (
           <>
-            <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
-              {fmtScheduleTime(scheduleStart)}
+            <span className="w-14 shrink-0" />
+            <span className="w-14 shrink-0" />
+            <span className={cn('text-xs', leaveCode ? 'text-yellow-600' : 'text-muted-foreground')}>
+              {day.isWeekend ? 'Weekend' : day.isHoliday ? 'Holiday' : leaveCode ?? (isFuture ? '—' : 'Absent')}
             </span>
-            <span className="w-14 shrink-0 text-center text-xs text-muted-foreground">
-              {fmtScheduleTime(scheduleEnd)}
-            </span>
-            <span className="text-xs text-red-400">{anyAdj ? '' : 'Absent'}</span>
           </>
         )}
       </div>
