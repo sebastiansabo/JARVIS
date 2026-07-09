@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import jsQR from 'jsqr'
 import {
   MapPin, LogIn, LogOut, Loader2, CheckCircle2, XCircle,
   Navigation, Clock, Smartphone, Zap, Wifi, QrCode, Camera, Monitor,
@@ -79,20 +80,21 @@ function useQRScanner(onScan: (token: string) => void) {
   }, [])
 
   const startScanning = useCallback(async () => {
-    // Check if BarcodeDetector is available (Chrome Android, Safari 16.4+)
-    if (!('BarcodeDetector' in window)) {
-      // Fallback: prompt for manual QR code input
-      const token = prompt('Enter the check-in code from the QR (e.g. checkin:1):')
-      if (token) onScan(token)
-      return
-    }
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' },
       })
       streamRef.current = stream
       setScanning(true)
+
+      const handleValue = (value: string): boolean => {
+        if (value && value.startsWith('checkin:')) {
+          stopScanning()
+          onScan(value)
+          return true
+        }
+        return false
+      }
 
       // Wait for video element to be ready
       requestAnimationFrame(() => {
@@ -101,26 +103,37 @@ function useQRScanner(onScan: (token: string) => void) {
           videoRef.current.play()
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] })
-        intervalRef.current = setInterval(async () => {
-          if (!videoRef.current || videoRef.current.readyState < 2) return
-          try {
-            const barcodes = await detector.detect(videoRef.current)
-            if (barcodes.length > 0) {
-              const value = barcodes[0].rawValue
-              if (value && value.startsWith('checkin:')) {
-                stopScanning()
-                onScan(value)
-              }
+        if ('BarcodeDetector' in window) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] })
+          intervalRef.current = setInterval(async () => {
+            if (!videoRef.current || videoRef.current.readyState < 2) return
+            try {
+              const barcodes = await detector.detect(videoRef.current)
+              if (barcodes.length > 0) handleValue(barcodes[0].rawValue || '')
+            } catch {
+              // detection frame error, ignore
             }
-          } catch {
-            // detection frame error, ignore
-          }
-        }, 500)
+          }, 500)
+        } else {
+          // Fallback for browsers without BarcodeDetector (Safari/iOS, Firefox,
+          // iOS WKWebView): decode each frame with jsQR via an offscreen canvas.
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d', { willReadFrequently: true })
+          intervalRef.current = setInterval(() => {
+            const v = videoRef.current
+            if (!v || v.readyState < 2 || !ctx || !v.videoWidth) return
+            canvas.width = v.videoWidth
+            canvas.height = v.videoHeight
+            ctx.drawImage(v, 0, 0, canvas.width, canvas.height)
+            const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+            const result = jsQR(data, width, height, { inversionAttempts: 'dontInvert' })
+            if (result?.data) handleValue(result.data)
+          }, 300)
+        }
       })
     } catch {
-      // Camera denied or unavailable
+      // Camera denied or unavailable — manual entry fallback.
       const token = prompt('Camera unavailable. Enter the check-in code manually (e.g. checkin:1):')
       if (token) onScan(token)
     }
