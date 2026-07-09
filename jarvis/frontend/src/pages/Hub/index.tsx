@@ -25,6 +25,7 @@ import {
   LogIn,
   LogOut,
   Check,
+  ScanLine,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -68,6 +69,9 @@ const CreateTicketDialog = lazy(() => import('@/pages/Ticketing/CreateTicketDial
 const EditProfileDialogLazy = lazy(() => import('@/pages/Profile/index').then(m => ({ default: m.EditProfileDialog })))
 const FormRendererLazy = lazy(() => import('@/components/forms/FormRenderer').then(m => ({ default: m.FormRenderer })))
 const Digest = lazy(() => import('@/pages/Digest'))
+const VoucherRedeem = lazy(() => import('@/pages/Public/VoucherRedeem'))
+
+const VOUCHER_FORM_SLUG = 'voucher-issuance'
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -1507,6 +1511,8 @@ function HubFormsPanel() {
 function HubFormModal({ slug, name, onClose, onSubmitted }: { slug: string; name: string; onClose: () => void; onSubmitted: () => void }) {
   const user = useAuthStore((s) => s.user)
   const [successData, setSuccessData] = useState<{ thank_you_message?: string; hook_data?: Record<string, string> } | null>(null)
+  const isVoucherForm = slug === VOUCHER_FORM_SLUG
+  const [mode, setMode] = useState<'issue' | 'redeem'>('issue')
 
   const { data: form, isLoading } = useQuery({
     queryKey: ['public-form', slug],
@@ -1589,22 +1595,56 @@ function HubFormModal({ slug, name, onClose, onSubmitted }: { slug: string; name
               )}
               <Button variant="outline" size="sm" onClick={onClose}>Inchide</Button>
             </div>
-          ) : isLoading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
-            </div>
-          ) : schema.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">This form has no fields.</p>
           ) : (
-            <Suspense fallback={<Skeleton className="h-48 w-full" />}>
-              <FormRendererLazy
-                schema={schema}
-                onSubmit={(answers) => submitMutation.mutate(answers)}
-                submitting={submitMutation.isPending}
-                submitLabel={submitLabel}
-                defaultValues={mergedDefaults}
-              />
-            </Suspense>
+            <div className="space-y-4">
+              {/* Issue / Redeem toggle — only for the voucher form */}
+              {isVoucherForm && (
+                <div className="flex rounded-lg border bg-muted/40 p-1 gap-1">
+                  <button
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-2 rounded-md py-2.5 text-sm font-medium transition-colors',
+                      mode === 'issue' ? 'bg-slate-800 text-white shadow-sm' : 'text-muted-foreground hover:bg-accent',
+                    )}
+                    onClick={() => setMode('issue')}
+                  >
+                    <Ticket className="h-4 w-4" />
+                    Issue Voucher
+                  </button>
+                  <button
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-2 rounded-md py-2.5 text-sm font-medium transition-colors',
+                      mode === 'redeem' ? 'bg-slate-800 text-white shadow-sm' : 'text-muted-foreground hover:bg-accent',
+                    )}
+                    onClick={() => setMode('redeem')}
+                  >
+                    <ScanLine className="h-4 w-4" />
+                    Redeem Voucher
+                  </button>
+                </div>
+              )}
+
+              {isVoucherForm && mode === 'redeem' ? (
+                <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+                  <VoucherRedeem />
+                </Suspense>
+              ) : isLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                </div>
+              ) : schema.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">This form has no fields.</p>
+              ) : (
+                <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+                  <FormRendererLazy
+                    schema={schema}
+                    onSubmit={(answers) => submitMutation.mutate(answers)}
+                    submitting={submitMutation.isPending}
+                    submitLabel={submitLabel}
+                    defaultValues={mergedDefaults}
+                  />
+                </Suspense>
+              )}
+            </div>
           )}
         </div>
       </div>
