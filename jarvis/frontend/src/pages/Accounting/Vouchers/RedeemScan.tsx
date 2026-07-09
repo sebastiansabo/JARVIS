@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import jsQR from 'jsqr'
 import { Camera, CameraOff, Keyboard, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -67,7 +68,23 @@ export default function RedeemScan() {
       setCameraActive(true)
       scanningRef.current = true
 
-      // Use BarcodeDetector if available
+      // Parse the voucher QR payload — either "voucher:CODE" or a URL
+      // ".../app/voucher/CODE" (see accounting/vouchers/pdf_generator.py).
+      const extractCode = (raw: string): string => {
+        if (!raw) return ''
+        if (raw.startsWith('voucher:')) return raw.replace('voucher:', '').trim()
+        if (raw.includes('/voucher/')) return (raw.split('/voucher/').pop() || '').split(/[?#/]/)[0].trim()
+        return ''
+      }
+      const onDecoded = (raw: string): boolean => {
+        const code = extractCode(raw)
+        if (!code) return false
+        scanningRef.current = false
+        toast.success(`Scanned: ${code}`)
+        lookupVoucher(code)
+        return true
+      }
+
       if ('BarcodeDetector' in window) {
         const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] })
         const poll = async () => {
@@ -75,24 +92,31 @@ export default function RedeemScan() {
           try {
             const barcodes = await detector.detect(videoRef.current)
             for (const barcode of barcodes) {
-              const raw = barcode.rawValue || ''
-              let voucherCode = ''
-              if (raw.startsWith('voucher:')) {
-                voucherCode = raw.replace('voucher:', '')
-              } else if (raw.includes('/voucher/')) {
-                voucherCode = raw.split('/voucher/').pop() || ''
-              }
-              if (voucherCode) {
-                scanningRef.current = false
-                toast.success(`Scanned: ${voucherCode}`)
-                lookupVoucher(voucherCode)
-                return
-              }
+              if (onDecoded(barcode.rawValue || '')) return
             }
           } catch { /* ignore detect errors */ }
           if (scanningRef.current) requestAnimationFrame(poll)
         }
         requestAnimationFrame(poll)
+      } else {
+        // Fallback for browsers without BarcodeDetector (Safari/iOS, Firefox,
+        // iOS WKWebView): decode each frame with jsQR via an offscreen canvas.
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })
+        const poll = () => {
+          if (!scanningRef.current || !videoRef.current || !ctx) return
+          const v = videoRef.current
+          if (v.readyState >= 2 && v.videoWidth > 0) {
+            canvas.width = v.videoWidth
+            canvas.height = v.videoHeight
+            ctx.drawImage(v, 0, 0, canvas.width, canvas.height)
+            const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+            const result = jsQR(data, width, height, { inversionAttempts: 'dontInvert' })
+            if (result?.data && onDecoded(result.data)) return
+          }
+          if (scanningRef.current) setTimeout(poll, 250)
+        }
+        setTimeout(poll, 250)
       }
     } catch (err) {
       toast.error('Camera access denied or unavailable')
