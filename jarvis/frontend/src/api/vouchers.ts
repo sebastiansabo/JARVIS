@@ -29,6 +29,9 @@ export const vouchersApi = {
   deleteVoucher: (id: number) =>
     api.delete<{ success: boolean }>(`/api/vouchers/${id}`),
 
+  restoreVoucher: (id: number) =>
+    api.post<{ success: boolean }>(`/api/vouchers/${id}/restore`),
+
   pdfUrl: (id: number) => `/api/vouchers/${id}/pdf`,
 
   sendToClient: (id: number, email: string) =>
