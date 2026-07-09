@@ -93,7 +93,7 @@ class VoucherRepository(BaseRepository):
             LEFT JOIN users u_issued   ON u_issued.id = v.issued_by_user_id
             LEFT JOIN users u_approver ON u_approver.id = v.approver_user_id
             LEFT JOIN users u_redeemed ON u_redeemed.id = v.redeemed_by_user_id
-            WHERE v.id = %s
+            WHERE v.id = %s AND v.deleted_at IS NULL
         ''', (voucher_id,))
 
     def get_all(self, company_id=None, status=None, voucher_type=None,
@@ -101,7 +101,7 @@ class VoucherRepository(BaseRepository):
                 date_from=None, date_to=None, expiring_within_days=None,
                 limit=200, offset=0) -> list[dict]:
         """List vouchers with filters. company_id=None shows all companies."""
-        conditions = []
+        conditions = ['v.deleted_at IS NULL']
         params = []
         if company_id:
             conditions.append('v.company_id = %s')
@@ -182,7 +182,7 @@ class VoucherRepository(BaseRepository):
             FROM vouchers v
             LEFT JOIN users u_issued ON u_issued.id = v.issued_by_user_id
             LEFT JOIN users u_approver ON u_approver.id = v.approver_user_id
-            WHERE v.issued_by_user_id = %s OR v.approver_user_id = %s
+            WHERE (v.issued_by_user_id = %s OR v.approver_user_id = %s) AND v.deleted_at IS NULL
             ORDER BY v.created_at DESC
             LIMIT %s OFFSET %s
         ''', (user_id, user_id, limit, offset))
@@ -234,13 +234,17 @@ class VoucherRepository(BaseRepository):
             UPDATE vouchers
             SET status = 'archived', updated_at = CURRENT_TIMESTAMP
             WHERE status = 'redeemed'
+              AND deleted_at IS NULL
               AND redeemed_at < CURRENT_TIMESTAMP - INTERVAL '2 hours'
         ''')
 
     def delete_voucher(self, voucher_id: int) -> bool:
-        """Hard-delete a voucher. Returns True if deleted."""
+        """Soft-delete a voucher (set deleted_at). Returns True if a row was updated."""
         count = self.execute(
-            'DELETE FROM vouchers WHERE id = %s', (voucher_id,)
+            '''UPDATE vouchers
+               SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+               WHERE id = %s AND deleted_at IS NULL''',
+            (voucher_id,)
         )
         return count > 0
 
@@ -249,7 +253,7 @@ class VoucherRepository(BaseRepository):
         return self.execute('''
             UPDATE vouchers
             SET status = 'expired', updated_at = CURRENT_TIMESTAMP
-            WHERE status = 'active' AND expires_at < CURRENT_DATE
+            WHERE status = 'active' AND expires_at < CURRENT_DATE AND deleted_at IS NULL
         ''')
 
     def get_expiring_on(self, target_date: date) -> list[dict]:
@@ -258,12 +262,12 @@ class VoucherRepository(BaseRepository):
             SELECT v.*, u.name AS issued_by_name, u.email AS issued_by_email
             FROM vouchers v
             JOIN users u ON u.id = v.issued_by_user_id
-            WHERE v.status = 'active' AND v.expires_at = %s
+            WHERE v.status = 'active' AND v.expires_at = %s AND v.deleted_at IS NULL
         ''', (target_date,))
 
     def get_summary_counts(self, company_id=None) -> dict:
         """Get status counts and total active value for summary bar."""
-        where = 'WHERE company_id = %s' if company_id else ''
+        where = 'WHERE deleted_at IS NULL' + (' AND company_id = %s' if company_id else '')
         params = (company_id,) if company_id else ()
         row = self.query_one(f'''
             SELECT
@@ -294,7 +298,7 @@ class VoucherRepository(BaseRepository):
                 COUNT(*) FILTER (WHERE status = 'active' AND expires_at >= %s AND expires_at <= %s) AS expiring_this_month,
                 COUNT(*) FILTER (WHERE created_at >= %s AND created_at < %s) AS new_last_month
             FROM vouchers
-            WHERE company_id = %s
+            WHERE company_id = %s AND deleted_at IS NULL
         ''', (
             prev_month_start, first_of_month,
             prev_month_start, first_of_month,
@@ -317,7 +321,7 @@ class VoucherRepository(BaseRepository):
                 COUNT(*) FILTER (WHERE v.status = 'active' AND v.expires_at >= %s AND v.expires_at <= %s) AS expiring_this_month
             FROM vouchers v
             JOIN users u ON u.id = v.issued_by_user_id
-            WHERE v.company_id = %s
+            WHERE v.company_id = %s AND v.deleted_at IS NULL
             GROUP BY v.issued_by_user_id, u.name, u.email
             ORDER BY u.name
         ''', (first_of_month, next_month_end, company_id))

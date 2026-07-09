@@ -243,7 +243,7 @@ export default function VoucherRedeem() {
 
         {/* Manual entry */}
         {mode === 'manual' && !voucher && (
-          <div className="space-y-3 bg-white rounded-lg border p-4">
+          <div className="space-y-3 bg-card text-card-foreground rounded-lg border p-4">
             <div className="grid gap-1.5">
               <Label>Voucher Code</Label>
               <Input
