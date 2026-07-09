@@ -1498,9 +1498,9 @@ function HubFormsPanel() {
           name={openForm?.name || ''}
           onClose={() => setOpenSlug(null)}
           onSubmitted={() => {
-            setOpenSlug(null)
+            // Keep the modal open so the success screen (thank-you + PDF
+            // download links) can render. The user closes it via Inchide/Back.
             queryClient.invalidateQueries({ queryKey: ['hub'] })
-            toast.success('Form submitted')
           }}
         />
       )}
