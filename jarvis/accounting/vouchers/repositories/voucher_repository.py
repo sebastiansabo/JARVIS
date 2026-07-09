@@ -99,9 +99,10 @@ class VoucherRepository(BaseRepository):
     def get_all(self, company_id=None, status=None, voucher_type=None,
                 issued_by_user_id=None, expiring_soon=False,
                 date_from=None, date_to=None, expiring_within_days=None,
-                limit=200, offset=0) -> list[dict]:
-        """List vouchers with filters. company_id=None shows all companies."""
-        conditions = ['v.deleted_at IS NULL']
+                limit=200, offset=0, deleted_only=False) -> list[dict]:
+        """List vouchers with filters. company_id=None shows all companies.
+        deleted_only=True returns only soft-deleted vouchers (the Deleted tab)."""
+        conditions = ['v.deleted_at IS NOT NULL' if deleted_only else 'v.deleted_at IS NULL']
         params = []
         if company_id:
             conditions.append('v.company_id = %s')
@@ -244,6 +245,16 @@ class VoucherRepository(BaseRepository):
             '''UPDATE vouchers
                SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                WHERE id = %s AND deleted_at IS NULL''',
+            (voucher_id,)
+        )
+        return count > 0
+
+    def restore_voucher(self, voucher_id: int) -> bool:
+        """Restore a soft-deleted voucher (clear deleted_at). Returns True if restored."""
+        count = self.execute(
+            '''UPDATE vouchers
+               SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
+               WHERE id = %s AND deleted_at IS NOT NULL''',
             (voucher_id,)
         )
         return count > 0

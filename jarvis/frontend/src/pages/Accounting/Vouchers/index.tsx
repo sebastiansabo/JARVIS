@@ -1,7 +1,7 @@
 import { useState, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Download, FileText, ScanLine, Send, ArrowLeft, Pencil, Copy, Trash2 } from 'lucide-react'
+import { Plus, Download, FileText, ScanLine, Send, ArrowLeft, Pencil, Copy, Trash2, RotateCcw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -92,7 +92,7 @@ const RedeemScan = lazy(() => import('./RedeemScan'))
 export default function Vouchers() {
   const queryClient = useQueryClient()
   const [view, setView] = useState<'tracking' | 'issue' | 'redeem'>('tracking')
-  const [activeTab, setActiveTab] = useState<'active' | 'archive'>('active')
+  const [activeTab, setActiveTab] = useState<'active' | 'archive' | 'deleted'>('active')
 
   const [companyFilter, setCompanyFilter] = useState('__all__')
   const [statusFilter, setStatusFilter] = useState('__all__')
@@ -113,6 +113,8 @@ export default function Vouchers() {
   const [sendEmail, setSendEmail] = useState('')
   const [showSendModal, setShowSendModal] = useState<Voucher | null>(null)
 
+  const deletedView = activeTab === 'deleted'
+
   const buildParams = () => {
     const p: Record<string, string> = {}
     if (companyFilter !== '__all__') p.company_id = companyFilter
@@ -120,21 +122,22 @@ export default function Vouchers() {
     if (typeFilter !== '__all__') p.voucher_type = typeFilter
     if (dateFrom) p.date_from = dateFrom
     if (dateTo) p.date_to = dateTo
+    if (deletedView) p.deleted = '1'
     return p
   }
 
   const { data, isLoading } = useQuery({
-    queryKey: ['vouchers-accounting', companyFilter, statusFilter, typeFilter, dateFrom, dateTo],
+    queryKey: ['vouchers-accounting', companyFilter, statusFilter, typeFilter, dateFrom, dateTo, deletedView],
     queryFn: () => vouchersApi.accountingList(buildParams()),
   })
 
   const allVouchers = data?.vouchers ?? []
   const summary = data?.summary ?? { active_count: 0, expiring_soon_count: 0, redeemed_this_month: 0, expired_count: 0, total_active_value: 0 }
 
-  const vouchers = allVouchers.filter((v) =>
-    activeTab === 'archive' ? v.status === 'archived' : v.status !== 'archived'
-  )
-  const archivedCount = allVouchers.filter((v) => v.status === 'archived').length
+  const vouchers = deletedView
+    ? allVouchers
+    : allVouchers.filter((v) => activeTab === 'archive' ? v.status === 'archived' : v.status !== 'archived')
+  const archivedCount = deletedView ? 0 : allVouchers.filter((v) => v.status === 'archived').length
 
   const [editVoucher, setEditVoucher] = useState<Voucher | null>(null)
   const [editForm, setEditForm] = useState({ client_name: '', contract_number: '', car_vin: '', notes: '' })
@@ -188,6 +191,15 @@ export default function Vouchers() {
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to delete'),
   })
 
+  const restoreMutation = useMutation({
+    mutationFn: (id: number) => vouchersApi.restoreVoucher(id),
+    onSuccess: () => {
+      toast.success('Voucher restored')
+      queryClient.invalidateQueries({ queryKey: ['vouchers-accounting'] })
+    },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to restore'),
+  })
+
   const allColumns: ColumnDef<Voucher>[] = [
     { key: 'code', label: 'Code', className: 'font-mono text-xs', render: (v) => v.voucher_code },
     { key: 'issuer', label: 'Issuer', render: (v) => v.issued_by_name || '' },
@@ -200,7 +212,15 @@ export default function Vouchers() {
     { key: 'expires', label: 'Expires', render: (v) => <>{v.expires_at || '—'}{v.days_remaining != null && v.days_remaining <= 30 && v.days_remaining > 0 && <span className="ml-1 text-xs text-orange-500">({v.days_remaining}d)</span>}</> },
     { key: 'approver', label: 'Approver', render: (v) => v.approver_name || '—' },
     { key: 'status', label: 'Status', render: (v) => <StatusBadge status={v.status} /> },
-    { key: 'actions', label: 'Actions', render: (v) => (
+    { key: 'actions', label: 'Actions', render: (v) => deletedView ? (
+      <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+        {canDelete && (
+          <Button size="sm" variant="outline" onClick={() => { if (confirm(`Restore voucher ${v.voucher_code}?`)) restoreMutation.mutate(v.id) }}>
+            <RotateCcw className="h-3.5 w-3.5 mr-1" />Restore
+          </Button>
+        )}
+      </div>
+    ) : (
       <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
         {v.status === 'active' && (
           <Button size="sm" variant="outline" onClick={() => { setRedeemVoucher(v); setRedeemNotes('') }}>Redeem</Button>
@@ -334,6 +354,14 @@ export default function Vouchers() {
         >
           Archive {archivedCount > 0 && <span className="ml-1 text-xs bg-muted px-1.5 py-0.5 rounded-full">{archivedCount}</span>}
         </button>
+        {canDelete && (
+          <button
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'deleted' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setActiveTab('deleted')}
+          >
+            Deleted
+          </button>
+        )}
       </div>
 
       {/* Filters */}
