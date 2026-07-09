@@ -489,7 +489,7 @@ def api_analyze():
     try:
         cursor = get_cursor(conn)
         cursor.execute('SELECT id, company FROM companies ORDER BY company')
-        companies = [{'id': r[0], 'company': r[1]} for r in cursor.fetchall()]
+        companies = [{'id': r['id'], 'company': r['company']} for r in cursor.fetchall()]
     finally:
         release_db(conn)
 
