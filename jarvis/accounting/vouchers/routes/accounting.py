@@ -33,6 +33,9 @@ def accounting_list():
     else:
         cid = current_user.company_id
 
+    # Deleted tab (soft-deleted vouchers) is admin-only
+    deleted_only = request.args.get('deleted') in ('1', 'true') and is_admin
+
     rows = _repo.get_all(
         company_id=cid,
         status=status_list,
@@ -42,6 +45,7 @@ def accounting_list():
         expiring_within_days=expiring_within,
         limit=limit,
         offset=offset,
+        deleted_only=deleted_only,
     )
 
     summary = _repo.get_summary_counts(cid)
@@ -364,5 +368,20 @@ def delete_voucher_route(voucher_id):
     deleted = _repo.delete_voucher(voucher_id)
     if not deleted:
         return error_response('Failed to delete voucher', 500)
+
+    return jsonify({'success': True})
+
+
+@vouchers_bp.route('/api/vouchers/<int:voucher_id>/restore', methods=['POST'])
+@login_required
+@handle_api_errors
+def restore_voucher_route(voucher_id):
+    """Restore a soft-deleted voucher (admin only)."""
+    if getattr(current_user, 'role_name', '').lower() not in ('admin', 'superadmin'):
+        return jsonify({'success': False, 'error': 'Only an admin can restore a voucher'}), 403
+
+    restored = _repo.restore_voucher(voucher_id)
+    if not restored:
+        return error_response('Voucher not found or not deleted', 404)
 
     return jsonify({'success': True})
