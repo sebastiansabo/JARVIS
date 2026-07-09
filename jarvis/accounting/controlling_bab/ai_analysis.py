@@ -78,7 +78,7 @@ def _build_data_context(repo: BabRepository, company_id: int, companies: list, c
                 JOIN bab_uploads u ON u.company_id = c.id
                 ORDER BY c.company
             """)
-            target_companies = [{'id': r[0], 'company': r[1]} for r in cursor.fetchall()]
+            target_companies = [{'id': r['id'], 'company': r['company']} for r in cursor.fetchall()]
         finally:
             release_db(conn)
     else:
