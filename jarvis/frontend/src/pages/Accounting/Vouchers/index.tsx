@@ -144,7 +144,8 @@ export default function Vouchers() {
   const isAdmin = !user?.permissions || user?.role_name?.toLowerCase() === 'admin'
   const canEdit = isAdmin || perms['vouchers.accounting.edit']
   const canReissue = isAdmin || perms['vouchers.accounting.reissue']
-  const canDelete = isAdmin || perms['vouchers.accounting.delete']
+  // Delete is admin-only (soft delete). Matches backend gate on role_name.
+  const canDelete = ['admin', 'superadmin'].includes(user?.role_name?.toLowerCase() ?? '')
 
   const redeemMutation = useMutation({
     mutationFn: ({ id, notes }: { id: number; notes?: string }) => vouchersApi.redeem(id, notes),
@@ -215,7 +216,7 @@ export default function Vouchers() {
           </Button>
         )}
         {canDelete && (
-          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => { if (confirm(`Delete voucher ${v.voucher_code}? This cannot be undone.`)) deleteMutation.mutate(v.id) }}>
+          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => { if (confirm(`Delete voucher ${v.voucher_code}? It will be removed from the list.`)) deleteMutation.mutate(v.id) }}>
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
         )}
