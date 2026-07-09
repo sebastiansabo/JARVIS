@@ -96,7 +96,7 @@ def lookup_voucher_by_code(code):
         FROM vouchers v
         LEFT JOIN users u_issued ON u_issued.id = v.issued_by_user_id
         LEFT JOIN users u_redeemed ON u_redeemed.id = v.redeemed_by_user_id
-        WHERE v.voucher_code = %s
+        WHERE v.voucher_code = %s AND v.deleted_at IS NULL
     ''', (code.upper(),))
     if not voucher:
         return error_response('Voucher not found', 404)
@@ -119,7 +119,7 @@ def redeem_by_code():
         return jsonify({'success': False, 'error': 'voucher_code is required'}), 400
 
     voucher = _repo.query_one(
-        'SELECT id, status FROM vouchers WHERE voucher_code = %s', (code,)
+        'SELECT id, status FROM vouchers WHERE voucher_code = %s AND deleted_at IS NULL', (code,)
     )
     if not voucher:
         return jsonify({'success': False, 'error': f'Voucher {code} not found'}), 404
@@ -154,7 +154,7 @@ def public_lookup_voucher(code):
                     THEN (v.expires_at - CURRENT_DATE) ELSE NULL END AS days_remaining
         FROM vouchers v
         LEFT JOIN companies c ON c.id = v.company_id
-        WHERE v.voucher_code = %s
+        WHERE v.voucher_code = %s AND v.deleted_at IS NULL
     ''', (code.strip().upper(),))
     if not voucher:
         return error_response('Voucher not found', 404)
@@ -179,7 +179,7 @@ def public_redeem_voucher():
         return jsonify({'success': False, 'error': 'Signature is required'}), 400
 
     voucher = _repo.query_one(
-        'SELECT id, status, expires_at FROM vouchers WHERE voucher_code = %s', (code,)
+        'SELECT id, status, expires_at FROM vouchers WHERE voucher_code = %s AND deleted_at IS NULL', (code,)
     )
     if not voucher:
         return jsonify({'success': False, 'error': f'Voucher {code} not found'}), 404
@@ -353,16 +353,13 @@ def reissue_voucher(voucher_id):
 @login_required
 @handle_api_errors
 def delete_voucher_route(voucher_id):
-    """Hard-delete a voucher."""
-    if not _check_voucher_perm('accounting', 'delete'):
-        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    """Soft-delete a voucher (admin only). Sets deleted_at; row is recoverable."""
+    if getattr(current_user, 'role_name', '').lower() not in ('admin', 'superadmin'):
+        return jsonify({'success': False, 'error': 'Only an admin can delete a voucher'}), 403
 
     voucher = _repo.get_by_id(voucher_id)
     if not voucher:
         return error_response('Voucher not found', 404)
-
-    if voucher.get('status') in ('active', 'redeemed'):
-        return jsonify({'success': False, 'error': f'Cannot delete a voucher with status "{voucher["status"]}"'}), 400
 
     deleted = _repo.delete_voucher(voucher_id)
     if not deleted:

@@ -98,6 +98,15 @@ def create_schema_vouchers(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_form_submission ON vouchers(form_submission_id) WHERE form_submission_id IS NOT NULL')
 
+    # Soft-delete support: superadmin deletes set deleted_at instead of removing the row
+    cursor.execute('''
+        DO $$ BEGIN
+            ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_deleted_at ON vouchers(deleted_at) WHERE deleted_at IS NULL')
+
     # Add 'archived' to voucher status constraint
     cursor.execute('''
         DO $$ BEGIN
