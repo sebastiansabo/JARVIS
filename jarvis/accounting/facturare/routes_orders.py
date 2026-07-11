@@ -553,7 +553,11 @@ def api_get_anexa_detail(anexa_id):
     contract = _repo.get_contract_by_id(anexa["contract_id"])
     raw_lines = _repo.get_lines_by_anexa(anexa_id)
     lines = [_line_to_dict(l) for l in raw_lines]
-    all_line_ids = {l["id"] for l in lines}
+    # Keep line_number order (raw_lines is ORDER BY line_number) so the per-car
+    # display number below (base_no + idx) matches the PDF renderer, which numbers
+    # cars in line_number order. A set() here scrambled the order and produced
+    # UI invoice numbers that disagreed with the PDF sent to the client.
+    all_line_ids = [l["id"] for l in lines]
     invoices = [_inv_to_dict(inv) for inv in _repo.get_invoices_by_anexa(anexa_id)]
 
     # Enrich storno invoices with the IDs of invoices they reverse
