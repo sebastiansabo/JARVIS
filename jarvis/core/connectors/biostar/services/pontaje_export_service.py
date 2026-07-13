@@ -93,9 +93,11 @@ def _permit_cell(entry):
     return f'{hs}h ({sources})' if sources else f'{hs}h'
 
 
-def build_rows(punch_rows, sched_map, code_map, holidays=None, permit_map=None):
+def build_rows(punch_rows, sched_map, code_map, holidays=None, permit_map=None,
+               excluded_keys=None):
     holidays = holidays or set()
     permit_map = permit_map or {}
+    excluded_keys = excluded_keys or set()
     out = []
     for r in punch_rows:
         raw_day = r['day']
@@ -103,10 +105,20 @@ def build_rows(punch_rows, sched_map, code_map, holidays=None, permit_map=None):
         is_weekend = d.weekday() >= 5
         is_holiday = d.isoformat() in holidays
         juid = r.get('jarvis_user_id')
-        sched = sched_map.get((juid, r.get('company_id'), raw_day)) or {}
+        company_id = r.get('company_id')
+        sched = sched_map.get((juid, company_id, raw_day)) or {}
         lunch = sched.get('lunch_break_minutes')  # None allowed -> blank
-        sstart = sched.get('schedule_start') or r.get('static_start')
-        send = sched.get('schedule_end') or r.get('static_end')
+        # Schedule is Sincron-authoritative: no BioStar static fallback. A row with
+        # no non-excluded Sincron schedule is flagged instead of showing a generic
+        # BioStar default that may be wrong.
+        sstart = sched.get('schedule_start')
+        send = sched.get('schedule_end')
+        if sstart or send:
+            schedule_cell = f'{sstart or ""}–{send or ""}'
+        elif (juid, company_id) in excluded_keys:
+            schedule_cell = 'Exclus din pontaj'
+        else:
+            schedule_cell = 'Fără orar Sincron'
 
         adj_first = r.get('adjusted_first_punch')
         adj_last = r.get('adjusted_last_punch')
@@ -152,7 +164,7 @@ def build_rows(punch_rows, sched_map, code_map, holidays=None, permit_map=None):
             _lunch_cell(lunch),
             duration,
             str(total),
-            f'{sstart or ""}–{send or ""}' if (sstart or send) else '',
+            schedule_cell,
             code,
             _permit_cell(permit),
         ])
@@ -320,16 +332,21 @@ def generate(start, end, jarvis_user_ids):
     ids = sorted({r['jarvis_user_id'] for r in punch_rows if r.get('jarvis_user_id')})
     sched_map = {}
     code_rows = []
+    excluded_keys = set()
     if ids:
         for s in s_repo.get_day_schedules_for_users(ids, start, end):
             sched_map[(s['jarvis_user_id'], s['company_id'], s['day'])] = s
         for (y, m) in _months_between(start, end):
             code_rows.extend(s_repo.get_day_codes_for_users(ids, y, m))
+        excluded_keys = {
+            (k['jarvis_user_id'], k['company_id'])
+            for k in s_repo.get_excluded_contract_keys(ids)
+        }
     code_map = _build_code_map(code_rows)
 
     holidays = _fetch_holidays(start, end)
     permit_map = _fetch_permits(start, end)
-    rows = build_rows(punch_rows, sched_map, code_map, holidays, permit_map)
+    rows = build_rows(punch_rows, sched_map, code_map, holidays, permit_map, excluded_keys)
     xlsx = build_workbook(rows)
     filename = f'pontaje_{start}_{end}.xlsx'
     return xlsx, filename
