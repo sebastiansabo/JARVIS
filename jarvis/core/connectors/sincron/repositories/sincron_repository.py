@@ -672,6 +672,21 @@ class SincronRepository(BaseRepository):
             ORDER BY c.jarvis_user_id, c.company_id, d.day, st.program_in NULLS LAST
         ''', (start_date, end_date, jarvis_user_ids))
 
+    def get_excluded_contract_keys(self, jarvis_user_ids):
+        """Return (jarvis_user_id, company_id) pairs for active contracts flagged
+        exclude_from_pontaje. Lets the export tell 'excluded' rows apart from rows
+        that simply have no Sincron mapping."""
+        if not jarvis_user_ids:
+            return []
+        return self.query_all('''
+            SELECT DISTINCT se.mapped_jarvis_user_id AS jarvis_user_id, se.company_id
+            FROM sincron_employees se
+            WHERE se.mapped_jarvis_user_id = ANY(%s)
+              AND se.is_active = TRUE
+              AND se.exclude_from_pontaje = TRUE
+              AND se.company_id IS NOT NULL
+        ''', (jarvis_user_ids,))
+
     def get_all_full_day_schedules_for_date(self, date_str):
         """Get combined schedule boundaries for ALL mapped employees for a date.
 
