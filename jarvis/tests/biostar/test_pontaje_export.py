@@ -163,6 +163,28 @@ def test_weekday_and_zero_lunch():
     assert r[pes.HEADERS.index('Lunch')] == '0 min'
     assert r[pes.HEADERS.index('Duration')] == '8:00'
 
+def test_excluded_contract_shows_marker_not_biostar_fallback():
+    # Contract flagged exclude_from_pontaje: no sched entry, but (uid, company) is
+    # in excluded_keys -> Romanian marker instead of BioStar static 08:00-17:00.
+    pr = [row(first_punch=_dt(1,'17:00'), last_punch=_dt(1,'18:00'), total_punches=2,
+              duration_seconds=3600)]
+    r = pes.build_rows(pr, {}, {}, excluded_keys={(10, 5)})[0]
+    assert r[pes.HEADERS.index('Schedule')] == 'Exclus din pontaj'
+
+def test_no_sincron_mapping_shows_distinct_marker():
+    # No sched entry and not excluded -> "no Sincron schedule" marker (no BioStar fallback).
+    pr = [row(first_punch=_dt(1,'08:00'), last_punch=_dt(1,'16:00'), total_punches=2,
+              duration_seconds=8*3600)]
+    r = pes.build_rows(pr, {}, {})[0]
+    assert r[pes.HEADERS.index('Schedule')] == 'Fără orar Sincron'
+
+def test_real_schedule_beats_excluded_marker():
+    # A real Sincron schedule always wins, even if the pair is also in excluded_keys.
+    pr = [row()]
+    sched = {(10, 5, dt.date(2026,7,1)): {'schedule_start':'09:00','schedule_end':'17:00','lunch_break_minutes':60}}
+    r = pes.build_rows(pr, sched, {}, excluded_keys={(10, 5)})[0]
+    assert r[pes.HEADERS.index('Schedule')] == '09:00–17:00'
+
 def test_months_between_spans_year_boundary():
     from core.connectors.biostar.services import pontaje_export_service as pes
     assert pes._months_between('2025-12-20', '2026-02-03') == [(2025,12),(2026,1),(2026,2)]
