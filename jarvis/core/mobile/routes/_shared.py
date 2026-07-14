@@ -55,6 +55,7 @@ _sig_repo = SignatureRepository()
 
 
 @mobile_bp.route('/api/auth/token', methods=['OPTIONS'])
+@mobile_bp.route('/api/auth/verify-otp', methods=['OPTIONS'])
 @mobile_bp.route('/api/auth/refresh', methods=['OPTIONS'])
 @mobile_bp.route('/api/auth/logout', methods=['OPTIONS'])
 @mobile_bp.route('/api/auth/current-user', methods=['OPTIONS'])
