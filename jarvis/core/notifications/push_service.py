@@ -85,6 +85,15 @@ class _DeviceRepo(BaseRepository):
             tuple(user_ids),
         )
 
+    def get_tokens_for_user_device(self, user_id, device_id):
+        """Push tokens registered for THIS specific user + device_id."""
+        if not device_id:
+            return []
+        return self.query_all(
+            'SELECT id, user_id, push_token FROM mobile_devices WHERE user_id = %s AND device_id = %s',
+            (user_id, device_id),
+        ) or []
+
     def delete_tokens(self, token_ids):
         if not token_ids:
             return
