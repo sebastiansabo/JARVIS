@@ -18,6 +18,7 @@ from ..config import AIAgentConfig
 from ..exceptions import RAGError
 from ..repositories import RAGDocumentRepository
 from .embedding_service import EmbeddingService
+from .quasar_patterns import dropped_critical_values
 from .rag_indexers.invoices import InvoiceIndexerMixin
 from .rag_indexers.entities import EntityIndexerMixin
 from .rag_indexers.accounting import AccountingIndexerMixin
@@ -340,22 +341,31 @@ class RAGService(
         return "\n".join(context_parts)
 
     def _create_snippet(self, content: str, max_length: int = 300) -> str:
-        """Create a snippet from content."""
+        """Create a snippet from content.
+
+        Truncates to ~max_length, but preserves high-criticality values (IBANs,
+        VINs, VATs, reg-com) that fall past the cutoff so they stay visible to
+        the LLM. Without this, the 300-char cut silently dropped real IBANs from
+        10 bank_statement/transaction docs and 341 VINs from car dossiers on
+        every query (see scripts/quasar_snippet_report.py).
+        """
         if len(content) <= max_length:
             return content
 
-        # Try to break at sentence
-        snippet = content[:max_length]
-        last_period = snippet.rfind('.')
+        # Try to break at sentence, else at a word boundary.
+        window = content[:max_length]
+        last_period = window.rfind('.')
         if last_period > max_length // 2:
-            return snippet[:last_period + 1]
+            snippet = window[:last_period + 1]
+        else:
+            last_space = window.rfind(' ')
+            snippet = (window[:last_space] + "...") if last_space > 0 else (window + "...")
 
-        # Break at word
-        last_space = snippet.rfind(' ')
-        if last_space > 0:
-            return snippet[:last_space] + "..."
-
-        return snippet + "..."
+        # Re-attach critical values the truncation would otherwise drop.
+        dropped = dropped_critical_values(content, snippet)
+        if dropped:
+            snippet = f"{snippet} [key values: {', '.join(dropped)}]"
+        return snippet
 
     # ============== Generic Index Helper ==============
 
