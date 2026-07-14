@@ -1,5 +1,6 @@
 """Data access for foi_de_parcurs and foi_de_parcurs_audit tables."""
 
+import json
 import logging
 from core.base_repository import BaseRepository
 
@@ -120,3 +121,31 @@ class FoiParcursRepository(BaseRepository):
         sql = f'UPDATE foi_de_parcurs SET {sets}, updated_at = NOW() WHERE id = %s RETURNING *'
         params = list(data.values()) + [contract_id]
         return self.execute(sql, tuple(params), returning=True)
+
+    def record_return(self, contract_id: int, data: dict) -> dict:
+        """Update a TD contract with return data (km/fuel/damage/signatures) and mark COMPLETED.
+
+        `return_datetime` (if provided in data) is stored as-is; if missing/falsy,
+        it defaults to NOW() via COALESCE.
+        """
+        data = dict(data)
+        if 'return_damage' in data:
+            data['return_damage'] = json.dumps(data['return_damage'])
+        return_datetime = data.pop('return_datetime', None)
+
+        sets = [f'{k} = %s' for k in data.keys()]
+        params = list(data.values())
+        sets.append('return_datetime = COALESCE(%s, NOW())')
+        params.append(return_datetime)
+
+        sets_sql = ', '.join(sets)
+        sql = (
+            f'UPDATE foi_de_parcurs SET {sets_sql}, '
+            f"returned_at = NOW(), status = 'COMPLETED', updated_at = NOW() "
+            f"WHERE id = %s AND route_type = 'TD' RETURNING *"
+        )
+        params.append(contract_id)
+        row = self.execute(sql, tuple(params), returning=True)
+        if row and row.get('id'):
+            return self.get_contract_by_id(row['id']) or row
+        return row
