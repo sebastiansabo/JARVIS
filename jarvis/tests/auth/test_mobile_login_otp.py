@@ -69,7 +69,11 @@ def _user_row(user_id=1, email='user@example.com', name='Test User'):
 
 def test_trusted_device_returns_tokens_no_otp(client, monkeypatch):
     monkeypatch.setattr(auth_mod._user_repo, 'authenticate', lambda e, p: _user_row())
-    monkeypatch.setattr(auth_mod._user_repo, 'update_last_login', lambda uid: True)
+    last_login_calls = []
+    monkeypatch.setattr(
+        auth_mod._user_repo, 'update_last_login',
+        lambda uid: last_login_calls.append(uid),
+    )
 
     class FakeSvc:
         def validate_trusted_device_token(self, token, uid, device_id, secret):
@@ -93,10 +97,23 @@ def test_trusted_device_returns_tokens_no_otp(client, monkeypatch):
     assert 'otp_required' not in body
     assert body['user']['id'] == 1
 
+    # Trusted-device login completes immediately, so last_login is recorded
+    # (the background thread may still be scheduling — allow it to finish).
+    import time
+    for _ in range(20):
+        if last_login_calls:
+            break
+        time.sleep(0.01)
+    assert last_login_calls == [1]
+
 
 def test_untrusted_device_with_push_sends_push_otp(client, monkeypatch):
     monkeypatch.setattr(auth_mod._user_repo, 'authenticate', lambda e, p: _user_row())
-    monkeypatch.setattr(auth_mod._user_repo, 'update_last_login', lambda uid: True)
+    last_login_calls = []
+    monkeypatch.setattr(
+        auth_mod._user_repo, 'update_last_login',
+        lambda uid: last_login_calls.append(uid),
+    )
     monkeypatch.setattr(auth_mod._user_repo, 'create_otp', lambda uid, code_hash, expires_at: 42)
 
     class FakeSvc:
@@ -141,10 +158,17 @@ def test_untrusted_device_with_push_sends_push_otp(client, monkeypatch):
     assert '123456' in sent['body']
     assert sent['data'] == {'type': 'login_otp', 'code': '123456'}
 
+    # OTP challenge issued (not completed) — last_login must NOT be bumped yet.
+    assert last_login_calls == []
+
 
 def test_untrusted_device_without_push_sends_email_otp(client, monkeypatch):
     monkeypatch.setattr(auth_mod._user_repo, 'authenticate', lambda e, p: _user_row())
-    monkeypatch.setattr(auth_mod._user_repo, 'update_last_login', lambda uid: True)
+    last_login_calls = []
+    monkeypatch.setattr(
+        auth_mod._user_repo, 'update_last_login',
+        lambda uid: last_login_calls.append(uid),
+    )
 
     class FakeSvc:
         def generate_and_send_otp(self, user_id, email, name, secret):
@@ -170,6 +194,39 @@ def test_untrusted_device_without_push_sends_email_otp(client, monkeypatch):
     body = resp.get_json()
     assert body == {'otp_required': True, 'challenge_id': 99, 'channel': 'email'}
     assert push_called['called'] is False
+
+    # OTP challenge issued (not completed) — last_login must NOT be bumped yet.
+    assert last_login_calls == []
+
+
+def test_untrusted_device_email_send_failure_returns_error(client, monkeypatch):
+    """If the OTP row is created but the email fails to send, the endpoint
+    must surface an error instead of falsely reporting otp_required."""
+    monkeypatch.setattr(auth_mod._user_repo, 'authenticate', lambda e, p: _user_row())
+    last_login_calls = []
+    monkeypatch.setattr(
+        auth_mod._user_repo, 'update_last_login',
+        lambda uid: last_login_calls.append(uid),
+    )
+
+    class FakeSvc:
+        def generate_and_send_otp(self, user_id, email, name, secret):
+            return (99, False, 'SMTP connection failed')
+
+    monkeypatch.setattr(auth_mod, 'AuthService', FakeSvc)
+
+    class FakeDeviceRepo:
+        def get_tokens_for_users(self, user_ids):
+            return []
+
+    monkeypatch.setattr(auth_mod, '_DeviceRepo', FakeDeviceRepo)
+
+    resp = client.post('/api/auth/token', json={'email': 'user@example.com', 'password': 'pw'})
+    assert resp.status_code >= 500
+    body = resp.get_json()
+    assert 'error' in body
+    assert 'otp_required' not in body
+    assert last_login_calls == []
 
 
 def test_verify_otp_wrong_code_returns_401(client, monkeypatch):

@@ -58,10 +58,9 @@ def api_token():
         except Exception:
             is_trusted = False
 
-    # Update last_login in background
-    threading.Thread(target=lambda: _user_repo.update_last_login(user.id), daemon=True).start()
-
     if is_trusted:
+        # Trusted device — login completes now, so it's safe to record it.
+        threading.Thread(target=lambda: _user_repo.update_last_login(user.id), daemon=True).start()
         tokens = _generate_tokens(user.id)
         return jsonify({
             **tokens,
@@ -97,6 +96,8 @@ def api_token():
         otp_id, ok, err = svc.generate_and_send_otp(user.id, user.email, user.name, _JWT_SECRET)
         if not otp_id:
             return jsonify({'error': err or 'Failed to send code'}), 500
+        if not ok:
+            return jsonify({'error': err or 'Failed to send verification email'}), 502
         channel = 'email'
 
     return jsonify({
