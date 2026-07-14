@@ -445,6 +445,31 @@ If you didn't request this, you can safely ignore this email.
         expected_hash = self._compute_device_hash(user_agent, ip_address)
         return hmac.compare_digest(data.get('dh', ''), expected_hash)
 
+    def create_trusted_device_token(self, user_id: int, device_id: str, secret_key: str) -> str:
+        """Create a signed, stateless trusted-device token for mobile 2FA.
+
+        Unlike create_trusted_device_cookie (which binds a UA+IP device_hash),
+        this binds the token to an explicit, stable device_id supplied by the
+        mobile app.
+        """
+        s = URLSafeTimedSerializer(secret_key)
+        return s.dumps({'uid': user_id, 'did': device_id})
+
+    def validate_trusted_device_token(self, token: str, user_id: int, device_id: str, secret_key: str) -> bool:
+        """Validate a stateless trusted-device token for mobile 2FA."""
+        if not token:
+            return False
+        s = URLSafeTimedSerializer(secret_key)
+        try:
+            data = s.loads(token, max_age=self.TRUSTED_DEVICE_MAX_AGE)
+        except (BadSignature, SignatureExpired):
+            return False
+
+        if data.get('uid') != user_id:
+            return False
+
+        return hmac.compare_digest(str(data.get('did', '')), str(device_id))
+
     def _send_otp_email(self, name: str, email: str, code: str) -> tuple:
         """Send OTP verification email. Returns (success, error_message)."""
         from core.services.notification_service import send_email, is_smtp_configured
