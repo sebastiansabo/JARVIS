@@ -55,9 +55,11 @@ _sig_repo = SignatureRepository()
 
 
 @mobile_bp.route('/api/auth/token', methods=['OPTIONS'])
+@mobile_bp.route('/api/auth/verify-otp', methods=['OPTIONS'])
 @mobile_bp.route('/api/auth/refresh', methods=['OPTIONS'])
 @mobile_bp.route('/api/auth/logout', methods=['OPTIONS'])
 @mobile_bp.route('/api/auth/current-user', methods=['OPTIONS'])
+@mobile_bp.route('/api/mobile/current-user', methods=['OPTIONS'])
 @mobile_bp.route('/api/mobile/dashboard', methods=['OPTIONS'])
 @mobile_bp.route('/api/mobile/widget-data', methods=['OPTIONS'])
 @mobile_bp.route('/api/mobile/version', methods=['OPTIONS'])
@@ -190,6 +192,7 @@ def _user_json(user) -> dict:
         'birthdate': getattr(user, 'birthdate', None),
         # Flat permission flags (no wrapper — extractPermissions reads top-level)
         'is_hr_manager': bool(getattr(user, 'is_hr_manager', False)),
+        'is_superuser': bool(getattr(user, 'is_superuser', False)),
         'can_access_marketing':  _mod('marketing',  'can_access_marketing'),
         'can_access_hr':         _mod('hr',         'can_access_hr'),
         'can_access_approvals':  _mod('approvals',  'can_access_approvals'),
@@ -198,6 +201,9 @@ def _user_json(user) -> dict:
         'can_access_digest':     _mod('digest',     'can_access_digest'),
         'can_access_accounting': _mod('accounting', 'can_access_accounting'),
         'can_access_field_sales': _mod('field_sales', None),
+        'can_access_vouchers':    _mod('vouchers', None),
+        'can_access_facturare':   _mod('facturare', None),
+        'can_access_controlling': _mod('controlling', None),
         # Mobile-specific toggles
         'can_access_approvals_mobile':    _mobile('approvals'),
         'can_access_forms_mobile':        _mobile('forms'),
