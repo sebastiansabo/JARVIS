@@ -72,7 +72,7 @@ def api_token():
 
     has_push = False
     try:
-        has_push = bool(_DeviceRepo().get_tokens_for_users([user.id]))
+        has_push = bool(device_id) and bool(_DeviceRepo().get_tokens_for_user_device(user.id, device_id))
     except Exception:
         has_push = False
 
