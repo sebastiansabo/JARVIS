@@ -199,3 +199,12 @@ def api_mobile_current_user():
     """Get current user info for mobile app."""
     user = _current_mobile_user()
     return jsonify({'authenticated': True, 'user': _user_json(user)})
+
+
+@mobile_bp.route('/api/mobile/current-user')
+@jwt_required
+def api_mobile_current_user_v2():
+    """Mobile-unique current-user route (avoids collision with web auth_bp's
+    /api/auth/current-user, which is registered first and may shadow the JWT one)."""
+    user = _current_mobile_user()
+    return jsonify({'authenticated': True, 'user': _user_json(user)})
