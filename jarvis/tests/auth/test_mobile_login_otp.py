@@ -108,6 +108,8 @@ def test_trusted_device_returns_tokens_no_otp(client, monkeypatch):
 
 
 def test_untrusted_device_with_push_sends_push_otp(client, monkeypatch):
+    """Device that HAS a registered push token for its own device_id gets
+    the OTP via push."""
     monkeypatch.setattr(auth_mod._user_repo, 'authenticate', lambda e, p: _user_row())
     last_login_calls = []
     monkeypatch.setattr(
@@ -128,8 +130,12 @@ def test_untrusted_device_with_push_sends_push_otp(client, monkeypatch):
     monkeypatch.setattr(auth_mod, 'AuthService', FakeSvc)
 
     class FakeDeviceRepo:
-        def get_tokens_for_users(self, user_ids):
-            return [{'id': 1, 'user_id': 1, 'push_token': 'tok-abc'}]
+        def get_tokens_for_user_device(self, user_id, device_id):
+            assert user_id == 1
+            # Only THIS device_id has a registered token.
+            if device_id == 'device-with-token':
+                return [{'id': 1, 'user_id': 1, 'push_token': 'tok-abc'}]
+            return []
 
     monkeypatch.setattr(auth_mod, '_DeviceRepo', FakeDeviceRepo)
 
@@ -147,7 +153,7 @@ def test_untrusted_device_with_push_sends_push_otp(client, monkeypatch):
     resp = client.post('/api/auth/token', json={
         'email': 'user@example.com',
         'password': 'pw',
-        'device_id': 'new-device',
+        'device_id': 'device-with-token',
     })
     assert resp.status_code == 200
     body = resp.get_json()
@@ -163,6 +169,9 @@ def test_untrusted_device_with_push_sends_push_otp(client, monkeypatch):
 
 
 def test_untrusted_device_without_push_sends_email_otp(client, monkeypatch):
+    """A brand-new device_id with no registered push token falls back to
+    email — even though the user has SOME OTHER device with a token
+    registered. The channel decision must be per-device, not per-user."""
     monkeypatch.setattr(auth_mod._user_repo, 'authenticate', lambda e, p: _user_row())
     last_login_calls = []
     monkeypatch.setattr(
@@ -178,8 +187,56 @@ def test_untrusted_device_without_push_sends_email_otp(client, monkeypatch):
     monkeypatch.setattr(auth_mod, 'AuthService', FakeSvc)
 
     class FakeDeviceRepo:
-        def get_tokens_for_users(self, user_ids):
+        def get_tokens_for_user_device(self, user_id, device_id):
+            assert user_id == 1
+            # The user DOES have a token registered, but for a different
+            # device_id than the one logging in right now.
+            if device_id == 'device-with-token':
+                return [{'id': 1, 'user_id': 1, 'push_token': 'tok-abc'}]
             return []
+
+    monkeypatch.setattr(auth_mod, '_DeviceRepo', FakeDeviceRepo)
+
+    push_called = {'called': False}
+    monkeypatch.setattr(
+        auth_mod, 'send_push_to_users',
+        lambda *a, **kw: push_called.update(called=True),
+    )
+
+    resp = client.post('/api/auth/token', json={
+        'email': 'user@example.com',
+        'password': 'pw',
+        'device_id': 'device-no-token',
+    })
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body == {'otp_required': True, 'challenge_id': 99, 'channel': 'email'}
+    assert push_called['called'] is False
+
+    # OTP challenge issued (not completed) — last_login must NOT be bumped yet.
+    assert last_login_calls == []
+
+
+def test_untrusted_login_with_no_device_id_sends_email_otp(client, monkeypatch):
+    """No device_id supplied at all (e.g. web client) must never attempt a
+    push lookup and always falls back to email."""
+    monkeypatch.setattr(auth_mod._user_repo, 'authenticate', lambda e, p: _user_row())
+    last_login_calls = []
+    monkeypatch.setattr(
+        auth_mod._user_repo, 'update_last_login',
+        lambda uid: last_login_calls.append(uid),
+    )
+
+    class FakeSvc:
+        def generate_and_send_otp(self, user_id, email, name, secret):
+            assert user_id == 1
+            return (99, True, None)
+
+    monkeypatch.setattr(auth_mod, 'AuthService', FakeSvc)
+
+    class FakeDeviceRepo:
+        def get_tokens_for_user_device(self, user_id, device_id):
+            raise AssertionError('should not be called when device_id is empty')
 
     monkeypatch.setattr(auth_mod, '_DeviceRepo', FakeDeviceRepo)
 
