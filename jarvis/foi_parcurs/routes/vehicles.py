@@ -118,3 +118,25 @@ def api_list_companies():
     repo = BaseRepository()
     companies = repo.query_all('SELECT id, company FROM companies ORDER BY company')
     return jsonify({'success': True, 'companies': companies})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/brands/<int:company_id>', methods=['GET'])
+@login_required
+def api_list_brands(company_id):
+    """List the car brands a company carries (from the company_brands catalog).
+
+    Deliberately reads the brand catalog rather than structure_nodes L1, because
+    some companies use L1 for departments (e.g. Administrativ, Aftersales), not brands.
+    """
+    from core.base_repository import BaseRepository
+    repo = BaseRepository()
+    rows = repo.query_all(
+        '''SELECT b.name
+           FROM company_brands cb
+           JOIN brands b ON b.id = cb.brand_id
+           WHERE cb.company_id = %s AND cb.is_active = TRUE AND b.is_active = TRUE
+           ORDER BY b.name''',
+        (company_id,),
+    )
+    brands = [r['name'] for r in (rows or [])]
+    return jsonify({'success': True, 'brands': brands})

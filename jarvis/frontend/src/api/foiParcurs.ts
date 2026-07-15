@@ -82,9 +82,9 @@ export const foiParcursApi = {
   getCompanies: () =>
     api.get<{ companies: { id: number; company: string }[] }>(`${BASE}/companies`),
 
-  // ── Brands for a company (from core structure; returns brand names) ──
-  getBrands: (company: string) =>
-    api.get<string[]>(`/api/brands/${encodeURIComponent(company)}`),
+  // ── Brands for a company (from the company_brands catalog, not dept structure) ──
+  getBrands: (companyId: number) =>
+    api.get<{ success: boolean; brands: string[] }>(`${BASE}/brands/${companyId}`),
 
   // ── KM Configs (Settings) ──
   getKmConfigs: () =>
