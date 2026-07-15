@@ -1,5 +1,6 @@
 """Routes for Test Drive form submission."""
 import json
+import re
 import time
 import uuid
 from ._shared import (
@@ -7,6 +8,13 @@ from ._shared import (
     logger, _fp_repo, _inspection_repo, _crm_client_repo,
 )
 from ..services.fuel_service import parse_fuel_level
+
+_PHONE_RE = re.compile(r'^(07\d{8}|\+40\d{9}|004\d{10})$')
+
+
+def _normalize_name(name: str) -> str:
+    """Lowercase + collapse whitespace for crm_clients.name_normalized (trigram-indexed)."""
+    return re.sub(r'\s+', ' ', (name or '').strip().lower())
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/test-drive', methods=['POST'])
@@ -83,6 +91,8 @@ def api_submit_test_drive():
             'departure_datetime': data['departure_datetime'],
             'return_datetime': data.get('return_datetime'),
             'departure_damage': json.dumps(departure_damage),
+            'driver_license_photo': data.get('driver_license_photo'),
+            'driver_license_number': data.get('driver_license_number'),
             'gdpr_consent': True,
             'inspection_acceptance': bool(data.get('inspection_acceptance')),
             'inspection_id': data.get('inspection_id'),
@@ -188,3 +198,76 @@ def api_get_test_drive(id):
         'contract': contract,
         'inspection': inspection,
     })
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/driver-license/ocr', methods=['POST'])
+@login_required
+def api_driver_license_ocr():
+    """Extract structured fields from a driving-license photo via Claude vision.
+
+    Body: {"image": "data:image/jpeg;base64,..."} (or bare base64).
+    Returns {success, data: {last_name, first_name, full_name, cnp,
+    license_number, birth_date, expiry_date, address, city, county}}.
+    """
+    data = request.get_json(silent=True) or {}
+    image = data.get('image')
+    if not image:
+        return jsonify({'success': False, 'error': 'image is required'}), 400
+
+    try:
+        from ..services.license_ocr_service import extract_license_data
+        fields = extract_license_data(image)
+        return jsonify({'success': True, 'data': fields})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        logger.exception('Driver-license OCR failed')
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/crm-clients', methods=['POST'])
+@login_required
+def api_create_crm_client():
+    """Create a CRM client from the mobile Test Drive form (login-gated, so the
+    consilier can create one without full CRM access). Returns the new client."""
+    data = request.get_json(silent=True) or {}
+
+    display_name = (data.get('display_name') or data.get('name') or '').strip()
+    if not display_name:
+        return jsonify({'success': False, 'error': 'display_name is required'}), 400
+
+    phone = (data.get('phone') or '').strip()
+    phone_clean = phone.replace(' ', '').replace('-', '')
+    if not _PHONE_RE.match(phone_clean):
+        return jsonify({
+            'success': False,
+            'error': 'Invalid phone. Must start with 07, +40, or 004',
+        }), 400
+
+    cnp = (data.get('cnp') or '').strip() or None
+    address = (data.get('address') or '').strip() or None
+    city = (data.get('city') or '').strip() or None
+    county = (data.get('county') or '').strip() or None
+
+    try:
+        row = _crm_client_repo.create(
+            display_name=display_name,
+            name_normalized=_normalize_name(display_name),
+            client_type='person',
+            phone=phone_clean,
+            phone_raw=phone,
+            street=address,
+            city=city,
+            region=county,
+            source_flags={'foi_parcurs': True},
+        )
+        new_id = row['id'] if row else None
+        if new_id and cnp:
+            _crm_client_repo.execute(
+                'UPDATE crm_clients SET cnp = %s WHERE id = %s', (cnp, new_id)
+            )
+        client = _crm_client_repo.get_by_id(new_id) if new_id else None
+        return jsonify({'success': True, 'client': client})
+    except Exception as e:
+        logger.exception('Failed to create CRM client from Test Drive form')
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
