@@ -75,9 +75,11 @@ def create_schema(conn, cursor):
     except Exception:
         pass  # May fail during initial import chain; app.py will retry
 
-    # Seed test drive form (idempotent, needs forms table to exist)
+    # Retire the Forms-engine 'test-drive' form. Test drives are now recorded
+    # exclusively via the in-module custom form (POST /api/foi-parcurs/test-drive).
+    # This unpublishes any previously-seeded row (idempotent).
     try:
-        from foi_parcurs.form_seed import ensure_test_drive_form
-        ensure_test_drive_form()
+        from foi_parcurs.form_seed import retire_test_drive_form
+        retire_test_drive_form()
     except Exception:
         pass  # May fail during initial import chain; app.py will retry

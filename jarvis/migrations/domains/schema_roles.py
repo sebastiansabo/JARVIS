@@ -661,6 +661,27 @@ def create_schema_roles(conn, cursor):
         ''')
         conn.commit()
 
+    # Migration: Add Test Drive module permission (mobile Sales / Test Drive tile).
+    # Admin-only by default; admins allocate it to other roles in the matrix later.
+    test_drive_perms = [
+        ('test_drive', 'Test Drive', 'bi-car-front', 'module', 'Module', 'access', 'Access', 'Access the Sales / Test Drive section', False, 1),
+    ]
+    for p in test_drive_perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', p)
+    # Grant Test Drive access to Admin role ONLY (default-deny for everyone else)
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'all', TRUE
+        FROM roles r
+        CROSS JOIN permissions_v2 p
+        WHERE r.name = 'Admin' AND p.module_key = 'test_drive'
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+    ''')
+
     # Migration: Add CRM RAG source permissions if not already present
     crm_rag_perms = [
         ('ai_agent', 'AI Agent', 'bi-robot', 'rag_source', 'RAG Sources', 'crm_client', 'CRM Clients', 'Access CRM client data in AI chat', False, 20),

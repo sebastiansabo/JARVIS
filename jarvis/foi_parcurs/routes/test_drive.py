@@ -5,6 +5,7 @@ from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required, current_user,
     logger, _fp_repo, _inspection_repo,
 )
+from ..services.fuel_service import parse_fuel_level
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/test-drive', methods=['POST'])
@@ -26,6 +27,19 @@ def api_submit_test_drive():
     contract_id = f"TD-{data['vin'][:8]}-{int(time.time())}-{uuid.uuid4().hex[:4]}"
 
     try:
+        # Derive fuel liters from gauge levels × tank capacity (single source of truth).
+        tank = int(data.get('fuel_tank_capacity_liters', 0))
+        start_level = data['fuel_gauge_start_level']
+        end_level = data.get('fuel_gauge_end_level', start_level)
+        try:
+            start_fraction = parse_fuel_level(str(start_level))
+            end_fraction = parse_fuel_level(str(end_level))
+        except ValueError:
+            start_fraction, end_fraction = 1.0, 1.0
+        fuel_start_liters = round(start_fraction * tank, 2)
+        fuel_end_liters = round(end_fraction * tank, 2)
+        fuel_consumed_liters = round(max(0.0, fuel_start_liters - fuel_end_liters), 2)
+
         contract_data = {
             'contract_id': contract_id,
             'vin': data['vin'],
@@ -37,12 +51,12 @@ def api_submit_test_drive():
             'km_start': int(data['odometer_start']),
             'km_end': int(data.get('odometer_end', 0)) or int(data['odometer_start']),
             'distance_km': int(data.get('estimated_km', 0)),
-            'fuel_tank_capacity_liters': int(data.get('fuel_tank_capacity_liters', 0)),
-            'fuel_gauge_start_level': data['fuel_gauge_start_level'],
-            'fuel_gauge_end_level': data.get('fuel_gauge_end_level', data['fuel_gauge_start_level']),
-            'fuel_start_liters': float(data.get('fuel_start_liters', 0)),
-            'fuel_end_liters': float(data.get('fuel_end_liters', 0)),
-            'fuel_consumed_liters': float(data.get('fuel_consumed_liters', 0)),
+            'fuel_tank_capacity_liters': tank,
+            'fuel_gauge_start_level': start_level,
+            'fuel_gauge_end_level': end_level,
+            'fuel_start_liters': fuel_start_liters,
+            'fuel_end_liters': fuel_end_liters,
+            'fuel_consumed_liters': fuel_consumed_liters,
             'itinerary': data.get('itinerary', ''),
             'advisor_name': data['advisor_name'],
             'signature_ai_generated': data.get('advisor_signature', ''),
