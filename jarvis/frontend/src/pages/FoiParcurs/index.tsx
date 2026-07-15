@@ -63,6 +63,8 @@ import { hrApi } from '@/api/hr'
 import {
   FUEL_LEVEL_OPTIONS,
   fuelUnit,
+  usesFuelTank,
+  usesBattery,
   type FuelGaugeLevel,
   type BatchConfig,
   type PreviewResponse,
@@ -75,6 +77,7 @@ export default function FoiParcurs() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'contracts' | 'parcurs' | 'stock' | 'settings'>('contracts')
   const [companyId, setCompanyId] = useState<number>(0)
+  const [brand, setBrand] = useState<string>('')
 
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
@@ -87,6 +90,27 @@ export default function FoiParcurs() {
   if (companyId === 0 && companies.length > 0) {
     setCompanyId(companies[0].id)
   }
+
+  const companyName = companies.find((c) => c.id === companyId)?.company ?? ''
+
+  // Brands for the selected company (from core structure)
+  const { data: brandsData } = useQuery({
+    queryKey: ['fp-brands', companyName],
+    queryFn: () => foiParcursApi.getBrands(companyName),
+    enabled: !!companyName,
+    staleTime: 60_000,
+  })
+  const brands = brandsData ?? []
+
+  // Auto-select first brand when the company (and thus its brand list) changes
+  useEffect(() => {
+    const list = brandsData ?? []
+    if (list.length === 0) {
+      if (brand !== '') setBrand('')
+    } else if (!list.includes(brand)) {
+      setBrand(list[0])
+    }
+  }, [brandsData, brand])
 
   return (
     <div className="space-y-6">
@@ -109,6 +133,18 @@ export default function FoiParcurs() {
               ))}
             </SelectContent>
           </Select>
+          {brands.length > 0 && (
+            <Select value={brand} onValueChange={setBrand}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Selectează brandul" />
+              </SelectTrigger>
+              <SelectContent>
+                {brands.map((b) => (
+                  <SelectItem key={b} value={b}>{b}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
       </div>
 
@@ -121,9 +157,9 @@ export default function FoiParcurs() {
         </TabsList>
       </Tabs>
 
-      {activeTab === 'contracts' && <ContractsTab companyId={companyId} />}
-      {activeTab === 'parcurs' && <ParcursTab companyId={companyId} />}
-      {activeTab === 'stock' && <StockTab companyId={companyId} />}
+      {activeTab === 'contracts' && <ContractsTab companyId={companyId} brand={brand} />}
+      {activeTab === 'parcurs' && <ParcursTab companyId={companyId} brand={brand} />}
+      {activeTab === 'stock' && <StockTab companyId={companyId} brand={brand} />}
       {activeTab === 'settings' && <SettingsTab />}
     </div>
   )
@@ -132,7 +168,7 @@ export default function FoiParcurs() {
 // ── Contracts Tab — Form → Preview → Save Batch ──
 type ContractStep = 'form' | 'preview' | 'saved'
 
-function ContractsTab({ companyId }: { companyId: number }) {
+function ContractsTab({ companyId, brand }: { companyId: number; brand: string }) {
   const queryClient = useQueryClient()
   const [step, setStep] = useState<ContractStep>('form')
   const [batchConfig, setBatchConfig] = useState<BatchConfig | null>(null)
@@ -184,7 +220,7 @@ function ContractsTab({ companyId }: { companyId: number }) {
       )}
 
       {/* Step 1: Batch Config Form */}
-      {step === 'form' && <BatchConfigForm companyId={companyId} onPreview={handlePreviewReady} />}
+      {step === 'form' && <BatchConfigForm companyId={companyId} brand={brand} onPreview={handlePreviewReady} />}
 
       {/* Step 2: Preview — Save or Regenerate */}
       {step === 'preview' && preview && batchConfig && (
@@ -366,7 +402,7 @@ const STATUS_ROW_BG: Record<string, string> = {
   filled: 'bg-green-500/5 border-l-4 border-l-green-500/50',
 }
 
-function ParcursTab({ companyId }: { companyId: number }) {
+function ParcursTab({ companyId, brand }: { companyId: number; brand: string }) {
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const now = new Date()
@@ -387,10 +423,19 @@ function ParcursTab({ companyId }: { companyId: number }) {
     staleTime: 30_000,
   })
 
+  // Vehicles → vin→brand map, so contracts can be filtered by the selected brand
+  const { data: vehiclesData } = useQuery({
+    queryKey: ['fp-vehicles'],
+    queryFn: () => foiParcursApi.getVehicles(),
+    staleTime: 30_000,
+  })
+  const vinBrand = new Map((vehiclesData?.vehicles ?? []).map((v) => [v.vin, v.brand]))
+
   const allContracts = data?.contracts ?? []
 
   // Apply filters
   const filtered = allContracts.filter((c) => {
+    if (brand && vinBrand.get(c.vin) !== brand) return false
     if (filterVin !== 'all' && c.vin !== filterVin) return false
     if (filterStatus !== 'all' && c.status !== filterStatus) return false
     if (filterMonth !== 'all' && c.month != null && String(c.month) !== filterMonth) return false
@@ -813,10 +858,13 @@ function AllocateClientDialog({
 
 // ── Stock Tab (Vehicle CRUD) ──
 const STOCK_COLUMNS = [
+  { key: 'car_id', label: 'Car ID', default: true },
   { key: 'vin', label: 'VIN', default: true },
   { key: 'reg_number', label: 'Reg. No.', default: true },
+  { key: 'brand', label: 'Brand', default: true },
   { key: 'mark', label: 'Mark', default: true },
   { key: 'model', label: 'Model', default: true },
+  { key: 'color', label: 'Color', default: true },
   { key: 'fuel_type', label: 'Fuel Type', default: true },
   { key: 'capacity', label: 'Capacity', default: true },
   { key: 'company', label: 'Company', default: true },
@@ -824,7 +872,7 @@ const STOCK_COLUMNS = [
 
 type StockColumnKey = (typeof STOCK_COLUMNS)[number]['key']
 
-function StockTab({ companyId }: { companyId: number }) {
+function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -836,10 +884,13 @@ function StockTab({ companyId }: { companyId: number }) {
   const [newVehicle, setNewVehicle] = useState({
     vin: '',
     registration_number: '',
+    car_id: '',
     mark: '',
     model: '',
+    color: '',
     fuel_type: 'Diesel' as string,
     fuel_tank_capacity_liters: 50,
+    battery_capacity_kwh: 0,
     company_id: companyId ? String(companyId) : '' as string,
   })
   const [error, setError] = useState('')
@@ -850,9 +901,9 @@ function StockTab({ companyId }: { companyId: number }) {
     staleTime: 30_000,
   })
 
-  // Filter vehicles by selected company
+  // Filter vehicles by selected company and brand
   const filteredVehicles = vehiclesData?.vehicles?.filter(
-    (v) => !companyId || v.company_id === companyId
+    (v) => (!companyId || v.company_id === companyId) && (!brand || v.brand === brand)
   ) ?? []
 
   const { data: companiesData } = useQuery({
@@ -866,16 +917,20 @@ function StockTab({ companyId }: { companyId: number }) {
       foiParcursApi.createVehicle({
         vin: newVehicle.vin.toUpperCase().trim(),
         registration_number: newVehicle.registration_number.trim() || undefined,
+        car_id: newVehicle.car_id.trim() || undefined,
         mark: newVehicle.mark.trim(),
+        brand: brand || undefined,
         model: newVehicle.model.trim(),
+        color: newVehicle.color.trim() || undefined,
         fuel_type: newVehicle.fuel_type,
-        fuel_tank_capacity_liters: newVehicle.fuel_tank_capacity_liters,
+        fuel_tank_capacity_liters: usesFuelTank(newVehicle.fuel_type) ? newVehicle.fuel_tank_capacity_liters : null,
+        battery_capacity_kwh: usesBattery(newVehicle.fuel_type) ? newVehicle.battery_capacity_kwh : null,
         company_id: newVehicle.company_id ? Number(newVehicle.company_id) : undefined,
       }),
     onSuccess: () => {
       setError('')
       setShowAdd(false)
-      setNewVehicle({ vin: '', registration_number: '', mark: '', model: '', fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, company_id: '' })
+      setNewVehicle({ vin: '', registration_number: '', car_id: '', mark: '', model: '', color: '', fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0, company_id: companyId ? String(companyId) : '' })
       queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
     },
     onError: (err: any) => {
@@ -906,7 +961,8 @@ function StockTab({ companyId }: { companyId: number }) {
     if (!newVehicle.vin.trim()) return setError('VIN is required')
     if (!newVehicle.mark.trim()) return setError('Mark is required')
     if (!newVehicle.model.trim()) return setError('Model is required')
-    if (newVehicle.fuel_tank_capacity_liters <= 0) return setError('Capacity must be positive')
+    if (usesFuelTank(newVehicle.fuel_type) && newVehicle.fuel_tank_capacity_liters <= 0) return setError('Fuel capacity (L) must be positive')
+    if (usesBattery(newVehicle.fuel_type) && newVehicle.battery_capacity_kwh <= 0) return setError('Battery capacity (kWh) must be positive')
     createMutation.mutate()
   }
 
@@ -915,25 +971,33 @@ function StockTab({ companyId }: { companyId: number }) {
     setEditData({
       vin: v.vin,
       registration_number: v.registration_number || '',
+      car_id: v.car_id || '',
       mark: v.mark,
+      brand: v.brand || '',
       model: v.model,
+      color: v.color || '',
       fuel_type: v.fuel_type || 'Diesel',
-      fuel_tank_capacity_liters: v.fuel_tank_capacity_liters,
+      fuel_tank_capacity_liters: v.fuel_tank_capacity_liters ?? 0,
+      battery_capacity_kwh: v.battery_capacity_kwh ?? 0,
       company_id: v.company_id ? String(v.company_id) : '',
     })
   }
 
   const saveEdit = () => {
     if (!editId) return
+    const ft = String(editData.fuel_type)
     updateMutation.mutate({
       id: editId,
       data: {
         vin: String(editData.vin).toUpperCase().trim(),
         registration_number: String(editData.registration_number).trim() || null,
+        car_id: String(editData.car_id).trim() || null,
         mark: String(editData.mark).trim(),
         model: String(editData.model).trim(),
-        fuel_type: String(editData.fuel_type),
-        fuel_tank_capacity_liters: Number(editData.fuel_tank_capacity_liters),
+        color: String(editData.color).trim() || null,
+        fuel_type: ft,
+        fuel_tank_capacity_liters: usesFuelTank(ft) ? Number(editData.fuel_tank_capacity_liters) : null,
+        battery_capacity_kwh: usesBattery(ft) ? Number(editData.battery_capacity_kwh) : null,
         company_id: editData.company_id ? Number(editData.company_id) : null,
       },
     })
@@ -992,6 +1056,14 @@ function StockTab({ companyId }: { companyId: number }) {
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-1.5">
+                <Label className="text-xs">Car ID</Label>
+                <Input
+                  value={newVehicle.car_id}
+                  onChange={(e) => setNewVehicle((p) => ({ ...p, car_id: e.target.value }))}
+                  placeholder="internal ID"
+                />
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-xs">VIN</Label>
                 <Input
                   value={newVehicle.vin}
@@ -1007,6 +1079,10 @@ function StockTab({ companyId }: { companyId: number }) {
                   onChange={(e) => setNewVehicle((p) => ({ ...p, registration_number: e.target.value.toUpperCase() }))}
                   placeholder="e.g., CJ-01-ABC"
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Brand</Label>
+                <Input value={brand || '—'} readOnly disabled />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Mark</Label>
@@ -1027,6 +1103,14 @@ function StockTab({ companyId }: { companyId: number }) {
                 />
               </div>
               <div className="space-y-1.5">
+                <Label className="text-xs">Color</Label>
+                <Input
+                  value={newVehicle.color}
+                  onChange={(e) => setNewVehicle((p) => ({ ...p, color: e.target.value }))}
+                  placeholder="e.g., Soul Red"
+                />
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-xs">Fuel Type</Label>
                 <Select value={newVehicle.fuel_type} onValueChange={(v) => setNewVehicle((p) => ({ ...p, fuel_type: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -1034,19 +1118,34 @@ function StockTab({ companyId }: { companyId: number }) {
                     <SelectItem value="Benzina">Benzina</SelectItem>
                     <SelectItem value="Diesel">Diesel</SelectItem>
                     <SelectItem value="Electric">Electric</SelectItem>
+                    <SelectItem value="Hybrid">Hybrid</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Capacity (L/kW)</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={newVehicle.fuel_tank_capacity_liters}
-                  onChange={(e) => setNewVehicle((p) => ({ ...p, fuel_tank_capacity_liters: Number(e.target.value) }))}
-                  required
-                />
-              </div>
+              {usesFuelTank(newVehicle.fuel_type) && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Fuel capacity (L)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={newVehicle.fuel_tank_capacity_liters}
+                    onChange={(e) => setNewVehicle((p) => ({ ...p, fuel_tank_capacity_liters: Number(e.target.value) }))}
+                    required
+                  />
+                </div>
+              )}
+              {usesBattery(newVehicle.fuel_type) && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Battery capacity (kWh)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={newVehicle.battery_capacity_kwh}
+                    onChange={(e) => setNewVehicle((p) => ({ ...p, battery_capacity_kwh: Number(e.target.value) }))}
+                    required
+                  />
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label className="text-xs">Company</Label>
                 <Select value={newVehicle.company_id} onValueChange={(v) => setNewVehicle((p) => ({ ...p, company_id: v }))}>
@@ -1086,10 +1185,13 @@ function StockTab({ companyId }: { companyId: number }) {
           <Table>
             <TableHeader>
               <TableRow>
+                {show('car_id') && <TableHead>Car ID</TableHead>}
                 {show('vin') && <TableHead>VIN</TableHead>}
                 {show('reg_number') && <TableHead>Reg. No.</TableHead>}
+                {show('brand') && <TableHead>Brand</TableHead>}
                 {show('mark') && <TableHead>Mark</TableHead>}
                 {show('model') && <TableHead>Model</TableHead>}
+                {show('color') && <TableHead>Color</TableHead>}
                 {show('fuel_type') && <TableHead>Fuel Type</TableHead>}
                 {show('capacity') && <TableHead>Capacity</TableHead>}
                 {show('company') && <TableHead>Company</TableHead>}
@@ -1100,6 +1202,11 @@ function StockTab({ companyId }: { companyId: number }) {
               {filteredVehicles.map((v) =>
                 editId === v.id ? (
                   <TableRow key={v.id} className="bg-muted/30">
+                    {show('car_id') && (
+                      <TableCell>
+                        <Input className="h-8 text-xs" value={editData.car_id} onChange={(e) => setEditData((p) => ({ ...p, car_id: e.target.value }))} />
+                      </TableCell>
+                    )}
                     {show('vin') && (
                       <TableCell>
                         <Input
@@ -1119,6 +1226,9 @@ function StockTab({ companyId }: { companyId: number }) {
                         />
                       </TableCell>
                     )}
+                    {show('brand') && (
+                      <TableCell className="text-sm text-muted-foreground">{v.brand || '—'}</TableCell>
+                    )}
                     {show('mark') && (
                       <TableCell>
                         <Input className="h-8" value={editData.mark} onChange={(e) => setEditData((p) => ({ ...p, mark: e.target.value }))} />
@@ -1129,6 +1239,11 @@ function StockTab({ companyId }: { companyId: number }) {
                         <Input className="h-8" value={editData.model} onChange={(e) => setEditData((p) => ({ ...p, model: e.target.value }))} />
                       </TableCell>
                     )}
+                    {show('color') && (
+                      <TableCell>
+                        <Input className="h-8" value={editData.color} onChange={(e) => setEditData((p) => ({ ...p, color: e.target.value }))} />
+                      </TableCell>
+                    )}
                     {show('fuel_type') && (
                       <TableCell>
                         <Select value={String(editData.fuel_type)} onValueChange={(val) => setEditData((p) => ({ ...p, fuel_type: val }))}>
@@ -1137,19 +1252,35 @@ function StockTab({ companyId }: { companyId: number }) {
                             <SelectItem value="Benzina">Benzina</SelectItem>
                             <SelectItem value="Diesel">Diesel</SelectItem>
                             <SelectItem value="Electric">Electric</SelectItem>
+                            <SelectItem value="Hybrid">Hybrid</SelectItem>
                           </SelectContent>
                         </Select>
                       </TableCell>
                     )}
                     {show('capacity') && (
                       <TableCell>
-                        <Input
-                          className="h-8 w-20"
-                          type="number"
-                          min={1}
-                          value={editData.fuel_tank_capacity_liters}
-                          onChange={(e) => setEditData((p) => ({ ...p, fuel_tank_capacity_liters: Number(e.target.value) }))}
-                        />
+                        <div className="flex gap-1">
+                          {usesFuelTank(String(editData.fuel_type)) && (
+                            <Input
+                              className="h-8 w-16"
+                              type="number"
+                              min={1}
+                              placeholder="L"
+                              value={editData.fuel_tank_capacity_liters}
+                              onChange={(e) => setEditData((p) => ({ ...p, fuel_tank_capacity_liters: Number(e.target.value) }))}
+                            />
+                          )}
+                          {usesBattery(String(editData.fuel_type)) && (
+                            <Input
+                              className="h-8 w-16"
+                              type="number"
+                              min={1}
+                              placeholder="kWh"
+                              value={editData.battery_capacity_kwh}
+                              onChange={(e) => setEditData((p) => ({ ...p, battery_capacity_kwh: Number(e.target.value) }))}
+                            />
+                          )}
+                        </div>
                       </TableCell>
                     )}
                     {show('company') && (
@@ -1177,14 +1308,24 @@ function StockTab({ companyId }: { companyId: number }) {
                   </TableRow>
                 ) : (
                   <TableRow key={v.id}>
+                    {show('car_id') && <TableCell className="text-sm">{v.car_id || '—'}</TableCell>}
                     {show('vin') && <TableCell className="font-mono text-xs">{v.vin}</TableCell>}
                     {show('reg_number') && <TableCell className="text-sm">{v.registration_number || '—'}</TableCell>}
+                    {show('brand') && <TableCell className="text-sm">{v.brand || '—'}</TableCell>}
                     {show('mark') && <TableCell>{v.mark}</TableCell>}
                     {show('model') && <TableCell>{v.model}</TableCell>}
+                    {show('color') && <TableCell className="text-sm">{v.color || '—'}</TableCell>}
                     {show('fuel_type') && (
                       <TableCell><Badge variant="outline">{v.fuel_type}</Badge></TableCell>
                     )}
-                    {show('capacity') && <TableCell>{v.fuel_tank_capacity_liters}L</TableCell>}
+                    {show('capacity') && (
+                      <TableCell className="text-sm whitespace-nowrap">
+                        {[
+                          usesFuelTank(v.fuel_type) && v.fuel_tank_capacity_liters ? `${v.fuel_tank_capacity_liters} L` : null,
+                          usesBattery(v.fuel_type) && v.battery_capacity_kwh ? `${v.battery_capacity_kwh} kWh` : null,
+                        ].filter(Boolean).join(' + ') || '—'}
+                      </TableCell>
+                    )}
                     {show('company') && (
                       <TableCell className="text-sm text-muted-foreground">{v.company_name || '—'}</TableCell>
                     )}
@@ -1250,9 +1391,11 @@ function SortableHeader({
 // ── Batch Config Form ──
 function BatchConfigForm({
   companyId: defaultCompanyId,
+  brand,
   onPreview,
 }: {
   companyId: number
+  brand: string
   onPreview: (config: BatchConfig, preview: PreviewResponse) => void
 }) {
   const now = new Date()
@@ -1296,7 +1439,8 @@ function BatchConfigForm({
   })
 
   const filteredVehicles = vehiclesData?.vehicles?.filter(
-    (v) => !form.company_id || v.company_id === Number(form.company_id)
+    (v) => (!form.company_id || v.company_id === Number(form.company_id)) &&
+           (!brand || v.brand === brand)
   )
   const selectedVehicle = vehiclesData?.vehicles?.find((v) => v.vin === form.vin)
 

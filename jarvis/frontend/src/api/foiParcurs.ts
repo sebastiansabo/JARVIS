@@ -69,7 +69,7 @@ export const foiParcursApi = {
   getVehicles: (activeOnly = true) =>
     api.get<{ vehicles: FpVehicle[] }>(`${BASE}/vehicles`, { active_only: String(activeOnly) }),
 
-  createVehicle: (data: { vin: string; registration_number?: string; mark: string; model: string; fuel_type: string; fuel_tank_capacity_liters: number; company_id?: number }) =>
+  createVehicle: (data: { vin: string; registration_number?: string; car_id?: string; mark: string; brand?: string; model: string; color?: string; fuel_type: string; fuel_tank_capacity_liters?: number | null; battery_capacity_kwh?: number | null; company_id?: number }) =>
     api.post<{ success: boolean; vehicle: FpVehicle }>(`${BASE}/vehicles`, data),
 
   updateVehicle: (id: number, data: Partial<FpVehicle>) =>
@@ -81,6 +81,10 @@ export const foiParcursApi = {
   // ── Companies ──
   getCompanies: () =>
     api.get<{ companies: { id: number; company: string }[] }>(`${BASE}/companies`),
+
+  // ── Brands for a company (from core structure; returns brand names) ──
+  getBrands: (company: string) =>
+    api.get<string[]>(`/api/brands/${encodeURIComponent(company)}`),
 
   // ── KM Configs (Settings) ──
   getKmConfigs: () =>

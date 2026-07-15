@@ -6,6 +6,16 @@ from ._shared import (
 )
 
 
+def _to_int_or_none(value):
+    """Coerce to int, or None if empty/invalid."""
+    if value in (None, ''):
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/vehicles', methods=['GET'])
 @login_required
 def api_list_vehicles():
@@ -35,8 +45,20 @@ def api_create_vehicle():
         return jsonify({'success': False, 'error': f'Vehicle with VIN {vin} already exists'}), 409
 
     fuel_type = (data.get('fuel_type') or 'Diesel').strip()
-    if fuel_type not in ('Benzina', 'Diesel', 'Electric'):
-        return jsonify({'success': False, 'error': 'fuel_type must be Benzina, Diesel, or Electric'}), 400
+    if fuel_type not in ('Benzina', 'Diesel', 'Electric', 'Hybrid'):
+        return jsonify({'success': False, 'error': 'fuel_type must be Benzina, Diesel, Electric, or Hybrid'}), 400
+
+    # Capacity depends on fuel type: combustion → liters, Electric → kWh, Hybrid → both
+    fuel_liters = _to_int_or_none(data.get('fuel_tank_capacity_liters'))
+    battery_kwh = _to_int_or_none(data.get('battery_capacity_kwh'))
+    if fuel_type in ('Benzina', 'Diesel', 'Hybrid') and not fuel_liters:
+        return jsonify({'success': False, 'error': 'Fuel capacity (L) is required for this fuel type'}), 400
+    if fuel_type in ('Electric', 'Hybrid') and not battery_kwh:
+        return jsonify({'success': False, 'error': 'Battery capacity (kWh) is required for this fuel type'}), 400
+    if fuel_type == 'Electric':
+        fuel_liters = None
+    if fuel_type in ('Benzina', 'Diesel'):
+        battery_kwh = None
 
     company_id = data.get('company_id')
     if company_id is not None:
@@ -48,10 +70,15 @@ def api_create_vehicle():
     try:
         vehicle = _vehicle_repo.create({
             'vin': vin,
+            'registration_number': (data.get('registration_number') or '').strip().upper() or None,
+            'car_id': (data.get('car_id') or '').strip() or None,
             'mark': mark,
+            'brand': (data.get('brand') or '').strip() or None,
             'model': model,
+            'color': (data.get('color') or '').strip() or None,
             'fuel_type': fuel_type,
-            'fuel_tank_capacity_liters': int(data.get('fuel_tank_capacity_liters', 50)),
+            'fuel_tank_capacity_liters': fuel_liters,
+            'battery_capacity_kwh': battery_kwh,
             'company_id': company_id,
         })
         return jsonify({'success': True, 'vehicle': vehicle})
