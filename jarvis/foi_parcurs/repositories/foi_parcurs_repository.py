@@ -63,7 +63,8 @@ class FoiParcursRepository(BaseRepository):
         offset = (page - 1) * per_page
         data_sql = (
             f'SELECT fp.*, '
-            f'c.name AS client_name, c.phone AS client_phone, '
+            f'COALESCE(fp.client_name, c.name) AS client_name, '
+            f'COALESCE(fp.client_phone, c.phone) AS client_phone, '
             f'co.company AS company_name '
             f'FROM foi_de_parcurs fp '
             f'LEFT JOIN fp_clients c ON c.id = fp.client_id '
@@ -81,7 +82,8 @@ class FoiParcursRepository(BaseRepository):
         """Single contract with client + company join."""
         sql = (
             'SELECT fp.*, '
-            'c.name AS client_name, c.phone AS client_phone, '
+            'COALESCE(fp.client_name, c.name) AS client_name, '
+            'COALESCE(fp.client_phone, c.phone) AS client_phone, '
             'co.company AS company_name '
             'FROM foi_de_parcurs fp '
             'LEFT JOIN fp_clients c ON c.id = fp.client_id '
@@ -105,7 +107,13 @@ class FoiParcursRepository(BaseRepository):
         return self.query_all(sql, (batch_id,))
 
     def create_from_td_form(self, data: dict) -> dict:
-        """Create a FILLED contract from test drive form data."""
+        """Create a FILLED contract from test drive form data.
+
+        `data` may include `client_name`/`client_phone` (resolved from the CRM
+        client at submission time) — these are inserted as columns on
+        foi_de_parcurs like any other key, since this INSERT is column-driven
+        by whatever keys the caller provides.
+        """
         cols = list(data.keys())
         placeholders = ', '.join(['%s'] * len(cols))
         col_names = ', '.join(cols)

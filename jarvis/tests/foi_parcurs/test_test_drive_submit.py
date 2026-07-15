@@ -1,0 +1,119 @@
+"""Tests for the Test Drive SUBMIT endpoint:
+POST /api/foi-parcurs/test-drive.
+
+Focus: the client is resolved from the CRM (crm_clients) — not the legacy
+fp_clients table — and the resolved name/phone are stored directly on the
+contract row so the contract can be read back without depending on a
+fp_clients join.
+
+Uses the Flask test client against a minimal app registering foi_parcurs_bp,
+with FoiParcursRepository and the CRM ClientRepository mocked at the module
+level where they are imported into foi_parcurs.routes.test_drive (mirrors
+jarvis/tests/foi_parcurs/test_test_drive_return.py).
+"""
+import os
+
+os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')
+
+import pytest
+from flask import Flask
+
+from foi_parcurs import foi_parcurs_bp
+import foi_parcurs.routes.test_drive as test_drive_mod
+
+
+@pytest.fixture
+def app():
+    app = Flask(__name__)
+    app.register_blueprint(foi_parcurs_bp)
+    app.config['TESTING'] = True
+    # login_required is a no-op under LOGIN_DISABLED — no LoginManager needed.
+    app.config['LOGIN_DISABLED'] = True
+    return app
+
+
+@pytest.fixture
+def client(app):
+    return app.test_client()
+
+
+def _valid_payload(**overrides):
+    payload = {
+        'company_id': 1,
+        'vin': 'WVWZZZ1JZXW000001',
+        'client_id': 42,
+        'odometer_start': 1000,
+        'estimated_km': 20,
+        'fuel_gauge_start_level': 'full',
+        'departure_datetime': '2026-07-15T10:00:00Z',
+        'itinerary': 'Cluj - Turda',
+        'advisor_name': 'Ana Pop',
+        'client_signature': 'data:image/png;base64,client-sig',
+        'gdpr_consent': True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _crm_client(id=42, display_name='Ion Popescu', phone='0722123456'):
+    return {'id': id, 'display_name': display_name, 'phone': phone}
+
+
+def test_submit_resolves_and_stores_crm_client_name_and_phone(client, monkeypatch):
+    monkeypatch.setattr(test_drive_mod, '_crm_client_repo', _FakeCrmRepo(_crm_client()))
+
+    calls = []
+
+    def fake_create_from_td_form(data):
+        calls.append(data)
+        return {**data, 'id': 1}
+
+    monkeypatch.setattr(test_drive_mod._fp_repo, 'create_from_td_form', fake_create_from_td_form)
+
+    resp = client.post('/api/foi-parcurs/test-drive', json=_valid_payload())
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body['success'] is True
+    assert body['contract']['client_name'] == 'Ion Popescu'
+    assert body['contract']['client_phone'] == '0722123456'
+
+    assert len(calls) == 1
+    assert calls[0]['client_id'] == 42
+    assert calls[0]['client_name'] == 'Ion Popescu'
+    assert calls[0]['client_phone'] == '0722123456'
+
+
+def test_submit_with_unknown_crm_client_still_succeeds(client, monkeypatch):
+    monkeypatch.setattr(test_drive_mod, '_crm_client_repo', _FakeCrmRepo(None))
+
+    calls = []
+
+    def fake_create_from_td_form(data):
+        calls.append(data)
+        return {**data, 'id': 2}
+
+    monkeypatch.setattr(test_drive_mod._fp_repo, 'create_from_td_form', fake_create_from_td_form)
+
+    resp = client.post('/api/foi-parcurs/test-drive', json=_valid_payload(client_id=999))
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body['success'] is True
+    assert body['contract']['client_name'] is None
+    assert body['contract']['client_phone'] is None
+
+    assert len(calls) == 1
+    assert calls[0]['client_id'] == 999
+    assert calls[0]['client_name'] is None
+    assert calls[0]['client_phone'] is None
+
+
+class _FakeCrmRepo:
+    """Minimal stand-in for crm.repositories.ClientRepository.get_by_id."""
+
+    def __init__(self, client_row):
+        self._client_row = client_row
+
+    def get_by_id(self, client_id):
+        return self._client_row
