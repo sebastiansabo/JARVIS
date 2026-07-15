@@ -79,6 +79,64 @@ def api_submit_test_drive():
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
 
+@foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>/return', methods=['PUT'])
+@login_required
+def api_return_test_drive(id):
+    """Complete a test drive by recording return data (km/fuel/damage/signatures)."""
+    data = request.get_json(silent=True) or {}
+
+    try:
+        contract = _fp_repo.get_contract_by_id(id)
+        if not contract:
+            return jsonify({'success': False, 'error': 'Not found'}), 404
+        if contract.get('route_type') != 'TD':
+            return jsonify({'success': False, 'error': 'Contract is not a Test Drive'}), 400
+
+        advisor_signature = data.get('advisor_signature')
+        client_signature = data.get('client_signature')
+        if not advisor_signature or not client_signature:
+            return jsonify({
+                'success': False,
+                'error': 'Both advisor_signature and client_signature are required',
+            }), 400
+
+        km_end = data.get('km_end')
+        if km_end is None:
+            return jsonify({'success': False, 'error': 'km_end is required'}), 400
+        try:
+            km_end = int(km_end)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'km_end must be a number'}), 400
+
+        km_start = contract.get('km_start')
+        if km_start is not None and km_end < km_start:
+            return jsonify({
+                'success': False,
+                'error': f'km_end ({km_end}) cannot be less than km_start ({km_start})',
+            }), 400
+
+        return_damage = data.get('return_damage') or []
+        if not isinstance(return_damage, list):
+            return jsonify({'success': False, 'error': 'return_damage must be a list'}), 400
+
+        update_data = {
+            'km_end': km_end,
+            'fuel_gauge_end_level': data.get('fuel_gauge_end_level'),
+            'return_datetime': data.get('return_datetime'),
+            'return_damage': return_damage,
+            'return_notes': data.get('return_notes'),
+            'return_advisor_signature': advisor_signature,
+            'return_client_signature': client_signature,
+        }
+
+        updated = _fp_repo.record_return(id, update_data)
+        return jsonify({'success': True, 'contract': updated})
+
+    except Exception as e:
+        logger.exception('Failed to record test drive return for contract %s', id)
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>', methods=['GET'])
 @login_required
 def api_get_test_drive(id):
