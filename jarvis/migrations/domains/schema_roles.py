@@ -681,6 +681,16 @@ def create_schema_roles(conn, cursor):
         WHERE r.name = 'Admin' AND p.module_key = 'test_drive'
         ON CONFLICT (role_id, permission_id) DO NOTHING
     ''')
+    # Grant Test Drive access to Viewer role as well (consilieri use the mobile
+    # Test Drive tile). Admins can still revoke/adjust it in the matrix.
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'all', TRUE
+        FROM roles r
+        CROSS JOIN permissions_v2 p
+        WHERE r.name = 'Viewer' AND p.module_key = 'test_drive'
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+    ''')
 
     # Migration: Add CRM RAG source permissions if not already present
     crm_rag_perms = [

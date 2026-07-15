@@ -7,6 +7,21 @@ from core.base_repository import BaseRepository
 logger = logging.getLogger('jarvis.foi_parcurs.repository')
 
 
+# Derived three-state status for Test Drive contracts, surfaced on the list and
+# detail endpoints so the mobile app can badge each row without re-deriving:
+#   complete   → the return form was submitted (status COMPLETED)
+#   incomplete → the expected arrival time (return_datetime) has passed but no
+#                return form was submitted yet
+#   driving    → still out (no return yet, arrival time not passed / not set)
+_TD_STATUS_SQL = (
+    "CASE "
+    "WHEN fp.status = 'COMPLETED' THEN 'complete' "
+    "WHEN fp.return_datetime IS NOT NULL AND fp.return_datetime < NOW() THEN 'incomplete' "
+    "ELSE 'driving' "
+    "END AS td_status"
+)
+
+
 class FoiParcursRepository(BaseRepository):
 
     def create_contract(self, data: dict) -> dict:
@@ -65,7 +80,8 @@ class FoiParcursRepository(BaseRepository):
             f'SELECT fp.*, '
             f'COALESCE(fp.client_name, c.name) AS client_name, '
             f'COALESCE(fp.client_phone, c.phone) AS client_phone, '
-            f'co.company AS company_name '
+            f'co.company AS company_name, '
+            f'{_TD_STATUS_SQL} '
             f'FROM foi_de_parcurs fp '
             f'LEFT JOIN fp_clients c ON c.id = fp.client_id '
             f'LEFT JOIN companies co ON co.id = fp.company_id'
@@ -84,7 +100,8 @@ class FoiParcursRepository(BaseRepository):
             'SELECT fp.*, '
             'COALESCE(fp.client_name, c.name) AS client_name, '
             'COALESCE(fp.client_phone, c.phone) AS client_phone, '
-            'co.company AS company_name '
+            'co.company AS company_name, '
+            f'{_TD_STATUS_SQL} '
             'FROM foi_de_parcurs fp '
             'LEFT JOIN fp_clients c ON c.id = fp.client_id '
             'LEFT JOIN companies co ON co.id = fp.company_id '
