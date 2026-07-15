@@ -2022,6 +2022,36 @@ def _create_schema_incremental_continued(conn, cursor):
             END IF;
         END $$;
     ''')
+
+    # ── Foi de Parcurs — vehicle stock hotfix: car_id, brand, color, battery capacity, Hybrid ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='car_id') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN car_id VARCHAR(50);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='brand') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN brand VARCHAR(100);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='color') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN color VARCHAR(50);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='battery_capacity_kwh') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN battery_capacity_kwh INTEGER;
+            END IF;
+        END $$;
+    ''')
+    # Allow empty fuel tank capacity (pure-Electric vehicles use battery_capacity_kwh instead)
+    cursor.execute("ALTER TABLE fp_vehicles ALTER COLUMN fuel_tank_capacity_liters DROP NOT NULL")
+    # One-time: existing Electric rows stored their kWh in the liters column — move it to battery_capacity_kwh
+    cursor.execute('''
+        UPDATE fp_vehicles
+        SET battery_capacity_kwh = fuel_tank_capacity_liters,
+            fuel_tank_capacity_liters = NULL
+        WHERE fuel_type = 'Electric'
+          AND battery_capacity_kwh IS NULL
+          AND fuel_tank_capacity_liters IS NOT NULL
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_vehicles_brand ON fp_vehicles(brand)')
     cursor.execute('''
         DO $$ BEGIN
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='registration_number') THEN
