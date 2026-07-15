@@ -2045,6 +2045,27 @@ def _create_schema_incremental_continued(conn, cursor):
             END IF;
         END $$;
     ''')
+
+    # ── Foi de Parcurs — Test Drive RETURN fields ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='returned_at') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN returned_at TIMESTAMPTZ;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='return_advisor_signature') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN return_advisor_signature TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='return_client_signature') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN return_client_signature TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='return_damage') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN return_damage JSONB DEFAULT '[]'::jsonb;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='return_notes') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN return_notes TEXT;
+            END IF;
+        END $$;
+    ''')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS fp_vehicle_inspections (
             id BIGSERIAL PRIMARY KEY,
