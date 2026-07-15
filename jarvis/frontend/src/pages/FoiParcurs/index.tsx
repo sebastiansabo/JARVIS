@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react'
-
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
@@ -72,6 +72,7 @@ import {
 
 // ── Main Page ──
 export default function FoiParcurs() {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'contracts' | 'parcurs' | 'stock' | 'settings'>('contracts')
   const [companyId, setCompanyId] = useState<number>(0)
 
@@ -94,6 +95,10 @@ export default function FoiParcurs() {
           <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Foi de Parcurs</h1>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => navigate('/app/foi-parcurs/test-drive')}>
+            <FileText className="mr-1.5 h-4 w-4" />
+            New Test Drive
+          </Button>
           <Select value={String(companyId)} onValueChange={(v) => setCompanyId(Number(v))}>
             <SelectTrigger className="w-56">
               <SelectValue placeholder="Selectează compania" />
