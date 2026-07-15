@@ -936,6 +936,17 @@ def create_schema_incremental(conn, cursor):
             END IF;
         END $$;
     ''')
+    # CRM: cnp (personal numeric code) on crm_clients — captured when creating a
+    # client from a driving-license scan on the mobile Test Drive form.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'crm_clients' AND column_name = 'cnp') THEN
+                ALTER TABLE crm_clients ADD COLUMN cnp TEXT;
+            END IF;
+        END $$;
+    ''')
     # ── DMS (Document Management System) tables ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS dms_categories (
@@ -2067,6 +2078,13 @@ def _create_schema_incremental_continued(conn, cursor):
             -- Structured vehicle-condition report captured at handover (departure form).
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='departure_damage') THEN
                 ALTER TABLE foi_de_parcurs ADD COLUMN departure_damage JSONB DEFAULT '[]'::jsonb;
+            END IF;
+            -- Driving-license photo (compressed JPEG base64) + number, captured on the departure form.
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='driver_license_photo') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN driver_license_photo TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='driver_license_number') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN driver_license_number TEXT;
             END IF;
         END $$;
     ''')
