@@ -14,8 +14,11 @@ def api_submit_test_drive():
     """Submit test drive form — creates FILLED contract."""
     data = request.get_json(silent=True) or {}
 
+    # `itinerary` is intentionally NOT required — the mobile Test Drive form
+    # dropped the Traseu/Itinerariu field. It's still stored when provided
+    # (e.g. by the web form) via data.get('itinerary', '') below.
     required = ['company_id', 'vin', 'client_id', 'odometer_start', 'estimated_km',
-                'fuel_gauge_start_level', 'departure_datetime', 'itinerary',
+                'fuel_gauge_start_level', 'departure_datetime',
                 'advisor_name', 'client_signature', 'gdpr_consent']
     missing = [f for f in required if not data.get(f)]
     if missing:
