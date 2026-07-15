@@ -33,11 +33,15 @@ class FPVehicleRepository(BaseRepository):
     def create(self, data):
         """Insert a new vehicle."""
         return self.execute(
-            '''INSERT INTO fp_vehicles (vin, mark, model, fuel_type, fuel_tank_capacity_liters, company_id)
-               VALUES (%s, %s, %s, %s, %s, %s) RETURNING *''',
-            (data['vin'], data['mark'], data['model'],
+            '''INSERT INTO fp_vehicles
+               (vin, registration_number, car_id, mark, brand, model, color,
+                fuel_type, fuel_tank_capacity_liters, battery_capacity_kwh, company_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *''',
+            (data['vin'], data.get('registration_number'), data.get('car_id'),
+             data['mark'], data.get('brand'), data['model'], data.get('color'),
              data.get('fuel_type', 'Diesel'),
-             int(data.get('fuel_tank_capacity_liters', 50)),
+             data.get('fuel_tank_capacity_liters'),
+             data.get('battery_capacity_kwh'),
              data.get('company_id')),
             returning=True,
         )
@@ -46,7 +50,9 @@ class FPVehicleRepository(BaseRepository):
         """Update a vehicle."""
         sets = []
         params = []
-        for col in ('vin', 'mark', 'model', 'fuel_type', 'fuel_tank_capacity_liters', 'company_id', 'is_active'):
+        for col in ('vin', 'registration_number', 'car_id', 'mark', 'brand', 'model', 'color',
+                    'fuel_type', 'fuel_tank_capacity_liters', 'battery_capacity_kwh',
+                    'company_id', 'is_active'):
             if col in data:
                 sets.append(f'{col} = %s')
                 params.append(data[col])
