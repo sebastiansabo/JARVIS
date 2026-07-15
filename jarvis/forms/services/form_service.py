@@ -312,8 +312,9 @@ class FormService:
         try:
             if slug == 'voucher-issuance' and user_id:
                 self._create_voucher_from_submission(form, submission_id, answers, user_id)
-            elif slug == 'test-drive':
-                return self._create_test_drive_contract(form, submission_id, answers, user_id)
+            # NOTE: 'test-drive' is intentionally NOT handled here. Test drives are
+            # recorded exclusively via the in-module custom form
+            # (POST /api/foi-parcurs/test-drive). See foi_parcurs/routes/test_drive.py.
         except Exception as e:
             logger.error('Post-submit hook failed for %s submission %s: %s', slug, submission_id, e)
         return None
@@ -383,108 +384,6 @@ class FormService:
             release_db(conn)
 
         logger.info('Voucher %s created from form submission %s by user %s', voucher['id'], submission_id, user_id)
-
-    def _create_test_drive_contract(self, form: dict, submission_id: int, answers: Dict, user_id: Optional[int]) -> Optional[Dict]:
-        """Create a foi_de_parcurs contract from a test-drive form submission."""
-        import time
-        import uuid
-        from foi_parcurs.repositories import FoiParcursRepository, FPVehicleRepository
-        from foi_parcurs.services.fuel_service import parse_fuel_level
-        from foi_parcurs.services.pdf_service import generate_legal_pdf, generate_custom_pdf
-
-        vehicle_id = answers.get('f_vehicle')
-        if not vehicle_id:
-            logger.warning('Test drive submission %s missing vehicle', submission_id)
-            return None
-
-        vehicle_repo = FPVehicleRepository()
-        vehicle = vehicle_repo.get_by_id(int(vehicle_id))
-        if not vehicle:
-            logger.warning('Test drive submission %s — vehicle %s not found', submission_id, vehicle_id)
-            return None
-
-        vin = vehicle['vin']
-        tank = vehicle.get('fuel_tank_capacity_liters', 50)
-        fuel_start_level = answers.get('f_fuel_start', '1')
-        fuel_end_level = answers.get('f_fuel_end', fuel_start_level)
-
-        try:
-            start_fraction = parse_fuel_level(str(fuel_start_level))
-            end_fraction = parse_fuel_level(str(fuel_end_level))
-        except ValueError:
-            start_fraction, end_fraction = 1.0, 1.0
-
-        fuel_start_liters = start_fraction * tank
-        fuel_end_liters = end_fraction * tank
-        fuel_consumed = max(0, fuel_start_liters - fuel_end_liters)
-
-        contract_id = f"TD-{vin[:8]}-{int(time.time())}-{uuid.uuid4().hex[:4]}"
-
-        # Parse company_id — company_select stores company name, look up ID
-        company_id_raw = answers.get('f_company')
-        company_id = None
-        if company_id_raw:
-            from core.base_repository import BaseRepository
-            base = BaseRepository()
-            row = base.query_one('SELECT id FROM companies WHERE company = %s', (str(company_id_raw),))
-            if row:
-                company_id = row['id']
-
-        contract_data = {
-            'contract_id': contract_id,
-            'vin': vin,
-            'registration_number': vehicle.get('registration_number', ''),
-            'company_id': company_id or form.get('company_id'),
-            'client_id': int(answers.get('f_client', 0)) or None,
-            'route_type': 'TD',
-            'slot_number': 0,
-            'km_start': int(answers.get('f_odometer_start', 0) or 0),
-            'km_end': int(answers.get('f_odometer_end', 0) or 0) or int(answers.get('f_odometer_start', 0) or 0),
-            'distance_km': int(answers.get('f_estimated_km', 0) or 0),
-            'fuel_tank_capacity_liters': tank,
-            'fuel_gauge_start_level': str(fuel_start_level),
-            'fuel_gauge_end_level': str(fuel_end_level),
-            'fuel_start_liters': fuel_start_liters,
-            'fuel_end_liters': fuel_end_liters,
-            'fuel_consumed_liters': fuel_consumed,
-            'itinerary': answers.get('f_itinerary', ''),
-            'advisor_name': answers.get('f_advisor', ''),
-            'signature_ai_generated': answers.get('f_advisor_sig', ''),
-            'client_signature': answers.get('f_client_sig', ''),
-            'departure_datetime': answers.get('f_departure'),
-            'return_datetime': answers.get('f_return'),
-            'gdpr_consent': bool(answers.get('f_gdpr')),
-            'inspection_acceptance': bool(answers.get('f_inspection')),
-            'source': 'td_form',
-            'status': 'FILLED',
-        }
-
-        fp_repo = FoiParcursRepository()
-        contract = fp_repo.create_from_td_form(contract_data)
-
-        # Generate PDFs
-        pdf_legal_url = None
-        pdf_custom_url = None
-        try:
-            legal_path = generate_legal_pdf(contract)
-            custom_path = generate_custom_pdf(contract)
-            fp_repo.execute(
-                'UPDATE foi_de_parcurs SET pdf_legal_path = %s, pdf_custom_path = %s WHERE id = %s',
-                (legal_path, custom_path, contract['id']),
-            )
-            pdf_legal_url = f'/api/foi-parcurs/contracts/{contract["id"]}/pdf/legal'
-            pdf_custom_url = f'/api/foi-parcurs/contracts/{contract["id"]}/pdf/custom'
-        except Exception:
-            logger.exception('PDF generation failed for TD contract %s', contract_id)
-
-        logger.info('Test drive contract %s created from form submission %s', contract_id, submission_id)
-
-        return {
-            'contract_id': contract_id,
-            'foi_de_parcurs_id': contract.get('id'),
-            'pdf_legal_url': pdf_legal_url,
-            'pdf_custom_url': pdf_custom_url,
-        }
 
     # ============== Approval ==============
 
