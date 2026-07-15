@@ -1,20 +1,33 @@
 // ── Fuel Type ──
-export type FuelType = 'Benzina' | 'Diesel' | 'Electric'
+export type FuelType = 'Benzina' | 'Diesel' | 'Electric' | 'Hybrid'
 
 export const FUEL_TYPE_OPTIONS: { value: FuelType; label: string }[] = [
   { value: 'Benzina', label: 'Benzina' },
   { value: 'Diesel', label: 'Diesel' },
   { value: 'Electric', label: 'Electric' },
+  { value: 'Hybrid', label: 'Hybrid' },
 ]
+
+// Which capacity fields apply to a given fuel type
+export function usesFuelTank(fuelType?: FuelType | string): boolean {
+  return fuelType === 'Benzina' || fuelType === 'Diesel' || fuelType === 'Hybrid'
+}
+export function usesBattery(fuelType?: FuelType | string): boolean {
+  return fuelType === 'Electric' || fuelType === 'Hybrid'
+}
 
 // ── Vehicle (Stock) ──
 export interface FpVehicle {
   id: number
   vin: string
+  car_id?: string
   mark: string
+  brand?: string
   model: string
+  color?: string
   fuel_type: FuelType
-  fuel_tank_capacity_liters: number
+  fuel_tank_capacity_liters: number | null
+  battery_capacity_kwh?: number | null
   registration_number?: string
   company_id?: number
   company_name?: string
