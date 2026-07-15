@@ -26,6 +26,7 @@ import {
   LogOut,
   Check,
   ScanLine,
+  Users,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -59,7 +60,7 @@ import { toast } from 'sonner'
 import type { InAppNotification } from '@/types/notifications'
 import type { ProfileInvoice, ProfileBonus } from '@/types/profile'
 import type { Invoice } from '@/types/invoices'
-import type { BioStarDayHistory } from '@/types/biostar'
+import type { BioStarDayHistory, BioStarRangeSummary } from '@/types/biostar'
 
 import { useVoucherSchema } from '@/hooks/useVoucherSchema'
 import { api } from '@/api/client'
@@ -76,7 +77,7 @@ const VOUCHER_FORM_SLUG = 'voucher-issuance'
 // ─── Types ──────────────────────────────────────────────
 
 type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals'
-type HrSubTab = 'pontaje' | 'bonuses' | 'leave-permits'
+type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits'
 
 interface AppTile {
   key: NonNullable<ActiveModule>
@@ -1117,18 +1118,25 @@ function HubHrPanel({ userId }: { userId: number }) {
     queryKey: ['hub', 'leave-permits', userId, year, month],
     queryFn: () => connecteamApi.getEmployeeSubmissions(userId, year, month),
   })
+  // Team pontaje — only returns data if the user is an organigram responsable (is_manager)
+  const { data: teamData } = useQuery({
+    queryKey: ['hub', 'team-pontaje', start, end],
+    queryFn: () => profileApi.getTeamPontaje({ mode: 'range', start, end }),
+  })
 
   const pontajeCount = (pontajeData?.history ?? []).length
+  const teamCount = teamData?.is_manager ? (teamData.summary?.length ?? 0) : 0
   const bonusesCount = (bonusesData?.bonuses ?? []).length
   const lpCount = (lpData?.data ?? []).length
 
   const availableTabs = useMemo(() => {
     const tabs: { key: HrSubTab; label: string; icon: React.ElementType }[] = []
     if (pontajeCount > 0) tabs.push({ key: 'pontaje', label: 'Pontaje', icon: Fingerprint })
+    if (teamCount > 0) tabs.push({ key: 'team-pontaje', label: 'Team Pontaje', icon: Users })
     if (bonusesCount > 0) tabs.push({ key: 'bonuses', label: 'Bonuses', icon: Gift })
     if (lpCount > 0) tabs.push({ key: 'leave-permits', label: 'Leave Permits', icon: ClipboardList })
     return tabs
-  }, [pontajeCount, bonusesCount, lpCount])
+  }, [pontajeCount, teamCount, bonusesCount, lpCount])
 
   // Auto-select first available tab if current has no data
   const effectiveTab = availableTabs.find(t => t.key === subTab) ? subTab : availableTabs[0]?.key ?? 'pontaje'
@@ -1160,6 +1168,7 @@ function HubHrPanel({ userId }: { userId: number }) {
       </div>
 
       {effectiveTab === 'pontaje' && <HubPontajeContent year={year} month={month} />}
+      {effectiveTab === 'team-pontaje' && <HubTeamPontajeContent year={year} month={month} />}
       {effectiveTab === 'bonuses' && <HubBonusesContent year={year} month={month} />}
       {effectiveTab === 'leave-permits' && <HubLeavePermitsContent userId={userId} year={year} month={month} />}
     </div>
@@ -1222,6 +1231,65 @@ function HubPontajeContent({ year, month }: { year: number; month: number }) {
                   hours != null && hours >= 8 ? 'text-green-600' : hours != null && hours > 0 ? 'text-amber-600' : 'text-muted-foreground',
                 )}>
                   {hours != null ? `${hours.toFixed(1)}h` : '—'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function HubTeamPontajeContent({ year, month }: { year: number; month: number }) {
+  const start = `${year}-${String(month).padStart(2, '0')}-01`
+  const lastDay = new Date(year, month, 0).getDate()
+  const end = `${year}-${String(month).padStart(2, '0')}-${lastDay}`
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['hub', 'team-pontaje', start, end],
+    queryFn: () => profileApi.getTeamPontaje({ mode: 'range', start, end }),
+  })
+
+  if (isLoading) return <Skeleton className="h-48 w-full" />
+
+  const rows = (data?.is_manager ? (data.summary as BioStarRangeSummary[]) : []) ?? []
+  if (rows.length === 0) {
+    return <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">No team punch data for this month.</CardContent></Card>
+  }
+
+  // Net hours = (worked − lunch deducted per present day) / 3600, same formula as HR Pontaje.
+  const netHours = (r: BioStarRangeSummary): number => {
+    const worked = r.adjusted_total_duration_seconds ?? r.total_duration_seconds ?? 0
+    const lunch = (r.lunch_break_minutes ?? 0) * 60 * (r.days_present ?? 0)
+    return Math.max(0, worked - lunch) / 3600
+  }
+
+  const withHours = rows.map((r) => ({ r, hours: netHours(r) }))
+  const teamTotal = withHours.reduce((sum, x) => sum + x.hours, 0)
+
+  return (
+    <Card>
+      <CardContent className="px-0 pb-0">
+        <div className="flex items-center justify-between px-4 pb-2 text-xs text-muted-foreground">
+          <span>{rows.length} {rows.length === 1 ? 'member' : 'members'}</span>
+          <span className="font-semibold tabular-nums">{teamTotal.toFixed(1)}h total</span>
+        </div>
+        <div className="divide-y">
+          {withHours.map(({ r, hours }) => {
+            const name = r.mapped_jarvis_user_name || r.name || '—'
+            const days = r.days_present ?? 0
+            return (
+              <div key={r.mapped_jarvis_user_id ?? r.biostar_user_id ?? name} className="flex items-center justify-between px-4 py-2.5">
+                <div>
+                  <p className="text-xs font-medium">{name}</p>
+                  <p className="text-[10px] text-muted-foreground">{days} {days === 1 ? 'day' : 'days'}</p>
+                </div>
+                <span className={cn(
+                  'text-sm font-semibold tabular-nums',
+                  hours > 0 ? 'text-green-600' : 'text-muted-foreground',
+                )}>
+                  {hours > 0 ? `${hours.toFixed(1)}h` : '—'}
                 </span>
               </div>
             )
