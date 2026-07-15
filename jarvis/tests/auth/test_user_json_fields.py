@@ -1,7 +1,7 @@
 """Tests for the mobile `_user_json` serializer (Task 4.1):
 
 - New flags: is_superuser, can_access_vouchers, can_access_facturare,
-  can_access_controlling
+  can_access_controlling, can_access_test_drive
 - New mobile-unique route /api/mobile/current-user (+ its OPTIONS preflight)
 
 Mocks `PermissionRepository` at the module level where it's imported inside
@@ -43,6 +43,7 @@ class FakePermRepo:
             'vouchers': True,
             'facturare': False,
             'controlling': True,
+            'test_drive': True,
         }
         self._mob_access = mob_access or {}
         self._has_view_perm = has_view_perm
@@ -70,11 +71,14 @@ def test_user_json_includes_new_flags_with_correct_types():
     assert 'can_access_vouchers' in result
     assert 'can_access_facturare' in result
     assert 'can_access_controlling' in result
+    assert 'can_access_test_drive' in result
 
     assert result['is_superuser'] is True
     assert result['can_access_vouchers'] is True
     assert result['can_access_facturare'] is False
     assert result['can_access_controlling'] is True
+    assert result['can_access_test_drive'] is True
+    assert isinstance(result['can_access_test_drive'], bool)
 
 
 def test_user_json_is_superuser_defaults_false_when_absent():
@@ -87,7 +91,7 @@ def test_user_json_is_superuser_defaults_false_when_absent():
 
 
 def test_user_json_module_flags_fallback_to_false_when_module_absent():
-    """vouchers/facturare/controlling have no legacy attr fallback (None),
+    """vouchers/facturare/controlling/test_drive have no legacy attr fallback (None),
     so an absent module-access-map entry must resolve to False."""
     user = FakeUser()
     with_empty_map = FakePermRepo(mod_access={})
@@ -101,6 +105,7 @@ def test_user_json_module_flags_fallback_to_false_when_module_absent():
     assert result['can_access_vouchers'] is False
     assert result['can_access_facturare'] is False
     assert result['can_access_controlling'] is False
+    assert result['can_access_test_drive'] is False
 
 
 # ============== Route registration smoke test ==============
