@@ -2066,6 +2066,18 @@ def _create_schema_incremental_continued(conn, cursor):
             END IF;
         END $$;
     ''')
+
+    # ── Foi de Parcurs — CRM-sourced client name/phone (Test Drive) ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='client_name') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN client_name TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='client_phone') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN client_phone TEXT;
+            END IF;
+        END $$;
+    ''')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS fp_vehicle_inspections (
             id BIGSERIAL PRIMARY KEY,
