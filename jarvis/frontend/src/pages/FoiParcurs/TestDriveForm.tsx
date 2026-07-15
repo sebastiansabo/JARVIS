@@ -187,7 +187,7 @@ export default function TestDriveForm() {
       odometer_start: Number(odometerStart),
       odometer_end: odometerEnd ? Number(odometerEnd) : undefined,
       estimated_km: Number(estimatedKm),
-      fuel_tank_capacity_liters: selectedVehicle!.fuel_tank_capacity_liters,
+      fuel_tank_capacity_liters: selectedVehicle!.fuel_tank_capacity_liters ?? selectedVehicle!.battery_capacity_kwh ?? 0,
       fuel_gauge_start_level: fuelGaugeStart as FuelGaugeLevel,
       fuel_gauge_end_level: fuelGaugeEnd ? (fuelGaugeEnd as FuelGaugeLevel) : undefined,
       itinerary,
