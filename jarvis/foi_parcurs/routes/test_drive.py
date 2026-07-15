@@ -1,4 +1,5 @@
 """Routes for Test Drive form submission."""
+import json
 import time
 import uuid
 from ._shared import (
@@ -51,6 +52,11 @@ def api_submit_test_drive():
         client_name = crm_client.get('display_name') if crm_client else None
         client_phone = crm_client.get('phone') if crm_client else None
 
+        # Structured vehicle-condition report captured at handover (optional).
+        departure_damage = data.get('departure_damage') or []
+        if not isinstance(departure_damage, list):
+            return jsonify({'success': False, 'error': 'departure_damage must be a list'}), 400
+
         contract_data = {
             'contract_id': contract_id,
             'vin': data['vin'],
@@ -76,6 +82,7 @@ def api_submit_test_drive():
             'client_signature': data['client_signature'],
             'departure_datetime': data['departure_datetime'],
             'return_datetime': data.get('return_datetime'),
+            'departure_damage': json.dumps(departure_damage),
             'gdpr_consent': True,
             'inspection_acceptance': bool(data.get('inspection_acceptance')),
             'inspection_id': data.get('inspection_id'),
