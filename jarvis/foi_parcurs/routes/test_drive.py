@@ -3,7 +3,7 @@ import time
 import uuid
 from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required, current_user,
-    logger, _fp_repo, _inspection_repo,
+    logger, _fp_repo, _inspection_repo, _crm_client_repo,
 )
 from ..services.fuel_service import parse_fuel_level
 
@@ -40,12 +40,22 @@ def api_submit_test_drive():
         fuel_end_liters = round(end_fraction * tank, 2)
         fuel_consumed_liters = round(max(0.0, fuel_start_liters - fuel_end_liters), 2)
 
+        # Client comes from the CRM (crm_clients), not the legacy fp_clients table.
+        # Resolve name/phone now and store them directly on the contract so old
+        # contracts (joined via fp_clients) and new ones (CRM-sourced) both resolve.
+        client_id = int(data['client_id'])
+        crm_client = _crm_client_repo.get_by_id(client_id)
+        client_name = crm_client.get('display_name') if crm_client else None
+        client_phone = crm_client.get('phone') if crm_client else None
+
         contract_data = {
             'contract_id': contract_id,
             'vin': data['vin'],
             'registration_number': data.get('registration_number', ''),
             'company_id': int(data['company_id']),
-            'client_id': int(data['client_id']),
+            'client_id': client_id,
+            'client_name': client_name,
+            'client_phone': client_phone,
             'route_type': 'TD',
             'slot_number': 0,
             'km_start': int(data['odometer_start']),
