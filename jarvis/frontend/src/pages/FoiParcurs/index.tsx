@@ -91,20 +91,18 @@ export default function FoiParcurs() {
     setCompanyId(companies[0].id)
   }
 
-  const companyName = companies.find((c) => c.id === companyId)?.company ?? ''
-
-  // Brands for the selected company (from core structure)
+  // Brands for the selected company (from the company_brands catalog)
   const { data: brandsData } = useQuery({
-    queryKey: ['fp-brands', companyName],
-    queryFn: () => foiParcursApi.getBrands(companyName),
-    enabled: !!companyName,
+    queryKey: ['fp-brands', companyId],
+    queryFn: () => foiParcursApi.getBrands(companyId),
+    enabled: companyId > 0,
     staleTime: 60_000,
   })
-  const brands = brandsData ?? []
+  const brands = brandsData?.brands ?? []
 
   // Auto-select first brand when the company (and thus its brand list) changes
   useEffect(() => {
-    const list = brandsData ?? []
+    const list = brandsData?.brands ?? []
     if (list.length === 0) {
       if (brand !== '') setBrand('')
     } else if (!list.includes(brand)) {
