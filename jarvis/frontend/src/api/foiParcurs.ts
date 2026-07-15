@@ -8,6 +8,7 @@ import type {
   CreateClientPayload,
   FpVehicle,
   FpVehicleInspection,
+  TestDriveFormPayload,
 } from '../types/foiParcurs'
 
 function qs(params: Record<string, unknown>): string {
@@ -114,6 +115,13 @@ export const foiParcursApi = {
 
   updateCompanyConfig: (companyId: number, data: { base_location: string; td_radius_km: number; comodat_avg_km: number }) =>
     api.put<{ success: boolean }>(`${BASE}/company-config/${companyId}`, data),
+
+  // ── Test Drive Form ──
+  submitTestDrive: (data: TestDriveFormPayload) =>
+    api.post<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive`, data),
+
+  getTestDrive: (id: number) =>
+    api.get<{ success: boolean; contract: FoiContract; inspection: FpVehicleInspection | null }>(`${BASE}/test-drive/${id}`),
 
   // ── Vehicle Inspections ──
   getInspections: (vehicleId: number) =>
