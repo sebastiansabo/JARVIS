@@ -2064,6 +2064,10 @@ def _create_schema_incremental_continued(conn, cursor):
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='return_notes') THEN
                 ALTER TABLE foi_de_parcurs ADD COLUMN return_notes TEXT;
             END IF;
+            -- Structured vehicle-condition report captured at handover (departure form).
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='departure_damage') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN departure_damage JSONB DEFAULT '[]'::jsonb;
+            END IF;
         END $$;
     ''')
 
