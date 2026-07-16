@@ -230,6 +230,46 @@ export interface FpVehicleInspection {
   created_at: string
 }
 
+// ── CRM Client (Test Drive search/create — crm_clients table) ──
+export interface CrmClient {
+  id: number | string
+  display_name?: string | null
+  name?: string | null
+  phone?: string | null
+}
+
+export interface CreateCrmClientPayload {
+  display_name: string
+  phone: string
+  email?: string
+  address?: string
+  city?: string
+  county?: string
+  country?: string
+}
+
+// ── Driver-license OCR (Claude vision) ──
+export interface DriverLicenseOcrData {
+  last_name?: string | null
+  first_name?: string | null
+  full_name?: string | null
+  cnp?: string | null
+  license_number?: string | null
+  birth_date?: string | null
+  expiry_date?: string | null
+  address?: string | null
+  city?: string | null
+  county?: string | null
+}
+
+// ── Structured vehicle-condition damage (shared departure/return model) ──
+export interface TdDamageItem {
+  zone: string
+  severity: 'minor' | 'moderate' | 'severe'
+  note?: string
+  photos?: string[]
+}
+
 // ── Test Drive Form Payload ──
 export interface TestDriveFormPayload {
   company_id: number
@@ -239,19 +279,23 @@ export interface TestDriveFormPayload {
   odometer_start: number
   odometer_end?: number
   estimated_km: number
-  fuel_tank_capacity_liters: number
+  fuel_tank_capacity_liters?: number
   fuel_gauge_start_level: FuelGaugeLevel
   fuel_gauge_end_level?: FuelGaugeLevel
   fuel_start_liters?: number
   fuel_end_liters?: number
   fuel_consumed_liters?: number
-  itinerary: string
+  itinerary?: string
   departure_datetime: string
   return_datetime?: string
   advisor_name: string
-  advisor_signature: string
+  advisor_signature?: string
   client_signature: string
   gdpr_consent: boolean
-  inspection_acceptance: boolean
+  inspection_acceptance?: boolean
   inspection_id?: number
+  departure_damage?: TdDamageItem[]
+  driver_license_photo?: string
+  driver_license_number?: string
+  driver_license_expiry?: string
 }

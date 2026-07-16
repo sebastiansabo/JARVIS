@@ -9,6 +9,9 @@ import type {
   FpVehicle,
   FpVehicleInspection,
   TestDriveFormPayload,
+  CrmClient,
+  CreateCrmClientPayload,
+  DriverLicenseOcrData,
 } from '../types/foiParcurs'
 
 function qs(params: Record<string, unknown>): string {
@@ -123,6 +126,17 @@ export const foiParcursApi = {
   // ── Test Drive Form ──
   submitTestDrive: (data: TestDriveFormPayload) =>
     api.post<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive`, data),
+
+  // ── CRM clients (Test Drive: search + inline create) ──
+  searchCrmClients: (q: string, limit = 20) =>
+    api.get<{ clients: CrmClient[]; total: number }>(`/api/crm/clients${qs({ q, limit })}`),
+
+  createCrmClient: (data: CreateCrmClientPayload) =>
+    api.post<{ success: boolean; client: CrmClient }>(`${BASE}/crm-clients`, data),
+
+  // ── Driver-license OCR (Claude vision) ──
+  driverLicenseOcr: (image: string) =>
+    api.post<{ success: boolean; data: DriverLicenseOcrData }>(`${BASE}/driver-license/ocr`, { image }),
 
   getTestDrive: (id: number) =>
     api.get<{ success: boolean; contract: FoiContract; inspection: FpVehicleInspection | null }>(`${BASE}/test-drive/${id}`),
