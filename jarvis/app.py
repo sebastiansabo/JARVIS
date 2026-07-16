@@ -489,12 +489,23 @@ def _register_routes(flask_app: Flask):
 
     @flask_app.route('/download/jarvis2.apk')
     def download_apk_v2():
-        # JARVIS Mobile 2.0 (com.jarvis.mobile2). The jarvis-mobile-2 CI overwrites
-        # this file on every build, so the URL is stable and always the latest.
-        # no-store so a phone/browser never serves a cached (older) APK.
+        # JARVIS Mobile 2.0 (com.jarvis.mobile2). Stable URL, overwritten each
+        # build → always the latest. no-store so no stale cached APK. The saved
+        # file is named with the version (e.g. jarvis2_0_6.apk) from the
+        # CI-published manifest, while the URL itself stays stable for the QR.
+        import json as _json
         downloads_dir = os.path.join(flask_app.static_folder, 'downloads')
+        download_name = 'jarvis2.apk'
+        try:
+            with open(os.path.join(downloads_dir, 'jarvis2-version.json')) as _f:
+                _ver = _json.load(_f).get('version')
+            if _ver:
+                download_name = f"jarvis{_ver.replace('.', '_')}.apk"
+        except Exception:
+            pass
         resp = send_from_directory(downloads_dir, 'jarvis2.apk',
                                    as_attachment=True,
+                                   download_name=download_name,
                                    mimetype='application/vnd.android.package-archive')
         resp.headers['Cache-Control'] = 'no-store, max-age=0'
         return resp
