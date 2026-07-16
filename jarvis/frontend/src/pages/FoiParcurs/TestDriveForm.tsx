@@ -1,12 +1,14 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { useAuthStore } from '@/stores/authStore'
+import { cn } from '@/lib/utils'
 import {
-  FUEL_LEVEL_OPTIONS,
+  usesFuelTank,
+  usesBattery,
   type FuelGaugeLevel,
-  type FoiClient,
+  type CrmClient,
   type FpVehicle,
   type FpVehicleInspection,
   type TestDriveFormPayload,
@@ -17,7 +19,6 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
@@ -30,7 +31,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   Car,
   Search,
-  MapPin,
+  IdCard,
   Fuel,
   ShieldCheck,
   PenLine,
@@ -40,12 +41,35 @@ import {
   ClipboardCheck,
   Loader2,
   X,
+  UserPlus,
+  ChevronDown,
   FileText,
+  AlertTriangle,
 } from 'lucide-react'
+import { CreateClientPanel, DriverLicenseSection } from './CreateClientPanel'
+import {
+  DamageReport,
+  makeEmptyDamageState,
+  toDamagePayload,
+  type DamageState,
+} from './testDriveDamage'
 
 const SignatureCanvas = lazy(() => import('@/components/shared/SignatureCanvas'))
 
-// ── Helpers ──
+const ADVISOR_SIG_KEY = 'fp_advisor_signature'
+
+const FUEL_START_OPTIONS: { label: string; value: FuelGaugeLevel }[] = [
+  { label: 'Plin (1)', value: '1' },
+  { label: '2/3', value: '2/3' },
+  { label: '1/2', value: '1/2' },
+  { label: '1/4', value: '1/4' },
+]
+
+// ── datetime-local helpers (local time, no tz suffix) ──
+function localDatetimeValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 
 function useDebounce(value: string, delay: number) {
   const [debounced, setDebounced] = useState(value)
@@ -57,56 +81,60 @@ function useDebounce(value: string, delay: number) {
 }
 
 // ── Component ──
-
 export default function TestDriveForm() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const _contractId = searchParams.get('contract_id') // reserved for future edit mode
-  void _contractId
   const user = useAuthStore((s) => s.user)
 
-  // ── Section 1: Vehicle & Company ──
+  // Company & vehicle
   const [companyId, setCompanyId] = useState<number | null>(null)
   const [vehicleId, setVehicleId] = useState<number | null>(null)
   const [selectedVehicle, setSelectedVehicle] = useState<FpVehicle | null>(null)
 
-  // ── Section 2: Client ──
+  // Client (CRM)
   const [clientSearch, setClientSearch] = useState('')
-  const debouncedSearch = useDebounce(clientSearch, 300)
-  const [selectedClient, setSelectedClient] = useState<FoiClient | null>(null)
-  const [showClientDropdown, setShowClientDropdown] = useState(false)
+  const debouncedSearch = useDebounce(clientSearch, 350)
+  const [selectedClient, setSelectedClient] = useState<CrmClient | null>(null)
+  const [showManualCreate, setShowManualCreate] = useState(false)
 
-  // ── Section 3: Route ──
-  const [departureDatetime, setDepartureDatetime] = useState('')
-  const [returnDatetime, setReturnDatetime] = useState('')
+  // Driver license
+  const [driverLicensePhoto, setDriverLicensePhoto] = useState<string | null>(null)
+  const [driverLicenseNumber, setDriverLicenseNumber] = useState('')
+  const [driverLicenseExpiry, setDriverLicenseExpiry] = useState('')
+
+  // Trip
+  const [departureDatetime, setDepartureDatetime] = useState(() => localDatetimeValue(new Date()))
+  const [returnDatetime, setReturnDatetime] = useState(() => localDatetimeValue(new Date(Date.now() + 60 * 60 * 1000)))
   const [odometerStart, setOdometerStart] = useState('')
-  const [odometerEnd, setOdometerEnd] = useState('')
   const [estimatedKm, setEstimatedKm] = useState('')
-  const [itinerary, setItinerary] = useState('')
-
-  // ── Section 4: Fuel ──
   const [fuelGaugeStart, setFuelGaugeStart] = useState<FuelGaugeLevel | ''>('')
-  const [fuelGaugeEnd, setFuelGaugeEnd] = useState<FuelGaugeLevel | ''>('')
 
-  // ── Section 5: Compliance ──
-  const [gdprConsent, setGdprConsent] = useState(false)
-  const [inspectionAcceptance, setInspectionAcceptance] = useState(false)
+  // Advisor & signatures
   const [advisorName, setAdvisorName] = useState(user?.name ?? '')
-
-  // ── Section 6: Signatures ──
   const [clientSignature, setClientSignature] = useState('')
   const [advisorSignature, setAdvisorSignature] = useState('')
 
-  // ── Success ──
+  // Damage (departure)
+  const [showDamage, setShowDamage] = useState(false)
+  const [departureDamage, setDepartureDamage] = useState<DamageState>(makeEmptyDamageState)
+
+  // Compliance
+  const [gdprConsent, setGdprConsent] = useState(false)
+  const [inspectionAcceptance, setInspectionAcceptance] = useState(false)
+
   const [submittedContract, setSubmittedContract] = useState<FoiContract | null>(null)
+  const [attempted, setAttempted] = useState(false)
 
-  // ── Validation errors ──
-  const [errors, setErrors] = useState<Record<string, string>>({})
-
-  // Pre-fill advisor name when user loads
   useEffect(() => {
     if (user?.name && !advisorName) setAdvisorName(user.name)
   }, [user?.name]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load a persisted advisor signature (reused across submissions, like mobile)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(ADVISOR_SIG_KEY)
+      if (saved) setAdvisorSignature(saved)
+    } catch { /* ignore */ }
+  }, [])
 
   // ── Queries ──
   const { data: companiesData } = useQuery({
@@ -120,9 +148,10 @@ export default function TestDriveForm() {
     queryFn: () => foiParcursApi.getVehicles(true),
   })
   const allVehicles = vehiclesData?.vehicles ?? []
-  const filteredVehicles = companyId
-    ? allVehicles.filter((v) => v.company_id === companyId)
-    : allVehicles
+  const vehiclesForCompany = useMemo(
+    () => (companyId ? allVehicles.filter((v) => v.company_id === companyId) : []),
+    [allVehicles, companyId],
+  )
 
   const { data: inspectionData } = useQuery({
     queryKey: ['fp-inspection', vehicleId],
@@ -132,97 +161,99 @@ export default function TestDriveForm() {
   const latestInspection: FpVehicleInspection | null = inspectionData?.inspection ?? null
 
   const { data: clientSearchData, isFetching: isSearching } = useQuery({
-    queryKey: ['fp-clients-search', debouncedSearch],
-    queryFn: () => foiParcursApi.searchClients(debouncedSearch, 10),
-    enabled: debouncedSearch.length >= 2 && !selectedClient,
+    queryKey: ['fp-crm-search', debouncedSearch],
+    queryFn: () => foiParcursApi.searchCrmClients(debouncedSearch, 20),
+    enabled: debouncedSearch.trim().length >= 2 && !selectedClient,
   })
   const clientResults = clientSearchData?.clients ?? []
 
-  // ── Vehicle selection handler ──
+  // Auto-select the logged-in user's company by name (still switchable)
+  useEffect(() => {
+    if (companyId || !user?.company || !companies.length) return
+    const target = user.company.trim().toLowerCase()
+    const match = companies.find((c) => c.company.trim().toLowerCase() === target)
+    if (match) setCompanyId(match.id)
+  }, [companies, user?.company, companyId])
+
   const handleVehicleChange = useCallback(
     (vId: string) => {
       const id = Number(vId)
       setVehicleId(id)
-      const v = allVehicles.find((x) => x.id === id) ?? null
-      setSelectedVehicle(v)
+      setSelectedVehicle(vehiclesForCompany.find((x) => x.id === id) ?? null)
     },
-    [allVehicles],
+    [vehiclesForCompany],
   )
 
-  // ── Submit mutation ──
+  // ── Per-field validity (drives red highlight after a submit attempt) ──
+  const odometerNum = odometerStart.trim() === '' ? NaN : Number(odometerStart)
+  const estimatedNum = estimatedKm.trim() === '' ? NaN : Number(estimatedKm)
+  const missing = {
+    company: !companyId,
+    vehicle: !selectedVehicle?.vin,
+    client: !selectedClient,
+    license: !driverLicensePhoto,
+    departure: !departureDatetime,
+    odometer: Number.isNaN(odometerNum) || odometerNum < 0,
+    estimated: Number.isNaN(estimatedNum) || estimatedNum <= 0,
+    fuel: !fuelGaugeStart,
+    advisor: advisorName.trim() === '',
+    clientSig: !clientSignature,
+    gdpr: !gdprConsent,
+  }
+  const formValid = !Object.values(missing).some(Boolean)
+  const err = (bad: boolean) => attempted && bad
+
+  const damagedZoneCount = toDamagePayload(departureDamage).length
+
   const submitMutation = useMutation({
     mutationFn: (payload: TestDriveFormPayload) => foiParcursApi.submitTestDrive(payload),
-    onSuccess: (data) => {
-      setSubmittedContract(data.contract)
-    },
+    onSuccess: (data) => setSubmittedContract(data.contract),
   })
 
-  // ── Validation ──
-  function validate(): boolean {
-    const e: Record<string, string> = {}
-    if (!companyId) e.company = 'Selectati compania'
-    if (!vehicleId || !selectedVehicle) e.vehicle = 'Selectati vehiculul'
-    if (!selectedClient) e.client = 'Selectati clientul'
-    if (!departureDatetime) e.departure = 'Data si ora plecarii sunt obligatorii'
-    if (!odometerStart) e.odometerStart = 'KM plecare obligatoriu'
-    if (!estimatedKm) e.estimatedKm = 'KM estimat obligatoriu'
-    if (!itinerary.trim()) e.itinerary = 'Traseul este obligatoriu'
-    if (!fuelGaugeStart) e.fuelStart = 'Nivel combustibil plecare obligatoriu'
-    if (!gdprConsent) e.gdpr = 'Consimtamantul GDPR este obligatoriu'
-    if (!inspectionAcceptance) e.inspection = 'Acceptarea inspectiei este obligatorie'
-    if (!advisorName.trim()) e.advisor = 'Numele consilierului este obligatoriu'
-    if (!clientSignature) e.clientSig = 'Semnatura clientului este obligatorie'
-    if (!advisorSignature) e.advisorSig = 'Semnatura consilierului este obligatorie'
-    setErrors(e)
-    return Object.keys(e).length === 0
-  }
-
   function handleSubmit() {
-    if (!validate()) return
+    if (submitMutation.isPending) return
+    if (!formValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
+      setAttempted(true)
+      return
+    }
+    const damagePayload = toDamagePayload(departureDamage)
+    const capacity = selectedVehicle.fuel_tank_capacity_liters ?? selectedVehicle.battery_capacity_kwh ?? undefined
     const payload: TestDriveFormPayload = {
       company_id: companyId!,
-      vin: selectedVehicle!.vin,
-      registration_number: selectedVehicle!.registration_number ?? '',
-      client_id: selectedClient!.id,
-      odometer_start: Number(odometerStart),
-      odometer_end: odometerEnd ? Number(odometerEnd) : undefined,
-      estimated_km: Number(estimatedKm),
-      fuel_tank_capacity_liters: selectedVehicle!.fuel_tank_capacity_liters ?? selectedVehicle!.battery_capacity_kwh ?? 0,
+      vin: selectedVehicle.vin,
+      registration_number: selectedVehicle.registration_number ?? '',
+      client_id: Number(selectedClient.id),
+      odometer_start: odometerNum,
+      estimated_km: estimatedNum,
       fuel_gauge_start_level: fuelGaugeStart as FuelGaugeLevel,
-      fuel_gauge_end_level: fuelGaugeEnd ? (fuelGaugeEnd as FuelGaugeLevel) : undefined,
-      itinerary,
       departure_datetime: departureDatetime,
-      return_datetime: returnDatetime || undefined,
-      advisor_name: advisorName,
-      advisor_signature: advisorSignature,
+      advisor_name: advisorName.trim(),
       client_signature: clientSignature,
       gdpr_consent: gdprConsent,
-      inspection_acceptance: inspectionAcceptance,
-      inspection_id: latestInspection?.id,
+      ...(returnDatetime ? { return_datetime: returnDatetime } : {}),
+      ...(capacity != null ? { fuel_tank_capacity_liters: capacity } : {}),
+      ...(advisorSignature ? { advisor_signature: advisorSignature } : {}),
+      ...(inspectionAcceptance ? { inspection_acceptance: inspectionAcceptance } : {}),
+      ...(latestInspection?.id ? { inspection_id: latestInspection.id } : {}),
+      ...(damagePayload.length ? { departure_damage: damagePayload } : {}),
+      ...(driverLicensePhoto ? { driver_license_photo: driverLicensePhoto } : {}),
+      ...(driverLicenseNumber.trim() ? { driver_license_number: driverLicenseNumber.trim() } : {}),
+      ...(driverLicenseExpiry.trim() ? { driver_license_expiry: driverLicenseExpiry.trim() } : {}),
     }
     submitMutation.mutate(payload)
   }
 
   function resetForm() {
-    setCompanyId(null)
-    setVehicleId(null)
-    setSelectedVehicle(null)
-    setClientSearch('')
-    setSelectedClient(null)
-    setDepartureDatetime('')
-    setReturnDatetime('')
-    setOdometerStart('')
-    setOdometerEnd('')
-    setEstimatedKm('')
-    setItinerary('')
-    setFuelGaugeStart('')
-    setFuelGaugeEnd('')
-    setGdprConsent(false)
-    setInspectionAcceptance(false)
+    setCompanyId(null); setVehicleId(null); setSelectedVehicle(null)
+    setClientSearch(''); setSelectedClient(null); setShowManualCreate(false)
+    setDriverLicensePhoto(null); setDriverLicenseNumber(''); setDriverLicenseExpiry('')
+    setDepartureDatetime(localDatetimeValue(new Date()))
+    setReturnDatetime(localDatetimeValue(new Date(Date.now() + 60 * 60 * 1000)))
+    setOdometerStart(''); setEstimatedKm(''); setFuelGaugeStart('')
     setClientSignature('')
-    setAdvisorSignature('')
-    setSubmittedContract(null)
-    setErrors({})
+    setShowDamage(false); setDepartureDamage(makeEmptyDamageState())
+    setGdprConsent(false); setInspectionAcceptance(false)
+    setSubmittedContract(null); setAttempted(false)
   }
 
   // ── Success Screen ──
@@ -232,45 +263,31 @@ export default function TestDriveForm() {
         <Card>
           <CardContent className="pt-6 text-center space-y-4">
             <CheckCircle2 className="mx-auto h-16 w-16 text-green-500" />
-            <h2 className="text-xl font-semibold">Test Drive Inregistrat</h2>
+            <h2 className="text-xl font-semibold">Test Drive Înregistrat</h2>
             <div className="text-sm text-muted-foreground space-y-1">
               <p>Contract: <span className="font-medium text-foreground">{submittedContract.contract_id}</span></p>
-              {submittedContract.vin && (
-                <p>VIN: <span className="font-medium text-foreground">{submittedContract.vin}</span></p>
-              )}
-              {submittedContract.client_name && (
-                <p>Client: <span className="font-medium text-foreground">{submittedContract.client_name}</span></p>
-              )}
+              {submittedContract.vin && <p>VIN: <span className="font-medium text-foreground">{submittedContract.vin}</span></p>}
+              {submittedContract.client_name && <p>Client: <span className="font-medium text-foreground">{submittedContract.client_name}</span></p>}
             </div>
             <div className="flex gap-2 justify-center flex-wrap">
               <a href={foiParcursApi.getContractPdfUrl(submittedContract.id, 'legal')} target="_blank" rel="noopener">
-                <Button variant="outline" size="sm">
-                  <FileText className="mr-1.5 h-3.5 w-3.5" />
-                  Download Legal PDF
-                </Button>
+                <Button variant="outline" size="sm"><FileText className="mr-1.5 h-3.5 w-3.5" />Download Legal PDF</Button>
               </a>
               <a href={foiParcursApi.getContractPdfUrl(submittedContract.id, 'custom')} target="_blank" rel="noopener">
-                <Button variant="outline" size="sm">
-                  <FileText className="mr-1.5 h-3.5 w-3.5" />
-                  Download Custom PDF
-                </Button>
+                <Button variant="outline" size="sm"><FileText className="mr-1.5 h-3.5 w-3.5" />Download Custom PDF</Button>
               </a>
             </div>
             <div className="flex gap-3 justify-center pt-2">
-              <Button variant="outline" onClick={resetForm}>
-                <Plus className="h-4 w-4 mr-1" />
-                Test Drive Nou
-              </Button>
-              <Button onClick={() => navigate('/app/foi-parcurs')}>
-                <ArrowLeft className="h-4 w-4 mr-1" />
-                Inapoi la Foi de Parcurs
-              </Button>
+              <Button variant="outline" onClick={resetForm}><Plus className="h-4 w-4 mr-1" />Test Drive Nou</Button>
+              <Button onClick={() => navigate('/app/foi-parcurs')}><ArrowLeft className="h-4 w-4 mr-1" />Înapoi la Foi de Parcurs</Button>
             </div>
           </CardContent>
         </Card>
       </div>
     )
   }
+
+  const invalidRing = (bad: boolean) => cn(err(bad) && 'ring-2 ring-destructive')
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-12">
@@ -279,416 +296,261 @@ export default function TestDriveForm() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-lg font-semibold">Formular Test Drive</h1>
-          <p className="text-sm text-muted-foreground">Completati datele pentru test drive</p>
+          <h1 className="text-lg font-semibold">Test Drive Nou</h1>
+          <p className="text-sm text-muted-foreground">Completați datele pentru test drive</p>
         </div>
       </div>
 
-      {/* ── Section 1: Vehicle & Company ── */}
+      {/* ── Companie & Vehicul ── */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Car className="h-4 w-4" />
-            Vehicul si Companie
-          </CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><Car className="h-4 w-4" />Companie & Vehicul</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
             <Label className="text-xs">Companie *</Label>
             <Select
               value={companyId ? String(companyId) : ''}
-              onValueChange={(v) => {
-                setCompanyId(Number(v))
-                setVehicleId(null)
-                setSelectedVehicle(null)
-              }}
+              onValueChange={(v) => { setCompanyId(Number(v)); setVehicleId(null); setSelectedVehicle(null) }}
             >
-              <SelectTrigger>
-                <SelectValue placeholder="Selectati compania" />
-              </SelectTrigger>
+              <SelectTrigger className={invalidRing(missing.company)}><SelectValue placeholder="Selectează compania" /></SelectTrigger>
               <SelectContent>
-                {companies.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    {c.company}
-                  </SelectItem>
-                ))}
+                {companies.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>)}
               </SelectContent>
             </Select>
-            {errors.company && <p className="text-xs text-destructive">{errors.company}</p>}
           </div>
-
           <div className="space-y-1.5">
             <Label className="text-xs">Vehicul *</Label>
-            <Select
-              value={vehicleId ? String(vehicleId) : ''}
-              onValueChange={handleVehicleChange}
-              disabled={!companyId}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={companyId ? 'Selectati vehiculul' : 'Selectati mai intai compania'} />
+            <Select value={vehicleId ? String(vehicleId) : ''} onValueChange={handleVehicleChange} disabled={!companyId}>
+              <SelectTrigger className={invalidRing(missing.vehicle)}>
+                <SelectValue placeholder={companyId ? 'Selectează vehiculul' : 'Selectează întâi compania'} />
               </SelectTrigger>
               <SelectContent>
-                {filteredVehicles.map((v) => (
+                {vehiclesForCompany.map((v) => (
                   <SelectItem key={v.id} value={String(v.id)}>
-                    {v.mark} {v.model} — {v.registration_number || v.vin}
+                    {[v.mark, v.model].filter(Boolean).join(' ') || '—'} — {v.registration_number || v.vin}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {errors.vehicle && <p className="text-xs text-destructive">{errors.vehicle}</p>}
           </div>
-
           {selectedVehicle && (
             <div className="rounded-md border bg-muted/50 p-3 space-y-1 text-sm">
               <p><span className="text-muted-foreground">Marca/Model:</span> {selectedVehicle.mark} {selectedVehicle.model}</p>
-              <p><span className="text-muted-foreground">Nr. inmatriculare:</span> {selectedVehicle.registration_number || '—'}</p>
+              <p><span className="text-muted-foreground">Nr. înmatriculare:</span> {selectedVehicle.registration_number || '—'}</p>
               <p><span className="text-muted-foreground">Combustibil:</span> {selectedVehicle.fuel_type}</p>
-              <p><span className="text-muted-foreground">Capacitate rezervor:</span> {selectedVehicle.fuel_tank_capacity_liters} L</p>
+              <p><span className="text-muted-foreground">Capacitate:</span> {[
+                usesFuelTank(selectedVehicle.fuel_type) && selectedVehicle.fuel_tank_capacity_liters ? `${selectedVehicle.fuel_tank_capacity_liters} L` : null,
+                usesBattery(selectedVehicle.fuel_type) && selectedVehicle.battery_capacity_kwh ? `${selectedVehicle.battery_capacity_kwh} kWh` : null,
+              ].filter(Boolean).join(' + ') || '—'}</p>
             </div>
           )}
-
           {latestInspection && (
             <div className="rounded-md border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 space-y-1 text-sm">
               <div className="flex items-center gap-1.5 font-medium text-blue-700 dark:text-blue-300 mb-1">
-                <ClipboardCheck className="h-4 w-4" />
-                Ultima inspectie
+                <ClipboardCheck className="h-4 w-4" />Ultima inspecție
               </div>
               <p><span className="text-muted-foreground">Data:</span> {new Date(latestInspection.inspection_date).toLocaleDateString('ro-RO')}</p>
               <p><span className="text-muted-foreground">Inspector:</span> {latestInspection.inspector_name}</p>
-              {latestInspection.condition_notes && (
-                <p><span className="text-muted-foreground">Note:</span> {latestInspection.condition_notes}</p>
-              )}
+              {latestInspection.condition_notes && <p><span className="text-muted-foreground">Note:</span> {latestInspection.condition_notes}</p>}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* ── Section 2: Client ── */}
+      {/* ── Client ── */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Search className="h-4 w-4" />
-            Client
-          </CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><Search className="h-4 w-4" />Client</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3">
           {selectedClient ? (
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="text-sm py-1 px-3">
-                {selectedClient.name}
+                {selectedClient.display_name || selectedClient.name || `Client #${selectedClient.id}`}
                 {selectedClient.phone && ` — ${selectedClient.phone}`}
               </Badge>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSelectedClient(null)
-                  setClientSearch('')
-                }}
-              >
-                <X className="h-4 w-4 mr-1" />
-                Schimba
+              <Button variant="ghost" size="sm" onClick={() => { setSelectedClient(null); setClientSearch('') }}>
+                <X className="h-4 w-4 mr-1" />Schimbă
               </Button>
             </div>
+          ) : showManualCreate ? (
+            <CreateClientPanel
+              prefill={null}
+              onCancel={() => setShowManualCreate(false)}
+              onCreated={(client, licenseNumber, licenseExpiry) => {
+                setSelectedClient(client)
+                if (licenseNumber) setDriverLicenseNumber(licenseNumber)
+                if (licenseExpiry) setDriverLicenseExpiry(licenseExpiry)
+                setShowManualCreate(false)
+                setClientSearch('')
+              }}
+            />
           ) : (
-            <div className="space-y-1.5 relative">
-              <Label className="text-xs">Cauta client *</Label>
+            <div className="space-y-2 relative">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  className="pl-9"
-                  placeholder="Nume, telefon sau email..."
+                  className={cn('pl-9', invalidRing(missing.client))}
+                  placeholder="Caută client (CRM) după nume sau telefon..."
                   value={clientSearch}
-                  onChange={(e) => {
-                    setClientSearch(e.target.value)
-                    setShowClientDropdown(true)
-                  }}
-                  onFocus={() => setShowClientDropdown(true)}
+                  onChange={(e) => setClientSearch(e.target.value)}
                 />
-                {isSearching && (
-                  <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 text-muted-foreground animate-spin" />
-                )}
+                {isSearching && <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 text-muted-foreground animate-spin" />}
               </div>
-              {showClientDropdown && clientResults.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-60 overflow-y-auto">
+              {debouncedSearch.trim().length >= 2 && !isSearching && clientResults.length === 0 && (
+                <p className="text-xs text-muted-foreground">Niciun client găsit.</p>
+              )}
+              {clientResults.length > 0 && (
+                <div className="border rounded-md divide-y max-h-60 overflow-y-auto">
                   {clientResults.map((c) => (
                     <button
                       key={c.id}
                       type="button"
-                      className="w-full text-left px-3 py-2 hover:bg-accent text-sm transition-colors"
-                      onClick={() => {
-                        setSelectedClient(c)
-                        setShowClientDropdown(false)
-                        setClientSearch('')
-                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-accent text-sm transition-colors flex items-center justify-between gap-2"
+                      onClick={() => { setSelectedClient(c); setClientSearch('') }}
                     >
-                      <p className="font-medium">{c.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {c.phone || 'Fara detalii'}
-                      </p>
+                      <span className="font-medium truncate">{c.display_name || c.name || '—'}</span>
+                      {c.phone && <span className="text-xs text-muted-foreground shrink-0">{c.phone}</span>}
                     </button>
                   ))}
                 </div>
               )}
-              {showClientDropdown && debouncedSearch.length >= 2 && !isSearching && clientResults.length === 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md p-3 text-sm text-muted-foreground text-center">
-                  Niciun client gasit
-                </div>
-              )}
+              <Button type="button" variant="outline" className="w-full border-dashed" onClick={() => setShowManualCreate(true)}>
+                <UserPlus className="h-4 w-4 mr-2" />Adaugă client manual
+              </Button>
             </div>
           )}
-          {errors.client && <p className="text-xs text-destructive">{errors.client}</p>}
         </CardContent>
       </Card>
 
-      {/* ── Section 3: Route ── */}
+      {/* ── Permis de conducere ── */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <MapPin className="h-4 w-4" />
-            Traseu
-          </CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><IdCard className="h-4 w-4" />Permis de conducere</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DriverLicenseSection
+            photo={driverLicensePhoto}
+            onPhotoChange={setDriverLicensePhoto}
+            invalid={err(missing.license)}
+            hasClient={!!selectedClient}
+            onSelectClient={setSelectedClient}
+            onLicenseNumber={setDriverLicenseNumber}
+            onLicenseExpiry={setDriverLicenseExpiry}
+          />
+        </CardContent>
+      </Card>
+
+      {/* ── Detalii plecare ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2"><Fuel className="h-4 w-4" />Detalii plecare</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">Data/Ora plecare *</Label>
-              <Input
-                type="datetime-local"
-                value={departureDatetime}
-                onChange={(e) => setDepartureDatetime(e.target.value)}
-              />
-              {errors.departure && <p className="text-xs text-destructive">{errors.departure}</p>}
+              <Label className="text-xs">Data plecării *</Label>
+              <Input type="datetime-local" value={departureDatetime} onChange={(e) => setDepartureDatetime(e.target.value)} className={invalidRing(missing.departure)} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Data/Ora intoarcere</Label>
-              <Input
-                type="datetime-local"
-                value={returnDatetime}
-                onChange={(e) => setReturnDatetime(e.target.value)}
-              />
+              <Label className="text-xs">Data sosirii (estimată)</Label>
+              <Input type="datetime-local" value={returnDatetime} onChange={(e) => setReturnDatetime(e.target.value)} />
             </div>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs">KM Plecare *</Label>
-              <Input
-                type="number"
-                min={0}
-                placeholder="ex: 12345"
-                value={odometerStart}
-                onChange={(e) => setOdometerStart(e.target.value)}
-              />
-              {errors.odometerStart && <p className="text-xs text-destructive">{errors.odometerStart}</p>}
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">KM Sosire</Label>
-              <Input
-                type="number"
-                min={0}
-                placeholder="optional"
-                value={odometerEnd}
-                onChange={(e) => setOdometerEnd(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">KM Estimat *</Label>
-              <Input
-                type="number"
-                min={0}
-                placeholder="ex: 25"
-                value={estimatedKm}
-                onChange={(e) => setEstimatedKm(e.target.value)}
-              />
-              {errors.estimatedKm && <p className="text-xs text-destructive">{errors.estimatedKm}</p>}
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">Itinerariu *</Label>
-            <Textarea
-              rows={3}
-              placeholder="Descrieti traseul test drive-ului..."
-              value={itinerary}
-              onChange={(e) => setItinerary(e.target.value)}
-            />
-            {errors.itinerary && <p className="text-xs text-destructive">{errors.itinerary}</p>}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── Section 4: Fuel ── */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Fuel className="h-4 w-4" />
-            Combustibil
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">Nivel combustibil plecare *</Label>
-              <Select
-                value={fuelGaugeStart}
-                onValueChange={(v) => setFuelGaugeStart(v as FuelGaugeLevel)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selectati nivelul" />
-                </SelectTrigger>
-                <SelectContent>
-                  {FUEL_LEVEL_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.fuelStart && <p className="text-xs text-destructive">{errors.fuelStart}</p>}
+              <Label className="text-xs">KM plecare *</Label>
+              <Input type="number" min={0} placeholder="Km la plecare" value={odometerStart} onChange={(e) => setOdometerStart(e.target.value)} className={invalidRing(missing.odometer)} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Nivel combustibil sosire</Label>
-              <Select
-                value={fuelGaugeEnd}
-                onValueChange={(v) => setFuelGaugeEnd(v as FuelGaugeLevel)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selectati nivelul" />
-                </SelectTrigger>
-                <SelectContent>
-                  {FUEL_LEVEL_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">KM estimat *</Label>
+              <Input type="number" min={0} placeholder="Km estimați" value={estimatedKm} onChange={(e) => setEstimatedKm(e.target.value)} className={invalidRing(missing.estimated)} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Nivel combustibil plecare *</Label>
+            <div className={cn('grid grid-cols-4 gap-1 h-11 rounded-lg bg-secondary p-1', err(missing.fuel) && 'ring-2 ring-destructive')}>
+              {FUEL_START_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setFuelGaugeStart(opt.value)}
+                  className={cn(
+                    'flex items-center justify-center rounded-md text-sm font-medium transition-colors',
+                    fuelGaugeStart === opt.value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground',
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* ── Section 5: Compliance ── */}
+      {/* ── Consilier & Semnături ── */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4" />
-            Conformitate
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-md border bg-muted/50 p-3 text-xs text-muted-foreground leading-relaxed">
-            In conformitate cu Regulamentul (UE) 2016/679 (GDPR), datele dumneavoastra personale
-            (nume, prenume, telefon, adresa, serie/numar act de identitate, permis de conducere)
-            sunt colectate si prelucrate exclusiv in scopul organizarii si documentarii test
-            drive-ului solicitat. Datele vor fi stocate pe durata necesara indeplinirii scopului
-            mentionat si nu vor fi transmise catre terti, cu exceptia obligatiilor legale.
-            Aveti dreptul de acces, rectificare, stergere si portabilitate a datelor, precum si
-            dreptul de a va retrage consimtamantul in orice moment.
-          </div>
-
-          <div className="flex items-start gap-2">
-            <Checkbox
-              id="gdpr"
-              checked={gdprConsent}
-              onCheckedChange={(v) => setGdprConsent(v === true)}
-            />
-            <Label htmlFor="gdpr" className="text-xs leading-normal cursor-pointer">
-              Accept prelucrarea datelor personale conform GDPR *
-            </Label>
-          </div>
-          {errors.gdpr && <p className="text-xs text-destructive">{errors.gdpr}</p>}
-
-          <div className="flex items-start gap-2">
-            <Checkbox
-              id="inspection"
-              checked={inspectionAcceptance}
-              onCheckedChange={(v) => setInspectionAcceptance(v === true)}
-            />
-            <Label htmlFor="inspection" className="text-xs leading-normal cursor-pointer">
-              Accept starea tehnica a vehiculului conform ultimei inspectii *
-            </Label>
-          </div>
-          {errors.inspection && <p className="text-xs text-destructive">{errors.inspection}</p>}
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">Consilier vanzari *</Label>
-            <Input
-              value={advisorName}
-              onChange={(e) => setAdvisorName(e.target.value)}
-              placeholder="Nume consilier"
-            />
-            {errors.advisor && <p className="text-xs text-destructive">{errors.advisor}</p>}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── Section 6: Signatures ── */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <PenLine className="h-4 w-4" />
-            Semnaturi
-          </CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><PenLine className="h-4 w-4" />Consilier & Semnături</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-1.5">
-            <Label className="text-xs">Semnatura client *</Label>
-            {clientSignature ? (
-              <div className="space-y-2">
-                <div className="border rounded-lg p-2 bg-white">
-                  <img src={clientSignature} alt="Client signature" className="max-h-[100px] mx-auto" />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setClientSignature('')}
-                >
-                  Resemneaza
-                </Button>
-              </div>
-            ) : (
-              <Suspense fallback={<Skeleton className="h-[200px] w-full" />}>
-                <SignatureCanvas
-                  onSave={setClientSignature}
-                  onClear={() => setClientSignature('')}
-                  width={500}
-                  height={200}
-                />
-              </Suspense>
-            )}
-            {errors.clientSig && <p className="text-xs text-destructive">{errors.clientSig}</p>}
+            <Label className="text-xs">Nume consilier *</Label>
+            <Input value={advisorName} onChange={(e) => setAdvisorName(e.target.value)} placeholder="Numele consilierului" className={invalidRing(missing.advisor)} />
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Semnatura consilier *</Label>
-            {advisorSignature ? (
+            <Label className="text-xs">Semnătură client *</Label>
+            {clientSignature ? (
               <div className="space-y-2">
-                <div className="border rounded-lg p-2 bg-white">
-                  <img src={advisorSignature} alt="Advisor signature" className="max-h-[100px] mx-auto" />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setAdvisorSignature('')}
-                >
-                  Resemneaza
-                </Button>
+                <div className="border rounded-lg p-2 bg-white"><img src={clientSignature} alt="Client signature" className="max-h-[100px] mx-auto" /></div>
+                <Button type="button" variant="outline" size="sm" onClick={() => setClientSignature('')}>Resemnează</Button>
               </div>
             ) : (
               <Suspense fallback={<Skeleton className="h-[200px] w-full" />}>
-                <SignatureCanvas
-                  onSave={setAdvisorSignature}
-                  onClear={() => setAdvisorSignature('')}
-                  width={500}
-                  height={200}
-                />
+                <SignatureCanvas onSave={setClientSignature} onClear={() => setClientSignature('')} width={500} height={200} />
               </Suspense>
             )}
-            {errors.advisorSig && <p className="text-xs text-destructive">{errors.advisorSig}</p>}
+            {err(missing.clientSig) && <p className="text-xs text-destructive">Semnătura clientului este obligatorie.</p>}
+          </div>
+
+          <AdvisorSignatureField value={advisorSignature} onChange={setAdvisorSignature} />
+        </CardContent>
+      </Card>
+
+      {/* ── Raport Avarii (La Predare) — collapsible ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <button type="button" className="w-full flex items-center justify-between gap-2" onClick={() => setShowDamage((v) => !v)}>
+            <CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4" />Raport Avarii (La Predare)</CardTitle>
+            <span className="flex items-center gap-2">
+              {damagedZoneCount > 0 && <span className="text-xs font-medium text-primary">{damagedZoneCount} {damagedZoneCount === 1 ? 'zonă' : 'zone'}</span>}
+              <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', showDamage && 'rotate-180')} />
+            </span>
+          </button>
+        </CardHeader>
+        {showDamage && (
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">Marchează starea vehiculului la momentul predării (opțional).</p>
+            <DamageReport value={departureDamage} onChange={setDepartureDamage} />
+          </CardContent>
+        )}
+      </Card>
+
+      {/* ── Conformitate ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2"><ShieldCheck className="h-4 w-4" />Conformitate</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-start gap-2">
+            <Checkbox id="inspection" checked={inspectionAcceptance} onCheckedChange={(v) => setInspectionAcceptance(v === true)} />
+            <Label htmlFor="inspection" className="text-xs leading-normal cursor-pointer">Clientul a acceptat inspecția vehiculului (opțional).</Label>
+          </div>
+          <div className={cn('flex items-start gap-2 rounded-md p-2 -m-2', err(missing.gdpr) && 'ring-2 ring-destructive')}>
+            <Checkbox id="gdpr" checked={gdprConsent} onCheckedChange={(v) => setGdprConsent(v === true)} />
+            <Label htmlFor="gdpr" className="text-xs leading-normal cursor-pointer">Clientul este de acord cu prelucrarea datelor (GDPR). *</Label>
           </div>
         </CardContent>
       </Card>
@@ -696,25 +558,44 @@ export default function TestDriveForm() {
       {/* ── Submit ── */}
       {submitMutation.isError && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-          Eroare la trimitere. Va rugam incercati din nou.
+          Eroare la trimitere. Vă rugăm încercați din nou.
         </div>
       )}
-
-      <Button
-        className="w-full"
-        size="lg"
-        onClick={handleSubmit}
-        disabled={submitMutation.isPending}
-      >
-        {submitMutation.isPending ? (
-          <>
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Se trimite...
-          </>
-        ) : (
-          'Trimite Formular Test Drive'
-        )}
+      <Button className={cn('w-full', attempted && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleSubmit} disabled={submitMutation.isPending}>
+        {submitMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se trimite...</> : 'Trimite'}
       </Button>
+      {attempted && !formValid && !submitMutation.isPending && (
+        <p className="text-xs text-destructive text-center">Completează câmpurile marcate cu roșu pentru a trimite.</p>
+      )}
+    </div>
+  )
+}
+
+/** Advisor signature — reused across submissions via localStorage. Shows a
+ *  collapsed "saved" state once captured, with a "Schimbă semnătura" action. */
+function AdvisorSignatureField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const saved = !!value && !editing
+
+  const persist = (dataUrl: string) => {
+    onChange(dataUrl)
+    try { localStorage.setItem(ADVISOR_SIG_KEY, dataUrl) } catch { /* ignore */ }
+    setEditing(false)
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">Semnătură consilier (opțional)</Label>
+      {saved ? (
+        <div className="flex items-center justify-between rounded-md border bg-muted/40 p-2">
+          <span className="text-sm text-green-600 flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4" />Semnătură consilier salvată</span>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(true)}>Schimbă semnătura</Button>
+        </div>
+      ) : (
+        <Suspense fallback={<Skeleton className="h-[200px] w-full" />}>
+          <SignatureCanvas onSave={persist} onClear={() => onChange('')} width={500} height={200} />
+        </Suspense>
+      )}
     </div>
   )
 }
