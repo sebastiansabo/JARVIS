@@ -2038,6 +2038,9 @@ def _create_schema_incremental_continued(conn, cursor):
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='battery_capacity_kwh') THEN
                 ALTER TABLE fp_vehicles ADD COLUMN battery_capacity_kwh INTEGER;
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='odometer_km') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN odometer_km INTEGER;
+            END IF;
         END $$;
     ''')
     # Allow empty fuel tank capacity (pure-Electric vehicles use battery_capacity_kwh instead)
