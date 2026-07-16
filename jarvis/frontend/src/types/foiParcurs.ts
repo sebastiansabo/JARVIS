@@ -28,6 +28,7 @@ export interface FpVehicle {
   fuel_type: FuelType
   fuel_tank_capacity_liters: number | null
   battery_capacity_kwh?: number | null
+  odometer_km?: number | null
   registration_number?: string
   company_id?: number
   company_name?: string

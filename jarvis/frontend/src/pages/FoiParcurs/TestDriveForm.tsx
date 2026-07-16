@@ -179,7 +179,10 @@ export default function TestDriveForm() {
     (vId: string) => {
       const id = Number(vId)
       setVehicleId(id)
-      setSelectedVehicle(vehiclesForCompany.find((x) => x.id === id) ?? null)
+      const v = vehiclesForCompany.find((x) => x.id === id) ?? null
+      setSelectedVehicle(v)
+      // Prefill the starting odometer from the vehicle's stored reading
+      if (v?.odometer_km != null) setOdometerStart(String(v.odometer_km))
     },
     [vehiclesForCompany],
   )
