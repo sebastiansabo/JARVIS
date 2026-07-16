@@ -57,6 +57,13 @@ export const foiParcursApi = {
   getContract: (id: number) =>
     api.get<{ contract: FoiContract }>(`${BASE}/contracts/${id}`),
 
+  // Admin-only registration admin actions.
+  deleteContract: (id: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/contracts/${id}`),
+
+  resetContract: (id: number) =>
+    api.post<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${id}/reset`),
+
   // ── Signature ──
   generateSignature: (advisorName: string, variant: number) =>
     api.post<{ svg: string }>(`${BASE}/signature`, { advisor_name: advisorName, variant }),

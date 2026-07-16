@@ -13,6 +13,7 @@ import {
   Check,
   ArrowUpDown,
   Trash2,
+  RotateCcw,
   Car,
   Pencil,
   XIcon,
@@ -415,11 +416,26 @@ function ParcursTab({ companyId, brand }: { companyId: number; brand: string }) 
   const [sortBy, setSortBy] = useState('slot_number')
   const [sortDir, setSortDir] = useState('ASC')
 
+  const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
+
   const { data, isLoading } = useQuery({
     queryKey: ['foi-contracts-all', companyId],
     queryFn: () =>
       foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC' }),
     staleTime: 30_000,
+  })
+
+  // Admin-only registration cleanup (delete) + reset a completed TD to 'driving'.
+  const deleteContractMutation = useMutation({
+    mutationFn: (id: number) => foiParcursApi.deleteContract(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }),
+  })
+  const resetContractMutation = useMutation({
+    mutationFn: (id: number) => foiParcursApi.resetContract(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      queryClient.invalidateQueries({ queryKey: ['odometer-history'] })
+    },
   })
 
   // Vehicles → vin→brand map, so contracts can be filtered by the selected brand
@@ -605,17 +621,50 @@ function ParcursTab({ companyId, brand }: { companyId: number; brand: string }) 
                       <TableCell className="max-w-[150px] truncate text-xs">{c.itinerary || '—'}</TableCell>
                       <TableCell className="text-xs">{c.advisor_name || '—'}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        {c.status === 'PENDING' ? (
-                          <Button variant="outline" size="sm" onClick={() => setAllocatingContract(c)}>
-                            <UserPlus className="mr-1 h-3.5 w-3.5" />
-                            Allocate
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-green-600 flex items-center gap-1">
-                            <Check className="h-3.5 w-3.5 shrink-0" />
-                            {c.client_name || 'Filled'}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {c.status === 'PENDING' ? (
+                            <Button variant="outline" size="sm" onClick={() => setAllocatingContract(c)}>
+                              <UserPlus className="mr-1 h-3.5 w-3.5" />
+                              Allocate
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-green-600 flex items-center gap-1">
+                              <Check className="h-3.5 w-3.5 shrink-0" />
+                              {c.client_name || 'Filled'}
+                            </span>
+                          )}
+                          {isAdmin && c.route_type === 'TD' && c.status === 'COMPLETED' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Reset la 'driving' (re-testare retur)"
+                              onClick={() => {
+                                if (confirm('Resetezi acest test drive la „driving”? Datele de retur se șterg.')) {
+                                  resetContractMutation.mutate(c.id)
+                                }
+                              }}
+                              disabled={resetContractMutation.isPending}
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {isAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              title="Șterge înregistrarea (permanent)"
+                              onClick={() => {
+                                if (confirm('Ștergi definitiv această înregistrare? Acțiunea nu poate fi anulată.')) {
+                                  deleteContractMutation.mutate(c.id)
+                                }
+                              }}
+                              disabled={deleteContractMutation.isPending}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                     {isExpanded && (

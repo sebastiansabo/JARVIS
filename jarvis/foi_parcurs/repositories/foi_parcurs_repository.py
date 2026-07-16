@@ -94,6 +94,29 @@ class FoiParcursRepository(BaseRepository):
 
         return rows, total
 
+    def delete_contract(self, contract_id: int):
+        """Permanently delete a foi_de_parcurs row (admin/test cleanup)."""
+        self.execute('DELETE FROM foi_de_parcurs WHERE id = %s', (contract_id,))
+
+    def reset_return(self, contract_id: int) -> dict:
+        """Admin/test: revert a Test Drive to 'driving' — clear the return data
+        (km_end back to km_start, fuel/damage/signatures/returned_at reset) and
+        set status back to FILLED, so the return flow can be re-tested. The
+        vehicle's stored odometer is left as-is (not un-advanced)."""
+        sql = (
+            "UPDATE foi_de_parcurs SET "
+            "status = 'FILLED', returned_at = NULL, "
+            "km_end = km_start, fuel_gauge_end_level = NULL, "
+            "return_damage = '[]'::jsonb, return_notes = NULL, "
+            "return_advisor_signature = NULL, return_client_signature = NULL, "
+            "updated_at = NOW() "
+            "WHERE id = %s AND route_type = 'TD' RETURNING *"
+        )
+        row = self.execute(sql, (contract_id,), returning=True)
+        if row and row.get('id'):
+            return self.get_contract_by_id(row['id']) or row
+        return row
+
     def get_odometer_readings(self, vin: str) -> list:
         """All drives for a VIN in chronological order (departure time, falling
         back to created_at) — every route_type, so odometer continuity/gap
