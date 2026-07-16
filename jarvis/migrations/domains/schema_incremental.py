@@ -2077,6 +2077,20 @@ def _create_schema_incremental_continued(conn, cursor):
           AND battery_capacity_kwh IS NULL
           AND fuel_tank_capacity_liters IS NOT NULL
     ''')
+    # Allow decimal capacities (e.g. 1.8 kWh mild-hybrid) — widen INTEGER → NUMERIC.
+    # Value-preserving; guarded so it only runs once.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                WHERE table_name='fp_vehicles' AND column_name='battery_capacity_kwh') = 'integer' THEN
+                ALTER TABLE fp_vehicles ALTER COLUMN battery_capacity_kwh TYPE NUMERIC(7,2);
+            END IF;
+            IF (SELECT data_type FROM information_schema.columns
+                WHERE table_name='fp_vehicles' AND column_name='fuel_tank_capacity_liters') = 'integer' THEN
+                ALTER TABLE fp_vehicles ALTER COLUMN fuel_tank_capacity_liters TYPE NUMERIC(7,2);
+            END IF;
+        END $$;
+    ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_vehicles_brand ON fp_vehicles(brand)')
     cursor.execute('''
         DO $$ BEGIN
