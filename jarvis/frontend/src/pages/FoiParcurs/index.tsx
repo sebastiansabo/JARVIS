@@ -13,6 +13,7 @@ import {
   Check,
   ArrowUpDown,
   Trash2,
+  RotateCcw,
   Car,
   Pencil,
   XIcon,
@@ -415,11 +416,26 @@ function ParcursTab({ companyId, brand }: { companyId: number; brand: string }) 
   const [sortBy, setSortBy] = useState('slot_number')
   const [sortDir, setSortDir] = useState('ASC')
 
+  const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
+
   const { data, isLoading } = useQuery({
     queryKey: ['foi-contracts-all', companyId],
     queryFn: () =>
       foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC' }),
     staleTime: 30_000,
+  })
+
+  // Admin-only registration cleanup (delete) + reset a completed TD to 'driving'.
+  const deleteContractMutation = useMutation({
+    mutationFn: (id: number) => foiParcursApi.deleteContract(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }),
+  })
+  const resetContractMutation = useMutation({
+    mutationFn: (id: number) => foiParcursApi.resetContract(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      queryClient.invalidateQueries({ queryKey: ['odometer-history'] })
+    },
   })
 
   // Vehicles → vin→brand map, so contracts can be filtered by the selected brand
@@ -605,17 +621,50 @@ function ParcursTab({ companyId, brand }: { companyId: number; brand: string }) 
                       <TableCell className="max-w-[150px] truncate text-xs">{c.itinerary || '—'}</TableCell>
                       <TableCell className="text-xs">{c.advisor_name || '—'}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        {c.status === 'PENDING' ? (
-                          <Button variant="outline" size="sm" onClick={() => setAllocatingContract(c)}>
-                            <UserPlus className="mr-1 h-3.5 w-3.5" />
-                            Allocate
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-green-600 flex items-center gap-1">
-                            <Check className="h-3.5 w-3.5 shrink-0" />
-                            {c.client_name || 'Filled'}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {c.status === 'PENDING' ? (
+                            <Button variant="outline" size="sm" onClick={() => setAllocatingContract(c)}>
+                              <UserPlus className="mr-1 h-3.5 w-3.5" />
+                              Allocate
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-green-600 flex items-center gap-1">
+                              <Check className="h-3.5 w-3.5 shrink-0" />
+                              {c.client_name || 'Filled'}
+                            </span>
+                          )}
+                          {isAdmin && c.route_type === 'TD' && c.status === 'COMPLETED' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Reset la 'driving' (re-testare retur)"
+                              onClick={() => {
+                                if (confirm('Resetezi acest test drive la „driving”? Datele de retur se șterg.')) {
+                                  resetContractMutation.mutate(c.id)
+                                }
+                              }}
+                              disabled={resetContractMutation.isPending}
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {isAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              title="Șterge înregistrarea (permanent)"
+                              onClick={() => {
+                                if (confirm('Ștergi definitiv această înregistrare? Acțiunea nu poate fi anulată.')) {
+                                  deleteContractMutation.mutate(c.id)
+                                }
+                              }}
+                              disabled={deleteContractMutation.isPending}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                     {isExpanded && (
@@ -868,9 +917,28 @@ const STOCK_COLUMNS = [
   { key: 'capacity', label: 'Capacity', default: true },
   { key: 'odometer', label: 'Odometer', default: true },
   { key: 'company', label: 'Company', default: true },
+  { key: 'vignette', label: 'Rovinietă', default: true },
+  { key: 'itp', label: 'ITP', default: true },
+  { key: 'rca', label: 'RCA', default: true },
 ] as const
 
 type StockColumnKey = (typeof STOCK_COLUMNS)[number]['key']
+
+/** Formats a validity date + a color class: red if expired, amber within 30 days. */
+function fmtValidity(dateStr?: string | null): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('ro-RO')
+}
+function validityCls(dateStr?: string | null): string {
+  if (!dateStr) return 'text-muted-foreground'
+  const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return 'text-muted-foreground'
+  const days = Math.floor((d.getTime() - Date.now()) / 86_400_000)
+  if (days < 0) return 'text-red-600 font-semibold'
+  if (days <= 30) return 'text-amber-600 font-semibold'
+  return ''
+}
 
 // Unified value shape for the vehicle Add/Edit form (shared by the inline Add
 // card and the Edit modal so the two never drift apart).
@@ -886,6 +954,13 @@ interface VehicleFormValue {
   battery_capacity_kwh: number
   odometer_km: string
   company_id: string
+  vignette_valid_until: string
+  itp_valid_until: string
+  insurance_valid_until: string
+  insurance_doc: string
+  talon_doc: string
+  civ_doc: string
+  registration_doc: string
 }
 
 function emptyVehicleForm(companyId?: number): VehicleFormValue {
@@ -893,6 +968,8 @@ function emptyVehicleForm(companyId?: number): VehicleFormValue {
     car_id: '', vin: '', registration_number: '', mark: '', model: '', color: '',
     fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0,
     odometer_km: '', company_id: companyId ? String(companyId) : '',
+    vignette_valid_until: '', itp_valid_until: '', insurance_valid_until: '',
+    insurance_doc: '', talon_doc: '', civ_doc: '', registration_doc: '',
   }
 }
 
@@ -909,7 +986,87 @@ function vehicleToForm(v: FpVehicle): VehicleFormValue {
     battery_capacity_kwh: v.battery_capacity_kwh ?? 0,
     odometer_km: v.odometer_km != null ? String(v.odometer_km) : '',
     company_id: v.company_id ? String(v.company_id) : '',
+    vignette_valid_until: v.vignette_valid_until ? String(v.vignette_valid_until).slice(0, 10) : '',
+    itp_valid_until: v.itp_valid_until ? String(v.itp_valid_until).slice(0, 10) : '',
+    insurance_valid_until: v.insurance_valid_until ? String(v.insurance_valid_until).slice(0, 10) : '',
+    insurance_doc: v.insurance_doc || '',
+    talon_doc: v.talon_doc || '',
+    civ_doc: v.civ_doc || '',
+    registration_doc: v.registration_doc || '',
   }
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result))
+    r.onerror = reject
+    r.readAsDataURL(file)
+  })
+}
+
+/** Downscale big photos before storing as base64 (PDFs are kept as-is). */
+function downscaleImage(dataUrl: string, maxDim = 1600, quality = 0.72): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      let { width, height } = img
+      if (Math.max(width, height) > maxDim) {
+        const scale = maxDim / Math.max(width, height)
+        width = Math.round(width * scale)
+        height = Math.round(height * scale)
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return resolve(dataUrl)
+      ctx.drawImage(img, 0, 0, width, height)
+      resolve(canvas.toDataURL('image/jpeg', quality))
+    }
+    img.onerror = () => resolve(dataUrl)
+    img.src = dataUrl
+  })
+}
+
+async function fileToDoc(file: File): Promise<string> {
+  const dataUrl = await fileToDataUrl(file)
+  return file.type.startsWith('image/') ? downscaleImage(dataUrl) : dataUrl
+}
+
+/** Upload / preview / clear a single base64 document (image or PDF). */
+function DocUpload({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const isImg = value.startsWith('data:image')
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">{label}</Label>
+      {value ? (
+        <div className="flex items-center gap-2">
+          {isImg ? (
+            <img src={value} alt={label} className="h-14 w-14 rounded border object-cover" />
+          ) : (
+            <div className="flex h-14 w-14 items-center justify-center rounded border bg-muted text-[10px] font-semibold text-muted-foreground">PDF</div>
+          )}
+          <a href={value} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline">Vezi</a>
+          <button type="button" onClick={() => onChange('')} className="text-xs text-destructive">Șterge</button>
+        </div>
+      ) : (
+        <label className="flex h-14 cursor-pointer items-center justify-center rounded border border-dashed text-xs text-muted-foreground hover:bg-muted/40">
+          Încarcă (foto/PDF)
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            className="hidden"
+            onChange={async (e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ''
+              if (f) onChange(await fileToDoc(f))
+            }}
+          />
+        </label>
+      )}
+    </div>
+  )
 }
 
 /** The full vehicle field grid, in the canonical column order. Shared by the
@@ -927,6 +1084,7 @@ function VehicleFormFields({
   companies: { id: number; company: string }[]
 }) {
   return (
+    <div className="space-y-4">
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <div className="space-y-1.5">
         <Label className="text-xs">Model</Label>
@@ -994,6 +1152,29 @@ function VehicleFormFields({
         </Select>
       </div>
     </div>
+
+    <div className="space-y-3 border-t pt-4">
+      <p className="text-sm font-semibold">Documente & Valabilități</p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Rovinietă valabilă până la</Label>
+          <Input type="date" value={value.vignette_valid_until} onChange={(e) => onChange({ vignette_valid_until: e.target.value })} />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">ITP valabil până la</Label>
+          <Input type="date" value={value.itp_valid_until} onChange={(e) => onChange({ itp_valid_until: e.target.value })} />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">RCA valabil până la</Label>
+          <Input type="date" value={value.insurance_valid_until} onChange={(e) => onChange({ insurance_valid_until: e.target.value })} />
+        </div>
+        <DocUpload label="Asigurare (RCA)" value={value.insurance_doc} onChange={(v) => onChange({ insurance_doc: v })} />
+        <DocUpload label="Talon" value={value.talon_doc} onChange={(v) => onChange({ talon_doc: v })} />
+        <DocUpload label="Carte de identitate (CIV)" value={value.civ_doc} onChange={(v) => onChange({ civ_doc: v })} />
+        <DocUpload label="Documente înmatriculare" value={value.registration_doc} onChange={(v) => onChange({ registration_doc: v })} />
+      </div>
+    </div>
+    </div>
   )
 }
 
@@ -1043,6 +1224,13 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
         battery_capacity_kwh: usesBattery(newVehicle.fuel_type) ? newVehicle.battery_capacity_kwh : null,
         odometer_km: newVehicle.odometer_km.trim() === '' ? null : Number(newVehicle.odometer_km),
         company_id: newVehicle.company_id ? Number(newVehicle.company_id) : undefined,
+        vignette_valid_until: newVehicle.vignette_valid_until || undefined,
+        itp_valid_until: newVehicle.itp_valid_until || undefined,
+        insurance_valid_until: newVehicle.insurance_valid_until || undefined,
+        insurance_doc: newVehicle.insurance_doc || undefined,
+        talon_doc: newVehicle.talon_doc || undefined,
+        civ_doc: newVehicle.civ_doc || undefined,
+        registration_doc: newVehicle.registration_doc || undefined,
       }),
     onSuccess: () => {
       setError('')
@@ -1115,6 +1303,13 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
         battery_capacity_kwh: usesBattery(ft) ? Number(editForm.battery_capacity_kwh) : null,
         odometer_km: editForm.odometer_km.trim() === '' ? null : Number(editForm.odometer_km),
         company_id: editForm.company_id ? Number(editForm.company_id) : null,
+        vignette_valid_until: editForm.vignette_valid_until || null,
+        itp_valid_until: editForm.itp_valid_until || null,
+        insurance_valid_until: editForm.insurance_valid_until || null,
+        insurance_doc: editForm.insurance_doc || null,
+        talon_doc: editForm.talon_doc || null,
+        civ_doc: editForm.civ_doc || null,
+        registration_doc: editForm.registration_doc || null,
       },
     })
   }
@@ -1214,6 +1409,9 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                 {show('capacity') && <TableHead>Capacity</TableHead>}
                 {show('odometer') && <TableHead>Odometer</TableHead>}
                 {show('company') && <TableHead>Company</TableHead>}
+                {show('vignette') && <TableHead>Rovinietă</TableHead>}
+                {show('itp') && <TableHead>ITP</TableHead>}
+                {show('rca') && <TableHead>RCA</TableHead>}
                 <TableHead className="w-[100px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -1247,6 +1445,15 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                   )}
                   {show('company') && (
                     <TableCell className="text-sm text-muted-foreground">{v.company_name || '—'}</TableCell>
+                  )}
+                  {show('vignette') && (
+                    <TableCell className={`whitespace-nowrap text-sm ${validityCls(v.vignette_valid_until)}`}>{fmtValidity(v.vignette_valid_until)}</TableCell>
+                  )}
+                  {show('itp') && (
+                    <TableCell className={`whitespace-nowrap text-sm ${validityCls(v.itp_valid_until)}`}>{fmtValidity(v.itp_valid_until)}</TableCell>
+                  )}
+                  {show('rca') && (
+                    <TableCell className={`whitespace-nowrap text-sm ${validityCls(v.insurance_valid_until)}`}>{fmtValidity(v.insurance_valid_until)}</TableCell>
                   )}
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <div className="flex gap-1">
