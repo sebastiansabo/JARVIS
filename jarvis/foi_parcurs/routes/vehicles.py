@@ -16,6 +16,16 @@ def _to_int_or_none(value):
         return None
 
 
+def _to_num_or_none(value):
+    """Coerce to a number (allows decimals, e.g. 1.8 kWh), or None if empty/invalid."""
+    if value in (None, ''):
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/vehicles', methods=['GET'])
 @login_required
 def api_list_vehicles():
@@ -106,8 +116,8 @@ def api_create_vehicle():
         return jsonify({'success': False, 'error': 'fuel_type must be Benzina, Diesel, Electric, or Hybrid'}), 400
 
     # Capacity depends on fuel type: combustion → liters, Electric → kWh, Hybrid → both
-    fuel_liters = _to_int_or_none(data.get('fuel_tank_capacity_liters'))
-    battery_kwh = _to_int_or_none(data.get('battery_capacity_kwh'))
+    fuel_liters = _to_num_or_none(data.get('fuel_tank_capacity_liters'))
+    battery_kwh = _to_num_or_none(data.get('battery_capacity_kwh'))
     if fuel_type in ('Benzina', 'Diesel', 'Hybrid') and not fuel_liters:
         return jsonify({'success': False, 'error': 'Fuel capacity (L) is required for this fuel type'}), 400
     if fuel_type in ('Electric', 'Hybrid') and not battery_kwh:

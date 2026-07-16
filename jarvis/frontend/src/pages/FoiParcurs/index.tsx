@@ -75,12 +75,33 @@ import {
 } from '@/types/foiParcurs'
 import { VehicleOdometerHistory } from './VehicleOdometerHistory'
 
+/** useState backed by localStorage — survives a page refresh. */
+function usePersistentState<T>(key: string, initial: T) {
+  const [state, setState] = useState<T>(() => {
+    try {
+      const s = localStorage.getItem(key)
+      return s != null ? (JSON.parse(s) as T) : initial
+    } catch {
+      return initial
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(state))
+    } catch {
+      /* ignore quota/serialization errors */
+    }
+  }, [key, state])
+  return [state, setState] as const
+}
+
 // ── Main Page ──
 export default function FoiParcurs() {
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'contracts' | 'parcurs' | 'stock' | 'settings'>('stock')
-  const [companyId, setCompanyId] = useState<number>(0)
-  const [brand, setBrand] = useState<string>('')
+  // Persist the tab + company/brand filters so a refresh keeps your context.
+  const [activeTab, setActiveTab] = usePersistentState<'contracts' | 'parcurs' | 'stock' | 'settings'>('fp.activeTab', 'stock')
+  const [companyId, setCompanyId] = usePersistentState<number>('fp.companyId', 0)
+  const [brand, setBrand] = usePersistentState<string>('fp.brand', '')
 
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
@@ -1130,13 +1151,13 @@ function VehicleFormFields({
       {usesFuelTank(value.fuel_type) && (
         <div className="space-y-1.5">
           <Label className="text-xs">Fuel capacity (L)</Label>
-          <Input type="number" min={1} value={value.fuel_tank_capacity_liters} onChange={(e) => onChange({ fuel_tank_capacity_liters: Number(e.target.value) })} required />
+          <Input type="number" min={0} step="any" value={value.fuel_tank_capacity_liters} onChange={(e) => onChange({ fuel_tank_capacity_liters: Number(e.target.value) })} required />
         </div>
       )}
       {usesBattery(value.fuel_type) && (
         <div className="space-y-1.5">
           <Label className="text-xs">Battery capacity (kWh)</Label>
-          <Input type="number" min={1} value={value.battery_capacity_kwh} onChange={(e) => onChange({ battery_capacity_kwh: Number(e.target.value) })} required />
+          <Input type="number" min={0} step="any" value={value.battery_capacity_kwh} onChange={(e) => onChange({ battery_capacity_kwh: Number(e.target.value) })} required />
         </div>
       )}
       <div className="space-y-1.5">
