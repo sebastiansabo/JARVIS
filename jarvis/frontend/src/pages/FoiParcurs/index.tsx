@@ -1267,7 +1267,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
 
       {/* Edit Vehicle Modal */}
       <Dialog open={!!editVehicle} onOpenChange={(open) => { if (!open) { setEditVehicle(null); setEditError('') } }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-[min(95vw,1400px)] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Vehicle</DialogTitle>
           </DialogHeader>
