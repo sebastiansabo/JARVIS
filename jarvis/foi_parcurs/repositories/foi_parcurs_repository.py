@@ -94,6 +94,23 @@ class FoiParcursRepository(BaseRepository):
 
         return rows, total
 
+    def get_odometer_readings(self, vin: str) -> list:
+        """All drives for a VIN in chronological order (departure time, falling
+        back to created_at) — every route_type, so odometer continuity/gap
+        analysis isn't fooled by non-TD drives. Only the fields needed for the
+        odometer history."""
+        return self.query_all(
+            '''SELECT fp.id, fp.contract_id, fp.route_type, fp.status,
+                      fp.km_start, fp.km_end,
+                      fp.departure_datetime, fp.return_datetime, fp.created_at,
+                      COALESCE(fp.client_name, c.name) AS client_name
+               FROM foi_de_parcurs fp
+               LEFT JOIN fp_clients c ON c.id = fp.client_id
+               WHERE fp.vin = %s
+               ORDER BY COALESCE(fp.departure_datetime, fp.created_at) ASC, fp.id ASC''',
+            (vin,),
+        )
+
     def get_contract_by_id(self, contract_id: int) -> dict:
         """Single contract with client + company join."""
         sql = (
