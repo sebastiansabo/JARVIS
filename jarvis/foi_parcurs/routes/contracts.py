@@ -207,6 +207,42 @@ def api_contract_detail(id):
     return jsonify({'success': True, 'contract': contract})
 
 
+def _is_admin():
+    """Admin / superadmin — gates the destructive registration actions below."""
+    return getattr(current_user, 'role_name', '').lower() in ('admin', 'superadmin')
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>', methods=['DELETE'])
+@login_required
+def api_delete_contract(id):
+    """Admin-only: permanently delete a registration (foi_de_parcurs row)."""
+    if not _is_admin():
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    contract = _fp_repo.get_contract_by_id(id)
+    if not contract:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    _fp_repo.delete_contract(id)
+    logger.info('foi-parcurs contract %s deleted by admin %s', id, getattr(current_user, 'email', '?'))
+    return jsonify({'success': True})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/reset', methods=['POST'])
+@login_required
+def api_reset_contract(id):
+    """Admin-only: reset a completed Test Drive back to 'driving' (clears the
+    return data) so the return flow can be re-tested."""
+    if not _is_admin():
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    contract = _fp_repo.get_contract_by_id(id)
+    if not contract:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    if contract.get('route_type') != 'TD':
+        return jsonify({'success': False, 'error': 'Only Test Drive registrations can be reset'}), 400
+    updated = _fp_repo.reset_return(id)
+    logger.info('foi-parcurs contract %s reset to driving by admin %s', id, getattr(current_user, 'email', '?'))
+    return jsonify({'success': True, 'contract': updated})
+
+
 # ════════════════════════════════════════════════════════════════
 # Save Batch — persist preview as PENDING contracts
 # ════════════════════════════════════════════════════════════════
