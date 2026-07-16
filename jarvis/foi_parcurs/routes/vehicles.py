@@ -79,6 +79,7 @@ def api_create_vehicle():
             'fuel_type': fuel_type,
             'fuel_tank_capacity_liters': fuel_liters,
             'battery_capacity_kwh': battery_kwh,
+            'odometer_km': _to_int_or_none(data.get('odometer_km')),
             'company_id': company_id,
         })
         return jsonify({'success': True, 'vehicle': vehicle})
