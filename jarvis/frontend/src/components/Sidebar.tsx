@@ -90,7 +90,7 @@ const navItemsDef: NavItem[] = [
       { path: '/app/carpark', label: 'Vehicule', icon: Car, moduleKey: 'carpark_vehicles' },
       { path: '/app/carpark/pricing-rules', label: 'Reguli preț', icon: DollarSign, moduleKey: 'carpark_pricing' },
       { path: '/app/carpark/promotions', label: 'Promoții', icon: Tag, moduleKey: 'carpark_promotions' },
-      { path: '/app/foi-parcurs', label: 'Foi de Parcurs', icon: FileText, moduleKey: 'foi_parcurs', permission: 'can_access_carpark' },
+      { path: '/app/foi-parcurs', label: 'Driving Hub', icon: FileText, moduleKey: 'foi_parcurs', permission: 'can_access_carpark' },
     ],
   },
   {

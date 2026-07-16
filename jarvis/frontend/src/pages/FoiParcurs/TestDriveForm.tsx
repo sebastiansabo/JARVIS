@@ -282,7 +282,7 @@ export default function TestDriveForm() {
             </div>
             <div className="flex gap-3 justify-center pt-2">
               <Button variant="outline" onClick={resetForm}><Plus className="h-4 w-4 mr-1" />Test Drive Nou</Button>
-              <Button onClick={() => navigate('/app/foi-parcurs')}><ArrowLeft className="h-4 w-4 mr-1" />Înapoi la Foi de Parcurs</Button>
+              <Button onClick={() => navigate('/app/foi-parcurs')}><ArrowLeft className="h-4 w-4 mr-1" />Înapoi la Driving Hub</Button>
             </div>
           </CardContent>
         </Card>

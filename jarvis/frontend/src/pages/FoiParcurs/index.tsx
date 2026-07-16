@@ -115,7 +115,7 @@ export default function FoiParcurs() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Foi de Parcurs</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Driving Hub</h1>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => navigate('/app/foi-parcurs/test-drive')}>
