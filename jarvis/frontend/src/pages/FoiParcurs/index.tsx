@@ -856,12 +856,12 @@ function AllocateClientDialog({
 
 // ── Stock Tab (Vehicle CRUD) ──
 const STOCK_COLUMNS = [
-  { key: 'car_id', label: 'Car ID', default: true },
+  { key: 'model', label: 'Model', default: true },
+  { key: 'mark', label: 'Mark', default: true },
   { key: 'vin', label: 'VIN', default: true },
+  { key: 'car_id', label: 'Car ID', default: true },
   { key: 'reg_number', label: 'Reg. No.', default: true },
   { key: 'brand', label: 'Brand', default: true },
-  { key: 'mark', label: 'Mark', default: true },
-  { key: 'model', label: 'Model', default: true },
   { key: 'color', label: 'Color', default: true },
   { key: 'fuel_type', label: 'Fuel Type', default: true },
   { key: 'capacity', label: 'Capacity', default: true },
@@ -871,28 +871,142 @@ const STOCK_COLUMNS = [
 
 type StockColumnKey = (typeof STOCK_COLUMNS)[number]['key']
 
+// Unified value shape for the vehicle Add/Edit form (shared by the inline Add
+// card and the Edit modal so the two never drift apart).
+interface VehicleFormValue {
+  car_id: string
+  vin: string
+  registration_number: string
+  mark: string
+  model: string
+  color: string
+  fuel_type: string
+  fuel_tank_capacity_liters: number
+  battery_capacity_kwh: number
+  odometer_km: string
+  company_id: string
+}
+
+function emptyVehicleForm(companyId?: number): VehicleFormValue {
+  return {
+    car_id: '', vin: '', registration_number: '', mark: '', model: '', color: '',
+    fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0,
+    odometer_km: '', company_id: companyId ? String(companyId) : '',
+  }
+}
+
+function vehicleToForm(v: FpVehicle): VehicleFormValue {
+  return {
+    car_id: v.car_id || '',
+    vin: v.vin,
+    registration_number: v.registration_number || '',
+    mark: v.mark,
+    model: v.model,
+    color: v.color || '',
+    fuel_type: v.fuel_type || 'Diesel',
+    fuel_tank_capacity_liters: v.fuel_tank_capacity_liters ?? 0,
+    battery_capacity_kwh: v.battery_capacity_kwh ?? 0,
+    odometer_km: v.odometer_km != null ? String(v.odometer_km) : '',
+    company_id: v.company_id ? String(v.company_id) : '',
+  }
+}
+
+/** The full vehicle field grid, in the canonical column order. Shared by the
+ *  Add card and the Edit modal. Brand is read-only (set from the header on Add,
+ *  kept as-is on Edit). */
+function VehicleFormFields({
+  value,
+  onChange,
+  brandLabel,
+  companies,
+}: {
+  value: VehicleFormValue
+  onChange: (patch: Partial<VehicleFormValue>) => void
+  brandLabel: string
+  companies: { id: number; company: string }[]
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="space-y-1.5">
+        <Label className="text-xs">Model</Label>
+        <Input value={value.model} onChange={(e) => onChange({ model: e.target.value })} placeholder="e.g., EX90" required />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Mark</Label>
+        <Input value={value.mark} onChange={(e) => onChange({ mark: e.target.value })} placeholder="e.g., VOLVO" required />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">VIN</Label>
+        <Input value={value.vin} onChange={(e) => onChange({ vin: e.target.value.toUpperCase() })} placeholder="e.g., YV1TFEVB1SG004808" required />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Car ID</Label>
+        <Input value={value.car_id} onChange={(e) => onChange({ car_id: e.target.value })} placeholder="internal ID" />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Reg. No.</Label>
+        <Input value={value.registration_number} onChange={(e) => onChange({ registration_number: e.target.value.toUpperCase() })} placeholder="e.g., CJ-01-ABC" />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Brand</Label>
+        <Input value={brandLabel} readOnly disabled />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Color</Label>
+        <Input value={value.color} onChange={(e) => onChange({ color: e.target.value })} placeholder="e.g., Soul Red" />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Fuel Type</Label>
+        <Select value={value.fuel_type} onValueChange={(v) => onChange({ fuel_type: v })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Benzina">Benzina</SelectItem>
+            <SelectItem value="Diesel">Diesel</SelectItem>
+            <SelectItem value="Electric">Electric</SelectItem>
+            <SelectItem value="Hybrid">Hybrid</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {usesFuelTank(value.fuel_type) && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Fuel capacity (L)</Label>
+          <Input type="number" min={1} value={value.fuel_tank_capacity_liters} onChange={(e) => onChange({ fuel_tank_capacity_liters: Number(e.target.value) })} required />
+        </div>
+      )}
+      {usesBattery(value.fuel_type) && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Battery capacity (kWh)</Label>
+          <Input type="number" min={1} value={value.battery_capacity_kwh} onChange={(e) => onChange({ battery_capacity_kwh: Number(e.target.value) })} required />
+        </div>
+      )}
+      <div className="space-y-1.5">
+        <Label className="text-xs">Starting odometer (km)</Label>
+        <Input type="number" min={0} value={value.odometer_km} onChange={(e) => onChange({ odometer_km: e.target.value })} placeholder="e.g., 12" />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Company</Label>
+        <Select value={value.company_id} onValueChange={(v) => onChange({ company_id: v })}>
+          <SelectTrigger><SelectValue placeholder="Select company..." /></SelectTrigger>
+          <SelectContent>
+            {companies.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  )
+}
+
 function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
-  const [editId, setEditId] = useState<number | null>(null)
-  const [editData, setEditData] = useState<Record<string, string | number>>({})
+  const [editVehicle, setEditVehicle] = useState<FpVehicle | null>(null)
+  const [editForm, setEditForm] = useState<VehicleFormValue>(emptyVehicleForm())
+  const [editError, setEditError] = useState('')
   const [visibleCols, setVisibleCols] = useState<Set<StockColumnKey>>(
     new Set(STOCK_COLUMNS.filter((c) => c.default).map((c) => c.key))
   )
   const [showColMenu, setShowColMenu] = useState(false)
-  const [newVehicle, setNewVehicle] = useState({
-    vin: '',
-    registration_number: '',
-    car_id: '',
-    mark: '',
-    model: '',
-    color: '',
-    fuel_type: 'Diesel' as string,
-    fuel_tank_capacity_liters: 50,
-    battery_capacity_kwh: 0,
-    odometer_km: '' as string,
-    company_id: companyId ? String(companyId) : '' as string,
-  })
+  const [newVehicle, setNewVehicle] = useState<VehicleFormValue>(() => emptyVehicleForm(companyId))
   const [error, setError] = useState('')
 
   const { data: vehiclesData, isLoading } = useQuery({
@@ -931,7 +1045,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
     onSuccess: () => {
       setError('')
       setShowAdd(false)
-      setNewVehicle({ vin: '', registration_number: '', car_id: '', mark: '', model: '', color: '', fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0, odometer_km: '', company_id: companyId ? String(companyId) : '' })
+      setNewVehicle(emptyVehicleForm(companyId))
       queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
     },
     onError: (err: any) => {
@@ -943,9 +1057,12 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
     mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
       foiParcursApi.updateVehicle(id, data),
     onSuccess: () => {
-      setEditId(null)
-      setEditData({})
+      setEditVehicle(null)
+      setEditError('')
       queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
+    },
+    onError: (err: any) => {
+      setEditError(err?.data?.error || err?.message || 'Failed to update vehicle')
     },
   })
 
@@ -968,40 +1085,34 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
   }
 
   const startEdit = (v: FpVehicle) => {
-    setEditId(v.id)
-    setEditData({
-      vin: v.vin,
-      registration_number: v.registration_number || '',
-      car_id: v.car_id || '',
-      mark: v.mark,
-      brand: v.brand || '',
-      model: v.model,
-      color: v.color || '',
-      fuel_type: v.fuel_type || 'Diesel',
-      fuel_tank_capacity_liters: v.fuel_tank_capacity_liters ?? 0,
-      battery_capacity_kwh: v.battery_capacity_kwh ?? 0,
-      odometer_km: v.odometer_km ?? '',
-      company_id: v.company_id ? String(v.company_id) : '',
-    })
+    setEditError('')
+    setEditVehicle(v)
+    setEditForm(vehicleToForm(v))
   }
 
   const saveEdit = () => {
-    if (!editId) return
-    const ft = String(editData.fuel_type)
+    if (!editVehicle) return
+    setEditError('')
+    if (!editForm.vin.trim()) return setEditError('VIN is required')
+    if (!editForm.mark.trim()) return setEditError('Mark is required')
+    if (!editForm.model.trim()) return setEditError('Model is required')
+    const ft = editForm.fuel_type
+    if (usesFuelTank(ft) && editForm.fuel_tank_capacity_liters <= 0) return setEditError('Fuel capacity (L) must be positive')
+    if (usesBattery(ft) && editForm.battery_capacity_kwh <= 0) return setEditError('Battery capacity (kWh) must be positive')
     updateMutation.mutate({
-      id: editId,
+      id: editVehicle.id,
       data: {
-        vin: String(editData.vin).toUpperCase().trim(),
-        registration_number: String(editData.registration_number).trim() || null,
-        car_id: String(editData.car_id).trim() || null,
-        mark: String(editData.mark).trim(),
-        model: String(editData.model).trim(),
-        color: String(editData.color).trim() || null,
+        vin: editForm.vin.toUpperCase().trim(),
+        registration_number: editForm.registration_number.trim() || null,
+        car_id: editForm.car_id.trim() || null,
+        mark: editForm.mark.trim(),
+        model: editForm.model.trim(),
+        color: editForm.color.trim() || null,
         fuel_type: ft,
-        fuel_tank_capacity_liters: usesFuelTank(ft) ? Number(editData.fuel_tank_capacity_liters) : null,
-        battery_capacity_kwh: usesBattery(ft) ? Number(editData.battery_capacity_kwh) : null,
-        odometer_km: String(editData.odometer_km).trim() === '' ? null : Number(editData.odometer_km),
-        company_id: editData.company_id ? Number(editData.company_id) : null,
+        fuel_tank_capacity_liters: usesFuelTank(ft) ? Number(editForm.fuel_tank_capacity_liters) : null,
+        battery_capacity_kwh: usesBattery(ft) ? Number(editForm.battery_capacity_kwh) : null,
+        odometer_km: editForm.odometer_km.trim() === '' ? null : Number(editForm.odometer_km),
+        company_id: editForm.company_id ? Number(editForm.company_id) : null,
       },
     })
   }
@@ -1057,120 +1168,12 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
       {showAdd && (
         <Card className="p-4">
           <form onSubmit={handleCreate} className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Car ID</Label>
-                <Input
-                  value={newVehicle.car_id}
-                  onChange={(e) => setNewVehicle((p) => ({ ...p, car_id: e.target.value }))}
-                  placeholder="internal ID"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">VIN</Label>
-                <Input
-                  value={newVehicle.vin}
-                  onChange={(e) => setNewVehicle((p) => ({ ...p, vin: e.target.value.toUpperCase() }))}
-                  placeholder="e.g., YV1TFEVB1SG004808"
-                  required
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Reg. No.</Label>
-                <Input
-                  value={newVehicle.registration_number}
-                  onChange={(e) => setNewVehicle((p) => ({ ...p, registration_number: e.target.value.toUpperCase() }))}
-                  placeholder="e.g., CJ-01-ABC"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Brand</Label>
-                <Input value={brand || '—'} readOnly disabled />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Mark</Label>
-                <Input
-                  value={newVehicle.mark}
-                  onChange={(e) => setNewVehicle((p) => ({ ...p, mark: e.target.value }))}
-                  placeholder="e.g., VOLVO"
-                  required
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Model</Label>
-                <Input
-                  value={newVehicle.model}
-                  onChange={(e) => setNewVehicle((p) => ({ ...p, model: e.target.value }))}
-                  placeholder="e.g., EX90"
-                  required
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Color</Label>
-                <Input
-                  value={newVehicle.color}
-                  onChange={(e) => setNewVehicle((p) => ({ ...p, color: e.target.value }))}
-                  placeholder="e.g., Soul Red"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Fuel Type</Label>
-                <Select value={newVehicle.fuel_type} onValueChange={(v) => setNewVehicle((p) => ({ ...p, fuel_type: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Benzina">Benzina</SelectItem>
-                    <SelectItem value="Diesel">Diesel</SelectItem>
-                    <SelectItem value="Electric">Electric</SelectItem>
-                    <SelectItem value="Hybrid">Hybrid</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {usesFuelTank(newVehicle.fuel_type) && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Fuel capacity (L)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={newVehicle.fuel_tank_capacity_liters}
-                    onChange={(e) => setNewVehicle((p) => ({ ...p, fuel_tank_capacity_liters: Number(e.target.value) }))}
-                    required
-                  />
-                </div>
-              )}
-              {usesBattery(newVehicle.fuel_type) && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Battery capacity (kWh)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={newVehicle.battery_capacity_kwh}
-                    onChange={(e) => setNewVehicle((p) => ({ ...p, battery_capacity_kwh: Number(e.target.value) }))}
-                    required
-                  />
-                </div>
-              )}
-              <div className="space-y-1.5">
-                <Label className="text-xs">Starting odometer (km)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={newVehicle.odometer_km}
-                  onChange={(e) => setNewVehicle((p) => ({ ...p, odometer_km: e.target.value }))}
-                  placeholder="e.g., 12"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Company</Label>
-                <Select value={newVehicle.company_id} onValueChange={(v) => setNewVehicle((p) => ({ ...p, company_id: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select company..." /></SelectTrigger>
-                  <SelectContent>
-                    {companiesData?.companies?.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            <VehicleFormFields
+              value={newVehicle}
+              onChange={(patch) => setNewVehicle((p) => ({ ...p, ...patch }))}
+              brandLabel={brand || '—'}
+              companies={companiesData?.companies ?? []}
+            />
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex gap-2">
               <Button type="submit" size="sm" disabled={createMutation.isPending}>
@@ -1198,12 +1201,12 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
           <Table>
             <TableHeader>
               <TableRow>
-                {show('car_id') && <TableHead>Car ID</TableHead>}
+                {show('model') && <TableHead>Model</TableHead>}
+                {show('mark') && <TableHead>Mark</TableHead>}
                 {show('vin') && <TableHead>VIN</TableHead>}
+                {show('car_id') && <TableHead>Car ID</TableHead>}
                 {show('reg_number') && <TableHead>Reg. No.</TableHead>}
                 {show('brand') && <TableHead>Brand</TableHead>}
-                {show('mark') && <TableHead>Mark</TableHead>}
-                {show('model') && <TableHead>Model</TableHead>}
                 {show('color') && <TableHead>Color</TableHead>}
                 {show('fuel_type') && <TableHead>Fuel Type</TableHead>}
                 {show('capacity') && <TableHead>Capacity</TableHead>}
@@ -1213,173 +1216,76 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredVehicles.map((v) =>
-                editId === v.id ? (
-                  <TableRow key={v.id} className="bg-muted/30">
-                    {show('car_id') && (
-                      <TableCell>
-                        <Input className="h-8 text-xs" value={editData.car_id} onChange={(e) => setEditData((p) => ({ ...p, car_id: e.target.value }))} />
-                      </TableCell>
-                    )}
-                    {show('vin') && (
-                      <TableCell>
-                        <Input
-                          className="h-8 text-xs font-mono"
-                          value={editData.vin}
-                          onChange={(e) => setEditData((p) => ({ ...p, vin: e.target.value.toUpperCase() }))}
-                        />
-                      </TableCell>
-                    )}
-                    {show('reg_number') && (
-                      <TableCell>
-                        <Input
-                          className="h-8 text-xs"
-                          value={editData.registration_number}
-                          onChange={(e) => setEditData((p) => ({ ...p, registration_number: e.target.value.toUpperCase() }))}
-                          placeholder="CJ-01-ABC"
-                        />
-                      </TableCell>
-                    )}
-                    {show('brand') && (
-                      <TableCell className="text-sm text-muted-foreground">{v.brand || '—'}</TableCell>
-                    )}
-                    {show('mark') && (
-                      <TableCell>
-                        <Input className="h-8" value={editData.mark} onChange={(e) => setEditData((p) => ({ ...p, mark: e.target.value }))} />
-                      </TableCell>
-                    )}
-                    {show('model') && (
-                      <TableCell>
-                        <Input className="h-8" value={editData.model} onChange={(e) => setEditData((p) => ({ ...p, model: e.target.value }))} />
-                      </TableCell>
-                    )}
-                    {show('color') && (
-                      <TableCell>
-                        <Input className="h-8" value={editData.color} onChange={(e) => setEditData((p) => ({ ...p, color: e.target.value }))} />
-                      </TableCell>
-                    )}
-                    {show('fuel_type') && (
-                      <TableCell>
-                        <Select value={String(editData.fuel_type)} onValueChange={(val) => setEditData((p) => ({ ...p, fuel_type: val }))}>
-                          <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Benzina">Benzina</SelectItem>
-                            <SelectItem value="Diesel">Diesel</SelectItem>
-                            <SelectItem value="Electric">Electric</SelectItem>
-                            <SelectItem value="Hybrid">Hybrid</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                    )}
-                    {show('capacity') && (
-                      <TableCell>
-                        <div className="flex gap-1">
-                          {usesFuelTank(String(editData.fuel_type)) && (
-                            <Input
-                              className="h-8 w-16"
-                              type="number"
-                              min={1}
-                              placeholder="L"
-                              value={editData.fuel_tank_capacity_liters}
-                              onChange={(e) => setEditData((p) => ({ ...p, fuel_tank_capacity_liters: Number(e.target.value) }))}
-                            />
-                          )}
-                          {usesBattery(String(editData.fuel_type)) && (
-                            <Input
-                              className="h-8 w-16"
-                              type="number"
-                              min={1}
-                              placeholder="kWh"
-                              value={editData.battery_capacity_kwh}
-                              onChange={(e) => setEditData((p) => ({ ...p, battery_capacity_kwh: Number(e.target.value) }))}
-                            />
-                          )}
-                        </div>
-                      </TableCell>
-                    )}
-                    {show('odometer') && (
-                      <TableCell>
-                        <Input
-                          className="h-8 w-20"
-                          type="number"
-                          min={0}
-                          value={editData.odometer_km}
-                          onChange={(e) => setEditData((p) => ({ ...p, odometer_km: e.target.value }))}
-                        />
-                      </TableCell>
-                    )}
-                    {show('company') && (
-                      <TableCell>
-                        <Select value={String(editData.company_id || '')} onValueChange={(val) => setEditData((p) => ({ ...p, company_id: val }))}>
-                          <SelectTrigger className="h-8"><SelectValue placeholder="—" /></SelectTrigger>
-                          <SelectContent>
-                            {companiesData?.companies?.map((c) => (
-                              <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                    )}
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" onClick={saveEdit} disabled={updateMutation.isPending}>
-                          <Check className="h-4 w-4 text-green-600" />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setEditId(null)}>
-                          <XIcon className="h-4 w-4" />
-                        </Button>
-                      </div>
+              {filteredVehicles.map((v) => (
+                <TableRow key={v.id}>
+                  {show('model') && <TableCell>{v.model}</TableCell>}
+                  {show('mark') && <TableCell>{v.mark}</TableCell>}
+                  {show('vin') && <TableCell className="font-mono text-xs">{v.vin}</TableCell>}
+                  {show('car_id') && <TableCell className="text-sm">{v.car_id || '—'}</TableCell>}
+                  {show('reg_number') && <TableCell className="text-sm">{v.registration_number || '—'}</TableCell>}
+                  {show('brand') && <TableCell className="text-sm">{v.brand || '—'}</TableCell>}
+                  {show('color') && <TableCell className="text-sm">{v.color || '—'}</TableCell>}
+                  {show('fuel_type') && (
+                    <TableCell><Badge variant="outline">{v.fuel_type}</Badge></TableCell>
+                  )}
+                  {show('capacity') && (
+                    <TableCell className="text-sm whitespace-nowrap">
+                      {[
+                        usesFuelTank(v.fuel_type) && v.fuel_tank_capacity_liters ? `${v.fuel_tank_capacity_liters} L` : null,
+                        usesBattery(v.fuel_type) && v.battery_capacity_kwh ? `${v.battery_capacity_kwh} kWh` : null,
+                      ].filter(Boolean).join(' + ') || '—'}
                     </TableCell>
-                  </TableRow>
-                ) : (
-                  <TableRow key={v.id}>
-                    {show('car_id') && <TableCell className="text-sm">{v.car_id || '—'}</TableCell>}
-                    {show('vin') && <TableCell className="font-mono text-xs">{v.vin}</TableCell>}
-                    {show('reg_number') && <TableCell className="text-sm">{v.registration_number || '—'}</TableCell>}
-                    {show('brand') && <TableCell className="text-sm">{v.brand || '—'}</TableCell>}
-                    {show('mark') && <TableCell>{v.mark}</TableCell>}
-                    {show('model') && <TableCell>{v.model}</TableCell>}
-                    {show('color') && <TableCell className="text-sm">{v.color || '—'}</TableCell>}
-                    {show('fuel_type') && (
-                      <TableCell><Badge variant="outline">{v.fuel_type}</Badge></TableCell>
-                    )}
-                    {show('capacity') && (
-                      <TableCell className="text-sm whitespace-nowrap">
-                        {[
-                          usesFuelTank(v.fuel_type) && v.fuel_tank_capacity_liters ? `${v.fuel_tank_capacity_liters} L` : null,
-                          usesBattery(v.fuel_type) && v.battery_capacity_kwh ? `${v.battery_capacity_kwh} kWh` : null,
-                        ].filter(Boolean).join(' + ') || '—'}
-                      </TableCell>
-                    )}
-                    {show('odometer') && (
-                      <TableCell className="text-sm whitespace-nowrap">{v.odometer_km != null ? `${v.odometer_km.toLocaleString('ro-RO')} km` : '—'}</TableCell>
-                    )}
-                    {show('company') && (
-                      <TableCell className="text-sm text-muted-foreground">{v.company_name || '—'}</TableCell>
-                    )}
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => startEdit(v)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => deleteMutation.mutate(v.id)}
-                          disabled={deleteMutation.isPending}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              )}
+                  )}
+                  {show('odometer') && (
+                    <TableCell className="text-sm whitespace-nowrap">{v.odometer_km != null ? `${v.odometer_km.toLocaleString('ro-RO')} km` : '—'}</TableCell>
+                  )}
+                  {show('company') && (
+                    <TableCell className="text-sm text-muted-foreground">{v.company_name || '—'}</TableCell>
+                  )}
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => startEdit(v)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => deleteMutation.mutate(v.id)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </Card>
       )}
+
+      {/* Edit Vehicle Modal */}
+      <Dialog open={!!editVehicle} onOpenChange={(open) => { if (!open) { setEditVehicle(null); setEditError('') } }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Vehicle</DialogTitle>
+          </DialogHeader>
+          <VehicleFormFields
+            value={editForm}
+            onChange={(patch) => setEditForm((p) => ({ ...p, ...patch }))}
+            brandLabel={editVehicle?.brand || '—'}
+            companies={companiesData?.companies ?? []}
+          />
+          {editError && <p className="text-sm text-destructive">{editError}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEditVehicle(null); setEditError('') }}>Cancel</Button>
+            <Button onClick={saveEdit} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
