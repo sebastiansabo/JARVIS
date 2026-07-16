@@ -259,17 +259,24 @@ def api_create_crm_client():
     address = (data.get('address') or '').strip() or None
     city = (data.get('city') or '').strip() or None
     county = (data.get('county') or '').strip() or None
+    email = (data.get('email') or '').strip() or None
+    is_company = bool(data.get('is_company'))
+    company_name = (data.get('company_name') or '').strip() or None
+    cui = (data.get('cui') or '').strip() or None
 
     try:
         row = _crm_client_repo.create(
             display_name=display_name,
             name_normalized=_normalize_name(display_name),
-            client_type='person',
+            client_type='company' if is_company else 'person',
             phone=phone_clean,
             phone_raw=phone,
+            email=email,
             street=address,
             city=city,
             region=county,
+            company_name=company_name,
+            cui=cui,
             source_flags={'foi_parcurs': True},
         )
         new_id = row['id'] if row else None
