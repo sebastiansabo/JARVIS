@@ -35,15 +35,21 @@ class FPVehicleRepository(BaseRepository):
         return self.execute(
             '''INSERT INTO fp_vehicles
                (vin, registration_number, car_id, mark, brand, model, color,
-                fuel_type, fuel_tank_capacity_liters, battery_capacity_kwh, odometer_km, company_id)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *''',
+                fuel_type, fuel_tank_capacity_liters, battery_capacity_kwh, odometer_km, company_id,
+                vignette_valid_until, itp_valid_until, insurance_valid_until,
+                insurance_doc, talon_doc, civ_doc, registration_doc)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                       %s, %s, %s, %s, %s, %s, %s) RETURNING *''',
             (data['vin'], data.get('registration_number'), data.get('car_id'),
              data['mark'], data.get('brand'), data['model'], data.get('color'),
              data.get('fuel_type', 'Diesel'),
              data.get('fuel_tank_capacity_liters'),
              data.get('battery_capacity_kwh'),
              data.get('odometer_km'),
-             data.get('company_id')),
+             data.get('company_id'),
+             data.get('vignette_valid_until'), data.get('itp_valid_until'),
+             data.get('insurance_valid_until'), data.get('insurance_doc'),
+             data.get('talon_doc'), data.get('civ_doc'), data.get('registration_doc')),
             returning=True,
         )
 
@@ -53,7 +59,9 @@ class FPVehicleRepository(BaseRepository):
         params = []
         for col in ('vin', 'registration_number', 'car_id', 'mark', 'brand', 'model', 'color',
                     'fuel_type', 'fuel_tank_capacity_liters', 'battery_capacity_kwh', 'odometer_km',
-                    'company_id', 'is_active'):
+                    'company_id', 'is_active',
+                    'vignette_valid_until', 'itp_valid_until', 'insurance_valid_until',
+                    'insurance_doc', 'talon_doc', 'civ_doc', 'registration_doc'):
             if col in data:
                 sets.append(f'{col} = %s')
                 params.append(data[col])

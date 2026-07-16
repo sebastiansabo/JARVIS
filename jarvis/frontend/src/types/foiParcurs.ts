@@ -32,6 +32,15 @@ export interface FpVehicle {
   registration_number?: string
   company_id?: number
   company_name?: string
+  // Documents + validity (rovinietă/vignette, ITP, RCA insurance). Docs are
+  // base64 (image or PDF data-URL).
+  vignette_valid_until?: string | null
+  itp_valid_until?: string | null
+  insurance_valid_until?: string | null
+  insurance_doc?: string | null
+  talon_doc?: string | null
+  civ_doc?: string | null
+  registration_doc?: string | null
   is_active: boolean
   created_at: string
   updated_at: string
