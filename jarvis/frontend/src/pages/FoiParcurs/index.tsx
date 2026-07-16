@@ -865,6 +865,7 @@ const STOCK_COLUMNS = [
   { key: 'color', label: 'Color', default: true },
   { key: 'fuel_type', label: 'Fuel Type', default: true },
   { key: 'capacity', label: 'Capacity', default: true },
+  { key: 'odometer', label: 'Odometer', default: true },
   { key: 'company', label: 'Company', default: true },
 ] as const
 
@@ -889,6 +890,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
     fuel_type: 'Diesel' as string,
     fuel_tank_capacity_liters: 50,
     battery_capacity_kwh: 0,
+    odometer_km: '' as string,
     company_id: companyId ? String(companyId) : '' as string,
   })
   const [error, setError] = useState('')
@@ -923,12 +925,13 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
         fuel_type: newVehicle.fuel_type,
         fuel_tank_capacity_liters: usesFuelTank(newVehicle.fuel_type) ? newVehicle.fuel_tank_capacity_liters : null,
         battery_capacity_kwh: usesBattery(newVehicle.fuel_type) ? newVehicle.battery_capacity_kwh : null,
+        odometer_km: newVehicle.odometer_km.trim() === '' ? null : Number(newVehicle.odometer_km),
         company_id: newVehicle.company_id ? Number(newVehicle.company_id) : undefined,
       }),
     onSuccess: () => {
       setError('')
       setShowAdd(false)
-      setNewVehicle({ vin: '', registration_number: '', car_id: '', mark: '', model: '', color: '', fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0, company_id: companyId ? String(companyId) : '' })
+      setNewVehicle({ vin: '', registration_number: '', car_id: '', mark: '', model: '', color: '', fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0, odometer_km: '', company_id: companyId ? String(companyId) : '' })
       queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
     },
     onError: (err: any) => {
@@ -977,6 +980,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
       fuel_type: v.fuel_type || 'Diesel',
       fuel_tank_capacity_liters: v.fuel_tank_capacity_liters ?? 0,
       battery_capacity_kwh: v.battery_capacity_kwh ?? 0,
+      odometer_km: v.odometer_km ?? '',
       company_id: v.company_id ? String(v.company_id) : '',
     })
   }
@@ -996,6 +1000,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
         fuel_type: ft,
         fuel_tank_capacity_liters: usesFuelTank(ft) ? Number(editData.fuel_tank_capacity_liters) : null,
         battery_capacity_kwh: usesBattery(ft) ? Number(editData.battery_capacity_kwh) : null,
+        odometer_km: String(editData.odometer_km).trim() === '' ? null : Number(editData.odometer_km),
         company_id: editData.company_id ? Number(editData.company_id) : null,
       },
     })
@@ -1145,6 +1150,16 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                 </div>
               )}
               <div className="space-y-1.5">
+                <Label className="text-xs">Starting odometer (km)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={newVehicle.odometer_km}
+                  onChange={(e) => setNewVehicle((p) => ({ ...p, odometer_km: e.target.value }))}
+                  placeholder="e.g., 12"
+                />
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-xs">Company</Label>
                 <Select value={newVehicle.company_id} onValueChange={(v) => setNewVehicle((p) => ({ ...p, company_id: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select company..." /></SelectTrigger>
@@ -1192,6 +1207,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                 {show('color') && <TableHead>Color</TableHead>}
                 {show('fuel_type') && <TableHead>Fuel Type</TableHead>}
                 {show('capacity') && <TableHead>Capacity</TableHead>}
+                {show('odometer') && <TableHead>Odometer</TableHead>}
                 {show('company') && <TableHead>Company</TableHead>}
                 <TableHead className="w-[100px]">Actions</TableHead>
               </TableRow>
@@ -1281,6 +1297,17 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                         </div>
                       </TableCell>
                     )}
+                    {show('odometer') && (
+                      <TableCell>
+                        <Input
+                          className="h-8 w-20"
+                          type="number"
+                          min={0}
+                          value={editData.odometer_km}
+                          onChange={(e) => setEditData((p) => ({ ...p, odometer_km: e.target.value }))}
+                        />
+                      </TableCell>
+                    )}
                     {show('company') && (
                       <TableCell>
                         <Select value={String(editData.company_id || '')} onValueChange={(val) => setEditData((p) => ({ ...p, company_id: val }))}>
@@ -1323,6 +1350,9 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                           usesBattery(v.fuel_type) && v.battery_capacity_kwh ? `${v.battery_capacity_kwh} kWh` : null,
                         ].filter(Boolean).join(' + ') || '—'}
                       </TableCell>
+                    )}
+                    {show('odometer') && (
+                      <TableCell className="text-sm whitespace-nowrap">{v.odometer_km != null ? `${v.odometer_km.toLocaleString('ro-RO')} km` : '—'}</TableCell>
                     )}
                     {show('company') && (
                       <TableCell className="text-sm text-muted-foreground">{v.company_name || '—'}</TableCell>
