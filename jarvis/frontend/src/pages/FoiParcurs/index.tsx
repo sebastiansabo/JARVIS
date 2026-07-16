@@ -75,7 +75,7 @@ import {
 // ── Main Page ──
 export default function FoiParcurs() {
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'contracts' | 'parcurs' | 'stock' | 'settings'>('contracts')
+  const [activeTab, setActiveTab] = useState<'contracts' | 'parcurs' | 'stock' | 'settings'>('stock')
   const [companyId, setCompanyId] = useState<number>(0)
   const [brand, setBrand] = useState<string>('')
 
@@ -148,9 +148,9 @@ export default function FoiParcurs() {
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'settings')}>
         <TabsList>
+          <TabsTrigger value="stock">Driving Park</TabsTrigger>
           <TabsTrigger value="contracts">Contracts</TabsTrigger>
           <TabsTrigger value="parcurs">Parcurs</TabsTrigger>
-          <TabsTrigger value="stock">Stock</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
       </Tabs>
@@ -1022,7 +1022,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold flex items-center gap-2">
           <Car className="h-5 w-5 text-muted-foreground" />
-          Vehicle Stock
+          Driving Park
         </h3>
         <div className="flex gap-2">
           <div className="relative">
