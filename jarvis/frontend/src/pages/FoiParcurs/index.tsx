@@ -71,6 +71,7 @@ import {
   type FoiContract,
   type FpVehicle,
 } from '@/types/foiParcurs'
+import { VehicleOdometerHistory } from './VehicleOdometerHistory'
 
 // ── Main Page ──
 export default function FoiParcurs() {
@@ -999,6 +1000,7 @@ function VehicleFormFields({
 function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
+  const [expandedVehicleId, setExpandedVehicleId] = useState<number | string | null>(null)
   const [editVehicle, setEditVehicle] = useState<FpVehicle | null>(null)
   const [editForm, setEditForm] = useState<VehicleFormValue>(emptyVehicleForm())
   const [editError, setEditError] = useState('')
@@ -1217,7 +1219,11 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
             </TableHeader>
             <TableBody>
               {filteredVehicles.map((v) => (
-                <TableRow key={v.id}>
+                <React.Fragment key={v.id}>
+                <TableRow
+                  className="cursor-pointer hover:bg-muted/40"
+                  onClick={() => setExpandedVehicleId((prev) => (prev === v.id ? null : v.id))}
+                >
                   {show('model') && <TableCell>{v.model}</TableCell>}
                   {show('mark') && <TableCell>{v.mark}</TableCell>}
                   {show('vin') && <TableCell className="font-mono text-xs">{v.vin}</TableCell>}
@@ -1242,7 +1248,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                   {show('company') && (
                     <TableCell className="text-sm text-muted-foreground">{v.company_name || '—'}</TableCell>
                   )}
-                  <TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="sm" onClick={() => startEdit(v)}>
                         <Pencil className="h-4 w-4" />
@@ -1259,6 +1265,14 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                     </div>
                   </TableCell>
                 </TableRow>
+                {expandedVehicleId === v.id && v.vin && (
+                  <TableRow className="bg-muted/30 border-l-4 border-l-primary/30 hover:bg-muted/30">
+                    <TableCell colSpan={12} className="p-0">
+                      <VehicleOdometerHistory vin={v.vin} />
+                    </TableCell>
+                  </TableRow>
+                )}
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>
