@@ -5,7 +5,7 @@ import time
 import uuid
 from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required, current_user,
-    logger, _fp_repo, _inspection_repo, _crm_client_repo,
+    logger, _fp_repo, _inspection_repo, _crm_client_repo, _vehicle_repo,
 )
 from ..services.fuel_service import parse_fuel_level
 
@@ -174,6 +174,17 @@ def api_return_test_drive(id):
         }
 
         updated = _fp_repo.record_return(id, update_data)
+
+        # Advance the vehicle's stored odometer to the latest reading (never backwards)
+        try:
+            vin = contract.get('vin')
+            if vin:
+                veh = _vehicle_repo.get_by_vin(vin)
+                if veh and (veh.get('odometer_km') is None or km_end > veh['odometer_km']):
+                    _vehicle_repo.update(veh['id'], {'odometer_km': km_end})
+        except Exception:
+            logger.warning('Could not advance vehicle odometer after return for contract %s', id, exc_info=True)
+
         return jsonify({'success': True, 'contract': updated})
 
     except Exception as e:
