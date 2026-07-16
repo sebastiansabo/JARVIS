@@ -14,6 +14,7 @@ import {
   ArrowUpDown,
   Trash2,
   RotateCcw,
+  Archive,
   Car,
   Pencil,
   XIcon,
@@ -1189,12 +1190,14 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
     new Set(STOCK_COLUMNS.filter((c) => c.default).map((c) => c.key))
   )
   const [showColMenu, setShowColMenu] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
   const [newVehicle, setNewVehicle] = useState<VehicleFormValue>(() => emptyVehicleForm(companyId))
   const [error, setError] = useState('')
 
   const { data: vehiclesData, isLoading } = useQuery({
-    queryKey: ['fp-vehicles', companyId],
-    queryFn: () => foiParcursApi.getVehicles(),
+    queryKey: ['fp-vehicles', companyId, showArchived],
+    // active_only=false returns archived vehicles too (marked is_active=false).
+    queryFn: () => foiParcursApi.getVehicles(!showArchived),
     staleTime: 30_000,
   })
 
@@ -1258,6 +1261,14 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => foiParcursApi.deleteVehicle(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
+    },
+  })
+
+  // Restore an archived vehicle (is_active back to true).
+  const restoreMutation = useMutation({
+    mutationFn: (id: number) => foiParcursApi.updateVehicle(id, { is_active: true }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
     },
@@ -1332,7 +1343,11 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
           <Car className="h-5 w-5 text-muted-foreground" />
           Driving Park
         </h3>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="rounded" />
+            Arată arhivate
+          </label>
           <div className="relative">
             <Button size="sm" variant="outline" onClick={() => setShowColMenu(!showColMenu)}>
               <SlidersHorizontal className="mr-1.5 h-4 w-4" />
@@ -1419,10 +1434,17 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
               {filteredVehicles.map((v) => (
                 <React.Fragment key={v.id}>
                 <TableRow
-                  className="cursor-pointer hover:bg-muted/40"
+                  className={`cursor-pointer hover:bg-muted/40 ${v.is_active ? '' : 'opacity-60'}`}
                   onClick={() => setExpandedVehicleId((prev) => (prev === v.id ? null : v.id))}
                 >
-                  {show('model') && <TableCell>{v.model}</TableCell>}
+                  {show('model') && (
+                    <TableCell>
+                      {v.model}
+                      {!v.is_active && (
+                        <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Arhivat</span>
+                      )}
+                    </TableCell>
+                  )}
                   {show('mark') && <TableCell>{v.mark}</TableCell>}
                   {show('vin') && <TableCell className="font-mono text-xs">{v.vin}</TableCell>}
                   {show('car_id') && <TableCell className="text-sm">{v.car_id || '—'}</TableCell>}
@@ -1457,18 +1479,39 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                   )}
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => startEdit(v)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => deleteMutation.mutate(v.id)}
-                        disabled={deleteMutation.isPending}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {v.is_active ? (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => startEdit(v)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            title="Arhivează vehiculul"
+                            onClick={() => {
+                              if (confirm('Arhivezi acest vehicul? Nu va mai apărea în listă (poate fi restaurat).')) {
+                                deleteMutation.mutate(v.id)
+                              }
+                            }}
+                            disabled={deleteMutation.isPending}
+                          >
+                            <Archive className="h-4 w-4" />
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs"
+                          title="Restaurează vehiculul"
+                          onClick={() => restoreMutation.mutate(v.id)}
+                          disabled={restoreMutation.isPending}
+                        >
+                          <RotateCcw className="mr-1 h-4 w-4" />
+                          Restaurează
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
