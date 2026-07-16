@@ -2,7 +2,7 @@
 
 from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required,
-    logger, _vehicle_repo,
+    logger, _vehicle_repo, _fp_repo,
 )
 
 
@@ -22,6 +22,50 @@ def api_list_vehicles():
     active_only = request.args.get('active_only', 'true').lower() == 'true'
     vehicles = _vehicle_repo.get_all(active_only=active_only)
     return jsonify({'success': True, 'vehicles': vehicles})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/odometer-history', methods=['GET'])
+@login_required
+def api_odometer_history():
+    """Per-car odometer history + KM-gap detection. Query: ?vin=<vin>.
+
+    Returns the car's current stored odometer plus every drive (all route types)
+    in chronological order, each annotated with gap_km = this drive's km_start
+    minus the previous drive's km_end (km driven between logged drives; > 0 means
+    the car moved without a logged drive)."""
+    vin = (request.args.get('vin') or '').strip()
+    if not vin:
+        return jsonify({'success': False, 'error': 'vin is required'}), 400
+
+    vehicle = _vehicle_repo.get_by_vin(vin)
+    rows = _fp_repo.get_odometer_readings(vin)
+
+    entries = []
+    prev_end = None
+    for r in rows:
+        km_start = r.get('km_start')
+        km_end = r.get('km_end')
+        gap_km = (km_start - prev_end) if (prev_end is not None and km_start is not None) else None
+        entries.append({
+            'contract_id': r.get('contract_id'),
+            'route_type': r.get('route_type'),
+            'status': r.get('status'),
+            'km_start': km_start,
+            'km_end': km_end,
+            'departure_datetime': r.get('departure_datetime'),
+            'return_datetime': r.get('return_datetime'),
+            'client_name': r.get('client_name'),
+            'gap_km': gap_km,
+        })
+        if km_end is not None:
+            prev_end = km_end
+
+    return jsonify({
+        'success': True,
+        'vin': vin,
+        'current_odometer': (vehicle or {}).get('odometer_km'),
+        'entries': entries,
+    })
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/vehicles', methods=['POST'])
