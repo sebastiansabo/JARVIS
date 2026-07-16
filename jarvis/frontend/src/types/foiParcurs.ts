@@ -168,7 +168,7 @@ export interface FoiContract {
   itinerary: string
   advisor_name: string
   signature_ai_generated: string
-  status: 'PENDING' | 'FILLED'
+  status: 'PENDING' | 'FILLED' | 'COMPLETED'
   created_at: string
   updated_at: string
 }
