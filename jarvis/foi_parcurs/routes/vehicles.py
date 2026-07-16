@@ -43,21 +43,34 @@ def api_odometer_history():
     entries = []
     prev_end = None
     for r in rows:
+        route_type = r.get('route_type')
         km_start = r.get('km_start')
         km_end = r.get('km_end')
+        # A Test Drive is "returned" only once the return form is submitted
+        # (returned_at set / status COMPLETED). Non-TD contracts are historical
+        # complete records. Until returned, the km_end/return time are just
+        # placeholders, so we blank them and don't advance the gap baseline.
+        returned = (
+            route_type != 'TD'
+            or r.get('returned_at') is not None
+            or r.get('status') == 'COMPLETED'
+        )
         gap_km = (km_start - prev_end) if (prev_end is not None and km_start is not None) else None
         entries.append({
             'contract_id': r.get('contract_id'),
-            'route_type': r.get('route_type'),
+            'route_type': route_type,
             'status': r.get('status'),
+            'returned': returned,
             'km_start': km_start,
-            'km_end': km_end,
+            'km_end': km_end if returned else None,
             'departure_datetime': r.get('departure_datetime'),
-            'return_datetime': r.get('return_datetime'),
+            'return_datetime': r.get('return_datetime') if returned else None,
             'client_name': r.get('client_name'),
             'gap_km': gap_km,
+            'departure_damage': r.get('departure_damage') or [],
+            'return_damage': r.get('return_damage') or [],
         })
-        if km_end is not None:
+        if returned and km_end is not None:
             prev_end = km_end
 
     return jsonify({

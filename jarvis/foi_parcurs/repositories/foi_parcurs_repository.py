@@ -101,8 +101,9 @@ class FoiParcursRepository(BaseRepository):
         odometer history."""
         return self.query_all(
             '''SELECT fp.id, fp.contract_id, fp.route_type, fp.status,
-                      fp.km_start, fp.km_end,
+                      fp.km_start, fp.km_end, fp.returned_at,
                       fp.departure_datetime, fp.return_datetime, fp.created_at,
+                      fp.departure_damage, fp.return_damage,
                       COALESCE(fp.client_name, c.name) AS client_name
                FROM foi_de_parcurs fp
                LEFT JOIN fp_clients c ON c.id = fp.client_id
