@@ -39,6 +39,7 @@ def create_schema_crm(conn, cursor):
             region TEXT,
             country TEXT DEFAULT 'Romania',
             company_name TEXT,
+            cui TEXT,
             responsible TEXT,
             nr_reg TEXT,
             is_blacklisted BOOLEAN DEFAULT FALSE,
@@ -48,6 +49,16 @@ def create_schema_crm(conn, cursor):
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # Company tax id (CUI) — added for existing tables (idempotent).
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='crm_clients' AND column_name='cui') THEN
+                ALTER TABLE crm_clients ADD COLUMN cui TEXT;
+            END IF;
+        END $$;
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_clients_cui ON crm_clients(cui)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_clients_phone ON crm_clients(phone)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_clients_email ON crm_clients(email)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_clients_merged ON crm_clients(merged_into_id)')

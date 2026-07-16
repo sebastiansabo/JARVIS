@@ -146,16 +146,16 @@ class ClientRepository(BaseRepository):
 
     def create(self, display_name, name_normalized, client_type='person',
                phone=None, phone_raw=None, email=None, street=None, city=None,
-               region=None, company_name=None, responsible=None, source_flags=None):
+               region=None, company_name=None, cui=None, responsible=None, source_flags=None):
         import json
         return self.execute(
             '''INSERT INTO crm_clients
                (display_name, name_normalized, client_type, phone, phone_raw,
-                email, street, city, region, company_name, responsible, source_flags)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                email, street, city, region, company_name, cui, responsible, source_flags)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                RETURNING id''',
             (display_name, name_normalized, client_type, phone, phone_raw,
-             email, street, city, region, company_name, responsible,
+             email, street, city, region, company_name, cui, responsible,
              json.dumps(source_flags or {})),
             returning=True
         )
