@@ -138,6 +138,13 @@ def api_create_vehicle():
             'battery_capacity_kwh': battery_kwh,
             'odometer_km': _to_int_or_none(data.get('odometer_km')),
             'company_id': company_id,
+            'vignette_valid_until': (data.get('vignette_valid_until') or '').strip() or None,
+            'itp_valid_until': (data.get('itp_valid_until') or '').strip() or None,
+            'insurance_valid_until': (data.get('insurance_valid_until') or '').strip() or None,
+            'insurance_doc': data.get('insurance_doc') or None,
+            'talon_doc': data.get('talon_doc') or None,
+            'civ_doc': data.get('civ_doc') or None,
+            'registration_doc': data.get('registration_doc') or None,
         })
         return jsonify({'success': True, 'vehicle': vehicle})
     except Exception as e:
@@ -151,6 +158,10 @@ def api_update_vehicle(vehicle_id):
     data = request.get_json(silent=True) or {}
     if 'vin' in data:
         data['vin'] = data['vin'].strip().upper()
+    # DATE columns reject '' — coerce blank validity dates to NULL (clears them).
+    for _col in ('vignette_valid_until', 'itp_valid_until', 'insurance_valid_until'):
+        if _col in data and not (data[_col] or '').strip():
+            data[_col] = None
     try:
         vehicle = _vehicle_repo.update(vehicle_id, data)
         if not vehicle:
