@@ -92,18 +92,14 @@ function DriveEntry({ e }: { e: OdometerEntry }) {
 
   return (
     <div className="space-y-2 rounded-lg border bg-background p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium">{fmt(e.departure_datetime)}</span>
-          <span className="text-muted-foreground">→ {e.returned ? fmt(e.return_datetime) : '-'}</span>
-          {!e.returned && (
-            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Driving</span>
-          )}
-        </div>
-        <span className="text-muted-foreground">
-          {e.route_type || '—'}
-          {e.client_name ? ` · ${e.client_name}` : ''}
-        </span>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="font-medium">{fmt(e.departure_datetime)}</span>
+        <span className="text-muted-foreground">→ {e.returned ? fmt(e.return_datetime) : '-'}</span>
+        {!e.returned && (
+          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Driving</span>
+        )}
+        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">{e.route_type || '—'}</span>
+        <span className="font-medium">{e.client_name || 'Fără client'}</span>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs tabular-nums">
