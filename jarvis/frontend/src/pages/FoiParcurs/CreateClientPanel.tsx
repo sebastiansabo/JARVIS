@@ -1,0 +1,296 @@
+import { useMemo, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { ImagePlus, X, Loader2, ScanLine } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { foiParcursApi } from '@/api/foiParcurs'
+import { fileToCompressedDataUrl } from '@/lib/imageCompress'
+import { RO_COUNTIES, RO_CITIES } from '@/data/roLocalities'
+import { Autocomplete } from '@/components/shared/Autocomplete'
+import type { CrmClient, DriverLicenseOcrData } from '@/types/foiParcurs'
+
+/** Country options — România default, common others after. */
+const COUNTRIES = [
+  'România',
+  'Republica Moldova',
+  'Ungaria',
+  'Bulgaria',
+  'Germania',
+  'Italia',
+  'Spania',
+  'Franța',
+  'Austria',
+  'Marea Britanie',
+]
+
+/** Required driving-license photo (stored on the contract) plus, when no client
+ *  is selected yet, an OCR-assisted "create CRM client from the license" flow.
+ *  The uploaded photo doubles as the OCR source and the contract attachment. */
+export function DriverLicenseSection({
+  photo,
+  onPhotoChange,
+  invalid,
+  hasClient,
+  onSelectClient,
+  onLicenseNumber,
+  onLicenseExpiry,
+}: {
+  photo: string | null
+  onPhotoChange: (value: string | null) => void
+  invalid?: boolean
+  hasClient: boolean
+  onSelectClient: (client: CrmClient) => void
+  onLicenseNumber: (value: string) => void
+  onLicenseExpiry?: (value: string) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [prefill, setPrefill] = useState<DriverLicenseOcrData | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const ocr = useMutation({
+    mutationFn: (image: string) => foiParcursApi.driverLicenseOcr(image),
+  })
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setBusy(true)
+    const compressed = await fileToCompressedDataUrl(file)
+    setBusy(false)
+    if (compressed) onPhotoChange(compressed)
+  }
+
+  const handleScan = () => {
+    if (!photo) return
+    setError(null)
+    ocr.mutate(photo, {
+      onSuccess: (res) => {
+        const data = res.data ?? {}
+        setPrefill(data)
+        if (data.license_number) onLicenseNumber(data.license_number)
+        setShowCreate(true)
+      },
+      onError: (err: any) => {
+        setError(err?.data?.error || err?.message || 'Scanarea a eșuat. Completează manual.')
+        setPrefill(null)
+        setShowCreate(true)
+      },
+    })
+  }
+
+  return (
+    <div className="space-y-3">
+      {photo ? (
+        <div className="flex items-center gap-3">
+          <img src={photo} alt="Permis de conducere" className="h-20 w-32 rounded-md object-cover border" />
+          <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => onPhotoChange(null)}>
+            <X className="h-3.5 w-3.5 mr-1" /> Șterge
+          </Button>
+        </div>
+      ) : (
+        <label
+          className={cn(
+            'flex h-20 w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed text-muted-foreground hover:bg-accent transition-colors',
+            invalid && 'border-destructive',
+          )}
+        >
+          {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImagePlus className="h-5 w-5" />}
+          <span className="text-xs font-medium">Adaugă poza permisului</span>
+          <input type="file" accept="image/*" className="hidden" onChange={handleFile} />
+        </label>
+      )}
+
+      {!photo && (
+        <p className={cn('text-xs', invalid ? 'text-destructive' : 'text-muted-foreground')}>
+          Poza permisului de conducere este obligatorie.
+        </p>
+      )}
+
+      {photo && !hasClient && !showCreate && (
+        <Button type="button" variant="secondary" className="w-full" onClick={handleScan} disabled={ocr.isPending}>
+          {ocr.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanLine className="h-4 w-4 mr-2" />}
+          {ocr.isPending ? 'Se scanează...' : 'Scanează permisul și creează client'}
+        </Button>
+      )}
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
+
+      {photo && !hasClient && showCreate && (
+        <CreateClientPanel
+          prefill={prefill}
+          onCancel={() => setShowCreate(false)}
+          onCreated={(client, licenseNumber, licenseExpiry) => {
+            onSelectClient(client)
+            if (licenseNumber) onLicenseNumber(licenseNumber)
+            if (licenseExpiry) onLicenseExpiry?.(licenseExpiry)
+            setShowCreate(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** Inline "new CRM client" form, prefilled from the license OCR where legible.
+ *  Name + phone required; the rest optional. Creates in crm_clients. */
+export function CreateClientPanel({
+  prefill,
+  onCancel,
+  onCreated,
+}: {
+  prefill: DriverLicenseOcrData | null
+  onCancel: () => void
+  onCreated: (client: CrmClient, licenseNumber: string, licenseExpiry: string) => void
+}) {
+  const [name, setName] = useState(prefill?.full_name ?? '')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [licenseNumber, setLicenseNumber] = useState(prefill?.license_number ?? '')
+  const [licenseExpiry, setLicenseExpiry] = useState(prefill?.expiry_date ?? '')
+  const [address, setAddress] = useState(prefill?.address ?? '')
+  const [country, setCountry] = useState('România')
+  const [county, setCounty] = useState(prefill?.county ?? '')
+  const [city, setCity] = useState(prefill?.city ?? '')
+  const [error, setError] = useState<string | null>(null)
+
+  // County first: choosing a județ scopes the city list to that county's towns.
+  const cityOptions = useMemo(() => {
+    const scoped = county ? RO_CITIES.filter((c) => c.county === county) : RO_CITIES
+    return scoped.map((c) => c.name)
+  }, [county])
+
+  const create = useMutation({
+    mutationFn: (data: Parameters<typeof foiParcursApi.createCrmClient>[0]) =>
+      foiParcursApi.createCrmClient(data),
+  })
+
+  const phoneClean = phone.replace(/[\s-]/g, '')
+  const phoneValid = /^(07\d{8}|\+40\d{9}|004\d{10})$/.test(phoneClean)
+  const emailValid = email.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  const canCreate = name.trim() !== '' && phoneValid && emailValid && !create.isPending
+
+  const handleCreate = () => {
+    if (!canCreate) return
+    setError(null)
+    create.mutate(
+      {
+        display_name: name.trim(),
+        phone: phoneClean,
+        ...(email.trim() ? { email: email.trim() } : {}),
+        ...(address.trim() ? { address: address.trim() } : {}),
+        ...(city.trim() ? { city: city.trim() } : {}),
+        ...(county.trim() ? { county: county.trim() } : {}),
+        ...(country.trim() ? { country: country.trim() } : {}),
+      },
+      {
+        onSuccess: (res) => {
+          if (res.client) onCreated(res.client, licenseNumber.trim(), licenseExpiry.trim())
+          else setError('Clientul nu a putut fi creat.')
+        },
+        onError: (err: any) => {
+          setError(err?.data?.error || err?.message || 'Crearea clientului a eșuat.')
+        },
+      },
+    )
+  }
+
+  return (
+    <div className="space-y-2.5 rounded-md border bg-muted/40 p-3">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Client nou</p>
+      <div className="space-y-1">
+        <Label className="text-xs">Nume complet *</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nume și prenume" />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Telefon *</Label>
+        <Input
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="07xxxxxxxx"
+          inputMode="tel"
+          className={cn(phone !== '' && !phoneValid && 'ring-2 ring-destructive')}
+        />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Email</Label>
+        <Input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="email@exemplu.ro"
+          inputMode="email"
+          autoCapitalize="none"
+          className={cn(email.trim() !== '' && !emailValid && 'ring-2 ring-destructive')}
+        />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Serie/nr permis</Label>
+        <Input value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} placeholder="Serie/număr" />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Valabilitate permis (4b)</Label>
+        <Input type="date" value={licenseExpiry} onChange={(e) => setLicenseExpiry(e.target.value)} />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Adresă</Label>
+        <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Strada, număr" />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Țară</Label>
+        <Select value={country} onValueChange={setCountry}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {COUNTRIES.map((c) => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Județ</Label>
+        <Autocomplete
+          value={county}
+          onChange={(v) => { setCounty(v); setCity('') }}
+          onSelect={(v) => { setCounty(v); setCity('') }}
+          options={RO_COUNTIES}
+          placeholder="Caută județul..."
+        />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Oraș</Label>
+        <Autocomplete
+          value={city}
+          onChange={setCity}
+          onSelect={(name) => {
+            setCity(name)
+            if (!county) {
+              const found = RO_CITIES.find((c) => c.name === name)
+              if (found) setCounty(found.county)
+            }
+          }}
+          options={cityOptions}
+          placeholder={county ? 'Caută orașul...' : 'Alege întâi județul (sau caută orașul)'}
+        />
+      </div>
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
+
+      <div className="flex gap-2 pt-1">
+        <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>Anulează</Button>
+        <Button type="button" className="flex-1" onClick={handleCreate} disabled={!canCreate}>
+          {create.isPending ? 'Se creează...' : 'Creează client'}
+        </Button>
+      </div>
+    </div>
+  )
+}
