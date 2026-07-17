@@ -44,6 +44,60 @@ _PRESTATOR_INTRO = (
     'denumita in continuare "Prestator", si:'
 )
 
+# Fallback Prestator text (used when the contract has no resolvable company).
+_PRESTATOR_FALLBACK = _PRESTATOR_INTRO
+
+
+def _co(text: str, name: str) -> str:
+    """Substitute the dealer-name token in body text with the actual company."""
+    return text.replace('{CO}', name)
+
+
+def _company_legal(company: dict) -> dict:
+    """Map a `companies` row to Prestator display fields (best-effort, blanks ok)."""
+    company = company or {}
+    vat = (company.get('vat') or '').strip()
+    cui = vat[2:].strip() if vat[:2].upper() == 'RO' else vat
+    street = (company.get('street') or '').strip()
+    city = (company.get('city') or '').strip()
+    sediu = ', '.join(p for p in (city, street) if p)
+    showroom = (company.get('showroom_address') or '').strip()
+    puncte = '; '.join(line.strip() for line in showroom.splitlines() if line.strip())
+    return {
+        'name': (company.get('company') or '').strip(),
+        'sediu': sediu,
+        'puncte': puncte,
+        'reg_no': (company.get('reg_no') or '').strip(),
+        'cui': cui,
+        'iban': (company.get('iban') or '').strip(),
+        'bank': (company.get('bank') or '').strip(),
+        'administrator': (company.get('administrator') or '').strip(),
+    }
+
+
+def _build_prestator_intro(company: dict, phone: str) -> str:
+    """Full Prestator paragraph for the contract's company + brand phone."""
+    lg = _company_legal(company)
+    parts = [f'S.C. {lg["name"]}']
+    if lg['sediu']:
+        parts.append(f'cu sediul in {lg["sediu"]}')
+    if lg['puncte']:
+        parts.append(f'avand puncte de lucru in {lg["puncte"]}')
+    if lg['reg_no']:
+        parts.append(f'numar de ordine in Registrul Comertului {lg["reg_no"]}')
+    if lg['cui']:
+        parts.append(f'CUI {lg["cui"]}')
+    if lg['iban']:
+        cont = f'cont {lg["iban"]}'
+        if lg['bank']:
+            cont += f', deschis la {lg["bank"]}'
+        parts.append(cont)
+    if (phone or '').strip():
+        parts.append(f'telefon: {phone.strip()}')
+    if lg['administrator']:
+        parts.append(f'reprezentata de {lg["administrator"]}, administrator')
+    return ', '.join(parts) + ', denumita in continuare "Prestator", si:'
+
 
 # --- Test-drive terms & conditions + GDPR note (appended to the legal PDF) ----
 
@@ -55,9 +109,9 @@ _TC_OBLIGATIONS = [
     'sa respecte regulile de circulatie si toate prevederile legale aplicabile;',
     'sa nu incredinteze autovehiculul unei alte persoane decat cele nominalizate in contract;',
     'sa nu conduca autovehiculul sub influenta alcoolului, drogurilor, substantelor psihoactive sau a oricaror substante care pot afecta capacitatea de conducere;',
-    'sa anunte AUTOWORLD Plus S.R.L. in cel mai scurt timp despre orice accident, avarie, defectiune, furt sau alta situatie care poate afecta autovehiculul;',
+    'sa anunte {CO} in cel mai scurt timp despre orice accident, avarie, defectiune, furt sau alta situatie care poate afecta autovehiculul;',
     'sa obtina, atunci cand legea impune, documentele necesare de la organele competente pentru constatarea accidentului sau avariei;',
-    'sa coopereze cu AUTOWORLD Plus S.R.L. si cu asiguratorul pentru deschiderea si solutionarea dosarului de dauna.',
+    'sa coopereze cu {CO} si cu asiguratorul pentru deschiderea si solutionarea dosarului de dauna.',
 ]
 
 _TC_LIABILITY = [
@@ -78,23 +132,23 @@ _TC_CASCO_EXCLUSIONS = [
 
 _TC_PARAGRAPHS = [
     'UTILIZATORUL declara ca i-a fost adus la cunostinta faptul ca asigurarea CASCO de care beneficiaza autovehiculul cuprinde o clauza de fransiza in valoare de minim 500 EURO in caz de dauna (in functie de conditiile politei CASCO), respectiv 20% din valoarea asigurata a autovehiculului in caz de dauna totala sau furt al autoturismului. In cazul producerii unei daune sau al furtului autovehiculului.',
-    'UTILIZATORUL este obligat sa suporte contravaloarea francizei, astfel cum aceasta este stabilita prin polita de asigurare aplicabila. Plata se va efectua in termen de 3 zile de la comunicarea sumei datorate de catre AUTOWORLD Plus S.R.L. sau de catre asigurator.',
-    'UTILIZATORUL intelege ca nu dobandeste niciun drept de proprietate sau posesie asupra autovehiculului si are obligatia de a-l returna la data si ora stabilite sau la prima cerere a AUTOWORLD Plus S.R.L.',
+    'UTILIZATORUL este obligat sa suporte contravaloarea francizei, astfel cum aceasta este stabilita prin polita de asigurare aplicabila. Plata se va efectua in termen de 3 zile de la comunicarea sumei datorate de catre {CO} sau de catre asigurator.',
+    'UTILIZATORUL intelege ca nu dobandeste niciun drept de proprietate sau posesie asupra autovehiculului si are obligatia de a-l returna la data si ora stabilite sau la prima cerere a {CO}.',
     'Autovehiculul poate fi condus doar de persoane care detin permis de conducere valabil si care au o vechime a permisului de minimum 1 an.',
-    'Deplasarea in afara teritoriului Romaniei este permisa numai cu acordul prealabil scris al AUTOWORLD Plus S.R.L. si, daca este cazul, dupa extinderea valabilitatii asigurarilor pentru strainatate.',
-    'In cazul in care UTILIZATORUL constata defectiuni, martori de bord, zgomote anormale sau orice semn care poate afecta siguranta in circulatie ori starea tehnica a autovehiculului, acesta are obligatia sa opreasca utilizarea autovehiculului si sa anunte imediat AUTOWORLD Plus S.R.L.',
-    'UTILIZATORUL nu are dreptul sa efectueze reparatii, interventii sau modificari asupra autovehiculului fara acordul scris al AUTOWORLD Plus S.R.L. Reparatiile pot fi efectuate numai intr-un service agreat de AUTOWORLD Plus S.R.L.',
+    'Deplasarea in afara teritoriului Romaniei este permisa numai cu acordul prealabil scris al {CO} si, daca este cazul, dupa extinderea valabilitatii asigurarilor pentru strainatate.',
+    'In cazul in care UTILIZATORUL constata defectiuni, martori de bord, zgomote anormale sau orice semn care poate afecta siguranta in circulatie ori starea tehnica a autovehiculului, acesta are obligatia sa opreasca utilizarea autovehiculului si sa anunte imediat {CO}.',
+    'UTILIZATORUL nu are dreptul sa efectueze reparatii, interventii sau modificari asupra autovehiculului fara acordul scris al {CO}. Reparatiile pot fi efectuate numai intr-un service agreat de {CO}.',
     'Diferenta de combustibil dintre cantitatea existenta la predarea autovehiculului catre UTILIZATOR si cantitatea existenta la returnare se va taxa cu 1,5 EUR/litru de combustibil lipsa.',
     'Autovehiculul va fi returnat in aceeasi stare in care a fost predat, curat la interior si exterior. In caz contrar, UTILIZATORUL va suporta costurile aferente curatarii.',
-    'In cazul in care UTILIZATORUL intarzie returnarea autovehiculului cu mai mult de 24 de ore fara acordul AUTOWORLD Plus S.R.L., societatea isi rezerva dreptul de a sesiza organele competente si/sau compania de asigurare.',
-    'Raspunderea AUTOWORLD Plus S.R.L. este exclusa pentru evenimente, prejudicii sau consecinte produse din culpa UTILIZATORULUI ori ca urmare a nerespectarii obligatiilor asumate prin prezentul document.',
+    'In cazul in care UTILIZATORUL intarzie returnarea autovehiculului cu mai mult de 24 de ore fara acordul {CO}, societatea isi rezerva dreptul de a sesiza organele competente si/sau compania de asigurare.',
+    'Raspunderea {CO} este exclusa pentru evenimente, prejudicii sau consecinte produse din culpa UTILIZATORULUI ori ca urmare a nerespectarii obligatiilor asumate prin prezentul document.',
     'UTILIZATORULUI i s-a explicat modul de utilizare a autovehiculului, inclusiv principiile de functionare aplicabile autovehiculelor hibrid/electric, dupa caz, si a fost informat cu privire la tipul de combustibil sau energie utilizat.',
-    'UTILIZATORUL declara ca intelege riscurile inerente utilizarii unui autovehicul in circulatia rutiera si ca nu va solicita despagubiri AUTOWORLD Plus S.R.L. pentru prejudicii rezultate din accidente sau evenimente care nu sunt imputabile societatii.',
+    'UTILIZATORUL declara ca intelege riscurile inerente utilizarii unui autovehicul in circulatia rutiera si ca nu va solicita despagubiri {CO} pentru prejudicii rezultate din accidente sau evenimente care nu sunt imputabile societatii.',
 ]
 
 _TC_DATA_BULLETS = [
     'Categorii de date prelucrate: date de identificare, date de contact si date privind permisul de conducere;',
-    'Scop: organizarea si efectuarea test drive-ului, executarea obligatiilor contractuale si protejarea patrimoniului AUTOWORLD Plus S.R.L.;',
+    'Scop: organizarea si efectuarea test drive-ului, executarea obligatiilor contractuale si protejarea patrimoniului {CO};',
     'Temei juridic: contract sau relatie precontractuala la cererea UTILIZATORULUI, interes legitim si, dupa caz, obligatie legala;',
     'Durata de stocare: 7 ani, cu exceptia datelor GPS, care se stocheaza timp de 21 de zile.',
 ]
@@ -104,12 +158,12 @@ _TC_DATA_PARAGRAPHS = [
 ]
 
 _TC_GPS_PARAGRAPHS = [
-    'UTILIZATORULUI i s-a adus la cunostinta ca autovehiculele din flota de test drive sunt prevazute cu sistem de monitorizare GPS. Monitorizarea GPS se realizeaza in interesul legitim al AUTOWORLD INTERNATIONAL S.R.L. de a-si administra patrimoniul, de a asigura securitatea autovehiculelor, de a preveni furtul si de a documenta utilizarea autovehiculelor.',
+    'UTILIZATORULUI i s-a adus la cunostinta ca autovehiculele din flota de test drive sunt prevazute cu sistem de monitorizare GPS. Monitorizarea GPS se realizeaza in interesul legitim al {CO} de a-si administra patrimoniul, de a asigura securitatea autovehiculelor, de a preveni furtul si de a documenta utilizarea autovehiculelor.',
     'Datele colectate prin sistemul GPS pot include data, ora si localizarea autovehiculului. Nu sunt utilizate tehnologii de monitorizare a comportamentului la volan.',
-    'Datele colectate prin sistemul GPS sunt stocate pe serverele furnizorului serviciului GPS si/sau pe serverele AUTOWORLD Plus S.R.L. timp de 21 de zile.',
+    'Datele colectate prin sistemul GPS sunt stocate pe serverele furnizorului serviciului GPS si/sau pe serverele {CO} timp de 21 de zile.',
     'Pentru prelucrarea datelor in scopuri care exced relatia contractuala, inclusiv comunicari comerciale, campanii promotionale, statistice sau de optimizare a satisfactiei clientilor, datele UTILIZATORULUI vor fi prelucrate doar in baza consimtamantului exprimat explicit.',
     'UTILIZATORUL are dreptul de a solicita accesul la datele cu caracter personal care il privesc, rectificarea, stergerea, restrictionarea prelucrarii, portabilitatea datelor, retragerea consimtamantului, opozitia la prelucrare si dreptul de a depune plangere in fata autoritatii de supraveghere competente.',
-    'Pentru exercitarea acestor drepturi, UTILIZATORUL poate transmite o solicitare la adresa de e-mail protectiadatelor@autoworld.ro sau la sediul AUTOWORLD Plus S.R.L. din Cluj-Napoca, Calea Floresti nr. 145, jud. Cluj. AUTOWORLD Plus S.R.L. va raspunde in termen de maximum 30 de zile, in conditiile legii. Politica privind protectia datelor este disponibila pe site-ul companiei si in incinta locatiilor Autoworld.',
+    'Pentru exercitarea acestor drepturi, UTILIZATORUL poate transmite o solicitare la adresa de e-mail protectiadatelor@autoworld.ro sau la sediul {CO} din Cluj-Napoca, Calea Floresti nr. 145, jud. Cluj. {CO} va raspunde in termen de maximum 30 de zile, in conditiile legii. Politica privind protectia datelor este disponibila pe site-ul companiei si in incinta locatiilor Autoworld.',
 ]
 
 # GDPR "Nota de informare si acord" (also shown as a modal in the app)
@@ -141,7 +195,7 @@ _GDPR_OUTRO = [
 ]
 
 
-def _terms_flowables():
+def _terms_flowables(company_name: str):
     """T&C + GDPR note flowables, appended after the contract summary and before
     the signatures (so the client signs having read the terms)."""
     styles = getSampleStyleSheet()
@@ -158,7 +212,7 @@ def _terms_flowables():
     closing = ParagraphStyle('TCClose', parent=body, fontName='Helvetica-Bold', spaceBefore=6)
 
     def bl(items):
-        return [Paragraph(t, bullet, bulletText='-') for t in items]
+        return [Paragraph(_co(t, company_name), bullet, bulletText='-') for t in items]
 
     fl = [PageBreak(), Paragraph('CONDITII GENERALE TEST DRIVE', title)]
     fl.append(Paragraph('Pe perioada desfasurarii actiunii de test drive, UTILIZATORUL se obliga:', lead))
@@ -167,12 +221,12 @@ def _terms_flowables():
     fl += bl(_TC_LIABILITY)
     fl.append(Paragraph('Asigurarea CASCO nu include si nu este valabila in urmatoarele cazuri:', lead))
     fl += bl(_TC_CASCO_EXCLUSIONS)
-    fl += [Paragraph(t, body) for t in _TC_PARAGRAPHS]
+    fl += [Paragraph(_co(t, company_name), body) for t in _TC_PARAGRAPHS]
 
     fl.append(Paragraph('PRELUCRAREA DATELOR CU CARACTER PERSONAL', header))
     fl += [Paragraph(t, body) for t in _TC_DATA_PARAGRAPHS]
     fl += bl(_TC_DATA_BULLETS)
-    fl += [Paragraph(t, body) for t in _TC_GPS_PARAGRAPHS]
+    fl += [Paragraph(_co(t, company_name), body) for t in _TC_GPS_PARAGRAPHS]
 
     fl.append(PageBreak())
     fl.append(Paragraph('NOTA DE INFORMARE si ACORD', title))
@@ -289,7 +343,26 @@ def generate_legal_pdf(contract: dict) -> str:
     story.append(HRFlowable(width='100%', thickness=1.5, color=colors.HexColor('#1a1a2e'), spaceAfter=8))
 
     # ---- Prestator (provider) party ----
-    story.append(Paragraph(_PRESTATOR_INTRO, intro_style))
+    company_row = None
+    _cid = contract.get('company_id')
+    if _cid:
+        try:
+            from core.organization.repositories.company_repository import CompanyRepository
+            company_row = CompanyRepository().get(_cid)
+        except Exception:
+            logging.exception('Prestator: company lookup failed for company_id=%s', _cid)
+    if company_row and (company_row.get('company') or '').strip():
+        try:
+            from foi_parcurs.dealer_config import get_dealer_config
+            _phone = get_dealer_config(company_row.get('company'), contract.get('vehicle_brand') or '').get('phone', '')
+        except Exception:
+            _phone = ''
+        prestator_text = _build_prestator_intro(company_row, _phone)
+        company_name = (company_row.get('company') or '').strip()
+    else:
+        prestator_text = _PRESTATOR_FALLBACK
+        company_name = 'AUTOWORLD Plus S.R.L.'
+    story.append(Paragraph(prestator_text, intro_style))
 
     # ---- Company & Vehicle ----
     story.append(Paragraph('Date Companie și Vehicul', section_style))
@@ -378,7 +451,7 @@ def generate_legal_pdf(contract: dict) -> str:
     story.append(Spacer(1, 6))
 
     # ---- Terms & conditions + GDPR note (own pages, before signing) ----
-    story.extend(_terms_flowables())
+    story.extend(_terms_flowables(company_name))
 
     # ---- Signatures ----
     story.append(Paragraph('Semnături', section_style))

@@ -1187,6 +1187,29 @@ async function fileToDoc(file: File): Promise<string> {
   return file.type.startsWith('image/') ? downscaleImage(dataUrl) : dataUrl
 }
 
+/** Open a stored document in a new tab. Browsers block top-level navigation to
+ *  `data:` URLs (so a plain <a href="data:..."> does nothing), so convert the
+ *  base64 data URL to a Blob and open a `blob:` object URL instead. */
+function openDoc(value: string) {
+  if (!value) return
+  if (!value.startsWith('data:')) {
+    window.open(value, '_blank', 'noopener,noreferrer')
+    return
+  }
+  try {
+    const [meta, b64] = value.split(',', 2)
+    const mime = meta.match(/data:([^;]+)/)?.[1] || 'application/octet-stream'
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const url = URL.createObjectURL(new Blob([bytes], { type: mime }))
+    window.open(url, '_blank', 'noopener,noreferrer')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch {
+    window.open(value, '_blank', 'noopener,noreferrer')
+  }
+}
+
 /** Upload / preview / clear a single base64 document (image or PDF). */
 function DocUpload({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   const isImg = value.startsWith('data:image')
@@ -1200,7 +1223,7 @@ function DocUpload({ label, value, onChange }: { label: string; value: string; o
           ) : (
             <div className="flex h-14 w-14 items-center justify-center rounded border bg-muted text-[10px] font-semibold text-muted-foreground">PDF</div>
           )}
-          <a href={value} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline">Vezi</a>
+          <button type="button" onClick={() => openDoc(value)} className="text-xs text-primary underline">Vezi</button>
           <button type="button" onClick={() => onChange('')} className="text-xs text-destructive">Șterge</button>
         </div>
       ) : (
