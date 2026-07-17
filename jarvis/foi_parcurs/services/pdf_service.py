@@ -44,6 +44,60 @@ _PRESTATOR_INTRO = (
     'denumita in continuare "Prestator", si:'
 )
 
+# Fallback Prestator text (used when the contract has no resolvable company).
+_PRESTATOR_FALLBACK = _PRESTATOR_INTRO
+
+
+def _co(text: str, name: str) -> str:
+    """Substitute the dealer-name token in body text with the actual company."""
+    return text.replace('{CO}', name)
+
+
+def _company_legal(company: dict) -> dict:
+    """Map a `companies` row to Prestator display fields (best-effort, blanks ok)."""
+    company = company or {}
+    vat = (company.get('vat') or '').strip()
+    cui = vat[2:].strip() if vat[:2].upper() == 'RO' else vat
+    street = (company.get('street') or '').strip()
+    city = (company.get('city') or '').strip()
+    sediu = ', '.join(p for p in (city, street) if p)
+    showroom = (company.get('showroom_address') or '').strip()
+    puncte = '; '.join(line.strip() for line in showroom.splitlines() if line.strip())
+    return {
+        'name': (company.get('company') or '').strip(),
+        'sediu': sediu,
+        'puncte': puncte,
+        'reg_no': (company.get('reg_no') or '').strip(),
+        'cui': cui,
+        'iban': (company.get('iban') or '').strip(),
+        'bank': (company.get('bank') or '').strip(),
+        'administrator': (company.get('administrator') or '').strip(),
+    }
+
+
+def _build_prestator_intro(company: dict, phone: str) -> str:
+    """Full Prestator paragraph for the contract's company + brand phone."""
+    lg = _company_legal(company)
+    parts = [f'S.C. {lg["name"]}']
+    if lg['sediu']:
+        parts.append(f'cu sediul in {lg["sediu"]}')
+    if lg['puncte']:
+        parts.append(f'avand puncte de lucru in {lg["puncte"]}')
+    if lg['reg_no']:
+        parts.append(f'numar de ordine in Registrul Comertului {lg["reg_no"]}')
+    if lg['cui']:
+        parts.append(f'CUI {lg["cui"]}')
+    if lg['iban']:
+        cont = f'cont {lg["iban"]}'
+        if lg['bank']:
+            cont += f', deschis la {lg["bank"]}'
+        parts.append(cont)
+    if (phone or '').strip():
+        parts.append(f'telefon: {phone.strip()}')
+    if lg['administrator']:
+        parts.append(f'reprezentata de {lg["administrator"]}, administrator')
+    return ', '.join(parts) + ', denumita in continuare "Prestator", si:'
+
 
 # --- Test-drive terms & conditions + GDPR note (appended to the legal PDF) ----
 
