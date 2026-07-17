@@ -203,6 +203,17 @@ def create_schema_core(conn, cursor):
         END $$;
     ''')
 
+    # Administrator / legal representative — shown on the Foi de Parcurs contract Prestator block
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'administrator') THEN
+                ALTER TABLE companies ADD COLUMN administrator TEXT;
+                UPDATE companies SET administrator = 'Ioan Mezei' WHERE UPPER(company) LIKE '%AUTOWORLD%';
+            END IF;
+        END $$;
+    ''')
+
     # Company aliases — normalise names across BioStar, Sincron, etc.
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS company_aliases (
