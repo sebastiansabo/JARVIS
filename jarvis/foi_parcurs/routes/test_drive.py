@@ -292,6 +292,24 @@ def api_driver_license_ocr():
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
 
+@foi_parcurs_bp.route('/api/foi-parcurs/crm-clients/search', methods=['GET'])
+@login_required
+def api_search_crm_clients():
+    """Login-gated CRM client search for the test-drive flow, so consilieri
+    without full CRM (sales) access can find existing clients instead of creating
+    duplicates. Mirrors the login-gated create endpoint below."""
+    q = (request.args.get('q') or '').strip()
+    if len(q) < 2:
+        return jsonify({'success': True, 'clients': []})
+    limit = request.args.get('limit', 20, type=int)
+    try:
+        rows, _ = _crm_client_repo.search(q=q, limit=min(max(limit, 1), 50))
+    except Exception:
+        logger.exception('CRM client search failed for q=%r', q)
+        return jsonify({'success': False, 'error': 'Search failed'}), 500
+    return jsonify({'success': True, 'clients': rows})
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/crm-clients', methods=['POST'])
 @login_required
 def api_create_crm_client():
