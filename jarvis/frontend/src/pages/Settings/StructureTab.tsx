@@ -13,6 +13,7 @@ import { StatCard } from '@/components/shared/StatCard'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { organizationApi } from '@/api/organization'
+import { foiParcursApi } from '@/api/foiParcurs'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { CompanyWithBrands, StructureNode } from '@/types/organization'
@@ -539,7 +540,7 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); else resetForm() }}>
-      <DialogContent className="sm:max-w-sm" onOpenAutoFocus={resetForm}>
+      <DialogContent className="sm:max-w-sm max-h-[88vh] overflow-y-auto" onOpenAutoFocus={resetForm}>
         <DialogHeader>
           <DialogTitle>{company ? 'Edit Company' : 'Add Company'}</DialogTitle>
         </DialogHeader>
@@ -628,6 +629,7 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
               </div>
             </div>
           )}
+          {company?.id != null && <DealerConfigSection companyId={company.id} />}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -640,6 +642,66 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+type DealerDraft = { review_url: string; address: string; phone: string; email: string }
+
+/** Per-brand Google review link + contact for the test-drive email, editable per
+ *  linked brand of a company (writes to fp_dealer_config via foi-parcurs API). */
+function DealerConfigSection({ companyId }: { companyId: number }) {
+  const qc = useQueryClient()
+  const { data } = useQuery({
+    queryKey: ['fp-dealer-config', companyId],
+    queryFn: () => foiParcursApi.getDealerConfig(companyId),
+    enabled: companyId > 0,
+  })
+  const configs = data?.configs ?? []
+  const [drafts, setDrafts] = useState<Record<number, DealerDraft>>({})
+
+  useEffect(() => {
+    const d: Record<number, DealerDraft> = {}
+    configs.forEach((c) => {
+      d[c.brand_id] = { review_url: c.review_url ?? '', address: c.address ?? '', phone: c.phone ?? '', email: c.email ?? '' }
+    })
+    setDrafts(d)
+  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveMut = useMutation({
+    mutationFn: ({ brandId, values }: { brandId: number; values: DealerDraft }) =>
+      foiParcursApi.updateDealerConfig(companyId, brandId, values),
+    onSuccess: () => {
+      toast.success('Contact & review salvate')
+      qc.invalidateQueries({ queryKey: ['fp-dealer-config', companyId] })
+    },
+    onError: () => toast.error('Salvarea a eșuat'),
+  })
+
+  if (!configs.length) return null
+
+  return (
+    <div className="grid gap-2 border-t pt-3">
+      <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Review & Contact (per brand)</Label>
+      {configs.map((c) => {
+        const d = drafts[c.brand_id] ?? { review_url: '', address: '', phone: '', email: '' }
+        const set = (k: keyof DealerDraft, v: string) => setDrafts((p) => ({ ...p, [c.brand_id]: { ...d, [k]: v } }))
+        return (
+          <div key={c.brand_id} className="grid gap-1.5 rounded-md border p-2">
+            <div className="text-xs font-medium">{c.brand_name}</div>
+            <Input className="h-8 text-xs" placeholder="Google review URL" value={d.review_url} onChange={(e) => set('review_url', e.target.value)} />
+            <Input className="h-8 text-xs" placeholder="Adresă" value={d.address} onChange={(e) => set('address', e.target.value)} />
+            <div className="grid grid-cols-2 gap-2">
+              <Input className="h-8 text-xs" placeholder="Telefon" value={d.phone} onChange={(e) => set('phone', e.target.value)} />
+              <Input className="h-8 text-xs" placeholder="Email" value={d.email} onChange={(e) => set('email', e.target.value)} />
+            </div>
+            <Button size="sm" variant="outline" className="h-7 justify-self-start text-xs"
+              onClick={() => saveMut.mutate({ brandId: c.brand_id, values: d })} disabled={saveMut.isPending}>
+              {saveMut.isPending ? 'Se salvează...' : `Salvează ${c.brand_name}`}
+            </Button>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
