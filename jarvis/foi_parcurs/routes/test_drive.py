@@ -123,6 +123,39 @@ def api_submit_test_drive():
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
 
+def _autosend_completed_contract(contract_id):
+    """Email the finished contract PDF to the client + consilier once a TD is
+    completed. Best-effort — recipients are deduped and failures are logged, never
+    raised. Client email comes from crm_clients (where TD clients live), the
+    consilier's from the users table (by advisor_name)."""
+    from .pdf import email_contract_pdf, _consilier_contact
+    full = _fp_repo.get_contract_by_id(contract_id)
+    if not full:
+        return
+    recipients = set()
+    client_id = full.get('client_id')
+    if client_id:
+        try:
+            row = _fp_repo.query_one('SELECT email FROM crm_clients WHERE id = %s', (client_id,))
+            if row and (row.get('email') or '').strip():
+                recipients.add(row['email'].strip())
+        except Exception:
+            logger.warning('crm_clients email lookup failed for client %s', client_id, exc_info=True)
+    if (full.get('client_email') or '').strip():
+        recipients.add(full['client_email'].strip())
+    cons = _consilier_contact(full.get('advisor_name'))
+    if (cons.get('email') or '').strip():
+        recipients.add(cons['email'].strip())
+
+    for addr in recipients:
+        try:
+            ok, err = email_contract_pdf(full, addr)
+            if not ok:
+                logger.warning('Auto-email to %s failed for contract %s: %s', addr, contract_id, err)
+        except Exception:
+            logger.warning('Auto-email to %s errored for contract %s', addr, contract_id, exc_info=True)
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>/return', methods=['PUT'])
 @login_required
 def api_return_test_drive(id):
@@ -184,6 +217,12 @@ def api_return_test_drive(id):
                     _vehicle_repo.update(veh['id'], {'odometer_km': km_end})
         except Exception:
             logger.warning('Could not advance vehicle odometer after return for contract %s', id, exc_info=True)
+
+        # On completion, auto-send the finished contract to the client + consilier.
+        try:
+            _autosend_completed_contract(id)
+        except Exception:
+            logger.warning('Auto-send on completion failed for contract %s', id, exc_info=True)
 
         return jsonify({'success': True, 'contract': updated})
 
