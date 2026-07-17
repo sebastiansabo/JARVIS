@@ -143,9 +143,10 @@ export const foiParcursApi = {
   submitTestDrive: (data: TestDriveFormPayload) =>
     api.post<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive`, data),
 
-  // ── CRM clients (Test Drive: search + inline create) ──
+  // ── CRM clients (Test Drive: search + inline create) — login-gated search so
+  //    consilieri without full CRM access can find existing clients ──
   searchCrmClients: (q: string, limit = 20) =>
-    api.get<{ clients: CrmClient[]; total: number }>(`/api/crm/clients${qs({ q, limit })}`),
+    api.get<{ clients: CrmClient[] }>(`${BASE}/crm-clients/search${qs({ q, limit })}`),
 
   createCrmClient: (data: CreateCrmClientPayload) =>
     api.post<{ success: boolean; client: CrmClient }>(`${BASE}/crm-clients`, data),
