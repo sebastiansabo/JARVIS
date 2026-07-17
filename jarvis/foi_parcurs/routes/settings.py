@@ -1,9 +1,35 @@
 """Routes for Foi de Parcurs settings: KM configs, company config, itinerary routes."""
 
-from ._shared import foi_parcurs_bp, jsonify, request, login_required, logger
+from ._shared import foi_parcurs_bp, jsonify, request, login_required, logger, _dealer_repo
 from ..repositories import FoiParcursRepository
 
 _repo = FoiParcursRepository()
+
+
+# ════════════════════════════════════════════════════════════════
+# Dealer config per company + brand (review link + contact for the email)
+# ════════════════════════════════════════════════════════════════
+
+@foi_parcurs_bp.route('/api/foi-parcurs/dealer-config/<int:company_id>', methods=['GET'])
+@login_required
+def api_get_dealer_config(company_id):
+    """Per-brand review link + contact for a company's linked brands."""
+    return jsonify({'success': True, 'configs': _dealer_repo.list_for_company(company_id)})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/dealer-config/<int:company_id>/<int:brand_id>', methods=['PUT'])
+@login_required
+def api_put_dealer_config(company_id, brand_id):
+    """Upsert the review link + contact for one (company, brand)."""
+    data = request.get_json(silent=True) or {}
+    _dealer_repo.upsert(
+        company_id, brand_id,
+        (data.get('review_url') or '').strip() or None,
+        (data.get('address') or '').strip() or None,
+        (data.get('phone') or '').strip() or None,
+        (data.get('email') or '').strip() or None,
+    )
+    return jsonify({'success': True})
 
 
 # ════════════════════════════════════════════════════════════════

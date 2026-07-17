@@ -96,6 +96,15 @@ export const foiParcursApi = {
   getBrands: (companyId: number) =>
     api.get<{ success: boolean; brands: string[] }>(`${BASE}/brands/${companyId}`),
 
+  // ── Per company+brand dealer config (review link + contact for the email) ──
+  getDealerConfig: (companyId: number) =>
+    api.get<{ success: boolean; configs: { brand_id: number; brand_name: string; review_url: string | null; address: string | null; phone: string | null; email: string | null }[] }>(
+      `${BASE}/dealer-config/${companyId}`,
+    ),
+
+  updateDealerConfig: (companyId: number, brandId: number, data: { review_url?: string; address?: string; phone?: string; email?: string }) =>
+    api.put<{ success: boolean }>(`${BASE}/dealer-config/${companyId}/${brandId}`, data),
+
   // ── KM Configs (Settings) ──
   getKmConfigs: () =>
     api.get<{ configs: { company_id: number; td_km_min: number; td_km_max: number; comodat_km_min: number; comodat_km_max: number; km_gap: number }[] }>(`${BASE}/km-configs`),
