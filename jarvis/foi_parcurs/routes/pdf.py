@@ -2,14 +2,28 @@
 import os
 import io
 import re
+import base64
 import html as _html
 from datetime import datetime
 from flask import send_file
-from ._shared import foi_parcurs_bp, jsonify, request, login_required, current_user, logger, _fp_repo
+from ._shared import foi_parcurs_bp, jsonify, request, login_required, current_user, logger, _fp_repo, _vehicle_repo
 from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
 from ..dealer_config import get_dealer_config
 
 _EMAIL_RE = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+
+
+def _decode_doc(data_url, base_name):
+    """Decode a base64 data-URL document → (filename, bytes), or (None, None)."""
+    if not data_url or ',' not in data_url:
+        return None, None
+    try:
+        header, b64 = data_url.split(',', 1)
+        raw = base64.b64decode(b64)
+    except Exception:
+        return None, None
+    ext = 'pdf' if 'pdf' in header else ('png' if 'png' in header else 'jpg')
+    return f'{base_name}.{ext}', raw
 
 
 def _fmt_date(v):
@@ -199,6 +213,17 @@ def email_contract_pdf(contract, to_email, pdf_type='legal'):
     qr = _qr_png(dealer.get('review_url'))
     if qr:
         attachments.append(('recenzie-google-qr.png', qr))
+
+    # Attach the vehicle's offer document, only if one is on file.
+    try:
+        vin = contract.get('vin')
+        veh = _vehicle_repo.get_by_vin(vin) if vin else None
+        offer_fn, offer_bytes = _decode_doc((veh or {}).get('offer_doc') or '', 'oferta')
+        if offer_bytes:
+            attachments.append((offer_fn, offer_bytes))
+    except Exception:
+        logger.warning('Could not attach offer for contract %s', contract.get('id'), exc_info=True)
+
     return send_email(to_email=to_email, subject=subject, html_body=html_body,
                       text_body=text_body, attachments=attachments, from_name='AUTOWORLD')
 
