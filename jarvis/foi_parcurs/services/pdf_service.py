@@ -279,7 +279,7 @@ def generate_legal_pdf(contract: dict) -> str:
     story = []
 
     # ---- Header ----
-    story.append(Paragraph('Contract Utilizare Auto', title_style))
+    story.append(Paragraph('Contract Driving Auto', title_style))
     story.append(Paragraph(f'Nr. {cid}', sub_style))
     story.append(HRFlowable(width='100%', thickness=1.5, color=colors.HexColor('#1a1a2e'), spaceAfter=8))
 
@@ -354,26 +354,6 @@ def generate_legal_pdf(contract: dict) -> str:
     ]))
     story.append(km_table)
     story.append(Spacer(1, 6))
-
-    # ---- Fuel ----
-    story.append(Paragraph('Combustibil', section_style))
-    fu_data = [
-        [Paragraph('Nivel plecare', label_style), Paragraph(str(contract.get('fuel_gauge_start_level') or '—'), value_style),
-         Paragraph('Nivel sosire', label_style), Paragraph(str(contract.get('fuel_gauge_end_level') or '—'), value_style)],
-        [Paragraph('Litri start', label_style), Paragraph(str(contract.get('fuel_start_liters') or '—'), value_style),
-         Paragraph('Litri final', label_style), Paragraph(str(contract.get('fuel_end_liters') or '—'), value_style)],
-        [Paragraph('Combustibil consumat', label_style), Paragraph(f"{contract.get('fuel_consumed_liters') or '—'} L", value_style), '', ''],
-    ]
-    fu_table = Table(fu_data, colWidths=[38 * mm, 35 * mm, 38 * mm, W - 111 * mm])
-    fu_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ('TOPPADDING', (0, 0), (-1, -1), 2),
-        ('SPAN', (1, 2), (3, 2)),
-        ('LINEBELOW', (0, 0), (-1, -1), 0.25, colors.HexColor('#dddddd')),
-    ]))
-    story.append(fu_table)
-    story.append(Spacer(1, 10))
 
     # ---- Terms & conditions + GDPR note (own pages, before signing) ----
     story.extend(_terms_flowables())
