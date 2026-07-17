@@ -645,7 +645,7 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
   )
 }
 
-type DealerDraft = { review_url: string; address: string; phone: string; email: string }
+type DealerDraft = { review_url: string; address: string; phone: string; email: string; show: boolean }
 
 /** Per-brand Google review link + contact for the test-drive email, editable per
  *  linked brand of a company (writes to fp_dealer_config via foi-parcurs API). */
@@ -662,16 +662,19 @@ function DealerConfigSection({ companyId }: { companyId: number }) {
   useEffect(() => {
     const d: Record<number, DealerDraft> = {}
     configs.forEach((c) => {
-      d[c.brand_id] = { review_url: c.review_url ?? '', address: c.address ?? '', phone: c.phone ?? '', email: c.email ?? '' }
+      d[c.brand_id] = { review_url: c.review_url ?? '', address: c.address ?? '', phone: c.phone ?? '', email: c.email ?? '', show: c.show_in_foi_parcurs !== false }
     })
     setDrafts(d)
   }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveMut = useMutation({
     mutationFn: ({ brandId, values }: { brandId: number; values: DealerDraft }) =>
-      foiParcursApi.updateDealerConfig(companyId, brandId, values),
+      foiParcursApi.updateDealerConfig(companyId, brandId, {
+        review_url: values.review_url, address: values.address, phone: values.phone, email: values.email,
+        show_in_foi_parcurs: values.show,
+      }),
     onSuccess: () => {
-      toast.success('Contact & review salvate')
+      toast.success('Salvat')
       qc.invalidateQueries({ queryKey: ['fp-dealer-config', companyId] })
     },
     onError: () => toast.error('Salvarea a eșuat'),
@@ -681,13 +684,17 @@ function DealerConfigSection({ companyId }: { companyId: number }) {
 
   return (
     <div className="grid gap-2 border-t pt-3">
-      <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Review & Contact (per brand)</Label>
+      <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Branduri Foi de Parcurs · Review & Contact</Label>
       {configs.map((c) => {
-        const d = drafts[c.brand_id] ?? { review_url: '', address: '', phone: '', email: '' }
-        const set = (k: keyof DealerDraft, v: string) => setDrafts((p) => ({ ...p, [c.brand_id]: { ...d, [k]: v } }))
+        const d = drafts[c.brand_id] ?? { review_url: '', address: '', phone: '', email: '', show: true }
+        const set = <K extends keyof DealerDraft>(k: K, v: DealerDraft[K]) => setDrafts((p) => ({ ...p, [c.brand_id]: { ...d, [k]: v } }))
         return (
           <div key={c.brand_id} className="grid gap-1.5 rounded-md border p-2">
             <div className="text-xs font-medium">{c.brand_name}</div>
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" className="rounded" checked={d.show} onChange={(e) => set('show', e.target.checked)} />
+              Afișează în selectorul Foi de Parcurs
+            </label>
             <Input className="h-8 text-xs" placeholder="Google review URL" value={d.review_url} onChange={(e) => set('review_url', e.target.value)} />
             <Input className="h-8 text-xs" placeholder="Adresă" value={d.address} onChange={(e) => set('address', e.target.value)} />
             <div className="grid grid-cols-2 gap-2">
