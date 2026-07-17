@@ -3,6 +3,7 @@ import os
 import base64
 import tempfile
 import logging
+import unicodedata
 from datetime import datetime
 
 from reportlab.lib.pagesizes import A4
@@ -10,11 +11,180 @@ from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, HRFlowable,
+    SimpleDocTemplate, Paragraph as _RLParagraph, Spacer, Table, TableStyle, Image, HRFlowable,
+    PageBreak,
 )
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
 
 logger = logging.getLogger('jarvis.foi_parcurs.pdf_service')
+
+
+def _ascii(text):
+    """Strip diacritics to plain ASCII (ș→s, ț→t, ă→a, â→a, î→i, and any other
+    accented Latin letters). The base-14 reportlab fonts (Helvetica) can't render
+    Romanian glyphs, so they'd otherwise show as boxes — we drop them entirely."""
+    if not isinstance(text, str):
+        return text
+    nfkd = unicodedata.normalize('NFKD', text)
+    return ''.join(c for c in nfkd if not unicodedata.combining(c))
+
+
+def Paragraph(text, *args, **kwargs):
+    """reportlab Paragraph with diacritics stripped from the text (see _ascii)."""
+    return _RLParagraph(_ascii(text) if isinstance(text, str) else text, *args, **kwargs)
+
+
+# Prestator (provider) party header shown at the top of the legal contract.
+_PRESTATOR_INTRO = (
+    'S.C. AUTOWORLD PLUS S.R.L., cu sediul in Cluj-Napoca, Calea Floresti, Nr. 145, '
+    'avand puncte de lucru in Calea Clujului 4B_4C Com Apahida, 407035, Cluj, '
+    'numar de ordine in Registrul Comertului J/12/2102/2024, CUI 50022994, '
+    'cont RO34 BACX 0000 0026 7930 8000 RON, deschis la Unicredit Cluj-Napoca, '
+    'telefon: 0264-207 400 / 0264-502 600, reprezentata de Dl Mezei Ioan director General, '
+    'denumita in continuare "Prestator", si:'
+)
+
+
+# --- Test-drive terms & conditions + GDPR note (appended to the legal PDF) ----
+
+_TC_OBLIGATIONS = [
+    'sa utilizeze autovehiculul potrivit destinatiei sale, exclusiv pe drumuri publice, fara a participa la curse auto, competitii, teste de performanta sau alte activitati care pot produce uzura excesiva ori daune autovehiculului;',
+    'sa nu forteze, sa nu exploateze abuziv sau necorespunzator autovehiculul si sa respecte instructiunile primite privind utilizarea acestuia;',
+    'sa pastreze curatenia in interiorul autovehiculului, sa nu fumeze in habitaclu si sa nu transporte substante periculoase, inflamabile, corozive sau alte obiecte care pot deteriora autovehiculul;',
+    'sa asigure integritatea si securitatea autovehiculului pe intreaga perioada in care acesta se afla in folosinta sa;',
+    'sa respecte regulile de circulatie si toate prevederile legale aplicabile;',
+    'sa nu incredinteze autovehiculul unei alte persoane decat cele nominalizate in contract;',
+    'sa nu conduca autovehiculul sub influenta alcoolului, drogurilor, substantelor psihoactive sau a oricaror substante care pot afecta capacitatea de conducere;',
+    'sa anunte AUTOWORLD Plus S.R.L. in cel mai scurt timp despre orice accident, avarie, defectiune, furt sau alta situatie care poate afecta autovehiculul;',
+    'sa obtina, atunci cand legea impune, documentele necesare de la organele competente pentru constatarea accidentului sau avariei;',
+    'sa coopereze cu AUTOWORLD Plus S.R.L. si cu asiguratorul pentru deschiderea si solutionarea dosarului de dauna.',
+]
+
+_TC_LIABILITY = [
+    'pentru orice daune, defectiuni, avarii sau stricaciuni produse autovehiculului, in masura in care acestea nu sunt acoperite de asigurarea CASCO;',
+    'pentru furtul, distrugerea totala sau partiala a autovehiculului, daca asiguratorul refuza acoperirea prejudiciului conform politei CASCO;',
+    'pentru orice daune produse tertilor prin utilizarea autovehiculului, in masura in care acestea nu sunt acoperite de asigurarea RCA;',
+    'pentru orice amenzi, sanctiuni, taxe, penalitati sau contraventii rezultate din utilizarea autovehiculului;',
+    'pentru lipsa documentelor necesare constatarii unei daune, daca aceasta lipsa impiedica solutionarea dosarului de asigurare.',
+]
+
+_TC_CASCO_EXCLUSIONS = [
+    'avarierea partii inferioare a autovehiculului, a sasiului, a blocului motor sau a altor componente similare, prin actiune deliberata sau neglijenta;',
+    'avarierea jantelor sau pneurilor, daca aceasta nu este cauzata de un accident rutier acoperit de asigurare;',
+    'conducerea autovehiculului de catre o persoana neautorizata sau nenominalizata in contract;',
+    'conducerea sub influenta alcoolului, drogurilor sau a altor substante interzise;',
+    'daunele produse persoanelor si bagajelor aflate in autovehicul, daca acestea nu sunt acoperite prin polita de asigurare aplicabila.',
+]
+
+_TC_PARAGRAPHS = [
+    'UTILIZATORUL declara ca i-a fost adus la cunostinta faptul ca asigurarea CASCO de care beneficiaza autovehiculul cuprinde o clauza de fransiza in valoare de minim 500 EURO in caz de dauna (in functie de conditiile politei CASCO), respectiv 20% din valoarea asigurata a autovehiculului in caz de dauna totala sau furt al autoturismului. In cazul producerii unei daune sau al furtului autovehiculului.',
+    'UTILIZATORUL este obligat sa suporte contravaloarea francizei, astfel cum aceasta este stabilita prin polita de asigurare aplicabila. Plata se va efectua in termen de 3 zile de la comunicarea sumei datorate de catre AUTOWORLD Plus S.R.L. sau de catre asigurator.',
+    'UTILIZATORUL intelege ca nu dobandeste niciun drept de proprietate sau posesie asupra autovehiculului si are obligatia de a-l returna la data si ora stabilite sau la prima cerere a AUTOWORLD Plus S.R.L.',
+    'Autovehiculul poate fi condus doar de persoane care detin permis de conducere valabil si care au o vechime a permisului de minimum 1 an.',
+    'Deplasarea in afara teritoriului Romaniei este permisa numai cu acordul prealabil scris al AUTOWORLD Plus S.R.L. si, daca este cazul, dupa extinderea valabilitatii asigurarilor pentru strainatate.',
+    'In cazul in care UTILIZATORUL constata defectiuni, martori de bord, zgomote anormale sau orice semn care poate afecta siguranta in circulatie ori starea tehnica a autovehiculului, acesta are obligatia sa opreasca utilizarea autovehiculului si sa anunte imediat AUTOWORLD Plus S.R.L.',
+    'UTILIZATORUL nu are dreptul sa efectueze reparatii, interventii sau modificari asupra autovehiculului fara acordul scris al AUTOWORLD Plus S.R.L. Reparatiile pot fi efectuate numai intr-un service agreat de AUTOWORLD Plus S.R.L.',
+    'Diferenta de combustibil dintre cantitatea existenta la predarea autovehiculului catre UTILIZATOR si cantitatea existenta la returnare se va taxa cu 1,5 EUR/litru de combustibil lipsa.',
+    'Autovehiculul va fi returnat in aceeasi stare in care a fost predat, curat la interior si exterior. In caz contrar, UTILIZATORUL va suporta costurile aferente curatarii.',
+    'In cazul in care UTILIZATORUL intarzie returnarea autovehiculului cu mai mult de 24 de ore fara acordul AUTOWORLD Plus S.R.L., societatea isi rezerva dreptul de a sesiza organele competente si/sau compania de asigurare.',
+    'Raspunderea AUTOWORLD Plus S.R.L. este exclusa pentru evenimente, prejudicii sau consecinte produse din culpa UTILIZATORULUI ori ca urmare a nerespectarii obligatiilor asumate prin prezentul document.',
+    'UTILIZATORULUI i s-a explicat modul de utilizare a autovehiculului, inclusiv principiile de functionare aplicabile autovehiculelor hibrid/electric, dupa caz, si a fost informat cu privire la tipul de combustibil sau energie utilizat.',
+    'UTILIZATORUL declara ca intelege riscurile inerente utilizarii unui autovehicul in circulatia rutiera si ca nu va solicita despagubiri AUTOWORLD Plus S.R.L. pentru prejudicii rezultate din accidente sau evenimente care nu sunt imputabile societatii.',
+]
+
+_TC_DATA_BULLETS = [
+    'Categorii de date prelucrate: date de identificare, date de contact si date privind permisul de conducere;',
+    'Scop: organizarea si efectuarea test drive-ului, executarea obligatiilor contractuale si protejarea patrimoniului AUTOWORLD Plus S.R.L.;',
+    'Temei juridic: contract sau relatie precontractuala la cererea UTILIZATORULUI, interes legitim si, dupa caz, obligatie legala;',
+    'Durata de stocare: 7 ani, cu exceptia datelor GPS, care se stocheaza timp de 21 de zile.',
+]
+
+_TC_DATA_PARAGRAPHS = [
+    'UTILIZATORULUI i s-a prezentat nota de informare privind prelucrarea datelor cu caracter personal colectate in vederea efectuarii test drive-ului.',
+]
+
+_TC_GPS_PARAGRAPHS = [
+    'UTILIZATORULUI i s-a adus la cunostinta ca autovehiculele din flota de test drive sunt prevazute cu sistem de monitorizare GPS. Monitorizarea GPS se realizeaza in interesul legitim al AUTOWORLD INTERNATIONAL S.R.L. de a-si administra patrimoniul, de a asigura securitatea autovehiculelor, de a preveni furtul si de a documenta utilizarea autovehiculelor.',
+    'Datele colectate prin sistemul GPS pot include data, ora si localizarea autovehiculului. Nu sunt utilizate tehnologii de monitorizare a comportamentului la volan.',
+    'Datele colectate prin sistemul GPS sunt stocate pe serverele furnizorului serviciului GPS si/sau pe serverele AUTOWORLD Plus S.R.L. timp de 21 de zile.',
+    'Pentru prelucrarea datelor in scopuri care exced relatia contractuala, inclusiv comunicari comerciale, campanii promotionale, statistice sau de optimizare a satisfactiei clientilor, datele UTILIZATORULUI vor fi prelucrate doar in baza consimtamantului exprimat explicit.',
+    'UTILIZATORUL are dreptul de a solicita accesul la datele cu caracter personal care il privesc, rectificarea, stergerea, restrictionarea prelucrarii, portabilitatea datelor, retragerea consimtamantului, opozitia la prelucrare si dreptul de a depune plangere in fata autoritatii de supraveghere competente.',
+    'Pentru exercitarea acestor drepturi, UTILIZATORUL poate transmite o solicitare la adresa de e-mail protectiadatelor@autoworld.ro sau la sediul AUTOWORLD Plus S.R.L. din Cluj-Napoca, Calea Floresti nr. 145, jud. Cluj. AUTOWORLD Plus S.R.L. va raspunde in termen de maximum 30 de zile, in conditiile legii. Politica privind protectia datelor este disponibila pe site-ul companiei si in incinta locatiilor Autoworld.',
+]
+
+# GDPR "Nota de informare si acord" (also shown as a modal in the app)
+_GDPR_INTRO = [
+    'Avand in vedere prevederile Regulamentului UE 679/2016 privind protectia persoanelor fizice in ceea ce priveste prelucrarea datelor cu caracter personal si libera circulatie a acestor date, denumit in continuare "Regulamentul", si abrogarea Directivei 95/46/CE, societatea QUANTUM AUTO MAX S.R.L. cu sediul in Bucuresti, Soseaua Bucuresti - Ploiesti, Nr. 40A, Sector 1, inregistrata la Registrul Comertului sub nr. J23/5062/04.08.2023 si avand CUI 48590798, in calitate de operator, prelucreaza datele dumneavoastra cu caracter personal conform prevederilor Regulamentului.',
+    'Datele dumneavoastra cu caracter personal pe care le colectam si prelucram includ datele cu caracter personal pe care ni le furnizati direct, precum si urmatoarele categorii de date pe care le colectam indirect (cum ar fi de la clientul pe care, spre exemplu, il reprezentati) dealeri, reparatori autorizati sau institutii/autoritati publice: date de identitate: nume, prenume, CNP; date de contact: nr. de telefon, adresa de domiciliu, adresa de e-mail, semnatura; date de identificare si date tehnice ale vehiculului: nr. inmatriculare, marca, model, tip, seria sasiu, serie motor, data fabricatiei, data livrarii, data primei inmatriculari, kilometraj.',
+]
+_GDPR_BASIS = [
+    'Suntem in situatia incheierii/ executarii unui contract la care sunteti parte;',
+    'Trebuie sa indeplinim o obligatie legala cum ar fi: emiterea facturilor, primirea platilor, transmiterea de notificari, elaborarea de rapoarte financiare si a altor obligatii pe care legislatia ni le impune, etc.;',
+    'Urmarim un interes legitim cum ar fi: incheierea si executarea contractelor cu clientii persoane juridice, sondaje de satisfactie a clientilor, indeplinirea unor contracte la care suntem parte si care au legatura cu activitatea desfasurata de noi, inclusiv in interesul legitim de a gestiona in bune conditii relatia comerciala cu producatorul, etc.;',
+    'Ne-ati oferit consimtamantul pentru a primi din partea noastra comunicari cu scop comercial sau invitatii la sondaje de marketing; aveti dreptul de a va retrage consimtamantul in orice moment.',
+]
+_GDPR_RIGHTS = [
+    'Accesul la date: de a obtine acces la datele dumneavoastra cu caracter personal prelucrate si informatii privind activitatile de prelucrare desfasurate;',
+    'Rectificarea datelor: de a obtine rectificarea datelor dumneavoastra care sunt eronate sau incomplete;',
+    'Stergerea datelor ("dreptul de a fi uitat"): de a obtine stergerea datelor pe care le prelucram;',
+    'Restrictionarea prelucrarii datelor: de a restrictiona prelucrarea datelor pe care le prelucram;',
+    'Dreptul de a obiecta: dreptul sa obiectati in ceea ce priveste prelucrarea datelor dumneavoastra;',
+    'Portabilitatea datelor: de a primi dumneavoastra/de a obtine transferul datelor dumneavoastra pe care le prelucram catre un alt operator;',
+    'Retragerea consimtamantului: daca ne-ati acordat consimtamantul, aveti oricand dreptul de a-l retrage;',
+    'Dreptul de a nu fi supus unei decizii individuale automate;',
+    'Dreptul de a depune o plangere la autoritatea de supraveghere a prelucrarii datelor cu caracter personal si dreptul de a va adresa justitiei, pentru apararea oricaror drepturi garantate de legislatia aplicabila in domeniul protectiei datelor cu caracter personal, care au fost incalcate.',
+]
+_GDPR_OUTRO = [
+    'Vom pastra datele dumneavoastra personale intr-o maniera compatibila cu legislatia aplicabila privind protectia datelor. Vom pastra numai datele care ne sunt necesare si pentru atata timp cat este necesar in raport de scopurile pentru care prelucram datele sau pentru a ne conforma dispozitiilor legale. In cazul sondajelor privind satisfactia clientilor datele personale vor fi pastrate timp de maxim 6 ani.',
+    'In functie de scopurile pentru care colectam datele este posibil sa le dezvaluim, in principal, urmatoarelor categorii de destinatari: afiliatii si filialele noastre, dealerii si reparatorii autorizati, agentii de sondare a satisfactiei, agentii de marketing, firme care va ofera serviciile si/sau produsele pe care le-ati solicitat, societati de asigurare, brokeri, societati de leasing, MG MOTOR EUROPE - societatea producatoare, avocati, consultanti externi, traducatori, etc.',
+    'Pentru detalii complete cu privire la activitatile de prelucrare desfasurate (inclusiv in privinta scopurilor de prelucrare, categoriilor de destinatari, transferului de date, perioadelor de stocare) precum si cu privire la drepturile de care beneficiati si pentru exercitarea acestora, va rugam sa accesati Politica noastra de confidentialitate, disponibila la www.mgmotor.ro sau sa ne contactati la adresa de e-mail info@mgcluj.ro.',
+]
+
+
+def _terms_flowables():
+    """T&C + GDPR note flowables, appended after the contract summary and before
+    the signatures (so the client signs having read the terms)."""
+    styles = getSampleStyleSheet()
+    title = ParagraphStyle('TCTitle', parent=styles['Heading2'], fontSize=12, alignment=TA_CENTER,
+                           spaceBefore=2, spaceAfter=6, textColor=colors.HexColor('#1a1a2e'))
+    subtitle = ParagraphStyle('TCSub', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER,
+                              spaceAfter=8, textColor=colors.HexColor('#555555'))
+    header = ParagraphStyle('TCHead', parent=styles['Heading3'], fontSize=10, spaceBefore=8, spaceAfter=4,
+                            textColor=colors.HexColor('#1a1a2e'))
+    body = ParagraphStyle('TCBody', parent=styles['Normal'], fontSize=8, leading=11,
+                          alignment=TA_JUSTIFY, spaceAfter=4)
+    lead = ParagraphStyle('TCLead', parent=body, fontName='Helvetica-Bold', spaceBefore=3, spaceAfter=2)
+    bullet = ParagraphStyle('TCBul', parent=body, leftIndent=14, bulletIndent=4, spaceAfter=2)
+    closing = ParagraphStyle('TCClose', parent=body, fontName='Helvetica-Bold', spaceBefore=6)
+
+    def bl(items):
+        return [Paragraph(t, bullet, bulletText='-') for t in items]
+
+    fl = [PageBreak(), Paragraph('CONDITII GENERALE TEST DRIVE', title)]
+    fl.append(Paragraph('Pe perioada desfasurarii actiunii de test drive, UTILIZATORUL se obliga:', lead))
+    fl += bl(_TC_OBLIGATIONS)
+    fl.append(Paragraph('UTILIZATORUL poarta intreaga raspundere:', lead))
+    fl += bl(_TC_LIABILITY)
+    fl.append(Paragraph('Asigurarea CASCO nu include si nu este valabila in urmatoarele cazuri:', lead))
+    fl += bl(_TC_CASCO_EXCLUSIONS)
+    fl += [Paragraph(t, body) for t in _TC_PARAGRAPHS]
+
+    fl.append(Paragraph('PRELUCRAREA DATELOR CU CARACTER PERSONAL', header))
+    fl += [Paragraph(t, body) for t in _TC_DATA_PARAGRAPHS]
+    fl += bl(_TC_DATA_BULLETS)
+    fl += [Paragraph(t, body) for t in _TC_GPS_PARAGRAPHS]
+
+    fl.append(PageBreak())
+    fl.append(Paragraph('NOTA DE INFORMARE si ACORD', title))
+    fl.append(Paragraph('privind prelucrarea datelor cu caracter personal', subtitle))
+    fl += [Paragraph(t, body) for t in _GDPR_INTRO]
+    fl.append(Paragraph('Datele dumneavoastra personale pot fi prelucrate, conform legislatiei aplicabile privind protectia datelor, daca:', lead))
+    fl += bl(_GDPR_BASIS)
+    fl.append(Paragraph('Drepturile dumneavoastra privind datele personale, in conditiile legii:', lead))
+    fl += bl(_GDPR_RIGHTS)
+    fl += [Paragraph(t, body) for t in _GDPR_OUTRO]
+    fl.append(Paragraph('Prin semnarea prezentei note de informare confirmati ca aceasta v-a fost adusa la cunostinta si va exprimati acordul pentru prelucrarea datelor personale in scopurile mentionate.', closing))
+    return fl
 
 # Output directory (relative to Flask app root — will be resolved at call time)
 _PDF_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'static', 'pdfs', 'foi-parcurs')
@@ -92,6 +262,10 @@ def generate_legal_pdf(contract: dict) -> str:
         fontSize=11, spaceBefore=8, spaceAfter=4,
         textColor=colors.HexColor('#1a1a2e'),
     )
+    intro_style = ParagraphStyle(
+        'FPIntro', parent=styles['Normal'],
+        fontSize=8.5, leading=12, alignment=TA_JUSTIFY, spaceAfter=6,
+    )
 
     doc = SimpleDocTemplate(
         out_path,
@@ -105,9 +279,12 @@ def generate_legal_pdf(contract: dict) -> str:
     story = []
 
     # ---- Header ----
-    story.append(Paragraph('FOAIE DE PARCURS', title_style))
+    story.append(Paragraph('Contract Utilizare Auto', title_style))
     story.append(Paragraph(f'Nr. {cid}', sub_style))
     story.append(HRFlowable(width='100%', thickness=1.5, color=colors.HexColor('#1a1a2e'), spaceAfter=8))
+
+    # ---- Prestator (provider) party ----
+    story.append(Paragraph(_PRESTATOR_INTRO, intro_style))
 
     # ---- Company & Vehicle ----
     story.append(Paragraph('Date Companie și Vehicul', section_style))
@@ -197,6 +374,9 @@ def generate_legal_pdf(contract: dict) -> str:
     ]))
     story.append(fu_table)
     story.append(Spacer(1, 10))
+
+    # ---- Terms & conditions + GDPR note (own pages, before signing) ----
+    story.extend(_terms_flowables())
 
     # ---- Signatures ----
     story.append(Paragraph('Semnături', section_style))

@@ -1,11 +1,140 @@
 """PDF download + email routes for foi de parcurs contracts."""
 import os
+import io
 import re
+import html as _html
+from datetime import datetime
 from flask import send_file
-from ._shared import foi_parcurs_bp, jsonify, request, login_required, logger, _fp_repo
+from ._shared import foi_parcurs_bp, jsonify, request, login_required, current_user, logger, _fp_repo
 from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
+from ..dealer_config import get_dealer_config
 
 _EMAIL_RE = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+
+
+def _fmt_date(v):
+    """Format a datetime/ISO string as dd.mm.yyyy; '' when missing."""
+    if not v:
+        return ''
+    if isinstance(v, datetime):
+        return v.strftime('%d.%m.%Y')
+    try:
+        return datetime.fromisoformat(str(v).replace('Z', '')).strftime('%d.%m.%Y')
+    except ValueError:
+        return str(v)
+
+
+def _qr_png(url):
+    """PNG bytes of a QR code for `url`, or None (missing url / lib / failure)."""
+    if not url:
+        return None
+    try:
+        import segno
+        buf = io.BytesIO()
+        segno.make(url, error='m').save(buf, kind='png', scale=6, border=2)
+        return buf.getvalue()
+    except Exception:
+        logger.warning('QR generation failed for %s', url, exc_info=True)
+        return None
+
+
+def _consilier_contact(advisor_name):
+    """Resolve the consilier's contact details. Looks the advisor up by name in
+    the `users` table (name/email/phone); falls back to the sending user for any
+    missing field. Returns {'name', 'email', 'phone'} (values may be '')."""
+    name = (advisor_name or '').strip()
+    out = {'name': name, 'email': '', 'phone': ''}
+    if name:
+        try:
+            row = _fp_repo.query_one(
+                'SELECT name, email, phone FROM users WHERE LOWER(name) = LOWER(%s) ORDER BY id LIMIT 1',
+                (name,),
+            )
+            if row:
+                out = {
+                    'name': (row.get('name') or name).strip(),
+                    'email': (row.get('email') or '').strip(),
+                    'phone': (row.get('phone') or '').strip(),
+                }
+        except Exception:
+            logger.warning('Consilier lookup failed for %s', name, exc_info=True)
+    # Fall back to the logged-in sender for anything still missing.
+    if not out['name']:
+        out['name'] = (getattr(current_user, 'name', '') or '').strip()
+    if not out['email']:
+        out['email'] = (getattr(current_user, 'email', '') or '').strip()
+    if not out['phone']:
+        out['phone'] = (getattr(current_user, 'phone', '') or '').strip()
+    return out
+
+
+def _render_td_email(contract, dealer, consilier):
+    """Build (subject, plain-text body, html body) for the test-drive contract
+    email — a plain, standard-looking mail (HTML paragraphs, no icons, no
+    formatting tricks). Any placeholder without a value has its line omitted."""
+    contract_nr = str(contract.get('contract_id') or contract.get('id') or '')
+    client_name = (contract.get('client_name') or '').strip()
+    vehicul = ' '.join(x for x in (
+        (contract.get('vehicle_mark') or '').strip(),
+        (contract.get('vehicle_model') or '').strip(),
+        (contract.get('vehicle_fuel_type') or '').strip(),   # motorizare (best available)
+    ) if x)
+    vin = (contract.get('vin') or '').strip()
+    data_td = _fmt_date(contract.get('departure_datetime'))
+    cons_nume = (consilier.get('name') or '').strip()
+    cons_tel = (consilier.get('phone') or '').strip()
+    cons_email = (consilier.get('email') or '').strip()
+    review = dealer.get('review_url')
+    footer = ' | '.join(x for x in (dealer.get('address'), dealer.get('phone'), 'www.autoworld.ro') if x)
+
+    detail = [(l, v) for l, v in (('Contract', contract_nr), ('Vehicul', vehicul),
+                                  ('VIN', vin), ('Data', data_td)) if v]
+    cons = [(l, v) for l, v in (('Nume', cons_nume), ('Telefon', cons_tel),
+                                ('Email', cons_email)) if v]
+
+    # ---- plain-text alternative ----
+    T = [f'Bună ziua {client_name},' if client_name else 'Bună ziua,',
+         'Vă mulțumim că ați ales AUTOWORLD pentru test drive-ul de astăzi! '
+         'Sperăm că experiența la volan a fost pe măsura așteptărilor.',
+         'Atașat găsiți foaia de parcurs / contractul de test drive.']
+    if detail:
+        T.append('Detalii test drive\n' + '\n'.join(f'{l}: {v}' for l, v in detail))
+    if cons:
+        T.append('Consilierul dumneavoastră\n' + '\n'.join(f'{l}: {v}' for l, v in cons))
+        T.append('Pentru orice întrebare legată de vehicul, ofertă sau pașii următori, '
+                 'consilierul dumneavoastră vă stă la dispoziție.')
+    if review:
+        T.append('Părerea dumneavoastră contează. Ne-ați ajuta enorm cu o recenzie de '
+                 '30 de secunde pe Google:\n' + review + '\n(sau scanați codul QR atașat)')
+    T.append('Vă mulțumim și vă așteptăm cu drag înapoi!')
+    T.append('Cu stimă,\nEchipa AUTOWORLD' + (('\n' + footer) if footer else ''))
+    text = '\n\n'.join(T)
+
+    # ---- HTML alternative (plain paragraphs) ----
+    e = _html.escape
+    H = [f'<p>Bună ziua {e(client_name)},</p>' if client_name else '<p>Bună ziua,</p>',
+         '<p>Vă mulțumim că ați ales AUTOWORLD pentru test drive-ul de astăzi! '
+         'Sperăm că experiența la volan a fost pe măsura așteptărilor.</p>',
+         '<p>Atașat găsiți foaia de parcurs / contractul de test drive.</p>']
+    if detail:
+        H.append('<p><strong>Detalii test drive</strong><br>'
+                 + '<br>'.join(f'{l}: {e(v)}' for l, v in detail) + '</p>')
+    if cons:
+        H.append('<p><strong>Consilierul dumneavoastră</strong><br>'
+                 + '<br>'.join(f'{l}: {e(v)}' for l, v in cons) + '</p>')
+        H.append('<p>Pentru orice întrebare legată de vehicul, ofertă sau pașii următori, '
+                 'consilierul dumneavoastră vă stă la dispoziție.</p>')
+    if review:
+        H.append('<p>Părerea dumneavoastră contează. Ne-ați ajuta enorm cu o recenzie de '
+                 '30 de secunde pe Google:<br>'
+                 f'<a href="{e(review)}">Lăsați o recenzie</a> (sau scanați codul QR atașat).</p>')
+    H.append('<p>Vă mulțumim și vă așteptăm cu drag înapoi!</p>')
+    H.append('<p>Cu stimă,<br>Echipa AUTOWORLD'
+             + (f'<br>{e(footer)}' if footer else '') + '</p>')
+    html = '\n'.join(H)
+
+    subject = 'Mulțumim pentru test drive!'
+    return subject, text, html
 
 
 def _ensure_pdf_path(contract, contract_id, pdf_type):
@@ -74,18 +203,20 @@ def api_email_pdf(id):
         return jsonify({'success': False, 'error': 'Trimiterea de email nu este configurată.'}), 503
 
     contract_code = contract.get('contract_id') or id
-    client_name = contract.get('client_name') or ''
-    filename = f'foaie-parcurs-{contract_code}.pdf'
-    html_body = (
-        f'<p>Bună ziua{(" " + client_name) if client_name else ""},</p>'
-        f'<p>Atașat găsiți contractul de test drive ({contract_code}).</p>'
-        f'<p>O zi bună,<br>AUTOWORLD</p>'
-    )
+    dealer = get_dealer_config(contract.get('company_name'), contract.get('vehicle_brand'))
+    consilier = _consilier_contact(contract.get('advisor_name'))
+    subject, text_body, html_body = _render_td_email(contract, dealer, consilier)
+    attachments = [(f'foaie-parcurs-{contract_code}.pdf', pdf_bytes)]
+    qr = _qr_png(dealer.get('review_url'))
+    if qr:
+        attachments.append(('recenzie-google-qr.png', qr))
+
     ok, err = send_email(
         to_email=to_email,
-        subject=f'Foaie de parcurs {contract_code} — AUTOWORLD',
+        subject=subject,
         html_body=html_body,
-        attachments=[(filename, pdf_bytes)],
+        text_body=text_body,
+        attachments=attachments,
         from_name='AUTOWORLD',
     )
     if not ok:
