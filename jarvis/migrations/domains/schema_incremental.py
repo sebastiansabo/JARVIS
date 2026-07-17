@@ -2014,6 +2014,20 @@ def _create_schema_incremental_continued(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_routes_company ON fp_routes(company_id)')
 
+    # ── Foi de Parcurs — per company+brand dealer config (review link + contact) ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_dealer_config (
+            company_id BIGINT NOT NULL,
+            brand_id BIGINT NOT NULL,
+            review_url TEXT,
+            address TEXT,
+            phone TEXT,
+            email TEXT,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            PRIMARY KEY (company_id, brand_id)
+        )
+    ''')
+
     # ── Foi de Parcurs Phase 2 — TD form fields ──
     cursor.execute('''
         DO $$ BEGIN
