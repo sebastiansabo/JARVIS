@@ -136,16 +136,19 @@ class FoiParcursRepository(BaseRepository):
         )
 
     def get_contract_by_id(self, contract_id: int) -> dict:
-        """Single contract with client + company join."""
+        """Single contract with client + company + vehicle join."""
         sql = (
             'SELECT fp.*, '
             'COALESCE(fp.client_name, c.name) AS client_name, '
             'COALESCE(fp.client_phone, c.phone) AS client_phone, '
+            'c.email AS client_email, '
             'co.company AS company_name, '
+            'v.mark AS vehicle_mark, v.model AS vehicle_model, '
             f'{_TD_STATUS_SQL} '
             'FROM foi_de_parcurs fp '
             'LEFT JOIN fp_clients c ON c.id = fp.client_id '
             'LEFT JOIN companies co ON co.id = fp.company_id '
+            'LEFT JOIN fp_vehicles v ON v.vin = fp.vin '
             'WHERE fp.id = %s'
         )
         return self.query_one(sql, (contract_id,))
