@@ -42,8 +42,12 @@ class FoiParcursRepository(BaseRepository):
 
     def get_contracts(self, vin=None, company_id=None, status=None,
                       batch_id=None, page=1, per_page=25,
-                      sort_by='created_at', sort_dir='DESC'):
-        """Paginated list with optional filters. Returns (rows, total)."""
+                      sort_by='created_at', sort_dir='DESC',
+                      date_from=None, date_to=None, route_type=None):
+        """Paginated list with optional filters. Returns (rows, total).
+
+        date_from/date_to filter on the drive date (departure_datetime, falling
+        back to created_at); date_to is inclusive of the whole day."""
         allowed_sort = {'created_at', 'contract_id', 'vin', 'km_start', 'km_end',
                         'route_type', 'distance_km', 'status', 'batch_id'}
         if sort_by not in allowed_sort:
@@ -66,6 +70,16 @@ class FoiParcursRepository(BaseRepository):
         if batch_id:
             where_clauses.append('fp.batch_id = %s')
             params.append(batch_id)
+        if route_type:
+            where_clauses.append('fp.route_type = %s')
+            params.append(route_type)
+        if date_from:
+            where_clauses.append('COALESCE(fp.departure_datetime, fp.created_at) >= %s')
+            params.append(date_from)
+        if date_to:
+            # inclusive of the whole end day
+            where_clauses.append('COALESCE(fp.departure_datetime, fp.created_at) < (%s::date + INTERVAL \'1 day\')')
+            params.append(date_to)
 
         where_sql = (' WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
 

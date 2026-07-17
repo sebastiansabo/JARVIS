@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, ChevronDown } from 'lucide-react'
+import { AlertTriangle, ChevronDown, FileText } from 'lucide-react'
 import { api } from '@/api/client'
+import { foiParcursApi } from '@/api/foiParcurs'
 
 interface DamageItem {
   zone?: string | null
@@ -11,6 +12,7 @@ interface DamageItem {
 }
 
 interface OdometerEntry {
+  id?: number | null
   contract_id?: string | null
   route_type?: string | null
   status?: string | null
@@ -100,6 +102,17 @@ function DriveEntry({ e }: { e: OdometerEntry }) {
         )}
         <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">{e.route_type || '—'}</span>
         <span className="font-medium">{e.client_name || 'Fără client'}</span>
+        {e.id != null && (e.status === 'FILLED' || e.status === 'COMPLETED') && (
+          <a
+            href={foiParcursApi.getContractPdfUrl(e.id, 'legal')}
+            target="_blank"
+            rel="noopener"
+            onClick={(ev) => ev.stopPropagation()}
+            className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10"
+          >
+            <FileText className="h-3.5 w-3.5" /> Contract
+          </a>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs tabular-nums">
