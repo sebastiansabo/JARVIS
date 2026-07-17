@@ -93,6 +93,7 @@ def api_submit_test_drive():
             'departure_damage': json.dumps(departure_damage),
             'driver_license_photo': data.get('driver_license_photo'),
             'driver_license_number': data.get('driver_license_number'),
+            'driver_license_expiry': (data.get('driver_license_expiry') or '').strip() or None,
             'gdpr_consent': True,
             'inspection_acceptance': bool(data.get('inspection_acceptance')),
             'inspection_id': data.get('inspection_id'),
@@ -101,6 +102,22 @@ def api_submit_test_drive():
         }
 
         contract = _fp_repo.create_from_td_form(contract_data)
+
+        # Keep the client's driving license on their CRM record, so it's prefilled
+        # on the next test drive (front-end checks the expiry when reusing it).
+        try:
+            lic_no = (data.get('driver_license_number') or '').strip()
+            lic_exp = (data.get('driver_license_expiry') or '').strip()
+            if client_id and (lic_no or lic_exp):
+                _crm_client_repo.execute(
+                    "UPDATE crm_clients SET "
+                    "driver_license_number = COALESCE(NULLIF(%s, ''), driver_license_number), "
+                    "driver_license_expiry = COALESCE(NULLIF(%s, ''), driver_license_expiry) "
+                    "WHERE id = %s",
+                    (lic_no, lic_exp, client_id),
+                )
+        except Exception:
+            logger.warning('Could not store driving license on CRM client %s', client_id, exc_info=True)
 
         # Generate PDFs
         try:

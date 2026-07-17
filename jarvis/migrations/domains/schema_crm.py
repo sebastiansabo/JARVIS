@@ -171,6 +171,10 @@ def create_schema_crm(conn, cursor):
     cursor.execute("ALTER TABLE crm_clients ADD COLUMN IF NOT EXISTS contact_person TEXT")
     cursor.execute("ALTER TABLE crm_clients ADD COLUMN IF NOT EXISTS dealer_codes TEXT[]")
 
+    # -- Driving license kept on the client for reuse across test drives --
+    cursor.execute("ALTER TABLE crm_clients ADD COLUMN IF NOT EXISTS driver_license_number TEXT")
+    cursor.execute("ALTER TABLE crm_clients ADD COLUMN IF NOT EXISTS driver_license_expiry VARCHAR(20)")
+
     # -- EuroFib konto_debit per CRM client, keyed by eurofib_klient_id --
     # Migration: convert INTEGER → JSONB if column exists as integer
     cursor.execute("""
