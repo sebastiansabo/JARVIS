@@ -279,8 +279,13 @@ def generate_legal_pdf(contract: dict) -> str:
     story = []
 
     # ---- Header ----
+    try:
+        _dt = contract.get('departure_datetime')
+        _hdr_date = (datetime.fromisoformat(str(_dt).replace('Z', '')) if _dt else datetime.now()).strftime('%d.%m.%Y')
+    except Exception:
+        _hdr_date = datetime.now().strftime('%d.%m.%Y')
     story.append(Paragraph('Contract Driving Auto', title_style))
-    story.append(Paragraph(f'Nr. {cid}', sub_style))
+    story.append(Paragraph(f'Nr. {cid}  •  {_hdr_date}', sub_style))
     story.append(HRFlowable(width='100%', thickness=1.5, color=colors.HexColor('#1a1a2e'), spaceAfter=8))
 
     # ---- Prestator (provider) party ----
@@ -304,20 +309,37 @@ def generate_legal_pdf(contract: dict) -> str:
     story.append(cv_table)
     story.append(Spacer(1, 6))
 
-    # ---- Client ----
-    story.append(Paragraph('Date Client', section_style))
-    cl_data = [
-        [Paragraph('Client', label_style), Paragraph(str(contract.get('client_name') or '—'), value_style)],
-        [Paragraph('Consilier vânzări', label_style), Paragraph(str(contract.get('advisor_name') or '—'), value_style)],
-    ]
-    cl_table = Table(cl_data, colWidths=[45 * mm, W - 45 * mm])
-    cl_table.setStyle(TableStyle([
+    _kv_style = TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ('TOPPADDING', (0, 0), (-1, -1), 2),
         ('LINEBELOW', (0, 0), (-1, -1), 0.25, colors.HexColor('#dddddd')),
-    ]))
-    story.append(cl_table)
+    ])
+
+    def _kv_table(rows):
+        if not rows:
+            rows = [[Paragraph('—', label_style), Paragraph('—', value_style)]]
+        t = Table([[Paragraph(l, label_style), Paragraph(str(v), value_style)] for l, v in rows],
+                  colWidths=[45 * mm, W - 45 * mm])
+        t.setStyle(_kv_style)
+        return t
+
+    # ---- Client ----
+    story.append(Paragraph('Date Client', section_style))
+    cl_rows = [(l, v) for l, v in (
+        ('Nume', contract.get('client_name')),
+        ('Telefon', contract.get('client_phone')),
+        ('Email', contract.get('client_email')),
+        ('Adresă', contract.get('client_address')),
+        ('Serie/nr permis', contract.get('driver_license_number')),
+        ('Valabilitate permis', contract.get('driver_license_expiry')),
+    ) if v not in (None, '', '—')]
+    story.append(_kv_table(cl_rows))
+    story.append(Spacer(1, 6))
+
+    # ---- Consilier ----
+    story.append(Paragraph('Consilier', section_style))
+    story.append(_kv_table([('Consilier vânzări', contract.get('advisor_name') or '—')]))
     story.append(Spacer(1, 6))
 
     # ---- Route ----
@@ -393,6 +415,23 @@ def generate_legal_pdf(contract: dict) -> str:
     sig_table = Table(sig_row, colWidths=[col_w, col_w], rowHeights=[35 * mm])
     sig_table.setStyle(sig_box_style)
     story.append(sig_table)
+
+    # ---- Driver license photo (at the very end) ----
+    lic_path = _decode_signature(contract.get('driver_license_photo') or '')
+    if lic_path:
+        try:
+            from reportlab.lib.utils import ImageReader
+            iw, ih = ImageReader(lic_path).getSize()
+            disp_w = min(W, 130 * mm)
+            disp_h = disp_w * ih / iw
+            if disp_h > 85 * mm:
+                disp_h = 85 * mm
+                disp_w = disp_h * iw / ih
+            story.append(Spacer(1, 10))
+            story.append(Paragraph('Permis de conducere', section_style))
+            story.append(Image(lic_path, width=disp_w, height=disp_h))
+        except Exception:
+            logger.warning('Could not embed driver-license photo in PDF', exc_info=True)
 
     story.append(Spacer(1, 10))
     story.append(HRFlowable(width='100%', thickness=0.5, color=colors.HexColor('#cccccc'), spaceAfter=4))
