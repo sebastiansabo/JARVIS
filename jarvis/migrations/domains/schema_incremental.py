@@ -2023,10 +2023,12 @@ def _create_schema_incremental_continued(conn, cursor):
             address TEXT,
             phone TEXT,
             email TEXT,
+            show_in_foi_parcurs BOOLEAN NOT NULL DEFAULT TRUE,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             PRIMARY KEY (company_id, brand_id)
         )
     ''')
+    cursor.execute("ALTER TABLE fp_dealer_config ADD COLUMN IF NOT EXISTS show_in_foi_parcurs BOOLEAN NOT NULL DEFAULT TRUE")
 
     # ── Foi de Parcurs Phase 2 — TD form fields ──
     cursor.execute('''
