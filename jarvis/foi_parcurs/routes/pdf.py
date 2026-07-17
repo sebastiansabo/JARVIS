@@ -171,6 +171,38 @@ def api_download_pdf(id, pdf_type):
                      download_name=f'foaie-parcurs-{contract["contract_id"]}-{pdf_type}.pdf')
 
 
+def email_contract_pdf(contract, to_email, pdf_type='legal'):
+    """Render + send the test-drive contract email (PDF + review QR attached) to
+    one recipient. Returns (ok: bool, err: str). Reused by the manual email route
+    and the auto-send on TD completion."""
+    to_email = (to_email or '').strip()
+    if not to_email or not _EMAIL_RE.match(to_email):
+        return False, 'Adresă de email invalidă sau lipsă.'
+    from core.services.notification_service import send_email, is_smtp_configured
+    if not is_smtp_configured():
+        return False, 'Trimiterea de email nu este configurată.'
+
+    cid = contract.get('id')
+    try:
+        pdf_path = _ensure_pdf_path(contract, cid, pdf_type)
+        with open(pdf_path, 'rb') as f:
+            pdf_bytes = f.read()
+    except Exception as e:
+        logger.exception('Failed to generate PDF for contract %s', cid)
+        return False, str(e)[:200]
+
+    contract_code = contract.get('contract_id') or cid
+    dealer = get_dealer_config(contract.get('company_name'), contract.get('vehicle_brand'))
+    consilier = _consilier_contact(contract.get('advisor_name'))
+    subject, text_body, html_body = _render_td_email(contract, dealer, consilier)
+    attachments = [(f'foaie-parcurs-{contract_code}.pdf', pdf_bytes)]
+    qr = _qr_png(dealer.get('review_url'))
+    if qr:
+        attachments.append(('recenzie-google-qr.png', qr))
+    return send_email(to_email=to_email, subject=subject, html_body=html_body,
+                      text_body=text_body, attachments=attachments, from_name='AUTOWORLD')
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/email', methods=['POST'])
 @login_required
 def api_email_pdf(id):
@@ -187,40 +219,10 @@ def api_email_pdf(id):
         return jsonify({'success': False, 'error': 'Contract not found'}), 404
 
     to_email = (data.get('to_email') or contract.get('client_email') or '').strip()
-    if not to_email or not _EMAIL_RE.match(to_email):
-        return jsonify({'success': False, 'error': 'Adresă de email invalidă sau lipsă.'}), 400
-
-    try:
-        pdf_path = _ensure_pdf_path(contract, id, pdf_type)
-        with open(pdf_path, 'rb') as f:
-            pdf_bytes = f.read()
-    except Exception as e:
-        logger.exception('Failed to generate PDF for contract %s', id)
-        return jsonify({'success': False, 'error': str(e)[:200]}), 500
-
-    from core.services.notification_service import send_email, is_smtp_configured
-    if not is_smtp_configured():
-        return jsonify({'success': False, 'error': 'Trimiterea de email nu este configurată.'}), 503
-
-    contract_code = contract.get('contract_id') or id
-    dealer = get_dealer_config(contract.get('company_name'), contract.get('vehicle_brand'))
-    consilier = _consilier_contact(contract.get('advisor_name'))
-    subject, text_body, html_body = _render_td_email(contract, dealer, consilier)
-    attachments = [(f'foaie-parcurs-{contract_code}.pdf', pdf_bytes)]
-    qr = _qr_png(dealer.get('review_url'))
-    if qr:
-        attachments.append(('recenzie-google-qr.png', qr))
-
-    ok, err = send_email(
-        to_email=to_email,
-        subject=subject,
-        html_body=html_body,
-        text_body=text_body,
-        attachments=attachments,
-        from_name='AUTOWORLD',
-    )
+    ok, err = email_contract_pdf(contract, to_email, pdf_type)
     if not ok:
         logger.error('Failed to email contract %s to %s: %s', id, to_email, err)
-        return jsonify({'success': False, 'error': err or 'Trimiterea a eșuat.'}), 502
+        code = 400 if 'invalid' in err.lower() or 'lipsă' in err.lower() else 502
+        return jsonify({'success': False, 'error': err}), code
 
     return jsonify({'success': True, 'sent_to': to_email})
