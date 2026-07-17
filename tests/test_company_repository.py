@@ -319,3 +319,25 @@ class TestCompanyRepositoryGet:
         result = repo.get(999)
 
         assert result is None
+
+
+def test_update_persists_administrator():
+    from core.organization.repositories.company_repository import CompanyRepository
+    repo = CompanyRepository()
+    captured = {}
+
+    def fake_execute_many(work):
+        class Cur:
+            rowcount = 1
+            def execute(self, sql, params):
+                captured['sql'] = sql
+                captured['params'] = params
+        return work(Cur())
+
+    with patch.object(repo, 'execute_many', side_effect=fake_execute_many), \
+         patch('core.organization.repositories.company_repository.clear_companies_vat_cache'):
+        ok = repo.update(company_id=10, administrator='Ioan Mezei')
+
+    assert ok is True
+    assert 'administrator = %s' in captured['sql']
+    assert 'Ioan Mezei' in captured['params']

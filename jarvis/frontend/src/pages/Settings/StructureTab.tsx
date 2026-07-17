@@ -493,6 +493,7 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
   const [city, setCity] = useState('')
   const [county, setCounty] = useState('')
   const [postalCode, setPostalCode] = useState('')
+  const [administrator, setAdministrator] = useState('')
 
   const resetForm = () => {
     if (company) {
@@ -502,9 +503,10 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
       setBank((company as any).bank || ''); setSwift((company as any).swift || '')
       setStreet((company as any).street || ''); setCity((company as any).city || '')
       setCounty((company as any).county || ''); setPostalCode((company as any).postal_code || '')
+      setAdministrator((company as any).administrator || '')
     } else {
       setName(''); setVat(''); setParentId('none'); setLogoPreview(null)
-      setRegNo(''); setIban(''); setBank(''); setSwift(''); setStreet(''); setCity(''); setCounty(''); setPostalCode('')
+      setRegNo(''); setIban(''); setBank(''); setSwift(''); setStreet(''); setCity(''); setCounty(''); setPostalCode(''); setAdministrator('')
     }
   }
 
@@ -590,6 +592,10 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
             <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="e.g. 400000" />
           </div>
           <div className="grid gap-2">
+            <Label>Administrator</Label>
+            <Input value={administrator} onChange={(e) => setAdministrator(e.target.value)} placeholder="e.g. Ioan Mezei" />
+          </div>
+          <div className="grid gap-2">
             <Label>Parent Company</Label>
             <Select value={parentId} onValueChange={setParentId}>
               <SelectTrigger><SelectValue placeholder="None (root level)" /></SelectTrigger>
@@ -635,7 +641,7 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             disabled={!name || isPending}
-            onClick={() => onSave({ company: name, vat: vat || undefined, parent_company_id: parentId === 'none' ? null : Number(parentId), reg_no: regNo || undefined, iban: iban || undefined, bank: bank || undefined, swift: swift || undefined, street: street || undefined, city: city || undefined, county: county || undefined, postal_code: postalCode || undefined } as any)}
+            onClick={() => onSave({ company: name, vat: vat || undefined, parent_company_id: parentId === 'none' ? null : Number(parentId), reg_no: regNo || undefined, iban: iban || undefined, bank: bank || undefined, swift: swift || undefined, street: street || undefined, city: city || undefined, county: county || undefined, postal_code: postalCode || undefined, administrator: administrator || undefined } as any)}
           >
             {isPending ? 'Saving...' : 'Save'}
           </Button>
