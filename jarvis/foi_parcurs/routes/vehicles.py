@@ -214,7 +214,10 @@ def api_list_brands(company_id):
         '''SELECT b.name
            FROM company_brands cb
            JOIN brands b ON b.id = cb.brand_id
+           LEFT JOIN fp_dealer_config dc
+                  ON dc.company_id = cb.company_id AND dc.brand_id = cb.brand_id
            WHERE cb.company_id = %s AND cb.is_active = TRUE AND b.is_active = TRUE
+             AND COALESCE(dc.show_in_foi_parcurs, TRUE) = TRUE
            ORDER BY b.name''',
         (company_id,),
     )

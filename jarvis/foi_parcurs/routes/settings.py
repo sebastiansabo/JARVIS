@@ -28,6 +28,7 @@ def api_put_dealer_config(company_id, brand_id):
         (data.get('address') or '').strip() or None,
         (data.get('phone') or '').strip() or None,
         (data.get('email') or '').strip() or None,
+        show_in_foi_parcurs=bool(data.get('show_in_foi_parcurs', True)),
     )
     return jsonify({'success': True})
 
