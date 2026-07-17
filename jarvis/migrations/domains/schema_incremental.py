@@ -2170,6 +2170,9 @@ def _create_schema_incremental_continued(conn, cursor):
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='driver_license_number') THEN
                 ALTER TABLE foi_de_parcurs ADD COLUMN driver_license_number TEXT;
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='driver_license_expiry') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN driver_license_expiry VARCHAR(20);
+            END IF;
         END $$;
     ''')
 
