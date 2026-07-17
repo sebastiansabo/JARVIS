@@ -67,6 +67,7 @@ def api_odometer_history():
         )
         gap_km = (km_start - prev_end) if (prev_end is not None and km_start is not None) else None
         entries.append({
+            'id': r.get('id'),
             'contract_id': r.get('contract_id'),
             'route_type': route_type,
             'status': r.get('status'),

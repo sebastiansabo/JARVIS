@@ -164,4 +164,11 @@ export const foiParcursApi = {
   // ── PDF Downloads ──
   getContractPdfUrl: (contractId: number, type: 'legal' | 'custom') =>
     `${BASE}/contracts/${contractId}/pdf/${type}`,
+
+  // ── Export (session list xlsx / contract PDFs zip) ──
+  getExportXlsxUrl: (params: { company_id?: number; date_from?: string; date_to?: string; vin?: string }) =>
+    `${BASE}/export/xlsx${qs(params)}`,
+
+  getExportContractsZipUrl: (params: { company_id?: number; date_from?: string; date_to?: string; vin?: string }) =>
+    `${BASE}/export/contracts-zip${qs(params)}`,
 }
