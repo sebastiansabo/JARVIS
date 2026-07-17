@@ -49,3 +49,6 @@ playwright>=1.55,<2
 
 # Background tasks
 apscheduler>=3.10,<4
+
+# QR codes (test-drive review email)
+segno>=1.6,<2

@@ -158,6 +158,8 @@ class FoiParcursRepository(BaseRepository):
             'c.email AS client_email, '
             'co.company AS company_name, '
             'v.mark AS vehicle_mark, v.model AS vehicle_model, '
+            'v.registration_number AS vehicle_registration_number, '
+            'v.brand AS vehicle_brand, v.fuel_type AS vehicle_fuel_type, '
             f'{_TD_STATUS_SQL} '
             'FROM foi_de_parcurs fp '
             'LEFT JOIN fp_clients c ON c.id = fp.client_id '
