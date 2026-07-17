@@ -1112,6 +1112,7 @@ interface VehicleFormValue {
   talon_doc: string
   civ_doc: string
   registration_doc: string
+  offer_doc: string
 }
 
 function emptyVehicleForm(companyId?: number): VehicleFormValue {
@@ -1120,7 +1121,7 @@ function emptyVehicleForm(companyId?: number): VehicleFormValue {
     fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0,
     odometer_km: '', company_id: companyId ? String(companyId) : '',
     vignette_valid_until: '', itp_valid_until: '', insurance_valid_until: '',
-    insurance_doc: '', talon_doc: '', civ_doc: '', registration_doc: '',
+    insurance_doc: '', talon_doc: '', civ_doc: '', registration_doc: '', offer_doc: '',
   }
 }
 
@@ -1144,6 +1145,7 @@ function vehicleToForm(v: FpVehicle): VehicleFormValue {
     talon_doc: v.talon_doc || '',
     civ_doc: v.civ_doc || '',
     registration_doc: v.registration_doc || '',
+    offer_doc: v.offer_doc || '',
   }
 }
 
@@ -1323,6 +1325,7 @@ function VehicleFormFields({
         <DocUpload label="Talon" value={value.talon_doc} onChange={(v) => onChange({ talon_doc: v })} />
         <DocUpload label="Carte de identitate (CIV)" value={value.civ_doc} onChange={(v) => onChange({ civ_doc: v })} />
         <DocUpload label="Documente înmatriculare" value={value.registration_doc} onChange={(v) => onChange({ registration_doc: v })} />
+      <DocUpload label="Ofertă (trimisă pe email după test drive)" value={value.offer_doc} onChange={(v) => onChange({ offer_doc: v })} />
       </div>
     </div>
     </div>
@@ -1384,6 +1387,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
         talon_doc: newVehicle.talon_doc || undefined,
         civ_doc: newVehicle.civ_doc || undefined,
         registration_doc: newVehicle.registration_doc || undefined,
+        offer_doc: newVehicle.offer_doc || undefined,
       }),
     onSuccess: () => {
       setError('')
@@ -1471,6 +1475,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
         talon_doc: editForm.talon_doc || null,
         civ_doc: editForm.civ_doc || null,
         registration_doc: editForm.registration_doc || null,
+        offer_doc: editForm.offer_doc || null,
       },
     })
   }

@@ -156,6 +156,7 @@ def api_create_vehicle():
             'talon_doc': data.get('talon_doc') or None,
             'civ_doc': data.get('civ_doc') or None,
             'registration_doc': data.get('registration_doc') or None,
+            'offer_doc': data.get('offer_doc') or None,
         })
         return jsonify({'success': True, 'vehicle': vehicle})
     except Exception as e:

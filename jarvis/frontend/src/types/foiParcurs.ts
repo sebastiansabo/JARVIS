@@ -41,6 +41,7 @@ export interface FpVehicle {
   talon_doc?: string | null
   civ_doc?: string | null
   registration_doc?: string | null
+  offer_doc?: string | null
   is_active: boolean
   created_at: string
   updated_at: string
