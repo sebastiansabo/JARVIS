@@ -25,6 +25,8 @@ import {
   MapPin,
   ChevronDown,
   ChevronUp,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -424,6 +426,106 @@ const STATUS_ROW_BG: Record<string, string> = {
   filled: 'bg-green-500/5 border-l-4 border-l-green-500/50',
 }
 
+/** Export modal for the Parcurs history: pick a period (quick presets or a
+ *  custom from–to) and optionally a single car, then download the session list
+ *  as .xlsx or the contract PDFs as a .zip. Downloads go through authenticated
+ *  GET links (session cookie), so a plain anchor click suffices. */
+function ExportDialog({
+  open, onOpenChange, companyId, vehicles, brand, from, to, vin, setFrom, setTo, setVin,
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  companyId: number
+  vehicles: FpVehicle[]
+  brand: string
+  from: string
+  to: string
+  vin: string
+  setFrom: (v: string) => void
+  setTo: (v: string) => void
+  setVin: (v: string) => void
+}) {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  const setThisMonth = () => {
+    const d = new Date()
+    setFrom(ymd(new Date(d.getFullYear(), d.getMonth(), 1)))
+    setTo(ymd(d))
+  }
+  const setLastMonth = () => {
+    const d = new Date()
+    setFrom(ymd(new Date(d.getFullYear(), d.getMonth() - 1, 1)))
+    setTo(ymd(new Date(d.getFullYear(), d.getMonth(), 0)))
+  }
+
+  const carOptions = vehicles.filter(
+    (v) => (!companyId || v.company_id === companyId) && (!brand || v.brand === brand),
+  )
+  const params = {
+    company_id: companyId || undefined,
+    date_from: from || undefined,
+    date_to: to || undefined,
+    vin: vin !== 'all' ? vin : undefined,
+  }
+  const download = (url: string) => {
+    const a = document.createElement('a')
+    a.href = url
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Export sesiuni</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-xs">Perioadă</Label>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={setThisMonth}>Luna aceasta</Button>
+              <Button type="button" size="sm" variant="outline" onClick={setLastMonth}>Luna trecută</Button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">De la</Label>
+                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Până la</Label>
+                <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+              </div>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Mașină</Label>
+            <Select value={vin} onValueChange={setVin}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toate mașinile</SelectItem>
+                {carOptions.map((v) => (
+                  <SelectItem key={v.id} value={v.vin}>
+                    {[v.mark, v.model].filter(Boolean).join(' ')} — {v.registration_number || v.vin}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter className="flex-col sm:flex-row gap-2">
+          <Button variant="outline" className="w-full sm:w-auto" onClick={() => download(foiParcursApi.getExportXlsxUrl(params))}>
+            <FileSpreadsheet className="mr-1.5 h-4 w-4" /> Export Excel
+          </Button>
+          <Button className="w-full sm:w-auto" onClick={() => download(foiParcursApi.getExportContractsZipUrl(params))}>
+            <FileText className="mr-1.5 h-4 w-4" /> Export contracte (ZIP)
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function ParcursTab({ companyId, brand }: { companyId: number; brand: string }) {
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
@@ -437,6 +539,12 @@ function ParcursTab({ companyId, brand }: { companyId: number; brand: string }) 
   const [filterYear, setFilterYear] = useState<string>(String(now.getFullYear()))
   const [sortBy, setSortBy] = useState('slot_number')
   const [sortDir, setSortDir] = useState('ASC')
+
+  // ── Export modal ──
+  const [exportOpen, setExportOpen] = useState(false)
+  const [expFrom, setExpFrom] = useState('')
+  const [expTo, setExpTo] = useState('')
+  const [expVin, setExpVin] = useState('all')
 
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
 
@@ -569,7 +677,28 @@ function ParcursTab({ companyId, brand }: { companyId: number; brand: string }) 
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs opacity-0 select-none">Export</Label>
+          <Button size="sm" variant="outline" className="h-8" onClick={() => setExportOpen(true)}>
+            <Download className="mr-1.5 h-4 w-4" />
+            Export
+          </Button>
+        </div>
       </div>
+
+      <ExportDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        companyId={companyId}
+        vehicles={vehiclesData?.vehicles ?? []}
+        brand={brand}
+        from={expFrom}
+        to={expTo}
+        vin={expVin}
+        setFrom={setExpFrom}
+        setTo={setExpTo}
+        setVin={setExpVin}
+      />
 
       {/* Summary badges */}
       <div className="flex gap-2 text-sm">
@@ -939,9 +1068,9 @@ const STOCK_COLUMNS = [
   { key: 'capacity', label: 'Capacity', default: true },
   { key: 'odometer', label: 'Odometer', default: true },
   { key: 'company', label: 'Company', default: false },
-  { key: 'vignette', label: 'Rovinietă', default: true },
-  { key: 'itp', label: 'ITP', default: true },
-  { key: 'rca', label: 'RCA', default: true },
+  { key: 'vignette', label: 'Rovinietă', default: false },
+  { key: 'itp', label: 'ITP', default: false },
+  { key: 'rca', label: 'RCA', default: false },
 ] as const
 
 type StockColumnKey = (typeof STOCK_COLUMNS)[number]['key']
