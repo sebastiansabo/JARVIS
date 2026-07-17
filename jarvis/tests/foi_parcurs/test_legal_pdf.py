@@ -38,3 +38,36 @@ def test_prestator_intro_contains_identity_and_phone():
 def test_prestator_intro_omits_missing_phone_label():
     intro = ps._build_prestator_intro(_INTL, '')
     assert 'telefon' not in intro.lower()
+
+
+def test_company_legal_splits_multiline_showroom():
+    c = dict(_INTL, showroom_address='Str. Oradiei 1-3-5-7, Cluj-Napoca, 400220\nCalea Turzii 249, Cluj-Napoca, 400495')
+    legal = ps._company_legal(c)
+    assert legal['puncte'] == 'Str. Oradiei 1-3-5-7, Cluj-Napoca, 400220; Calea Turzii 249, Cluj-Napoca, 400495'
+
+
+def test_prestator_intro_omits_missing_administrator():
+    c = dict(_INTL, administrator='')
+    intro = ps._build_prestator_intro(c, '0371536475')
+    assert 'reprezentata de' not in intro
+
+
+def test_dealer_constants_use_token_not_hardcoded_name():
+    # Every dealer body mention must be tokenized; third-party entities stay.
+    dealer_blocks = (
+        ps._TC_OBLIGATIONS + ps._TC_PARAGRAPHS + ps._TC_DATA_BULLETS + ps._TC_GPS_PARAGRAPHS
+    )
+    joined = ' '.join(dealer_blocks)
+    assert 'AUTOWORLD Plus' not in joined
+    assert 'AUTOWORLD INTERNATIONAL S.R.L.' not in joined
+    assert '{CO}' in joined
+    # Third-party GDPR entities must remain untouched.
+    gdpr = ' '.join(ps._GDPR_INTRO + ps._GDPR_OUTRO)
+    assert 'QUANTUM AUTO MAX S.R.L.' in gdpr
+    assert 'MG MOTOR EUROPE' in gdpr
+
+
+def test_terms_flowables_accepts_company_name():
+    # Should not raise and should return a non-empty list of flowables.
+    fl = ps._terms_flowables('Autoworld ONE S.R.L.')
+    assert isinstance(fl, list) and len(fl) > 0
