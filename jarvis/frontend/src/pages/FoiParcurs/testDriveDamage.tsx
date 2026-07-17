@@ -12,7 +12,9 @@ import type { TdDamageItem } from '@/types/foiParcurs'
 
 export const DAMAGE_ZONES = [
   'Față',
+  'Parbriz',
   'Spate',
+  'Lunetă',
   'Lateral stânga',
   'Lateral dreapta',
   'Plafon',
