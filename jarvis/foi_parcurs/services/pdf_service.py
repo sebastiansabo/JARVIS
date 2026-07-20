@@ -146,54 +146,6 @@ _TC_PARAGRAPHS = [
     'UTILIZATORUL declara ca intelege riscurile inerente utilizarii unui autovehicul in circulatia rutiera si ca nu va solicita despagubiri {CO} pentru prejudicii rezultate din accidente sau evenimente care nu sunt imputabile societatii.',
 ]
 
-_TC_DATA_BULLETS = [
-    'Categorii de date prelucrate: date de identificare, date de contact si date privind permisul de conducere;',
-    'Scop: organizarea si efectuarea test drive-ului, executarea obligatiilor contractuale si protejarea patrimoniului {CO};',
-    'Temei juridic: contract sau relatie precontractuala la cererea UTILIZATORULUI, interes legitim si, dupa caz, obligatie legala;',
-    'Durata de stocare: 7 ani, cu exceptia datelor GPS, care se stocheaza timp de 21 de zile.',
-]
-
-_TC_DATA_PARAGRAPHS = [
-    'UTILIZATORULUI i s-a prezentat nota de informare privind prelucrarea datelor cu caracter personal colectate in vederea efectuarii test drive-ului.',
-]
-
-_TC_GPS_PARAGRAPHS = [
-    'UTILIZATORULUI i s-a adus la cunostinta ca autovehiculele din flota de test drive sunt prevazute cu sistem de monitorizare GPS. Monitorizarea GPS se realizeaza in interesul legitim al {CO} de a-si administra patrimoniul, de a asigura securitatea autovehiculelor, de a preveni furtul si de a documenta utilizarea autovehiculelor.',
-    'Datele colectate prin sistemul GPS pot include data, ora si localizarea autovehiculului. Nu sunt utilizate tehnologii de monitorizare a comportamentului la volan.',
-    'Datele colectate prin sistemul GPS sunt stocate pe serverele furnizorului serviciului GPS si/sau pe serverele {CO} timp de 21 de zile.',
-    'Pentru prelucrarea datelor in scopuri care exced relatia contractuala, inclusiv comunicari comerciale, campanii promotionale, statistice sau de optimizare a satisfactiei clientilor, datele UTILIZATORULUI vor fi prelucrate doar in baza consimtamantului exprimat explicit.',
-    'UTILIZATORUL are dreptul de a solicita accesul la datele cu caracter personal care il privesc, rectificarea, stergerea, restrictionarea prelucrarii, portabilitatea datelor, retragerea consimtamantului, opozitia la prelucrare si dreptul de a depune plangere in fata autoritatii de supraveghere competente.',
-    'Pentru exercitarea acestor drepturi, UTILIZATORUL poate transmite o solicitare la adresa de e-mail protectiadatelor@autoworld.ro sau la sediul {CO} din Cluj-Napoca, Calea Floresti nr. 145, jud. Cluj. {CO} va raspunde in termen de maximum 30 de zile, in conditiile legii. Politica privind protectia datelor este disponibila pe site-ul companiei si in incinta locatiilor Autoworld.',
-]
-
-# GDPR "Nota de informare si acord" (also shown as a modal in the app)
-_GDPR_INTRO = [
-    'Avand in vedere prevederile Regulamentului UE 679/2016 privind protectia persoanelor fizice in ceea ce priveste prelucrarea datelor cu caracter personal si libera circulatie a acestor date, denumit in continuare "Regulamentul", si abrogarea Directivei 95/46/CE, societatea QUANTUM AUTO MAX S.R.L. cu sediul in Bucuresti, Soseaua Bucuresti - Ploiesti, Nr. 40A, Sector 1, inregistrata la Registrul Comertului sub nr. J23/5062/04.08.2023 si avand CUI 48590798, in calitate de operator, prelucreaza datele dumneavoastra cu caracter personal conform prevederilor Regulamentului.',
-    'Datele dumneavoastra cu caracter personal pe care le colectam si prelucram includ datele cu caracter personal pe care ni le furnizati direct, precum si urmatoarele categorii de date pe care le colectam indirect (cum ar fi de la clientul pe care, spre exemplu, il reprezentati) dealeri, reparatori autorizati sau institutii/autoritati publice: date de identitate: nume, prenume, CNP; date de contact: nr. de telefon, adresa de domiciliu, adresa de e-mail, semnatura; date de identificare si date tehnice ale vehiculului: nr. inmatriculare, marca, model, tip, seria sasiu, serie motor, data fabricatiei, data livrarii, data primei inmatriculari, kilometraj.',
-]
-_GDPR_BASIS = [
-    'Suntem in situatia incheierii/ executarii unui contract la care sunteti parte;',
-    'Trebuie sa indeplinim o obligatie legala cum ar fi: emiterea facturilor, primirea platilor, transmiterea de notificari, elaborarea de rapoarte financiare si a altor obligatii pe care legislatia ni le impune, etc.;',
-    'Urmarim un interes legitim cum ar fi: incheierea si executarea contractelor cu clientii persoane juridice, sondaje de satisfactie a clientilor, indeplinirea unor contracte la care suntem parte si care au legatura cu activitatea desfasurata de noi, inclusiv in interesul legitim de a gestiona in bune conditii relatia comerciala cu producatorul, etc.;',
-    'Ne-ati oferit consimtamantul pentru a primi din partea noastra comunicari cu scop comercial sau invitatii la sondaje de marketing; aveti dreptul de a va retrage consimtamantul in orice moment.',
-]
-_GDPR_RIGHTS = [
-    'Accesul la date: de a obtine acces la datele dumneavoastra cu caracter personal prelucrate si informatii privind activitatile de prelucrare desfasurate;',
-    'Rectificarea datelor: de a obtine rectificarea datelor dumneavoastra care sunt eronate sau incomplete;',
-    'Stergerea datelor ("dreptul de a fi uitat"): de a obtine stergerea datelor pe care le prelucram;',
-    'Restrictionarea prelucrarii datelor: de a restrictiona prelucrarea datelor pe care le prelucram;',
-    'Dreptul de a obiecta: dreptul sa obiectati in ceea ce priveste prelucrarea datelor dumneavoastra;',
-    'Portabilitatea datelor: de a primi dumneavoastra/de a obtine transferul datelor dumneavoastra pe care le prelucram catre un alt operator;',
-    'Retragerea consimtamantului: daca ne-ati acordat consimtamantul, aveti oricand dreptul de a-l retrage;',
-    'Dreptul de a nu fi supus unei decizii individuale automate;',
-    'Dreptul de a depune o plangere la autoritatea de supraveghere a prelucrarii datelor cu caracter personal si dreptul de a va adresa justitiei, pentru apararea oricaror drepturi garantate de legislatia aplicabila in domeniul protectiei datelor cu caracter personal, care au fost incalcate.',
-]
-_GDPR_OUTRO = [
-    'Vom pastra datele dumneavoastra personale intr-o maniera compatibila cu legislatia aplicabila privind protectia datelor. Vom pastra numai datele care ne sunt necesare si pentru atata timp cat este necesar in raport de scopurile pentru care prelucram datele sau pentru a ne conforma dispozitiilor legale. In cazul sondajelor privind satisfactia clientilor datele personale vor fi pastrate timp de maxim 6 ani.',
-    'In functie de scopurile pentru care colectam datele este posibil sa le dezvaluim, in principal, urmatoarelor categorii de destinatari: afiliatii si filialele noastre, dealerii si reparatorii autorizati, agentii de sondare a satisfactiei, agentii de marketing, firme care va ofera serviciile si/sau produsele pe care le-ati solicitat, societati de asigurare, brokeri, societati de leasing, MG MOTOR EUROPE - societatea producatoare, avocati, consultanti externi, traducatori, etc.',
-    'Pentru detalii complete cu privire la activitatile de prelucrare desfasurate (inclusiv in privinta scopurilor de prelucrare, categoriilor de destinatari, transferului de date, perioadelor de stocare) precum si cu privire la drepturile de care beneficiati si pentru exercitarea acestora, va rugam sa accesati Politica noastra de confidentialitate, disponibila la www.mgmotor.ro sau sa ne contactati la adresa de e-mail info@mgcluj.ro.',
-]
-
 
 def _parse_conditions(text: str) -> list:
     """Parse the general-conditions markup subset into typed blocks.
@@ -267,21 +219,19 @@ def _general_conditions_flowables(text: str, accepted_at) -> list:
     return fl
 
 
-def _terms_flowables(company_name: str):
-    """T&C + GDPR note flowables, appended after the contract summary and before
-    the signatures (so the client signs having read the terms)."""
+def _terms_flowables(company_name: str, gdpr_text: str = ''):
+    """T&C flowables (+ the company's GDPR text, when configured), appended
+    after the contract summary and before the signatures (so the client signs
+    having read the terms)."""
     styles = getSampleStyleSheet()
     title = ParagraphStyle('TCTitle', parent=styles['Heading2'], fontSize=12, alignment=TA_CENTER,
                            spaceBefore=2, spaceAfter=6, textColor=colors.HexColor('#1a1a2e'))
-    subtitle = ParagraphStyle('TCSub', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER,
-                              spaceAfter=8, textColor=colors.HexColor('#555555'))
     header = ParagraphStyle('TCHead', parent=styles['Heading3'], fontSize=10, spaceBefore=8, spaceAfter=4,
                             textColor=colors.HexColor('#1a1a2e'))
     body = ParagraphStyle('TCBody', parent=styles['Normal'], fontSize=8, leading=11,
                           alignment=TA_JUSTIFY, spaceAfter=4)
     lead = ParagraphStyle('TCLead', parent=body, fontName='Helvetica-Bold', spaceBefore=3, spaceAfter=2)
     bullet = ParagraphStyle('TCBul', parent=body, leftIndent=14, bulletIndent=4, spaceAfter=2)
-    closing = ParagraphStyle('TCClose', parent=body, fontName='Helvetica-Bold', spaceBefore=6)
 
     def bl(items):
         return [Paragraph(_co(t, company_name), bullet, bulletText='-') for t in items]
@@ -295,21 +245,15 @@ def _terms_flowables(company_name: str):
     fl += bl(_TC_CASCO_EXCLUSIONS)
     fl += [Paragraph(_co(t, company_name), body) for t in _TC_PARAGRAPHS]
 
-    fl.append(Paragraph('PRELUCRAREA DATELOR CU CARACTER PERSONAL', header))
-    fl += [Paragraph(t, body) for t in _TC_DATA_PARAGRAPHS]
-    fl += bl(_TC_DATA_BULLETS)
-    fl += [Paragraph(_co(t, company_name), body) for t in _TC_GPS_PARAGRAPHS]
-
-    fl.append(PageBreak())
-    fl.append(Paragraph('NOTA DE INFORMARE si ACORD', title))
-    fl.append(Paragraph('privind prelucrarea datelor cu caracter personal', subtitle))
-    fl += [Paragraph(t, body) for t in _GDPR_INTRO]
-    fl.append(Paragraph('Datele dumneavoastra personale pot fi prelucrate, conform legislatiei aplicabile privind protectia datelor, daca:', lead))
-    fl += bl(_GDPR_BASIS)
-    fl.append(Paragraph('Drepturile dumneavoastra privind datele personale, in conditiile legii:', lead))
-    fl += bl(_GDPR_RIGHTS)
-    fl += [Paragraph(t, body) for t in _GDPR_OUTRO]
-    fl.append(Paragraph('Prin semnarea prezentei note de informare confirmati ca aceasta v-a fost adusa la cunostinta si va exprimati acordul pentru prelucrarea datelor personale in scopurile mentionate.', closing))
+    if (gdpr_text or '').strip():
+        fl.append(Paragraph('PRELUCRAREA DATELOR CU CARACTER PERSONAL', header))
+        for kind, payload in _parse_conditions(gdpr_text):
+            if kind == 'heading':
+                fl.append(Paragraph(payload, lead))
+            elif kind == 'bullets':
+                fl += [Paragraph(t, bullet, bulletText='-') for t in payload]
+            else:
+                fl.append(Paragraph(payload, body))
     return fl
 
 # Output directory (relative to Flask app root — will be resolved at call time)
@@ -523,7 +467,7 @@ def generate_legal_pdf(contract: dict) -> str:
     story.append(Spacer(1, 6))
 
     # ---- Terms & conditions + GDPR note (own pages, before signing) ----
-    story.extend(_terms_flowables(company_name))
+    story.extend(_terms_flowables(company_name, (company_row.get('gdpr_text') if company_row else '') or ''))
 
     # ---- Accepted general conditions (dealer-configured, per company/brand) ----
     story.extend(_general_conditions_flowables(

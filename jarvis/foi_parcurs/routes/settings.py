@@ -56,6 +56,26 @@ def api_get_general_conditions():
     return jsonify({'success': True, 'text': text, 'brand': brand})
 
 
+def _company_gdpr_lookup(company_id: int) -> str:
+    """The company's configured GDPR text ('' when unset/missing)."""
+    try:
+        from core.organization.repositories.company_repository import CompanyRepository
+        row = CompanyRepository().get(company_id)
+        return ((row or {}).get('gdpr_text') or '')
+    except Exception:
+        logger.warning('company-gdpr lookup failed for company_id=%s', company_id, exc_info=True)
+        return ''
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/company-gdpr', methods=['GET'])
+@login_required
+def api_get_company_gdpr():
+    """Per-company GDPR text for the mobile Test Drive GDPR modal."""
+    company_id = request.args.get('company_id', type=int)
+    text = _company_gdpr_lookup(company_id) if company_id else ''
+    return jsonify({'success': True, 'text': text})
+
+
 # ════════════════════════════════════════════════════════════════
 # KM Configs per company
 # ════════════════════════════════════════════════════════════════

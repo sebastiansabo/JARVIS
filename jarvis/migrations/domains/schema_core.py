@@ -177,6 +177,7 @@ def create_schema_core(conn, cursor):
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'city') THEN ALTER TABLE companies ADD COLUMN city TEXT; END IF;
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'county') THEN ALTER TABLE companies ADD COLUMN county TEXT; END IF;
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'postal_code') THEN ALTER TABLE companies ADD COLUMN postal_code TEXT; END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'gdpr_text') THEN ALTER TABLE companies ADD COLUMN gdpr_text TEXT; END IF;
         END $$;
     ''')
 
