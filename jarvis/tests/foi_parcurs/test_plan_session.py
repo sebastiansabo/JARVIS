@@ -56,3 +56,32 @@ def test_draft_create_omits_signature_and_pdf(client, monkeypatch):
     assert resp.get_json()['success'] is True
     assert captured['status'] == 'PLANNED'
     assert called['pdf'] is False   # no PDF for a draft
+
+
+def test_activate_requires_signature(client, monkeypatch):
+    monkeypatch.setattr(td_routes._fp_repo, 'get_contract_by_id',
+                        lambda i: {'id': i, 'route_type': 'TD', 'status': 'PLANNED', 'vin': 'V1', 'km_start': 1000})
+    resp = client.put('/api/foi-parcurs/test-drive/101/activate', json={'km_start': 1000})
+    assert resp.status_code == 400
+    assert 'signature' in resp.get_json()['error'].lower()
+
+
+def test_activate_fills_and_generates_pdf(client, monkeypatch):
+    row = {'id': 101, 'route_type': 'TD', 'status': 'PLANNED', 'vin': 'V1',
+           'km_start': 1000, 'fuel_tank_capacity_liters': 50}
+    monkeypatch.setattr(td_routes._fp_repo, 'get_contract_by_id', lambda i: dict(row))
+    seen = {}
+    monkeypatch.setattr(td_routes._fp_repo, 'record_activation',
+                        lambda i, d: seen.update(d) or {**row, 'id': i, 'status': 'FILLED'})
+    monkeypatch.setattr(td_routes._fp_repo, 'execute', lambda *a, **k: None)
+    import foi_parcurs.services.pdf_service as pdf
+    made = {'pdf': False}
+    monkeypatch.setattr(pdf, 'generate_legal_pdf', lambda c: made.__setitem__('pdf', True) or '/tmp/l.pdf')
+    monkeypatch.setattr(pdf, 'generate_custom_pdf', lambda c: '/tmp/c.pdf')
+    body = {'client_signature': 'data:sig', 'advisor_signature': 'data:adv',
+            'gdpr_consent': True, 'odometer_start': 1005, 'fuel_gauge_start_level': '1/2',
+            'departure_datetime': '2026-08-01T10:00:00'}
+    resp = client.put('/api/foi-parcurs/test-drive/101/activate', json=body)
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()['contract']['status'] == 'FILLED'
+    assert made['pdf'] is True

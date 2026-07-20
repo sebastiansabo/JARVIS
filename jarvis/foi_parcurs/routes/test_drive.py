@@ -175,6 +175,66 @@ def api_submit_test_drive():
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
 
+@foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>/activate', methods=['PUT'])
+@login_required
+def api_activate_test_drive(id):
+    """Activate a PLANNED draft: capture the client signature + any handover
+    edits, flip to FILLED, generate the PDFs (mirrors the live-submit path)."""
+    data = request.get_json(silent=True) or {}
+    try:
+        contract = _fp_repo.get_contract_by_id(id)
+        if not contract:
+            return jsonify({'success': False, 'error': 'Not found'}), 404
+        if contract.get('route_type') != 'TD' or contract.get('status') != 'PLANNED':
+            return jsonify({'success': False, 'error': 'Contract is not a PLANNED draft'}), 400
+        if not data.get('client_signature'):
+            return jsonify({'success': False, 'error': 'client_signature is required'}), 400
+
+        tank = int(data.get('fuel_tank_capacity_liters', contract.get('fuel_tank_capacity_liters') or 0))
+        start_level = data.get('fuel_gauge_start_level') or contract.get('fuel_gauge_start_level') or '1'
+        try:
+            start_fraction = parse_fuel_level(str(start_level))
+        except ValueError:
+            start_fraction = 1.0
+        fuel_start_liters = round(start_fraction * tank, 2)
+
+        update = {
+            'client_signature': data['client_signature'],
+            'signature_ai_generated': data.get('advisor_signature', contract.get('signature_ai_generated', '')),
+            'gdpr_consent': bool(data.get('gdpr_consent', True)),
+            'fuel_gauge_start_level': start_level,
+            'fuel_start_liters': fuel_start_liters,
+        }
+        if data.get('odometer_start') is not None:
+            update['km_start'] = int(data['odometer_start'])
+        if data.get('departure_datetime'):
+            update['departure_datetime'] = data['departure_datetime']
+        if data.get('return_datetime'):
+            update['return_datetime'] = data['return_datetime']
+        if data.get('departure_damage') is not None:
+            update['departure_damage'] = data['departure_damage']
+
+        updated = _fp_repo.record_activation(id, update)
+
+        try:
+            from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
+            legal_path = generate_legal_pdf(updated)
+            custom_path = generate_custom_pdf(updated)
+            _fp_repo.execute(
+                'UPDATE foi_de_parcurs SET pdf_legal_path = %s, pdf_custom_path = %s WHERE id = %s',
+                (legal_path, custom_path, id),
+            )
+            updated['pdf_legal_path'] = legal_path
+            updated['pdf_custom_path'] = custom_path
+        except Exception:
+            logger.exception('PDF generation failed activating contract %s', id)
+
+        return jsonify({'success': True, 'contract': updated})
+    except Exception as e:
+        logger.exception('Failed to activate planned test drive %s', id)
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+
 def _autosend_completed_contract(contract_id):
     """Email the finished contract PDF to the client + consilier once a TD is
     completed. Best-effort — recipients are deduped and failures are logged, never

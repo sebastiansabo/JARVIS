@@ -236,3 +236,21 @@ class FoiParcursRepository(BaseRepository):
         if row and row.get('id'):
             return self.get_contract_by_id(row['id']) or row
         return row
+
+    def record_activation(self, contract_id: int, data: dict) -> dict:
+        """Turn a PLANNED draft into a live FILLED contract: write the handover
+        fields (km/fuel/signatures/departure) and set status='FILLED'."""
+        data = dict(data)
+        if 'departure_damage' in data and not isinstance(data['departure_damage'], str):
+            data['departure_damage'] = json.dumps(data['departure_damage'])
+        sets = ', '.join(f'{k} = %s' for k in data.keys())
+        sql = (
+            f'UPDATE foi_de_parcurs SET {sets}, '
+            f"status = 'FILLED', updated_at = NOW() "
+            f"WHERE id = %s AND route_type = 'TD' AND status = 'PLANNED' RETURNING *"
+        )
+        params = list(data.values()) + [contract_id]
+        row = self.execute(sql, tuple(params), returning=True)
+        if row and row.get('id'):
+            return self.get_contract_by_id(row['id']) or row
+        return row
