@@ -133,6 +133,8 @@ export default function TestDriveForm() {
   // Compliance
   const [gdprConsent, setGdprConsent] = useState(false)
   const [inspectionAcceptance, setInspectionAcceptance] = useState(false)
+  const [conditionsAccepted, setConditionsAccepted] = useState(false)
+  const [showConditions, setShowConditions] = useState(false)
 
   const [submittedContract, setSubmittedContract] = useState<FoiContract | null>(null)
   const [attempted, setAttempted] = useState(false)
@@ -203,6 +205,18 @@ export default function TestDriveForm() {
   })
   const latestInspection: FpVehicleInspection | null = inspectionData?.inspection ?? null
 
+  // ── Per company+vehicle-brand general-conditions text ('' when unset ⇒
+  //    acceptance not shown/required). Required for live submit + activation,
+  //    deferred for a PLANNED draft (mirrors the backend). ──
+  const { data: gcData } = useQuery({
+    queryKey: ['fp-general-conditions', companyId, selectedVehicle?.vin],
+    queryFn: () => foiParcursApi.getGeneralConditions(companyId!, selectedVehicle!.vin),
+    enabled: !!companyId && !!selectedVehicle?.vin,
+    staleTime: 60_000,
+  })
+  const generalConditions = (gcData?.text ?? '').trim()
+  const conditionsRequired = generalConditions.length > 0
+
   const { data: clientSearchData, isFetching: isSearching } = useQuery({
     queryKey: ['fp-crm-search', debouncedSearch],
     queryFn: () => foiParcursApi.searchCrmClients(debouncedSearch, 20),
@@ -245,6 +259,7 @@ export default function TestDriveForm() {
     advisor: advisorName.trim() === '',
     clientSig: !clientSignature,
     gdpr: !gdprConsent,
+    conditions: conditionsRequired && !conditionsAccepted,
   }
   const formValid = !Object.values(missing).some(Boolean)
   // A PLANNED draft defers signature/GDPR/license to activation — mirrors the
@@ -256,7 +271,7 @@ export default function TestDriveForm() {
   // Activating a PLANNED draft only needs the deferred client signature on top of
   // the draft fields — the activate endpoint requires client_signature, defaults
   // gdpr_consent to true, and never reads a driver-license photo (so don't gate on it).
-  const activateValid = draftValid && !missing.clientSig
+  const activateValid = draftValid && !missing.clientSig && !missing.conditions
   const err = (bad: boolean) => attempted && bad
 
   const damagedZoneCount = toDamagePayload(departureDamage).length
@@ -326,6 +341,7 @@ export default function TestDriveForm() {
       ...buildBasePayload(selectedVehicle, selectedClient),
       client_signature: clientSignature,
       gdpr_consent: gdprConsent,
+      ...(conditionsRequired ? { general_conditions_accepted: conditionsAccepted } : {}),
     }
     withConflictCheck(selectedVehicle.vin, () => submitMutation.mutate(payload))
   }
@@ -368,6 +384,7 @@ export default function TestDriveForm() {
       departure_datetime: departureDatetime,
       ...(returnDatetime ? { return_datetime: returnDatetime } : {}),
       ...(damagePayload.length ? { departure_damage: damagePayload } : {}),
+      ...(conditionsRequired ? { general_conditions_accepted: conditionsAccepted } : {}),
     }
     withConflictCheck(selectedVehicle.vin, () => activateMutation.mutate(payload), activateId)
   }
@@ -382,6 +399,7 @@ export default function TestDriveForm() {
     setClientSignature('')
     setShowDamage(false); setDepartureDamage(makeEmptyDamageState())
     setGdprConsent(false); setInspectionAcceptance(false)
+    setConditionsAccepted(false); setShowConditions(false)
     setSubmittedContract(null); setAttempted(false)
     setConflictList([]); setShowConflicts(false); setPendingRun(null)
     if (isActivating) navigate('/app/foi-parcurs/test-drive', { replace: true })
@@ -692,6 +710,22 @@ export default function TestDriveForm() {
             <Checkbox id="gdpr" checked={gdprConsent} onCheckedChange={(v) => setGdprConsent(v === true)} />
             <Label htmlFor="gdpr" className="text-xs leading-normal cursor-pointer">Clientul este de acord cu prelucrarea datelor (GDPR). *</Label>
           </div>
+          {conditionsRequired && (
+            <div className="space-y-2">
+              <div className={cn('flex items-start gap-2 rounded-md p-2 -m-2', err(missing.conditions) && 'ring-2 ring-destructive')}>
+                <Checkbox id="conditions" checked={conditionsAccepted} onCheckedChange={(v) => setConditionsAccepted(v === true)} />
+                <Label htmlFor="conditions" className="text-xs leading-normal cursor-pointer">Clientul a citit și acceptă condițiile generale. *</Label>
+              </div>
+              <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setShowConditions((s) => !s)}>
+                {showConditions ? 'Ascunde condițiile generale' : 'Citește condițiile generale'}
+              </Button>
+              {showConditions && (
+                <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-3 text-xs leading-relaxed">
+                  {generalConditions}
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
