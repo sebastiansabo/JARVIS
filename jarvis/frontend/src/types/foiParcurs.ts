@@ -172,6 +172,11 @@ export interface FoiContract {
   status: 'PENDING' | 'FILLED' | 'COMPLETED'
   created_at: string
   updated_at: string
+  // Returned by get_contracts (fp.* + _TD_STATUS_SQL) but previously undeclared:
+  td_status?: 'complete' | 'incomplete' | 'driving'
+  departure_datetime?: string | null
+  return_datetime?: string | null
+  returned_at?: string | null
 }
 
 // ── Create Contract Payload ──
