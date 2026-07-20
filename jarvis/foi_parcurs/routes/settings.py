@@ -1,6 +1,6 @@
 """Routes for Foi de Parcurs settings: KM configs, company config, itinerary routes."""
 
-from ._shared import foi_parcurs_bp, jsonify, request, login_required, logger, _dealer_repo
+from ._shared import foi_parcurs_bp, jsonify, request, login_required, logger, _dealer_repo, _vehicle_repo
 from ..repositories import FoiParcursRepository
 
 _repo = FoiParcursRepository()
@@ -29,8 +29,31 @@ def api_put_dealer_config(company_id, brand_id):
         (data.get('phone') or '').strip() or None,
         (data.get('email') or '').strip() or None,
         show_in_foi_parcurs=bool(data.get('show_in_foi_parcurs', True)),
+        general_conditions=(data.get('general_conditions') or '').strip() or None,
     )
     return jsonify({'success': True})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/general-conditions', methods=['GET'])
+@login_required
+def api_get_general_conditions():
+    """Resolve the general-conditions text for the mobile Test Drive form.
+    Brand is resolved from the vehicle (vin); a `brand` name param is accepted
+    as a fallback. Returns '' when nothing is configured."""
+    company_id = request.args.get('company_id', type=int)
+    vin = (request.args.get('vin') or '').strip()
+    brand = (request.args.get('brand') or '').strip()
+    if vin and not brand:
+        try:
+            veh = _vehicle_repo.get_by_vin(vin)
+            brand = (veh or {}).get('brand') or ''
+        except Exception:
+            logger.warning('general-conditions: vehicle lookup failed for vin=%s', vin, exc_info=True)
+            brand = ''
+    text = ''
+    if company_id and brand:
+        text = _dealer_repo.get_general_conditions(company_id, brand)
+    return jsonify({'success': True, 'text': text, 'brand': brand})
 
 
 # ════════════════════════════════════════════════════════════════
