@@ -182,3 +182,21 @@ def test_submit_requires_gdpr_when_company_has_text(client, monkeypatch):
     r = client.post('/api/foi-parcurs/test-drive', json=payload)
     assert r.status_code == 400
     assert 'gdpr' in r.get_json()['error'].lower()
+
+
+def test_submit_gdpr_enforced_through_real_company_repository(client, monkeypatch):
+    """Exercises the REAL _company_gdpr_text helper (not monkeypatched), mocking
+    only at the CompanyRepository boundary it calls internally, to prove the
+    actual wiring _company_gdpr_text -> CompanyRepository().get()['gdpr_text']
+    enforces the GDPR consent gate.
+    """
+    monkeypatch.setattr(
+        'core.organization.repositories.company_repository.CompanyRepository.get',
+        lambda self, cid: {'gdpr_text': '## GDPR\n\ntext'},
+    )
+    monkeypatch.setattr(td._vehicle_repo, 'get_by_vin', lambda vin: {'brand': 'MG Motor'})
+    monkeypatch.setattr(td._dealer_repo, 'get_general_conditions', lambda cid, b: '')
+    payload = _valid_payload(); payload.pop('gdpr_consent', None)
+    r = client.post('/api/foi-parcurs/test-drive', json=payload)
+    assert r.status_code == 400
+    assert 'gdpr' in r.get_json()['error'].lower()
