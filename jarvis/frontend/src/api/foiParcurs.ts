@@ -146,6 +146,12 @@ export const foiParcursApi = {
   submitTestDrive: (data: TestDriveFormPayload) =>
     api.post<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive`, data),
 
+  // ── Per company+vehicle-brand general-conditions text ('' when unset) ──
+  getGeneralConditions: (companyId: number, vin: string) =>
+    api.get<{ success: boolean; text: string; brand: string }>(
+      `${BASE}/general-conditions?company_id=${companyId}&vin=${encodeURIComponent(vin)}`,
+    ),
+
   // ── Plan a draft TD (status: 'PLANNED') — same endpoint, signature/GDPR/PDF
   //    deferred to activation ──
   planTestDrive: (data: PlanTestDrivePayload) =>

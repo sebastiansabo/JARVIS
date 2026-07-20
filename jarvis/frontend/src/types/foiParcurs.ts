@@ -318,6 +318,7 @@ export interface TestDriveFormPayload {
   driver_license_photo?: string
   driver_license_number?: string
   driver_license_expiry?: string
+  general_conditions_accepted?: boolean
 }
 
 // ── Plan (draft) Test Drive Payload — POST /test-drive with status:'PLANNED'.
