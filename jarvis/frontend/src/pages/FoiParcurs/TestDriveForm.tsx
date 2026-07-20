@@ -253,6 +253,10 @@ export default function TestDriveForm() {
     missing.company || missing.vehicle || missing.client || missing.departure ||
     missing.odometer || missing.estimated || missing.fuel || missing.advisor
   )
+  // Activating a PLANNED draft only needs the deferred client signature on top of
+  // the draft fields — the activate endpoint requires client_signature, defaults
+  // gdpr_consent to true, and never reads a driver-license photo (so don't gate on it).
+  const activateValid = draftValid && !missing.clientSig
   const err = (bad: boolean) => attempted && bad
 
   const damagedZoneCount = toDamagePayload(departureDamage).length
@@ -348,7 +352,7 @@ export default function TestDriveForm() {
 
   function handleActivate() {
     if (activateMutation.isPending || checking || activateId == null) return
-    if (!formValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
+    if (!activateValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
       setAttempted(true)
       return
     }
@@ -698,7 +702,7 @@ export default function TestDriveForm() {
         </div>
       )}
       {isActivating ? (
-        <Button className={cn('w-full', attempted && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleActivate} disabled={activateMutation.isPending || checking || loadingDraft}>
+        <Button className={cn('w-full', attempted && !activateValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleActivate} disabled={activateMutation.isPending || checking || loadingDraft}>
           {activateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se activează...</> : <><PlayCircle className="h-4 w-4 mr-2" />Începe sesiunea</>}
         </Button>
       ) : (
@@ -718,7 +722,7 @@ export default function TestDriveForm() {
           </Button>
         </div>
       )}
-      {attempted && !formValid && !submitMutation.isPending && !activateMutation.isPending && (
+      {attempted && !(isActivating ? activateValid : formValid) && !submitMutation.isPending && !activateMutation.isPending && (
         <p className="text-xs text-destructive text-center">Completează câmpurile marcate cu roșu pentru a trimite.</p>
       )}
       <ConflictDialog
