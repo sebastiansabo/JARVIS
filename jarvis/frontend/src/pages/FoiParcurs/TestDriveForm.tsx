@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
@@ -14,6 +14,7 @@ import {
   type FpVehicleInspection,
   type TestDriveFormPayload,
   type PlanTestDrivePayload,
+  type ActivateTestDrivePayload,
   type VehicleConflict,
   type FoiContract,
 } from '@/types/foiParcurs'
@@ -49,12 +50,14 @@ import {
   FileText,
   AlertTriangle,
   CalendarPlus,
+  PlayCircle,
 } from 'lucide-react'
 import { CreateClientPanel, DriverLicenseSection } from './CreateClientPanel'
 import {
   DamageReport,
   makeEmptyDamageState,
   toDamagePayload,
+  fromDamagePayload,
   type DamageState,
 } from './testDriveDamage'
 import { ConflictDialog } from './ConflictDialog'
@@ -89,6 +92,11 @@ function useDebounce(value: string, delay: number) {
 export default function TestDriveForm() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
+
+  // ── Activation mode — reopens this form pre-filled from a PLANNED draft ──
+  const [searchParams] = useSearchParams()
+  const activateId = searchParams.get('activate') ? Number(searchParams.get('activate')) : null
+  const isActivating = activateId != null
 
   // Company & vehicle
   const [companyId, setCompanyId] = useState<number | null>(null)
@@ -157,6 +165,36 @@ export default function TestDriveForm() {
     () => (companyId ? allVehicles.filter((v) => v.company_id === companyId) : []),
     [allVehicles, companyId],
   )
+
+  // ── Load + prefill the PLANNED draft being activated ──
+  const { data: draftData, isLoading: loadingDraft } = useQuery({
+    queryKey: ['fp-test-drive', activateId],
+    queryFn: () => foiParcursApi.getTestDrive(activateId!),
+    enabled: activateId != null,
+  })
+
+  useEffect(() => {
+    const c = draftData?.contract
+    if (!c || c.status !== 'PLANNED') return
+    setCompanyId(c.company_id)
+    setDepartureDatetime(c.departure_datetime ? c.departure_datetime.slice(0, 16) : localDatetimeValue(new Date()))
+    setReturnDatetime(c.return_datetime ? c.return_datetime.slice(0, 16) : localDatetimeValue(new Date(Date.now() + 60 * 60 * 1000)))
+    setOdometerStart(String(c.km_start ?? ''))
+    setEstimatedKm(String(c.distance_km ?? ''))
+    setFuelGaugeStart((c.fuel_gauge_start_level as FuelGaugeLevel) || '')
+    setAdvisorName(c.advisor_name || '')
+    setDepartureDamage(fromDamagePayload(c.departure_damage))
+    if (c.client_id && c.client_name) {
+      setSelectedClient({ id: c.client_id, display_name: c.client_name, phone: c.client_phone ?? null })
+    }
+  }, [draftData]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const c = draftData?.contract
+    if (!c || c.status !== 'PLANNED' || !allVehicles.length) return
+    const v = allVehicles.find((x) => x.vin === c.vin)
+    if (v) { setVehicleId(v.id); setSelectedVehicle(v) }
+  }, [draftData, allVehicles])
 
   const { data: inspectionData } = useQuery({
     queryKey: ['fp-inspection', vehicleId],
@@ -303,6 +341,33 @@ export default function TestDriveForm() {
     withConflictCheck(selectedVehicle.vin, () => planMutation.mutate(payload))
   }
 
+  const activateMutation = useMutation({
+    mutationFn: (payload: ActivateTestDrivePayload) => foiParcursApi.activateTestDrive(activateId!, payload),
+    onSuccess: (data) => setSubmittedContract(data.contract),
+  })
+
+  function handleActivate() {
+    if (activateMutation.isPending || checking || activateId == null) return
+    if (!formValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
+      setAttempted(true)
+      return
+    }
+    const damagePayload = toDamagePayload(departureDamage)
+    const capacity = selectedVehicle.fuel_tank_capacity_liters ?? selectedVehicle.battery_capacity_kwh ?? undefined
+    const payload: ActivateTestDrivePayload = {
+      client_signature: clientSignature,
+      ...(advisorSignature ? { advisor_signature: advisorSignature } : {}),
+      gdpr_consent: gdprConsent,
+      odometer_start: odometerNum,
+      fuel_gauge_start_level: fuelGaugeStart as FuelGaugeLevel,
+      ...(capacity != null ? { fuel_tank_capacity_liters: capacity } : {}),
+      departure_datetime: departureDatetime,
+      ...(returnDatetime ? { return_datetime: returnDatetime } : {}),
+      ...(damagePayload.length ? { departure_damage: damagePayload } : {}),
+    }
+    withConflictCheck(selectedVehicle.vin, () => activateMutation.mutate(payload), activateId)
+  }
+
   function resetForm() {
     setCompanyId(null); setVehicleId(null); setSelectedVehicle(null)
     setClientSearch(''); setSelectedClient(null); setShowManualCreate(false)
@@ -315,6 +380,7 @@ export default function TestDriveForm() {
     setGdprConsent(false); setInspectionAcceptance(false)
     setSubmittedContract(null); setAttempted(false)
     setConflictList([]); setShowConflicts(false); setPendingRun(null)
+    if (isActivating) navigate('/app/foi-parcurs/test-drive', { replace: true })
   }
 
   // ── Success Screen ──
@@ -364,8 +430,10 @@ export default function TestDriveForm() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-lg font-semibold">Test Drive Nou</h1>
-          <p className="text-sm text-muted-foreground">Completați datele pentru test drive</p>
+          <h1 className="text-lg font-semibold">{isActivating ? 'Activează Test Drive' : 'Test Drive Nou'}</h1>
+          <p className="text-sm text-muted-foreground">
+            {isActivating ? 'Confirmă/ajustează datele și capturează semnătura clientului' : 'Completați datele pentru test drive'}
+          </p>
         </div>
       </div>
 
@@ -624,27 +692,33 @@ export default function TestDriveForm() {
       </Card>
 
       {/* ── Submit ── */}
-      {(submitMutation.isError || planMutation.isError) && (
+      {(submitMutation.isError || planMutation.isError || activateMutation.isError) && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           Eroare la trimitere. Vă rugăm încercați din nou.
         </div>
       )}
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="flex-1"
-          size="lg"
-          onClick={handlePlan}
-          disabled={planMutation.isPending || submitMutation.isPending || checking}
-        >
-          {planMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se salvează...</> : <><CalendarPlus className="h-4 w-4 mr-2" />Planifică (draft)</>}
+      {isActivating ? (
+        <Button className={cn('w-full', attempted && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleActivate} disabled={activateMutation.isPending || checking || loadingDraft}>
+          {activateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se activează...</> : <><PlayCircle className="h-4 w-4 mr-2" />Începe sesiunea</>}
         </Button>
-        <Button className={cn('flex-1', attempted && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleSubmit} disabled={submitMutation.isPending || planMutation.isPending || checking}>
-          {submitMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se trimite...</> : 'Trimite'}
-        </Button>
-      </div>
-      {attempted && !formValid && !submitMutation.isPending && (
+      ) : (
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1"
+            size="lg"
+            onClick={handlePlan}
+            disabled={planMutation.isPending || submitMutation.isPending || checking}
+          >
+            {planMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se salvează...</> : <><CalendarPlus className="h-4 w-4 mr-2" />Planifică (draft)</>}
+          </Button>
+          <Button className={cn('flex-1', attempted && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleSubmit} disabled={submitMutation.isPending || planMutation.isPending || checking}>
+            {submitMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se trimite...</> : 'Trimite'}
+          </Button>
+        </div>
+      )}
+      {attempted && !formValid && !submitMutation.isPending && !activateMutation.isPending && (
         <p className="text-xs text-destructive text-center">Completează câmpurile marcate cu roșu pentru a trimite.</p>
       )}
       <ConflictDialog
