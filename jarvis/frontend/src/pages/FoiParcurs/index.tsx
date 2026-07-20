@@ -557,8 +557,8 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterMonth, setFilterMonth] = useState<string>(String(now.getMonth() + 1))
   const [filterYear, setFilterYear] = useState<string>(String(now.getFullYear()))
-  const [sortBy, setSortBy] = useState('slot_number')
-  const [sortDir, setSortDir] = useState('ASC')
+  const [sortBy, setSortBy] = useState('departure_datetime')
+  const [sortDir, setSortDir] = useState('DESC')
 
   // ── Export modal ──
   const [exportOpen, setExportOpen] = useState(false)
@@ -594,7 +594,9 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
     queryFn: () => foiParcursApi.getVehicles(),
     staleTime: 30_000,
   })
-  const vinBrand = new Map((vehiclesData?.vehicles ?? []).map((v) => [v.vin, v.brand]))
+  const vehiclesList = vehiclesData?.vehicles ?? []
+  const vinBrand = new Map(vehiclesList.map((v) => [v.vin, v.brand]))
+  const vinVehicle = new Map(vehiclesList.map((v) => [v.vin, v]))
 
   const allContracts = data?.contracts ?? []
 
@@ -615,10 +617,16 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
   })
 
   // Sort
+  const sortVal = (c: FoiContract): string | number => {
+    if (sortBy === 'departure_datetime') return c.departure_datetime || c.created_at || ''
+    return ((c as any)[sortBy] ?? '') as string | number
+  }
   const sorted = [...filtered].sort((a, b) => {
-    const aVal = (a as any)[sortBy] ?? ''
-    const bVal = (b as any)[sortBy] ?? ''
-    const cmp = typeof aVal === 'number' ? aVal - bVal : String(aVal).localeCompare(String(bVal))
+    const aVal = sortVal(a)
+    const bVal = sortVal(b)
+    const cmp = typeof aVal === 'number' && typeof bVal === 'number'
+      ? aVal - bVal
+      : String(aVal).localeCompare(String(bVal))
     return sortDir === 'ASC' ? cmp : -cmp
   })
 
@@ -749,16 +757,14 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
           <Table>
             <TableHeader>
               <TableRow>
-                <SortableHeader col="slot_number" label="#" current={sortBy} dir={sortDir} toggle={toggleSort} />
+                <SortableHeader col="departure_datetime" label="Date" current={sortBy} dir={sortDir} toggle={toggleSort} />
                 <SortableHeader col="status" label="Status" current={sortBy} dir={sortDir} toggle={toggleSort} />
                 <TableHead>Company</TableHead>
-                <SortableHeader col="vin" label="VIN" current={sortBy} dir={sortDir} toggle={toggleSort} />
-                <SortableHeader col="route_type" label="Type" current={sortBy} dir={sortDir} toggle={toggleSort} />
-                <SortableHeader col="distance_km" label="Distance" current={sortBy} dir={sortDir} toggle={toggleSort} />
-                <TableHead>KM</TableHead>
+                <SortableHeader col="vin" label="Vehicle" current={sortBy} dir={sortDir} toggle={toggleSort} />
                 <TableHead>Client</TableHead>
-                <TableHead>Itinerary</TableHead>
-                <TableHead>Advisor</TableHead>
+                <TableHead>Consilier</TableHead>
+                <TableHead>KM</TableHead>
+                <TableHead>Return</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -773,19 +779,27 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                       className={`cursor-pointer hover:bg-muted/40 ${ss.rowClass}`}
                       onClick={() => setExpandedRow(isExpanded ? null : c.id)}
                     >
-                      <TableCell className="text-xs">{c.slot_number || '—'}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">
+                        {c.departure_datetime
+                          ? new Date(c.departure_datetime).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' })
+                          : new Date(c.created_at).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </TableCell>
                       <TableCell>
                         <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
                       </TableCell>
                       <TableCell className="text-xs">{c.company_name || '—'}</TableCell>
-                      <TableCell className="font-mono text-xs">{c.vin.slice(0, 12)}...</TableCell>
-                      <TableCell>
-                        <Badge variant={c.route_type === 'TD' ? 'default' : 'secondary'}>
-                          {c.route_type}
-                        </Badge>
+                      <TableCell className="text-xs">
+                        {(() => {
+                          const v = vinVehicle.get(c.vin)
+                          const name = v ? [v.brand || v.mark, v.model].filter(Boolean).join(' ') : ''
+                          return (
+                            <div className="leading-tight">
+                              <div className="font-medium">{name || `${c.vin.slice(0, 12)}...`}</div>
+                              {v?.registration_number && <div className="text-muted-foreground font-mono text-[11px]">{v.registration_number}</div>}
+                            </div>
+                          )
+                        })()}
                       </TableCell>
-                      <TableCell>{c.distance_km} km</TableCell>
-                      <TableCell className="text-xs">{c.km_start} - {c.km_end}</TableCell>
                       <TableCell>
                         {c.client_name ? (
                           <span className="font-medium text-sm">{c.client_name}</span>
@@ -793,8 +807,13 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                           <span className="text-muted-foreground text-xs">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="max-w-[150px] truncate text-xs">{c.itinerary || '—'}</TableCell>
                       <TableCell className="text-xs">{c.advisor_name || '—'}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">{c.km_start} - {c.km_end}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">
+                        {c.return_datetime
+                          ? new Date(c.return_datetime).toLocaleString('ro-RO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                          : '—'}
+                      </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1">
                           {c.status === 'PENDING' ? (
