@@ -2029,6 +2029,7 @@ def _create_schema_incremental_continued(conn, cursor):
         )
     ''')
     cursor.execute("ALTER TABLE fp_dealer_config ADD COLUMN IF NOT EXISTS show_in_foi_parcurs BOOLEAN NOT NULL DEFAULT TRUE")
+    cursor.execute("ALTER TABLE fp_dealer_config ADD COLUMN IF NOT EXISTS general_conditions TEXT")
 
     # ── Foi de Parcurs Phase 2 — TD form fields ──
     cursor.execute('''
@@ -2142,6 +2143,15 @@ def _create_schema_incremental_continued(conn, cursor):
             END IF;
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='source') THEN
                 ALTER TABLE foi_de_parcurs ADD COLUMN source VARCHAR(20) DEFAULT 'batch';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='general_conditions_accepted') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN general_conditions_accepted BOOLEAN DEFAULT FALSE;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='general_conditions_accepted_at') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN general_conditions_accepted_at TIMESTAMP WITH TIME ZONE;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='general_conditions_text') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN general_conditions_text TEXT;
             END IF;
         END $$;
     ''')
