@@ -169,7 +169,10 @@ export interface FoiContract {
   itinerary: string
   advisor_name: string
   signature_ai_generated: string
-  status: 'PENDING' | 'FILLED' | 'COMPLETED'
+  // 'PLANNED' — draft session created ahead of time (Plan a Driving Session,
+  // Phase 1 backend). Signature/GDPR/PDF are deferred; activated into
+  // 'FILLED' when the client arrives (PUT /test-drive/{id}/activate).
+  status: 'PENDING' | 'PLANNED' | 'FILLED' | 'COMPLETED'
   created_at: string
   updated_at: string
   // Returned by get_contracts (fp.* + _TD_STATUS_SQL) but previously undeclared:
@@ -177,6 +180,7 @@ export interface FoiContract {
   departure_datetime?: string | null
   return_datetime?: string | null
   returned_at?: string | null
+  departure_damage?: TdDamageItem[] | null
 }
 
 // ── Create Contract Payload ──
@@ -314,4 +318,44 @@ export interface TestDriveFormPayload {
   driver_license_photo?: string
   driver_license_number?: string
   driver_license_expiry?: string
+}
+
+// ── Plan (draft) Test Drive Payload — POST /test-drive with status:'PLANNED'.
+// Same shape as TestDriveFormPayload except client_signature/gdpr_consent are
+// deferred to activation (backend only requires them when status is
+// absent/'FILLED' — see api_submit_test_drive's `is_draft` branch). ──
+export type PlanTestDrivePayload = Omit<TestDriveFormPayload, 'client_signature' | 'gdpr_consent'> & {
+  status: 'PLANNED'
+  client_signature?: string
+  gdpr_consent?: boolean
+}
+
+// ── Activate a PLANNED draft — PUT /test-drive/{id}/activate. Only
+// client_signature is required by the backend; everything else is an
+// optional handover edit (unset fields keep the PLANNED row's existing
+// values). ──
+export interface ActivateTestDrivePayload {
+  client_signature: string
+  advisor_signature?: string
+  gdpr_consent?: boolean
+  general_conditions_accepted?: boolean
+  odometer_start?: number
+  fuel_gauge_start_level?: FuelGaugeLevel
+  fuel_tank_capacity_liters?: number
+  departure_datetime?: string
+  return_datetime?: string
+  departure_damage?: TdDamageItem[]
+}
+
+// ── Vehicle conflict — GET /vehicles/{vin}/conflicts response row. Matches
+// FoiParcursRepository.find_conflicts()'s SELECT list exactly (no td_status —
+// the backend query doesn't derive/select it). ──
+export interface VehicleConflict {
+  id: number
+  contract_id: string
+  status: 'PLANNED' | 'FILLED' | 'COMPLETED'
+  departure_datetime: string | null
+  return_datetime: string | null
+  client_name: string | null
+  advisor_name: string
 }
