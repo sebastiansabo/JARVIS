@@ -14,6 +14,17 @@ from ..services.fuel_service import parse_fuel_level
 _PHONE_RE = re.compile(r'^(07\d{8}|\+40\d{9}|004\d{10})$')
 
 
+def _company_gdpr_text(company_id) -> str:
+    """The company's configured GDPR text ('' when unset/missing)."""
+    try:
+        from core.organization.repositories.company_repository import CompanyRepository
+        row = CompanyRepository().get(int(company_id))
+        return ((row or {}).get('gdpr_text') or '')
+    except Exception:
+        logger.warning('gdpr_text lookup failed at submit for company_id=%s', company_id, exc_info=True)
+        return ''
+
+
 def _normalize_name(name: str) -> str:
     """Lowercase + collapse whitespace for crm_clients.name_normalized (trigram-indexed)."""
     return re.sub(r'\s+', ' ', (name or '').strip().lower())
@@ -30,12 +41,12 @@ def api_submit_test_drive():
     # (e.g. by the web form) via data.get('itinerary', '') below.
     required = ['company_id', 'vin', 'client_id', 'odometer_start', 'estimated_km',
                 'fuel_gauge_start_level', 'departure_datetime',
-                'advisor_name', 'client_signature', 'gdpr_consent']
+                'advisor_name', 'client_signature']
     missing = [f for f in required if not data.get(f)]
     if missing:
         return jsonify({'success': False, 'error': f'Missing: {", ".join(missing)}'}), 400
 
-    if not data.get('gdpr_consent'):
+    if _company_gdpr_text(data.get('company_id')).strip() and not data.get('gdpr_consent'):
         return jsonify({'success': False, 'error': 'GDPR consent is required'}), 400
 
     # General conditions (per company+brand) — required only when configured.

@@ -160,3 +160,25 @@ def test_submit_ok_without_conditions_when_none_configured(client, monkeypatch):
     resp = client.post('/api/foi-parcurs/test-drive', json=_valid_payload())
     assert resp.status_code == 200
     assert 'general_conditions_text' not in seen
+
+
+def test_submit_ok_without_gdpr_when_company_has_no_text(client, monkeypatch):
+    monkeypatch.setattr(td, '_company_gdpr_text', lambda cid: '')
+    monkeypatch.setattr(td._vehicle_repo, 'get_by_vin', lambda vin: {'brand': 'MG Motor'})
+    monkeypatch.setattr(td._dealer_repo, 'get_general_conditions', lambda cid, b: '')
+    monkeypatch.setattr(td._crm_client_repo, 'get_by_id', lambda cid: {'display_name': 'X', 'phone': '0700000000'})
+    monkeypatch.setattr(td._fp_repo, 'create_from_td_form', lambda d: {'id': 1, 'contract_id': d['contract_id']})
+    monkeypatch.setattr(td._fp_repo, 'execute', lambda *a, **k: None)
+    payload = _valid_payload(); payload.pop('gdpr_consent', None)  # no consent sent
+    r = client.post('/api/foi-parcurs/test-drive', json=payload)
+    assert r.status_code == 200
+
+
+def test_submit_requires_gdpr_when_company_has_text(client, monkeypatch):
+    monkeypatch.setattr(td, '_company_gdpr_text', lambda cid: '## GDPR\n\ntext')
+    monkeypatch.setattr(td._vehicle_repo, 'get_by_vin', lambda vin: {'brand': 'MG Motor'})
+    monkeypatch.setattr(td._dealer_repo, 'get_general_conditions', lambda cid, b: '')
+    payload = _valid_payload(); payload.pop('gdpr_consent', None)
+    r = client.post('/api/foi-parcurs/test-drive', json=payload)
+    assert r.status_code == 400
+    assert 'gdpr' in r.get_json()['error'].lower()
