@@ -54,23 +54,34 @@ def test_prestator_intro_omits_missing_administrator():
 
 def test_dealer_constants_use_token_not_hardcoded_name():
     # Every dealer body mention must be tokenized; third-party entities stay.
-    dealer_blocks = (
-        ps._TC_OBLIGATIONS + ps._TC_PARAGRAPHS + ps._TC_DATA_BULLETS + ps._TC_GPS_PARAGRAPHS
-    )
+    dealer_blocks = ps._TC_OBLIGATIONS + ps._TC_PARAGRAPHS
     joined = ' '.join(dealer_blocks)
     assert 'AUTOWORLD Plus' not in joined
     assert 'AUTOWORLD INTERNATIONAL S.R.L.' not in joined
     assert '{CO}' in joined
-    # Third-party GDPR entities must remain untouched.
-    gdpr = ' '.join(ps._GDPR_INTRO + ps._GDPR_OUTRO)
-    assert 'QUANTUM AUTO MAX S.R.L.' in gdpr
-    assert 'MG MOTOR EUROPE' in gdpr
 
 
 def test_terms_flowables_accepts_company_name():
     # Should not raise and should return a non-empty list of flowables.
     fl = ps._terms_flowables('Autoworld ONE S.R.L.')
     assert isinstance(fl, list) and len(fl) > 0
+
+
+def test_terms_flowables_renders_company_gdpr_and_no_notice_page():
+    fl = ps._terms_flowables('Autoworld ONE S.R.L.', '## Prelucrare\n\nText GDPR firma.')
+    joined = ' '.join(getattr(p, 'text', '') for p in fl)
+    assert 'NOTA DE INFORMARE' not in joined            # notice page removed
+    assert 'PRELUCRAREA DATELOR CU CARACTER PERSONAL' in joined
+    assert 'Text GDPR firma.' in joined                 # company text rendered
+    assert 'CONDITII GENERALE TEST DRIVE' in joined     # T&C kept
+
+
+def test_terms_flowables_omits_gdpr_section_when_empty():
+    fl = ps._terms_flowables('Autoworld ONE S.R.L.', '')
+    joined = ' '.join(getattr(p, 'text', '') for p in fl)
+    assert 'PRELUCRAREA DATELOR CU CARACTER PERSONAL' not in joined
+    assert 'NOTA DE INFORMARE' not in joined
+    assert 'CONDITII GENERALE TEST DRIVE' in joined     # T&C still there
 
 
 def test_parse_conditions_blocks():
