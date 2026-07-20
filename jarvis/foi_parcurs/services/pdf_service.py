@@ -195,6 +195,78 @@ _GDPR_OUTRO = [
 ]
 
 
+def _parse_conditions(text: str) -> list:
+    """Parse the general-conditions markup subset into typed blocks.
+    Rules: blank line separates blocks; '## ' = heading; '- ' = bullet
+    (consecutive bullets = one list); other non-blank runs = one paragraph."""
+    blocks = []
+    para: list[str] = []
+    bullets: list[str] = []
+
+    def flush_para():
+        if para:
+            blocks.append(('paragraph', ' '.join(para)))
+            para.clear()
+
+    def flush_bullets():
+        if bullets:
+            blocks.append(('bullets', list(bullets)))
+            bullets.clear()
+
+    for raw in (text or '').splitlines():
+        line = raw.rstrip()
+        if not line.strip():
+            flush_para(); flush_bullets(); continue
+        if line.lstrip().startswith('## '):
+            flush_para(); flush_bullets()
+            blocks.append(('heading', line.lstrip()[3:].strip()))
+        elif line.lstrip().startswith('- '):
+            flush_para()
+            bullets.append(line.lstrip()[2:].strip())
+        else:
+            flush_bullets()
+            para.append(line.strip())
+    flush_para(); flush_bullets()
+    return blocks
+
+
+def _general_conditions_flowables(text: str, accepted_at) -> list:
+    """Reportlab flowables for the accepted general-conditions section. Empty
+    list when there is no text (old/unconfigured contracts)."""
+    if not (text or '').strip():
+        return []
+    styles = getSampleStyleSheet()
+    sec = ParagraphStyle('GCSection', parent=styles['Heading3'], fontSize=11,
+                         spaceBefore=8, spaceAfter=4, textColor=colors.HexColor('#1a1a2e'))
+    head = ParagraphStyle('GCHead', parent=styles['Normal'], fontSize=9.5,
+                          leading=13, spaceBefore=4, spaceAfter=2, fontName='Helvetica-Bold')
+    body = ParagraphStyle('GCBody', parent=styles['Normal'], fontSize=8.5,
+                          leading=12, alignment=TA_JUSTIFY, spaceAfter=4)
+    bullet = ParagraphStyle('GCBullet', parent=body, leftIndent=10, bulletIndent=2, spaceAfter=2)
+    note = ParagraphStyle('GCNote', parent=styles['Normal'], fontSize=8.5,
+                          leading=12, spaceBefore=6, fontName='Helvetica-Oblique')
+
+    fl = [Paragraph('Condiții generale', sec)]
+    for kind, payload in _parse_conditions(text):
+        if kind == 'heading':
+            fl.append(Paragraph(payload, head))
+        elif kind == 'bullets':
+            for item in payload:
+                fl.append(Paragraph(item, bullet, bulletText='•'))
+        else:
+            fl.append(Paragraph(payload, body))
+
+    when = ''
+    if accepted_at:
+        try:
+            when = datetime.fromisoformat(str(accepted_at).replace('Z', '')).strftime('%d.%m.%Y %H:%M')
+        except Exception:
+            when = str(accepted_at)
+    suffix = f' la data de {when}' if when else ''
+    fl.append(Paragraph(f'Clientul a citit și acceptat condițiile generale{suffix}.', note))
+    return fl
+
+
 def _terms_flowables(company_name: str):
     """T&C + GDPR note flowables, appended after the contract summary and before
     the signatures (so the client signs having read the terms)."""
@@ -452,6 +524,12 @@ def generate_legal_pdf(contract: dict) -> str:
 
     # ---- Terms & conditions + GDPR note (own pages, before signing) ----
     story.extend(_terms_flowables(company_name))
+
+    # ---- Accepted general conditions (dealer-configured, per company/brand) ----
+    story.extend(_general_conditions_flowables(
+        contract.get('general_conditions_text') or '',
+        contract.get('general_conditions_accepted_at'),
+    ))
 
     # ---- Signatures ----
     story.append(Paragraph('Semnături', section_style))
