@@ -426,6 +426,30 @@ const STATUS_ROW_BG: Record<string, string> = {
   filled: 'bg-green-500/5 border-l-4 border-l-green-500/50',
 }
 
+// Derived 4-state session status for the Sesiuni Driving tab. Combines the raw
+// `status` column with the backend-derived `td_status` (complete/incomplete/driving).
+// PENDING must be checked first: td_status' ELSE branch returns 'driving' even for
+// un-allocated PENDING batch slots that were never driven.
+export type SessionStatusKey = 'nealocat' | 'driving' | 'intarziat' | 'finalizat'
+
+export function sessionStatus(c: FoiContract): {
+  key: SessionStatusKey
+  label: string
+  badgeClass: string
+  rowClass: string
+} {
+  if (c.status === 'PENDING') {
+    return { key: 'nealocat', label: 'Nealocat', badgeClass: 'bg-muted text-muted-foreground', rowClass: '' }
+  }
+  if (c.td_status === 'complete' || c.status === 'COMPLETED') {
+    return { key: 'finalizat', label: 'Finalizat', badgeClass: 'bg-green-600 text-white', rowClass: 'bg-green-500/5 border-l-4 border-l-green-500/40' }
+  }
+  if (c.td_status === 'incomplete') {
+    return { key: 'intarziat', label: 'Întârziat', badgeClass: 'bg-red-600 text-white', rowClass: 'bg-red-500/10 border-l-4 border-l-red-500/60' }
+  }
+  return { key: 'driving', label: 'În desfășurare', badgeClass: 'bg-blue-600 text-white', rowClass: 'bg-blue-500/5 border-l-4 border-l-blue-500/40' }
+}
+
 /** Export modal for the Parcurs history: pick a period (quick presets or a
  *  custom from–to) and optionally a single car, then download the session list
  *  as .xlsx or the contract PDFs as a .zip. Downloads go through authenticated
