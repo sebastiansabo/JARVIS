@@ -237,6 +237,31 @@ class FoiParcursRepository(BaseRepository):
             return self.get_contract_by_id(row['id']) or row
         return row
 
+    def find_conflicts(self, vin: str, frm, to, exclude_id: int | None = None) -> list:
+        """TD sessions on `vin` whose [departure, COALESCE(return, departure)]
+        window overlaps [frm, to] and which are still open — PLANNED drafts or
+        live drives (out now / overdue). Excludes `exclude_id`."""
+        params = [vin, to, frm]
+        exclude_sql = ''
+        if exclude_id is not None:
+            exclude_sql = ' AND fp.id <> %s'
+            params.append(exclude_id)
+        sql = (
+            "SELECT fp.id, fp.contract_id, fp.status, fp.departure_datetime, fp.return_datetime, "
+            "COALESCE(fp.client_name, c.name) AS client_name, fp.advisor_name "
+            "FROM foi_de_parcurs fp "
+            "LEFT JOIN fp_clients c ON c.id = fp.client_id "
+            "WHERE fp.vin = %s AND fp.route_type = 'TD' "
+            # overlap: existing.dep <= new.to AND new.frm <= existing.end
+            "AND fp.departure_datetime <= %s "
+            "AND COALESCE(fp.return_datetime, fp.departure_datetime) >= %s "
+            "AND ( fp.status = 'PLANNED' "
+            "      OR (fp.status <> 'COMPLETED' AND fp.status <> 'PENDING') ) "
+            f"{exclude_sql} "
+            "ORDER BY fp.departure_datetime ASC"
+        )
+        return self.query_all(sql, tuple(params))
+
     def record_activation(self, contract_id: int, data: dict) -> dict:
         """Turn a PLANNED draft into a live FILLED contract: write the handover
         fields (km/fuel/signatures/departure) and set status='FILLED'."""
