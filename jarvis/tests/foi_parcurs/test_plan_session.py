@@ -85,3 +85,19 @@ def test_activate_fills_and_generates_pdf(client, monkeypatch):
     assert resp.status_code == 200, resp.get_json()
     assert resp.get_json()['contract']['status'] == 'FILLED'
     assert made['pdf'] is True
+
+
+def test_activate_race_returns_409_no_pdf(client, monkeypatch):
+    # Row reads as PLANNED, but a concurrent activation flipped it first, so the
+    # guarded UPDATE matches zero rows and record_activation returns falsy.
+    monkeypatch.setattr(td_routes._fp_repo, 'get_contract_by_id',
+                        lambda i: {'id': i, 'route_type': 'TD', 'status': 'PLANNED', 'vin': 'V1',
+                                   'km_start': 1000, 'fuel_tank_capacity_liters': 50})
+    monkeypatch.setattr(td_routes._fp_repo, 'record_activation', lambda i, d: None)
+    import foi_parcurs.services.pdf_service as pdf
+    made = {'pdf': False}
+    monkeypatch.setattr(pdf, 'generate_legal_pdf', lambda c: made.__setitem__('pdf', True) or '/tmp/l.pdf')
+    resp = client.put('/api/foi-parcurs/test-drive/101/activate',
+                      json={'client_signature': 'data:sig', 'fuel_gauge_start_level': '1/2'})
+    assert resp.status_code == 409
+    assert made['pdf'] is False

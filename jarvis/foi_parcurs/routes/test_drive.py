@@ -215,6 +215,11 @@ def api_activate_test_drive(id):
             update['departure_damage'] = data['departure_damage']
 
         updated = _fp_repo.record_activation(id, update)
+        # record_activation only matches PLANNED TD rows; a concurrent/duplicate
+        # activation flips it to FILLED first, so a zero-row UPDATE returns falsy.
+        # Report that instead of a false 200 with a null contract.
+        if not (updated and updated.get('id')):
+            return jsonify({'success': False, 'error': 'Contract is no longer a PLANNED draft'}), 409
 
         try:
             from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
