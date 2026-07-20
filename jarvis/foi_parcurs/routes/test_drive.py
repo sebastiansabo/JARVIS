@@ -60,7 +60,7 @@ def api_submit_test_drive():
     except Exception:
         logger.warning('general-conditions lookup failed at submit', exc_info=True)
         general_conditions_text = ''
-    if general_conditions_text.strip() and not data.get('general_conditions_accepted'):
+    if not is_draft and general_conditions_text.strip() and not data.get('general_conditions_accepted'):
         return jsonify({'success': False, 'error': 'General conditions acceptance is required'}), 400
 
     contract_id = f"TD-{data['vin'][:8]}-{int(time.time())}-{uuid.uuid4().hex[:4]}"
@@ -130,7 +130,7 @@ def api_submit_test_drive():
             'source': 'td_form',
             'status': 'PLANNED' if is_draft else 'FILLED',
         }
-        if general_conditions_text.strip():
+        if not is_draft and general_conditions_text.strip():
             contract_data['general_conditions_accepted'] = True
             contract_data['general_conditions_accepted_at'] = datetime.now(timezone.utc)
             contract_data['general_conditions_text'] = general_conditions_text
@@ -190,6 +190,19 @@ def api_activate_test_drive(id):
         if not data.get('client_signature'):
             return jsonify({'success': False, 'error': 'client_signature is required'}), 400
 
+        # General conditions (per company+brand) — required only when configured.
+        # Mirrors the live-submit gate: a PLANNED draft defers this to activation.
+        general_conditions_text = ''
+        try:
+            _veh = _vehicle_repo.get_by_vin(contract.get('vin'))
+            _brand = (_veh or {}).get('brand') or ''
+            general_conditions_text = _dealer_repo.get_general_conditions(int(contract['company_id']), _brand) or ''
+        except Exception:
+            logger.warning('general-conditions lookup failed at activation', exc_info=True)
+            general_conditions_text = ''
+        if general_conditions_text.strip() and not data.get('general_conditions_accepted'):
+            return jsonify({'success': False, 'error': 'General conditions acceptance is required'}), 400
+
         tank = int(data.get('fuel_tank_capacity_liters', contract.get('fuel_tank_capacity_liters') or 0))
         start_level = data.get('fuel_gauge_start_level') or contract.get('fuel_gauge_start_level') or '1'
         try:
@@ -213,6 +226,10 @@ def api_activate_test_drive(id):
             update['return_datetime'] = data['return_datetime']
         if data.get('departure_damage') is not None:
             update['departure_damage'] = data['departure_damage']
+        if general_conditions_text.strip():
+            update['general_conditions_accepted'] = True
+            update['general_conditions_accepted_at'] = datetime.now(timezone.utc)
+            update['general_conditions_text'] = general_conditions_text
 
         updated = _fp_repo.record_activation(id, update)
         # record_activation only matches PLANNED TD rows; a concurrent/duplicate

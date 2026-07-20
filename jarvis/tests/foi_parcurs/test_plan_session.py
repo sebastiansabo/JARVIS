@@ -59,6 +59,34 @@ def test_draft_create_omits_signature_and_pdf(client, monkeypatch):
     assert called['pdf'] is False   # no PDF for a draft
 
 
+def test_draft_create_skips_general_conditions(client, monkeypatch):
+    # Company has general conditions configured, but a PLANNED draft must not
+    # require or record acceptance — that's deferred to activation.
+    captured = {}
+
+    def fake_create(data):
+        captured.update(data)
+        return {'id': 102, **data}
+    monkeypatch.setattr(td_routes._fp_repo, 'create_from_td_form', fake_create)
+    monkeypatch.setattr(td_routes._crm_client_repo, 'get_by_id', lambda i: {'display_name': 'Ion Pop', 'phone': '0700000000'})
+    monkeypatch.setattr(td_routes._vehicle_repo, 'get_by_vin', lambda vin: {'brand': 'VW'})
+    monkeypatch.setattr(td_routes._dealer_repo, 'get_general_conditions', lambda company_id, brand: 'Some GC text')
+
+    body = {
+        'company_id': 11, 'vin': 'WAUZZZF4T1021365', 'client_id': 5,
+        'odometer_start': 1000, 'estimated_km': 30,
+        'fuel_gauge_start_level': '1', 'departure_datetime': '2026-08-01T10:00:00',
+        'advisor_name': 'Consilier X', 'status': 'PLANNED',
+        # NOTE: no general_conditions_accepted
+    }
+    resp = client.post('/api/foi-parcurs/test-drive', json=body)
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()['success'] is True
+    assert 'general_conditions_accepted' not in captured
+    assert 'general_conditions_accepted_at' not in captured
+    assert 'general_conditions_text' not in captured
+
+
 def test_activate_requires_signature(client, monkeypatch):
     monkeypatch.setattr(td_routes._fp_repo, 'get_contract_by_id',
                         lambda i: {'id': i, 'route_type': 'TD', 'status': 'PLANNED', 'vin': 'V1', 'km_start': 1000})
@@ -86,6 +114,42 @@ def test_activate_fills_and_generates_pdf(client, monkeypatch):
     assert resp.status_code == 200, resp.get_json()
     assert resp.get_json()['contract']['status'] == 'FILLED'
     assert made['pdf'] is True
+
+
+def test_activate_requires_general_conditions(client, monkeypatch):
+    row = {'id': 101, 'route_type': 'TD', 'status': 'PLANNED', 'vin': 'V1',
+           'company_id': 11, 'km_start': 1000, 'fuel_tank_capacity_liters': 50}
+    monkeypatch.setattr(td_routes._fp_repo, 'get_contract_by_id', lambda i: dict(row))
+    monkeypatch.setattr(td_routes._vehicle_repo, 'get_by_vin', lambda vin: {'brand': 'VW'})
+    monkeypatch.setattr(td_routes._dealer_repo, 'get_general_conditions', lambda company_id, brand: 'Some GC text')
+    body = {'client_signature': 'data:sig', 'advisor_signature': 'data:adv',
+            'gdpr_consent': True, 'odometer_start': 1005, 'fuel_gauge_start_level': '1/2',
+            'departure_datetime': '2026-08-01T10:00:00'}
+    resp = client.put('/api/foi-parcurs/test-drive/101/activate', json=body)
+    assert resp.status_code == 400
+    assert 'general conditions' in resp.get_json()['error'].lower()
+
+
+def test_activate_captures_general_conditions(client, monkeypatch):
+    row = {'id': 101, 'route_type': 'TD', 'status': 'PLANNED', 'vin': 'V1',
+           'company_id': 11, 'km_start': 1000, 'fuel_tank_capacity_liters': 50}
+    monkeypatch.setattr(td_routes._fp_repo, 'get_contract_by_id', lambda i: dict(row))
+    monkeypatch.setattr(td_routes._vehicle_repo, 'get_by_vin', lambda vin: {'brand': 'VW'})
+    monkeypatch.setattr(td_routes._dealer_repo, 'get_general_conditions', lambda company_id, brand: 'Some GC text')
+    seen = {}
+    monkeypatch.setattr(td_routes._fp_repo, 'record_activation',
+                        lambda i, d: seen.update(d) or {**row, 'id': i, 'status': 'FILLED'})
+    monkeypatch.setattr(td_routes._fp_repo, 'execute', lambda *a, **k: None)
+    import foi_parcurs.services.pdf_service as pdf
+    monkeypatch.setattr(pdf, 'generate_legal_pdf', lambda c: '/tmp/l.pdf')
+    monkeypatch.setattr(pdf, 'generate_custom_pdf', lambda c: '/tmp/c.pdf')
+    body = {'client_signature': 'data:sig', 'advisor_signature': 'data:adv',
+            'gdpr_consent': True, 'odometer_start': 1005, 'fuel_gauge_start_level': '1/2',
+            'departure_datetime': '2026-08-01T10:00:00', 'general_conditions_accepted': True}
+    resp = client.put('/api/foi-parcurs/test-drive/101/activate', json=body)
+    assert resp.status_code == 200, resp.get_json()
+    assert seen.get('general_conditions_accepted') is True
+    assert seen.get('general_conditions_text') == 'Some GC text'
 
 
 def test_activate_race_returns_409_no_pdf(client, monkeypatch):
