@@ -114,27 +114,7 @@ _TC_OBLIGATIONS = [
     'sa coopereze cu {CO} si cu asiguratorul pentru deschiderea si solutionarea dosarului de dauna.',
 ]
 
-_TC_LIABILITY = [
-    'pentru orice daune, defectiuni, avarii sau stricaciuni produse autovehiculului, in masura in care acestea nu sunt acoperite de asigurarea CASCO;',
-    'pentru furtul, distrugerea totala sau partiala a autovehiculului, daca asiguratorul refuza acoperirea prejudiciului conform politei CASCO;',
-    'pentru orice daune produse tertilor prin utilizarea autovehiculului, in masura in care acestea nu sunt acoperite de asigurarea RCA;',
-    'pentru orice amenzi, sanctiuni, taxe, penalitati sau contraventii rezultate din utilizarea autovehiculului;',
-    'pentru lipsa documentelor necesare constatarii unei daune, daca aceasta lipsa impiedica solutionarea dosarului de asigurare.',
-]
-
-_TC_CASCO_EXCLUSIONS = [
-    'avarierea partii inferioare a autovehiculului, a sasiului, a blocului motor sau a altor componente similare, prin actiune deliberata sau neglijenta;',
-    'avarierea jantelor sau pneurilor, daca aceasta nu este cauzata de un accident rutier acoperit de asigurare;',
-    'conducerea autovehiculului de catre o persoana neautorizata sau nenominalizata in contract;',
-    'conducerea sub influenta alcoolului, drogurilor sau a altor substante interzise;',
-    'daunele produse persoanelor si bagajelor aflate in autovehicul, daca acestea nu sunt acoperite prin polita de asigurare aplicabila.',
-]
-
 _TC_PARAGRAPHS = [
-    'UTILIZATORUL declara ca i-a fost adus la cunostinta faptul ca asigurarea CASCO de care beneficiaza autovehiculul cuprinde o clauza de fransiza in valoare de minim 500 EURO in caz de dauna (in functie de conditiile politei CASCO), respectiv 20% din valoarea asigurata a autovehiculului in caz de dauna totala sau furt al autoturismului. In cazul producerii unei daune sau al furtului autovehiculului.',
-    'UTILIZATORUL este obligat sa suporte contravaloarea francizei, astfel cum aceasta este stabilita prin polita de asigurare aplicabila. Plata se va efectua in termen de 3 zile de la comunicarea sumei datorate de catre {CO} sau de catre asigurator.',
-    'UTILIZATORUL intelege ca nu dobandeste niciun drept de proprietate sau posesie asupra autovehiculului si are obligatia de a-l returna la data si ora stabilite sau la prima cerere a {CO}.',
-    'Autovehiculul poate fi condus doar de persoane care detin permis de conducere valabil si care au o vechime a permisului de minimum 1 an.',
     'Deplasarea in afara teritoriului Romaniei este permisa numai cu acordul prealabil scris al {CO} si, daca este cazul, dupa extinderea valabilitatii asigurarilor pentru strainatate.',
     'In cazul in care UTILIZATORUL constata defectiuni, martori de bord, zgomote anormale sau orice semn care poate afecta siguranta in circulatie ori starea tehnica a autovehiculului, acesta are obligatia sa opreasca utilizarea autovehiculului si sa anunte imediat {CO}.',
     'UTILIZATORUL nu are dreptul sa efectueze reparatii, interventii sau modificari asupra autovehiculului fara acordul scris al {CO}. Reparatiile pot fi efectuate numai intr-un service agreat de {CO}.',
@@ -239,10 +219,6 @@ def _terms_flowables(company_name: str, gdpr_text: str = ''):
     fl = [PageBreak(), Paragraph('CONDITII GENERALE TEST DRIVE', title)]
     fl.append(Paragraph('Pe perioada desfasurarii actiunii de test drive, UTILIZATORUL se obliga:', lead))
     fl += bl(_TC_OBLIGATIONS)
-    fl.append(Paragraph('UTILIZATORUL poarta intreaga raspundere:', lead))
-    fl += bl(_TC_LIABILITY)
-    fl.append(Paragraph('Asigurarea CASCO nu include si nu este valabila in urmatoarele cazuri:', lead))
-    fl += bl(_TC_CASCO_EXCLUSIONS)
     fl += [Paragraph(_co(t, company_name), body) for t in _TC_PARAGRAPHS]
 
     if (gdpr_text or '').strip():
