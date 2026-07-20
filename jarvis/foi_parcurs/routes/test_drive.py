@@ -35,18 +35,20 @@ def _normalize_name(name: str) -> str:
 def api_submit_test_drive():
     """Submit test drive form — creates FILLED contract."""
     data = request.get_json(silent=True) or {}
+    is_draft = data.get('status') == 'PLANNED'
 
     # `itinerary` is intentionally NOT required — the mobile Test Drive form
     # dropped the Traseu/Itinerariu field. It's still stored when provided
     # (e.g. by the web form) via data.get('itinerary', '') below.
     required = ['company_id', 'vin', 'client_id', 'odometer_start', 'estimated_km',
-                'fuel_gauge_start_level', 'departure_datetime',
-                'advisor_name', 'client_signature']
+                'fuel_gauge_start_level', 'departure_datetime', 'advisor_name']
+    if not is_draft:
+        required += ['client_signature']
     missing = [f for f in required if not data.get(f)]
     if missing:
         return jsonify({'success': False, 'error': f'Missing: {", ".join(missing)}'}), 400
 
-    if _company_gdpr_text(data.get('company_id')).strip() and not data.get('gdpr_consent'):
+    if not is_draft and _company_gdpr_text(data.get('company_id')).strip() and not data.get('gdpr_consent'):
         return jsonify({'success': False, 'error': 'GDPR consent is required'}), 400
 
     # General conditions (per company+brand) — required only when configured.
@@ -112,18 +114,18 @@ def api_submit_test_drive():
             'itinerary': data.get('itinerary', ''),
             'advisor_name': data['advisor_name'],
             'signature_ai_generated': data.get('advisor_signature', ''),
-            'client_signature': data['client_signature'],
+            'client_signature': data.get('client_signature', ''),
             'departure_datetime': data['departure_datetime'],
             'return_datetime': data.get('return_datetime'),
             'departure_damage': json.dumps(departure_damage),
             'driver_license_photo': data.get('driver_license_photo'),
             'driver_license_number': data.get('driver_license_number'),
             'driver_license_expiry': (data.get('driver_license_expiry') or '').strip() or None,
-            'gdpr_consent': True,
+            'gdpr_consent': bool(data.get('gdpr_consent')),
             'inspection_acceptance': bool(data.get('inspection_acceptance')),
             'inspection_id': data.get('inspection_id'),
             'source': 'td_form',
-            'status': 'FILLED',
+            'status': 'PLANNED' if is_draft else 'FILLED',
         }
         if general_conditions_text.strip():
             contract_data['general_conditions_accepted'] = True
@@ -148,19 +150,20 @@ def api_submit_test_drive():
         except Exception:
             logger.warning('Could not store driving license on CRM client %s', client_id, exc_info=True)
 
-        # Generate PDFs
-        try:
-            from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
-            legal_path = generate_legal_pdf(contract)
-            custom_path = generate_custom_pdf(contract)
-            _fp_repo.execute(
-                'UPDATE foi_de_parcurs SET pdf_legal_path = %s, pdf_custom_path = %s WHERE id = %s',
-                (legal_path, custom_path, contract['id']),
-            )
-            contract['pdf_legal_path'] = legal_path
-            contract['pdf_custom_path'] = custom_path
-        except Exception:
-            logger.exception('PDF generation failed for contract %s', contract.get('contract_id'))
+        # Generate PDFs (skipped for PLANNED drafts — no signature/GDPR captured yet)
+        if not is_draft:
+            try:
+                from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
+                legal_path = generate_legal_pdf(contract)
+                custom_path = generate_custom_pdf(contract)
+                _fp_repo.execute(
+                    'UPDATE foi_de_parcurs SET pdf_legal_path = %s, pdf_custom_path = %s WHERE id = %s',
+                    (legal_path, custom_path, contract['id']),
+                )
+                contract['pdf_legal_path'] = legal_path
+                contract['pdf_custom_path'] = custom_path
+            except Exception:
+                logger.exception('PDF generation failed for contract %s', contract.get('contract_id'))
 
         return jsonify({'success': True, 'contract': contract})
 
