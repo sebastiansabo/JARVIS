@@ -117,3 +117,46 @@ class _FakeCrmRepo:
 
     def get_by_id(self, client_id):
         return self._client_row
+
+
+import foi_parcurs.routes.test_drive as td
+
+
+def test_submit_requires_conditions_when_text_exists(client, monkeypatch):
+    monkeypatch.setattr(td._vehicle_repo, 'get_by_vin', lambda vin: {'brand': 'MG Motor'})
+    monkeypatch.setattr(td._dealer_repo, 'get_general_conditions', lambda cid, b: 'Termeni...')
+    resp = client.post('/api/foi-parcurs/test-drive', json=_valid_payload())  # no accept flag
+    assert resp.status_code == 400
+    assert 'general' in resp.get_json()['error'].lower()
+
+
+def test_submit_snapshots_conditions_when_accepted(client, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(td._vehicle_repo, 'get_by_vin', lambda vin: {'brand': 'MG Motor'})
+    monkeypatch.setattr(td._dealer_repo, 'get_general_conditions', lambda cid, b: 'Termeni generali...')
+    monkeypatch.setattr(td._crm_client_repo, 'get_by_id', lambda cid: {'display_name': 'X', 'phone': '0700000000'})
+
+    def fake_create(data):
+        captured.update(data)
+        return {'id': 1, 'contract_id': data['contract_id']}
+    monkeypatch.setattr(td._fp_repo, 'create_from_td_form', fake_create)
+    monkeypatch.setattr(td._fp_repo, 'execute', lambda *a, **k: None)
+
+    resp = client.post('/api/foi-parcurs/test-drive',
+                       json=_valid_payload(general_conditions_accepted=True))
+    assert resp.status_code == 200
+    assert captured['general_conditions_accepted'] is True
+    assert captured['general_conditions_text'] == 'Termeni generali...'
+    assert captured['general_conditions_accepted_at'] is not None
+
+
+def test_submit_ok_without_conditions_when_none_configured(client, monkeypatch):
+    monkeypatch.setattr(td._vehicle_repo, 'get_by_vin', lambda vin: {'brand': 'MG Motor'})
+    monkeypatch.setattr(td._dealer_repo, 'get_general_conditions', lambda cid, b: '')
+    monkeypatch.setattr(td._crm_client_repo, 'get_by_id', lambda cid: {'display_name': 'X', 'phone': '0700000000'})
+    seen = {}
+    monkeypatch.setattr(td._fp_repo, 'create_from_td_form', lambda d: (seen.update(d) or {'id': 2, 'contract_id': d['contract_id']}))
+    monkeypatch.setattr(td._fp_repo, 'execute', lambda *a, **k: None)
+    resp = client.post('/api/foi-parcurs/test-drive', json=_valid_payload())
+    assert resp.status_code == 200
+    assert 'general_conditions_text' not in seen
