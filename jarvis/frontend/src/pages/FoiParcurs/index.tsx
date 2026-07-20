@@ -816,18 +816,20 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1">
-                          {c.status === 'PENDING' ? (
+                          {c.status === 'PENDING' && (
                             <Button variant="outline" size="sm" onClick={() => setAllocatingContract(c)}>
                               <UserPlus className="mr-1 h-3.5 w-3.5" />
                               Allocate
                             </Button>
-                          ) : (
-                            <span className="text-xs text-green-600 flex items-center gap-1">
-                              <Check className="h-3.5 w-3.5 shrink-0" />
-                              {c.client_name || 'Filled'}
-                            </span>
                           )}
-                          {isAdmin && c.route_type === 'TD' && c.status === 'COMPLETED' && (
+                          {c.status !== 'PENDING' && (
+                            <a href={foiParcursApi.getContractPdfUrl(c.id, 'legal')} target="_blank" rel="noopener" title="Descarcă PDF">
+                              <Button variant="ghost" size="sm">
+                                <FileText className="h-4 w-4" />
+                              </Button>
+                            </a>
+                          )}
+                          {isAdmin && c.route_type === 'TD' && ss.key !== 'nealocat' && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -863,7 +865,7 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                     </TableRow>
                     {isExpanded && (
                       <TableRow className="bg-muted/30 border-l-4 border-l-primary/30">
-                        <TableCell colSpan={11} className="px-6 py-4">
+                        <TableCell colSpan={9} className="px-6 py-4">
                           <div className="grid grid-cols-3 gap-6">
                             {/* Fuel */}
                             <div className="space-y-1.5">
@@ -907,6 +909,12 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                             <div className="space-y-1.5">
                               <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">Route</h4>
                               <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+                                <span className="text-muted-foreground">VIN</span>
+                                <span className="font-mono">{c.vin}</span>
+                                <span className="text-muted-foreground">Plecare</span>
+                                <span>{c.departure_datetime ? new Date(c.departure_datetime).toLocaleString('ro-RO') : '—'}</span>
+                                <span className="text-muted-foreground">Retur</span>
+                                <span>{c.return_datetime ? new Date(c.return_datetime).toLocaleString('ro-RO') : '—'}</span>
                                 <span className="text-muted-foreground">Itinerary</span>
                                 <span>{c.itinerary || '—'}</span>
                                 <span className="text-muted-foreground">Contract</span>
@@ -921,7 +929,7 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                             </div>
                           </div>
                           {/* PDF Downloads */}
-                          {c.status === 'FILLED' && (
+                          {c.status !== 'PENDING' && (
                             <div className="flex gap-2 mt-3 pt-3 border-t">
                               <a href={foiParcursApi.getContractPdfUrl(c.id, 'legal')} target="_blank" rel="noopener">
                                 <Button variant="outline" size="sm">
