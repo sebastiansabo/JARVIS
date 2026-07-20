@@ -176,13 +176,13 @@ export default function FoiParcurs() {
         <TabsList>
           <TabsTrigger value="stock">Driving Park</TabsTrigger>
           <TabsTrigger value="contracts">Contracts</TabsTrigger>
-          <TabsTrigger value="parcurs">Parcurs</TabsTrigger>
+          <TabsTrigger value="parcurs">Sesiuni Driving</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
       </Tabs>
 
       {activeTab === 'contracts' && <ContractsTab companyId={companyId} brand={brand} />}
-      {activeTab === 'parcurs' && <ParcursTab companyId={companyId} brand={brand} />}
+      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={brand} />}
       {activeTab === 'stock' && <StockTab companyId={companyId} brand={brand} />}
       {activeTab === 'settings' && <SettingsTab />}
     </div>
@@ -550,7 +550,7 @@ function ExportDialog({
   )
 }
 
-function ParcursTab({ companyId, brand }: { companyId: number; brand: string }) {
+function SessionsTab({ companyId, brand }: { companyId: number; brand: string }) {
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const now = new Date()
@@ -604,6 +604,7 @@ function ParcursTab({ companyId, brand }: { companyId: number; brand: string }) 
 
   // Apply filters
   const filtered = allContracts.filter((c) => {
+    if (c.route_type !== 'TD') return false
     if (brand && vinBrand.get(c.vin) !== brand) return false
     if (filterVin !== 'all' && c.vin !== filterVin) return false
     if (filterStatus !== 'all' && c.status !== filterStatus) return false
