@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
+import { useVehicleConflicts } from '@/hooks/useVehicleConflicts'
 import {
   usesFuelTank,
   usesBattery,
@@ -12,6 +13,9 @@ import {
   type FpVehicle,
   type FpVehicleInspection,
   type TestDriveFormPayload,
+  type PlanTestDrivePayload,
+  type ActivateTestDrivePayload,
+  type VehicleConflict,
   type FoiContract,
 } from '@/types/foiParcurs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -45,14 +49,18 @@ import {
   ChevronDown,
   FileText,
   AlertTriangle,
+  CalendarPlus,
+  PlayCircle,
 } from 'lucide-react'
 import { CreateClientPanel, DriverLicenseSection } from './CreateClientPanel'
 import {
   DamageReport,
   makeEmptyDamageState,
   toDamagePayload,
+  fromDamagePayload,
   type DamageState,
 } from './testDriveDamage'
+import { ConflictDialog } from './ConflictDialog'
 
 const SignatureCanvas = lazy(() => import('@/components/shared/SignatureCanvas'))
 
@@ -84,6 +92,11 @@ function useDebounce(value: string, delay: number) {
 export default function TestDriveForm() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
+
+  // ── Activation mode — reopens this form pre-filled from a PLANNED draft ──
+  const [searchParams] = useSearchParams()
+  const activateId = searchParams.get('activate') ? Number(searchParams.get('activate')) : null
+  const isActivating = activateId != null
 
   // Company & vehicle
   const [companyId, setCompanyId] = useState<number | null>(null)
@@ -120,6 +133,8 @@ export default function TestDriveForm() {
   // Compliance
   const [gdprConsent, setGdprConsent] = useState(false)
   const [inspectionAcceptance, setInspectionAcceptance] = useState(false)
+  const [conditionsAccepted, setConditionsAccepted] = useState(false)
+  const [showConditions, setShowConditions] = useState(false)
 
   const [submittedContract, setSubmittedContract] = useState<FoiContract | null>(null)
   const [attempted, setAttempted] = useState(false)
@@ -153,12 +168,54 @@ export default function TestDriveForm() {
     [allVehicles, companyId],
   )
 
+  // ── Load + prefill the PLANNED draft being activated ──
+  const { data: draftData, isLoading: loadingDraft } = useQuery({
+    queryKey: ['fp-test-drive', activateId],
+    queryFn: () => foiParcursApi.getTestDrive(activateId!),
+    enabled: activateId != null,
+  })
+
+  useEffect(() => {
+    const c = draftData?.contract
+    if (!c || c.status !== 'PLANNED') return
+    setCompanyId(c.company_id)
+    setDepartureDatetime(c.departure_datetime ? c.departure_datetime.slice(0, 16) : localDatetimeValue(new Date()))
+    setReturnDatetime(c.return_datetime ? c.return_datetime.slice(0, 16) : localDatetimeValue(new Date(Date.now() + 60 * 60 * 1000)))
+    setOdometerStart(String(c.km_start ?? ''))
+    setEstimatedKm(String(c.distance_km ?? ''))
+    setFuelGaugeStart((c.fuel_gauge_start_level as FuelGaugeLevel) || '')
+    setAdvisorName(c.advisor_name || '')
+    setDepartureDamage(fromDamagePayload(c.departure_damage))
+    if (c.client_id && c.client_name) {
+      setSelectedClient({ id: c.client_id, display_name: c.client_name, phone: c.client_phone ?? null })
+    }
+  }, [draftData]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const c = draftData?.contract
+    if (!c || c.status !== 'PLANNED' || !allVehicles.length) return
+    const v = allVehicles.find((x) => x.vin === c.vin)
+    if (v) { setVehicleId(v.id); setSelectedVehicle(v) }
+  }, [draftData, allVehicles])
+
   const { data: inspectionData } = useQuery({
     queryKey: ['fp-inspection', vehicleId],
     queryFn: () => foiParcursApi.getLatestInspection(vehicleId!),
     enabled: !!vehicleId,
   })
   const latestInspection: FpVehicleInspection | null = inspectionData?.inspection ?? null
+
+  // ── Per company+vehicle-brand general-conditions text ('' when unset ⇒
+  //    acceptance not shown/required). Required for live submit + activation,
+  //    deferred for a PLANNED draft (mirrors the backend). ──
+  const { data: gcData } = useQuery({
+    queryKey: ['fp-general-conditions', companyId, selectedVehicle?.vin],
+    queryFn: () => foiParcursApi.getGeneralConditions(companyId!, selectedVehicle!.vin),
+    enabled: !!companyId && !!selectedVehicle?.vin,
+    staleTime: 60_000,
+  })
+  const generalConditions = (gcData?.text ?? '').trim()
+  const conditionsRequired = generalConditions.length > 0
 
   const { data: clientSearchData, isFetching: isSearching } = useQuery({
     queryKey: ['fp-crm-search', debouncedSearch],
@@ -202,8 +259,19 @@ export default function TestDriveForm() {
     advisor: advisorName.trim() === '',
     clientSig: !clientSignature,
     gdpr: !gdprConsent,
+    conditions: conditionsRequired && !conditionsAccepted,
   }
   const formValid = !Object.values(missing).some(Boolean)
+  // A PLANNED draft defers signature/GDPR/license to activation — mirrors the
+  // backend's `required` list for status:'PLANNED' (no client_signature/gdpr_consent).
+  const draftValid = !(
+    missing.company || missing.vehicle || missing.client || missing.departure ||
+    missing.odometer || missing.estimated || missing.fuel || missing.advisor
+  )
+  // Activating a PLANNED draft only needs the deferred client signature on top of
+  // the draft fields — the activate endpoint requires client_signature, defaults
+  // gdpr_consent to true, and never reads a driver-license photo (so don't gate on it).
+  const activateValid = draftValid && !missing.clientSig && !missing.conditions
   const err = (bad: boolean) => attempted && bad
 
   const damagedZoneCount = toDamagePayload(departureDamage).length
@@ -212,27 +280,45 @@ export default function TestDriveForm() {
     mutationFn: (payload: TestDriveFormPayload) => foiParcursApi.submitTestDrive(payload),
     onSuccess: (data) => setSubmittedContract(data.contract),
   })
+  const planMutation = useMutation({
+    mutationFn: (payload: PlanTestDrivePayload) => foiParcursApi.planTestDrive(payload),
+    onSuccess: (data) => setSubmittedContract(data.contract),
+  })
 
-  function handleSubmit() {
-    if (submitMutation.isPending) return
-    if (!formValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
-      setAttempted(true)
-      return
+  // ── VIN-conflict soft-block (shared by Trimite + Planifică) ──
+  const { check: checkConflicts, checking } = useVehicleConflicts()
+  const [conflictList, setConflictList] = useState<VehicleConflict[]>([])
+  const [showConflicts, setShowConflicts] = useState(false)
+  const [pendingRun, setPendingRun] = useState<(() => void) | null>(null)
+
+  /** Runs the VIN-conflict check for the chosen window; if clear, calls
+   *  `run()` immediately, else stashes it and opens the soft-block dialog. */
+  async function withConflictCheck(vin: string, run: () => void, excludeId?: number) {
+    const conflicts = await checkConflicts(vin, departureDatetime, returnDatetime || departureDatetime, excludeId)
+    if (conflicts.length) {
+      setConflictList(conflicts)
+      setPendingRun(() => run)
+      setShowConflicts(true)
+    } else {
+      run()
     }
+  }
+
+  type BasePayload = Omit<TestDriveFormPayload, 'client_signature' | 'gdpr_consent'>
+
+  function buildBasePayload(vehicle: FpVehicle, client: CrmClient): BasePayload {
     const damagePayload = toDamagePayload(departureDamage)
-    const capacity = selectedVehicle.fuel_tank_capacity_liters ?? selectedVehicle.battery_capacity_kwh ?? undefined
-    const payload: TestDriveFormPayload = {
+    const capacity = vehicle.fuel_tank_capacity_liters ?? vehicle.battery_capacity_kwh ?? undefined
+    return {
       company_id: companyId!,
-      vin: selectedVehicle.vin,
-      registration_number: selectedVehicle.registration_number ?? '',
-      client_id: Number(selectedClient.id),
+      vin: vehicle.vin,
+      registration_number: vehicle.registration_number ?? '',
+      client_id: Number(client.id),
       odometer_start: odometerNum,
       estimated_km: estimatedNum,
       fuel_gauge_start_level: fuelGaugeStart as FuelGaugeLevel,
       departure_datetime: departureDatetime,
       advisor_name: advisorName.trim(),
-      client_signature: clientSignature,
-      gdpr_consent: gdprConsent,
       ...(returnDatetime ? { return_datetime: returnDatetime } : {}),
       ...(capacity != null ? { fuel_tank_capacity_liters: capacity } : {}),
       ...(advisorSignature ? { advisor_signature: advisorSignature } : {}),
@@ -243,7 +329,64 @@ export default function TestDriveForm() {
       ...(driverLicenseNumber.trim() ? { driver_license_number: driverLicenseNumber.trim() } : {}),
       ...(driverLicenseExpiry.trim() ? { driver_license_expiry: driverLicenseExpiry.trim() } : {}),
     }
-    submitMutation.mutate(payload)
+  }
+
+  function handleSubmit() {
+    if (submitMutation.isPending || planMutation.isPending || checking) return
+    if (!formValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
+      setAttempted(true)
+      return
+    }
+    const payload: TestDriveFormPayload = {
+      ...buildBasePayload(selectedVehicle, selectedClient),
+      client_signature: clientSignature,
+      gdpr_consent: gdprConsent,
+      ...(conditionsRequired ? { general_conditions_accepted: conditionsAccepted } : {}),
+    }
+    withConflictCheck(selectedVehicle.vin, () => submitMutation.mutate(payload))
+  }
+
+  function handlePlan() {
+    if (planMutation.isPending || submitMutation.isPending || checking) return
+    if (!draftValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
+      setAttempted(true)
+      return
+    }
+    const payload: PlanTestDrivePayload = {
+      ...buildBasePayload(selectedVehicle, selectedClient),
+      status: 'PLANNED',
+      ...(clientSignature ? { client_signature: clientSignature } : {}),
+      ...(gdprConsent ? { gdpr_consent: gdprConsent } : {}),
+    }
+    withConflictCheck(selectedVehicle.vin, () => planMutation.mutate(payload))
+  }
+
+  const activateMutation = useMutation({
+    mutationFn: (payload: ActivateTestDrivePayload) => foiParcursApi.activateTestDrive(activateId!, payload),
+    onSuccess: (data) => setSubmittedContract(data.contract),
+  })
+
+  function handleActivate() {
+    if (activateMutation.isPending || checking || activateId == null) return
+    if (!activateValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
+      setAttempted(true)
+      return
+    }
+    const damagePayload = toDamagePayload(departureDamage)
+    const capacity = selectedVehicle.fuel_tank_capacity_liters ?? selectedVehicle.battery_capacity_kwh ?? undefined
+    const payload: ActivateTestDrivePayload = {
+      client_signature: clientSignature,
+      ...(advisorSignature ? { advisor_signature: advisorSignature } : {}),
+      gdpr_consent: gdprConsent,
+      odometer_start: odometerNum,
+      fuel_gauge_start_level: fuelGaugeStart as FuelGaugeLevel,
+      ...(capacity != null ? { fuel_tank_capacity_liters: capacity } : {}),
+      departure_datetime: departureDatetime,
+      ...(returnDatetime ? { return_datetime: returnDatetime } : {}),
+      ...(damagePayload.length ? { departure_damage: damagePayload } : {}),
+      ...(conditionsRequired ? { general_conditions_accepted: conditionsAccepted } : {}),
+    }
+    withConflictCheck(selectedVehicle.vin, () => activateMutation.mutate(payload), activateId)
   }
 
   function resetForm() {
@@ -256,30 +399,40 @@ export default function TestDriveForm() {
     setClientSignature('')
     setShowDamage(false); setDepartureDamage(makeEmptyDamageState())
     setGdprConsent(false); setInspectionAcceptance(false)
+    setConditionsAccepted(false); setShowConditions(false)
     setSubmittedContract(null); setAttempted(false)
+    setConflictList([]); setShowConflicts(false); setPendingRun(null)
+    if (isActivating) navigate('/app/foi-parcurs/test-drive', { replace: true })
   }
 
   // ── Success Screen ──
   if (submittedContract) {
+    const isPlanned = submittedContract.status === 'PLANNED'
     return (
       <div className="max-w-lg mx-auto py-12 space-y-6">
         <Card>
           <CardContent className="pt-6 text-center space-y-4">
             <CheckCircle2 className="mx-auto h-16 w-16 text-green-500" />
-            <h2 className="text-xl font-semibold">Test Drive Înregistrat</h2>
+            <h2 className="text-xl font-semibold">{isPlanned ? 'Sesiune Planificată' : 'Test Drive Înregistrat'}</h2>
             <div className="text-sm text-muted-foreground space-y-1">
               <p>Contract: <span className="font-medium text-foreground">{submittedContract.contract_id}</span></p>
               {submittedContract.vin && <p>VIN: <span className="font-medium text-foreground">{submittedContract.vin}</span></p>}
               {submittedContract.client_name && <p>Client: <span className="font-medium text-foreground">{submittedContract.client_name}</span></p>}
             </div>
-            <div className="flex gap-2 justify-center flex-wrap">
-              <a href={foiParcursApi.getContractPdfUrl(submittedContract.id, 'legal')} target="_blank" rel="noopener">
-                <Button variant="outline" size="sm"><FileText className="mr-1.5 h-3.5 w-3.5" />Download Legal PDF</Button>
-              </a>
-              <a href={foiParcursApi.getContractPdfUrl(submittedContract.id, 'custom')} target="_blank" rel="noopener">
-                <Button variant="outline" size="sm"><FileText className="mr-1.5 h-3.5 w-3.5" />Download Custom PDF</Button>
-              </a>
-            </div>
+            {isPlanned ? (
+              <p className="text-xs text-muted-foreground">
+                Draftul a fost salvat. Activează sesiunea din tab-ul <span className="font-medium">Sesiuni Driving</span> când clientul ajunge.
+              </p>
+            ) : (
+              <div className="flex gap-2 justify-center flex-wrap">
+                <a href={foiParcursApi.getContractPdfUrl(submittedContract.id, 'legal')} target="_blank" rel="noopener">
+                  <Button variant="outline" size="sm"><FileText className="mr-1.5 h-3.5 w-3.5" />Download Legal PDF</Button>
+                </a>
+                <a href={foiParcursApi.getContractPdfUrl(submittedContract.id, 'custom')} target="_blank" rel="noopener">
+                  <Button variant="outline" size="sm"><FileText className="mr-1.5 h-3.5 w-3.5" />Download Custom PDF</Button>
+                </a>
+              </div>
+            )}
             <div className="flex gap-3 justify-center pt-2">
               <Button variant="outline" onClick={resetForm}><Plus className="h-4 w-4 mr-1" />Test Drive Nou</Button>
               <Button onClick={() => navigate('/app/foi-parcurs')}><ArrowLeft className="h-4 w-4 mr-1" />Înapoi la Driving Hub</Button>
@@ -299,8 +452,10 @@ export default function TestDriveForm() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-lg font-semibold">Test Drive Nou</h1>
-          <p className="text-sm text-muted-foreground">Completați datele pentru test drive</p>
+          <h1 className="text-lg font-semibold">{isActivating ? 'Activează Test Drive' : 'Test Drive Nou'}</h1>
+          <p className="text-sm text-muted-foreground">
+            {isActivating ? 'Confirmă/ajustează datele și capturează semnătura clientului' : 'Completați datele pentru test drive'}
+          </p>
         </div>
       </div>
 
@@ -555,21 +710,65 @@ export default function TestDriveForm() {
             <Checkbox id="gdpr" checked={gdprConsent} onCheckedChange={(v) => setGdprConsent(v === true)} />
             <Label htmlFor="gdpr" className="text-xs leading-normal cursor-pointer">Clientul este de acord cu prelucrarea datelor (GDPR). *</Label>
           </div>
+          {conditionsRequired && (
+            <div className="space-y-2">
+              <div className={cn('flex items-start gap-2 rounded-md p-2 -m-2', err(missing.conditions) && 'ring-2 ring-destructive')}>
+                <Checkbox id="conditions" checked={conditionsAccepted} onCheckedChange={(v) => setConditionsAccepted(v === true)} />
+                <Label htmlFor="conditions" className="text-xs leading-normal cursor-pointer">Clientul a citit și acceptă condițiile generale. *</Label>
+              </div>
+              <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setShowConditions((s) => !s)}>
+                {showConditions ? 'Ascunde condițiile generale' : 'Citește condițiile generale'}
+              </Button>
+              {showConditions && (
+                <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-3 text-xs leading-relaxed">
+                  {generalConditions}
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* ── Submit ── */}
-      {submitMutation.isError && (
+      {(submitMutation.isError || planMutation.isError || activateMutation.isError) && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           Eroare la trimitere. Vă rugăm încercați din nou.
         </div>
       )}
-      <Button className={cn('w-full', attempted && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleSubmit} disabled={submitMutation.isPending}>
-        {submitMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se trimite...</> : 'Trimite'}
-      </Button>
-      {attempted && !formValid && !submitMutation.isPending && (
+      {isActivating ? (
+        <Button className={cn('w-full', attempted && !activateValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleActivate} disabled={activateMutation.isPending || checking || loadingDraft}>
+          {activateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se activează...</> : <><PlayCircle className="h-4 w-4 mr-2" />Începe sesiunea</>}
+        </Button>
+      ) : (
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1"
+            size="lg"
+            onClick={handlePlan}
+            disabled={planMutation.isPending || submitMutation.isPending || checking}
+          >
+            {planMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se salvează...</> : <><CalendarPlus className="h-4 w-4 mr-2" />Planifică (draft)</>}
+          </Button>
+          <Button className={cn('flex-1', attempted && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleSubmit} disabled={submitMutation.isPending || planMutation.isPending || checking}>
+            {submitMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se trimite...</> : 'Trimite'}
+          </Button>
+        </div>
+      )}
+      {attempted && !(isActivating ? activateValid : formValid) && !submitMutation.isPending && !activateMutation.isPending && (
         <p className="text-xs text-destructive text-center">Completează câmpurile marcate cu roșu pentru a trimite.</p>
       )}
+      <ConflictDialog
+        open={showConflicts}
+        conflicts={conflictList}
+        onCancel={() => { setShowConflicts(false); setPendingRun(null) }}
+        onContinue={() => {
+          setShowConflicts(false)
+          pendingRun?.()
+          setPendingRun(null)
+        }}
+      />
     </div>
   )
 }

@@ -9,6 +9,9 @@ import type {
   FpVehicle,
   FpVehicleInspection,
   TestDriveFormPayload,
+  PlanTestDrivePayload,
+  ActivateTestDrivePayload,
+  VehicleConflict,
   CrmClient,
   CreateCrmClientPayload,
   DriverLicenseOcrData,
@@ -142,6 +145,30 @@ export const foiParcursApi = {
   // ── Test Drive Form ──
   submitTestDrive: (data: TestDriveFormPayload) =>
     api.post<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive`, data),
+
+  // ── Per company+vehicle-brand general-conditions text ('' when unset) ──
+  getGeneralConditions: (companyId: number, vin: string) =>
+    api.get<{ success: boolean; text: string; brand: string }>(
+      `${BASE}/general-conditions?company_id=${companyId}&vin=${encodeURIComponent(vin)}`,
+    ),
+
+  // ── Plan a draft TD (status: 'PLANNED') — same endpoint, signature/GDPR/PDF
+  //    deferred to activation ──
+  planTestDrive: (data: PlanTestDrivePayload) =>
+    api.post<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive`, data),
+
+  // ── Activate a PLANNED draft → FILLED (client signature required) ──
+  activateTestDrive: (id: number, data: ActivateTestDrivePayload) =>
+    api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/activate`, data),
+
+  // ── Discard a PLANNED draft (PLANNED-only; 409 otherwise) ──
+  discardTestDrive: (id: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/test-drive/${id}`),
+
+  // ── Overlapping PLANNED/live sessions for a VIN in [from, to] — soft-block
+  //    double-booking a car (never hard-blocks) ──
+  getVehicleConflicts: (vin: string, params: { from: string; to: string; exclude_id?: number }) =>
+    api.get<{ success: boolean; conflicts: VehicleConflict[] }>(`${BASE}/vehicles/${vin}/conflicts${qs(params)}`),
 
   // ── CRM clients (Test Drive: search + inline create) — login-gated search so
   //    consilieri without full CRM access can find existing clients ──
