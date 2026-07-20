@@ -420,11 +420,7 @@ function RecentContractsGrouped() {
   )
 }
 
-// ── Parcurs Tab — all contracts grouped by Company → VIN ──
-const STATUS_ROW_BG: Record<string, string> = {
-  pending: 'bg-orange-500/5 border-l-4 border-l-orange-500/50',
-  filled: 'bg-green-500/5 border-l-4 border-l-green-500/50',
-}
+// ── Sesiuni Driving Tab — TD sessions (historical record) ──
 
 // Derived 4-state session status for the Sesiuni Driving tab. Combines the raw
 // `status` column with the backend-derived `td_status` (complete/incomplete/driving).
@@ -607,7 +603,7 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
     if (c.route_type !== 'TD') return false
     if (brand && vinBrand.get(c.vin) !== brand) return false
     if (filterVin !== 'all' && c.vin !== filterVin) return false
-    if (filterStatus !== 'all' && c.status !== filterStatus) return false
+    if (filterStatus !== 'all' && sessionStatus(c).key !== filterStatus) return false
     if (filterMonth !== 'all' && c.month != null && String(c.month) !== filterMonth) return false
     if (filterYear !== 'all' && c.year != null && String(c.year) !== filterYear) return false
     if (search) {
@@ -631,8 +627,11 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
     else { setSortBy(col); setSortDir('ASC') }
   }
 
-  const pendingCount = filtered.filter((c) => c.status === 'PENDING').length
-  const filledCount = filtered.filter((c) => c.status === 'FILLED').length
+  const countBy = (k: SessionStatusKey) => filtered.filter((c) => sessionStatus(c).key === k).length
+  const finalizatCount = countBy('finalizat')
+  const drivingCount = countBy('driving')
+  const intarziatCount = countBy('intarziat')
+  const nealocatCount = countBy('nealocat')
 
   // Unique VINs for filter
   const uniqueVins = [...new Set(allContracts.map((c) => c.vin))].sort()
@@ -666,8 +665,10 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
-              <SelectItem value="PENDING">Pending</SelectItem>
-              <SelectItem value="FILLED">Filled</SelectItem>
+              <SelectItem value="finalizat">Finalizat</SelectItem>
+              <SelectItem value="driving">În desfășurare</SelectItem>
+              <SelectItem value="intarziat">Întârziat</SelectItem>
+              <SelectItem value="nealocat">Nealocat</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -727,9 +728,11 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
 
       {/* Summary badges */}
       <div className="flex gap-2 text-sm">
-        <Badge variant="outline">{filtered.length} contracts</Badge>
-        {pendingCount > 0 && <Badge variant="destructive">{pendingCount} pending</Badge>}
-        {filledCount > 0 && <Badge className="bg-green-600">{filledCount} filled</Badge>}
+        <Badge variant="outline">{filtered.length} sesiuni</Badge>
+        {finalizatCount > 0 && <Badge className="bg-green-600">{finalizatCount} finalizate</Badge>}
+        {drivingCount > 0 && <Badge className="bg-blue-600">{drivingCount} în desfășurare</Badge>}
+        {intarziatCount > 0 && <Badge className="bg-red-600">{intarziatCount} întârziate</Badge>}
+        {nealocatCount > 0 && <Badge variant="outline">{nealocatCount} nealocate</Badge>}
       </div>
 
       {/* Table */}
@@ -762,21 +765,17 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
             <TableBody>
               {sorted.map((c) => {
                 const isExpanded = expandedRow === c.id
+                const ss = sessionStatus(c)
                 const u = fuelUnit(c.fuel_tank_capacity_liters > 100 ? 'Electric' : undefined)
                 return (
                   <React.Fragment key={c.id}>
                     <TableRow
-                      className={`cursor-pointer hover:bg-muted/40 ${STATUS_ROW_BG[c.status?.toLowerCase()] || ''}`}
+                      className={`cursor-pointer hover:bg-muted/40 ${ss.rowClass}`}
                       onClick={() => setExpandedRow(isExpanded ? null : c.id)}
                     >
                       <TableCell className="text-xs">{c.slot_number || '—'}</TableCell>
                       <TableCell>
-                        <Badge
-                          variant={c.status === 'FILLED' ? 'default' : 'destructive'}
-                          className="text-xs"
-                        >
-                          {c.status}
-                        </Badge>
+                        <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
                       </TableCell>
                       <TableCell className="text-xs">{c.company_name || '—'}</TableCell>
                       <TableCell className="font-mono text-xs">{c.vin.slice(0, 12)}...</TableCell>
