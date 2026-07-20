@@ -229,7 +229,7 @@ export default function TestDriveForm() {
   })
 
   // ── VIN-conflict soft-block (shared by Trimite + Planifică) ──
-  const { check: checkConflicts } = useVehicleConflicts()
+  const { check: checkConflicts, checking } = useVehicleConflicts()
   const [conflictList, setConflictList] = useState<VehicleConflict[]>([])
   const [showConflicts, setShowConflicts] = useState(false)
   const [pendingRun, setPendingRun] = useState<(() => void) | null>(null)
@@ -275,7 +275,7 @@ export default function TestDriveForm() {
   }
 
   function handleSubmit() {
-    if (submitMutation.isPending) return
+    if (submitMutation.isPending || planMutation.isPending || checking) return
     if (!formValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
       setAttempted(true)
       return
@@ -289,7 +289,7 @@ export default function TestDriveForm() {
   }
 
   function handlePlan() {
-    if (planMutation.isPending) return
+    if (planMutation.isPending || submitMutation.isPending || checking) return
     if (!draftValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
       setAttempted(true)
       return
@@ -636,11 +636,11 @@ export default function TestDriveForm() {
           className="flex-1"
           size="lg"
           onClick={handlePlan}
-          disabled={planMutation.isPending || submitMutation.isPending}
+          disabled={planMutation.isPending || submitMutation.isPending || checking}
         >
           {planMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se salvează...</> : <><CalendarPlus className="h-4 w-4 mr-2" />Planifică (draft)</>}
         </Button>
-        <Button className={cn('flex-1', attempted && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleSubmit} disabled={submitMutation.isPending || planMutation.isPending}>
+        <Button className={cn('flex-1', attempted && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleSubmit} disabled={submitMutation.isPending || planMutation.isPending || checking}>
           {submitMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se trimite...</> : 'Trimite'}
         </Button>
       </div>
