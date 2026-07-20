@@ -101,3 +101,20 @@ def test_activate_race_returns_409_no_pdf(client, monkeypatch):
                       json={'client_signature': 'data:sig', 'fuel_gauge_start_level': '1/2'})
     assert resp.status_code == 409
     assert made['pdf'] is False
+
+
+def test_discard_deletes_planned(client, monkeypatch):
+    monkeypatch.setattr(td_routes._fp_repo, 'get_contract_by_id',
+                        lambda i: {'id': i, 'route_type': 'TD', 'status': 'PLANNED'})
+    deleted = {}
+    monkeypatch.setattr(td_routes._fp_repo, 'delete_contract', lambda i: deleted.__setitem__('id', i))
+    resp = client.delete('/api/foi-parcurs/test-drive/101')
+    assert resp.status_code == 200 and resp.get_json()['success'] is True
+    assert deleted['id'] == 101
+
+
+def test_discard_refuses_non_planned(client, monkeypatch):
+    monkeypatch.setattr(td_routes._fp_repo, 'get_contract_by_id',
+                        lambda i: {'id': i, 'route_type': 'TD', 'status': 'FILLED'})
+    resp = client.delete('/api/foi-parcurs/test-drive/101')
+    assert resp.status_code == 409
