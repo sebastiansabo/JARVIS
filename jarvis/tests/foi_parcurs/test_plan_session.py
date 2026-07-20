@@ -12,6 +12,7 @@ from flask import Flask
 
 from foi_parcurs import foi_parcurs_bp
 import foi_parcurs.routes.test_drive as td_routes
+import foi_parcurs.routes.vehicles as veh_routes
 
 
 @pytest.fixture
@@ -118,3 +119,39 @@ def test_discard_refuses_non_planned(client, monkeypatch):
                         lambda i: {'id': i, 'route_type': 'TD', 'status': 'FILLED'})
     resp = client.delete('/api/foi-parcurs/test-drive/101')
     assert resp.status_code == 409
+
+
+def test_find_conflicts_overlap(monkeypatch):
+    from foi_parcurs.repositories.foi_parcurs_repository import FoiParcursRepository
+    repo = FoiParcursRepository.__new__(FoiParcursRepository)
+    captured = {}
+    def fake_query_all(sql, params):
+        captured['sql'] = sql; captured['params'] = params
+        return [{'id': 9, 'status': 'PLANNED'}]
+    repo.query_all = fake_query_all
+    rows = repo.find_conflicts('V1', '2026-08-01T09:00:00', '2026-08-01T11:00:00', exclude_id=5)
+    assert rows and rows[0]['id'] == 9
+    # VIN + window + exclude_id all bound
+    assert 'V1' in captured['params'] and 5 in captured['params']
+    assert 'PLANNED' in captured['sql']
+
+
+def test_conflicts_route_requires_from_and_to(client):
+    resp = client.get('/api/foi-parcurs/vehicles/V1/conflicts')
+    assert resp.status_code == 400
+
+
+def test_conflicts_route_returns_conflicts(client, monkeypatch):
+    captured = {}
+    def fake_find_conflicts(vin, frm, to, exclude_id=None):
+        captured.update(vin=vin, frm=frm, to=to, exclude_id=exclude_id)
+        return [{'id': 9, 'status': 'PLANNED'}]
+    monkeypatch.setattr(veh_routes._fp_repo, 'find_conflicts', fake_find_conflicts)
+    resp = client.get('/api/foi-parcurs/vehicles/V1/conflicts',
+                       query_string={'from': '2026-08-01T09:00:00', 'to': '2026-08-01T11:00:00', 'exclude_id': 5})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['success'] is True
+    assert data['conflicts'] == [{'id': 9, 'status': 'PLANNED'}]
+    assert captured['vin'] == 'V1'
+    assert captured['exclude_id'] == 5
