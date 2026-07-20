@@ -78,6 +78,7 @@ import {
 } from '@/types/foiParcurs'
 import { VehicleOdometerHistory } from './VehicleOdometerHistory'
 import { sessionStatus, type SessionStatusKey } from './sessionStatus'
+import { CalendarTab } from './CalendarTab'
 
 /** useState backed by localStorage — survives a page refresh. */
 function usePersistentState<T>(key: string, initial: T) {
@@ -103,7 +104,7 @@ function usePersistentState<T>(key: string, initial: T) {
 export default function FoiParcurs() {
   const navigate = useNavigate()
   // Persist the tab + company/brand filters so a refresh keeps your context.
-  const [activeTab, setActiveTab] = usePersistentState<'contracts' | 'parcurs' | 'stock' | 'settings'>('fp.activeTab', 'stock')
+  const [activeTab, setActiveTab] = usePersistentState<'contracts' | 'parcurs' | 'stock' | 'calendar' | 'settings'>('fp.activeTab', 'stock')
   const [companyId, setCompanyId] = usePersistentState<number>('fp.companyId', 0)
   const [brand, setBrand] = usePersistentState<string>('fp.brand', '')
 
@@ -174,11 +175,12 @@ export default function FoiParcurs() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'settings')}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'calendar' | 'settings')}>
         <TabsList>
           <TabsTrigger value="stock">Driving Park</TabsTrigger>
           <TabsTrigger value="contracts">Contracts</TabsTrigger>
           <TabsTrigger value="parcurs">Sesiuni Driving</TabsTrigger>
+          <TabsTrigger value="calendar">Calendar</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
       </Tabs>
@@ -186,6 +188,7 @@ export default function FoiParcurs() {
       {activeTab === 'contracts' && <ContractsTab companyId={companyId} brand={brand} />}
       {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={brand} />}
       {activeTab === 'stock' && <StockTab companyId={companyId} brand={brand} />}
+      {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={brand} />}
       {activeTab === 'settings' && <SettingsTab />}
     </div>
   )
