@@ -71,3 +71,26 @@ def test_terms_flowables_accepts_company_name():
     # Should not raise and should return a non-empty list of flowables.
     fl = ps._terms_flowables('Autoworld ONE S.R.L.')
     assert isinstance(fl, list) and len(fl) > 0
+
+
+def test_parse_conditions_blocks():
+    text = "## Termeni\n\nRand unu.\nRand doi.\n\n- alfa\n- beta\n\nUltim paragraf."
+    blocks = ps._parse_conditions(text)
+    assert blocks[0] == ('heading', 'Termeni')
+    assert blocks[1] == ('paragraph', 'Rand unu. Rand doi.')
+    assert blocks[2] == ('bullets', ['alfa', 'beta'])
+    assert blocks[3] == ('paragraph', 'Ultim paragraf.')
+
+
+def test_parse_conditions_empty():
+    assert ps._parse_conditions('') == []
+    assert ps._parse_conditions('   \n  ') == []
+
+
+def test_general_conditions_flowables_empty_when_no_text():
+    assert ps._general_conditions_flowables('', None) == []
+
+
+def test_general_conditions_flowables_present():
+    fl = ps._general_conditions_flowables('## T\n\ntext', '2026-07-20T09:00:00+00:00')
+    assert fl  # non-empty list of flowables

@@ -3,9 +3,11 @@ import json
 import re
 import time
 import uuid
+from datetime import datetime, timezone
 from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required, current_user,
     logger, _fp_repo, _inspection_repo, _crm_client_repo, _vehicle_repo,
+    _dealer_repo,
 )
 from ..services.fuel_service import parse_fuel_level
 
@@ -35,6 +37,18 @@ def api_submit_test_drive():
 
     if not data.get('gdpr_consent'):
         return jsonify({'success': False, 'error': 'GDPR consent is required'}), 400
+
+    # General conditions (per company+brand) — required only when configured.
+    general_conditions_text = ''
+    try:
+        _veh = _vehicle_repo.get_by_vin(data['vin'])
+        _brand = (_veh or {}).get('brand') or ''
+        general_conditions_text = _dealer_repo.get_general_conditions(int(data['company_id']), _brand) or ''
+    except Exception:
+        logger.warning('general-conditions lookup failed at submit', exc_info=True)
+        general_conditions_text = ''
+    if general_conditions_text.strip() and not data.get('general_conditions_accepted'):
+        return jsonify({'success': False, 'error': 'General conditions acceptance is required'}), 400
 
     contract_id = f"TD-{data['vin'][:8]}-{int(time.time())}-{uuid.uuid4().hex[:4]}"
 
@@ -100,6 +114,10 @@ def api_submit_test_drive():
             'source': 'td_form',
             'status': 'FILLED',
         }
+        if general_conditions_text.strip():
+            contract_data['general_conditions_accepted'] = True
+            contract_data['general_conditions_accepted_at'] = datetime.now(timezone.utc)
+            contract_data['general_conditions_text'] = general_conditions_text
 
         contract = _fp_repo.create_from_td_form(contract_data)
 
