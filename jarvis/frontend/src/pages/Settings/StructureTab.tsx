@@ -651,7 +651,7 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
   )
 }
 
-type DealerDraft = { review_url: string; address: string; phone: string; email: string; show: boolean }
+type DealerDraft = { review_url: string; address: string; phone: string; email: string; show: boolean; general_conditions: string }
 
 /** Per-brand Google review link + contact for the test-drive email, editable per
  *  linked brand of a company (writes to fp_dealer_config via foi-parcurs API). */
@@ -668,7 +668,7 @@ function DealerConfigSection({ companyId }: { companyId: number }) {
   useEffect(() => {
     const d: Record<number, DealerDraft> = {}
     configs.forEach((c) => {
-      d[c.brand_id] = { review_url: c.review_url ?? '', address: c.address ?? '', phone: c.phone ?? '', email: c.email ?? '', show: c.show_in_foi_parcurs !== false }
+      d[c.brand_id] = { review_url: c.review_url ?? '', address: c.address ?? '', phone: c.phone ?? '', email: c.email ?? '', show: c.show_in_foi_parcurs !== false, general_conditions: c.general_conditions ?? '' }
     })
     setDrafts(d)
   }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -678,6 +678,7 @@ function DealerConfigSection({ companyId }: { companyId: number }) {
       foiParcursApi.updateDealerConfig(companyId, brandId, {
         review_url: values.review_url, address: values.address, phone: values.phone, email: values.email,
         show_in_foi_parcurs: values.show,
+        general_conditions: values.general_conditions,
       }),
     onSuccess: () => {
       toast.success('Salvat')
@@ -692,7 +693,7 @@ function DealerConfigSection({ companyId }: { companyId: number }) {
     <div className="grid gap-2 border-t pt-3">
       <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Branduri Foi de Parcurs · Review & Contact</Label>
       {configs.map((c) => {
-        const d = drafts[c.brand_id] ?? { review_url: '', address: '', phone: '', email: '', show: true }
+        const d = drafts[c.brand_id] ?? { review_url: '', address: '', phone: '', email: '', show: true, general_conditions: '' }
         const set = <K extends keyof DealerDraft>(k: K, v: DealerDraft[K]) => setDrafts((p) => ({ ...p, [c.brand_id]: { ...d, [k]: v } }))
         return (
           <div key={c.brand_id} className="grid gap-1.5 rounded-md border p-2">
@@ -707,6 +708,12 @@ function DealerConfigSection({ companyId }: { companyId: number }) {
               <Input className="h-8 text-xs" placeholder="Telefon" value={d.phone} onChange={(e) => set('phone', e.target.value)} />
               <Input className="h-8 text-xs" placeholder="Email" value={d.email} onChange={(e) => set('email', e.target.value)} />
             </div>
+            <textarea
+              className="w-full min-h-[120px] rounded-md border bg-background p-2 text-xs font-mono"
+              placeholder="Condiții generale (## Titlu, - punct, rând gol = paragraf nou)"
+              value={d.general_conditions}
+              onChange={(e) => set('general_conditions', e.target.value)}
+            />
             <Button size="sm" variant="outline" className="h-7 justify-self-start text-xs"
               onClick={() => saveMut.mutate({ brandId: c.brand_id, values: d })} disabled={saveMut.isPending}>
               {saveMut.isPending ? 'Se salvează...' : `Salvează ${c.brand_name}`}
