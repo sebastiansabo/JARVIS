@@ -27,6 +27,7 @@ import {
   ChevronUp,
   Download,
   FileSpreadsheet,
+  PlayCircle,
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -76,6 +77,7 @@ import {
   type FpVehicle,
 } from '@/types/foiParcurs'
 import { VehicleOdometerHistory } from './VehicleOdometerHistory'
+import { sessionStatus, type SessionStatusKey } from './sessionStatus'
 
 /** useState backed by localStorage — survives a page refresh. */
 function usePersistentState<T>(key: string, initial: T) {
@@ -421,30 +423,10 @@ function RecentContractsGrouped() {
 }
 
 // ── Sesiuni Driving Tab — TD sessions (historical record) ──
-
-// Derived 4-state session status for the Sesiuni Driving tab. Combines the raw
-// `status` column with the backend-derived `td_status` (complete/incomplete/driving).
-// PENDING must be checked first: td_status' ELSE branch returns 'driving' even for
-// un-allocated PENDING batch slots that were never driven.
-export type SessionStatusKey = 'nealocat' | 'driving' | 'intarziat' | 'finalizat'
-
-export function sessionStatus(c: FoiContract): {
-  key: SessionStatusKey
-  label: string
-  badgeClass: string
-  rowClass: string
-} {
-  if (c.status === 'PENDING') {
-    return { key: 'nealocat', label: 'Nealocat', badgeClass: 'bg-muted text-muted-foreground', rowClass: '' }
-  }
-  if (c.td_status === 'complete' || c.status === 'COMPLETED') {
-    return { key: 'finalizat', label: 'Finalizat', badgeClass: 'bg-green-600 text-white', rowClass: 'bg-green-500/5 border-l-4 border-l-green-500/40' }
-  }
-  if (c.td_status === 'incomplete') {
-    return { key: 'intarziat', label: 'Întârziat', badgeClass: 'bg-red-600 text-white', rowClass: 'bg-red-500/10 border-l-4 border-l-red-500/60' }
-  }
-  return { key: 'driving', label: 'În desfășurare', badgeClass: 'bg-blue-600 text-white', rowClass: 'bg-blue-500/5 border-l-4 border-l-blue-500/40' }
-}
+// sessionStatus/SessionStatusKey now live in ./sessionStatus.ts (shared with
+// CalendarTab — keeping them here would make index.tsx → CalendarTab.tsx →
+// index.tsx a circular import).
+export { sessionStatus, type SessionStatusKey }
 
 /** Export modal for the Parcurs history: pick a period (quick presets or a
  *  custom from–to) and optionally a single car, then download the session list
@@ -548,6 +530,7 @@ function ExportDialog({
 
 function SessionsTab({ companyId, brand }: { companyId: number; brand: string }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const now = new Date()
   const [allocatingContract, setAllocatingContract] = useState<FoiContract | null>(null)
@@ -586,6 +569,12 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
       queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
       queryClient.invalidateQueries({ queryKey: ['odometer-history'] })
     },
+  })
+  // Discard a PLANNED draft (any TD user — same gate as create). Only PLANNED
+  // rows are eligible; the backend 409s otherwise.
+  const discardMutation = useMutation({
+    mutationFn: (id: number) => foiParcursApi.discardTestDrive(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }),
   })
 
   // Vehicles → vin→brand map, so contracts can be filtered by the selected brand
@@ -636,6 +625,7 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
   }
 
   const countBy = (k: SessionStatusKey) => filtered.filter((c) => sessionStatus(c).key === k).length
+  const planificatCount = countBy('planificat')
   const finalizatCount = countBy('finalizat')
   const drivingCount = countBy('driving')
   const intarziatCount = countBy('intarziat')
@@ -673,6 +663,7 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
+              <SelectItem value="planificat">Planificat</SelectItem>
               <SelectItem value="finalizat">Finalizat</SelectItem>
               <SelectItem value="driving">În desfășurare</SelectItem>
               <SelectItem value="intarziat">Întârziat</SelectItem>
@@ -737,6 +728,7 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
       {/* Summary badges */}
       <div className="flex gap-2 text-sm">
         <Badge variant="outline">{filtered.length} sesiuni</Badge>
+        {planificatCount > 0 && <Badge className="bg-indigo-600">{planificatCount} planificate</Badge>}
         {finalizatCount > 0 && <Badge className="bg-green-600">{finalizatCount} finalizate</Badge>}
         {drivingCount > 0 && <Badge className="bg-blue-600">{drivingCount} în desfășurare</Badge>}
         {intarziatCount > 0 && <Badge className="bg-red-600">{intarziatCount} întârziate</Badge>}
@@ -822,14 +814,36 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                               Allocate
                             </Button>
                           )}
-                          {c.status !== 'PENDING' && (
+                          {c.status === 'PLANNED' && (
+                            <>
+                              <Button variant="outline" size="sm" onClick={() => navigate(`/app/foi-parcurs/test-drive?activate=${c.id}`)}>
+                                <PlayCircle className="mr-1 h-3.5 w-3.5" />
+                                Începe sesiunea
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                title="Renunță la planificare"
+                                onClick={() => {
+                                  if (confirm('Renunți la această sesiune planificată? Acțiunea nu poate fi anulată.')) {
+                                    discardMutation.mutate(c.id)
+                                  }
+                                }}
+                                disabled={discardMutation.isPending}
+                              >
+                                <XIcon className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
+                          {c.status !== 'PENDING' && c.status !== 'PLANNED' && (
                             <a href={foiParcursApi.getContractPdfUrl(c.id, 'legal')} target="_blank" rel="noopener" title="Descarcă PDF">
                               <Button variant="ghost" size="sm">
                                 <FileText className="h-4 w-4" />
                               </Button>
                             </a>
                           )}
-                          {isAdmin && c.route_type === 'TD' && ss.key !== 'nealocat' && (
+                          {isAdmin && c.route_type === 'TD' && ss.key !== 'nealocat' && ss.key !== 'planificat' && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -928,8 +942,8 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                               </div>
                             </div>
                           </div>
-                          {/* PDF Downloads */}
-                          {c.status !== 'PENDING' && (
+                          {/* PDF Downloads — none yet for a PLANNED draft (generated at activation) */}
+                          {c.status !== 'PENDING' && c.status !== 'PLANNED' && (
                             <div className="flex gap-2 mt-3 pt-3 border-t">
                               <a href={foiParcursApi.getContractPdfUrl(c.id, 'legal')} target="_blank" rel="noopener">
                                 <Button variant="outline" size="sm">
