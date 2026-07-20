@@ -367,6 +367,20 @@ def api_get_test_drive(id):
     })
 
 
+@foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>', methods=['DELETE'])
+@login_required
+def api_discard_test_drive(id):
+    """Discard a PLANNED draft (any TD user). Only PLANNED rows may be deleted
+    here — live/completed sessions still require the admin hard-delete route."""
+    contract = _fp_repo.get_contract_by_id(id)
+    if not contract:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    if contract.get('status') != 'PLANNED':
+        return jsonify({'success': False, 'error': 'Only PLANNED drafts can be discarded'}), 409
+    _fp_repo.delete_contract(id)
+    return jsonify({'success': True})
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/driver-license/ocr', methods=['POST'])
 @login_required
 def api_driver_license_ocr():
