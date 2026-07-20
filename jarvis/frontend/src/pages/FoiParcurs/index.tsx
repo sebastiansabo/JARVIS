@@ -745,7 +745,7 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
 
       {/* Table */}
       {isLoading ? (
-        <TableSkeleton rows={8} columns={10} />
+        <TableSkeleton rows={8} columns={9} />
       ) : !sorted.length ? (
         <EmptyState
           icon={<FileText className="h-10 w-10" />}
