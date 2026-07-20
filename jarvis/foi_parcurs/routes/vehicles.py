@@ -191,6 +191,20 @@ def api_delete_vehicle(vehicle_id):
     return jsonify({'success': True})
 
 
+@foi_parcurs_bp.route('/api/foi-parcurs/vehicles/<vin>/conflicts', methods=['GET'])
+@login_required
+def api_vehicle_conflicts(vin):
+    """Overlapping open sessions (planned or live) for a VIN in [from, to].
+    Used to soft-block double-booking a car."""
+    frm = request.args.get('from')
+    to = request.args.get('to')
+    if not frm or not to:
+        return jsonify({'success': False, 'error': 'from and to are required'}), 400
+    exclude_id = request.args.get('exclude_id', type=int)
+    rows = _fp_repo.find_conflicts(vin, frm, to, exclude_id)
+    return jsonify({'success': True, 'conflicts': rows})
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/companies', methods=['GET'])
 @login_required
 def api_list_companies():

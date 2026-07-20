@@ -35,18 +35,20 @@ def _normalize_name(name: str) -> str:
 def api_submit_test_drive():
     """Submit test drive form — creates FILLED contract."""
     data = request.get_json(silent=True) or {}
+    is_draft = data.get('status') == 'PLANNED'
 
     # `itinerary` is intentionally NOT required — the mobile Test Drive form
     # dropped the Traseu/Itinerariu field. It's still stored when provided
     # (e.g. by the web form) via data.get('itinerary', '') below.
     required = ['company_id', 'vin', 'client_id', 'odometer_start', 'estimated_km',
-                'fuel_gauge_start_level', 'departure_datetime',
-                'advisor_name', 'client_signature']
+                'fuel_gauge_start_level', 'departure_datetime', 'advisor_name']
+    if not is_draft:
+        required += ['client_signature']
     missing = [f for f in required if not data.get(f)]
     if missing:
         return jsonify({'success': False, 'error': f'Missing: {", ".join(missing)}'}), 400
 
-    if _company_gdpr_text(data.get('company_id')).strip() and not data.get('gdpr_consent'):
+    if not is_draft and _company_gdpr_text(data.get('company_id')).strip() and not data.get('gdpr_consent'):
         return jsonify({'success': False, 'error': 'GDPR consent is required'}), 400
 
     # General conditions (per company+brand) — required only when configured.
@@ -58,7 +60,7 @@ def api_submit_test_drive():
     except Exception:
         logger.warning('general-conditions lookup failed at submit', exc_info=True)
         general_conditions_text = ''
-    if general_conditions_text.strip() and not data.get('general_conditions_accepted'):
+    if not is_draft and general_conditions_text.strip() and not data.get('general_conditions_accepted'):
         return jsonify({'success': False, 'error': 'General conditions acceptance is required'}), 400
 
     contract_id = f"TD-{data['vin'][:8]}-{int(time.time())}-{uuid.uuid4().hex[:4]}"
@@ -112,20 +114,23 @@ def api_submit_test_drive():
             'itinerary': data.get('itinerary', ''),
             'advisor_name': data['advisor_name'],
             'signature_ai_generated': data.get('advisor_signature', ''),
-            'client_signature': data['client_signature'],
+            'client_signature': data.get('client_signature', ''),
             'departure_datetime': data['departure_datetime'],
             'return_datetime': data.get('return_datetime'),
             'departure_damage': json.dumps(departure_damage),
             'driver_license_photo': data.get('driver_license_photo'),
             'driver_license_number': data.get('driver_license_number'),
             'driver_license_expiry': (data.get('driver_license_expiry') or '').strip() or None,
-            'gdpr_consent': True,
+            # Live submit keeps the historical hardcoded True (GDPR is gated by the
+            # validation above); a PLANNED draft stores whatever was sent (consent
+            # is deferred to activation, so typically absent → False).
+            'gdpr_consent': bool(data.get('gdpr_consent')) if is_draft else True,
             'inspection_acceptance': bool(data.get('inspection_acceptance')),
             'inspection_id': data.get('inspection_id'),
             'source': 'td_form',
-            'status': 'FILLED',
+            'status': 'PLANNED' if is_draft else 'FILLED',
         }
-        if general_conditions_text.strip():
+        if not is_draft and general_conditions_text.strip():
             contract_data['general_conditions_accepted'] = True
             contract_data['general_conditions_accepted_at'] = datetime.now(timezone.utc)
             contract_data['general_conditions_text'] = general_conditions_text
@@ -148,24 +153,107 @@ def api_submit_test_drive():
         except Exception:
             logger.warning('Could not store driving license on CRM client %s', client_id, exc_info=True)
 
-        # Generate PDFs
-        try:
-            from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
-            legal_path = generate_legal_pdf(contract)
-            custom_path = generate_custom_pdf(contract)
-            _fp_repo.execute(
-                'UPDATE foi_de_parcurs SET pdf_legal_path = %s, pdf_custom_path = %s WHERE id = %s',
-                (legal_path, custom_path, contract['id']),
-            )
-            contract['pdf_legal_path'] = legal_path
-            contract['pdf_custom_path'] = custom_path
-        except Exception:
-            logger.exception('PDF generation failed for contract %s', contract.get('contract_id'))
+        # Generate PDFs (skipped for PLANNED drafts — no signature/GDPR captured yet)
+        if not is_draft:
+            try:
+                from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
+                legal_path = generate_legal_pdf(contract)
+                custom_path = generate_custom_pdf(contract)
+                _fp_repo.execute(
+                    'UPDATE foi_de_parcurs SET pdf_legal_path = %s, pdf_custom_path = %s WHERE id = %s',
+                    (legal_path, custom_path, contract['id']),
+                )
+                contract['pdf_legal_path'] = legal_path
+                contract['pdf_custom_path'] = custom_path
+            except Exception:
+                logger.exception('PDF generation failed for contract %s', contract.get('contract_id'))
 
         return jsonify({'success': True, 'contract': contract})
 
     except Exception as e:
         logger.exception('Failed to submit test drive form')
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>/activate', methods=['PUT'])
+@login_required
+def api_activate_test_drive(id):
+    """Activate a PLANNED draft: capture the client signature + any handover
+    edits, flip to FILLED, generate the PDFs (mirrors the live-submit path)."""
+    data = request.get_json(silent=True) or {}
+    try:
+        contract = _fp_repo.get_contract_by_id(id)
+        if not contract:
+            return jsonify({'success': False, 'error': 'Not found'}), 404
+        if contract.get('route_type') != 'TD' or contract.get('status') != 'PLANNED':
+            return jsonify({'success': False, 'error': 'Contract is not a PLANNED draft'}), 400
+        if not data.get('client_signature'):
+            return jsonify({'success': False, 'error': 'client_signature is required'}), 400
+
+        # General conditions (per company+brand) — required only when configured.
+        # Mirrors the live-submit gate: a PLANNED draft defers this to activation.
+        general_conditions_text = ''
+        try:
+            _veh = _vehicle_repo.get_by_vin(contract.get('vin'))
+            _brand = (_veh or {}).get('brand') or ''
+            general_conditions_text = _dealer_repo.get_general_conditions(int(contract['company_id']), _brand) or ''
+        except Exception:
+            logger.warning('general-conditions lookup failed at activation', exc_info=True)
+            general_conditions_text = ''
+        if general_conditions_text.strip() and not data.get('general_conditions_accepted'):
+            return jsonify({'success': False, 'error': 'General conditions acceptance is required'}), 400
+
+        tank = int(data.get('fuel_tank_capacity_liters', contract.get('fuel_tank_capacity_liters') or 0))
+        start_level = data.get('fuel_gauge_start_level') or contract.get('fuel_gauge_start_level') or '1'
+        try:
+            start_fraction = parse_fuel_level(str(start_level))
+        except ValueError:
+            start_fraction = 1.0
+        fuel_start_liters = round(start_fraction * tank, 2)
+
+        update = {
+            'client_signature': data['client_signature'],
+            'signature_ai_generated': data.get('advisor_signature', contract.get('signature_ai_generated', '')),
+            'gdpr_consent': bool(data.get('gdpr_consent', True)),
+            'fuel_gauge_start_level': start_level,
+            'fuel_start_liters': fuel_start_liters,
+        }
+        if data.get('odometer_start') is not None:
+            update['km_start'] = int(data['odometer_start'])
+        if data.get('departure_datetime'):
+            update['departure_datetime'] = data['departure_datetime']
+        if data.get('return_datetime'):
+            update['return_datetime'] = data['return_datetime']
+        if data.get('departure_damage') is not None:
+            update['departure_damage'] = data['departure_damage']
+        if general_conditions_text.strip():
+            update['general_conditions_accepted'] = True
+            update['general_conditions_accepted_at'] = datetime.now(timezone.utc)
+            update['general_conditions_text'] = general_conditions_text
+
+        updated = _fp_repo.record_activation(id, update)
+        # record_activation only matches PLANNED TD rows; a concurrent/duplicate
+        # activation flips it to FILLED first, so a zero-row UPDATE returns falsy.
+        # Report that instead of a false 200 with a null contract.
+        if not (updated and updated.get('id')):
+            return jsonify({'success': False, 'error': 'Contract is no longer a PLANNED draft'}), 409
+
+        try:
+            from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
+            legal_path = generate_legal_pdf(updated)
+            custom_path = generate_custom_pdf(updated)
+            _fp_repo.execute(
+                'UPDATE foi_de_parcurs SET pdf_legal_path = %s, pdf_custom_path = %s WHERE id = %s',
+                (legal_path, custom_path, id),
+            )
+            updated['pdf_legal_path'] = legal_path
+            updated['pdf_custom_path'] = custom_path
+        except Exception:
+            logger.exception('PDF generation failed activating contract %s', id)
+
+        return jsonify({'success': True, 'contract': updated})
+    except Exception as e:
+        logger.exception('Failed to activate planned test drive %s', id)
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
 
@@ -294,6 +382,20 @@ def api_get_test_drive(id):
         'contract': contract,
         'inspection': inspection,
     })
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>', methods=['DELETE'])
+@login_required
+def api_discard_test_drive(id):
+    """Discard a PLANNED draft (any TD user). Only PLANNED rows may be deleted
+    here — live/completed sessions still require the admin hard-delete route."""
+    contract = _fp_repo.get_contract_by_id(id)
+    if not contract:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    if contract.get('status') != 'PLANNED':
+        return jsonify({'success': False, 'error': 'Only PLANNED drafts can be discarded'}), 409
+    _fp_repo.delete_contract(id)
+    return jsonify({'success': True})
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/driver-license/ocr', methods=['POST'])
