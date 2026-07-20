@@ -3,6 +3,7 @@ export interface Company {
   company: string
   vat: string | null
   created_at: string
+  gdpr_text?: string | null
 }
 
 export interface CompanyWithBrands extends Company {
