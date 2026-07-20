@@ -121,7 +121,10 @@ def api_submit_test_drive():
             'driver_license_photo': data.get('driver_license_photo'),
             'driver_license_number': data.get('driver_license_number'),
             'driver_license_expiry': (data.get('driver_license_expiry') or '').strip() or None,
-            'gdpr_consent': bool(data.get('gdpr_consent')),
+            # Live submit keeps the historical hardcoded True (GDPR is gated by the
+            # validation above); a PLANNED draft stores whatever was sent (consent
+            # is deferred to activation, so typically absent → False).
+            'gdpr_consent': bool(data.get('gdpr_consent')) if is_draft else True,
             'inspection_acceptance': bool(data.get('inspection_acceptance')),
             'inspection_id': data.get('inspection_id'),
             'source': 'td_form',
