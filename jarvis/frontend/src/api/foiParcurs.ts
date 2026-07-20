@@ -98,11 +98,11 @@ export const foiParcursApi = {
 
   // ── Per company+brand dealer config (review link + contact for the email) ──
   getDealerConfig: (companyId: number) =>
-    api.get<{ success: boolean; configs: { brand_id: number; brand_name: string; review_url: string | null; address: string | null; phone: string | null; email: string | null; show_in_foi_parcurs: boolean }[] }>(
+    api.get<{ success: boolean; configs: { brand_id: number; brand_name: string; review_url: string | null; address: string | null; phone: string | null; email: string | null; show_in_foi_parcurs: boolean; general_conditions: string | null }[] }>(
       `${BASE}/dealer-config/${companyId}`,
     ),
 
-  updateDealerConfig: (companyId: number, brandId: number, data: { review_url?: string; address?: string; phone?: string; email?: string; show_in_foi_parcurs?: boolean }) =>
+  updateDealerConfig: (companyId: number, brandId: number, data: { review_url?: string; address?: string; phone?: string; email?: string; show_in_foi_parcurs?: boolean; general_conditions?: string }) =>
     api.put<{ success: boolean }>(`${BASE}/dealer-config/${companyId}/${brandId}`, data),
 
   // ── KM Configs (Settings) ──
