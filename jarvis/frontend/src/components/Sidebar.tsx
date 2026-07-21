@@ -81,6 +81,8 @@ const navItemsDef: NavItem[] = [
     children: [
       { path: '/app/sales/crm', label: 'CRM Database', icon: Contact, moduleKey: 'crm_database' },
       { path: '/app/sales/field-sales', label: 'Field Sales', icon: MapPin, moduleKey: 'field_sales' },
+      // Positioned in Sales (cosmetic); route/slug/moduleKey unchanged.
+      { path: '/app/foi-parcurs', label: 'Driving Hub', icon: FileText, moduleKey: 'foi_parcurs', permission: 'can_access_carpark' },
     ],
   },
   {
@@ -90,7 +92,6 @@ const navItemsDef: NavItem[] = [
       { path: '/app/carpark', label: 'Vehicule', icon: Car, moduleKey: 'carpark_vehicles' },
       { path: '/app/carpark/pricing-rules', label: 'Reguli preț', icon: DollarSign, moduleKey: 'carpark_pricing' },
       { path: '/app/carpark/promotions', label: 'Promoții', icon: Tag, moduleKey: 'carpark_promotions' },
-      { path: '/app/foi-parcurs', label: 'Driving Hub', icon: FileText, moduleKey: 'foi_parcurs', permission: 'can_access_carpark' },
     ],
   },
   {
