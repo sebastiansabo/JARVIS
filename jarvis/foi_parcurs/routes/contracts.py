@@ -183,6 +183,7 @@ def api_list_contracts():
         vin=vin, company_id=company_id,
         page=page, per_page=per_page,
         sort_by=sort_by, sort_dir=sort_dir,
+        lean=True,  # list never renders the base64 blobs — drop ~155 kB/row
     )
 
     return jsonify({
