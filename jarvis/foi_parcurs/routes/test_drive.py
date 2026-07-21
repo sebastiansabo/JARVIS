@@ -278,10 +278,9 @@ def api_update_plan(id):
         if data.get('client_id') is not None:
             cid = int(data['client_id'])
             update['client_id'] = cid
-            crm = _crm_client_repo.get_by_id(cid)
-            if crm:
-                update['client_name'] = crm.get('display_name')
-                update['client_phone'] = crm.get('phone')
+            crm = _crm_client_repo.get_by_id(cid) or {}
+            update['client_name'] = crm.get('display_name')
+            update['client_phone'] = crm.get('phone')
         if data.get('registration_number') is not None:
             update['registration_number'] = data.get('registration_number', '')
         if data.get('advisor_name'):
@@ -306,6 +305,8 @@ def api_update_plan(id):
             if tank:
                 update['fuel_tank_capacity_liters'] = tank
         if data.get('departure_damage') is not None:
+            if not isinstance(data['departure_damage'], list):
+                return jsonify({'success': False, 'error': 'departure_damage must be a list'}), 400
             update['departure_damage'] = data['departure_damage']
 
         if not update:

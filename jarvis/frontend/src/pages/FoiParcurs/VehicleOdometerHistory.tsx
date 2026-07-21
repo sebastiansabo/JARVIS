@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ChevronDown, FileText } from 'lucide-react'
 import { api } from '@/api/client'
 import { foiParcursApi } from '@/api/foiParcurs'
+import { naiveDate } from '@/lib/naiveDate'
 
 interface DamageItem {
   zone?: string | null
@@ -37,11 +38,10 @@ interface OdometerHistoryResp {
 const nf = (n?: number | null) => (n == null ? '—' : n.toLocaleString('ro-RO'))
 
 function fmt(dt?: string | null) {
-  if (!dt) return '—'
-  const d = new Date(dt)
-  return Number.isNaN(d.getTime())
-    ? '—'
-    : d.toLocaleString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const d = naiveDate(dt) // departure/return are wall-clock times — no TZ shift
+  return d
+    ? d.toLocaleString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '—'
 }
 
 const SEVERITY: Record<string, { label: string; cls: string }> = {
