@@ -219,3 +219,25 @@ def test_conflicts_route_returns_conflicts(client, monkeypatch):
     assert data['conflicts'] == [{'id': 9, 'status': 'PLANNED'}]
     assert captured['vin'] == 'V1'
     assert captured['exclude_id'] == 5
+
+
+def test_update_plan_changes_departure(client, monkeypatch):
+    monkeypatch.setattr(td_routes._fp_repo, 'get_contract_by_id',
+                        lambda i: {'id': i, 'route_type': 'TD', 'status': 'PLANNED', 'vin': 'V1',
+                                   'fuel_tank_capacity_liters': 50})
+    seen = {}
+    monkeypatch.setattr(td_routes._fp_repo, 'update_plan',
+                        lambda i, d: seen.update(d) or {'id': i, 'status': 'PLANNED', **d})
+    resp = client.put('/api/foi-parcurs/test-drive/101/plan',
+                      json={'departure_datetime': '2026-08-02T10:00:00', 'odometer_start': 1234})
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()['success'] is True
+    assert seen['departure_datetime'] == '2026-08-02T10:00:00'
+    assert seen['km_start'] == 1234
+
+
+def test_update_plan_refuses_non_planned(client, monkeypatch):
+    monkeypatch.setattr(td_routes._fp_repo, 'get_contract_by_id',
+                        lambda i: {'id': i, 'route_type': 'TD', 'status': 'FILLED'})
+    resp = client.put('/api/foi-parcurs/test-drive/101/plan', json={'departure_datetime': '2026-08-02T10:00:00'})
+    assert resp.status_code == 409
