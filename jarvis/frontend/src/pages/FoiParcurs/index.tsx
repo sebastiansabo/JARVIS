@@ -179,9 +179,9 @@ export default function FoiParcurs() {
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'calendar' | 'settings')}>
         <TabsList>
           <TabsTrigger value="stock">Driving Park</TabsTrigger>
-          <TabsTrigger value="contracts">Contracts</TabsTrigger>
           <TabsTrigger value="parcurs">Sesiuni Driving</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
+          <TabsTrigger value="contracts">Foi de Parcurs</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
       </Tabs>
@@ -746,7 +746,7 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
         <EmptyState
           icon={<FileText className="h-10 w-10" />}
           title="No contracts found"
-          description={allContracts.length ? 'Try adjusting your filters.' : 'Generate and save a batch from the Contracts tab first.'}
+          description={allContracts.length ? 'Try adjusting your filters.' : 'Generate and save a batch from the Foi de Parcurs tab first.'}
         />
       ) : (
         <Card className="overflow-hidden">
@@ -1534,7 +1534,28 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
   const startEdit = (v: FpVehicle) => {
     setEditError('')
     setEditVehicle(v)
+    // The list row is lean (no document blobs), so seed the form from it, then
+    // fetch the full vehicle to populate the docs. Without this fetch, saving
+    // would send empty docs and wipe the stored files.
     setEditForm(vehicleToForm(v))
+    foiParcursApi.getVehicle(v.id)
+      .then((res) => {
+        const full = res?.vehicle
+        if (!full) return
+        setEditForm((prev) =>
+          prev.vin === v.vin
+            ? {
+                ...prev,
+                insurance_doc: full.insurance_doc || '',
+                talon_doc: full.talon_doc || '',
+                civ_doc: full.civ_doc || '',
+                registration_doc: full.registration_doc || '',
+                offer_doc: full.offer_doc || '',
+              }
+            : prev,
+        )
+      })
+      .catch(() => {/* keep the lean form; docs just won't preload */})
   }
 
   const saveEdit = () => {
