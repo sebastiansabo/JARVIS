@@ -3,7 +3,6 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { useQuery } from '@tanstack/react-query'
 import {
   FileStack,
-  LayoutDashboard,
   Plus,
   RefreshCw,
   SlidersHorizontal,
@@ -17,7 +16,6 @@ import { efacturaApi } from '@/api/efactura'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MobileBottomTabs } from '@/components/shared/MobileBottomTabs'
 import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
-import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
 import { SyncDialog } from './SyncDialog'
 
 const UnallocatedTab = lazy(() => import('./UnallocatedTab'))
@@ -43,7 +41,6 @@ export default function EFactura() {
   const isMobile = useIsMobile()
   const isTablet = useIsTablet()
   const isSmall = isMobile || isTablet
-  const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('efactura_status')
   const [syncOpen, setSyncOpen] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
@@ -84,9 +81,6 @@ export default function EFactura() {
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${showFilters ? 'bg-muted' : ''}`} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
               <SlidersHorizontal className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="hidden md:inline-flex" onClick={toggleDashboardWidget} title={isOnDashboard() ? 'Hide from Dashboard' : 'Show on Dashboard'}>
-              <LayoutDashboard className="h-4 w-4" />
             </Button>
             {isOnMappingsTab && (
               <Button size="icon" className="hidden md:inline-flex" onClick={() => setMappingAddTrigger(n => n + 1)} title="Add Mapping / Type">

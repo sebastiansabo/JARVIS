@@ -9,12 +9,11 @@ import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { QueryError } from '@/components/QueryError'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ArrowRight, Clock, GripVertical, CreditCard, Receipt, CalendarDays, Megaphone, Bell, AlertTriangle } from 'lucide-react'
+import { ArrowRight, Clock, GripVertical, CreditCard, CalendarDays, Megaphone, Bell, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { dashboardApi } from '@/api/dashboard'
 import { approvalsApi } from '@/api/approvals'
 import { statementsApi } from '@/api/statements'
-import { efacturaApi } from '@/api/efactura'
 import { hrApi } from '@/api/hr'
 import { marketingApi } from '@/api/marketing'
 import { notificationsApi } from '@/api/notifications'
@@ -140,38 +139,6 @@ export function StatementsSummaryWidget({ enabled }: { enabled: boolean }) {
               </p>
             </div>
           ))}
-        </div>
-      )}
-    </WidgetShell>
-  )
-}
-
-// ── e-Factura Status ──
-
-export function EFacturaWidget({ enabled }: { enabled: boolean }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ['dashboard', 'efacturaUnallocated'],
-    queryFn: efacturaApi.getUnallocatedCount,
-    staleTime: 60_000,
-    enabled,
-  })
-  const count = data ?? 0
-
-  return (
-    <WidgetShell
-      title="e-Factura"
-      icon={<Receipt className="h-4 w-4 text-muted-foreground" />}
-      linkTo="/app/efactura"
-      className={count > 0 ? 'border-amber-300 dark:border-amber-700' : undefined}
-    >
-      {isLoading ? (
-        <Skeleton className="h-16 w-full" />
-      ) : (
-        <div className="flex flex-col items-center py-4">
-          <p className={cn('text-3xl font-bold', count > 0 ? 'text-amber-600' : 'text-green-600')}>{count}</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            {count > 0 ? 'unallocated invoices to review' : 'All invoices allocated'}
-          </p>
         </div>
       )}
     </WidgetShell>
