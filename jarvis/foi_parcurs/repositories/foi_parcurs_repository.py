@@ -209,6 +209,23 @@ class FoiParcursRepository(BaseRepository):
         params = list(data.values()) + [contract_id]
         return self.execute(sql, tuple(params), returning=True)
 
+    def update_plan(self, contract_id: int, data: dict) -> dict:
+        """Edit a PLANNED draft's fields (date/time/vehicle/client/etc.) without
+        activating it — PLANNED-only, status unchanged."""
+        data = dict(data)
+        if 'departure_damage' in data and not isinstance(data['departure_damage'], str):
+            data['departure_damage'] = json.dumps(data['departure_damage'])
+        sets = ', '.join(f'{k} = %s' for k in data.keys())
+        sql = (
+            f'UPDATE foi_de_parcurs SET {sets}, updated_at = NOW() '
+            f"WHERE id = %s AND route_type = 'TD' AND status = 'PLANNED' RETURNING *"
+        )
+        params = list(data.values()) + [contract_id]
+        row = self.execute(sql, tuple(params), returning=True)
+        if row and row.get('id'):
+            return self.get_contract_by_id(row['id']) or row
+        return row
+
     def record_return(self, contract_id: int, data: dict) -> dict:
         """Update a TD contract with return data (km/fuel/damage/signatures) and mark COMPLETED.
 
@@ -222,7 +239,10 @@ class FoiParcursRepository(BaseRepository):
 
         sets = [f'{k} = %s' for k in data.keys()]
         params = list(data.values())
-        sets.append('return_datetime = COALESCE(%s, NOW())')
+        # TD datetimes are naive wall-clock (stored as digits, displayed as-is).
+        # The auto return time must therefore be the *local* wall-clock, not UTC
+        # NOW(), or a returned session shows ~3h behind its departure.
+        sets.append("return_datetime = COALESCE(%s::timestamptz, (NOW() AT TIME ZONE 'Europe/Bucharest')::timestamptz)")
         params.append(return_datetime)
 
         sets_sql = ', '.join(sets)

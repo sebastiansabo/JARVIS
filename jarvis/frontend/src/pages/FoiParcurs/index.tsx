@@ -78,6 +78,7 @@ import {
 } from '@/types/foiParcurs'
 import { VehicleOdometerHistory } from './VehicleOdometerHistory'
 import { sessionStatus, type SessionStatusKey } from './sessionStatus'
+import { naiveDate } from '@/lib/naiveDate'
 import { CalendarTab } from './CalendarTab'
 
 /** useState backed by localStorage — survives a page refresh. */
@@ -776,7 +777,7 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                     >
                       <TableCell className="text-xs whitespace-nowrap">
                         {c.departure_datetime
-                          ? new Date(c.departure_datetime).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' })
+                          ? naiveDate(c.departure_datetime)!.toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' })
                           : new Date(c.created_at).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </TableCell>
                       <TableCell>
@@ -806,7 +807,7 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                       <TableCell className="text-xs whitespace-nowrap">{c.km_start} - {c.km_end}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap">
                         {c.return_datetime
-                          ? new Date(c.return_datetime).toLocaleString('ro-RO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                          ? naiveDate(c.return_datetime)!.toLocaleString('ro-RO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
                           : '—'}
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -929,9 +930,9 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                                 <span className="text-muted-foreground">VIN</span>
                                 <span className="font-mono">{c.vin}</span>
                                 <span className="text-muted-foreground">Plecare</span>
-                                <span>{c.departure_datetime ? new Date(c.departure_datetime).toLocaleString('ro-RO') : '—'}</span>
+                                <span>{c.departure_datetime ? naiveDate(c.departure_datetime)!.toLocaleString('ro-RO') : '—'}</span>
                                 <span className="text-muted-foreground">Retur</span>
-                                <span>{c.return_datetime ? new Date(c.return_datetime).toLocaleString('ro-RO') : '—'}</span>
+                                <span>{c.return_datetime ? naiveDate(c.return_datetime)!.toLocaleString('ro-RO') : '—'}</span>
                                 <span className="text-muted-foreground">Itinerary</span>
                                 <span>{c.itinerary || '—'}</span>
                                 <span className="text-muted-foreground">Contract</span>

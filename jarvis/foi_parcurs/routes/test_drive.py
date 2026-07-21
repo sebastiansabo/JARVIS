@@ -257,6 +257,70 @@ def api_activate_test_drive(id):
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
 
+@foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>/plan', methods=['PUT'])
+@login_required
+def api_update_plan(id):
+    """Edit a PLANNED draft (date/time/vehicle/client/km/fuel) without activating.
+    PLANNED-only; status stays PLANNED, no signature/PDF."""
+    data = request.get_json(silent=True) or {}
+    try:
+        contract = _fp_repo.get_contract_by_id(id)
+        if not contract:
+            return jsonify({'success': False, 'error': 'Not found'}), 404
+        if contract.get('route_type') != 'TD' or contract.get('status') != 'PLANNED':
+            return jsonify({'success': False, 'error': 'Only PLANNED drafts can be edited'}), 409
+
+        update = {}
+        if data.get('company_id') is not None:
+            update['company_id'] = int(data['company_id'])
+        if data.get('vin'):
+            update['vin'] = data['vin']
+        if data.get('client_id') is not None:
+            cid = int(data['client_id'])
+            update['client_id'] = cid
+            crm = _crm_client_repo.get_by_id(cid) or {}
+            update['client_name'] = crm.get('display_name')
+            update['client_phone'] = crm.get('phone')
+        if data.get('registration_number') is not None:
+            update['registration_number'] = data.get('registration_number', '')
+        if data.get('advisor_name'):
+            update['advisor_name'] = data['advisor_name']
+        if data.get('departure_datetime'):
+            update['departure_datetime'] = data['departure_datetime']
+        if 'return_datetime' in data:
+            update['return_datetime'] = data.get('return_datetime')
+        if data.get('odometer_start') is not None:
+            update['km_start'] = int(data['odometer_start'])
+        if data.get('estimated_km') is not None:
+            update['distance_km'] = int(data['estimated_km'])
+        if data.get('fuel_gauge_start_level'):
+            level = data['fuel_gauge_start_level']
+            tank = int(data.get('fuel_tank_capacity_liters', contract.get('fuel_tank_capacity_liters') or 0))
+            try:
+                frac = parse_fuel_level(str(level))
+            except ValueError:
+                frac = 1.0
+            update['fuel_gauge_start_level'] = level
+            update['fuel_start_liters'] = round(frac * tank, 2)
+            if tank:
+                update['fuel_tank_capacity_liters'] = tank
+        if data.get('departure_damage') is not None:
+            if not isinstance(data['departure_damage'], list):
+                return jsonify({'success': False, 'error': 'departure_damage must be a list'}), 400
+            update['departure_damage'] = data['departure_damage']
+
+        if not update:
+            return jsonify({'success': False, 'error': 'No editable fields provided'}), 400
+
+        updated = _fp_repo.update_plan(id, update)
+        if not (updated and updated.get('id')):
+            return jsonify({'success': False, 'error': 'Contract is no longer a PLANNED draft'}), 409
+        return jsonify({'success': True, 'contract': updated})
+    except Exception as e:
+        logger.exception('Failed to edit planned test drive %s', id)
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+
 def _autosend_completed_contract(contract_id):
     """Email the finished contract PDF to the client + consilier once a TD is
     completed. Best-effort — recipients are deduped and failures are logged, never

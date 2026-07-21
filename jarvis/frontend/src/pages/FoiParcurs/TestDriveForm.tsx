@@ -260,13 +260,15 @@ export default function TestDriveForm() {
     clientSig: !clientSignature,
     gdpr: !gdprConsent,
     conditions: conditionsRequired && !conditionsAccepted,
+    // Return can't be before departure (naive "YYYY-MM-DDTHH:MM" → string compare).
+    returnInvalid: !!returnDatetime && !!departureDatetime && returnDatetime < departureDatetime,
   }
   const formValid = !Object.values(missing).some(Boolean)
   // A PLANNED draft defers signature/GDPR/license to activation — mirrors the
   // backend's `required` list for status:'PLANNED' (no client_signature/gdpr_consent).
   const draftValid = !(
     missing.company || missing.vehicle || missing.client || missing.departure ||
-    missing.odometer || missing.estimated || missing.fuel || missing.advisor
+    missing.odometer || missing.estimated || missing.fuel || missing.advisor || missing.returnInvalid
   )
   // Activating a PLANNED draft only needs the deferred client signature on top of
   // the draft fields — the activate endpoint requires client_signature, defaults
@@ -613,7 +615,8 @@ export default function TestDriveForm() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Data sosirii (estimată)</Label>
-              <Input type="datetime-local" value={returnDatetime} onChange={(e) => setReturnDatetime(e.target.value)} />
+              <Input type="datetime-local" value={returnDatetime} min={departureDatetime || undefined} onChange={(e) => setReturnDatetime(e.target.value)} className={invalidRing(missing.returnInvalid)} />
+              {attempted && missing.returnInvalid && <p className="text-xs text-destructive">Data sosirii nu poate fi înainte de plecare.</p>}
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
