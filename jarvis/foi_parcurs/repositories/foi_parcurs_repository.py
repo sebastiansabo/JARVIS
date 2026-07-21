@@ -22,6 +22,26 @@ _TD_STATUS_SQL = (
 )
 
 
+# Lean column set for the LIST endpoint — every scalar the sessions/contracts/
+# calendar views render, but NONE of the heavy base64/JSON blobs (signatures,
+# driver-license photo, damage-with-photos, general-conditions text) which add
+# ~155 kB/row. The list never displays those; the detail endpoint
+# (get_contract_by_id) keeps them for the form/PDF. client_name/phone are
+# replaced by the COALESCE aliases, so they're omitted here.
+_LIST_COLUMNS = (
+    'fp.id, fp.contract_id, fp.batch_id, fp.vin, fp.client_id, fp.company_id, '
+    'fp.year, fp.month, fp.route_type, fp.slot_number, fp.km_start, fp.km_end, '
+    'fp.distance_km, fp.fuel_tank_capacity_liters, fp.fuel_gauge_start_level, '
+    'fp.fuel_gauge_end_level, fp.fuel_start_liters, fp.fuel_end_liters, '
+    'fp.fuel_consumed_liters, fp.itinerary, fp.advisor_name, fp.status, '
+    'fp.created_at, fp.updated_at, fp.registration_number, fp.departure_datetime, '
+    'fp.return_datetime, fp.returned_at, fp.return_notes, fp.source, '
+    'fp.driver_license_number, fp.driver_license_expiry, fp.gdpr_consent, '
+    'fp.inspection_acceptance, fp.inspection_id, fp.general_conditions_accepted, '
+    'fp.general_conditions_accepted_at, fp.pdf_legal_path, fp.pdf_custom_path'
+)
+
+
 class FoiParcursRepository(BaseRepository):
 
     def create_contract(self, data: dict) -> dict:
@@ -43,11 +63,17 @@ class FoiParcursRepository(BaseRepository):
     def get_contracts(self, vin=None, company_id=None, status=None,
                       batch_id=None, page=1, per_page=25,
                       sort_by='created_at', sort_dir='DESC',
-                      date_from=None, date_to=None, route_type=None):
+                      date_from=None, date_to=None, route_type=None,
+                      lean=False):
         """Paginated list with optional filters. Returns (rows, total).
 
         date_from/date_to filter on the drive date (departure_datetime, falling
-        back to created_at); date_to is inclusive of the whole day."""
+        back to created_at); date_to is inclusive of the whole day.
+
+        `lean=True` selects only the light columns (_LIST_COLUMNS) — the list
+        views never render the base64 blobs, so this drops ~155 kB/row of
+        payload. Callers that need the full row (e.g. PDF re-generation for the
+        ZIP export) leave lean=False."""
         allowed_sort = {'created_at', 'contract_id', 'vin', 'km_start', 'km_end',
                         'route_type', 'distance_km', 'status', 'batch_id'}
         if sort_by not in allowed_sort:
@@ -90,8 +116,9 @@ class FoiParcursRepository(BaseRepository):
         total = count_row['total'] if count_row else 0
 
         offset = (page - 1) * per_page
+        base_cols = _LIST_COLUMNS if lean else 'fp.*'
         data_sql = (
-            f'SELECT fp.*, '
+            f'SELECT {base_cols}, '
             f'COALESCE(fp.client_name, c.name) AS client_name, '
             f'COALESCE(fp.client_phone, c.phone) AS client_phone, '
             f'co.company AS company_name, '
