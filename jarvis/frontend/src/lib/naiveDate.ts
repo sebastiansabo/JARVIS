@@ -11,10 +11,13 @@
  *  to local normally.
  */
 export function naiveDate(iso: string | null | undefined): Date | null {
-  if (!iso) return null
-  const s = String(iso)
-    .replace(' ', 'T')
-    .replace(/(?:Z|[+-]\d{2}(?::?\d{2})?)$/, '') // strip Z / +HH / +HHMM / +HH:MM
+  let s = String(iso ?? '').replace(' ', 'T')
+  // Strip the zone only from the time part (after 'T'), so a date-only value
+  // like "2026-08-02" is never mangled (its trailing "-02" is not an offset).
+  const t = s.indexOf('T')
+  if (t >= 0) {
+    s = s.slice(0, t + 1) + s.slice(t + 1).replace(/(?:Z|[+-]\d{2}(?::?\d{2})?)$/, '')
+  }
   const d = new Date(s)
   return Number.isNaN(d.getTime()) ? null : d
 }
