@@ -754,3 +754,50 @@ class TestSupplierTypeRepository:
         repo = SupplierTypeRepository()
         result = repo.delete(1)
         assert result is True
+
+
+class TestUnallocatedLifecycle:
+
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_soft_delete_old_unallocated(self, mock_get_db, mock_get_cursor, mock_release):
+        mock_conn, mock_cursor = _mock_db()
+        mock_get_db.return_value = mock_conn
+        mock_get_cursor.return_value = mock_cursor
+        mock_cursor.rowcount = 7
+
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository
+        repo = EFacturaInvoiceRepository()
+        count = repo.soft_delete_old_unallocated(days=10)
+
+        assert count == 7
+        sql = mock_cursor.execute.call_args[0][0]
+        assert 'UPDATE efactura_invoices' in sql
+        assert 'SET deleted_at = NOW()' in sql
+        assert 'jarvis_invoice_id IS NULL' in sql
+        assert 'ignored = FALSE' in sql
+        assert 'deleted_at IS NULL' in sql
+        assert 'created_at <' in sql
+        mock_conn.commit.assert_called()
+
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_purge_binned_old(self, mock_get_db, mock_get_cursor, mock_release):
+        mock_conn, mock_cursor = _mock_db()
+        mock_get_db.return_value = mock_conn
+        mock_get_cursor.return_value = mock_cursor
+        mock_cursor.rowcount = 3
+
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository
+        repo = EFacturaInvoiceRepository()
+        count = repo.purge_binned_old(days=10)
+
+        assert count == 3
+        sql = mock_cursor.execute.call_args[0][0]
+        assert 'DELETE FROM efactura_invoices' in sql
+        assert 'jarvis_invoice_id IS NULL' in sql
+        assert 'deleted_at IS NOT NULL' in sql
+        assert 'deleted_at <' in sql
+        mock_conn.commit.assert_called()
