@@ -169,18 +169,27 @@ def api_create_contract():
 @foi_parcurs_bp.route('/api/foi-parcurs/contracts', methods=['GET'])
 @login_required
 def api_list_contracts():
-    """List contracts with pagination and filters."""
+    """List contracts with pagination + server-side filters."""
     vin = request.args.get('vin')
     company_id = request.args.get('company_id', type=int)
+    status = (request.args.get('status') or '').strip() or None
+    route_type = (request.args.get('route_type') or '').strip() or None
+    date_from = (request.args.get('date_from') or '').strip() or None
+    date_to = (request.args.get('date_to') or '').strip() or None
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 25, type=int)
     sort_by = request.args.get('sort_by', 'created_at')
     sort_dir = request.args.get('sort_dir', 'DESC')
 
-    per_page = min(per_page, 100)  # cap
+    # Rows are lean (~1 kB each), so a generous cap is safe and lets the client
+    # pull a whole company's history in one page; push filters server-side to
+    # keep it bounded as data grows.
+    per_page = min(max(per_page, 1), 2000)
 
     contracts, total = _fp_repo.get_contracts(
         vin=vin, company_id=company_id,
+        status=status, route_type=route_type,
+        date_from=date_from, date_to=date_to,
         page=page, per_page=per_page,
         sort_by=sort_by, sort_dir=sort_dir,
         lean=True,  # list never renders the base64 blobs — drop ~155 kB/row
