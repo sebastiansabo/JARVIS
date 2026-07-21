@@ -16,6 +16,7 @@ import {
 import { foiParcursApi } from '@/api/foiParcurs'
 import type { FoiContract } from '@/types/foiParcurs'
 import { sessionStatus } from './sessionStatus'
+import { naiveDate } from '@/lib/naiveDate'
 
 const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mie', 'Joi', 'Vin', 'Sâm', 'Dum']
 
@@ -77,7 +78,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
   const byDay = useMemo(() => {
     const map = new Map<string, FoiContract[]>()
     for (const c of tdContracts) {
-      const key = dayKey(new Date(c.departure_datetime!))
+      const key = dayKey(naiveDate(c.departure_datetime)!)
       const list = map.get(key) ?? []
       list.push(c)
       map.set(key, list)
@@ -132,7 +133,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
                     const v = vinVehicle.get(c.vin)
                     const carLabel = v ? [v.brand || v.mark, v.model].filter(Boolean).join(' ') : c.vin.slice(0, 8)
                     const time = c.departure_datetime
-                      ? new Date(c.departure_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
+                      ? naiveDate(c.departure_datetime)!.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
                       : ''
                     return (
                       <button
@@ -175,8 +176,8 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
                   return v ? `${[v.brand || v.mark, v.model].filter(Boolean).join(' ')} — ${v.registration_number || v.vin}` : selected.vin
                 })()}
               </p>
-              <p><span className="text-muted-foreground">Plecare:</span> {selected.departure_datetime ? new Date(selected.departure_datetime).toLocaleString('ro-RO') : '—'}</p>
-              <p><span className="text-muted-foreground">Retur:</span> {selected.return_datetime ? new Date(selected.return_datetime).toLocaleString('ro-RO') : '—'}</p>
+              <p><span className="text-muted-foreground">Plecare:</span> {selected.departure_datetime ? naiveDate(selected.departure_datetime)!.toLocaleString('ro-RO') : '—'}</p>
+              <p><span className="text-muted-foreground">Retur:</span> {selected.return_datetime ? naiveDate(selected.return_datetime)!.toLocaleString('ro-RO') : '—'}</p>
             </div>
             <DialogFooter className="flex-col sm:flex-row gap-2">
               {selected.status === 'PLANNED' && (

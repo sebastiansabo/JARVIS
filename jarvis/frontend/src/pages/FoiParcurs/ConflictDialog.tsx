@@ -3,6 +3,12 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { AlertTriangle } from 'lucide-react'
 import type { VehicleConflict } from '@/types/foiParcurs'
+import { naiveDate } from '@/lib/naiveDate'
+
+const fmt = (iso: string | null | undefined) => {
+  const d = naiveDate(iso)
+  return d ? d.toLocaleString('ro-RO') : '—'
+}
 
 const STATUS_LABEL: Record<string, string> = {
   PLANNED: 'Planificat',
@@ -48,9 +54,9 @@ export function ConflictDialog({
                 </div>
                 <p className="text-xs text-muted-foreground">Consilier: {c.advisor_name || '—'}</p>
                 <p className="text-xs text-muted-foreground">
-                  {c.departure_datetime ? new Date(c.departure_datetime).toLocaleString('ro-RO') : '—'}
+                  {fmt(c.departure_datetime)}
                   {' → '}
-                  {c.return_datetime ? new Date(c.return_datetime).toLocaleString('ro-RO') : '—'}
+                  {fmt(c.return_datetime)}
                 </p>
               </div>
             ))}
