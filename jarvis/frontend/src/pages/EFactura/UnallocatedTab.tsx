@@ -221,6 +221,36 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
     onSuccess: invalidateAll,
   })
 
+  // ── Clear (per-company bulk soft-delete to Bin) ──────────
+  const [clearOpen, setClearOpen] = useState<{ ids: number[]; companyName: string } | null>(null)
+  const [clearLoading, setClearLoading] = useState(false)
+
+  const handleClearClick = async () => {
+    if (filters.company_id == null) return
+    setClearLoading(true)
+    try {
+      const ids = await efacturaApi.getUnallocatedIds({ ...filters, search: search || undefined })
+      if (ids.length === 0) return
+      const companyName = companies.find((c) => c.id === filters.company_id)?.name ?? 'this company'
+      setClearOpen({ ids, companyName })
+    } finally {
+      setClearLoading(false)
+    }
+  }
+
+  const clearMut = useMutation({
+    mutationFn: async (ids: number[]) => {
+      const CHUNK = 5000
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        await efacturaApi.bulkDelete(ids.slice(i, i + CHUNK))
+      }
+    },
+    onSuccess: () => {
+      setClearOpen(null)
+      invalidateAll()
+    },
+  })
+
   const updateOverridesMut = useMutation({
     mutationFn: ({ id, data }: {
       id: number
@@ -515,6 +545,16 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
               <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
             )}
             <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive"
+                disabled={filters.company_id == null || clearLoading}
+                onClick={handleClearClick}
+                title={filters.company_id == null ? 'Select a company to clear' : "Clear this company's unallocated list to the Bin"}
+              >
+                <Trash2 className="mr-1 h-3 w-3" /> Clear
+              </Button>
               {onShowHiddenChange && (
                 <div className="flex items-center gap-1.5">
                   <Switch id="show-hidden" checked={showHidden} onCheckedChange={onShowHiddenChange} />
@@ -841,6 +881,20 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
         }
         onConfirm={executeAction}
         destructive={confirmAction?.action === 'delete'}
+      />
+
+      <ConfirmDialog
+        open={clearOpen != null}
+        onOpenChange={(o) => { if (!o) setClearOpen(null) }}
+        title="Clear unallocated invoices"
+        description={
+          clearOpen
+            ? `Clear ${clearOpen.ids.length} unallocated invoice${clearOpen.ids.length === 1 ? '' : 's'} for ${clearOpen.companyName} to the Bin? You can restore them from the Bin.`
+            : ''
+        }
+        confirmLabel="Clear to Bin"
+        destructive
+        onConfirm={() => { if (clearOpen) clearMut.mutate(clearOpen.ids) }}
       />
 
       {/* Send to Module dialog with observer picker */}
