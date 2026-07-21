@@ -908,6 +908,44 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
             logger.error(f"Failed to bulk delete invoices: {e}")
             return 0
 
+    def soft_delete_old_unallocated(self, days: int = 10) -> int:
+        """Stage 1 of the auto-lifecycle: soft-delete (move to Bin) unallocated
+        invoices older than N days by import date. Recoverable from the Bin."""
+        try:
+            sql = """
+                UPDATE efactura_invoices
+                SET deleted_at = NOW(), updated_at = NOW()
+                WHERE jarvis_invoice_id IS NULL
+                  AND ignored = FALSE
+                  AND deleted_at IS NULL
+                  AND created_at < NOW() - INTERVAL '%s days'
+            """
+            count = self.execute(sql, [days])
+            logger.info(f"Auto-lifecycle: soft-deleted {count} unallocated invoices to Bin (>{days} days)")
+            return count
+        except Exception as e:
+            logger.error(f"Failed to soft-delete old unallocated invoices: {e}")
+            return 0
+
+    def purge_binned_old(self, days: int = 10) -> int:
+        """Stage 2 of the auto-lifecycle: permanently delete any unallocated
+        invoice that has been in the Bin (deleted_at set) longer than N days.
+        Applies to both auto-binned and manually-deleted invoices. Allocated
+        invoices are never purged."""
+        try:
+            sql = """
+                DELETE FROM efactura_invoices
+                WHERE jarvis_invoice_id IS NULL
+                  AND deleted_at IS NOT NULL
+                  AND deleted_at < NOW() - INTERVAL '%s days'
+            """
+            count = self.execute(sql, [days])
+            logger.info(f"Auto-lifecycle: purged {count} invoices from Bin (>{days} days)")
+            return count
+        except Exception as e:
+            logger.error(f"Failed to purge old binned invoices: {e}")
+            return 0
+
     def bulk_restore_from_bin(self, invoice_ids: List[int]) -> int:
         """Restore multiple invoices from the bin."""
         if not invoice_ids:

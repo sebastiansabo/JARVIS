@@ -1,5 +1,5 @@
 import {
-  FileText, Users, ClipboardCheck, CreditCard, Receipt,
+  FileText, Users, ClipboardCheck, CreditCard,
   CalendarDays, Megaphone, Bell,
 } from 'lucide-react'
 import type { User } from '@/types'
@@ -57,15 +57,6 @@ export const WIDGET_CATALOG: WidgetDef[] = [
     defaultLayout: { w: 2, h: 3, minW: 2, minH: 2 },
     defaultVisible: true,
     statCards: [{ key: 'pending_txns', title: 'Pending Txns', icon: CreditCard }],
-  },
-  {
-    id: 'efactura_status',
-    name: 'e-Factura',
-    icon: Receipt,
-    permission: 'can_access_efactura',
-    defaultLayout: { w: 2, h: 3, minW: 2, minH: 2 },
-    defaultVisible: true,
-    statCards: [{ key: 'unallocated_efactura', title: 'Unallocated e-Factura', icon: Receipt }],
   },
   {
     id: 'hr_summary',

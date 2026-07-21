@@ -21,7 +21,6 @@ import { CustomizeSheet } from './CustomizeSheet'
 import {
   AccountingInvoicesWidget,
   StatementsSummaryWidget,
-  EFacturaWidget,
   HrSummaryWidget,
   MarketingSummaryWidget,
   ApprovalsQueueWidget,
@@ -74,7 +73,6 @@ function repackLayouts(widgets: WidgetLayout[]): WidgetLayout[] {
 const WIDGET_COMPONENTS: Record<string, React.ComponentType<{ enabled: boolean }>> = {
   accounting_invoices: AccountingInvoicesWidget,
   statements_summary: StatementsSummaryWidget,
-  efactura_status: EFacturaWidget,
   hr_summary: HrSummaryWidget,
   marketing_summary: MarketingSummaryWidget,
   approvals_queue: ApprovalsQueueWidget,
