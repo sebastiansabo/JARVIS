@@ -239,7 +239,10 @@ class FoiParcursRepository(BaseRepository):
 
         sets = [f'{k} = %s' for k in data.keys()]
         params = list(data.values())
-        sets.append('return_datetime = COALESCE(%s, NOW())')
+        # TD datetimes are naive wall-clock (stored as digits, displayed as-is).
+        # The auto return time must therefore be the *local* wall-clock, not UTC
+        # NOW(), or a returned session shows ~3h behind its departure.
+        sets.append("return_datetime = COALESCE(%s::timestamptz, (NOW() AT TIME ZONE 'Europe/Bucharest')::timestamptz)")
         params.append(return_datetime)
 
         sets_sql = ', '.join(sets)
