@@ -241,3 +241,21 @@ def test_update_plan_refuses_non_planned(client, monkeypatch):
                         lambda i: {'id': i, 'route_type': 'TD', 'status': 'FILLED'})
     resp = client.put('/api/foi-parcurs/test-drive/101/plan', json={'departure_datetime': '2026-08-02T10:00:00'})
     assert resp.status_code == 409
+
+
+def test_list_route_passes_server_side_filters_and_lean(client, monkeypatch):
+    captured = {}
+    def fake_get_contracts(**kw):
+        captured.update(kw)
+        return [], 0
+    monkeypatch.setattr(td_routes._fp_repo, 'get_contracts', fake_get_contracts)
+    resp = client.get('/api/foi-parcurs/contracts?company_id=11&status=PLANNED'
+                      '&route_type=TD&date_from=2026-07-01&date_to=2026-07-31&per_page=1000')
+    assert resp.status_code == 200, resp.get_json()
+    assert captured['company_id'] == 11
+    assert captured['status'] == 'PLANNED'
+    assert captured['route_type'] == 'TD'
+    assert captured['date_from'] == '2026-07-01'
+    assert captured['date_to'] == '2026-07-31'
+    assert captured['lean'] is True
+    assert captured['per_page'] == 1000  # cap raised above the old 100
