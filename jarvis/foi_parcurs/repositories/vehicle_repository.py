@@ -8,26 +8,35 @@ logger = logging.getLogger('jarvis.foi_parcurs.vehicle_repository')
 
 class FPVehicleRepository(BaseRepository):
 
-    _SELECT = (
-        'SELECT v.*, c.company AS company_name '
+    # Lean list SELECT — every scalar the Driving Park table renders, but NONE of
+    # the base64 document uploads (insurance_doc/talon_doc/civ_doc/registration_doc/
+    # offer_doc) which are avg ~1.5 MB/row (offer PDF alone up to 7 MB). The list
+    # never shows them; the detail endpoint (get_by_id) returns the full row for
+    # the edit form / document view.
+    _LIST_SELECT = (
+        'SELECT v.id, v.vin, v.mark, v.brand, v.model, v.color, v.fuel_type, '
+        'v.fuel_tank_capacity_liters, v.battery_capacity_kwh, v.odometer_km, '
+        'v.company_id, v.car_id, v.registration_number, v.is_active, '
+        'v.created_at, v.updated_at, v.vignette_valid_until, v.itp_valid_until, '
+        'v.insurance_valid_until, c.company AS company_name '
         'FROM fp_vehicles v '
         'LEFT JOIN companies c ON c.id = v.company_id'
     )
 
     def get_all(self, active_only=True):
-        """Get all vehicles, optionally filtered by active status."""
+        """Get all vehicles (lean — no document blobs), optionally active-only."""
         if active_only:
             return self.query_all(
-                f'{self._SELECT} WHERE v.is_active = TRUE ORDER BY v.mark, v.model, v.vin'
+                f'{self._LIST_SELECT} WHERE v.is_active = TRUE ORDER BY v.mark, v.model, v.vin'
             )
-        return self.query_all(f'{self._SELECT} ORDER BY v.mark, v.model, v.vin')
+        return self.query_all(f'{self._LIST_SELECT} ORDER BY v.mark, v.model, v.vin')
 
     def get_by_vin(self, vin):
-        """Get a single vehicle by VIN."""
+        """Get a single vehicle by VIN (full row, incl. documents)."""
         return self.query_one('SELECT * FROM fp_vehicles WHERE vin = %s', (vin,))
 
     def get_by_id(self, vehicle_id):
-        """Get a single vehicle by ID."""
+        """Get a single vehicle by ID (full row, incl. documents)."""
         return self.query_one('SELECT * FROM fp_vehicles WHERE id = %s', (vehicle_id,))
 
     def create(self, data):

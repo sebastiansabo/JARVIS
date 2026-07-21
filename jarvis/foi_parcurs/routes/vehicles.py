@@ -34,6 +34,17 @@ def api_list_vehicles():
     return jsonify({'success': True, 'vehicles': vehicles})
 
 
+@foi_parcurs_bp.route('/api/foi-parcurs/vehicles/<int:vehicle_id>', methods=['GET'])
+@login_required
+def api_get_vehicle(vehicle_id):
+    """Full vehicle incl. the document blobs — used by the edit form. The list
+    endpoint is lean (no docs), so the form fetches them here on demand."""
+    vehicle = _vehicle_repo.get_by_id(vehicle_id)
+    if not vehicle:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    return jsonify({'success': True, 'vehicle': vehicle})
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/odometer-history', methods=['GET'])
 @login_required
 def api_odometer_history():
