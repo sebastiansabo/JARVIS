@@ -18,7 +18,14 @@ class FPVehicleRepository(BaseRepository):
         'v.fuel_tank_capacity_liters, v.battery_capacity_kwh, v.odometer_km, '
         'v.company_id, v.car_id, v.registration_number, v.is_active, '
         'v.created_at, v.updated_at, v.vignette_valid_until, v.itp_valid_until, '
-        'v.insurance_valid_until, c.company AS company_name '
+        'v.insurance_valid_until, c.company AS company_name, '
+        # Cheap doc-availability flags so clients (mobile Parc Auto) know which
+        # documents exist without pulling the base64 blobs.
+        '(v.insurance_doc IS NOT NULL) AS has_insurance, '
+        '(v.talon_doc IS NOT NULL) AS has_talon, '
+        '(v.civ_doc IS NOT NULL) AS has_civ, '
+        '(v.registration_doc IS NOT NULL) AS has_registration, '
+        '(v.offer_doc IS NOT NULL) AS has_offer '
         'FROM fp_vehicles v '
         'LEFT JOIN companies c ON c.id = v.company_id'
     )
