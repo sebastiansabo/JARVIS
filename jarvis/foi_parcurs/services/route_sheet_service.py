@@ -51,9 +51,10 @@ def _fmt_date(v) -> str:
     return dt.strftime('%d.%m.%Y') if dt else (str(v) if v else '')
 
 
-def _fmt_time(v) -> str:
+def _fmt_dt(v) -> str:
+    """Date + time, 'dd.mm.yyyy HH:MM' — '' when missing."""
     dt = _as_dt(v)
-    return dt.strftime('%H:%M') if dt else ''
+    return dt.strftime('%d.%m.%Y %H:%M') if dt else ''
 
 
 def aggregate_month(vin: str, year: int, month: int) -> dict:
@@ -84,19 +85,70 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
         except Exception:
             logger.warning('Prestator lookup failed for company_id=%s', company_id, exc_info=True)
 
+    # Traseu rule inputs from the Settings tab: TD max distance (Route KM Limits)
+    # + the manually-configured Comodat routes (Itinerary Routes).
+    td_max = 50
+    comodat_routes = []
+    if company_id:
+        try:
+            km_cfg = _fp_repo.query_one('SELECT td_km_max FROM fp_km_configs WHERE company_id=%s', (company_id,))
+            if km_cfg and km_cfg.get('td_km_max'):
+                td_max = int(km_cfg['td_km_max'])
+        except Exception:
+            logger.warning('td_km_max lookup failed', exc_info=True)
+        try:
+            rr = _fp_repo.query_all(
+                "SELECT itinerary FROM fp_routes WHERE company_id=%s AND route_type='Comodat' ORDER BY id",
+                (company_id,))
+            comodat_routes = [r['itinerary'] for r in (rr or []) if r.get('itinerary')]
+        except Exception:
+            logger.warning('comodat routes lookup failed', exc_info=True)
+
+    # Tied promo project per session (already set in the driving-session module).
+    project_by_id = {}
+    try:
+        pr = _fp_repo.query_all(
+            'SELECT fp.id, mp.name AS project FROM foi_de_parcurs fp '
+            'LEFT JOIN mkt_projects mp ON mp.id = fp.mkt_project_id WHERE fp.vin=%s', (vin,))
+        project_by_id = {r['id']: (r.get('project') or '') for r in (pr or [])}
+    except Exception:
+        logger.warning('mkt_project lookup failed', exc_info=True)
+
+    model_label = ' '.join(x for x in (veh.get('mark'), veh.get('model')) if x) or 'vehicul'
+    ci = 0  # rotates through the configured Comodat routes
     trips = []
     for i, c in enumerate(sessions):
+        dist = c.get('distance_km') or 0
+        is_td = dist <= td_max
+        project = project_by_id.get(c.get('id'), '')
+        if is_td:
+            traseu = f'Test Drive {model_label}'
+        elif not project:
+            # Comodat with no promo project → deterministic Settings route
+            base = 'Deplasare în interes de serviciu'
+            if comodat_routes:
+                traseu = f'{base} — {comodat_routes[ci % len(comodat_routes)]}'
+                ci += 1
+            else:
+                traseu = base
+        else:
+            # Comodat tied to a promo project — deterministic fallback; the AI
+            # rephrases this into the promovare framing for the PDF.
+            traseu = f'Deplasare în interes de serviciu — participare la {project}, în scop de promovare'
         trips.append({
             'id': i,
             'date': _fmt_date(c.get('departure_datetime') or c.get('created_at')),
-            'ora_plecare': _fmt_time(c.get('departure_datetime')),
-            'ora_sosire': _fmt_time(c.get('return_datetime')),
+            'plecare': _fmt_dt(c.get('departure_datetime')),
+            'sosire': _fmt_dt(c.get('return_datetime')),
             'km_start': c.get('km_start') or 0,
             'km_end': c.get('km_end') or 0,
-            'distance_km': c.get('distance_km') or 0,
+            'distance_km': dist,
+            'is_td': is_td,
+            'project': project,
             'route_type': c.get('route_type') or '',
             'driver': (c.get('client_name') or c.get('advisor_name') or '').strip(),
             'itinerary': (c.get('itinerary') or '').strip(),
+            'traseu': traseu,
             'fuel_consumed': float(c.get('fuel_consumed_liters') or 0),
         })
 
@@ -121,50 +173,54 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
     }
 
 
-# ── AI: compose the route/purpose prose + monthly summary (prose only) ──
+# ── AI: tie Comodat-with-promo-project sessions to their event + monthly summary ──
+# TD and project-less Comodat trips already have a deterministic `traseu` (from the
+# Settings rules); AI only writes the promovare framing for sessions tied to a
+# marketing project, plus the monthly summary. Returns {'trips': {id: text}, 'summary'}.
 
 def _ai_prose(data: dict) -> dict:
-    """Return {'trips': {id: text}, 'summary': text}. Falls back to stored
-    itineraries (and empty summary) on any AI/parse failure — never raises."""
-    trips_for_ai = [
-        {'id': t['id'], 'data': t['date'],
-         'km_parcursi': t['distance_km'], 'sofer': t['driver'], 'traseu_existent': t['itinerary']}
-        for t in data['trips']
-    ]
-    fallback = {'trips': {t['id']: (t['itinerary'] or '') for t in data['trips']}, 'summary': ''}
-    if not trips_for_ai:
+    """Fill traseu for Comodat sessions that have a promo project ('participare la
+    …, în scop de promovare') + a monthly summary. Never raises; falls back to the
+    deterministic traseu already on each trip."""
+    fallback = {'trips': {t['id']: t['traseu'] for t in data['trips']}, 'summary': ''}
+    if not data['trips']:
         return fallback
+    to_fill = [
+        {'id': t['id'], 'data': t['date'], 'km_parcursi': t['distance_km'],
+         'sofer': t['driver'], 'proiect_promovare': t['project']}
+        for t in data['trips'] if not t['is_td'] and t.get('project')
+    ]
 
     system = (
-        'Ești asistent pentru completarea foilor de parcurs auto (document legal românesc). '
-        'Nu inventa și nu modifica niciun număr, dată sau kilometraj. '
-        'Compune DOAR un text scurt de traseu/scop pentru fiecare sesiune de rulare '
-        '(localități/rută plauzibilă) și un rezumat lunar de 1-2 fraze. '
-        'Răspunde STRICT în JSON, fără alt text.'
+        'Ești asistent pentru foi de parcurs auto (document legal românesc). '
+        'Nu inventa și nu modifica numere, date sau kilometraj. '
+        'Pentru fiecare cursă de tip Comodat, compune un text scurt de traseu/scop care '
+        'leagă deplasarea de participarea la proiectul/evenimentul de promovare indicat '
+        '(ex: "Deplasare în interes de serviciu — participare la {eveniment}, în scop de promovare"). '
+        'Scrie și un rezumat lunar de 1-2 fraze. Răspunde STRICT în JSON, fără alt text.'
     )
     prompt = (
-        'Vehicul: {make} {model} ({vin}), nr. {reg}. Perioada: {period}.\n'
-        'Curse (folosește exact aceste id-uri):\n{trips}\n\n'
-        'Returnează JSON de forma: '
-        '{{"trips": {{"0": "traseu/scop", "1": "..."}}, "summary": "rezumat lunar"}}'
+        'Vehicul: {make} {model} ({vin}). Perioada: {period}.\n'
+        'Curse Comodat cu proiect de promovare (folosește exact aceste id-uri):\n{trips}\n\n'
+        'Returnează JSON: {{"trips": {{"<id>": "traseu/scop"}}, "summary": "rezumat lunar"}}'
     ).format(
         make=data['vehicle']['make'], model=data['vehicle']['model'], vin=data['vehicle']['vin'],
-        reg=data['vehicle']['registration_number'], period=data['period']['label'],
-        trips=json.dumps(trips_for_ai, ensure_ascii=False),
+        period=data['period']['label'], trips=json.dumps(to_fill, ensure_ascii=False),
     )
 
     try:
         from ai_agent.services.llm_client import ask
-        raw = ask(prompt, system=system, model=_MODEL, max_tokens=2000)
+        raw = ask(prompt, system=system, model=_MODEL, max_tokens=1500)
         match = re.search(r'\{.*\}', raw or '', re.DOTALL)
         parsed = json.loads(match.group(0)) if match else {}
+        ai_trips = parsed.get('trips', {}) or {}
         out_trips = {}
         for t in data['trips']:
-            txt = (parsed.get('trips', {}) or {}).get(str(t['id'])) or (parsed.get('trips', {}) or {}).get(t['id'])
-            out_trips[t['id']] = (txt or t['itinerary'] or '').strip()
+            ai_txt = ai_trips.get(str(t['id'])) or ai_trips.get(t['id'])
+            out_trips[t['id']] = (ai_txt or t['traseu'] or '').strip()
         return {'trips': out_trips, 'summary': (parsed.get('summary') or '').strip()}
     except Exception:
-        logger.warning('Route-sheet AI prose failed; using stored itineraries', exc_info=True)
+        logger.warning('Route-sheet AI prose failed; using deterministic traseu', exc_info=True)
         return fallback
 
 
@@ -195,7 +251,7 @@ def _skeleton_html(data: dict, prose: dict) -> str:
         if r['gap']:
             rows.append(
                 '<tr class="gap">'
-                f'<td>{e(r["date"])}</td>'
+                f'<td class="c">{e(r["date"])}</td>'
                 '<td class="c">—</td>'
                 '<td class="route">Gap kilometraj (nejustificat)</td>'
                 '<td>—</td>'
@@ -206,12 +262,11 @@ def _skeleton_html(data: dict, prose: dict) -> str:
             )
             continue
         t = r['trip']
-        ora = ' – '.join(x for x in (t.get('ora_plecare'), t.get('ora_sosire')) if x) or '—'
         rows.append(
             '<tr>'
-            f'<td>{e(t["date"])}</td>'
-            f'<td class="c">{e(ora)}</td>'
-            f'<td class="route">{e(prose["trips"].get(t["id"], "") or "—")}</td>'
+            f'<td class="c">{e(t.get("plecare") or "—")}</td>'
+            f'<td class="c">{e(t.get("sosire") or "—")}</td>'
+            f'<td class="route">{e(prose["trips"].get(t["id"], "") or t.get("traseu") or "—")}</td>'
             f'<td>{e(t["driver"] or "—")}</td>'
             f'<td class="n">{t["km_start"]:,}</td>'
             f'<td class="n">{t["km_end"]:,}</td>'
@@ -307,7 +362,7 @@ table.alim {{ flex:1; margin-top:0; }}
 </table>
 <table class="trips">
   <thead><tr>
-    <th>Data</th><th>Ora (plecare–sosire)</th><th>Traseu / Scop</th><th>Șofer</th>
+    <th>Plecare</th><th>Sosire</th><th>Traseu / Scop</th><th>Șofer</th>
     <th>KM start</th><th>KM end</th><th>KM parcurși</th>
   </tr></thead>
   <tbody>
@@ -450,7 +505,7 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
     ws['A5'] = f"Companie: {data['company']['name'] or '—'}"
     ws['A6'] = f"Perioada: {data['period']['label']}"
 
-    headers = ['Data', 'Ora (plecare–sosire)', 'Traseu / Scop', 'Șofer', 'KM start', 'KM end', 'KM parcurși']
+    headers = ['Plecare', 'Sosire', 'Traseu / Scop', 'Șofer', 'KM start', 'KM end', 'KM parcurși']
     hrow = 8
     for col, h in enumerate(headers, start=1):
         cell = ws.cell(row=hrow, column=col, value=h)
@@ -467,10 +522,9 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
             r += 1
             continue
         t = row['trip']
-        ora = ' – '.join(x for x in (t.get('ora_plecare'), t.get('ora_sosire')) if x)
-        ws.cell(row=r, column=1, value=t['date'])
-        ws.cell(row=r, column=2, value=ora)
-        ws.cell(row=r, column=3, value=t['itinerary'] or '')
+        ws.cell(row=r, column=1, value=t.get('plecare') or '')
+        ws.cell(row=r, column=2, value=t.get('sosire') or '')
+        ws.cell(row=r, column=3, value=t.get('traseu') or '')
         ws.cell(row=r, column=4, value=t['driver'] or '')
         ws.cell(row=r, column=5, value=t['km_start'])
         ws.cell(row=r, column=6, value=t['km_end'])
@@ -514,7 +568,7 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
     ws.cell(row=ar, column=1, value='Total alimentat').font = bold
     ws.cell(row=ar, column=3, value=round(alim_total, 2)).font = bold
 
-    widths = [22, 18, 40, 22, 12, 12, 12]
+    widths = [20, 20, 42, 22, 12, 12, 12]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[chr(64 + i)].width = w
 
