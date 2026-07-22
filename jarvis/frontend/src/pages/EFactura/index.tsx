@@ -7,6 +7,7 @@ import {
   RefreshCw,
   SlidersHorizontal,
   Tags,
+  Trash2,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -20,10 +21,12 @@ import { SyncDialog } from './SyncDialog'
 
 const UnallocatedTab = lazy(() => import('./UnallocatedTab'))
 const MappingsTab = lazy(() => import('./MappingsTab'))
+const BinTab = lazy(() => import('./BinTab'))
 
 const tabs = [
   { to: '/app/efactura/unallocated', label: 'Unallocated', icon: FileStack },
   { to: '/app/efactura/mappings', label: 'Mappings', icon: Tags },
+  { to: '/app/efactura/bin', label: 'Bin', icon: Trash2 },
 ] as const
 
 function TabLoader() {
@@ -58,6 +61,11 @@ export default function EFactura() {
   const { data: hiddenCount } = useQuery({
     queryKey: ['efactura-hidden-count'],
     queryFn: () => efacturaApi.getHiddenCount(),
+  })
+
+  const { data: binCount } = useQuery({
+    queryKey: ['efactura-bin-count'],
+    queryFn: () => efacturaApi.getBinCount(),
   })
 
   return (
@@ -106,6 +114,15 @@ export default function EFactura() {
                     <Tags className="h-4 w-4" />
                     Mappings
                   </TabsTrigger>
+                  <TabsTrigger value="bin">
+                    <Trash2 className="h-4 w-4" />
+                    Bin
+                    {(binCount ?? 0) > 0 && (
+                      <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-semibold text-muted-foreground">
+                        {binCount}
+                      </span>
+                    )}
+                  </TabsTrigger>
                 </TabsList>
               </Tabs>
             )}
@@ -131,6 +148,15 @@ export default function EFactura() {
                 <Tags className="h-4 w-4" />
                 Mappings
               </TabsTrigger>
+              <TabsTrigger value="bin">
+                <Trash2 className="h-4 w-4" />
+                Bin
+                {(binCount ?? 0) > 0 && (
+                  <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-semibold text-muted-foreground">
+                    {binCount}
+                  </span>
+                )}
+              </TabsTrigger>
             </TabsList>
           </MobileBottomTabs>
         </Tabs>
@@ -142,6 +168,7 @@ export default function EFactura() {
           <Route index element={<Navigate to="unallocated" replace />} />
           <Route path="unallocated" element={<UnallocatedTab showHidden={showHidden} onShowHiddenChange={setShowHidden} hiddenCount={hiddenCount ?? 0} showFilters={showFilters} search={search} />} />
           <Route path="mappings" element={<MappingsTab showFilters={showFilters} addTrigger={mappingAddTrigger} />} />
+          <Route path="bin" element={<BinTab search={search} />} />
           {/* Redirect removed/old routes */}
           <Route path="fetch" element={<Navigate to="/app/efactura/unallocated" replace />} />
           <Route path="invoices" element={<Navigate to="/app/efactura/unallocated" replace />} />
