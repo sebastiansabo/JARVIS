@@ -9,3 +9,4 @@ from . import test_drive        # noqa: F401
 from . import pdf               # noqa: F401
 from . import export            # noqa: F401
 from . import route_sheet       # noqa: F401
+from . import session_import    # noqa: F401
