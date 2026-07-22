@@ -3,7 +3,7 @@
 sheets for a period. Regenerating overwrites the stored copy."""
 from flask import Response
 from ._shared import foi_parcurs_bp, jsonify, request, login_required, current_user, logger
-from ..services.route_sheet_service import generate_and_store, render_xlsx, list_stored
+from ..services.route_sheet_service import generate_and_store, render_xlsx, list_stored, redistribute_gap
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/pdf', methods=['POST'])
@@ -51,6 +51,31 @@ def api_route_sheet_xlsx():
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers={'Content-Disposition': f'attachment; filename="foaie-parcurs-{vin}-{year}-{month:02d}.xlsx"'},
     )
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/redistribute-gap', methods=['POST'])
+@login_required
+def api_redistribute_gap():
+    """Split an odometer gap's mileage into up to 3 synthetic 'gap-fill'
+    sessions (date / driver / km range). They then appear as normal sessions and
+    the gap shrinks/closes on the next route-sheet regeneration."""
+    data = request.get_json(silent=True) or {}
+    vin = (data.get('vin') or '').strip()
+    year, month = data.get('year'), data.get('month')
+    contracts = data.get('contracts') or []
+    if not vin or not year or not month or not contracts:
+        return jsonify({'success': False, 'error': 'vin, year, month și minim un contract sunt obligatorii'}), 400
+    if len(contracts) > 3:
+        return jsonify({'success': False, 'error': 'Maxim 3 șoferi per gap'}), 400
+    try:
+        n = redistribute_gap(vin, int(year), int(month), contracts,
+                             user_name=(getattr(current_user, 'name', None) or getattr(current_user, 'email', None)))
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        logger.exception('Gap redistribute failed for %s %s-%s', vin, year, month)
+        return jsonify({'success': False, 'error': str(e)[:200]}), 500
+    return jsonify({'success': True, 'inserted': n})
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/route-sheets', methods=['GET'])
