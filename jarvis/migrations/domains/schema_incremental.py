@@ -2202,6 +2202,16 @@ def _create_schema_incremental_continued(conn, cursor):
             END IF;
         END $$;
     ''')
+
+    # ── Foi de Parcurs — optional link to a marketing project/campaign ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='mkt_project_id') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN mkt_project_id BIGINT;
+            END IF;
+        END $$;
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_mkt_project ON foi_de_parcurs(mkt_project_id)')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS fp_vehicle_inspections (
             id BIGSERIAL PRIMARY KEY,
