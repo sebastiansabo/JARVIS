@@ -558,3 +558,39 @@ def api_create_crm_client():
     except Exception as e:
         logger.exception('Failed to create CRM client from Test Drive form')
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/crm-clients/<int:id>', methods=['PATCH'])
+@login_required
+def api_update_crm_client(id):
+    """Login-gated partial update of a CRM client's contact details (phone/email)
+    from the mobile Test Drive form, so a consilier can complete a selected
+    client's missing contact info without full CRM access."""
+    data = request.get_json(silent=True) or {}
+    update_data = {}
+
+    if 'phone' in data:
+        phone = (data.get('phone') or '').strip()
+        phone_clean = phone.replace(' ', '').replace('-', '')
+        if not _PHONE_RE.match(phone_clean):
+            return jsonify({
+                'success': False,
+                'error': 'Invalid phone. Must start with 07, +40, or 004',
+            }), 400
+        update_data['phone'] = phone_clean
+
+    if 'email' in data:
+        update_data['email'] = (data.get('email') or '').strip()
+
+    if not update_data:
+        return jsonify({'success': False, 'error': 'phone or email required'}), 400
+
+    try:
+        client = _crm_client_repo.update(id, update_data)
+    except Exception as e:
+        logger.exception('Failed to update CRM client %s from Test Drive form', id)
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+    if client is None:
+        return jsonify({'success': False, 'error': 'Client not found'}), 404
+    return jsonify({'success': True, 'client': client})
