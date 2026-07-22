@@ -7,15 +7,26 @@ import foi_parcurs.routes.test_drive as td_mod
 
 
 class FakeRepo:
+    """In-memory stand-in. Client 1 has empty contact details; client 2 already
+    has a phone + email (used to prove fill-only / no-overwrite behaviour)."""
+
     def __init__(self):
-        self.calls = []
-        self.existing = {1}
+        self.clients = {
+            1: {'id': 1, 'phone': None, 'email': None},
+            2: {'id': 2, 'phone': '0700000000', 'email': 'set@already.ro'},
+        }
+        self.update_calls = []
+
+    def get_by_id(self, client_id):
+        return self.clients.get(client_id)
 
     def update(self, client_id, data):
-        self.calls.append((client_id, data))
-        if client_id not in self.existing:
+        self.update_calls.append((client_id, data))
+        row = self.clients.get(client_id)
+        if row is None:
             return None
-        return {'id': client_id, 'phone': data.get('phone'), 'email': data.get('email')}
+        row.update(data)
+        return row
 
 
 @pytest.fixture
@@ -30,7 +41,7 @@ def client(monkeypatch):
     return app.test_client()
 
 
-def test_update_phone_and_email(client):
+def test_fill_phone_and_email(client):
     r = client.patch('/api/foi-parcurs/crm-clients/1',
                      json={'phone': '0712 345-678', 'email': 'a@b.ro'})
     assert r.status_code == 200
@@ -40,26 +51,39 @@ def test_update_phone_and_email(client):
     assert body['client']['email'] == 'a@b.ro'
 
 
-def test_update_email_only(client):
+def test_fill_email_only(client):
     r = client.patch('/api/foi-parcurs/crm-clients/1', json={'email': 'x@y.ro'})
     assert r.status_code == 200
-    # phone must NOT be part of the update when not supplied
-    _, data = client.application._fake_repo.calls[-1]
+    _, data = client.application._fake_repo.update_calls[-1]
     assert 'phone' not in data
     assert data['email'] == 'x@y.ro'
 
 
-def test_update_invalid_phone(client):
+def test_invalid_phone_rejected(client):
     r = client.patch('/api/foi-parcurs/crm-clients/1', json={'phone': '12345'})
     assert r.status_code == 400
     assert 'Invalid phone' in r.get_json()['error']
 
 
-def test_update_empty_body(client):
+def test_empty_body_no_change(client):
     r = client.patch('/api/foi-parcurs/crm-clients/1', json={})
-    assert r.status_code == 400
+    assert r.status_code == 200
+    # Nothing was written.
+    assert client.application._fake_repo.update_calls == []
 
 
-def test_update_unknown_id(client):
+def test_unknown_id_404(client):
     r = client.patch('/api/foi-parcurs/crm-clients/999', json={'email': 'z@z.ro'})
     assert r.status_code == 404
+
+
+def test_existing_values_not_overwritten(client):
+    """IDOR guard: a client that already has phone + email is returned
+    unchanged and update() is never called."""
+    r = client.patch('/api/foi-parcurs/crm-clients/2',
+                     json={'phone': '0711111111', 'email': 'attacker@evil.ro'})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['client']['phone'] == '0700000000'   # original kept
+    assert body['client']['email'] == 'set@already.ro'
+    assert client.application._fake_repo.update_calls == []
