@@ -2264,6 +2264,7 @@ def _create_schema_incremental_continued(conn, cursor):
             ai_trips_json JSONB,
             norma_combustibil NUMERIC(6,2),
             alimentari JSONB DEFAULT '[]',
+            evenimente JSONB DEFAULT '[]',
             session_count INTEGER NOT NULL DEFAULT 0,
             total_km INTEGER NOT NULL DEFAULT 0,
             generated_by INTEGER,
@@ -2277,5 +2278,6 @@ def _create_schema_incremental_continued(conn, cursor):
     # fuel fields added after the table's initial release (idempotent for existing DBs)
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS norma_combustibil NUMERIC(6,2)")
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS alimentari JSONB DEFAULT '[]'")
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS evenimente JSONB DEFAULT '[]'")
 
     conn.commit()

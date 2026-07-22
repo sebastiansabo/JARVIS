@@ -30,12 +30,18 @@ export interface GapFillContract {
   km_end: number
 }
 
+export interface RouteSheetEvent {
+  name: string
+  date: string
+}
+
 export interface StoredRouteSheet {
   vin: string
   session_count: number
   total_km: number
   norma_combustibil: number | null
   alimentari: RouteSheetAlimentare[] | null
+  evenimente: RouteSheetEvent[] | null
   generated_by_name: string | null
   generated_at: string
 }
@@ -236,13 +242,13 @@ export const foiParcursApi = {
   // user-entered fuel data; regenerate rebuilds + overwrites the stored copy.
   generateRouteSheetPdf: async (
     vin: string, year: number, month: number,
-    opts: { regenerate?: boolean; norma?: number | null; alimentari?: RouteSheetAlimentare[] } = {},
+    opts: { regenerate?: boolean; norma?: number | null; alimentari?: RouteSheetAlimentare[]; events?: RouteSheetEvent[] } = {},
   ): Promise<Blob> => {
     const res = await fetch(`${BASE}/route-sheet/pdf`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ vin, year, month, regenerate: !!opts.regenerate, norma: opts.norma ?? null, alimentari: opts.alimentari ?? [] }),
+      body: JSON.stringify({ vin, year, month, regenerate: !!opts.regenerate, norma: opts.norma ?? null, alimentari: opts.alimentari ?? [], events: opts.events ?? [] }),
     })
     if (!res.ok) {
       let msg = 'Generarea foii de parcurs a eșuat'

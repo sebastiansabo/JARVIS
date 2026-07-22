@@ -70,7 +70,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DateField } from '@/components/ui/date-field'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { useAuthStore } from '@/stores/authStore'
-import { foiParcursApi, type StoredRouteSheet, type RouteSheetAlimentare } from '@/api/foiParcurs'
+import { foiParcursApi, type StoredRouteSheet, type RouteSheetAlimentare, type RouteSheetEvent } from '@/api/foiParcurs'
 import { hrApi } from '@/api/hr'
 import {
   FUEL_LEVEL_OPTIONS,
@@ -744,6 +744,7 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
 
 // ── Foaie de Parcurs — collect Normă/Alimentări, generate (AI), preview, download ──
 type AlimRow = { date: string; bon: string; liters: string }
+type EventRow = { name: string; date: string }
 
 function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
   vin: string | null; year: number; month: number; stored: StoredRouteSheet | null; onClose: () => void
@@ -753,6 +754,18 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
   const [error, setError] = useState('')
   const [norma, setNorma] = useState('')
   const [alim, setAlim] = useState<AlimRow[]>([])
+  const [events, setEvents] = useState<EventRow[]>([])
+
+  // Period bounds for "Din evenimente" (HR calendar events that fall in the month).
+  const periodMin = `${year}-${String(month).padStart(2, '0')}-01`
+  const periodMax = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
+  const { data: hrEvents } = useQuery({
+    queryKey: ['hr-events-for-routesheet'],
+    queryFn: () => hrApi.getEvents(),
+    enabled: !!vin,
+    staleTime: 60_000,
+  })
+  const periodEvents = (hrEvents ?? []).filter((e) => e.start_date <= periodMax && e.end_date >= periodMin)
 
   const load = useCallback(async (regenerate: boolean) => {
     if (!vin) return
@@ -761,8 +774,11 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
       const alimentari: RouteSheetAlimentare[] = alim
         .filter((a) => a.date || a.bon || a.liters)
         .map((a) => ({ date: a.date, bon: a.bon, liters: Number(a.liters || 0) }))
+      const evPayload: RouteSheetEvent[] = events
+        .filter((e) => e.name.trim())
+        .map((e) => ({ name: e.name.trim(), date: e.date }))
       const blob = await foiParcursApi.generateRouteSheetPdf(vin, year, month, {
-        regenerate, norma: norma ? Number(norma) : null, alimentari,
+        regenerate, norma: norma ? Number(norma) : null, alimentari, events: evPayload,
       })
       setUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
     } catch (e: any) {
@@ -770,7 +786,7 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
     } finally {
       setLoading(false)
     }
-  }, [vin, year, month, norma, alim])
+  }, [vin, year, month, norma, alim, events])
 
   // On open: prefill the form from the stored sheet, and if one exists show it.
   useEffect(() => {
@@ -779,6 +795,11 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
     setAlim(
       Array.isArray(stored?.alimentari)
         ? stored!.alimentari!.map((a) => ({ date: a.date || '', bon: a.bon || '', liters: String(a.liters ?? '') }))
+        : [],
+    )
+    setEvents(
+      Array.isArray(stored?.evenimente)
+        ? stored!.evenimente!.map((e) => ({ name: e.name || '', date: e.date || '' }))
         : [],
     )
     setError('')
@@ -791,6 +812,13 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
     setAlim((p) => p.map((a, idx) => (idx === i ? { ...a, [k]: v } : a)))
   const addRow = () => setAlim((p) => [...p, { date: '', bon: '', liters: '' }])
   const removeRow = (i: number) => setAlim((p) => p.filter((_, idx) => idx !== i))
+
+  const setEventRow = (i: number, k: keyof EventRow, v: string) =>
+    setEvents((p) => p.map((e, idx) => (idx === i ? { ...e, [k]: v } : e)))
+  const addEvent = () => setEvents((p) => [...p, { name: '', date: '' }])
+  const removeEvent = (i: number) => setEvents((p) => p.filter((_, idx) => idx !== i))
+  const importEvent = (name: string, date: string) =>
+    setEvents((p) => (p.some((e) => e.name === name && e.date === date) ? p : [...p, { name, date }]))
 
   const fileName = `foaie-parcurs-${vin}-${year}-${String(month).padStart(2, '0')}.pdf`
 
@@ -827,6 +855,46 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
                 </div>
               ))}
             </div>
+
+            {/* Evenimente — tie Comodat sessions to promo events (AI). Import from
+                the HR calendar (period) or add manually. */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Evenimente (promovare)</Label>
+                <div className="flex gap-1.5">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" variant="outline" size="sm" className="h-7" disabled={!periodEvents.length}
+                        title={periodEvents.length ? undefined : 'Niciun eveniment în această lună'}>
+                        <Search className="mr-1 h-3.5 w-3.5" /> Din evenimente
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="max-h-[240px] overflow-y-auto">
+                      {periodEvents.map((e) => (
+                        <DropdownMenuItem key={e.id} onClick={() => importEvent(e.name, e.start_date)}>
+                          <span className="truncate">{e.name}</span>
+                          <span className="ml-2 text-xs text-muted-foreground">{e.start_date}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button type="button" variant="outline" size="sm" className="h-7" onClick={addEvent}>
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Adaugă
+                  </Button>
+                </div>
+              </div>
+              {events.length === 0 && <p className="text-xs text-muted-foreground">Fără evenimente. AI leagă cursele Comodat de proiectul sesiunii; adaugă evenimente pentru context suplimentar.</p>}
+              {events.map((e, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <Input type="date" className="h-8 w-[118px] shrink-0 text-xs" value={e.date} onChange={(ev) => setEventRow(i, 'date', ev.target.value)} />
+                  <Input className="h-8 flex-1 min-w-0 text-xs" placeholder="Nume eveniment" value={e.name} onChange={(ev) => setEventRow(i, 'name', ev.target.value)} />
+                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeEvent(i)}>
+                    <XIcon className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
             <Button className="w-full" onClick={() => load(true)} disabled={loading}>
               <Sparkles className="mr-1.5 h-4 w-4" /> {url ? 'Regenerează' : 'Generează'}
             </Button>

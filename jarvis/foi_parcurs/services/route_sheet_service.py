@@ -185,27 +185,36 @@ def _ai_prose(data: dict) -> dict:
     fallback = {'trips': {t['id']: t['traseu'] for t in data['trips']}, 'summary': ''}
     if not data['trips']:
         return fallback
+    # Every Comodat session can be tied to its own project or one of the events.
     to_fill = [
         {'id': t['id'], 'data': t['date'], 'km_parcursi': t['distance_km'],
          'sofer': t['driver'], 'proiect_promovare': t['project']}
-        for t in data['trips'] if not t['is_td'] and t.get('project')
+        for t in data['trips'] if not t['is_td']
+    ]
+    events = [
+        {'nume': (e.get('name') or '').strip(), 'data': (e.get('date') or '').strip()}
+        for e in (data.get('events') or []) if (e.get('name') or '').strip()
     ]
 
     system = (
         'Ești asistent pentru foi de parcurs auto (document legal românesc). '
         'Nu inventa și nu modifica numere, date sau kilometraj. '
         'Pentru fiecare cursă de tip Comodat, compune un text scurt de traseu/scop care '
-        'leagă deplasarea de participarea la proiectul/evenimentul de promovare indicat '
+        'leagă deplasarea de participarea la un eveniment/proiect de promovare '
         '(ex: "Deplasare în interes de serviciu — participare la {eveniment}, în scop de promovare"). '
+        'Folosește proiect_promovare al cursei dacă există; altfel alege dintre evenimentele '
+        'furnizate pe cel mai apropiat ca dată. Dacă nu există niciunul, păstrează un scop generic. '
         'Scrie și un rezumat lunar de 1-2 fraze. Răspunde STRICT în JSON, fără alt text.'
     )
     prompt = (
         'Vehicul: {make} {model} ({vin}). Perioada: {period}.\n'
-        'Curse Comodat cu proiect de promovare (folosește exact aceste id-uri):\n{trips}\n\n'
+        'Evenimente de promovare disponibile: {events}\n'
+        'Curse Comodat (folosește exact aceste id-uri):\n{trips}\n\n'
         'Returnează JSON: {{"trips": {{"<id>": "traseu/scop"}}, "summary": "rezumat lunar"}}'
     ).format(
         make=data['vehicle']['make'], model=data['vehicle']['model'], vin=data['vehicle']['vin'],
-        period=data['period']['label'], trips=json.dumps(to_fill, ensure_ascii=False),
+        period=data['period']['label'], events=json.dumps(events, ensure_ascii=False),
+        trips=json.dumps(to_fill, ensure_ascii=False),
     )
 
     try:
@@ -470,7 +479,7 @@ def get_stored_pdf(vin: str, year: int, month: int) -> bytes | None:
 def list_stored(company_id: int | None, year: int, month: int) -> list:
     """Metadata for every stored sheet in a period (badge + modal prefill)."""
     return _store.query_all(
-        'SELECT vin, session_count, total_km, norma_combustibil, alimentari, '
+        'SELECT vin, session_count, total_km, norma_combustibil, alimentari, evenimente, '
         'generated_by_name, generated_at '
         'FROM fp_route_sheets WHERE (%s IS NULL OR company_id=%s) AND year=%s AND month=%s',
         (company_id, company_id, year, month),
@@ -484,19 +493,21 @@ def _save_sheet(data: dict, pdf_bytes: bytes, prose: dict, user_id, user_name) -
     _store.execute(
         '''INSERT INTO fp_route_sheets
              (vin, company_id, year, month, pdf_bytes, ai_summary, ai_trips_json,
-              norma_combustibil, alimentari, session_count, total_km,
+              norma_combustibil, alimentari, evenimente, session_count, total_km,
               generated_by, generated_by_name, updated_at)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
            ON CONFLICT (vin, year, month) DO UPDATE SET
              pdf_bytes=EXCLUDED.pdf_bytes, ai_summary=EXCLUDED.ai_summary,
              ai_trips_json=EXCLUDED.ai_trips_json, norma_combustibil=EXCLUDED.norma_combustibil,
-             alimentari=EXCLUDED.alimentari, session_count=EXCLUDED.session_count,
+             alimentari=EXCLUDED.alimentari, evenimente=EXCLUDED.evenimente,
+             session_count=EXCLUDED.session_count,
              total_km=EXCLUDED.total_km, generated_by=EXCLUDED.generated_by,
              generated_by_name=EXCLUDED.generated_by_name, updated_at=NOW()''',
         (data['vehicle']['vin'], data['company'].get('id'),
          data['period']['year'], data['period']['month'], Binary(pdf_bytes),
          prose.get('summary', ''), Json(prose.get('trips', {})),
          fuel.get('norma'), Json(fuel.get('alimentari') or []),
+         Json(data.get('events') or []),
          data['totals']['sessions'], data['totals']['km'], user_id, user_name),
     )
 
@@ -524,17 +535,19 @@ def _user_signature(user_id) -> str | None:
 
 
 def generate_and_store(vin: str, year: int, month: int, user_id=None, user_name=None,
-                       regenerate: bool = False, norma=None, alimentari=None) -> bytes:
+                       regenerate: bool = False, norma=None, alimentari=None, events=None) -> bytes:
     """Return the stored PDF (unless `regenerate`), else build it with AI +
     Playwright, persist it to fp_route_sheets, and return the bytes. `norma`
     (l/100km) and `alimentari` (list of {date, bon, liters}) are user-entered.
-    The generating user's stored signature is embedded in the 'Întocmit' box."""
+    `events` (list of {name, date}) are promo events the AI ties Comodat sessions
+    to. The generating user's stored signature is embedded in the 'Întocmit' box."""
     if not regenerate:
         cached = get_stored_pdf(vin, year, month)
         if cached is not None:
             return cached
     data = aggregate_month(vin, year, month)
     data['fuel'] = {'norma': norma, 'alimentari': alimentari or []}
+    data['events'] = events or []
     data['signatures'] = {'intocmit': _user_signature(user_id), 'intocmit_name': user_name or ''}
     prose = _ai_prose(data)
     pdf_bytes = _html_to_pdf_bytes(_skeleton_html(data, prose))
