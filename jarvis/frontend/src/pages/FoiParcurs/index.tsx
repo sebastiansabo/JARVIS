@@ -319,9 +319,10 @@ function ContractsTab({ companyId, brand }: { companyId: number; brand: string }
 // the odometer jumps between logged sessions (km the car moved without a logged
 // drive). Gap rows carry only the distance + the date the gap was spotted (the
 // session that revealed it) — no client/traseu — as a legal continuity marker.
+export type GapRow = { id: string; date: string; dateFrom: string; dateTo: string; kmStart: number; kmEnd: number; distance: number }
 type DetailRow =
   | { gap: false; session: FoiContract }
-  | { gap: true; id: string; date: string; kmStart: number; kmEnd: number; distance: number }
+  | ({ gap: true } & GapRow)
 
 function withGaps(sessions: FoiContract[]): DetailRow[] {
   const sorted = [...sessions].sort(
@@ -329,13 +330,18 @@ function withGaps(sessions: FoiContract[]): DetailRow[] {
   )
   const rows: DetailRow[] = []
   let prevEnd: number | null = null
+  let prevSession: FoiContract | null = null
   for (const c of sorted) {
     const start = c.km_start ?? 0
     if (prevEnd != null && start > prevEnd) {
-      rows.push({ gap: true, id: `gap-${c.id}`, date: c.created_at, kmStart: prevEnd, kmEnd: start, distance: start - prevEnd })
+      rows.push({
+        gap: true, id: `gap-${c.id}`, date: c.created_at,
+        dateFrom: prevSession?.created_at ?? c.created_at, dateTo: c.created_at,
+        kmStart: prevEnd, kmEnd: start, distance: start - prevEnd,
+      })
     }
     rows.push({ gap: false, session: c })
-    prevEnd = Math.max(prevEnd ?? 0, c.km_end ?? 0)
+    if (prevEnd == null || (c.km_end ?? 0) > prevEnd) { prevEnd = c.km_end ?? 0; prevSession = c }
   }
   return rows
 }
@@ -348,6 +354,7 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
   const queryClient = useQueryClient()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [previewVin, setPreviewVin] = useState<string | null>(null)
+  const [redistribute, setRedistribute] = useState<{ vin: string; gap: GapRow } | null>(null)
   const now = new Date()
   const [filterYear, setFilterYear] = useState<number>(now.getFullYear())
   const [filterMonth, setFilterMonth] = useState<number>(now.getMonth() + 1) // 0 = all months
@@ -553,7 +560,12 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
                                         <TableCell className="text-sm whitespace-nowrap font-medium">{row.distance} km</TableCell>
                                         <TableCell className="text-xs whitespace-nowrap">{row.kmStart} - {row.kmEnd}</TableCell>
                                         <TableCell><Badge variant="outline" className="text-xs">Gap</Badge></TableCell>
-                                        <TableCell className="text-right"><span className="text-muted-foreground text-xs">—</span></TableCell>
+                                        <TableCell className="text-right">
+                                          <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
+                                            onClick={() => setRedistribute({ vin: sheet.vin, gap: row })}>
+                                            Redistribuie
+                                          </Button>
+                                        </TableCell>
                                       </TableRow>
                                     )
                                   }
@@ -618,7 +630,115 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
           queryClient.invalidateQueries({ queryKey: ['fp-route-sheets'] })
         }}
       />
+      <GapRedistributeDialog
+        data={redistribute}
+        year={filterYear}
+        month={filterMonth}
+        onClose={(changed) => {
+          setRedistribute(null)
+          if (changed) {
+            queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+            queryClient.invalidateQueries({ queryKey: ['fp-route-sheets'] })
+          }
+        }}
+      />
     </div>
+  )
+}
+
+// ── Redistribute an odometer gap into up to 3 synthetic "gap-fill" sessions ──
+function GapRedistributeDialog({ data, year, month, onClose }: {
+  data: { vin: string; gap: GapRow } | null
+  year: number
+  month: number
+  onClose: (changed: boolean) => void
+}) {
+  type Row = { date: string; client_name: string; km_start: string; km_end: string }
+  const [rows, setRows] = useState<Row[]>([])
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const gap = data?.gap
+  const isoDay = (s: string) => (s ? new Date(s).toISOString().slice(0, 10) : '')
+  const dFrom = gap ? isoDay(gap.dateFrom) : ''
+  const dTo = gap ? isoDay(gap.dateTo) : ''
+
+  useEffect(() => {
+    if (!gap) return
+    // seed one row spanning the whole gap, dated at the upper bound
+    setRows([{ date: dTo || dFrom, client_name: '', km_start: String(gap.kmStart), km_end: String(gap.kmEnd) }])
+    setError('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.gap?.id])
+
+  const setRow = (i: number, k: keyof Row, v: string) =>
+    setRows((p) => p.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)))
+  const addRow = () => setRows((p) => (p.length >= 3 ? p : [...p, { date: dTo || dFrom, client_name: '', km_start: '', km_end: '' }]))
+  const removeRow = (i: number) => setRows((p) => p.filter((_, idx) => idx !== i))
+
+  const save = async () => {
+    if (!gap || !data) return
+    const contracts = rows
+      .filter((r) => r.km_start !== '' && r.km_end !== '')
+      .map((r) => ({ date: r.date, client_name: r.client_name.trim(), km_start: Number(r.km_start), km_end: Number(r.km_end) }))
+    if (!contracts.length) return setError('Adaugă cel puțin un rând cu KM.')
+    for (const c of contracts) {
+      if (c.km_end <= c.km_start) return setError('KM end trebuie să fie mai mare decât KM start.')
+      if (c.km_start < gap.kmStart || c.km_end > gap.kmEnd) return setError(`KM trebuie să fie în intervalul gap-ului (${gap.kmStart} – ${gap.kmEnd}).`)
+    }
+    setSaving(true); setError('')
+    try {
+      await foiParcursApi.redistributeGap(data.vin, year, month, contracts)
+      onClose(true)
+    } catch (e: any) {
+      setError(e?.data?.error || e?.message || 'Redistribuirea a eșuat')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={!!data} onOpenChange={(o) => { if (!o) onClose(false) }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Redistribuie gap</DialogTitle>
+        </DialogHeader>
+        {gap && (
+          <p className="text-sm text-muted-foreground">
+            {gap.distance} km nejustificați ({gap.kmStart} → {gap.kmEnd}) · între {dFrom} și {dTo} · max 3 șoferi
+          </p>
+        )}
+        <div className="space-y-2">
+          <div className="grid grid-cols-[130px_1fr_90px_90px_32px] gap-1.5 text-xs text-muted-foreground px-0.5">
+            <span>Data</span><span>Client (Șofer)</span><span>KM start</span><span>KM end</span><span />
+          </div>
+          {rows.map((r, i) => (
+            <div key={i} className="grid grid-cols-[130px_1fr_90px_90px_32px] gap-1.5 items-center">
+              <Input type="date" min={dFrom} max={dTo} className="h-8 text-xs" value={r.date} onChange={(e) => setRow(i, 'date', e.target.value)} />
+              <Input className="h-8 text-xs" placeholder="Nume șofer" value={r.client_name} onChange={(e) => setRow(i, 'client_name', e.target.value)} />
+              <Input type="number" className="h-8 text-xs" value={r.km_start} onChange={(e) => setRow(i, 'km_start', e.target.value)} />
+              <Input type="number" className="h-8 text-xs" value={r.km_end} onChange={(e) => setRow(i, 'km_end', e.target.value)} />
+              <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeRow(i)}>
+                <XIcon className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+          {rows.length < 3 && (
+            <Button type="button" variant="outline" size="sm" className="h-7" onClick={addRow}>
+              <Plus className="mr-1 h-3.5 w-3.5" /> Adaugă șofer
+            </Button>
+          )}
+        </div>
+        {error && <div className="text-sm text-red-600">{error}</div>}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onClose(false)} disabled={saving}>Anulează</Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+            Salvează
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

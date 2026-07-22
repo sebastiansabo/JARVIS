@@ -398,6 +398,64 @@ from core.base_repository import BaseRepository  # noqa: E402
 _store = BaseRepository()
 
 
+def redistribute_gap(vin: str, year: int, month: int, items: list, user_name=None) -> int:
+    """Insert up to 3 synthetic 'gap-fill' sessions that redistribute an
+    odometer gap's mileage across drivers. Each item: {date, client_name,
+    km_start, km_end}. Returns the number inserted. Idempotent per km range."""
+    items = [it for it in (items or []) if it][:3]
+    if not items:
+        return 0
+
+    veh = _veh_repo.get_by_vin(vin) or {}
+    ref = _fp_repo.query_one('SELECT company_id, registration_number FROM foi_de_parcurs WHERE vin=%s LIMIT 1', (vin,)) or {}
+    company_id = ref.get('company_id') or veh.get('company_id')
+    if not company_id:
+        raise ValueError('Company nu a putut fi determinată pentru acest VIN')
+    reg = ref.get('registration_number') or veh.get('registration_number') or ''
+    tank = veh.get('fuel_tank_capacity_liters') or 50
+
+    td_max = 50
+    try:
+        km_cfg = _fp_repo.query_one('SELECT td_km_max FROM fp_km_configs WHERE company_id=%s', (company_id,))
+        if km_cfg and km_cfg.get('td_km_max'):
+            td_max = int(km_cfg['td_km_max'])
+    except Exception:
+        logger.warning('td_km_max lookup failed', exc_info=True)
+
+    inserted = 0
+    for it in items:
+        try:
+            ks, ke = int(it['km_start']), int(it['km_end'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if ke <= ks:
+            continue
+        dist = ke - ks
+        client = (it.get('client_name') or '').strip()
+        date = (it.get('date') or '').strip()
+        dep = f'{date} 10:00:00' if date else None
+        route_type = 'TD' if dist <= td_max else 'Comodat'
+        cid = f'GAPFILL_{re.sub(r"[^A-Za-z0-9]", "", vin)[-6:]}_{year}{month:02d}_{ks}_{ke}'
+        _fp_repo.execute(
+            '''INSERT INTO foi_de_parcurs
+                 (contract_id, vin, company_id, year, month, route_type, slot_number,
+                  km_start, km_end, distance_km, registration_number,
+                  fuel_tank_capacity_liters, fuel_gauge_start_level, fuel_gauge_end_level,
+                  fuel_start_liters, fuel_end_liters, fuel_consumed_liters,
+                  status, advisor_name, client_name, itinerary, departure_datetime, source)
+               VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s,%s,'1','1',0,0,0,
+                       'COMPLETED',%s,%s,'',%s,'gap-fill')
+               ON CONFLICT (contract_id) DO UPDATE SET
+                 km_start=EXCLUDED.km_start, km_end=EXCLUDED.km_end,
+                 distance_km=EXCLUDED.distance_km, client_name=EXCLUDED.client_name,
+                 departure_datetime=EXCLUDED.departure_datetime, route_type=EXCLUDED.route_type''',
+            (cid, vin, company_id, year, month, route_type, ks, ke, dist, reg, tank,
+             (user_name or 'Redistribuire'), client, dep),
+        )
+        inserted += 1
+    return inserted
+
+
 def get_stored_pdf(vin: str, year: int, month: int) -> bytes | None:
     """The stored PDF bytes for a sheet, or None if not generated yet."""
     row = _store.query_one(

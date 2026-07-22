@@ -23,6 +23,13 @@ export interface RouteSheetAlimentare {
   liters: number
 }
 
+export interface GapFillContract {
+  date: string
+  client_name: string
+  km_start: number
+  km_end: number
+}
+
 export interface StoredRouteSheet {
   vin: string
   session_count: number
@@ -252,6 +259,12 @@ export const foiParcursApi = {
   listRouteSheets: (companyId: number, year: number, month: number) =>
     api.get<{ success: boolean; sheets: StoredRouteSheet[] }>(
       `${BASE}/route-sheets${qs({ company_id: companyId || undefined, year, month })}`,
+    ),
+
+  // Redistribute an odometer gap into up to 3 synthetic "gap-fill" sessions.
+  redistributeGap: (vin: string, year: number, month: number, contracts: GapFillContract[]) =>
+    api.post<{ success: boolean; inserted: number }>(
+      `${BASE}/route-sheet/redistribute-gap`, { vin, year, month, contracts },
     ),
 
   // ── Export (session list xlsx / contract PDFs zip) ──
