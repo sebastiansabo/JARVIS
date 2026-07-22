@@ -249,6 +249,20 @@ def _skeleton_html(data: dict, prose: dict) -> str:
     </tbody>
   </table>
 </div>"""
+
+    # Signatures — Întocmit = generating user's stored signature (image);
+    # Aprobat = blank line (superior signs manually).
+    sigs = data.get('signatures', {}) or {}
+    intocmit_img = (f'<img class="sig-img" src="{sigs["intocmit"]}" />'
+                    if sigs.get('intocmit') else '<div class="sig-ph"></div>')
+    intocmit_name = f' — {e(sigs["intocmit_name"])}' if sigs.get('intocmit_name') else ''
+    sig_block = (
+        '<div class="sign">'
+        f'<div class="box">{intocmit_img}<div class="line">Întocmit{intocmit_name}</div></div>'
+        '<div class="box"><div class="sig-ph"></div><div class="line">Aprobat</div></div>'
+        '</div>'
+    )
+
     return f"""<!doctype html><html lang="ro"><head><meta charset="utf-8"><style>
 * {{ box-sizing: border-box; }}
 body {{ font-family: 'Helvetica Neue', Arial, sans-serif; color:#1a1a2e; font-size:11px; margin:0; }}
@@ -275,8 +289,11 @@ tr.gap td {{ background:#fff7ed; font-style:italic; color:#9a6a00; }}
 .fuel .kv td {{ padding:3px 8px; font-size:10px; border:0.5px solid #cfcfd8; }}
 .fuel .kv td.k {{ color:#555; background:#f7f7fa; }}
 table.alim {{ flex:1; margin-top:0; }}
-.sign {{ margin-top:34px; display:flex; justify-content:space-between; font-size:10px; }}
-.sign .box {{ width:30%; border-top:0.5px solid #999; padding-top:4px; text-align:center; color:#555; }}
+.sign {{ margin-top:30px; display:flex; justify-content:space-around; font-size:10px; }}
+.sign .box {{ width:42%; text-align:center; }}
+.sign .sig-img {{ height:44px; max-width:80%; object-fit:contain; margin-bottom:2px; }}
+.sign .sig-ph {{ height:44px; }}
+.sign .line {{ border-top:0.5px solid #999; padding-top:4px; color:#555; }}
 </style></head><body><div class="doc">
 <h1>Foaie de Parcurs</h1>
 <p class="sub">{e(v['make'])} {e(v['model'])} • {e(v['vin'])} • {e(data['period']['label'])}</p>
@@ -301,7 +318,7 @@ table.alim {{ flex:1; margin-top:0; }}
 </table>
 {fuel_block}
 {summary_html}
-<div class="sign"><div class="box">Conducător auto</div><div class="box">Întocmit</div><div class="box">Aprobat</div></div>
+{sig_block}
 </div></body></html>"""
 
 
@@ -371,17 +388,30 @@ def _save_sheet(data: dict, pdf_bytes: bytes, prose: dict, user_id, user_name) -
     )
 
 
+def _user_signature(user_id) -> str | None:
+    """The 'Întocmit' user's stored signature (base64 PNG / data URL) for the PDF."""
+    if not user_id:
+        return None
+    row = _store.query_one('SELECT signature FROM users WHERE id=%s', (user_id,))
+    sig = (row or {}).get('signature')
+    if not sig:
+        return None
+    return sig if str(sig).startswith('data:') else f'data:image/png;base64,{sig}'
+
+
 def generate_and_store(vin: str, year: int, month: int, user_id=None, user_name=None,
                        regenerate: bool = False, norma=None, alimentari=None) -> bytes:
     """Return the stored PDF (unless `regenerate`), else build it with AI +
     Playwright, persist it to fp_route_sheets, and return the bytes. `norma`
-    (l/100km) and `alimentari` (list of {date, bon, liters}) are user-entered."""
+    (l/100km) and `alimentari` (list of {date, bon, liters}) are user-entered.
+    The generating user's stored signature is embedded in the 'Întocmit' box."""
     if not regenerate:
         cached = get_stored_pdf(vin, year, month)
         if cached is not None:
             return cached
     data = aggregate_month(vin, year, month)
     data['fuel'] = {'norma': norma, 'alimentari': alimentari or []}
+    data['signatures'] = {'intocmit': _user_signature(user_id), 'intocmit_name': user_name or ''}
     prose = _ai_prose(data)
     pdf_bytes = _html_to_pdf_bytes(_skeleton_html(data, prose))
     _save_sheet(data, pdf_bytes, prose, user_id, user_name)

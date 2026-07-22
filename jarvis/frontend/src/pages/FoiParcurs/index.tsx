@@ -676,12 +676,12 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
 
   return (
     <Dialog open={!!vin} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
+      <DialogContent className="w-[95vw] max-w-[1120px] sm:max-w-[1120px] max-h-[92vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Foaie de parcurs — <span className="font-mono text-sm">{vin}</span></DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[320px_1fr] flex-1 overflow-hidden">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[380px_1fr] flex-1 overflow-hidden">
           {/* Left: user-entered fuel inputs */}
           <div className="space-y-3 overflow-y-auto pr-1">
             <div className="space-y-1.5">
@@ -698,9 +698,9 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
               {alim.length === 0 && <p className="text-xs text-muted-foreground">Nicio alimentare. Adaugă bonurile de combustibil.</p>}
               {alim.map((a, i) => (
                 <div key={i} className="flex items-center gap-1.5">
-                  <Input type="date" className="h-8 text-xs" value={a.date} onChange={(e) => setRow(i, 'date', e.target.value)} />
-                  <Input className="h-8 text-xs" placeholder="Bon" value={a.bon} onChange={(e) => setRow(i, 'bon', e.target.value)} />
-                  <Input type="number" step="0.01" className="h-8 w-20 text-xs" placeholder="Litri" value={a.liters} onChange={(e) => setRow(i, 'liters', e.target.value)} />
+                  <Input type="date" className="h-8 w-[118px] shrink-0 text-xs" value={a.date} onChange={(e) => setRow(i, 'date', e.target.value)} />
+                  <Input className="h-8 flex-1 min-w-0 text-xs" placeholder="Bon" value={a.bon} onChange={(e) => setRow(i, 'bon', e.target.value)} />
+                  <Input type="number" step="0.01" className="h-8 w-24 shrink-0 text-xs" placeholder="Litri" value={a.liters} onChange={(e) => setRow(i, 'liters', e.target.value)} />
                   <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeRow(i)}>
                     <XIcon className="h-3.5 w-3.5" />
                   </Button>
