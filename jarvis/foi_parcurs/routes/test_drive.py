@@ -563,9 +563,10 @@ def api_create_crm_client():
 @foi_parcurs_bp.route('/api/foi-parcurs/crm-clients/<int:id>', methods=['PATCH'])
 @login_required
 def api_update_crm_client(id):
-    """Login-gated partial update of a CRM client's contact details (phone/email)
-    from the mobile Test Drive form, so a consilier can complete a selected
-    client's missing contact info without full CRM access."""
+    """Login-gated partial update of a CRM client's contact details
+    (phone/email/driver_license_number) from the mobile Test Drive form, so a
+    consilier can complete a selected client's missing info without full CRM
+    access."""
     data = request.get_json(silent=True) or {}
 
     # Fill-only semantics: this endpoint is login-gated but NOT scoped to the
@@ -594,6 +595,11 @@ def api_update_crm_client(id):
         email = (data.get('email') or '').strip()
         if email:
             update_data['email'] = email
+
+    if 'driver_license_number' in data and not (existing.get('driver_license_number') or '').strip():
+        lic = (data.get('driver_license_number') or '').strip()
+        if lic:
+            update_data['driver_license_number'] = lic
 
     if not update_data:
         # Nothing to fill (fields already populated, or no valid input): return
