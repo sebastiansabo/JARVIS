@@ -24,10 +24,11 @@ import {
   Sparkles,
   MapPin,
   ChevronDown,
-  ChevronUp,
+  ChevronRight,
   Download,
   FileSpreadsheet,
   PlayCircle,
+  Loader2,
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -59,11 +60,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DateField } from '@/components/ui/date-field'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { useAuthStore } from '@/stores/authStore'
-import { foiParcursApi } from '@/api/foiParcurs'
+import { foiParcursApi, type StoredRouteSheet, type RouteSheetAlimentare } from '@/api/foiParcurs'
 import { hrApi } from '@/api/hr'
 import {
   FUEL_LEVEL_OPTIONS,
@@ -200,20 +207,25 @@ type ContractStep = 'form' | 'preview' | 'saved'
 
 function ContractsTab({ companyId, brand }: { companyId: number; brand: string }) {
   const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
   const [step, setStep] = useState<ContractStep>('form')
   const [batchConfig, setBatchConfig] = useState<BatchConfig | null>(null)
   const [preview, setPreview] = useState<PreviewResponse | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
-  const handlePreviewReady = useCallback(
-    (config: BatchConfig, prev: PreviewResponse) => {
-      setBatchConfig(config)
-      setPreview(prev)
-      setStep('preview')
-    },
-    []
-  )
+  const resetWizard = useCallback(() => {
+    setStep('form')
+    setBatchConfig(null)
+    setPreview(null)
+    setSaveError('')
+  }, [])
+
+  const handlePreviewReady = useCallback((config: BatchConfig, prev: PreviewResponse) => {
+    setBatchConfig(config)
+    setPreview(prev)
+    setStep('preview')
+  }, [])
 
   const handleSaveBatch = async () => {
     if (!batchConfig || !preview) return
@@ -231,198 +243,460 @@ function ContractsTab({ companyId, brand }: { companyId: number; brand: string }
     }
   }
 
-  const handleReset = useCallback(() => {
-    setStep('form')
-    setBatchConfig(null)
-    setPreview(null)
-    setSaveError('')
-  }, [])
+  const openModal = () => { resetWizard(); setOpen(true) }
+  const handleOpenChange = (v: boolean) => { setOpen(v); if (!v) resetWizard() }
 
   return (
-    <div className="space-y-6">
-      {step !== 'form' && (
-        <div className="flex justify-end">
-          <Button variant="outline" size="sm" onClick={handleReset}>
-            <Plus className="mr-1.5 h-4 w-4" />
-            New Batch
-          </Button>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Foi de Parcurs</h3>
+          <p className="text-sm text-muted-foreground">Sesiuni de rulare cumulate lunar, per mașină</p>
         </div>
-      )}
+        <Button onClick={openModal}>
+          <Plus className="mr-1.5 h-4 w-4" />
+          Generează foaie de parcurs
+        </Button>
+      </div>
 
-      {/* Step 1: Batch Config Form */}
-      {step === 'form' && <BatchConfigForm companyId={companyId} brand={brand} onPreview={handlePreviewReady} />}
+      {/* Foi de parcurs — one route sheet per car × month, scoped to header company */}
+      <RouteSheetsTable companyId={companyId} />
 
-      {/* Step 2: Preview — Save or Regenerate */}
-      {step === 'preview' && preview && batchConfig && (
-        <PreviewPanel
-          preview={preview}
-          config={batchConfig}
-          onSave={handleSaveBatch}
-          saving={saving}
-          saveError={saveError}
-          onBack={() => setStep('form')}
-        />
-      )}
+      {/* Generate Contracts Batch — wizard behind a modal */}
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{step === 'saved' ? 'Batch Saved' : 'Generate Contracts Batch'}</DialogTitle>
+          </DialogHeader>
 
-      {/* Step 3: Saved confirmation */}
-      {step === 'saved' && (
-        <Card className="p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="rounded-full bg-green-100 p-2 dark:bg-green-900">
-              <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
+          {step === 'form' && (
+            <BatchConfigForm companyId={companyId} brand={brand} onPreview={handlePreviewReady} />
+          )}
+
+          {step === 'preview' && preview && batchConfig && (
+            <PreviewPanel
+              preview={preview}
+              config={batchConfig}
+              onSave={handleSaveBatch}
+              saving={saving}
+              saveError={saveError}
+              onBack={() => setStep('form')}
+            />
+          )}
+
+          {step === 'saved' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-full bg-green-100 p-2 dark:bg-green-900">
+                  <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">{preview?.assignments.clients.length} contracts generated</h3>
+                  <p className="text-sm text-muted-foreground">
+                    VIN: {batchConfig?.vin} | {preview?.assignments.num_test_drives} TD
+                    + {preview?.assignments.num_comadats} Comodat
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Go to the <span className="font-medium">Sesiuni Driving</span> tab to allocate clients.
+                  </p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={resetWizard}>
+                  <Plus className="mr-1.5 h-4 w-4" /> New Batch
+                </Button>
+                <Button onClick={() => handleOpenChange(false)}>Done</Button>
+              </DialogFooter>
             </div>
-            <div>
-              <h3 className="font-semibold">
-                Batch saved — {preview?.assignments.clients.length} contracts generated
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                VIN: {batchConfig?.vin} | {preview?.assignments.num_test_drives} TD
-                + {preview?.assignments.num_comadats} Comodat
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Go to the <span className="font-medium">Parcurs</span> tab to allocate clients.
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={handleReset}>
-              <Plus className="mr-1.5 h-4 w-4" />
-              New Batch
-            </Button>
-          </div>
-        </Card>
-      )}
-
-      {/* Recent Contracts — grouped by VIN */}
-      <RecentContractsGrouped />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
-// ── Recent Contracts grouped by VIN ──
-function RecentContractsGrouped() {
-  const [expandedVins, setExpandedVins] = useState<Set<string>>(new Set())
+// ── Foi de Parcurs — one route sheet per car × month (cumulated driving
+//    sessions for that vehicle that month), scoped to the header company.
+//    Month is a filter; each row expands to its individual sessions and can
+//    generate/store an AI-drafted legal Foaie de Parcurs (PDF) or Excel. ──
+function RouteSheetsTable({ companyId }: { companyId: number }) {
+  const queryClient = useQueryClient()
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [previewVin, setPreviewVin] = useState<string | null>(null)
+  const now = new Date()
+  const [filterYear, setFilterYear] = useState<number>(now.getFullYear())
+  const [filterMonth, setFilterMonth] = useState<number>(now.getMonth() + 1) // 0 = all months
+  const monthChosen = filterMonth !== 0 // a Foaie de parcurs is monthly — needs a specific month
 
   const { data, isLoading } = useQuery({
-    queryKey: ['foi-contracts-all'],
+    queryKey: ['foi-contracts-all', 'recent', companyId],
     queryFn: () =>
-      foiParcursApi.getContracts({ per_page: 500, sort_by: 'created_at', sort_dir: 'DESC' }),
+      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 500, sort_by: 'created_at', sort_dir: 'DESC' }),
     staleTime: 30_000,
   })
 
-  const contracts = data?.contracts ?? []
+  // Vehicle catalog → Make/Model for each VIN (contracts only carry the VIN).
+  const { data: vehData } = useQuery({
+    queryKey: ['fp-vehicles'],
+    queryFn: () => foiParcursApi.getVehicles(false),
+    staleTime: 60_000,
+  })
+  const vinMap = React.useMemo(
+    () => new Map((vehData?.vehicles ?? []).map((v) => [v.vin, v])),
+    [vehData],
+  )
 
-  const toggleVin = (vin: string) => {
-    setExpandedVins((prev) => {
+  // Which cars already have a stored (generated) sheet for the selected period.
+  const { data: storedData } = useQuery({
+    queryKey: ['fp-route-sheets', companyId, filterYear, filterMonth],
+    queryFn: () => foiParcursApi.listRouteSheets(companyId, filterYear, filterMonth),
+    enabled: monthChosen,
+    staleTime: 30_000,
+  })
+  const storedByVin = React.useMemo(() => {
+    const m = new Map<string, StoredRouteSheet>()
+    ;(storedData?.sheets ?? []).forEach((s) => m.set(s.vin, s))
+    return m
+  }, [storedData])
+
+  const contracts = data?.contracts ?? []
+  const period = (c: (typeof contracts)[number]) => {
+    const d = new Date(c.created_at)
+    return { year: c.year ?? d.getFullYear(), month: c.month ?? d.getMonth() + 1 }
+  }
+
+  const years = React.useMemo(() => {
+    const s = new Set<number>([now.getFullYear()])
+    for (const c of contracts) s.add(period(c).year)
+    return [...s].sort((a, b) => b - a)
+  }, [contracts]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // One row per car (VIN), cumulating the sessions that match the period filter.
+  const cars = React.useMemo(() => {
+    const map = new Map<string, { vin: string; sessions: typeof contracts }>()
+    for (const c of contracts) {
+      const p = period(c)
+      if (p.year !== filterYear) continue
+      if (filterMonth !== 0 && p.month !== filterMonth) continue
+      if (!map.has(c.vin)) map.set(c.vin, { vin: c.vin, sessions: [] })
+      map.get(c.vin)!.sessions.push(c)
+    }
+    return [...map.values()].sort((a, b) => a.vin.localeCompare(b.vin))
+  }, [contracts, filterYear, filterMonth])
+
+  const toggle = (key: string) =>
+    setExpanded((prev) => {
       const next = new Set(prev)
-      if (next.has(vin)) next.delete(vin)
-      else next.add(vin)
+      next.has(key) ? next.delete(key) : next.add(key)
       return next
     })
-  }
 
-  // Group by VIN
-  const byVin: Record<string, typeof contracts> = {}
-  for (const c of contracts) {
-    if (!byVin[c.vin]) byVin[c.vin] = []
-    byVin[c.vin].push(c)
-  }
-  const vins = Object.keys(byVin).sort()
+  const monthName = (m: number) => new Date(2000, m - 1).toLocaleString('ro-RO', { month: 'long' })
+
+  const toolbar = (
+    <div className="flex items-center gap-2">
+      <Select value={String(filterMonth)} onValueChange={(v) => setFilterMonth(Number(v))}>
+        <SelectTrigger className="h-8 w-[150px]"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="0">Toate lunile</SelectItem>
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+            <SelectItem key={m} value={String(m)} className="capitalize">{monthName(m)}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select value={String(filterYear)} onValueChange={(v) => setFilterYear(Number(v))}>
+        <SelectTrigger className="h-8 w-[100px]"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {years.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      {!isLoading && <span className="text-xs text-muted-foreground">{cars.length} mașini</span>}
+    </div>
+  )
+
+  if (isLoading) return <div className="space-y-3">{toolbar}<TableSkeleton rows={6} columns={10} /></div>
 
   return (
     <div className="space-y-3">
-      <h3 className="text-lg font-semibold">Recent Contracts</h3>
-      {isLoading ? (
-        <TableSkeleton rows={5} columns={6} />
-      ) : !contracts.length ? (
+      {toolbar}
+      {!cars.length ? (
         <EmptyState
           icon={<FileText className="h-10 w-10" />}
-          title="No contracts yet"
-          description="Create your first batch using the form above."
+          title="Nicio foaie de parcurs"
+          description={contracts.length
+            ? 'Nicio sesiune pentru perioada selectată. Schimbă luna/anul sau generează una nouă.'
+            : 'Generează prima foaie de parcurs cu butonul de mai sus.'}
         />
       ) : (
-        vins.map((vin) => {
-          const vinContracts = byVin[vin]
-          const vinOpen = expandedVins.has(vin)
-          const pendingCount = vinContracts.filter((c) => c.status === 'PENDING').length
-          const companyName = vinContracts[0]?.company_name
+        <Card className="overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8" />
+                <TableHead>Make</TableHead>
+                <TableHead>Model</TableHead>
+                <TableHead>VIN</TableHead>
+                <TableHead>KM start</TableHead>
+                <TableHead>KM end</TableHead>
+                <TableHead>Total KM</TableHead>
+                <TableHead>Sesiuni</TableHead>
+                <TableHead>Clienți</TableHead>
+                <TableHead className="text-right">Foaie de parcurs</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {cars.map((sheet) => {
+                const isOpen = expanded.has(sheet.vin)
+                const veh = vinMap.get(sheet.vin)
+                const kmStart = Math.min(...sheet.sessions.map((c) => c.km_start ?? 0))
+                const kmEnd = Math.max(...sheet.sessions.map((c) => c.km_end ?? 0))
+                const totalKm = sheet.sessions.reduce((s, c) => s + (c.distance_km || 0), 0)
+                const clientCount = new Set(sheet.sessions.map((c) => c.client_name).filter(Boolean)).size
+                const stored = storedByVin.get(sheet.vin)
 
-          return (
-            <Card key={vin} className="overflow-hidden">
-              <button
-                className="w-full flex items-center justify-between px-5 py-3 hover:bg-muted/50 transition-colors"
-                onClick={() => toggleVin(vin)}
-              >
-                <div className="flex items-center gap-2">
-                  <Car className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-mono text-sm font-medium">{vin}</span>
-                  {companyName && (
-                    <span className="text-xs text-muted-foreground">({companyName})</span>
-                  )}
-                  <Badge variant="outline">{vinContracts.length} contracts</Badge>
-                  {pendingCount > 0 && (
-                    <Badge variant="destructive" className="text-xs">{pendingCount} pending</Badge>
-                  )}
-                </div>
-                {vinOpen ? (
-                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                )}
-              </button>
-              {vinOpen && (
-                <div className="border-t px-5 pb-3">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>#</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Distance</TableHead>
-                        <TableHead>KM</TableHead>
-                        <TableHead>Client</TableHead>
-                        <TableHead>Itinerary</TableHead>
-                        <TableHead>Advisor</TableHead>
-                        <TableHead>Date</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {vinContracts.map((c) => (
-                        <TableRow key={c.id} className={c.status === 'PENDING' ? 'bg-orange-500/5' : ''}>
-                          <TableCell className="text-xs">{c.slot_number || '—'}</TableCell>
-                          <TableCell>
-                            <Badge variant={c.status === 'FILLED' ? 'default' : 'destructive'} className="text-xs">
-                              {c.status}
+                return (
+                  <React.Fragment key={sheet.vin}>
+                    <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => toggle(sheet.vin)}>
+                      <TableCell className="py-2">
+                        {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                      </TableCell>
+                      <TableCell className="text-sm">{veh?.mark || <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="text-sm font-medium">{veh?.model || <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">{sheet.vin}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">{kmStart.toLocaleString('ro-RO')}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">{kmEnd.toLocaleString('ro-RO')}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap font-medium">{totalKm.toLocaleString('ro-RO')} km</TableCell>
+                      <TableCell>{sheet.sessions.length}</TableCell>
+                      <TableCell>{clientCount}</TableCell>
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-2">
+                          {stored && (
+                            <Badge className="bg-green-600 text-white text-xs"
+                              title={`Salvat ${new Date(stored.generated_at).toLocaleString('ro-RO')}`}>
+                              Salvat
                             </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={c.route_type === 'TD' ? 'default' : 'secondary'}>{c.route_type}</Badge>
-                          </TableCell>
-                          <TableCell>{c.distance_km} km</TableCell>
-                          <TableCell className="text-xs">{c.km_start} - {c.km_end}</TableCell>
-                          <TableCell>
-                            {c.client_name ? (
-                              <span className="font-medium">{c.client_name}</span>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="max-w-[150px] truncate text-xs">{c.itinerary || '—'}</TableCell>
-                          <TableCell className="text-sm">{c.advisor_name || '—'}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {new Date(c.created_at).toLocaleDateString('ro-RO')}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </Card>
-          )
-        })
+                          )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="outline" size="sm" className="h-7 gap-1" disabled={!monthChosen}
+                                title={monthChosen ? undefined : 'Selectează o lună'}>
+                                <FileText className="h-3.5 w-3.5" />
+                                {stored ? 'Vezi' : 'Generează'}
+                                <ChevronDown className="h-3 w-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setPreviewVin(sheet.vin)}>
+                                <FileText className="mr-2 h-4 w-4" /> PDF (previzualizare)
+                              </DropdownMenuItem>
+                              <DropdownMenuItem asChild>
+                                <a href={foiParcursApi.getRouteSheetXlsxUrl(sheet.vin, filterYear, filterMonth)} download>
+                                  <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel
+                                </a>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {isOpen && (
+                      <TableRow className="bg-muted/20 hover:bg-muted/20">
+                        <TableCell colSpan={10} className="p-0">
+                          <div className="px-4 py-2">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Data</TableHead>
+                                  <TableHead>Client</TableHead>
+                                  <TableHead>Traseu</TableHead>
+                                  <TableHead>Distanță</TableHead>
+                                  <TableHead>KM</TableHead>
+                                  <TableHead>Status</TableHead>
+                                  <TableHead className="text-right">PDF</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {sheet.sessions.map((c) => {
+                                  const ss = sessionStatus(c)
+                                  const hasPdf = c.status !== 'PENDING' && c.status !== 'PLANNED'
+                                  return (
+                                    <TableRow key={c.id} className={ss.rowClass}>
+                                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                        {new Date(c.created_at).toLocaleDateString('ro-RO')}
+                                      </TableCell>
+                                      <TableCell>
+                                        {c.client_name ? (
+                                          <span className="font-medium text-sm">{c.client_name}</span>
+                                        ) : (
+                                          <span className="text-muted-foreground text-xs">—</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="max-w-[220px] truncate text-sm">{c.itinerary || '—'}</TableCell>
+                                      <TableCell className="text-sm whitespace-nowrap">{c.distance_km} km</TableCell>
+                                      <TableCell className="text-xs whitespace-nowrap">{c.km_start} - {c.km_end}</TableCell>
+                                      <TableCell>
+                                        <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        {hasPdf ? (
+                                          <div className="flex justify-end gap-1">
+                                            <a href={foiParcursApi.getContractPdfUrl(c.id, 'legal')} target="_blank" rel="noopener" title="Legal PDF">
+                                              <Button variant="outline" size="sm" className="h-7 px-2 text-xs">Legal</Button>
+                                            </a>
+                                            <a href={foiParcursApi.getContractPdfUrl(c.id, 'custom')} target="_blank" rel="noopener" title="Custom PDF">
+                                              <Button variant="outline" size="sm" className="h-7 px-2 text-xs">Custom</Button>
+                                            </a>
+                                          </div>
+                                        ) : (
+                                          <span className="text-muted-foreground text-xs">—</span>
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                  )
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </Card>
       )}
+      <RouteSheetPreviewDialog
+        vin={previewVin}
+        year={filterYear}
+        month={filterMonth}
+        stored={previewVin ? storedByVin.get(previewVin) ?? null : null}
+        onClose={() => {
+          setPreviewVin(null)
+          queryClient.invalidateQueries({ queryKey: ['fp-route-sheets'] })
+        }}
+      />
     </div>
+  )
+}
+
+// ── Foaie de Parcurs — collect Normă/Alimentări, generate (AI), preview, download ──
+type AlimRow = { date: string; bon: string; liters: string }
+
+function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
+  vin: string | null; year: number; month: number; stored: StoredRouteSheet | null; onClose: () => void
+}) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [norma, setNorma] = useState('')
+  const [alim, setAlim] = useState<AlimRow[]>([])
+
+  const load = useCallback(async (regenerate: boolean) => {
+    if (!vin) return
+    setLoading(true); setError('')
+    try {
+      const alimentari: RouteSheetAlimentare[] = alim
+        .filter((a) => a.date || a.bon || a.liters)
+        .map((a) => ({ date: a.date, bon: a.bon, liters: Number(a.liters || 0) }))
+      const blob = await foiParcursApi.generateRouteSheetPdf(vin, year, month, {
+        regenerate, norma: norma ? Number(norma) : null, alimentari,
+      })
+      setUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
+    } catch (e: any) {
+      setError(e?.message || 'Eroare la generarea documentului')
+    } finally {
+      setLoading(false)
+    }
+  }, [vin, year, month, norma, alim])
+
+  // On open: prefill the form from the stored sheet, and if one exists show it.
+  useEffect(() => {
+    if (!vin) return
+    setNorma(stored?.norma_combustibil != null ? String(stored.norma_combustibil) : '')
+    setAlim(
+      Array.isArray(stored?.alimentari)
+        ? stored!.alimentari!.map((a) => ({ date: a.date || '', bon: a.bon || '', liters: String(a.liters ?? '') }))
+        : [],
+    )
+    setError('')
+    setUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null })
+    if (stored) load(false) // show the saved PDF immediately
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vin])
+
+  const setRow = (i: number, k: keyof AlimRow, v: string) =>
+    setAlim((p) => p.map((a, idx) => (idx === i ? { ...a, [k]: v } : a)))
+  const addRow = () => setAlim((p) => [...p, { date: '', bon: '', liters: '' }])
+  const removeRow = (i: number) => setAlim((p) => p.filter((_, idx) => idx !== i))
+
+  const fileName = `foaie-parcurs-${vin}-${year}-${String(month).padStart(2, '0')}.pdf`
+
+  return (
+    <Dialog open={!!vin} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Foaie de parcurs — <span className="font-mono text-sm">{vin}</span></DialogTitle>
+        </DialogHeader>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[320px_1fr] flex-1 overflow-hidden">
+          {/* Left: user-entered fuel inputs */}
+          <div className="space-y-3 overflow-y-auto pr-1">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Normă consum (l/100 km)</Label>
+              <Input type="number" step="0.1" value={norma} onChange={(e) => setNorma(e.target.value)} placeholder="ex. 6.5" />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Alimentări</Label>
+                <Button type="button" variant="outline" size="sm" className="h-7" onClick={addRow}>
+                  <Plus className="mr-1 h-3.5 w-3.5" /> Adaugă
+                </Button>
+              </div>
+              {alim.length === 0 && <p className="text-xs text-muted-foreground">Nicio alimentare. Adaugă bonurile de combustibil.</p>}
+              {alim.map((a, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <Input type="date" className="h-8 text-xs" value={a.date} onChange={(e) => setRow(i, 'date', e.target.value)} />
+                  <Input className="h-8 text-xs" placeholder="Bon" value={a.bon} onChange={(e) => setRow(i, 'bon', e.target.value)} />
+                  <Input type="number" step="0.01" className="h-8 w-20 text-xs" placeholder="Litri" value={a.liters} onChange={(e) => setRow(i, 'liters', e.target.value)} />
+                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeRow(i)}>
+                    <XIcon className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <Button className="w-full" onClick={() => load(true)} disabled={loading}>
+              <Sparkles className="mr-1.5 h-4 w-4" /> {url ? 'Regenerează' : 'Generează'}
+            </Button>
+            {error && <div className="text-sm text-red-600">{error}</div>}
+          </div>
+
+          {/* Right: PDF preview */}
+          <div className="min-h-[60vh] rounded border bg-muted/20 overflow-hidden">
+            {loading ? (
+              <div className="flex h-[60vh] items-center justify-center gap-2 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" /> Se generează documentul cu AI…
+              </div>
+            ) : url ? (
+              <iframe src={url} title="Foaie de parcurs" className="h-[60vh] w-full" />
+            ) : (
+              <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground px-6 text-center">
+                Completează normă/alimentări (opțional) și apasă „Generează”.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          {url && !loading && (
+            <a href={url} download={fileName}>
+              <Button><Download className="mr-1.5 h-4 w-4" /> Descarcă PDF</Button>
+            </a>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1856,7 +2130,7 @@ function SortableHeader({
 
 // ── Batch Config Form ──
 function BatchConfigForm({
-  companyId: defaultCompanyId,
+  companyId,
   brand,
   onPreview,
 }: {
@@ -1865,10 +2139,11 @@ function BatchConfigForm({
   onPreview: (config: BatchConfig, preview: PreviewResponse) => void
 }) {
   const now = new Date()
+  // Company is driven by the header filter (single source of truth) — no local
+  // override. The VIN dropdown below is scoped to the header company + brand.
   const [form, setForm] = useState({
     year: String(now.getFullYear()),
     month: String(now.getMonth() + 1),
-    company_id: defaultCompanyId ? String(defaultCompanyId) : '',
     vin: '',
     odometer_start: '',
     odometer_end: '',
@@ -1898,28 +2173,21 @@ function BatchConfigForm({
     staleTime: 30_000,
   })
 
-  const { data: companiesData } = useQuery({
-    queryKey: ['fp-companies'],
-    queryFn: () => foiParcursApi.getCompanies(),
-    staleTime: 60_000,
-  })
-
   const filteredVehicles = vehiclesData?.vehicles?.filter(
-    (v) => (!form.company_id || v.company_id === Number(form.company_id)) &&
+    (v) => (!companyId || v.company_id === companyId) &&
            (!brand || v.brand === brand)
   )
   const selectedVehicle = vehiclesData?.vehicles?.find((v) => v.vin === form.vin)
 
-  // When company changes, clear VIN if the selected vehicle doesn't belong to the new company
-  const handleCompanyChange = (companyId: string) => {
-    set('company_id', companyId)
-    if (form.vin && companyId) {
-      const vehicle = vehiclesData?.vehicles?.find((v) => v.vin === form.vin)
-      if (vehicle && vehicle.company_id !== Number(companyId)) {
-        set('vin', '')
-      }
+  // Follow the header company/brand filter: if the currently selected vehicle no
+  // longer matches (header company or brand changed), clear the VIN selection.
+  useEffect(() => {
+    if (!form.vin) return
+    const vehicle = vehiclesData?.vehicles?.find((v) => v.vin === form.vin)
+    if (vehicle && ((companyId && vehicle.company_id !== companyId) || (brand && vehicle.brand !== brand))) {
+      set('vin', '')
     }
-  }
+  }, [companyId, brand, form.vin, vehiclesData])
 
   // When num_clients changes, clamp num_td
   const handleNumClientsChange = (val: string) => {
@@ -1972,7 +2240,7 @@ function BatchConfigForm({
     const config: BatchConfig = {
       year: periodYear,
       month: periodMonth,
-      company_id: Number(form.company_id),
+      company_id: companyId,
       vin: form.vin.trim(),
       fuel_type: selectedVehicle?.fuel_type || 'Diesel',
       odometer_start: Number(form.odometer_start),
@@ -1994,8 +2262,8 @@ function BatchConfigForm({
         : undefined,
     }
 
+    if (!config.company_id) return setError('Select a company in the header first')
     if (!config.vin) return setError('VIN is required')
-    if (!config.company_id) return setError('Company is required')
     if (config.total_consumption_period_liters <= 0)
       return setError('Total consumption is required')
     if (config.odometer_end <= config.odometer_start)
@@ -2050,19 +2318,6 @@ function BatchConfigForm({
             Vehicle & Odometer
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Company</Label>
-              <Select value={form.company_id} onValueChange={handleCompanyChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select company..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {companiesData?.companies?.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="space-y-1.5">
               <Label className="text-xs">VIN</Label>
               <Select value={form.vin} onValueChange={handleVinChange}>
