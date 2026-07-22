@@ -315,6 +315,31 @@ function ContractsTab({ companyId, brand }: { companyId: number; brand: string }
   )
 }
 
+// Order a car's sessions by odometer and insert synthetic "gap" rows wherever
+// the odometer jumps between logged sessions (km the car moved without a logged
+// drive). Gap rows carry only the distance + the date the gap was spotted (the
+// session that revealed it) — no client/traseu — as a legal continuity marker.
+type DetailRow =
+  | { gap: false; session: FoiContract }
+  | { gap: true; id: string; date: string; kmStart: number; kmEnd: number; distance: number }
+
+function withGaps(sessions: FoiContract[]): DetailRow[] {
+  const sorted = [...sessions].sort(
+    (a, b) => (a.km_start ?? 0) - (b.km_start ?? 0) || (a.km_end ?? 0) - (b.km_end ?? 0),
+  )
+  const rows: DetailRow[] = []
+  let prevEnd: number | null = null
+  for (const c of sorted) {
+    const start = c.km_start ?? 0
+    if (prevEnd != null && start > prevEnd) {
+      rows.push({ gap: true, id: `gap-${c.id}`, date: c.created_at, kmStart: prevEnd, kmEnd: start, distance: start - prevEnd })
+    }
+    rows.push({ gap: false, session: c })
+    prevEnd = Math.max(prevEnd ?? 0, c.km_end ?? 0)
+  }
+  return rows
+}
+
 // ── Foi de Parcurs — one route sheet per car × month (cumulated driving
 //    sessions for that vehicle that month), scoped to the header company.
 //    Month is a filter; each row expands to its individual sessions and can
@@ -516,7 +541,23 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {sheet.sessions.map((c) => {
+                                {withGaps(sheet.sessions).map((row) => {
+                                  if (row.gap) {
+                                    return (
+                                      <TableRow key={row.id} className="bg-amber-500/10">
+                                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                          {new Date(row.date).toLocaleDateString('ro-RO')}
+                                        </TableCell>
+                                        <TableCell><span className="text-muted-foreground text-xs">—</span></TableCell>
+                                        <TableCell className="text-xs italic text-amber-700 dark:text-amber-500">Gap kilometraj (nejustificat)</TableCell>
+                                        <TableCell className="text-sm whitespace-nowrap font-medium">{row.distance} km</TableCell>
+                                        <TableCell className="text-xs whitespace-nowrap">{row.kmStart} - {row.kmEnd}</TableCell>
+                                        <TableCell><Badge variant="outline" className="text-xs">Gap</Badge></TableCell>
+                                        <TableCell className="text-right"><span className="text-muted-foreground text-xs">—</span></TableCell>
+                                      </TableRow>
+                                    )
+                                  }
+                                  const c = row.session
                                   const ss = sessionStatus(c)
                                   const hasPdf = c.status !== 'PENDING' && c.status !== 'PLANNED'
                                   return (
