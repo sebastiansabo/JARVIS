@@ -17,6 +17,22 @@ import type {
   DriverLicenseOcrData,
 } from '../types/foiParcurs'
 
+export interface RouteSheetAlimentare {
+  date: string
+  bon: string
+  liters: number
+}
+
+export interface StoredRouteSheet {
+  vin: string
+  session_count: number
+  total_km: number
+  norma_combustibil: number | null
+  alimentari: RouteSheetAlimentare[] | null
+  generated_by_name: string | null
+  generated_at: string
+}
+
 function qs(params: Record<string, unknown>): string {
   const sp = new URLSearchParams()
   Object.entries(params).forEach(([k, v]) => {
@@ -206,6 +222,37 @@ export const foiParcursApi = {
   // ── PDF Downloads ──
   getContractPdfUrl: (contractId: number, type: 'legal' | 'custom') =>
     `${BASE}/contracts/${contractId}/pdf/${type}`,
+
+  // ── Monthly Foaie de Parcurs (per car × month) ──
+  // AI-drafted PDF returned inline for preview — raw fetch so we get the blob
+  // (the shared api client force-parses JSON). norma (l/100km) + alimentari are
+  // user-entered fuel data; regenerate rebuilds + overwrites the stored copy.
+  generateRouteSheetPdf: async (
+    vin: string, year: number, month: number,
+    opts: { regenerate?: boolean; norma?: number | null; alimentari?: RouteSheetAlimentare[] } = {},
+  ): Promise<Blob> => {
+    const res = await fetch(`${BASE}/route-sheet/pdf`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ vin, year, month, regenerate: !!opts.regenerate, norma: opts.norma ?? null, alimentari: opts.alimentari ?? [] }),
+    })
+    if (!res.ok) {
+      let msg = 'Generarea foii de parcurs a eșuat'
+      try { const j = await res.json(); msg = j.error || msg } catch { /* non-JSON error body */ }
+      throw new Error(msg)
+    }
+    return res.blob()
+  },
+
+  getRouteSheetXlsxUrl: (vin: string, year: number, month: number) =>
+    `${BASE}/route-sheet/xlsx${qs({ vin, year, month })}`,
+
+  // Stored sheets for the period — badge + modal prefill (norma/alimentari).
+  listRouteSheets: (companyId: number, year: number, month: number) =>
+    api.get<{ success: boolean; sheets: StoredRouteSheet[] }>(
+      `${BASE}/route-sheets${qs({ company_id: companyId || undefined, year, month })}`,
+    ),
 
   // ── Export (session list xlsx / contract PDFs zip) ──
   getExportXlsxUrl: (params: { company_id?: number; date_from?: string; date_to?: string; vin?: string }) =>

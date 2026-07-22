@@ -2248,4 +2248,34 @@ def _create_schema_incremental_continued(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_inspections_vehicle ON fp_vehicle_inspections(vehicle_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_inspections_date ON fp_vehicle_inspections(inspection_date DESC)')
 
+    # ── Foi de Parcurs — stored monthly route sheets (one per car × month) ──
+    # Durable record of a generated monthly Foaie de Parcurs: the PDF bytes, the
+    # AI-composed content, user-entered fuel data, and provenance. Regeneration
+    # overwrites the row (UNIQUE on vin/year/month).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_route_sheets (
+            id BIGSERIAL PRIMARY KEY,
+            vin VARCHAR(50) NOT NULL,
+            company_id BIGINT,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            pdf_bytes BYTEA,
+            ai_summary TEXT,
+            ai_trips_json JSONB,
+            norma_combustibil NUMERIC(6,2),
+            alimentari JSONB DEFAULT '[]',
+            session_count INTEGER NOT NULL DEFAULT 0,
+            total_km INTEGER NOT NULL DEFAULT 0,
+            generated_by INTEGER,
+            generated_by_name VARCHAR(255),
+            generated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE (vin, year, month)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_route_sheets_period ON fp_route_sheets(company_id, year, month)')
+    # fuel fields added after the table's initial release (idempotent for existing DBs)
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS norma_combustibil NUMERIC(6,2)")
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS alimentari JSONB DEFAULT '[]'")
+
     conn.commit()
