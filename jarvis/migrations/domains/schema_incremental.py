@@ -2212,6 +2212,25 @@ def _create_schema_incremental_continued(conn, cursor):
         END $$;
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_mkt_project ON foi_de_parcurs(mkt_project_id)')
+
+    # ── CRM client contact-edit audit trail (mobile Test Drive PATCH) ──
+    # The login-gated crm-clients PATCH lets any consilier correct a selected
+    # client's phone/email/license. This table makes every such change
+    # attributable and reversible (who changed what, old -> new).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS crm_client_audit (
+            id BIGSERIAL PRIMARY KEY,
+            client_id INTEGER NOT NULL,
+            action TEXT NOT NULL DEFAULT 'contact_update',
+            changes JSONB,
+            user_id INTEGER,
+            source TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_client_audit_client ON crm_client_audit(client_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_client_audit_user ON crm_client_audit(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_client_audit_created ON crm_client_audit(created_at DESC)')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS fp_vehicle_inspections (
             id BIGSERIAL PRIMARY KEY,

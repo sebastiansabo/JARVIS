@@ -1,5 +1,6 @@
 import os
 os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')
+import json
 import pytest
 from flask import Flask
 from foi_parcurs import foi_parcurs_bp
@@ -8,7 +9,7 @@ import foi_parcurs.routes.test_drive as td_mod
 
 class FakeRepo:
     """In-memory stand-in. Client 1 has empty contact details; client 2 already
-    has a phone + email (used to prove fill-only / no-overwrite behaviour)."""
+    has phone + email + license (used to prove overwrite behaviour)."""
 
     def __init__(self):
         self.clients = {
@@ -17,6 +18,7 @@ class FakeRepo:
                 'driver_license_number': 'AB123456'},
         }
         self.update_calls = []
+        self.audit_rows = []
 
     def get_by_id(self, client_id):
         return self.clients.get(client_id)
@@ -28,6 +30,12 @@ class FakeRepo:
             return None
         row.update(data)
         return row
+
+    def execute(self, sql, params=None):
+        # Only the audit INSERT flows through execute() in this route.
+        if 'crm_client_audit' in sql:
+            self.audit_rows.append(params)
+        return None
 
 
 @pytest.fixture
@@ -67,12 +75,22 @@ def test_fill_license_number(client):
     assert r.get_json()['client']['driver_license_number'] == 'XY987654'
 
 
-def test_existing_license_not_overwritten(client):
-    r = client.patch('/api/foi-parcurs/crm-clients/2',
-                     json={'driver_license_number': 'HACK000'})
+def test_audit_written_on_change(client):
+    r = client.patch('/api/foi-parcurs/crm-clients/2', json={'email': 'fixed@correct.ro'})
     assert r.status_code == 200
-    assert r.get_json()['client']['driver_license_number'] == 'AB123456'
-    assert client.application._fake_repo.update_calls == []
+    rows = client.application._fake_repo.audit_rows
+    assert len(rows) == 1
+    client_id, action, changes_json, user_id, source = rows[0]
+    assert client_id == 2 and action == 'contact_update' and source == 'td_form'
+    changes = json.loads(changes_json)
+    assert changes['email'] == {'old': 'set@already.ro', 'new': 'fixed@correct.ro'}
+
+
+def test_audit_skipped_when_no_effective_change(client):
+    # Re-sending the SAME email must not produce an audit row.
+    r = client.patch('/api/foi-parcurs/crm-clients/2', json={'email': 'set@already.ro'})
+    assert r.status_code == 200
+    assert client.application._fake_repo.audit_rows == []
 
 
 def test_invalid_phone_rejected(client):
@@ -93,13 +111,18 @@ def test_unknown_id_404(client):
     assert r.status_code == 404
 
 
-def test_existing_values_not_overwritten(client):
-    """IDOR guard: a client that already has phone + email is returned
-    unchanged and update() is never called."""
+def test_existing_values_are_overwritten(client):
+    """Editing is allowed: existing phone/email are corrected in place."""
     r = client.patch('/api/foi-parcurs/crm-clients/2',
-                     json={'phone': '0711111111', 'email': 'attacker@evil.ro'})
+                     json={'phone': '0711111111', 'email': 'fixed@correct.ro'})
     assert r.status_code == 200
     body = r.get_json()
-    assert body['client']['phone'] == '0700000000'   # original kept
-    assert body['client']['email'] == 'set@already.ro'
-    assert client.application._fake_repo.update_calls == []
+    assert body['client']['phone'] == '0711111111'
+    assert body['client']['email'] == 'fixed@correct.ro'
+
+
+def test_existing_license_is_overwritten(client):
+    r = client.patch('/api/foi-parcurs/crm-clients/2',
+                     json={'driver_license_number': 'NEW999'})
+    assert r.status_code == 200
+    assert r.get_json()['client']['driver_license_number'] == 'NEW999'
