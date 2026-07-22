@@ -168,13 +168,44 @@ def _ai_prose(data: dict) -> dict:
         return fallback
 
 
+def _rows_with_gaps(trips: list) -> list:
+    """Order trips by odometer and interleave gap markers wherever the odometer
+    jumps between logged sessions (km moved without a logged drive). Gap dict:
+    {'gap': True, 'date', 'km_start', 'km_end', 'distance_km'}; trip:
+    {'gap': False, 'trip': <trip>}. The gap's date is the session that revealed it."""
+    ordered = sorted(trips, key=lambda t: (t['km_start'], t['km_end']))
+    rows = []
+    prev_end = None
+    for t in ordered:
+        if prev_end is not None and t['km_start'] > prev_end:
+            rows.append({'gap': True, 'date': t['date'], 'km_start': prev_end,
+                         'km_end': t['km_start'], 'distance_km': t['km_start'] - prev_end})
+        rows.append({'gap': False, 'trip': t})
+        prev_end = max(prev_end or 0, t['km_end'])
+    return rows
+
+
 # ── HTML skeleton (locked numbers) + Playwright render ──
 
 def _skeleton_html(data: dict, prose: dict) -> str:
     e = html.escape
     v = data['vehicle']
     rows = []
-    for t in data['trips']:
+    for r in _rows_with_gaps(data['trips']):
+        if r['gap']:
+            rows.append(
+                '<tr class="gap">'
+                f'<td>{e(r["date"])}</td>'
+                '<td class="c">—</td>'
+                '<td class="route">Gap kilometraj (nejustificat)</td>'
+                '<td>—</td>'
+                f'<td class="n">{r["km_start"]:,}</td>'
+                f'<td class="n">{r["km_end"]:,}</td>'
+                f'<td class="n">{r["distance_km"]:,}</td>'
+                '</tr>'
+            )
+            continue
+        t = r['trip']
         ora = ' – '.join(x for x in (t.get('ora_plecare'), t.get('ora_sosire')) if x) or '—'
         rows.append(
             '<tr>'
@@ -236,6 +267,7 @@ table.trips td.n {{ text-align:right; white-space:nowrap; }}
 table.trips td.c {{ text-align:center; white-space:nowrap; }}
 table.trips td.route {{ color:#222; }}
 tr.totals td {{ font-weight:700; background:#f2f2f6; }}
+tr.gap td {{ background:#fff7ed; font-style:italic; color:#9a6a00; }}
 .empty {{ text-align:center; color:#888; }}
 .summary {{ margin-top:12px; font-size:10.5px; line-height:1.5; }}
 .fuel {{ display:flex; gap:16px; margin-top:12px; align-items:flex-start; }}
@@ -384,7 +416,16 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
         cell.font = head; cell.fill = fill; cell.alignment = Alignment(horizontal='center')
 
     r = hrow + 1
-    for t in data['trips']:
+    for row in _rows_with_gaps(data['trips']):
+        if row['gap']:
+            ws.cell(row=r, column=1, value=row['date'])
+            ws.cell(row=r, column=3, value='Gap kilometraj (nejustificat)')
+            ws.cell(row=r, column=5, value=row['km_start'])
+            ws.cell(row=r, column=6, value=row['km_end'])
+            ws.cell(row=r, column=7, value=row['distance_km'])
+            r += 1
+            continue
+        t = row['trip']
         ora = ' – '.join(x for x in (t.get('ora_plecare'), t.get('ora_sosire')) if x)
         ws.cell(row=r, column=1, value=t['date'])
         ws.cell(row=r, column=2, value=ora)
