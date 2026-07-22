@@ -30,6 +30,14 @@ export interface GapFillContract {
   km_end: number
 }
 
+export interface SessionImportResult {
+  success: boolean
+  inserted: number
+  skipped: number
+  cars_created: number
+  errors: { row: number; message: string }[]
+}
+
 export interface RouteSheetEvent {
   name: string
   start: string
@@ -273,6 +281,25 @@ export const foiParcursApi = {
     api.post<{ success: boolean; inserted: number }>(
       `${BASE}/route-sheet/redistribute-gap`, { vin, year, month, contracts },
     ),
+
+  // ── Bulk session import (tenant-scoped Excel) ──
+  getSessionImportTemplateUrl: (companyId: number) =>
+    `${BASE}/sessions/import-template${qs({ company_id: companyId })}`,
+
+  importSessions: async (companyId: number, file: File): Promise<SessionImportResult> => {
+    const fd = new FormData()
+    fd.append('company_id', String(companyId))
+    fd.append('file', file)
+    const res = await fetch(`${BASE}/sessions/import`, {
+      method: 'POST', credentials: 'same-origin', body: fd,
+    })
+    if (!res.ok) {
+      let msg = 'Importul a eșuat'
+      try { const j = await res.json(); msg = j.error || msg } catch { /* non-JSON */ }
+      throw new Error(msg)
+    }
+    return res.json()
+  },
 
   // ── Export (session list xlsx / contract PDFs zip) ──
   getExportXlsxUrl: (params: { company_id?: number; date_from?: string; date_to?: string; vin?: string }) =>
