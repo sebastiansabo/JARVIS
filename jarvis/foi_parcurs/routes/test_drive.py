@@ -604,11 +604,31 @@ def api_update_crm_client(id):
     if not update_data:
         return jsonify({'success': True, 'client': existing})
 
+    # Capture old->new for the fields that actually change, for the audit trail.
+    changes = {
+        k: {'old': existing.get(k), 'new': v}
+        for k, v in update_data.items()
+        if (existing.get(k) or '') != (v or '')
+    }
+
     try:
         client = _crm_client_repo.update(id, update_data)
     except Exception as e:
         logger.exception('Failed to update CRM client %s from Test Drive form', id)
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+    # Attributable, reversible audit of the change (who, what, old->new).
+    # Fail-open: a logging error must not break the legitimate edit.
+    if changes:
+        try:
+            user_id = getattr(current_user, 'id', None)
+            _crm_client_repo.execute(
+                '''INSERT INTO crm_client_audit (client_id, action, changes, user_id, source)
+                   VALUES (%s, %s, %s::jsonb, %s, %s)''',
+                (id, 'contact_update', json.dumps(changes), user_id, 'td_form'),
+            )
+        except Exception:
+            logger.exception('Failed to write crm_client_audit for client %s', id)
 
     return jsonify({'success': True, 'client': client or existing})
 
