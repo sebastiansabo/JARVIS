@@ -12,8 +12,9 @@ class FakeRepo:
 
     def __init__(self):
         self.clients = {
-            1: {'id': 1, 'phone': None, 'email': None},
-            2: {'id': 2, 'phone': '0700000000', 'email': 'set@already.ro'},
+            1: {'id': 1, 'phone': None, 'email': None, 'driver_license_number': None},
+            2: {'id': 2, 'phone': '0700000000', 'email': 'set@already.ro',
+                'driver_license_number': 'AB123456'},
         }
         self.update_calls = []
 
@@ -57,6 +58,21 @@ def test_fill_email_only(client):
     _, data = client.application._fake_repo.update_calls[-1]
     assert 'phone' not in data
     assert data['email'] == 'x@y.ro'
+
+
+def test_fill_license_number(client):
+    r = client.patch('/api/foi-parcurs/crm-clients/1',
+                     json={'driver_license_number': 'XY987654'})
+    assert r.status_code == 200
+    assert r.get_json()['client']['driver_license_number'] == 'XY987654'
+
+
+def test_existing_license_not_overwritten(client):
+    r = client.patch('/api/foi-parcurs/crm-clients/2',
+                     json={'driver_license_number': 'HACK000'})
+    assert r.status_code == 200
+    assert r.get_json()['client']['driver_license_number'] == 'AB123456'
+    assert client.application._fake_repo.update_calls == []
 
 
 def test_invalid_phone_rejected(client):
