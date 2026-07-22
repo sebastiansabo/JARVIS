@@ -388,15 +388,26 @@ def _save_sheet(data: dict, pdf_bytes: bytes, prose: dict, user_id, user_name) -
     )
 
 
+# Only a clean base64 image data-URL may be embedded — the signature is rendered
+# inside an <img src="…"> by Playwright (full JS execution), so an unvalidated
+# value could break out of the attribute (stored-XSS / SSRF in the renderer).
+_SIG_DATA_URL_RE = re.compile(r'^data:image/(?:png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=\s]+$')
+
+
 def _user_signature(user_id) -> str | None:
-    """The 'Întocmit' user's stored signature (base64 PNG / data URL) for the PDF."""
+    """The 'Întocmit' user's stored signature as a validated base64 image
+    data-URL, or None if absent/malformed (rejects anything that isn't a clean
+    data:image/*;base64 URL — no HTML/attribute breakout possible)."""
     if not user_id:
         return None
     row = _store.query_one('SELECT signature FROM users WHERE id=%s', (user_id,))
     sig = (row or {}).get('signature')
     if not sig:
         return None
-    return sig if str(sig).startswith('data:') else f'data:image/png;base64,{sig}'
+    sig = str(sig).strip()
+    if not sig.startswith('data:'):
+        sig = f'data:image/png;base64,{sig}'
+    return sig if _SIG_DATA_URL_RE.match(sig) else None
 
 
 def generate_and_store(vin: str, year: int, month: int, user_id=None, user_name=None,
