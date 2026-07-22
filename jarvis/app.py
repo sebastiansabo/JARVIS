@@ -284,7 +284,7 @@ def _register_hooks(flask_app: Flask):
         if origin.startswith(('capacitor://', 'http://localhost', 'https://localhost', 'http://127.0.0.1')):
             response.headers['Access-Control-Allow-Origin'] = origin
             response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
             response.headers['Access-Control-Allow-Credentials'] = 'true'
             response.headers['Access-Control-Max-Age'] = '86400'
             if request.method == 'OPTIONS':
