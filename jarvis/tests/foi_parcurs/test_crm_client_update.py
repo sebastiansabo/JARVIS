@@ -67,14 +67,6 @@ def test_fill_license_number(client):
     assert r.get_json()['client']['driver_license_number'] == 'XY987654'
 
 
-def test_existing_license_not_overwritten(client):
-    r = client.patch('/api/foi-parcurs/crm-clients/2',
-                     json={'driver_license_number': 'HACK000'})
-    assert r.status_code == 200
-    assert r.get_json()['client']['driver_license_number'] == 'AB123456'
-    assert client.application._fake_repo.update_calls == []
-
-
 def test_invalid_phone_rejected(client):
     r = client.patch('/api/foi-parcurs/crm-clients/1', json={'phone': '12345'})
     assert r.status_code == 400
@@ -93,13 +85,18 @@ def test_unknown_id_404(client):
     assert r.status_code == 404
 
 
-def test_existing_values_not_overwritten(client):
-    """IDOR guard: a client that already has phone + email is returned
-    unchanged and update() is never called."""
+def test_existing_values_are_overwritten(client):
+    """Editing is allowed: existing phone/email are corrected in place."""
     r = client.patch('/api/foi-parcurs/crm-clients/2',
-                     json={'phone': '0711111111', 'email': 'attacker@evil.ro'})
+                     json={'phone': '0711111111', 'email': 'fixed@correct.ro'})
     assert r.status_code == 200
     body = r.get_json()
-    assert body['client']['phone'] == '0700000000'   # original kept
-    assert body['client']['email'] == 'set@already.ro'
-    assert client.application._fake_repo.update_calls == []
+    assert body['client']['phone'] == '0711111111'
+    assert body['client']['email'] == 'fixed@correct.ro'
+
+
+def test_existing_license_is_overwritten(client):
+    r = client.patch('/api/foi-parcurs/crm-clients/2',
+                     json={'driver_license_number': 'NEW999'})
+    assert r.status_code == 200
+    assert r.get_json()['client']['driver_license_number'] == 'NEW999'

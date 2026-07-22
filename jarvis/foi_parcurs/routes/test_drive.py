@@ -569,23 +569,23 @@ def api_create_crm_client():
 def api_update_crm_client(id):
     """Login-gated partial update of a CRM client's contact details
     (phone/email/driver_license_number) from the mobile Test Drive form, so a
-    consilier can complete a selected client's missing info without full CRM
-    access."""
+    consilier can complete OR correct a selected client's info without full CRM
+    access.
+
+    Scope note: only the three contact fields below are editable here, so the
+    blast radius is bounded — a consilier can already search and view every
+    client, and this lets them fix e.g. a mistyped email on the client they are
+    working with. It intentionally allows overwriting existing values (needed to
+    correct mistakes), unlike a fill-only endpoint."""
     data = request.get_json(silent=True) or {}
 
-    # Fill-only semantics: this endpoint is login-gated but NOT scoped to the
-    # caller's own clients (any consilier can search any client). To avoid an
-    # IDOR write vector — enumerating ids to overwrite arbitrary clients'
-    # contact details — we only ever populate a field that is currently empty,
-    # never overwrite an existing value. This also matches the design (the
-    # mobile panel only appears for missing fields).
     existing = _crm_client_repo.get_by_id(id)
     if existing is None:
         return jsonify({'success': False, 'error': 'Client not found'}), 404
 
     update_data = {}
 
-    if 'phone' in data and not (existing.get('phone') or '').strip():
+    if 'phone' in data:
         phone = (data.get('phone') or '').strip()
         phone_clean = phone.replace(' ', '').replace('-', '')
         if not _PHONE_RE.match(phone_clean):
@@ -595,19 +595,13 @@ def api_update_crm_client(id):
             }), 400
         update_data['phone'] = phone_clean
 
-    if 'email' in data and not (existing.get('email') or '').strip():
-        email = (data.get('email') or '').strip()
-        if email:
-            update_data['email'] = email
+    if 'email' in data:
+        update_data['email'] = (data.get('email') or '').strip()
 
-    if 'driver_license_number' in data and not (existing.get('driver_license_number') or '').strip():
-        lic = (data.get('driver_license_number') or '').strip()
-        if lic:
-            update_data['driver_license_number'] = lic
+    if 'driver_license_number' in data:
+        update_data['driver_license_number'] = (data.get('driver_license_number') or '').strip()
 
     if not update_data:
-        # Nothing to fill (fields already populated, or no valid input): return
-        # the current client unchanged rather than overwriting anything.
         return jsonify({'success': True, 'client': existing})
 
     try:
