@@ -45,6 +45,47 @@ def api_get_vehicle(vehicle_id):
     return jsonify({'success': True, 'vehicle': vehicle})
 
 
+# doc_type -> (column, human filename stem). Lets the mobile Parc Auto view pull
+# a single document blob on demand instead of the whole ~7 MB vehicle row.
+_DOC_COLUMNS = {
+    'insurance': ('insurance_doc', 'Asigurare'),
+    'talon': ('talon_doc', 'Talon'),
+    'civ': ('civ_doc', 'CIV'),
+    'registration': ('registration_doc', 'Inmatriculare'),
+    'offer': ('offer_doc', 'Oferta'),
+}
+
+
+def _doc_extension(data_url):
+    """Best-effort file extension from a data-URL mime type."""
+    if data_url.startswith('data:application/pdf'):
+        return 'pdf'
+    if data_url.startswith('data:image/png'):
+        return 'png'
+    if data_url.startswith('data:image/'):
+        return 'jpg'
+    return 'bin'
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/vehicles/<int:vehicle_id>/documents/<doc_type>', methods=['GET'])
+@login_required
+def api_get_vehicle_document(vehicle_id, doc_type):
+    """Return a single vehicle document (base64 data-URL) on demand."""
+    entry = _DOC_COLUMNS.get(doc_type)
+    if not entry:
+        return jsonify({'success': False, 'error': 'Unknown document type'}), 400
+    column, stem = entry
+    vehicle = _vehicle_repo.get_by_id(vehicle_id)
+    if not vehicle:
+        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+    data_url = vehicle.get(column)
+    if not data_url:
+        return jsonify({'success': False, 'error': 'Document not found'}), 404
+    plate = (vehicle.get('registration_number') or vehicle.get('vin') or str(vehicle_id)).replace(' ', '')
+    filename = f'{stem}_{plate}.{_doc_extension(data_url)}'
+    return jsonify({'success': True, 'type': doc_type, 'filename': filename, 'data_url': data_url})
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/odometer-history', methods=['GET'])
 @login_required
 def api_odometer_history():
