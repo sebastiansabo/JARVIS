@@ -127,6 +127,8 @@ def api_submit_test_drive():
             'gdpr_consent': bool(data.get('gdpr_consent')) if is_draft else True,
             'inspection_acceptance': bool(data.get('inspection_acceptance')),
             'inspection_id': data.get('inspection_id'),
+            # Optional link to a marketing project/campaign (nullable).
+            'mkt_project_id': int(data['mkt_project_id']) if data.get('mkt_project_id') else None,
             'source': 'td_form',
             'status': 'PLANNED' if is_draft else 'FILLED',
         }
@@ -308,6 +310,8 @@ def api_update_plan(id):
             if not isinstance(data['departure_damage'], list):
                 return jsonify({'success': False, 'error': 'departure_damage must be a list'}), 400
             update['departure_damage'] = data['departure_damage']
+        if 'mkt_project_id' in data:
+            update['mkt_project_id'] = int(data['mkt_project_id']) if data.get('mkt_project_id') else None
 
         if not update:
             return jsonify({'success': False, 'error': 'No editable fields provided'}), 400
@@ -613,3 +617,40 @@ def api_update_crm_client(id):
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
     return jsonify({'success': True, 'client': client or existing})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/mkt-projects/search', methods=['GET'])
+@login_required
+def api_search_mkt_projects():
+    """Login-gated marketing-project (campaign) search for the test-drive flow,
+    so a consilier without marketing access can attach a Test Drive to a
+    campaign. Scoped to the given company (direct company_id or membership in
+    company_ids) when provided; typing narrows by name/slug."""
+    q = (request.args.get('q') or '').strip()
+    company_id = request.args.get('company_id', type=int)
+    limit = min(max(request.args.get('limit', 20, type=int), 1), 50)
+
+    conditions = ['deleted_at IS NULL']
+    params = []
+    if company_id:
+        conditions.append('(company_id = %s OR %s = ANY(company_ids))')
+        params.extend([company_id, company_id])
+    if len(q) >= 2:
+        conditions.append('(name ILIKE %s OR slug ILIKE %s)')
+        like = f'%{q}%'
+        params.extend([like, like])
+    where = ' AND '.join(conditions)
+    params.append(limit)
+    try:
+        rows = _fp_repo.query_all(
+            f'''SELECT id, name, status, company_id, brand_id
+                FROM mkt_projects
+                WHERE {where}
+                ORDER BY updated_at DESC
+                LIMIT %s''',
+            tuple(params),
+        )
+    except Exception:
+        logger.exception('MKT project search failed for q=%r company_id=%r', q, company_id)
+        return jsonify({'success': False, 'error': 'Search failed'}), 500
+    return jsonify({'success': True, 'projects': rows})
