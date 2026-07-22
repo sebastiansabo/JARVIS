@@ -567,9 +567,20 @@ def api_update_crm_client(id):
     from the mobile Test Drive form, so a consilier can complete a selected
     client's missing contact info without full CRM access."""
     data = request.get_json(silent=True) or {}
+
+    # Fill-only semantics: this endpoint is login-gated but NOT scoped to the
+    # caller's own clients (any consilier can search any client). To avoid an
+    # IDOR write vector — enumerating ids to overwrite arbitrary clients'
+    # contact details — we only ever populate a field that is currently empty,
+    # never overwrite an existing value. This also matches the design (the
+    # mobile panel only appears for missing fields).
+    existing = _crm_client_repo.get_by_id(id)
+    if existing is None:
+        return jsonify({'success': False, 'error': 'Client not found'}), 404
+
     update_data = {}
 
-    if 'phone' in data:
+    if 'phone' in data and not (existing.get('phone') or '').strip():
         phone = (data.get('phone') or '').strip()
         phone_clean = phone.replace(' ', '').replace('-', '')
         if not _PHONE_RE.match(phone_clean):
@@ -579,11 +590,15 @@ def api_update_crm_client(id):
             }), 400
         update_data['phone'] = phone_clean
 
-    if 'email' in data:
-        update_data['email'] = (data.get('email') or '').strip()
+    if 'email' in data and not (existing.get('email') or '').strip():
+        email = (data.get('email') or '').strip()
+        if email:
+            update_data['email'] = email
 
     if not update_data:
-        return jsonify({'success': False, 'error': 'phone or email required'}), 400
+        # Nothing to fill (fields already populated, or no valid input): return
+        # the current client unchanged rather than overwriting anything.
+        return jsonify({'success': True, 'client': existing})
 
     try:
         client = _crm_client_repo.update(id, update_data)
@@ -591,6 +606,4 @@ def api_update_crm_client(id):
         logger.exception('Failed to update CRM client %s from Test Drive form', id)
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
-    if client is None:
-        return jsonify({'success': False, 'error': 'Client not found'}), 404
-    return jsonify({'success': True, 'client': client})
+    return jsonify({'success': True, 'client': client or existing})
