@@ -188,12 +188,14 @@ class FoiParcursRepository(BaseRepository):
             'v.mark AS vehicle_mark, v.model AS vehicle_model, '
             'v.registration_number AS vehicle_registration_number, '
             'v.brand AS vehicle_brand, v.fuel_type AS vehicle_fuel_type, '
+            'mp.name AS mkt_project_name, '
             f'{_TD_STATUS_SQL} '
             'FROM foi_de_parcurs fp '
             'LEFT JOIN fp_clients c ON c.id = fp.client_id '
             'LEFT JOIN crm_clients cc ON cc.id = fp.client_id '
             'LEFT JOIN companies co ON co.id = fp.company_id '
             'LEFT JOIN fp_vehicles v ON v.vin = fp.vin '
+            'LEFT JOIN mkt_projects mp ON mp.id = fp.mkt_project_id '
             'WHERE fp.id = %s'
         )
         return self.query_one(sql, (contract_id,))
