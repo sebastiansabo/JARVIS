@@ -744,7 +744,7 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
 
 // ── Foaie de Parcurs — collect Normă/Alimentări, generate (AI), preview, download ──
 type AlimRow = { date: string; bon: string; liters: string }
-type EventRow = { name: string; date: string }
+type EventRow = { name: string; start: string; end: string }
 
 function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
   vin: string | null; year: number; month: number; stored: StoredRouteSheet | null; onClose: () => void
@@ -776,7 +776,7 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
         .map((a) => ({ date: a.date, bon: a.bon, liters: Number(a.liters || 0) }))
       const evPayload: RouteSheetEvent[] = events
         .filter((e) => e.name.trim())
-        .map((e) => ({ name: e.name.trim(), date: e.date }))
+        .map((e) => ({ name: e.name.trim(), start: e.start, end: e.end || e.start }))
       const blob = await foiParcursApi.generateRouteSheetPdf(vin, year, month, {
         regenerate, norma: norma ? Number(norma) : null, alimentari, events: evPayload,
       })
@@ -799,7 +799,7 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
     )
     setEvents(
       Array.isArray(stored?.evenimente)
-        ? stored!.evenimente!.map((e) => ({ name: e.name || '', date: e.date || '' }))
+        ? stored!.evenimente!.map((e) => ({ name: e.name || '', start: e.start || '', end: e.end || e.start || '' }))
         : [],
     )
     setError('')
@@ -815,10 +815,10 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
 
   const setEventRow = (i: number, k: keyof EventRow, v: string) =>
     setEvents((p) => p.map((e, idx) => (idx === i ? { ...e, [k]: v } : e)))
-  const addEvent = () => setEvents((p) => [...p, { name: '', date: '' }])
+  const addEvent = () => setEvents((p) => [...p, { name: '', start: '', end: '' }])
   const removeEvent = (i: number) => setEvents((p) => p.filter((_, idx) => idx !== i))
-  const importEvent = (name: string, date: string) =>
-    setEvents((p) => (p.some((e) => e.name === name && e.date === date) ? p : [...p, { name, date }]))
+  const importEvent = (name: string, start: string, end: string) =>
+    setEvents((p) => (p.some((e) => e.name === name && e.start === start) ? p : [...p, { name, start, end }]))
 
   const fileName = `foaie-parcurs-${vin}-${year}-${String(month).padStart(2, '0')}.pdf`
 
@@ -871,9 +871,9 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="max-h-[240px] overflow-y-auto">
                       {periodEvents.map((e) => (
-                        <DropdownMenuItem key={e.id} onClick={() => importEvent(e.name, e.start_date)}>
+                        <DropdownMenuItem key={e.id} onClick={() => importEvent(e.name, e.start_date, e.end_date)}>
                           <span className="truncate">{e.name}</span>
-                          <span className="ml-2 text-xs text-muted-foreground">{e.start_date}</span>
+                          <span className="ml-2 text-xs text-muted-foreground">{e.start_date}{e.end_date && e.end_date !== e.start_date ? `–${e.end_date}` : ''}</span>
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
@@ -883,14 +883,20 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
                   </Button>
                 </div>
               </div>
-              {events.length === 0 && <p className="text-xs text-muted-foreground">Fără evenimente. AI leagă cursele Comodat de proiectul sesiunii; adaugă evenimente pentru context suplimentar.</p>}
+              {events.length === 0 && <p className="text-xs text-muted-foreground">Fără evenimente. O cursă se leagă de un eveniment doar dacă data ei e în intervalul evenimentului.</p>}
               {events.map((e, i) => (
-                <div key={i} className="flex items-center gap-1.5">
-                  <Input type="date" className="h-8 w-[118px] shrink-0 text-xs" value={e.date} onChange={(ev) => setEventRow(i, 'date', ev.target.value)} />
-                  <Input className="h-8 flex-1 min-w-0 text-xs" placeholder="Nume eveniment" value={e.name} onChange={(ev) => setEventRow(i, 'name', ev.target.value)} />
-                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeEvent(i)}>
-                    <XIcon className="h-3.5 w-3.5" />
-                  </Button>
+                <div key={i} className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <Input className="h-8 flex-1 min-w-0 text-xs" placeholder="Nume eveniment" value={e.name} onChange={(ev) => setEventRow(i, 'name', ev.target.value)} />
+                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeEvent(i)}>
+                      <XIcon className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Input type="date" className="h-8 flex-1 text-xs" title="Început" value={e.start} onChange={(ev) => setEventRow(i, 'start', ev.target.value)} />
+                    <span className="text-xs text-muted-foreground">–</span>
+                    <Input type="date" className="h-8 flex-1 text-xs" title="Sfârșit" min={e.start || undefined} value={e.end} onChange={(ev) => setEventRow(i, 'end', ev.target.value)} />
+                  </div>
                 </div>
               ))}
             </div>

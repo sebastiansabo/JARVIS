@@ -32,7 +32,8 @@ export interface GapFillContract {
 
 export interface RouteSheetEvent {
   name: string
-  date: string
+  start: string
+  end: string
 }
 
 export interface StoredRouteSheet {

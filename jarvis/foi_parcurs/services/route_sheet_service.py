@@ -57,6 +57,12 @@ def _fmt_dt(v) -> str:
     return dt.strftime('%d.%m.%Y %H:%M') if dt else ''
 
 
+def _iso_date(v) -> str:
+    """ISO date 'YYYY-MM-DD' (for matching a session against an event interval)."""
+    dt = _as_dt(v)
+    return dt.strftime('%Y-%m-%d') if dt else ''
+
+
 def aggregate_month(vin: str, year: int, month: int) -> dict:
     """Collect the locked-facts view of one car's month of driving sessions."""
     rows, _ = _fp_repo.get_contracts(vin=vin, per_page=2000, lean=True)
@@ -138,6 +144,7 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
         trips.append({
             'id': i,
             'date': _fmt_date(c.get('departure_datetime') or c.get('created_at')),
+            'iso': _iso_date(c.get('departure_datetime') or c.get('created_at')),
             'plecare': _fmt_dt(c.get('departure_datetime')),
             'sosire': _fmt_dt(c.get('return_datetime')),
             'km_start': c.get('km_start') or 0,
@@ -185,15 +192,32 @@ def _ai_prose(data: dict) -> dict:
     fallback = {'trips': {t['id']: t['traseu'] for t in data['trips']}, 'summary': ''}
     if not data['trips']:
         return fallback
-    # Every Comodat session can be tied to its own project or one of the events.
+    # Normalize events to {name, start, end}; an event can be tied to a session
+    # ONLY if the session's date falls within [start, end].
+    events = []
+    for e in (data.get('events') or []):
+        name = (e.get('name') or '').strip()
+        if not name:
+            continue
+        start = (e.get('start') or e.get('date') or '').strip()
+        end = (e.get('end') or e.get('date') or start).strip()
+        events.append({'name': name, 'start': start, 'end': end})
+
+    def _eligible_event(iso: str) -> str:
+        """Name of an event whose interval contains the session's date, else ''."""
+        if not iso:
+            return ''
+        for ev in events:
+            if ev['start'] and ev['start'] <= iso <= (ev['end'] or ev['start']):
+                return ev['name']
+        return ''
+
+    # Every Comodat session may be tied to its own project or an in-interval event.
     to_fill = [
         {'id': t['id'], 'data': t['date'], 'km_parcursi': t['distance_km'],
-         'sofer': t['driver'], 'proiect_promovare': t['project']}
+         'sofer': t['driver'], 'proiect_promovare': t['project'],
+         'eveniment_eligibil': _eligible_event(t.get('iso', ''))}
         for t in data['trips'] if not t['is_td']
-    ]
-    events = [
-        {'nume': (e.get('name') or '').strip(), 'data': (e.get('date') or '').strip()}
-        for e in (data.get('events') or []) if (e.get('name') or '').strip()
     ]
 
     system = (
@@ -202,19 +226,18 @@ def _ai_prose(data: dict) -> dict:
         'Pentru fiecare cursă de tip Comodat, compune un text scurt de traseu/scop care '
         'leagă deplasarea de participarea la un eveniment/proiect de promovare '
         '(ex: "Deplasare în interes de serviciu — participare la {eveniment}, în scop de promovare"). '
-        'Folosește proiect_promovare al cursei dacă există; altfel alege dintre evenimentele '
-        'furnizate pe cel mai apropiat ca dată. Dacă nu există niciunul, păstrează un scop generic. '
+        'Folosește proiect_promovare al cursei dacă există; altfel folosește exact '
+        'eveniment_eligibil (deja filtrat pe data cursei). NU lega o cursă de un eveniment '
+        'dacă eveniment_eligibil este gol — în acest caz păstrează un scop generic. '
         'Scrie și un rezumat lunar de 1-2 fraze. Răspunde STRICT în JSON, fără alt text.'
     )
     prompt = (
         'Vehicul: {make} {model} ({vin}). Perioada: {period}.\n'
-        'Evenimente de promovare disponibile: {events}\n'
         'Curse Comodat (folosește exact aceste id-uri):\n{trips}\n\n'
         'Returnează JSON: {{"trips": {{"<id>": "traseu/scop"}}, "summary": "rezumat lunar"}}'
     ).format(
         make=data['vehicle']['make'], model=data['vehicle']['model'], vin=data['vehicle']['vin'],
-        period=data['period']['label'], events=json.dumps(events, ensure_ascii=False),
-        trips=json.dumps(to_fill, ensure_ascii=False),
+        period=data['period']['label'], trips=json.dumps(to_fill, ensure_ascii=False),
     )
 
     try:
