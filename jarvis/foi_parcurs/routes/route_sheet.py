@@ -24,6 +24,7 @@ def api_route_sheet_pdf():
             regenerate=bool(data.get('regenerate')),
             norma=data.get('norma'),
             alimentari=data.get('alimentari') or [],
+            events=data.get('events') or [],
         )
     except Exception as e:
         logger.exception('Route-sheet PDF failed for %s %s-%s', vin, year, month)
