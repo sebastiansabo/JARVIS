@@ -66,7 +66,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { useAuthStore } from '@/stores/authStore'
-import { foiParcursApi, type StoredRouteSheet, type RouteSheetAlimentare, type RouteSheetEvent } from '@/api/foiParcurs'
+import { foiParcursApi, type StoredRouteSheet, type RouteSheetAlimentare, type RouteSheetEvent, type SessionImportResult } from '@/api/foiParcurs'
 import { hrApi } from '@/api/hr'
 import {
   fuelUnit,
@@ -196,14 +196,90 @@ export default function FoiParcurs() {
 
 // ── Contracts Tab — Form → Preview → Save Batch ──
 function ContractsTab({ companyId }: { companyId: number }) {
+  const [importOpen, setImportOpen] = useState(false)
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-lg font-semibold">Foi de Parcurs</h3>
-        <p className="text-sm text-muted-foreground">Sesiuni de rulare cumulate lunar, per mașină</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Foi de Parcurs</h3>
+          <p className="text-sm text-muted-foreground">Sesiuni de rulare cumulate lunar, per mașină</p>
+        </div>
+        <Button variant="outline" onClick={() => setImportOpen(true)}>
+          <Download className="mr-1.5 h-4 w-4" /> Importă sesiuni
+        </Button>
       </div>
       <RouteSheetsTable companyId={companyId} />
+      <SessionImportDialog companyId={companyId} open={importOpen} onOpenChange={setImportOpen} />
     </div>
+  )
+}
+
+// ── Bulk session import — download template, upload filled Excel, show report ──
+function SessionImportDialog({ companyId, open, onOpenChange }: {
+  companyId: number; open: boolean; onOpenChange: (o: boolean) => void
+}) {
+  const queryClient = useQueryClient()
+  const [file, setFile] = useState<File | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<SessionImportResult | null>(null)
+
+  useEffect(() => { if (open) { setFile(null); setError(''); setResult(null) } }, [open])
+
+  const doImport = async () => {
+    if (!file || !companyId) return
+    setBusy(true); setError(''); setResult(null)
+    try {
+      const r = await foiParcursApi.importSessions(companyId, file)
+      setResult(r)
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
+    } catch (e: any) {
+      setError(e?.message || 'Import eșuat')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Importă sesiuni</DialogTitle></DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Descarcă template-ul, completează sesiunile (o linie per cursă), apoi încarcă fișierul.
+          VIN-urile inexistente creează mașina; duplicatele sunt ignorate.
+        </p>
+        <a href={foiParcursApi.getSessionImportTemplateUrl(companyId)} download>
+          <Button variant="outline" size="sm" className="h-8" disabled={!companyId}>
+            <Download className="mr-1.5 h-4 w-4" /> Descarcă template
+          </Button>
+        </a>
+        <Input type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        {error && <div className="text-sm text-red-600">{error}</div>}
+        {result && (
+          <div className="rounded border p-3 text-sm space-y-1">
+            <div className="flex flex-wrap gap-3">
+              <Badge className="bg-green-600 text-white">Adăugate: {result.inserted}</Badge>
+              <Badge variant="outline">Ignorate (dup): {result.skipped}</Badge>
+              <Badge className="bg-blue-600 text-white">Mașini create: {result.cars_created}</Badge>
+              {result.errors.length > 0 && <Badge variant="destructive">Erori: {result.errors.length}</Badge>}
+            </div>
+            {result.errors.length > 0 && (
+              <ul className="mt-1 max-h-40 overflow-y-auto text-xs text-red-600">
+                {result.errors.map((er, i) => <li key={i}>Linia {er.row}: {er.message}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Închide</Button>
+          <Button onClick={doImport} disabled={!file || busy}>
+            {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}
+            Importă
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
