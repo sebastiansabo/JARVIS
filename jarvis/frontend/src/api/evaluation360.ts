@@ -48,6 +48,48 @@ export interface CreateCyclePayload {
   release_policy?: string
 }
 
+// ── Reviewer (capture) ──────────────────────────────────────────────────────
+
+export interface MyAssignment {
+  id: number
+  cycle_id: number
+  subject_id: number
+  relationship: string
+  status: string
+  due_at: string | null
+  subject_name: string
+  cycle_name: string
+  review_end: string | null
+}
+
+export type QuestionType = 'rating' | 'behavioral_frequency' | 'open_text' | 'forced_choice'
+
+export interface Question {
+  id: number
+  competency_id: number | null
+  competency_name: string | null
+  type: QuestionType
+  text_by_audience: Record<string, string>
+  required: boolean
+  sort_order: number
+}
+
+export interface EvaluationForm {
+  assignment: MyAssignment
+  questions: Question[]
+  draft: Record<string, string | number | null>
+  is_submitted: boolean
+}
+
+/** A submitted answer for one question. `rating` null means "Not observed". */
+export interface Answer {
+  question_id: number
+  competency_id: number | null
+  rating: number | null
+  not_observed: boolean
+  comment?: string
+}
+
 const BASE = '/hr/evaluation360/api'
 
 export const eval360Api = {
@@ -60,6 +102,25 @@ export const eval360Api = {
   dryRun: (id: number) => api.get<{ dry_run: DryRun }>(`${BASE}/cycles/${id}/dry-run`),
   nudge: (id: number, userId: number) =>
     api.post<{ ok: boolean }>(`${BASE}/cycles/${id}/nudge`, { user_id: userId }),
+
+  // reviewer capture
+  myAssignments: () => api.get<{ assignments: MyAssignment[] }>(`${BASE}/me/assignments`),
+  getForm: (id: number) => api.get<EvaluationForm>(`${BASE}/assignments/${id}/form`),
+  saveDraft: (id: number, patch: Record<string, string | number | null>) =>
+    api.put<{ draft: Record<string, string | number | null> }>(
+      `${BASE}/assignments/${id}/draft`, { patch, device: 'web' }),
+  submit: (id: number, answers: Answer[]) =>
+    api.post<{ ok: boolean }>(`${BASE}/assignments/${id}/submit`, { answers, device: 'web' }),
+  selfDecline: (id: number, reason: string) =>
+    api.patch<{ ok: boolean }>(`${BASE}/assignments/${id}/self-decline`, { reason }),
+}
+
+export const RELATIONSHIP_LABEL: Record<string, string> = {
+  self: 'Autoevaluare',
+  manager: 'Manager',
+  peer: 'Coleg',
+  direct_report: 'Subordonat',
+  external: 'Extern',
 }
 
 /** Forward transitions allowed from each state (mirrors the backend state machine). */
