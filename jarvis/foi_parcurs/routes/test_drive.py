@@ -220,8 +220,14 @@ def api_activate_test_drive(id):
             'fuel_gauge_start_level': start_level,
             'fuel_start_liters': fuel_start_liters,
         }
-        if data.get('odometer_start') is not None:
-            update['km_start'] = int(data['odometer_start'])
+        # Live-refresh the starting odometer to the car's latest reading across
+        # ALL its sessions. A draft planned earlier must not start below the
+        # mileage the car has actually reached since; a higher manual reading
+        # (car drove further) still wins.
+        _floor = _fp_repo.get_mileage_floor(contract.get('vin'), exclude_id=id)
+        _provided = data.get('odometer_start')
+        _base = int(_provided) if _provided is not None else (contract.get('km_start') or 0)
+        update['km_start'] = max(_base, _floor)
         if data.get('departure_datetime'):
             update['departure_datetime'] = data['departure_datetime']
         if data.get('return_datetime'):

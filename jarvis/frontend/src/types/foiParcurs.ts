@@ -29,6 +29,9 @@ export interface FpVehicle {
   fuel_tank_capacity_liters: number | null
   battery_capacity_kwh?: number | null
   odometer_km?: number | null
+  /** Highest known mileage: max(odometer_km, greatest km_end across the car's
+   *  non-draft sessions). Drives the TD form's start prefill + "below mileage" warning. */
+  mileage_floor?: number | null
   registration_number?: string
   company_id?: number
   company_name?: string
