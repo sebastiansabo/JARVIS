@@ -41,6 +41,17 @@ class ReportRepository(BaseRepository):
                FROM eval_reports r JOIN eval_participants p ON p.id = r.participant_id
                WHERE r.cycle_id = %s AND p.employee_id = %s''', (cycle_id, employee_id))
 
+    def list_for_employee(self, employee_id):
+        """The employee's own released reports across cycles (headers only)."""
+        return self.query_all(
+            '''SELECT r.id, r.cycle_id, c.name AS cycle_name,
+                      r.released_at, r.acknowledged_at
+               FROM eval_reports r
+               JOIN eval_participants p ON p.id = r.participant_id
+               JOIN eval_cycles c ON c.id = r.cycle_id
+               WHERE p.employee_id = %s AND r.released_at IS NOT NULL
+               ORDER BY r.released_at DESC''', (employee_id,))
+
     def list_for_cycle(self, cycle_id):
         """HR status view — flags only, no report content."""
         return self.query_all(

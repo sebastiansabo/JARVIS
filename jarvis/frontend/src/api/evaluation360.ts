@@ -115,6 +115,57 @@ export const eval360Api = {
     api.patch<{ ok: boolean }>(`${BASE}/assignments/${id}/self-decline`, { reason }),
 }
 
+// ── Reports ─────────────────────────────────────────────────────────────────
+
+export interface ReportHeader {
+  id: number
+  cycle_id: number
+  cycle_name: string
+  released_at: string
+  acknowledged_at: string | null
+}
+
+export interface CompetencyAgg {
+  competency_id: number
+  competency_name: string | null
+  self: number | null
+  others: number | null
+  gap: number | null
+  johari: string | null
+  categories: Record<string, { n: number; score: number | null; hidden: boolean }>
+}
+
+export interface ReportAggregates {
+  competencies: CompetencyAgg[]
+  visible_relationships: string[]
+  hidden_relationships: string[]
+}
+
+export interface Report {
+  id: number
+  cycle_id: number
+  participant_id: number
+  aggregates_by_relationship: ReportAggregates
+  gap_analysis: { flagged_competencies: number[] }
+  hidden_categories: string[]
+  manager_summary: string | null
+  released_at: string | null
+  acknowledged_at: string | null
+}
+
+export const JOHARI_LABEL: Record<string, string> = {
+  confirmed_strength: 'Puncte forte confirmate',
+  blind_spot: 'Puncte oarbe',
+  hidden_strength: 'Puncte forte ascunse',
+  agreed_growth: 'Zone de dezvoltare',
+}
+
+export const eval360Reports = {
+  myReports: () => api.get<{ reports: ReportHeader[] }>(`${BASE}/me/reports`),
+  myReport: (cycleId: number) => api.get<{ report: Report }>(`${BASE}/me/report/${cycleId}`),
+  acknowledge: (reportId: number) => api.post<{ ok: boolean }>(`${BASE}/reports/${reportId}/acknowledge`),
+}
+
 export const RELATIONSHIP_LABEL: Record<string, string> = {
   self: 'Autoevaluare',
   manager: 'Manager',

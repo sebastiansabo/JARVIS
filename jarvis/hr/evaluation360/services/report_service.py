@@ -73,6 +73,10 @@ class ReportService:
             built += 1
         return built
 
+    def my_reports(self, employee_id):
+        """Headers of the employee's released reports."""
+        return self.reports.list_for_employee(employee_id)
+
     def my_report(self, cycle_id, employee_id):
         rep = self.reports.get_for_employee(cycle_id, employee_id)
         if not rep:
