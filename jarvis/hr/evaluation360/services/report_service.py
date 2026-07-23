@@ -107,6 +107,19 @@ class ReportService:
                          payload={'report_id': report_id})
         return True
 
+    def team_reports(self, manager_id):
+        """Headers of the manager's direct-reports' reports (for calibration)."""
+        return self.reports.list_for_manager(self._reports_of(manager_id))
+
+    def manager_report(self, report_id, manager_id):
+        """A direct report's full report (draft or released) for calibration."""
+        rep = self.reports.get_with_owner(report_id)
+        if not rep:
+            raise ReportError('not found', 404)
+        if rep['employee_id'] not in self._reports_of(manager_id):
+            raise ReportError('not your direct report', 403)
+        return rep
+
     def set_manager_summary(self, report_id, manager_id, summary):
         summary = (summary or '').strip()
         if not (MIN_SUMMARY <= len(summary) <= MAX_SUMMARY):

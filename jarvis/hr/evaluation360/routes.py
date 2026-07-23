@@ -223,10 +223,36 @@ def my_report(cycle_id):
         return jsonify({'error': str(e)}), e.status
 
 
+@eval360_bp.route('/api/me/team-reports', methods=['GET'])
+@login_required
+def team_reports():
+    return jsonify({'reports': ReportService().team_reports(_actor_id())})
+
+
+@eval360_bp.route('/api/reports/<int:report_id>/manager-view', methods=['GET'])
+@login_required
+def manager_report(report_id):
+    try:
+        return jsonify({'report': ReportService().manager_report(report_id, _actor_id())})
+    except ReportError as e:
+        return jsonify({'error': str(e)}), e.status
+
+
 @eval360_bp.route('/api/reports/<int:report_id>/release', methods=['POST'])
 @hr_manager_required
 def release_report(report_id):
     try:
+        return jsonify({'report': ReportService().release(report_id, _actor_id())})
+    except ReportError as e:
+        return jsonify({'error': str(e)}), e.status
+
+
+@eval360_bp.route('/api/reports/<int:report_id>/manager-release', methods=['POST'])
+@login_required
+def manager_release_report(report_id):
+    # A manager releasing their own direct report's report (manager-gated policy).
+    try:
+        ReportService().manager_report(report_id, _actor_id())  # ownership check
         return jsonify({'report': ReportService().release(report_id, _actor_id())})
     except ReportError as e:
         return jsonify({'error': str(e)}), e.status
