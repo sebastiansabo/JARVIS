@@ -1,0 +1,246 @@
+{
+  "$schema": "jarvis2/indicator-catalog/v1",
+  "module": "360-evaluation",
+  "version": "1.0.0",
+  "date": "2026-07-23",
+  "conventions": {
+    "windows": "All rates computed per review cycle unless refresh says otherwise.",
+    "min_n": { "relationship_category": 3, "org_slice": 5 },
+    "not_observed": "Always excluded from every mean, count, and σ.",
+    "immutability": "Indicators read submitted (immutable) responses only; drafts never count.",
+    "trend_rule": "Cross-cycle comparison only on same competency + same template version; else break the series."
+  },
+  "events_required": [
+    "assignment.created { assignment_id, cycle_id, subject_id, reviewer_id, relationship, due_at }",
+    "assignment.started { assignment_id, ts, device }",
+    "assignment.submitted { assignment_id, ts, device, answers[{question_id, competency_id, rating|not_observed, comment}] }",
+    "assignment.declined { assignment_id, ts, reason }",
+    "report.released { report_id, participant_id, ts }",
+    "report.acknowledged { report_id, ts }",
+    "debrief.scheduled / debrief.held { report_id, ts }",
+    "devplan.created / devplan.checkin_completed { participant_id, ts }",
+    "nudge.sent { user_id, ts, source }"
+  ],
+  "indicators": [
+    {
+      "id": "A1_completion_rate",
+      "family": "adoption",
+      "name": "Reviewer completion rate",
+      "formula": "count(assignment.submitted before cycle.review_end) / count(assignment.created, excl. replaced)",
+      "target": ">= 0.90",
+      "warn": "< 0.75 at 50% of review window elapsed",
+      "surface": ["hub.hr.tiles", "hub.hr.dept_bars", "hub.manager.team_board"],
+      "refresh": "15min",
+      "slices": ["department", "relationship", "team"],
+      "alert": "warn breach -> hr_admin digest + one-click nudge (rate-limited 1/day/user)"
+    },
+    {
+      "id": "A2_median_eval_time",
+      "family": "adoption",
+      "name": "Median time per evaluation",
+      "formula": "median(submitted.ts - started.ts) over submitted assignments; cap outliers at p95 before median if resume-gaps > 30min are subtracted",
+      "target": "<= 240s (mobile)",
+      "warn": "> 360s sustained over 50+ submissions",
+      "surface": ["hub.hr.tiles"],
+      "refresh": "hourly",
+      "slices": ["device", "template_version"],
+      "alert": "warn -> flag form length; correlate with A5 to find the bloated competency screens"
+    },
+    {
+      "id": "A3_mobile_share",
+      "family": "adoption",
+      "name": "Mobile share of submissions",
+      "formula": "count(submitted where device='mobile') / count(submitted)",
+      "target": "informational; baseline ~0.78",
+      "surface": ["hub.hr.tiles"],
+      "refresh": "daily",
+      "alert": "none"
+    },
+    {
+      "id": "A4_decline_rate",
+      "family": "adoption",
+      "name": "Decline rate",
+      "formula": "count(assignment.declined) / count(assignment.created)",
+      "target": "< 0.10",
+      "warn": ">= 0.10 cycle-wide or >= 0.25 for one subject",
+      "surface": ["hub.hr.decline_queue"],
+      "refresh": "15min",
+      "alert": "per-subject breach -> hr_admin with replacement suggestions; subject sees only 'reviewer replaced'"
+    },
+    {
+      "id": "A5_overdue_count",
+      "family": "adoption",
+      "name": "Overdue assignments",
+      "formula": "count(now > due_at and not submitted/declined)",
+      "target": "0 at review_end",
+      "surface": ["hub.hr.progress", "hub.manager.team_board", "mobile.inbox (pinned red)"],
+      "refresh": "15min",
+      "alert": "T+1d email, then every 3d, max 3; manager digest"
+    },
+    {
+      "id": "A6_reviewer_load",
+      "family": "adoption",
+      "name": "Reviewer load",
+      "formula": "count(active assignments) per reviewer_id at nomination close",
+      "target": "<= 8",
+      "surface": ["hub.hr.health_checks"],
+      "refresh": "on nomination change",
+      "alert": "> 8 -> block auto-approve, require hr_admin rebalance"
+    },
+    {
+      "id": "A7_peer_eligibility",
+      "family": "adoption",
+      "name": "Participants with < 3 eligible peers",
+      "formula": "count(participants where eligible_peer_pool < 3) from dry-run validation",
+      "target": "0 before cycle activation",
+      "surface": ["hub.hr.health_checks (dry-run report)"],
+      "refresh": "nightly + on population change",
+      "alert": "blocks cycle transition draft -> nomination until resolved or waived"
+    },
+    {
+      "id": "B1_example_rate",
+      "family": "quality",
+      "name": "Comments with a specific example",
+      "formula": "count(comments classified example=true) / count(non-empty comments); classifier = length >= 40 chars AND contains concrete-event heuristic (past-tense verb + object) or AI label",
+      "target": ">= 0.60",
+      "surface": ["hub.hr.tiles"],
+      "refresh": "daily",
+      "slices": ["relationship", "department"],
+      "alert": "informational; drives the one-time mobile nudge (never blocking)"
+    },
+    {
+      "id": "B2_not_observed_rate",
+      "family": "quality",
+      "name": "Not-observed rate per question",
+      "formula": "count(answers not_observed) / count(answers) per question_id",
+      "target": "< 0.25",
+      "warn": ">= 0.25",
+      "surface": ["hub.hr.template_analytics"],
+      "refresh": "per cycle close",
+      "alert": "breach -> question flagged 'unobservable as written' for next template version"
+    },
+    {
+      "id": "B3_outlier_flag",
+      "family": "quality",
+      "name": "Single-rater outlier",
+      "formula": "|rating - mean(category ratings, excl. self)| > 2 * stdev(category ratings); only when category n >= 3",
+      "target": "flag, never edit",
+      "surface": ["hub.manager.calibration"],
+      "refresh": "on aggregate build",
+      "alert": "shown to manager as context; never identifies the rater; never shown to subject"
+    },
+    {
+      "id": "B4_leniency_index",
+      "family": "quality",
+      "name": "Leniency / severity index",
+      "formula": "mean(ratings GIVEN by dept members) - mean(all ratings given org-wide), per department; never per individual reviewer",
+      "target": "|LI| < 0.5",
+      "surface": ["hub.hr.org_analytics"],
+      "refresh": "per cycle close",
+      "min_n": 5,
+      "alert": "|LI| >= 0.5 -> calibration-hygiene note to hr_admin; informs manager summaries"
+    },
+    {
+      "id": "B5_score_drift",
+      "family": "quality",
+      "name": "Score distribution drift",
+      "formula": "mean(cycle scores) - mean(prior cycle scores) per competency, same template version only; report with % of categories shifting > 0.3",
+      "target": "|drift| < 0.3 absent an intervention",
+      "surface": ["hub.hr.org_analytics"],
+      "refresh": "per cycle close",
+      "alert": "informational; large drift + template change = broken series, render as such"
+    },
+    {
+      "id": "B6_anonymity_compliance",
+      "family": "quality",
+      "name": "Anonymity threshold enforcement",
+      "formula": "count(report categories rendered with n < 3) — must be 0; server-side gate, not a dashboard stat",
+      "target": "0, hard invariant",
+      "surface": ["report renderer (hidden-category notices)", "audit log"],
+      "refresh": "every report render",
+      "alert": "any violation -> block render, page engineering; this is a correctness bug, not a metric miss"
+    },
+    {
+      "id": "C1_category_score",
+      "family": "score",
+      "name": "Category score",
+      "formula": "mean(ratings in relationship category, excl. not_observed); render only when n >= 3 (manager & self exempt, n=1 attributed)",
+      "target": "n/a — display value",
+      "surface": ["report", "mobile.results"],
+      "refresh": "on aggregate build (calibration onward)"
+    },
+    {
+      "id": "C2_others_composite",
+      "family": "score",
+      "name": "Others composite",
+      "formula": "mean(category means), NOT pooled responses — equal weight per relationship so a large peer group can't drown direct reports",
+      "target": "n/a — display value",
+      "surface": ["report radar", "mobile.results"]
+    },
+    {
+      "id": "C3_gap",
+      "family": "score",
+      "name": "Self–others gap",
+      "formula": "self_score - others_composite, per competency",
+      "target": "|gap| >= 1.0 flags Johari placement",
+      "surface": ["report gap chips", "johari"],
+      "alert": "largest negative gap seeds the development plan suggestion"
+    },
+    {
+      "id": "C4_johari_class",
+      "family": "score",
+      "name": "Johari quadrant classification",
+      "formula": "split at 3.5/3.5 on (self, others): both high = confirmed strength; self high/others low = blind spot; self low/others high = hidden strength; both low = agreed growth",
+      "target": "n/a — classification",
+      "surface": ["hub.employee.johari", "mobile.results (chips)"]
+    },
+    {
+      "id": "C5_trend_delta",
+      "family": "score",
+      "name": "Cycle-over-cycle trend",
+      "formula": "category_score(cycle) - category_score(prior cycle); only same competency + template version, else series break shown explicitly",
+      "target": "n/a — display value",
+      "surface": ["hub.employee.report", "hub.manager.calibration (side-by-side)"]
+    },
+    {
+      "id": "D1_debrief_rate",
+      "family": "outcome",
+      "name": "Debrief within 14 days",
+      "formula": "count(debrief.held <= released_at + 14d) / count(report.released)",
+      "target": ">= 0.80",
+      "surface": ["hub.hr.org_analytics", "hub.manager.team_board (per report)"],
+      "refresh": "daily",
+      "alert": "report released 10d without debrief scheduled -> manager nudge"
+    },
+    {
+      "id": "D2_ack_rate",
+      "family": "outcome",
+      "name": "Report acknowledgment rate",
+      "formula": "count(report.acknowledged <= released_at + 7d) / count(report.released)",
+      "target": ">= 0.90",
+      "surface": ["hub.hr.org_analytics"],
+      "refresh": "daily",
+      "alert": "unacknowledged 7d -> employee push (deep-link to report)"
+    },
+    {
+      "id": "D3_devplan_activation",
+      "family": "outcome",
+      "name": "Development plan activation",
+      "formula": "count(participants with devplan.created and >= 1 goal, <= released_at + 30d) / count(report.released)",
+      "target": ">= 0.70",
+      "surface": ["hub.hr.org_analytics", "hub.manager.team_board"],
+      "refresh": "daily",
+      "alert": "day 21 without plan -> manager + employee nudge"
+    },
+    {
+      "id": "D4_checkin_completion",
+      "family": "outcome",
+      "name": "Check-in completion",
+      "formula": "count(devplan.checkin_completed within 7d of scheduled date) / count(check-ins scheduled)",
+      "target": ">= 0.75",
+      "surface": ["hub.employee.devplan", "hub.manager.team_board"],
+      "refresh": "daily",
+      "alert": "missed check-in -> reschedule prompt to both parties"
+    }
+  ]
+}
