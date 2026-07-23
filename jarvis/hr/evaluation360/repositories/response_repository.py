@@ -17,6 +17,16 @@ class ResponseRepository(BaseRepository):
         return self.query_one(
             'SELECT * FROM eval_responses WHERE assignment_id = %s', (assignment_id,))
 
+    def submitted_for_subject(self, cycle_id, subject_id):
+        """[{relationship, answers}] — one row per submitted review of this subject.
+        The aggregation layer consumes these; raw rows never leave the server."""
+        return self.query_all(
+            '''SELECT a.relationship, r.answers
+               FROM eval_assignments a
+               JOIN eval_responses r ON r.assignment_id = a.id
+               WHERE a.cycle_id = %s AND a.subject_id = %s AND r.is_submitted = TRUE''',
+            (cycle_id, subject_id))
+
     def save_draft(self, assignment_id, patch, device=None):
         """Merge ``patch`` ({question_id: value, ...}) into the draft. Idempotent
         per question — re-saving a question overwrites just that key. Returns the

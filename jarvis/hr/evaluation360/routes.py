@@ -14,6 +14,7 @@ from hr.evaluation360.services.cycle_service import CycleService, CycleError
 from hr.evaluation360.services.nomination_service import NominationService
 from hr.evaluation360.services.nudge_service import NudgeService, NudgeRateLimited
 from hr.evaluation360.services.response_service import ResponseService, ResponseError
+from hr.evaluation360.services.report_service import ReportService, ReportError
 
 
 def _actor_id():
@@ -184,5 +185,63 @@ def self_decline(assignment_id):
     try:
         ResponseService().self_decline(assignment_id, _actor_id(), data.get('reason', ''))
     except ResponseError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'ok': True})
+
+
+# ── Reports (P4) ─────────────────────────────────────────────────────────────
+
+@eval360_bp.route('/api/cycles/<int:cycle_id>/build-reports', methods=['POST'])
+@hr_manager_required
+def build_reports(cycle_id):
+    try:
+        built = ReportService().build_reports(cycle_id)
+    except ReportError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'built': built})
+
+
+@eval360_bp.route('/api/cycles/<int:cycle_id>/reports', methods=['GET'])
+@hr_required
+def report_status(cycle_id):
+    # status flags only — never report content
+    return jsonify({'reports': ReportService().status_list(cycle_id)})
+
+
+@eval360_bp.route('/api/me/report/<int:cycle_id>', methods=['GET'])
+@login_required
+def my_report(cycle_id):
+    try:
+        return jsonify({'report': ReportService().my_report(cycle_id, _actor_id())})
+    except ReportError as e:
+        return jsonify({'error': str(e)}), e.status
+
+
+@eval360_bp.route('/api/reports/<int:report_id>/release', methods=['POST'])
+@hr_manager_required
+def release_report(report_id):
+    try:
+        return jsonify({'report': ReportService().release(report_id, _actor_id())})
+    except ReportError as e:
+        return jsonify({'error': str(e)}), e.status
+
+
+@eval360_bp.route('/api/reports/<int:report_id>/acknowledge', methods=['POST'])
+@login_required
+def acknowledge_report(report_id):
+    try:
+        ReportService().acknowledge(report_id, _actor_id())
+    except ReportError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'ok': True})
+
+
+@eval360_bp.route('/api/reports/<int:report_id>/manager-summary', methods=['POST'])
+@login_required
+def manager_summary(report_id):
+    data = request.get_json() or {}
+    try:
+        ReportService().set_manager_summary(report_id, _actor_id(), data.get('summary', ''))
+    except ReportError as e:
         return jsonify({'error': str(e)}), e.status
     return jsonify({'ok': True})
