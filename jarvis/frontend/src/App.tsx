@@ -12,6 +12,7 @@ const Accounting = lazy(() => import('./pages/Accounting'))
 const AddInvoice = lazy(() => import('./pages/Accounting/AddInvoice'))
 const BulkUpload = lazy(() => import('./pages/Accounting/BulkUpload'))
 const Hr = lazy(() => import('./pages/Hr'))
+const Evaluations = lazy(() => import('./pages/Evaluations'))
 const Statements = lazy(() => import('./pages/Statements'))
 const EFactura = lazy(() => import('./pages/EFactura'))
 const Approvals = lazy(() => import('./pages/Approvals'))
@@ -188,6 +189,7 @@ export default function App() {
 
         {/* HR — requires can_access_hr */}
         <Route path="hr/*" element={<Guard flag="can_access_hr"><SuspensePage><Hr /></SuspensePage></Guard>} />
+        <Route path="evaluations/*" element={<SuspensePage><Evaluations /></SuspensePage>} />
 
         {/* Statements — requires can_access_statements */}
         <Route path="statements/*" element={<Guard flag="can_access_statements"><SuspensePage><Statements /></SuspensePage></Guard>} />

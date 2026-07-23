@@ -1,0 +1,249 @@
+import { useEffect, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { Target, ChevronLeft, ChevronRight, Clock, Send, CheckCircle2 } from 'lucide-react'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
+import {
+  eval360Api, RELATIONSHIP_LABEL, type MyAssignment, type Question, type Answer,
+} from '@/api/evaluation360'
+
+const NOT_OBSERVED = 'not_observed'
+type DraftValue = string | number | null
+
+export default function Evaluations() {
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <PageHeader
+        title="Evaluările mele"
+        breadcrumbs={[{ label: 'Evaluări 360' }, { label: 'De completat' }]}
+      />
+      {selectedId == null
+        ? <Inbox onOpen={setSelectedId} />
+        : <EvaluationForm assignmentId={selectedId} onBack={() => setSelectedId(null)} />}
+    </div>
+  )
+}
+
+function Inbox({ onOpen }: { onOpen: (id: number) => void }) {
+  const q = useQuery({ queryKey: ['eval360-my-assignments'], queryFn: () => eval360Api.myAssignments() })
+  const items = q.data?.assignments ?? []
+
+  if (q.isLoading) return <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
+  if (!items.length) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+          <CheckCircle2 className="h-7 w-7 text-muted-foreground/50" />
+        </div>
+        <p className="text-sm font-medium">Nicio evaluare de completat</p>
+        <p className="text-sm text-muted-foreground">Vei fi notificat când primești evaluări noi.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border divide-y">
+      {items.map((a) => <InboxRow key={a.id} a={a} onOpen={() => onOpen(a.id)} />)}
+    </div>
+  )
+}
+
+function InboxRow({ a, onOpen }: { a: MyAssignment; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400">
+          <Target className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{a.subject_name}</p>
+          <p className="truncate text-xs text-muted-foreground">{a.cycle_name}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Badge variant="secondary">{RELATIONSHIP_LABEL[a.relationship] ?? a.relationship}</Badge>
+        {a.status === 'in_progress' && <Badge variant="outline" className="text-amber-600 border-amber-200">În lucru</Badge>}
+        {a.review_end && <span className="hidden items-center gap-1 text-xs text-muted-foreground sm:flex"><Clock className="h-3 w-3" />{a.review_end}</span>}
+        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+      </div>
+    </button>
+  )
+}
+
+function questionText(q: Question, relationship: string): string {
+  return q.text_by_audience?.[relationship]
+    || q.text_by_audience?.peer
+    || q.competency_name
+    || 'Întrebare'
+}
+
+function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack: () => void }) {
+  const qc = useQueryClient()
+  const formQ = useQuery({
+    queryKey: ['eval360-form', assignmentId],
+    queryFn: () => eval360Api.getForm(assignmentId),
+  })
+  const [draft, setDraft] = useState<Record<string, DraftValue>>({})
+
+  useEffect(() => {
+    if (formQ.data) setDraft({ ...formQ.data.draft })
+  }, [formQ.data])
+
+  const saveM = useMutation({
+    mutationFn: (patch: Record<string, DraftValue>) => eval360Api.saveDraft(assignmentId, patch),
+  })
+  const submitM = useMutation({
+    mutationFn: (answers: Answer[]) => eval360Api.submit(assignmentId, answers),
+    onSuccess: () => {
+      toast.success('Evaluare trimisă')
+      qc.invalidateQueries({ queryKey: ['eval360-my-assignments'] })
+      onBack()
+    },
+    onError: () => toast.error('Nu s-a putut trimite'),
+  })
+
+  if (formQ.isLoading) return <Skeleton className="h-64 w-full" />
+  if (formQ.isError || !formQ.data) return <p className="py-12 text-center text-sm text-muted-foreground">Nu s-a putut încărca evaluarea.</p>
+
+  const { assignment, questions, is_submitted } = formQ.data
+  const relationship = assignment.relationship
+
+  const setValue = (q: Question, value: DraftValue) => {
+    setDraft((d) => ({ ...d, [String(q.id)]: value }))
+    saveM.mutate({ [String(q.id)]: value })   // idempotent per-question autosave
+  }
+
+  const ratingQuestions = questions.filter((q) => q.type === 'rating' || q.type === 'behavioral_frequency')
+  const answeredRequired = ratingQuestions
+    .filter((q) => q.required)
+    .every((q) => draft[String(q.id)] != null && draft[String(q.id)] !== '')
+  const answeredCount = ratingQuestions.filter((q) => draft[String(q.id)] != null).length
+
+  const buildAnswers = (): Answer[] => questions.map((q) => {
+    const v = draft[String(q.id)]
+    if (q.type === 'open_text') {
+      return { question_id: q.id, competency_id: q.competency_id, rating: null, not_observed: false, comment: typeof v === 'string' ? v : '' }
+    }
+    if (v === NOT_OBSERVED) return { question_id: q.id, competency_id: q.competency_id, rating: null, not_observed: true }
+    return { question_id: q.id, competency_id: q.competency_id, rating: typeof v === 'number' ? v : null, not_observed: false }
+  })
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
+        <ChevronLeft className="h-4 w-4" /> Înapoi
+      </button>
+
+      <Card>
+        <CardContent className="flex items-center justify-between gap-3 py-4">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">{assignment.subject_name}</h2>
+            <p className="text-xs text-muted-foreground">
+              {assignment.cycle_name} · <span className="font-medium">{RELATIONSHIP_LABEL[relationship] ?? relationship}</span>
+            </p>
+          </div>
+          {!is_submitted && (
+            <span className="text-xs text-muted-foreground">{answeredCount}/{ratingQuestions.length} completate</span>
+          )}
+        </CardContent>
+      </Card>
+
+      {is_submitted ? (
+        <Card><CardContent className="flex items-center gap-2 py-6 text-sm text-green-600">
+          <CheckCircle2 className="h-5 w-5" /> Ai trimis deja această evaluare. Răspunsurile sunt finale.
+        </CardContent></Card>
+      ) : !questions.length ? (
+        <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">
+          Formularul nu are încă întrebări configurate pentru acest ciclu.
+        </CardContent></Card>
+      ) : (
+        <>
+          {questions.map((q) => (
+            <QuestionCard
+              key={q.id}
+              q={q}
+              relationship={relationship}
+              value={draft[String(q.id)] ?? null}
+              onChange={(v) => setValue(q, v)}
+            />
+          ))}
+
+          <div className="flex items-center justify-end gap-2 pb-8">
+            <Button
+              disabled={!answeredRequired || submitM.isPending}
+              onClick={() => submitM.mutate(buildAnswers())}
+            >
+              <Send className="h-4 w-4 mr-1" /> Trimite evaluarea
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function QuestionCard({
+  q, relationship, value, onChange,
+}: {
+  q: Question; relationship: string; value: DraftValue; onChange: (v: DraftValue) => void
+}) {
+  if (q.type === 'open_text') {
+    return (
+      <Card><CardContent className="py-4 space-y-2">
+        {q.competency_name && <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{q.competency_name}</p>}
+        <p className="text-sm">{questionText(q, relationship)}</p>
+        <Textarea
+          value={typeof value === 'string' ? value : ''}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Un exemplu concret ajută cel mai mult…"
+          rows={3}
+        />
+      </CardContent></Card>
+    )
+  }
+
+  const notObserved = value === NOT_OBSERVED
+  return (
+    <Card><CardContent className="py-4 space-y-3">
+      {q.competency_name && <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{q.competency_name}</p>}
+      <p className="text-sm">{questionText(q, relationship)}{q.required && <span className="text-destructive"> *</span>}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onChange(n)}
+            className={cn(
+              'h-10 w-10 rounded-lg border text-sm font-semibold transition-colors',
+              value === n ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-muted',
+            )}
+          >
+            {n}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => onChange(NOT_OBSERVED)}
+          className={cn(
+            'h-10 rounded-lg border px-3 text-xs font-medium transition-colors',
+            notObserved ? 'border-primary bg-secondary text-foreground' : 'text-muted-foreground hover:bg-muted',
+          )}
+        >
+          Nu am observat
+        </button>
+      </div>
+    </CardContent></Card>
+  )
+}
