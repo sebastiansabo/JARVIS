@@ -25,7 +25,13 @@ class FPVehicleRepository(BaseRepository):
         '(v.talon_doc IS NOT NULL) AS has_talon, '
         '(v.civ_doc IS NOT NULL) AS has_civ, '
         '(v.registration_doc IS NOT NULL) AS has_registration, '
-        '(v.offer_doc IS NOT NULL) AS has_offer '
+        '(v.offer_doc IS NOT NULL) AS has_offer, '
+        # Highest known mileage for the car: its stored odometer vs the greatest
+        # km_end across its real (non-draft) sessions. Lets the TD form start a
+        # session at the car's true latest reading and warn on anything lower.
+        "GREATEST(COALESCE(v.odometer_km, 0), COALESCE("
+        "(SELECT MAX(f.km_end) FROM foi_de_parcurs f "
+        "WHERE f.vin = v.vin AND f.status <> 'PLANNED'), 0)) AS mileage_floor "
         'FROM fp_vehicles v '
         'LEFT JOIN companies c ON c.id = v.company_id'
     )

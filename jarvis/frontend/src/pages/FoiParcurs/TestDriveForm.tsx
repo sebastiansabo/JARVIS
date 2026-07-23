@@ -238,8 +238,10 @@ export default function TestDriveForm() {
       setVehicleId(id)
       const v = vehiclesForCompany.find((x) => x.id === id) ?? null
       setSelectedVehicle(v)
-      // Prefill the starting odometer from the vehicle's stored reading
-      if (v?.odometer_km != null) setOdometerStart(String(v.odometer_km))
+      // Prefill the starting odometer from the car's latest reading across ALL
+      // its sessions (mileage_floor), falling back to the stored odometer.
+      const floor = v?.mileage_floor ?? v?.odometer_km
+      if (floor != null) setOdometerStart(String(floor))
     },
     [vehiclesForCompany],
   )
@@ -247,6 +249,11 @@ export default function TestDriveForm() {
   // ── Per-field validity (drives red highlight after a submit attempt) ──
   const odometerNum = odometerStart.trim() === '' ? NaN : Number(odometerStart)
   const estimatedNum = estimatedKm.trim() === '' ? NaN : Number(estimatedKm)
+  // Soft, non-blocking guard: warn when KM plecare is below the car's latest
+  // known mileage (max of stored odometer + greatest km_end across its sessions).
+  const mileageFloor = selectedVehicle?.mileage_floor ?? selectedVehicle?.odometer_km ?? null
+  const odometerBelowFloor =
+    mileageFloor != null && Number.isFinite(odometerNum) && odometerNum < mileageFloor
   const missing = {
     company: !companyId,
     vehicle: !selectedVehicle?.vin,
@@ -623,6 +630,11 @@ export default function TestDriveForm() {
             <div className="space-y-1.5">
               <Label className="text-xs">KM plecare *</Label>
               <Input type="number" min={0} placeholder="Km la plecare" value={odometerStart} onChange={(e) => setOdometerStart(e.target.value)} className={invalidRing(missing.odometer)} />
+              {odometerBelowFloor && (
+                <p className="text-[11px] leading-tight text-amber-600 dark:text-amber-500">
+                  ⚠ Sub kilometrajul actual al mașinii ({mileageFloor!.toLocaleString('ro-RO')} km)
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">KM estimat *</Label>

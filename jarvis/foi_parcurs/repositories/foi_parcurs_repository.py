@@ -158,6 +158,23 @@ class FoiParcursRepository(BaseRepository):
             return self.get_contract_by_id(row['id']) or row
         return row
 
+    def get_mileage_floor(self, vin: str, exclude_id: int | None = None) -> int:
+        """Highest known mileage for a car: the greater of its stored odometer
+        and the largest km_end across its real (non-draft) sessions. Used to keep
+        a session's starting odometer from dropping below the car's reality.
+        exclude_id skips one session (the draft being activated) so its own
+        placeholder km_end doesn't inflate the floor."""
+        row = self.query_one(
+            '''SELECT GREATEST(
+                 COALESCE((SELECT odometer_km FROM fp_vehicles WHERE vin = %s), 0),
+                 COALESCE((SELECT MAX(km_end) FROM foi_de_parcurs
+                            WHERE vin = %s AND status <> 'PLANNED'
+                              AND (%s::int IS NULL OR id <> %s)), 0)
+               ) AS floor''',
+            (vin, vin, exclude_id, exclude_id),
+        )
+        return int(row['floor']) if row and row.get('floor') is not None else 0
+
     def get_odometer_readings(self, vin: str) -> list:
         """All drives for a VIN in chronological order (departure time, falling
         back to created_at) — every route_type, so odometer continuity/gap
