@@ -15,6 +15,7 @@ from hr.evaluation360.services.nomination_service import NominationService
 from hr.evaluation360.services.nudge_service import NudgeService, NudgeRateLimited
 from hr.evaluation360.services.response_service import ResponseService, ResponseError
 from hr.evaluation360.services.report_service import ReportService, ReportError
+from hr.evaluation360.services.devplan_service import DevplanService, DevplanError
 
 
 def _actor_id():
@@ -275,5 +276,51 @@ def manager_summary(report_id):
     try:
         ReportService().set_manager_summary(report_id, _actor_id(), data.get('summary', ''))
     except ReportError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'ok': True})
+
+
+# ── Development plans + check-ins (P5, co-owned by employee + manager) ────────
+
+@eval360_bp.route('/api/dev-plan/<int:cycle_id>/<int:employee_id>', methods=['GET'])
+@login_required
+def get_dev_plan(cycle_id, employee_id):
+    try:
+        return jsonify(DevplanService().get_plan(cycle_id, employee_id, _actor_id()))
+    except DevplanError as e:
+        return jsonify({'error': str(e)}), e.status
+
+
+@eval360_bp.route('/api/dev-plan/<int:cycle_id>/<int:employee_id>', methods=['POST'])
+@login_required
+def save_dev_plan(cycle_id, employee_id):
+    data = request.get_json() or {}
+    try:
+        plan = DevplanService().save_plan(
+            cycle_id, employee_id, _actor_id(),
+            data.get('goals', []), data.get('linked_competencies', []))
+    except DevplanError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'plan': plan})
+
+
+@eval360_bp.route('/api/dev-plans/<int:plan_id>/checkins', methods=['POST'])
+@login_required
+def add_checkin(plan_id):
+    data = request.get_json() or {}
+    try:
+        ci = DevplanService().add_checkin(plan_id, _actor_id(), data.get('scheduled_date'), data.get('note'))
+    except DevplanError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'checkin': ci}), 201
+
+
+@eval360_bp.route('/api/checkins/<int:checkin_id>/complete', methods=['POST'])
+@login_required
+def complete_checkin(checkin_id):
+    data = request.get_json() or {}
+    try:
+        DevplanService().complete_checkin(checkin_id, _actor_id(), data.get('note'))
+    except DevplanError as e:
         return jsonify({'error': str(e)}), e.status
     return jsonify({'ok': True})

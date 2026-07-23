@@ -5,8 +5,10 @@ import { ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useAuthStore } from '@/stores/authStore'
 import { eval360Reports, type ReportHeader } from '@/api/evaluation360'
 import { ReportView } from './ReportView'
+import { DevPlan } from './DevPlan'
 
 export default function MyReports() {
   const [cycleId, setCycleId] = useState<number | null>(null)
@@ -48,6 +50,7 @@ export default function MyReports() {
 
 function ReportDetail({ cycleId, onBack }: { cycleId: number; onBack: () => void }) {
   const qc = useQueryClient()
+  const userId = useAuthStore((s) => s.user?.id)
   const q = useQuery({ queryKey: ['eval360-report', cycleId], queryFn: () => eval360Reports.myReport(cycleId) })
   const report = q.data?.report
 
@@ -76,6 +79,7 @@ function ReportDetail({ cycleId, onBack }: { cycleId: number; onBack: () => void
         )}
       </div>
       <ReportView report={report} />
+      {userId && <DevPlan cycleId={report.cycle_id} employeeId={userId} />}
     </div>
   )
 }
