@@ -48,6 +48,11 @@ class CycleRepository(BaseRepository):
         return self.query_all(
             'SELECT * FROM eval_participants WHERE cycle_id = %s ORDER BY id', (cycle_id,))
 
+    def get_participant(self, cycle_id, employee_id):
+        return self.query_one(
+            'SELECT * FROM eval_participants WHERE cycle_id = %s AND employee_id = %s',
+            (cycle_id, employee_id))
+
     def eligible_peer_count(self, employee_id):
         """Count active colleagues in the same department (excludes self) — the
         pool from which peers can be nominated. Used by the A7 dry-run check."""

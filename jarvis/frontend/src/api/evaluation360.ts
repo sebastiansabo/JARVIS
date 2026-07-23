@@ -183,6 +183,36 @@ export const eval360Reports = {
     api.post<{ ok: boolean }>(`${BASE}/reports/${reportId}/manager-summary`, { summary }),
 }
 
+// ── Development plans ───────────────────────────────────────────────────────
+
+export interface DevPlanGoal { text: string; competency_id?: number | null }
+export interface DevPlan {
+  id: number
+  participant_id: number
+  goals: DevPlanGoal[]
+  linked_competencies: number[]
+  status: string
+}
+export interface Checkin {
+  id: number
+  plan_id: number
+  scheduled_date: string | null
+  completed_at: string | null
+  note: string | null
+}
+export interface DevPlanBundle { participant_id: number; plan: DevPlan | null; checkins: Checkin[] }
+
+export const eval360DevPlan = {
+  get: (cycleId: number, employeeId: number) =>
+    api.get<DevPlanBundle>(`${BASE}/dev-plan/${cycleId}/${employeeId}`),
+  save: (cycleId: number, employeeId: number, goals: DevPlanGoal[], linked: number[]) =>
+    api.post<{ plan: DevPlan }>(`${BASE}/dev-plan/${cycleId}/${employeeId}`, { goals, linked_competencies: linked }),
+  addCheckin: (planId: number, scheduledDate: string, note?: string) =>
+    api.post<{ checkin: Checkin }>(`${BASE}/dev-plans/${planId}/checkins`, { scheduled_date: scheduledDate, note }),
+  completeCheckin: (checkinId: number, note?: string) =>
+    api.post<{ ok: boolean }>(`${BASE}/checkins/${checkinId}/complete`, { note }),
+}
+
 export const RELATIONSHIP_LABEL: Record<string, string> = {
   self: 'Autoevaluare',
   manager: 'Manager',

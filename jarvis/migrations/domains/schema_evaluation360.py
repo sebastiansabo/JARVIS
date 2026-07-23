@@ -196,6 +196,19 @@ def create_schema_evaluation360(conn, cursor):
         )
     ''')
 
+    # ============== Development-plan check-ins ==============
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS eval_devplan_checkins (
+            id SERIAL PRIMARY KEY,
+            plan_id INTEGER NOT NULL REFERENCES eval_development_plans(id) ON DELETE CASCADE,
+            scheduled_date DATE,
+            completed_at TIMESTAMP,
+            note TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_eval_devplan_checkins_plan ON eval_devplan_checkins(plan_id)')
+
     # ============== Event log (append-only; drives indicators) ==============
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS eval_events (
