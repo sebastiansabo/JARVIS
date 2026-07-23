@@ -14,6 +14,7 @@ def _service(cycle=None, participants=None, peer_pool=0, loads=None, counts=None
     cr.eligible_peer_count.return_value = peer_pool
     ar.reviewer_load.return_value = loads or []
     ar.status_counts.return_value = counts or {}
+    ar.completion_by_department.return_value = []
     return CycleService(cr, ar, ev), cr, ar, ev
 
 

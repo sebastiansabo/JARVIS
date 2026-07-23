@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom'
-import { BarChart3, Clock, Download, FileCheck, FileSpreadsheet, Fingerprint, LayoutDashboard, List, Pencil, Plus, Users, CalendarClock, ShieldCheck } from 'lucide-react'
+import { BarChart3, Clock, Download, FileCheck, FileSpreadsheet, Fingerprint, LayoutDashboard, List, Pencil, Plus, Users, CalendarClock, ShieldCheck, Target } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -31,6 +31,7 @@ const CourseDetail = lazy(() => import('./CourseDetail'))
 const ReportsTab = lazy(() => import('./ReportsTab'))
 const TimeBankTab = lazy(() => import('./TimeBankTab'))
 const VerificationTab = lazy(() => import('./VerificationTab'))
+const Evaluation360Tab = lazy(() => import('./Evaluation360Tab'))
 
 function TabLoader() {
   return (
@@ -94,6 +95,7 @@ export default function Hr() {
   const isReportsPage = useMatch('/app/hr/reports')
   const isTimeBankPage = useMatch('/app/hr/time-bank')
   const isVerificationPage = useMatch('/app/hr/verification')
+  const isEvaluation360Page = useMatch('/app/hr/evaluation-360')
   const isEmployee360Page = useMatch('/app/hr/employees/:userId')
   const { isOnDashboard, toggleDashboardWidget } = useDashboardWidgetToggle('hr_summary')
   const filters = useHrStore((s) => s.filters)
@@ -126,6 +128,7 @@ export default function Hr() {
   const canViewReports = authLoading || !user ? true : (user?.can_access_hr ?? false)
   const canViewTimeBank = authLoading || !user ? true : (user?.can_access_hr ?? false)
   const canViewVerification = authLoading || !user ? true : (user?.can_access_hr ?? false)
+  const canViewEvaluation360 = authLoading || !user ? true : (user?.can_access_hr ?? false)
 
   // Manager filter for pontaje route (still accessible via direct URL)
   const forceTeamFilter = canViewTeamPontaje && teamPontajeScope !== 'all' && teamPontajeScope !== 'deny'
@@ -156,8 +159,11 @@ export default function Hr() {
     if (canViewVerification) {
       t.push({ to: '/app/hr/verification', label: 'Verification', icon: ShieldCheck })
     }
+    if (canViewEvaluation360) {
+      t.push({ to: '/app/hr/evaluation-360', label: '360', icon: Target })
+    }
     return t
-  }, [canViewTimesheets, canViewEmployees, canViewLeavePermits, canViewLeaves, canViewTimeBank, canViewCourses, canViewReports, canViewVerification])
+  }, [canViewTimesheets, canViewEmployees, canViewLeavePermits, canViewLeaves, canViewTimeBank, canViewCourses, canViewReports, canViewVerification, canViewEvaluation360])
 
   // Standalone pages — no tabs/stats
   if (isEmployee360Page) {
@@ -241,11 +247,11 @@ export default function Hr() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title={
-          isBonusesPage ? 'Bonuses' : isTimesheetsPage ? 'Timesheets' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete' : isLeavesPage ? 'Leaves (CO Balance)' : isTimeBankPage ? 'Bank' : isCoursesPage ? 'Cursuri' : isReportsPage ? 'Reports' : isVerificationPage ? 'Verification' : 'Pontaje'
+          isEvaluation360Page ? '360 Evaluation' : isBonusesPage ? 'Bonuses' : isTimesheetsPage ? 'Timesheets' : isEmployeesPage ? 'Employees' : isLeavePermitsPage ? 'Bilete' : isLeavesPage ? 'Leaves (CO Balance)' : isTimeBankPage ? 'Bank' : isCoursesPage ? 'Cursuri' : isReportsPage ? 'Reports' : isVerificationPage ? 'Verification' : 'Pontaje'
         }
         breadcrumbs={[
           { label: 'HR', href: '/app/hr/employees' },
-          ...(isBonusesPage ? [{ label: 'Bonuses' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete' }] : isLeavesPage ? [{ label: 'Leaves' }] : isTimeBankPage ? [{ label: 'Bank' }] : isCoursesPage ? [{ label: 'Cursuri' }] : isReportsPage ? [{ label: 'Reports' }] : isVerificationPage ? [{ label: 'Verification' }] : [{ label: 'Pontaje' }]),
+          ...(isEvaluation360Page ? [{ label: '360 Evaluation' }] : isBonusesPage ? [{ label: 'Bonuses' }] : isTimesheetsPage ? [{ label: 'Timesheets' }] : isEmployeesPage ? [{ label: 'Employees' }] : isLeavePermitsPage ? [{ label: 'Bilete' }] : isLeavesPage ? [{ label: 'Leaves' }] : isTimeBankPage ? [{ label: 'Bank' }] : isCoursesPage ? [{ label: 'Cursuri' }] : isReportsPage ? [{ label: 'Reports' }] : isVerificationPage ? [{ label: 'Verification' }] : [{ label: 'Pontaje' }]),
         ]}
         search={
           <SearchInput
@@ -274,7 +280,7 @@ export default function Hr() {
               </Button>
             )}
             {!isMobile && !isBonusesPage && tabs.length > 1 && (
-              <Tabs value={isVerificationPage ? 'verification' : isReportsPage ? 'reports' : isTimeBankPage ? 'time-bank' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+              <Tabs value={isEvaluation360Page ? 'evaluation-360' : isVerificationPage ? 'verification' : isReportsPage ? 'reports' : isTimeBankPage ? 'time-bank' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
                 <TabsList className="w-auto">
                   {tabs.map((t) => {
                     const val = t.to.split('/').pop()!
@@ -294,7 +300,7 @@ export default function Hr() {
 
       {/* Mobile tab nav */}
       {!isBonusesPage && isMobile && tabs.length > 1 && (
-        <Tabs value={isVerificationPage ? 'verification' : isReportsPage ? 'reports' : isTimeBankPage ? 'time-bank' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
+        <Tabs value={isEvaluation360Page ? 'evaluation-360' : isVerificationPage ? 'verification' : isReportsPage ? 'reports' : isTimeBankPage ? 'time-bank' : isLeavesPage ? 'leaves' : isLeavePermitsPage ? 'leave-permits' : isEmployeesPage ? 'employees' : isTimesheetsPage ? 'timesheets' : 'pontaje'} onValueChange={(v) => navigate(`/app/hr/${v}`)}>
           <MobileBottomTabs>
             <TabsList className="w-full">
               {tabs.map((t) => {
@@ -334,6 +340,7 @@ export default function Hr() {
           {canViewCourses && <Route path="courses" element={<CoursesTab search={search} />} />}
           {canViewReports && <Route path="reports" element={<ReportsTab search={search} />} />}
           {canViewVerification && <Route path="verification" element={<VerificationTab />} />}
+          {canViewEvaluation360 && <Route path="evaluation-360" element={<Evaluation360Tab search={search} />} />}
         </Routes>
       </Suspense>
     </div>
