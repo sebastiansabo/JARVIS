@@ -2200,6 +2200,9 @@ def _create_schema_incremental_continued(conn, cursor):
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='client_phone') THEN
                 ALTER TABLE foi_de_parcurs ADD COLUMN client_phone TEXT;
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='client_email') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN client_email TEXT;
+            END IF;
         END $$;
     ''')
 

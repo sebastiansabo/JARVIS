@@ -18,9 +18,13 @@ SESSION_COLUMNS = [
     'VIN', 'Marcă', 'Model', 'Nr. înmatriculare', 'Combustibil',
     'Capacitate rezervor (L)', 'Brand', 'Plecare', 'Sosire',
     'KM start', 'KM end', 'Șofer',
+    'Telefon', 'Email', 'Permis', 'Link Poza Permis', 'Link Semnatura',
 ]
 
-_DT_FORMATS = ('%d.%m.%Y %H:%M', '%d.%m.%Y', '%Y-%m-%d %H:%M', '%Y-%m-%d', '%Y-%m-%dT%H:%M')
+_DT_FORMATS = (
+    '%d.%m.%Y %H:%M', '%d.%m.%Y', '%Y-%m-%d %H:%M', '%Y-%m-%d', '%Y-%m-%dT%H:%M',
+    '%b %d, %Y %H:%M', '%b %d, %Y', '%B %d, %Y %H:%M', '%B %d, %Y',  # "Jul 20, 2026 10:22"
+)
 
 
 def parse_dt(v):
@@ -80,10 +84,12 @@ def build_template_xlsx(company_id: int) -> bytes:
         c = ws.cell(row=1, column=col, value=name)
         c.font = head; c.fill = fill
     example = ['WAUZZZ00000000000', 'Audi', 'A4', 'B 123 ABC', 'Diesel', 55, 'Audi',
-               '02.07.2026 10:00', '02.07.2026 12:30', 13000, 13025, 'Ion Popescu']
+               '02.07.2026 10:00', '02.07.2026 12:30', 13000, 13025, 'Ion Popescu',
+               '0720000000', 'ion@example.com', 'B00123456',
+               'https://…/permis.jpg', 'https://…/semnatura.png']
     for col, val in enumerate(example, start=1):
         ws.cell(row=2, column=col, value=val)
-    widths = [20, 12, 12, 16, 12, 16, 12, 18, 18, 10, 10, 20]
+    widths = [20, 12, 14, 16, 12, 16, 12, 18, 18, 10, 10, 18, 14, 22, 14, 34, 34]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[chr(64 + i)].width = w
 
@@ -171,19 +177,23 @@ def import_sessions(company_id: int, file_bytes: bytes, user_name: str | None) -
         route_type = 'TD' if dist <= td_max else 'Comodat'
         tank = (vehicle or {}).get('fuel_tank_capacity_liters') or 50
         reg = (vehicle or {}).get('registration_number') or ''
+        def _s(col):
+            return str(row.get(col) or '').strip() or None
         _fp_repo.execute(
             '''INSERT INTO foi_de_parcurs
                  (contract_id, vin, company_id, year, month, route_type, slot_number,
                   km_start, km_end, distance_km, registration_number,
                   fuel_tank_capacity_liters, fuel_gauge_start_level, fuel_gauge_end_level,
                   fuel_start_liters, fuel_end_liters, fuel_consumed_liters,
-                  status, advisor_name, client_name, itinerary,
-                  departure_datetime, return_datetime, source)
+                  status, advisor_name, client_name, client_phone, client_email,
+                  driver_license_number, driver_license_photo, client_signature,
+                  itinerary, departure_datetime, return_datetime, source)
                VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s,%s,'1','1',0,0,0,
-                       'COMPLETED',%s,%s,'',%s,%s,'import')
+                       'COMPLETED',%s,%s,%s,%s,%s,%s,%s,'',%s,%s,'import')
                ON CONFLICT (contract_id) DO NOTHING''',
             (cid, vin, company_id, dep.year, dep.month, route_type, ks, ke, dist, reg, tank,
              (user_name or 'Import'), str(row.get('Șofer') or '').strip(),
+             _s('Telefon'), _s('Email'), _s('Permis'), _s('Link Poza Permis'), _s('Link Semnatura'),
              dep.strftime('%Y-%m-%d %H:%M:%S'),
              sos.strftime('%Y-%m-%d %H:%M:%S') if sos else None),
         )
