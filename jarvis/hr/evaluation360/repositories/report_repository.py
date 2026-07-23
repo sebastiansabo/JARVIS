@@ -52,6 +52,23 @@ class ReportRepository(BaseRepository):
                WHERE p.employee_id = %s AND r.released_at IS NOT NULL
                ORDER BY r.released_at DESC''', (employee_id,))
 
+    def list_for_manager(self, employee_ids):
+        """Reports of a manager's direct reports (headers + status flags)."""
+        if not employee_ids:
+            return []
+        return self.query_all(
+            '''SELECT r.id, r.cycle_id, c.name AS cycle_name, p.employee_id,
+                      u.name AS employee_name,
+                      (r.released_at IS NOT NULL) AS released,
+                      (r.acknowledged_at IS NOT NULL) AS acknowledged,
+                      (r.manager_summary IS NOT NULL) AS has_summary
+               FROM eval_reports r
+               JOIN eval_participants p ON p.id = r.participant_id
+               JOIN eval_cycles c ON c.id = r.cycle_id
+               JOIN users u ON u.id = p.employee_id
+               WHERE p.employee_id = ANY(%s)
+               ORDER BY c.name, u.name''', (list(employee_ids),))
+
     def list_for_cycle(self, cycle_id):
         """HR status view — flags only, no report content."""
         return self.query_all(

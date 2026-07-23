@@ -160,10 +160,27 @@ export const JOHARI_LABEL: Record<string, string> = {
   agreed_growth: 'Zone de dezvoltare',
 }
 
+export interface TeamReportHeader {
+  id: number
+  cycle_id: number
+  cycle_name: string
+  employee_id: number
+  employee_name: string
+  released: boolean
+  acknowledged: boolean
+  has_summary: boolean
+}
+
 export const eval360Reports = {
   myReports: () => api.get<{ reports: ReportHeader[] }>(`${BASE}/me/reports`),
   myReport: (cycleId: number) => api.get<{ report: Report }>(`${BASE}/me/report/${cycleId}`),
   acknowledge: (reportId: number) => api.post<{ ok: boolean }>(`${BASE}/reports/${reportId}/acknowledge`),
+  // manager calibration
+  teamReports: () => api.get<{ reports: TeamReportHeader[] }>(`${BASE}/me/team-reports`),
+  managerReport: (reportId: number) => api.get<{ report: Report }>(`${BASE}/reports/${reportId}/manager-view`),
+  managerRelease: (reportId: number) => api.post<{ report: Report }>(`${BASE}/reports/${reportId}/manager-release`),
+  setSummary: (reportId: number, summary: string) =>
+    api.post<{ ok: boolean }>(`${BASE}/reports/${reportId}/manager-summary`, { summary }),
 }
 
 export const RELATIONSHIP_LABEL: Record<string, string> = {

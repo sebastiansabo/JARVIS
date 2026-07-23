@@ -5,6 +5,7 @@ import { Target, ChevronLeft, ChevronRight, Clock, Send, CheckCircle2 } from 'lu
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import MyReports from './MyReports'
+import TeamReports from './TeamReports'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,27 +21,29 @@ type DraftValue = string | number | null
 
 export default function Evaluations() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [view, setView] = useState<'todo' | 'reports'>('todo')
+  const [view, setView] = useState<'todo' | 'reports' | 'team'>('todo')
+  const crumb = view === 'todo' ? 'De completat' : view === 'reports' ? 'Rapoartele mele' : 'Echipa'
 
   return (
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Evaluări 360"
-        breadcrumbs={[{ label: 'Evaluări 360' }, { label: view === 'todo' ? 'De completat' : 'Rapoartele mele' }]}
+        breadcrumbs={[{ label: 'Evaluări 360' }, { label: crumb }]}
         actions={selectedId == null ? (
-          <Tabs value={view} onValueChange={(v) => setView(v as 'todo' | 'reports')}>
+          <Tabs value={view} onValueChange={(v) => setView(v as 'todo' | 'reports' | 'team')}>
             <TabsList>
               <TabsTrigger value="todo">De completat</TabsTrigger>
               <TabsTrigger value="reports">Rapoartele mele</TabsTrigger>
+              <TabsTrigger value="team">Echipa</TabsTrigger>
             </TabsList>
           </Tabs>
         ) : undefined}
       />
       {selectedId != null
         ? <EvaluationForm assignmentId={selectedId} onBack={() => setSelectedId(null)} />
-        : view === 'todo'
-          ? <Inbox onOpen={setSelectedId} />
-          : <MyReports />}
+        : view === 'todo' ? <Inbox onOpen={setSelectedId} />
+          : view === 'reports' ? <MyReports />
+            : <TeamReports />}
     </div>
   )
 }
