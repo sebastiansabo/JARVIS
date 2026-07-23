@@ -17,10 +17,12 @@ import foi_parcurs.routes.session_import as si_routes
 
 # ── Task 1: parse + validate ──
 
-def test_parse_dt_accepts_romanian_and_iso():
+def test_parse_dt_accepts_romanian_iso_and_us_month():
     assert sis.parse_dt('02.07.2026 10:00') == datetime(2026, 7, 2, 10, 0)
     assert sis.parse_dt('02.07.2026') == datetime(2026, 7, 2, 0, 0)
     assert sis.parse_dt('2026-07-02 10:00') == datetime(2026, 7, 2, 10, 0)
+    assert sis.parse_dt('Jul 20, 2026 10:22') == datetime(2026, 7, 20, 10, 22)
+    assert sis.parse_dt('Jul 20, 2026') == datetime(2026, 7, 20, 0, 0)
     assert sis.parse_dt(datetime(2026, 7, 2, 8, 30)) == datetime(2026, 7, 2, 8, 30)
     assert sis.parse_dt('') is None
     assert sis.parse_dt('nonsense') is None
