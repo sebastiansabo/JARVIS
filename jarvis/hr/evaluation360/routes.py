@@ -5,7 +5,7 @@ content (spec §2.2). Reads require HR access; writes require HR-manager rights.
 Responses use the platform's wrapped-envelope convention ({cycle: ...}).
 """
 from flask import request, jsonify
-from flask_login import current_user
+from flask_login import current_user, login_required
 
 from hr.events.routes._shared import hr_required, hr_manager_required
 from hr.evaluation360 import eval360_bp
@@ -13,6 +13,7 @@ from hr.evaluation360.domain.state_machine import InvalidTransition
 from hr.evaluation360.services.cycle_service import CycleService, CycleError
 from hr.evaluation360.services.nomination_service import NominationService
 from hr.evaluation360.services.nudge_service import NudgeService, NudgeRateLimited
+from hr.evaluation360.services.response_service import ResponseService, ResponseError
 
 
 def _actor_id():
@@ -128,4 +129,60 @@ def nudge(cycle_id):
                              actor_id=_actor_id())
     except NudgeRateLimited as e:
         return jsonify({'error': str(e)}), 429
+    return jsonify({'ok': True})
+
+
+# ── Reviewer-facing capture (login + ownership; NOT HR-gated) ────────────────
+
+@eval360_bp.route('/api/me/assignments', methods=['GET'])
+@login_required
+def my_assignments():
+    return jsonify({'assignments': ResponseService().my_assignments(_actor_id())})
+
+
+@eval360_bp.route('/api/assignments/<int:assignment_id>/form', methods=['GET'])
+@login_required
+def get_form(assignment_id):
+    try:
+        return jsonify(ResponseService().get_form(assignment_id, _actor_id()))
+    except ResponseError as e:
+        return jsonify({'error': str(e)}), e.status
+
+
+@eval360_bp.route('/api/assignments/<int:assignment_id>/draft', methods=['PUT'])
+@login_required
+def save_draft(assignment_id):
+    data = request.get_json() or {}
+    # Accept a whole patch ({question_id: value, ...}) or a single {question_id, value}.
+    patch = data.get('patch')
+    if patch is None and 'question_id' in data:
+        patch = {str(data['question_id']): data.get('value')}
+    try:
+        row = ResponseService().save_draft(
+            assignment_id, _actor_id(), patch or {}, device=data.get('device'))
+    except ResponseError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'draft': (row or {}).get('draft_payload') or {}})
+
+
+@eval360_bp.route('/api/assignments/<int:assignment_id>/submit', methods=['POST'])
+@login_required
+def submit_response(assignment_id):
+    data = request.get_json() or {}
+    try:
+        ResponseService().submit(
+            assignment_id, _actor_id(), data.get('answers', []), device=data.get('device'))
+    except ResponseError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'ok': True})
+
+
+@eval360_bp.route('/api/assignments/<int:assignment_id>/self-decline', methods=['PATCH'])
+@login_required
+def self_decline(assignment_id):
+    data = request.get_json() or {}
+    try:
+        ResponseService().self_decline(assignment_id, _actor_id(), data.get('reason', ''))
+    except ResponseError as e:
+        return jsonify({'error': str(e)}), e.status
     return jsonify({'ok': True})

@@ -32,6 +32,19 @@ class AssignmentRepository(BaseRepository):
             'SELECT * FROM eval_assignments WHERE cycle_id = %s AND subject_id = %s ORDER BY id',
             (cycle_id, subject_id))
 
+    def list_by_reviewer(self, reviewer_id, statuses=('invited', 'in_progress')):
+        """A reviewer's inbox — their still-to-do assignments (joined to subject
+        name + cycle name for display). Excludes submitted/declined/replaced."""
+        return self.query_all(
+            '''SELECT a.*, u.name AS subject_name, c.name AS cycle_name,
+                      c.review_end AS review_end
+               FROM eval_assignments a
+               JOIN users u ON u.id = a.subject_id
+               JOIN eval_cycles c ON c.id = a.cycle_id
+               WHERE a.reviewer_id = %s AND a.status = ANY(%s)
+               ORDER BY a.due_at NULLS LAST, a.id''',
+            (reviewer_id, list(statuses)))
+
     def set_status(self, assignment_id, status):
         return self.execute(
             'UPDATE eval_assignments SET status = %s WHERE id = %s', (status, assignment_id))
