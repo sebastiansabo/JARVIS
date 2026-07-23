@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Target, ChevronLeft, ChevronRight, Clock, Send, CheckCircle2 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import MyReports from './MyReports'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -18,16 +20,27 @@ type DraftValue = string | number | null
 
 export default function Evaluations() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [view, setView] = useState<'todo' | 'reports'>('todo')
 
   return (
     <div className="space-y-4 md:space-y-6">
       <PageHeader
-        title="Evaluările mele"
-        breadcrumbs={[{ label: 'Evaluări 360' }, { label: 'De completat' }]}
+        title="Evaluări 360"
+        breadcrumbs={[{ label: 'Evaluări 360' }, { label: view === 'todo' ? 'De completat' : 'Rapoartele mele' }]}
+        actions={selectedId == null ? (
+          <Tabs value={view} onValueChange={(v) => setView(v as 'todo' | 'reports')}>
+            <TabsList>
+              <TabsTrigger value="todo">De completat</TabsTrigger>
+              <TabsTrigger value="reports">Rapoartele mele</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        ) : undefined}
       />
-      {selectedId == null
-        ? <Inbox onOpen={setSelectedId} />
-        : <EvaluationForm assignmentId={selectedId} onBack={() => setSelectedId(null)} />}
+      {selectedId != null
+        ? <EvaluationForm assignmentId={selectedId} onBack={() => setSelectedId(null)} />
+        : view === 'todo'
+          ? <Inbox onOpen={setSelectedId} />
+          : <MyReports />}
     </div>
   )
 }

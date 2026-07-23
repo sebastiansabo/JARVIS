@@ -208,6 +208,12 @@ def report_status(cycle_id):
     return jsonify({'reports': ReportService().status_list(cycle_id)})
 
 
+@eval360_bp.route('/api/me/reports', methods=['GET'])
+@login_required
+def my_reports():
+    return jsonify({'reports': ReportService().my_reports(_actor_id())})
+
+
 @eval360_bp.route('/api/me/report/<int:cycle_id>', methods=['GET'])
 @login_required
 def my_report(cycle_id):
