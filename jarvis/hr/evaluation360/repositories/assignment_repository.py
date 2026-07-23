@@ -53,6 +53,20 @@ class AssignmentRepository(BaseRepository):
             (cycle_id,))
         return {r['status']: r['n'] for r in rows}
 
+    def completion_by_department(self, cycle_id):
+        """[{department, submitted, total}] — subject's department completion.
+        Dropped assignments (declined/replaced) are excluded from the total."""
+        return self.query_all(
+            '''SELECT COALESCE(u.department, '—') AS department,
+                      COUNT(*) FILTER (WHERE a.status NOT IN ('declined', 'replaced')) AS total,
+                      COUNT(*) FILTER (WHERE a.status = 'submitted') AS submitted
+               FROM eval_assignments a
+               JOIN users u ON u.id = a.subject_id
+               WHERE a.cycle_id = %s
+               GROUP BY COALESCE(u.department, '—')
+               ORDER BY department''',
+            (cycle_id,))
+
     def reviewer_load(self, cycle_id):
         """[{reviewer_id, load}] — count of live assignments per reviewer."""
         return self.query_all(

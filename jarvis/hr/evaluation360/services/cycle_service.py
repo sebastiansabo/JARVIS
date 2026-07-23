@@ -82,10 +82,21 @@ class CycleService:
         # Total excludes dropped (declined/replaced) work from the denominator.
         total = sum(n for s, n in counts.items() if s not in ('declined', 'replaced'))
         completion = round(submitted / total * 100, 1) if total else 0.0
+        by_department = []
+        for row in self.assignments.completion_by_department(cycle_id):
+            dept_total = row['total'] or 0
+            dept_done = row['submitted'] or 0
+            by_department.append({
+                'department': row['department'],
+                'submitted': dept_done,
+                'total': dept_total,
+                'completion_pct': round(dept_done / dept_total * 100, 1) if dept_total else 0.0,
+            })
         return {
             'completion_pct': completion,
             'submitted': submitted,
             'total': total,
             'by_status': counts,
+            'by_department': by_department,
             'declines_pending': counts.get('declined', 0),
         }
