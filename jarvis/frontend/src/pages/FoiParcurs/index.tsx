@@ -1281,7 +1281,28 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                         )}
                       </TableCell>
                       <TableCell className="text-xs">{c.advisor_name || '—'}</TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">{c.km_start} - {c.km_end}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">
+                        {(() => {
+                          const v = vinVehicle.get(c.vin)
+                          const floor = v?.mileage_floor ?? v?.odometer_km ?? null
+                          // Planned sessions snapshot km_start at plan time; show the car's
+                          // live odometer floor instead so the number reflects reality
+                          // (activation applies the same max(entered, floor) refresh).
+                          const startKm = c.status === 'PLANNED' && floor != null ? Math.max(c.km_start ?? 0, floor) : c.km_start
+                          // Only a finalised session carries a genuine return odometer —
+                          // never replicate km_start as the end for planned/driving/overdue
+                          // rows (which all still hold the km_start placeholder). Note
+                          // return_datetime is the expected arrival, set at plan time, so it
+                          // is NOT a "finished" signal.
+                          const endKm = ss.key === 'finalizat' && c.km_end != null ? c.km_end : null
+                          return (
+                            <>
+                              {startKm ?? '—'}
+                              {endKm != null ? ` - ${endKm}` : ''}
+                            </>
+                          )
+                        })()}
+                      </TableCell>
                       <TableCell className="text-xs whitespace-nowrap">
                         {c.return_datetime
                           ? naiveDate(c.return_datetime)!.toLocaleString('ro-RO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
