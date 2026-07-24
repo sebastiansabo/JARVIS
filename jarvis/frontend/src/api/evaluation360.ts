@@ -437,3 +437,6 @@ export const STATUS_LABEL: Record<CycleStatus, string> = {
   closed: 'Închis',
   archived: 'Arhivat',
 }
+
+/** The stages shown in the cycle-stage rail (closed/archived collapse to Publicat). */
+export const CYCLE_STAGES: CycleStatus[] = ['draft', 'nomination', 'active', 'calibration', 'released']
