@@ -16,19 +16,27 @@ class DevplanRepository(BaseRepository):
                FROM eval_development_plans dp JOIN eval_participants p ON p.id = dp.participant_id
                WHERE dp.id = %s''', (plan_id,))
 
-    def create(self, *, participant_id, goals, linked_competencies, status='active'):
+    def create(self, *, participant_id, goals, linked_competencies, status='draft'):
         return self.execute(
             '''INSERT INTO eval_development_plans (participant_id, goals, linked_competencies, status)
                VALUES (%s, %s::jsonb, %s, %s) RETURNING *''',
             (participant_id, json.dumps(goals or []), linked_competencies or [], status),
             returning=True)
 
-    def update(self, plan_id, *, goals, linked_competencies, status='active'):
+    def update(self, plan_id, *, goals, linked_competencies, status=None):
+        """Save goals; ``status=None`` keeps the plan's current status (a draft
+        stays a draft, a finalized plan stays finalized)."""
         return self.execute(
             '''UPDATE eval_development_plans
-               SET goals = %s::jsonb, linked_competencies = %s, status = %s, updated_at = CURRENT_TIMESTAMP
+               SET goals = %s::jsonb, linked_competencies = %s,
+                   status = COALESCE(%s, status), updated_at = CURRENT_TIMESTAMP
                WHERE id = %s RETURNING *''',
             (json.dumps(goals or []), linked_competencies or [], status, plan_id), returning=True)
+
+    def set_status(self, plan_id, status):
+        return self.execute(
+            'UPDATE eval_development_plans SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING *',
+            (status, plan_id), returning=True)
 
     # ── check-ins ────────────────────────────────────────────────────
     def list_checkins(self, plan_id):

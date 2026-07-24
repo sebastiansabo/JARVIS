@@ -53,22 +53,42 @@ class DevplanService:
             raise DevplanError('not allowed', 403)
         participant = self._participant(cycle_id, employee_id)
         plan = self.plans.get_for_participant(participant['id'])
-        checkins = self.plans.list_checkins(plan['id']) if plan else []
         can_edit = self._can_edit(employee_id, actor_id, actor_is_hr)
-        return {'participant_id': participant['id'], 'plan': plan, 'checkins': checkins, 'can_edit': can_edit}
+        # A draft plan is invisible to the employee — only the manager/HR author
+        # sees it until it is finalized (spec: "angajatul nu vede până la finalizare").
+        if plan and not can_edit and plan.get('status') != 'finalized':
+            plan = None
+        checkins = self.plans.list_checkins(plan['id']) if plan else []
+        return {'participant_id': participant['id'], 'plan': plan, 'checkins': checkins,
+                'can_edit': can_edit}
 
     def save_plan(self, cycle_id, employee_id, actor_id, goals, linked_competencies, actor_is_hr=False):
+        """Save/update the plan as a DRAFT — no devplan.created event yet (that
+        fires on finalize). Keeps a finalized plan's status if edited later."""
         if not self._can_edit(employee_id, actor_id, actor_is_hr):
             raise DevplanError('not allowed', 403)
         participant = self._participant(cycle_id, employee_id)
         existing = self.plans.get_for_participant(participant['id'])
         if existing:
             return self.plans.update(existing['id'], goals=goals, linked_competencies=linked_competencies)
-        plan = self.plans.create(participant_id=participant['id'], goals=goals,
-                                 linked_competencies=linked_competencies)
-        self.events.emit('devplan.created', cycle_id=cycle_id, subject_id=employee_id,
-                         actor_id=actor_id, payload={'goals': len(goals or [])})
-        return plan
+        return self.plans.create(participant_id=participant['id'], goals=goals,
+                                 linked_competencies=linked_competencies, status='draft')
+
+    def finalize_plan(self, cycle_id, employee_id, actor_id, actor_is_hr=False):
+        """Publish the plan to the employee. Requires >= 1 goal; emits devplan.created
+        (indicator D3) once, on the transition to finalized."""
+        if not self._can_edit(employee_id, actor_id, actor_is_hr):
+            raise DevplanError('not allowed', 403)
+        participant = self._participant(cycle_id, employee_id)
+        plan = self.plans.get_for_participant(participant['id'])
+        if not plan or not (plan.get('goals') or []):
+            raise DevplanError('planul are nevoie de cel puțin un obiectiv', 400)
+        already_final = plan.get('status') == 'finalized'
+        updated = self.plans.set_status(plan['id'], 'finalized')
+        if not already_final:
+            self.events.emit('devplan.created', cycle_id=cycle_id, subject_id=employee_id,
+                             actor_id=actor_id, payload={'goals': len(plan.get('goals') or [])})
+        return updated
 
     def add_checkin(self, plan_id, actor_id, scheduled_date, note=None, actor_is_hr=False):
         plan = self.plans.get_with_owner(plan_id)
