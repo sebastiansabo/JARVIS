@@ -25,7 +25,7 @@ export default function Evaluations() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [view, setView] = useState<'todo' | 'reports' | 'team' | 'cycles'>('todo')
   const isHrAdmin = useAuthStore((s) => s.user?.can_access_hr) ?? false
-  const crumb = { todo: 'De completat', reports: 'Rapoartele mele', team: 'Echipa', cycles: 'Cicluri' }[view]
+  const crumb = { todo: 'De completat', reports: 'Rapoartele mele', team: 'Echipa', cycles: 'Administrare' }[view]
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -38,7 +38,7 @@ export default function Evaluations() {
               <TabsTrigger value="todo">De completat</TabsTrigger>
               <TabsTrigger value="reports">Rapoartele mele</TabsTrigger>
               <TabsTrigger value="team">Echipa</TabsTrigger>
-              {isHrAdmin && <TabsTrigger value="cycles">Cicluri</TabsTrigger>}
+              {isHrAdmin && <TabsTrigger value="cycles">Administrare</TabsTrigger>}
             </TabsList>
           </Tabs>
         ) : undefined}

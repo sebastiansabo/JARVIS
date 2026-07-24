@@ -11,6 +11,7 @@ from hr.events.routes._shared import hr_required, hr_manager_required
 from hr.evaluation360 import eval360_bp
 from hr.evaluation360.domain.state_machine import InvalidTransition
 from hr.evaluation360.services.cycle_service import CycleService, CycleError
+from hr.evaluation360.services.template_service import EvalTemplateService, TemplateError
 from hr.evaluation360.services.nomination_service import NominationService
 from hr.evaluation360.services.nudge_service import NudgeService, NudgeRateLimited
 from hr.evaluation360.services.response_service import ResponseService, ResponseError
@@ -132,6 +133,121 @@ def nudge(cycle_id):
     except NudgeRateLimited as e:
         return jsonify({'error': str(e)}), 429
     return jsonify({'ok': True})
+
+
+@eval360_bp.route('/api/cycles/<int:cycle_id>/generate-assignments', methods=['POST'])
+@hr_manager_required
+def generate_assignments(cycle_id):
+    data = request.get_json() or {}
+    summary = CycleService().generate_assignments(
+        cycle_id, auto_peers=int(data.get('auto_peers', 4)),
+        due_at=data.get('due_at'), actor_id=_actor_id())
+    return jsonify({'generated': summary}), 201
+
+
+# ── Population picker (cycle builder) ────────────────────────────────────────
+
+@eval360_bp.route('/api/eligible-employees', methods=['GET'])
+@hr_required
+def eligible_employees():
+    return jsonify({'employees': CycleService().cycles.list_eligible_employees(
+        search=request.args.get('search'), department=request.args.get('department'))})
+
+
+@eval360_bp.route('/api/departments', methods=['GET'])
+@hr_required
+def departments():
+    return jsonify({'departments': CycleService().cycles.list_departments()})
+
+
+# ── Competency library + form templates (HR authoring) ───────────────────────
+
+@eval360_bp.route('/api/competencies', methods=['GET'])
+@hr_required
+def list_competencies():
+    include = request.args.get('include_inactive') in ('1', 'true', 'yes')
+    return jsonify({'competencies': EvalTemplateService().list_competencies(include_inactive=include)})
+
+
+@eval360_bp.route('/api/competencies', methods=['POST'])
+@hr_manager_required
+def create_competency():
+    try:
+        comp = EvalTemplateService().create_competency(request.get_json() or {}, actor_id=_actor_id())
+    except TemplateError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'competency': comp}), 201
+
+
+@eval360_bp.route('/api/competencies/<int:cid>', methods=['PATCH'])
+@hr_manager_required
+def update_competency(cid):
+    try:
+        comp = EvalTemplateService().update_competency(cid, request.get_json() or {}, actor_id=_actor_id())
+    except TemplateError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'competency': comp})
+
+
+@eval360_bp.route('/api/templates', methods=['GET'])
+@hr_required
+def list_templates():
+    include = request.args.get('include_archived') in ('1', 'true', 'yes')
+    return jsonify({'templates': EvalTemplateService().list_templates(include_archived=include)})
+
+
+@eval360_bp.route('/api/templates/<int:tid>', methods=['GET'])
+@hr_required
+def get_template(tid):
+    try:
+        return jsonify(EvalTemplateService().get_template(tid))
+    except TemplateError as e:
+        return jsonify({'error': str(e)}), e.status
+
+
+@eval360_bp.route('/api/templates', methods=['POST'])
+@hr_manager_required
+def create_template():
+    try:
+        return jsonify(EvalTemplateService().create_template(request.get_json() or {}, actor_id=_actor_id())), 201
+    except TemplateError as e:
+        return jsonify({'error': str(e)}), e.status
+
+
+@eval360_bp.route('/api/templates/<int:tid>', methods=['PATCH'])
+@hr_manager_required
+def save_template(tid):
+    try:
+        return jsonify(EvalTemplateService().save_template(tid, request.get_json() or {}, actor_id=_actor_id()))
+    except TemplateError as e:
+        return jsonify({'error': str(e)}), e.status
+
+
+@eval360_bp.route('/api/templates/<int:tid>/publish', methods=['POST'])
+@hr_manager_required
+def publish_template(tid):
+    try:
+        return jsonify(EvalTemplateService().publish_template(tid, actor_id=_actor_id()))
+    except TemplateError as e:
+        return jsonify({'error': str(e)}), e.status
+
+
+@eval360_bp.route('/api/templates/<int:tid>/fork', methods=['POST'])
+@hr_manager_required
+def fork_template(tid):
+    try:
+        return jsonify(EvalTemplateService().fork_template(tid, actor_id=_actor_id())), 201
+    except TemplateError as e:
+        return jsonify({'error': str(e)}), e.status
+
+
+@eval360_bp.route('/api/templates/<int:tid>/archive', methods=['POST'])
+@hr_manager_required
+def archive_template(tid):
+    try:
+        return jsonify(EvalTemplateService().archive_template(tid, actor_id=_actor_id()))
+    except TemplateError as e:
+        return jsonify({'error': str(e)}), e.status
 
 
 # ── Reviewer-facing capture (login + ownership; NOT HR-gated) ────────────────
