@@ -106,6 +106,60 @@ class CycleRepository(BaseRepository):
                 LIMIT %s''',
             tuple(params))
 
+    # ── Sincron organigram as a population source ────────────────────
+    def sincron_org_tree(self):
+        """The Sincron org tree (nodes across companies). ``member_count`` is the
+        distinct count of active JARVIS users under the node *and its descendants*
+        — i.e. exactly how many participants selecting the node would add."""
+        return self.query_all(
+            '''WITH RECURSIVE node_anc AS (
+                   -- map every node to itself and each of its ancestors
+                   SELECT id AS node_id, id AS anc_id FROM sincron_org_nodes
+                   UNION ALL
+                   SELECT na.node_id, n.parent_id
+                   FROM node_anc na JOIN sincron_org_nodes n ON n.id = na.anc_id
+                   WHERE n.parent_id IS NOT NULL
+               ),
+               elig AS (
+                   SELECT m.node_id, se.mapped_jarvis_user_id AS uid
+                   FROM sincron_org_members m
+                   JOIN sincron_employees se
+                     ON se.sincron_employee_id = m.sincron_employee_id
+                    AND se.company_name = m.company_name
+                   JOIN users u ON u.id = se.mapped_jarvis_user_id
+                   WHERE u.is_active = TRUE
+               )
+               SELECT n.id, n.company_id, c.company AS company_name, n.parent_id,
+                      n.name, n.node_type, n.level, n.display_order,
+                      COUNT(DISTINCT e.uid) AS member_count
+               FROM sincron_org_nodes n
+               JOIN companies c ON c.id = n.company_id
+               LEFT JOIN node_anc na ON na.anc_id = n.id        -- n + all descendants
+               LEFT JOIN elig e ON e.node_id = na.node_id
+               GROUP BY n.id, n.company_id, c.company, n.parent_id,
+                        n.name, n.node_type, n.level, n.display_order
+               ORDER BY c.company, n.level, n.display_order, n.name''')
+
+    def sincron_org_node_members(self, node_id):
+        """Active JARVIS users under a node *and its descendants*, resolved via
+        Sincron member → mapped_jarvis_user_id. Shaped like list_eligible_employees."""
+        return self.query_all(
+            '''WITH RECURSIVE sub AS (
+                   SELECT id FROM sincron_org_nodes WHERE id = %s
+                   UNION ALL
+                   SELECT n.id FROM sincron_org_nodes n JOIN sub ON n.parent_id = sub.id
+               )
+               SELECT DISTINCT u.id, u.name, u.department, u.company_id
+               FROM sincron_org_members m
+               JOIN sub ON sub.id = m.node_id
+               JOIN sincron_employees se
+                 ON se.sincron_employee_id = m.sincron_employee_id
+                AND se.company_name = m.company_name
+               JOIN users u ON u.id = se.mapped_jarvis_user_id
+               WHERE u.is_active = TRUE
+               ORDER BY u.name''',
+            (node_id,))
+
     def list_departments(self):
         rows = self.query_all(
             '''SELECT department, COUNT(*) AS n FROM users
