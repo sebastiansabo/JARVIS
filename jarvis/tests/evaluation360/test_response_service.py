@@ -8,9 +8,10 @@ from hr.evaluation360.services.response_service import ResponseService, Response
 OWNED = {'id': 1, 'cycle_id': 5, 'subject_id': 10, 'reviewer_id': 7, 'status': 'invited'}
 
 
-def _svc(assignment=None, draft_row=None, submit_row=None, response_row=None, cycle=None):
+def _svc(assignment=None, draft_row=None, submit_row=None, response_row=None, cycle=None, named=None):
     rr, ar, cr, tr, ev = (MagicMock() for _ in range(5))
     ar.get.return_value = assignment
+    ar.get_named.return_value = named
     rr.save_draft.return_value = draft_row
     rr.submit.return_value = submit_row
     rr.get_by_assignment.return_value = response_row
@@ -100,6 +101,19 @@ def test_list_questions_query_selects_level_descriptors():
     repo.query_all = _cap
     repo.list_questions(1)
     assert 'level_descriptors' in captured['sql']
+
+
+def test_get_form_includes_subject_and_cycle_name():
+    """The reviewer must always see who they're rating: the form header needs the
+    subject's name + cycle, which the bare assignment row lacks."""
+    svc, *_ = _svc(
+        assignment=dict(OWNED),
+        cycle={'id': 5, 'template_id': None, 'name': 'Q3 2026'},
+        named={'id': 1, 'reviewer_id': 7, 'cycle_id': 5,
+               'subject_name': 'Ana Pop', 'cycle_name': 'Q3 2026'})
+    form = svc.get_form(1, 7)
+    assert form['assignment']['subject_name'] == 'Ana Pop'
+    assert form['assignment']['cycle_name'] == 'Q3 2026'
 
 
 def test_get_form_forwards_anchor_descriptors():
