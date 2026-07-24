@@ -85,6 +85,23 @@ def test_resume_returns_saved_draft():
     assert form['is_submitted'] is False
 
 
+# ── Comment-quality nudge telemetry (spec §6.2, indicator B1 input) ──────────
+
+def test_comment_nudge_emits_event():
+    svc, rr, ar, cr, tr, ev = _svc(assignment=dict(OWNED))
+    assert svc.record_comment_nudge(1, reviewer_id=7, question_id=42) is True
+    assert ev.emit.call_args[0][0] == 'comment.nudge_shown'
+    assert ev.emit.call_args.kwargs['payload']['question_id'] == 42
+    assert ev.emit.call_args.kwargs['assignment_id'] == 1
+
+
+def test_comment_nudge_rejects_non_owner():
+    svc, *_ = _svc(assignment={'id': 1, 'reviewer_id': 99})
+    with pytest.raises(ResponseError) as e:
+        svc.record_comment_nudge(1, reviewer_id=7, question_id=42)
+    assert e.value.status == 403
+
+
 # ── Inbox progress + time estimate (spec §6.1) ──────────────────────────────
 
 def test_list_by_reviewer_computes_inbox_progress():

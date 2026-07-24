@@ -197,6 +197,8 @@ export const eval360Api = {
       `${BASE}/assignments/${id}/draft`, { patch, device: 'web' }),
   submit: (id: number, answers: Answer[]) =>
     api.post<{ ok: boolean }>(`${BASE}/assignments/${id}/submit`, { answers, device: 'web' }),
+  commentNudge: (id: number, questionId: number) =>
+    api.post<{ ok: boolean }>(`${BASE}/assignments/${id}/comment-nudge`, { question_id: questionId }),
   selfDecline: (id: number, reason: string) =>
     api.patch<{ ok: boolean }>(`${BASE}/assignments/${id}/self-decline`, { reason }),
 }
