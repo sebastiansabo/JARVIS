@@ -307,6 +307,7 @@ export interface Report {
   gap_analysis: { flagged_competencies: number[] }
   hidden_categories: string[]
   manager_summary: string | null
+  debrief_scheduled_at: string | null
   released_at: string | null
   acknowledged_at: string | null
 }
@@ -327,6 +328,8 @@ export interface TeamReportHeader {
   released: boolean
   acknowledged: boolean
   has_summary: boolean
+  debrief_scheduled: boolean
+  needs_summary_backfill: boolean
 }
 
 export const eval360Reports = {
@@ -339,6 +342,8 @@ export const eval360Reports = {
   managerRelease: (reportId: number) => api.post<{ report: Report }>(`${BASE}/reports/${reportId}/manager-release`),
   setSummary: (reportId: number, summary: string) =>
     api.post<{ ok: boolean }>(`${BASE}/reports/${reportId}/manager-summary`, { summary }),
+  scheduleDebrief: (reportId: number, scheduledAt?: string) =>
+    api.post<{ ok: boolean }>(`${BASE}/reports/${reportId}/schedule-debrief`, { scheduled_at: scheduledAt }),
 }
 
 // ── Development plans ───────────────────────────────────────────────────────

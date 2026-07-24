@@ -85,14 +85,39 @@ class ReportService:
             raise ReportError('report not released yet', 403)
         return rep
 
+    def _assert_releasable(self, rep):
+        """Manager-gated release (spec §5.5): a valid manager summary (300–1500)
+        AND a scheduled debrief must exist before the employee can see the report.
+        Enforced here so both release routes inherit the gate."""
+        summary = (rep.get('manager_summary') or '').strip()
+        if not (MIN_SUMMARY <= len(summary) <= MAX_SUMMARY):
+            raise ReportError(
+                f'Rezumatul managerului lipsește sau nu are {MIN_SUMMARY}–{MAX_SUMMARY} caractere', 422)
+        if not rep.get('debrief_scheduled_at'):
+            raise ReportError('Debrief neprogramat — programează un debrief înainte de publicare', 422)
+
     def release(self, report_id, actor_id):
         rep = self.reports.get(report_id)
         if not rep:
             raise ReportError('not found', 404)
+        self._assert_releasable(rep)
         self.reports.release(report_id)
         self.events.emit('report.released', cycle_id=rep['cycle_id'], actor_id=actor_id,
                          payload={'report_id': report_id})
         return self.reports.get(report_id)
+
+    def schedule_debrief(self, report_id, manager_id, scheduled_at=None):
+        """Manager schedules the debrief conversation (unlocks release). Minimal
+        Tier-1 mechanism: records a timestamp + emits debrief.scheduled."""
+        rep = self.reports.get_with_owner(report_id)
+        if not rep:
+            raise ReportError('not found', 404)
+        if rep['employee_id'] not in self._reports_of(manager_id):
+            raise ReportError('not a direct report of yours', 403)
+        self.reports.schedule_debrief(report_id, scheduled_at)
+        self.events.emit('debrief.scheduled', cycle_id=rep['cycle_id'], actor_id=manager_id,
+                         payload={'report_id': report_id, 'scheduled_at': scheduled_at})
+        return True
 
     def acknowledge(self, report_id, employee_id):
         rep = self.reports.get_with_owner(report_id)

@@ -175,12 +175,16 @@ def create_schema_evaluation360(conn, cursor):
             gap_analysis JSONB DEFAULT '{}'::jsonb,
             hidden_categories TEXT[] DEFAULT '{}',
             manager_summary TEXT,
+            debrief_scheduled_at TIMESTAMP,
             released_at TIMESTAMP,
             acknowledged_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT eval_reports_participant_unique UNIQUE (participant_id)
         )
     ''')
+    # Existing DBs already have eval_reports; add the debrief column idempotently.
+    cursor.execute(
+        'ALTER TABLE eval_reports ADD COLUMN IF NOT EXISTS debrief_scheduled_at TIMESTAMP')
 
     # ============== Development plans ==============
     cursor.execute('''
