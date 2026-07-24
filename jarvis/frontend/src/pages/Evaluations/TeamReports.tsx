@@ -98,7 +98,7 @@ function Calibration({ reportId, onBack }: { reportId: number; onBack: () => voi
         <ChevronLeft className="h-4 w-4" /> Calibrare echipă
       </button>
 
-      <ReportView report={report} />
+      <ReportView report={report} showManagerSummary={false} />
 
       {/* Manager summary (required 300–1500) */}
       <Card><CardContent className="py-4 space-y-2">
