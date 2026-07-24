@@ -85,6 +85,34 @@ def test_resume_returns_saved_draft():
     assert form['is_submitted'] is False
 
 
+# ── Inbox progress + time estimate (spec §6.1) ──────────────────────────────
+
+def test_list_by_reviewer_computes_inbox_progress():
+    """The inbox query must return per-assignment answered/total counts (progress),
+    computed from the draft payload — else the '3/5' card can't be honest."""
+    from hr.evaluation360.repositories.assignment_repository import AssignmentRepository
+    repo = AssignmentRepository()
+    captured = {}
+
+    def _cap(sql, params=None):
+        captured['sql'] = sql
+        return []
+
+    repo.query_all = _cap
+    repo.list_by_reviewer(7)
+    assert 'answered' in captured['sql'] and 'total' in captured['sql']
+    assert 'jsonb_exists' in captured['sql']   # answered counted from draft_payload keys
+
+
+def test_my_assignments_adds_time_estimate():
+    svc, rr, ar, *_ = _svc()
+    ar.list_by_reviewer.return_value = [{'id': 1, 'total': 5, 'answered': 2},
+                                        {'id': 2, 'total': 0, 'answered': 0}]
+    rows = svc.my_assignments(7)
+    assert rows[0]['est_minutes'] == 4   # round(5 * 0.75)
+    assert rows[1]['est_minutes'] == 1   # floored at 1 minute
+
+
 # ── Behavioral anchors (spec §6.2: anchor text before the scale) ─────────────
 
 def test_list_questions_query_selects_level_descriptors():

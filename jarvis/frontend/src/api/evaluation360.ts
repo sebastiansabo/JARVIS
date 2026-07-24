@@ -130,6 +130,10 @@ export interface MyAssignment {
   subject_name: string
   cycle_name: string
   review_end: string | null
+  /** Inbox progress (spec §6.1): rating questions answered in the draft / total. */
+  answered: number
+  total: number
+  est_minutes: number
 }
 
 export type QuestionType = 'rating' | 'behavioral_frequency' | 'open_text' | 'forced_choice'

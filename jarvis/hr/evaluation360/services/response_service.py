@@ -37,8 +37,12 @@ class ResponseService:
         return a
 
     def my_assignments(self, reviewer_id):
-        """The reviewer's to-do inbox."""
-        return self.assignments.list_by_reviewer(reviewer_id)
+        """The reviewer's to-do inbox, each with a rough time estimate (~45s per
+        rating question, spec §6.1 target ≤4 min)."""
+        rows = self.assignments.list_by_reviewer(reviewer_id)
+        for r in rows:
+            r['est_minutes'] = max(1, round((r.get('total') or 0) * 0.75))
+        return rows
 
     def get_form(self, assignment_id, reviewer_id):
         a = self._owned(assignment_id, reviewer_id)
