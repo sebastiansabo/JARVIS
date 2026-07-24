@@ -358,7 +358,7 @@ export interface Checkin {
   completed_at: string | null
   note: string | null
 }
-export interface DevPlanBundle { participant_id: number; plan: DevPlan | null; checkins: Checkin[] }
+export interface DevPlanBundle { participant_id: number; plan: DevPlan | null; checkins: Checkin[]; can_edit: boolean }
 
 export const eval360DevPlan = {
   get: (cycleId: number, employeeId: number) =>

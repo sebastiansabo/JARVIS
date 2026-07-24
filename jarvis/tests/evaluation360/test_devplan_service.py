@@ -61,3 +61,26 @@ def test_complete_checkin_already_completed_is_409():
     with pytest.raises(DevplanError) as e:
         svc.complete_checkin(1, actor_id=10)
     assert e.value.status == 409
+
+
+def test_participant_cannot_edit_own_plan():
+    # The subject is NOT a manager of anyone and isn't HR → editing is forbidden.
+    svc, *_ = _svc(participant=PART, manages=())
+    with pytest.raises(DevplanError) as e:
+        svc.save_plan(5, 10, actor_id=10, goals=[{'text': 'x'}], linked_competencies=[])
+    assert e.value.status == 403
+
+
+def test_hr_may_edit_plan():
+    # HR manages nobody but the actor_is_hr flag grants edit rights.
+    svc, dp, *_ = _svc(participant=PART, existing_plan=None, manages=())
+    svc.save_plan(5, 10, actor_id=99, goals=[{'text': 'g'}], linked_competencies=[], actor_is_hr=True)
+    dp.create.assert_called_once()
+
+
+def test_participant_may_view_own_plan_readonly():
+    # Subject can read their own plan even though they can't edit it.
+    svc, *_ = _svc(participant=PART, existing_plan={'id': 50, 'goals': []}, manages=())
+    out = svc.get_plan(5, 10, actor_id=10)  # not a manager, not HR
+    assert out['can_edit'] is False
+    assert out['participant_id'] == 100
