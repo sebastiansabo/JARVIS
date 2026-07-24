@@ -104,6 +104,19 @@ export function ReportView({ report, showManagerSummary = true }: { report: Repo
         })}
       </div>
 
+      {/* Unattributed comments wall (server-anonymized: shuffled, only above min-n) */}
+      {(agg?.comments?.length ?? 0) > 0 && (
+        <Card><CardContent className="py-4">
+          <p className="text-sm font-semibold mb-1">Comentarii</p>
+          <p className="text-xs text-muted-foreground mb-3">Anonime și amestecate — nu poți afla cine le-a scris.</p>
+          <div className="space-y-2">
+            {agg!.comments!.map((c, i) => (
+              <p key={i} className="rounded-lg border bg-muted/30 px-3 py-2 text-sm">{c}</p>
+            ))}
+          </div>
+        </CardContent></Card>
+      )}
+
       {showManagerSummary && report.manager_summary && (
         <Card><CardContent className="py-4">
           <p className="text-sm font-semibold mb-1">Rezumatul managerului</p>

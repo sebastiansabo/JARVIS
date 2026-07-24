@@ -317,6 +317,8 @@ export interface ReportAggregates {
   hidden_relationships: string[]
   /** Report-level denominator behind "others" (visible non-self reviewers). */
   others_n: number
+  /** Unattributed, shuffled comments from groups that clear min-n. */
+  comments?: string[]
 }
 
 export interface Report {
