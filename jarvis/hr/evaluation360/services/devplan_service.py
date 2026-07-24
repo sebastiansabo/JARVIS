@@ -32,7 +32,10 @@ class DevplanService:
         self._reports_of = reports_resolver or _default_reports_of
 
     def _can_edit(self, employee_id, actor_id, actor_is_hr=False):
-        # Manager (of this employee) or HR — NOT the participant themselves.
+        # You never author your OWN plan — a manager (of this employee) or HR does.
+        # The improvement plan is proposed by the person above you in the hierarchy.
+        if actor_id == employee_id:
+            return False
         return bool(actor_is_hr) or employee_id in self._reports_of(actor_id)
 
     def _can_view(self, employee_id, actor_id, actor_is_hr=False):

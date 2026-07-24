@@ -10,6 +10,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { eval360Reports, type TeamReportHeader } from '@/api/evaluation360'
 import { ReportView } from './ReportView'
+import { DevPlan } from './DevPlan'
 
 const MIN = 300
 const MAX = 1500
@@ -121,6 +122,11 @@ function Calibration({ reportId, onBack }: { reportId: number; onBack: () => voi
           </div>
         )}
       </CardContent></Card>
+
+      {/* Development plan — the manager authors it for this team member (spec §7.2) */}
+      {report.employee_id != null && (
+        <DevPlan cycleId={report.cycle_id} employeeId={report.employee_id} />
+      )}
 
       {/* Debrief scheduling (manager-gated release requires it) */}
       {!released && (

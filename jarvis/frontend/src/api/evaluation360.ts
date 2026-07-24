@@ -323,6 +323,8 @@ export interface Report {
   id: number
   cycle_id: number
   participant_id: number
+  /** Present on the manager/owner view (get_with_owner); used to author the dev plan. */
+  employee_id?: number
   aggregates_by_relationship: ReportAggregates
   gap_analysis: { flagged_competencies: number[] }
   hidden_categories: string[]
