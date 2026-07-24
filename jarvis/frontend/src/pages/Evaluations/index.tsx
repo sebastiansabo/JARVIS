@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Target, ChevronLeft, ChevronRight, Clock, Send, CheckCircle2, UserPlus } from 'lucide-react'
+import { Target, ChevronLeft, ChevronRight, Clock, Send, CheckCircle2, UserPlus, HelpCircle } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import MyReports from './MyReports'
 import TeamReports from './TeamReports'
+import Help from './Help'
 import Evaluation360Tab from '../Hr/Evaluation360Tab'
 import NominationEditor from '../Hr/eval360/NominationEditor'
 import { useAuthStore } from '@/stores/authStore'
@@ -25,9 +26,9 @@ type DraftValue = string | number | null
 
 export default function Evaluations() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [view, setView] = useState<'todo' | 'reports' | 'team' | 'cycles'>('todo')
+  const [view, setView] = useState<'todo' | 'reports' | 'team' | 'cycles' | 'help'>('todo')
   const isHrAdmin = useAuthStore((s) => s.user?.can_access_hr) ?? false
-  const crumb = { todo: 'De completat', reports: 'Rapoartele mele', team: 'Echipa', cycles: 'Administrare' }[view]
+  const crumb = { todo: 'De completat', reports: 'Rapoartele mele', team: 'Echipa', cycles: 'Administrare', help: 'Ajutor' }[view]
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -35,12 +36,13 @@ export default function Evaluations() {
         title="Evaluări 360"
         breadcrumbs={[{ label: 'Evaluări 360' }, { label: crumb }]}
         actions={selectedId == null ? (
-          <Tabs value={view} onValueChange={(v) => setView(v as 'todo' | 'reports' | 'team' | 'cycles')}>
+          <Tabs value={view} onValueChange={(v) => setView(v as 'todo' | 'reports' | 'team' | 'cycles' | 'help')}>
             <TabsList>
               <TabsTrigger value="todo">De completat</TabsTrigger>
               <TabsTrigger value="reports">Rapoartele mele</TabsTrigger>
               <TabsTrigger value="team">Echipa</TabsTrigger>
               {isHrAdmin && <TabsTrigger value="cycles">Administrare</TabsTrigger>}
+              <TabsTrigger value="help"><HelpCircle className="mr-1 h-3.5 w-3.5" />Ajutor</TabsTrigger>
             </TabsList>
           </Tabs>
         ) : undefined}
@@ -50,7 +52,8 @@ export default function Evaluations() {
         : view === 'todo' ? <div className="space-y-4"><NominationBanner /><Inbox onOpen={setSelectedId} /></div>
           : view === 'reports' ? <MyReports />
             : view === 'team' ? <TeamReports />
-              : <Evaluation360Tab />}
+              : view === 'help' ? <Help />
+                : <Evaluation360Tab />}
     </div>
   )
 }
