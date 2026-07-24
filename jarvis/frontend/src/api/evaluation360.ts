@@ -370,7 +370,14 @@ export const eval360Reports = {
 
 // ── Development plans ───────────────────────────────────────────────────────
 
-export interface DevPlanGoal { text: string; competency_id?: number | null }
+export interface DevPlanGoal {
+  competency_id?: number | null
+  title?: string
+  description?: string
+  target_date?: string | null
+  text?: string   // legacy shape — migrated to `title` on load
+}
+export interface PlanSuggestion { synthesis: string; goals: DevPlanGoal[] }
 export interface DevPlan {
   id: number
   participant_id: number
@@ -392,6 +399,10 @@ export const eval360DevPlan = {
     api.get<DevPlanBundle>(`${BASE}/dev-plan/${cycleId}/${employeeId}`),
   save: (cycleId: number, employeeId: number, goals: DevPlanGoal[], linked: number[]) =>
     api.post<{ plan: DevPlan }>(`${BASE}/dev-plan/${cycleId}/${employeeId}`, { goals, linked_competencies: linked }),
+  generate: (cycleId: number, employeeId: number, mode: 'ai' | 'seed') =>
+    api.post<{ suggestion: PlanSuggestion }>(`${BASE}/dev-plan/${cycleId}/${employeeId}/generate`, { mode }),
+  finalize: (cycleId: number, employeeId: number) =>
+    api.post<{ plan: DevPlan }>(`${BASE}/dev-plan/${cycleId}/${employeeId}/finalize`),
   addCheckin: (planId: number, scheduledDate: string, note?: string) =>
     api.post<{ checkin: Checkin }>(`${BASE}/dev-plans/${planId}/checkins`, { scheduled_date: scheduledDate, note }),
   completeCheckin: (checkinId: number, note?: string) =>

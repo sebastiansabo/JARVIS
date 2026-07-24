@@ -125,7 +125,11 @@ function Calibration({ reportId, onBack }: { reportId: number; onBack: () => voi
 
       {/* Development plan — the manager authors it for this team member (spec §7.2) */}
       {report.employee_id != null && (
-        <DevPlan cycleId={report.cycle_id} employeeId={report.employee_id} />
+        <DevPlan
+          cycleId={report.cycle_id}
+          employeeId={report.employee_id}
+          competencies={(report.aggregates_by_relationship?.competencies ?? []).map((c) => ({ id: c.competency_id, name: c.competency_name ?? `#${c.competency_id}` }))}
+        />
       )}
 
       {/* Debrief scheduling (manager-gated release requires it) */}
