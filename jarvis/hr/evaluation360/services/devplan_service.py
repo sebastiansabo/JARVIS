@@ -1,7 +1,8 @@
 """Development plans + check-ins (spec §5.5, §7.2, D-family indicators).
 
-A plan is co-owned by the participant and their manager — either may edit goals
-and complete check-ins. devplan.created (D3) fires on first creation;
+A plan is owned by the participant's manager and HR — either may edit goals and
+complete check-ins. The participant may VIEW their own plan (read-only) but not
+edit it. devplan.created (D3) fires on first creation;
 devplan.checkin_completed (D4) on each completed check-in.
 """
 from hr.evaluation360.repositories.devplan_repository import DevplanRepository
@@ -30,8 +31,13 @@ class DevplanService:
         self.events = event_repo or EvalEventRepository()
         self._reports_of = reports_resolver or _default_reports_of
 
-    def _can_edit(self, employee_id, actor_id):
-        return actor_id == employee_id or employee_id in self._reports_of(actor_id)
+    def _can_edit(self, employee_id, actor_id, actor_is_hr=False):
+        # Manager (of this employee) or HR — NOT the participant themselves.
+        return bool(actor_is_hr) or employee_id in self._reports_of(actor_id)
+
+    def _can_view(self, employee_id, actor_id, actor_is_hr=False):
+        # The participant may read their own plan; managers and HR may read too.
+        return actor_id == employee_id or self._can_edit(employee_id, actor_id, actor_is_hr)
 
     def _participant(self, cycle_id, employee_id):
         p = self.cycles.get_participant(cycle_id, employee_id)
@@ -39,16 +45,17 @@ class DevplanService:
             raise DevplanError('not a participant of this cycle', 404)
         return p
 
-    def get_plan(self, cycle_id, employee_id, actor_id):
-        if not self._can_edit(employee_id, actor_id):
+    def get_plan(self, cycle_id, employee_id, actor_id, actor_is_hr=False):
+        if not self._can_view(employee_id, actor_id, actor_is_hr):
             raise DevplanError('not allowed', 403)
         participant = self._participant(cycle_id, employee_id)
         plan = self.plans.get_for_participant(participant['id'])
         checkins = self.plans.list_checkins(plan['id']) if plan else []
-        return {'participant_id': participant['id'], 'plan': plan, 'checkins': checkins}
+        can_edit = self._can_edit(employee_id, actor_id, actor_is_hr)
+        return {'participant_id': participant['id'], 'plan': plan, 'checkins': checkins, 'can_edit': can_edit}
 
-    def save_plan(self, cycle_id, employee_id, actor_id, goals, linked_competencies):
-        if not self._can_edit(employee_id, actor_id):
+    def save_plan(self, cycle_id, employee_id, actor_id, goals, linked_competencies, actor_is_hr=False):
+        if not self._can_edit(employee_id, actor_id, actor_is_hr):
             raise DevplanError('not allowed', 403)
         participant = self._participant(cycle_id, employee_id)
         existing = self.plans.get_for_participant(participant['id'])
@@ -60,19 +67,19 @@ class DevplanService:
                          actor_id=actor_id, payload={'goals': len(goals or [])})
         return plan
 
-    def add_checkin(self, plan_id, actor_id, scheduled_date, note=None):
+    def add_checkin(self, plan_id, actor_id, scheduled_date, note=None, actor_is_hr=False):
         plan = self.plans.get_with_owner(plan_id)
         if not plan:
             raise DevplanError('plan not found', 404)
-        if not self._can_edit(plan['employee_id'], actor_id):
+        if not self._can_edit(plan['employee_id'], actor_id, actor_is_hr):
             raise DevplanError('not allowed', 403)
         return self.plans.add_checkin(plan_id, scheduled_date, note)
 
-    def complete_checkin(self, checkin_id, actor_id, note=None):
+    def complete_checkin(self, checkin_id, actor_id, note=None, actor_is_hr=False):
         ci = self.plans.get_checkin_with_owner(checkin_id)
         if not ci:
             raise DevplanError('check-in not found', 404)
-        if not self._can_edit(ci['employee_id'], actor_id):
+        if not self._can_edit(ci['employee_id'], actor_id, actor_is_hr):
             raise DevplanError('not allowed', 403)
         row = self.plans.complete_checkin(checkin_id, note)
         if row is None:

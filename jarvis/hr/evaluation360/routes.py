@@ -456,7 +456,7 @@ def manager_summary(report_id):
 @login_required
 def get_dev_plan(cycle_id, employee_id):
     try:
-        return jsonify(DevplanService().get_plan(cycle_id, employee_id, _actor_id()))
+        return jsonify(DevplanService().get_plan(cycle_id, employee_id, _actor_id(), actor_is_hr=_is_hr()))
     except DevplanError as e:
         return jsonify({'error': str(e)}), e.status
 
@@ -468,7 +468,7 @@ def save_dev_plan(cycle_id, employee_id):
     try:
         plan = DevplanService().save_plan(
             cycle_id, employee_id, _actor_id(),
-            data.get('goals', []), data.get('linked_competencies', []))
+            data.get('goals', []), data.get('linked_competencies', []), actor_is_hr=_is_hr())
     except DevplanError as e:
         return jsonify({'error': str(e)}), e.status
     return jsonify({'plan': plan})
@@ -479,7 +479,7 @@ def save_dev_plan(cycle_id, employee_id):
 def add_checkin(plan_id):
     data = request.get_json() or {}
     try:
-        ci = DevplanService().add_checkin(plan_id, _actor_id(), data.get('scheduled_date'), data.get('note'))
+        ci = DevplanService().add_checkin(plan_id, _actor_id(), data.get('scheduled_date'), data.get('note'), actor_is_hr=_is_hr())
     except DevplanError as e:
         return jsonify({'error': str(e)}), e.status
     return jsonify({'checkin': ci}), 201
@@ -490,7 +490,7 @@ def add_checkin(plan_id):
 def complete_checkin(checkin_id):
     data = request.get_json() or {}
     try:
-        DevplanService().complete_checkin(checkin_id, _actor_id(), data.get('note'))
+        DevplanService().complete_checkin(checkin_id, _actor_id(), data.get('note'), actor_is_hr=_is_hr())
     except DevplanError as e:
         return jsonify({'error': str(e)}), e.status
     return jsonify({'ok': True})

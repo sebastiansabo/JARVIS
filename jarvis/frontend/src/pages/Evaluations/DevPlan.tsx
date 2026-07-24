@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { eval360DevPlan, type DevPlanGoal } from '@/api/evaluation360'
 
-/** Co-owned development plan editor (goals + check-ins) for a participant. */
+/** Development plan (goals + check-ins). Editable by the participant's manager
+ *  and HR only; the participant sees it read-only (server-enforced via can_edit). */
 export function DevPlan({ cycleId, employeeId }: { cycleId: number; employeeId: number }) {
   const qc = useQueryClient()
   const q = useQuery({
@@ -40,6 +41,7 @@ export function DevPlan({ cycleId, employeeId }: { cycleId: number; employeeId: 
 
   const plan = q.data?.plan
   const checkins = q.data?.checkins ?? []
+  const canEdit = q.data?.can_edit ?? false
 
   const addGoal = () => {
     if (!newGoal.trim()) return
@@ -53,19 +55,25 @@ export function DevPlan({ cycleId, employeeId }: { cycleId: number; employeeId: 
 
   return (
     <Card><CardContent className="py-4 space-y-3">
-      <p className="text-sm font-semibold">Plan de dezvoltare</p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold">Plan de dezvoltare</p>
+        {!canEdit && <span className="text-xs text-muted-foreground">Gestionat de manager / HR</span>}
+      </div>
 
       <div className="space-y-2">
         {goals.map((g, i) => (
           <div key={i} className="flex items-center gap-2">
             <span className="flex-1 text-sm">{g.text}</span>
-            <button onClick={() => removeGoal(i)} className="text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
+            {canEdit && <button onClick={() => removeGoal(i)} className="text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>}
           </div>
         ))}
-        <div className="flex gap-2">
-          <Input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder="Un obiectiv de dezvoltare…" onKeyDown={(e) => e.key === 'Enter' && addGoal()} />
-          <Button size="sm" variant="outline" onClick={addGoal}><Plus className="h-4 w-4" /></Button>
-        </div>
+        {!goals.length && !canEdit && <p className="text-sm text-muted-foreground">Niciun obiectiv de dezvoltare încă.</p>}
+        {canEdit && (
+          <div className="flex gap-2">
+            <Input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder="Un obiectiv de dezvoltare…" onKeyDown={(e) => e.key === 'Enter' && addGoal()} />
+            <Button size="sm" variant="outline" onClick={addGoal}><Plus className="h-4 w-4" /></Button>
+          </div>
+        )}
       </div>
 
       {plan && (
@@ -76,13 +84,18 @@ export function DevPlan({ cycleId, employeeId }: { cycleId: number; employeeId: 
               <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5 text-muted-foreground" />{c.scheduled_date ?? '—'}</span>
               {c.completed_at
                 ? <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle2 className="h-3.5 w-3.5" />finalizat</span>
-                : <Button size="sm" variant="ghost" disabled={completeM.isPending} onClick={() => completeM.mutate(c.id)}>Finalizează</Button>}
+                : canEdit
+                  ? <Button size="sm" variant="ghost" disabled={completeM.isPending} onClick={() => completeM.mutate(c.id)}>Finalizează</Button>
+                  : <span className="text-xs text-muted-foreground">programat</span>}
             </div>
           ))}
-          <div className="flex gap-2">
-            <Input type="date" value={newCheckin} onChange={(e) => setNewCheckin(e.target.value)} />
-            <Button size="sm" variant="outline" disabled={!newCheckin || addCheckinM.isPending} onClick={() => { addCheckinM.mutate(newCheckin); setNewCheckin('') }}><Plus className="h-4 w-4" /></Button>
-          </div>
+          {!checkins.length && !canEdit && <p className="text-sm text-muted-foreground">Niciun check-in programat.</p>}
+          {canEdit && (
+            <div className="flex gap-2">
+              <Input type="date" value={newCheckin} onChange={(e) => setNewCheckin(e.target.value)} />
+              <Button size="sm" variant="outline" disabled={!newCheckin || addCheckinM.isPending} onClick={() => { addCheckinM.mutate(newCheckin); setNewCheckin('') }}><Plus className="h-4 w-4" /></Button>
+            </div>
+          )}
         </div>
       )}
     </CardContent></Card>
