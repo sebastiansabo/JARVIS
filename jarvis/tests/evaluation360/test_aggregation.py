@@ -57,6 +57,19 @@ def test_not_observed_excluded_from_category_mean():
     assert comp['categories']['peer']['score'] == 4.0  # the not-observed rating dropped
 
 
+def test_not_observed_category_excluded_from_composite_and_denominator():
+    """C1 end-to-end: a visible category whose members all marked 'not observed'
+    contributes no score — excluded from the others composite AND its n, while
+    still counting as reviewers for the anonymity gate."""
+    reviews = [review('self', {1: 5}), review('manager', {1: 4})] + [review('peer', {1: None})] * 3
+    comp = build_participant_report(reviews, [1])['competencies'][0]
+    assert comp['categories']['peer']['n'] == 3          # reviewers still count (anonymity)
+    assert comp['categories']['peer']['hidden'] is False  # cleared the n>=3 gate…
+    assert comp['categories']['peer']['score'] is None    # …but observed nothing here
+    assert comp['others'] == 4.0                          # composite = manager only
+    assert comp['others_n'] == 1                          # denominator excludes the not-observed peers
+
+
 def test_johari_blind_spot():
     reviews = [review('self', {1: 5})] + [review('peer', {1: 2})] * 3
     comp = build_participant_report(reviews, [1])['competencies'][0]
