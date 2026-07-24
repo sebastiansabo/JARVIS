@@ -228,6 +228,45 @@ export const eval360Population = {
     api.get<{ employees: EligibleEmployee[] }>(`${BASE}/sincron-org/${nodeId}/members`),
 }
 
+// ── Peer nomination (HR editor + employee self-nominate) ────────────────────
+
+export interface NominatedReviewer {
+  id: number
+  reviewer_id: number | null
+  relationship: string
+  source: string
+  status: string
+  reviewer_name: string | null
+}
+export interface NominationView {
+  peers: NominatedReviewer[]
+  others: NominatedReviewer[]
+  candidates: { id: number; name: string; department: string | null }[]
+}
+export interface NominationParticipant {
+  employee_id: number
+  name: string
+  department: string | null
+  peer_count: number
+}
+export interface NominationCycle {
+  id: number
+  name: string
+  status: CycleStatus
+  peer_count: number
+}
+
+export const eval360Nomination = {
+  participants: (cycleId: number) =>
+    api.get<{ participants: NominationParticipant[] }>(`${BASE}/cycles/${cycleId}/nomination-participants`),
+  myNominations: () => api.get<{ cycles: NominationCycle[] }>(`${BASE}/me/nominations`),
+  view: (cycleId: number, subjectId: number) =>
+    api.get<NominationView>(`${BASE}/nominate/${cycleId}/${subjectId}`),
+  setPeers: (cycleId: number, subjectId: number, peerIds: number[]) =>
+    api.post<{ result: { added: number[]; removed: number[]; peer_count: number } }>(
+      `${BASE}/nominate/${cycleId}/${subjectId}`, { peer_ids: peerIds }),
+}
+
 export const TEMPLATE_STATUS_LABEL: Record<TemplateSummary['status'], string> = {
   draft: 'Ciornă',
   published: 'Publicat',

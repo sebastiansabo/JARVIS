@@ -25,11 +25,18 @@ def _default_manager_of(subject_id):
 
 
 def _default_peer_pool(subject_id, limit, exclude_ids):
-    """Same-department active colleagues to auto-nominate as peers (empty on any
-    error). Injectable so the fan-out is deterministic in tests."""
+    """Auto-nominated peers: preferentially the subject's Sincron org-node
+    co-members (random sample), topped up from same-department colleagues when
+    the subject isn't in the organigram or the node is too small. Injectable so
+    the fan-out is deterministic in tests. Empty on any error."""
     try:
         from hr.evaluation360.repositories.cycle_repository import CycleRepository
-        return CycleRepository().peer_pool(subject_id, limit=limit, exclude_ids=exclude_ids)
+        repo = CycleRepository()
+        pool = repo.sincron_peer_pool(subject_id, limit=limit, exclude_ids=exclude_ids)
+        if len(pool) < limit:
+            seen = set(exclude_ids or []) | {p['id'] for p in pool}
+            pool = pool + repo.peer_pool(subject_id, limit=limit - len(pool), exclude_ids=seen)
+        return pool
     except Exception:
         return []
 
@@ -125,6 +132,64 @@ class NominationService:
             used.add(pid)
             picked += 1
         return created
+
+    # ── manual nomination (HR editor + employee self-nominate) ──────
+    ACTIVE = ('pending_approval', 'invited', 'in_progress', 'submitted')
+
+    def _peer_candidate_pool(self, subject_id, exclude_ids):
+        """Full (non-random) org-node co-member pool a subject can nominate from,
+        with a same-department top-up. Injected resolver in tests."""
+        try:
+            from hr.evaluation360.repositories.cycle_repository import CycleRepository
+            repo = CycleRepository()
+            pool = repo.sincron_peer_pool(subject_id, exclude_ids=exclude_ids, randomized=False)
+            seen = set(exclude_ids) | {p['id'] for p in pool}
+            pool = pool + repo.peer_pool(subject_id, exclude_ids=seen)
+            return pool
+        except Exception:
+            return []
+
+    def nomination_view(self, cycle_id, subject_id):
+        """What the nomination editor needs for one subject: the reviewers already
+        assigned (grouped) and the candidate peers still available to add."""
+        rows = self.assignments.list_by_subject_named(cycle_id, subject_id)
+        peers = [r for r in rows if r['relationship'] == 'peer' and r['status'] in self.ACTIVE]
+        others = [r for r in rows if r['relationship'] != 'peer' and r['status'] in self.ACTIVE]
+        used = {r['reviewer_id'] for r in rows if r['status'] in self.ACTIVE and r['reviewer_id']}
+        used.add(subject_id)
+        candidates = self._peer_candidate_pool(subject_id, used)
+        return {'peers': peers, 'others': others, 'candidates': candidates}
+
+    def set_peers(self, cycle_id, subject_id, peer_ids, actor_id=None,
+                  status='invited', source='hr_assigned'):
+        """Reconcile a subject's peer reviewers to ``peer_ids``: add the new ones,
+        drop any current peer no longer listed (never a submitted one). Used by
+        both the HR editor and employee self-nomination."""
+        rows = self.assignments.list_by_subject(cycle_id, subject_id)
+        active = [a for a in rows if a['status'] in self.ACTIVE]
+        current_peers = {a['reviewer_id']: a for a in active if a['relationship'] == 'peer'}
+        used_non_peer = {a['reviewer_id'] for a in active if a['relationship'] != 'peer'}
+        desired = {p for p in peer_ids if p and p != subject_id and p not in used_non_peer}
+
+        added, removed = [], []
+        for pid in desired:
+            if pid in current_peers:
+                continue
+            row = self.assignments.create(
+                cycle_id=cycle_id, subject_id=subject_id, reviewer_id=pid,
+                relationship='peer', source=source, status=status)
+            self.events.emit('assignment.created', cycle_id=cycle_id, subject_id=subject_id,
+                             assignment_id=row['id'], actor_id=actor_id,
+                             payload={'relationship': 'peer', 'nominated': True})
+            added.append(pid)
+        for pid, a in current_peers.items():
+            if pid not in desired and a['status'] != 'submitted':
+                self.assignments.delete(a['id'])
+                self.events.emit('assignment.removed', cycle_id=cycle_id, subject_id=subject_id,
+                                 assignment_id=a['id'], actor_id=actor_id, payload={'reviewer_id': pid})
+                removed.append(pid)
+        return {'added': added, 'removed': removed,
+                'peer_count': len(desired) if desired else len(current_peers) - len(removed)}
 
     def approve(self, assignment_id, actor_id=None):
         self.assignments.set_status(assignment_id, 'invited')
