@@ -496,6 +496,19 @@ def save_dev_plan(cycle_id, employee_id):
     return jsonify({'plan': plan})
 
 
+@eval360_bp.route('/api/dev-plan/<int:cycle_id>/<int:employee_id>/generate', methods=['POST'])
+@login_required
+def generate_dev_plan(cycle_id, employee_id):
+    data = request.get_json() or {}
+    try:
+        suggestion = DevplanService().suggest_plan(
+            cycle_id, employee_id, _actor_id(),
+            mode=data.get('mode', 'seed'), actor_is_hr=_is_hr())
+    except DevplanError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'suggestion': suggestion})
+
+
 @eval360_bp.route('/api/dev-plan/<int:cycle_id>/<int:employee_id>/finalize', methods=['POST'])
 @login_required
 def finalize_dev_plan(cycle_id, employee_id):
