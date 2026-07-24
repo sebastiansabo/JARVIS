@@ -16,8 +16,22 @@ import CycleBuilder from './eval360/CycleBuilder'
 import TemplateLibrary from './eval360/TemplateLibrary'
 import NominationEditor from './eval360/NominationEditor'
 import {
-  eval360Api, eval360Nomination, NEXT_STATES, STATUS_LABEL, type CycleStatus,
+  eval360Api, eval360Nomination, NEXT_STATES, STATUS_LABEL, CYCLE_STAGES, type CycleStatus,
 } from '@/api/evaluation360'
+import { Timeline, type TimelineNode } from '../Evaluations/Timeline'
+
+// closed/archived cycles are past release → pin the rail to the final "Publicat" stage
+function cycleStageIndex(status: CycleStatus): number {
+  const i = CYCLE_STAGES.indexOf(status)
+  return i === -1 ? CYCLE_STAGES.length - 1 : i
+}
+function cycleRail(status: CycleStatus): TimelineNode[] {
+  const idx = cycleStageIndex(status)
+  return CYCLE_STAGES.map((s, i) => ({
+    label: STATUS_LABEL[s],
+    state: i < idx ? 'done' : i === idx ? 'current' : 'todo',
+  }))
+}
 
 function statusBadgeClass(status: CycleStatus): string {
   switch (status) {
@@ -144,7 +158,8 @@ function CyclesView({ search }: { search?: string }) {
         <>
           {/* Header: status + advance controls */}
           <Card>
-            <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <CardContent className="py-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-semibold tracking-tight">{selected.name}</h2>
@@ -169,6 +184,11 @@ function CyclesView({ search }: { search?: string }) {
                     → {STATUS_LABEL[target]}
                   </Button>
                 ))}
+              </div>
+              </div>
+              {/* Read-only cycle-stage rail (same Timeline component as the capture flow) */}
+              <div className="overflow-x-auto pt-1">
+                <Timeline nodes={cycleRail(selected.status)} current={cycleStageIndex(selected.status)} />
               </div>
             </CardContent>
           </Card>
