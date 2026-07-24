@@ -22,7 +22,7 @@ export function ReportView({ report, showManagerSummary = true }: { report: Repo
   const byJohari = (key: string) => comps.filter((c) => c.johari === key)
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-5xl space-y-4">
       {agg?.hidden_relationships?.length > 0 && (
         <Card><CardContent className="flex items-start gap-2 py-3 text-sm text-muted-foreground">
           <EyeOff className="h-4 w-4 mt-0.5 shrink-0" />
@@ -30,28 +30,32 @@ export function ReportView({ report, showManagerSummary = true }: { report: Repo
         </CardContent></Card>
       )}
 
-      {radarData.length >= 3 && (
-        <Card><CardContent className="py-4">
-          <p className="text-sm font-semibold mb-2">Autoevaluare vs. ceilalți</p>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={radarData} outerRadius="72%">
-                <PolarGrid />
-                <PolarAngleAxis dataKey="competency" tick={{ fontSize: 11 }} />
-                <PolarRadiusAxis domain={[1, 5]} tick={{ fontSize: 10 }} />
-                <Radar name="Eu" dataKey="self" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.25} />
-                <Radar name={`Ceilalți (n=${agg?.others_n ?? 0})`} dataKey="others" stroke="#22c55e" fill="#22c55e" fillOpacity={0.2} />
-                <Legend />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent></Card>
-      )}
+      {/* Radar + gaps sit side by side on desktop so the chart fills a proportionate
+          column instead of a huge, mostly-empty card. */}
+      <div className={cn('grid items-start gap-4', radarData.length >= 3 && 'lg:grid-cols-2')}>
+        {radarData.length >= 3 && (
+          <Card><CardContent className="py-4">
+            <p className="text-sm font-semibold mb-2">Autoevaluare vs. ceilalți</p>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={radarData} outerRadius="72%">
+                  <PolarGrid />
+                  <PolarAngleAxis dataKey="competency" tick={{ fontSize: 11 }} />
+                  <PolarRadiusAxis domain={[1, 5]} tick={{ fontSize: 10 }} />
+                  <Radar name="Eu" dataKey="self" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.25} />
+                  <Radar name={`Ceilalți (n=${agg?.others_n ?? 0})`} dataKey="others" stroke="#22c55e" fill="#22c55e" fillOpacity={0.2} />
+                  <Legend />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent></Card>
+        )}
 
-      <Card><CardContent className="py-4">
-        <p className="text-sm font-semibold mb-3">Diferența autoevaluare — ceilalți</p>
-        <div className="space-y-2">{comps.map((c) => <GapRow key={c.competency_id} c={c} />)}</div>
-      </CardContent></Card>
+        <Card><CardContent className="py-4">
+          <p className="text-sm font-semibold mb-3">Diferența autoevaluare — ceilalți</p>
+          <div className="space-y-2">{comps.map((c) => <GapRow key={c.competency_id} c={c} />)}</div>
+        </CardContent></Card>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {(['confirmed_strength', 'blind_spot', 'hidden_strength', 'agreed_growth'] as const).map((key) => {
