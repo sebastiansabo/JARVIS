@@ -21,6 +21,7 @@ import {
 } from '@/api/evaluation360'
 
 const NOT_OBSERVED = 'not_observed'
+const commentKey = (id: number) => `${id}:c`   // per-rating optional comment, stored alongside the value in draft
 type DraftValue = string | number | null
 
 export default function Evaluations() {
@@ -150,6 +151,12 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
     saveM.mutate({ [String(q.id)]: value })   // idempotent per-question autosave
   }
 
+  const setComment = (q: Question, value: string) => {
+    const k = commentKey(q.id)
+    setDraft((d) => ({ ...d, [k]: value }))
+    saveM.mutate({ [k]: value })
+  }
+
   const ratingQuestions = questions.filter((q) => q.type === 'rating' || q.type === 'behavioral_frequency')
   const answeredRequired = ratingQuestions
     .filter((q) => q.required)
@@ -161,8 +168,10 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
     if (q.type === 'open_text') {
       return { question_id: q.id, competency_id: q.competency_id, rating: null, not_observed: false, comment: typeof v === 'string' ? v : '' }
     }
-    if (v === NOT_OBSERVED) return { question_id: q.id, competency_id: q.competency_id, rating: null, not_observed: true }
-    return { question_id: q.id, competency_id: q.competency_id, rating: typeof v === 'number' ? v : null, not_observed: false }
+    const cv = draft[commentKey(q.id)]
+    const comment = typeof cv === 'string' ? cv : ''
+    if (v === NOT_OBSERVED) return { question_id: q.id, competency_id: q.competency_id, rating: null, not_observed: true, comment }
+    return { question_id: q.id, competency_id: q.competency_id, rating: typeof v === 'number' ? v : null, not_observed: false, comment }
   })
 
   return (
@@ -202,6 +211,8 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
               relationship={relationship}
               value={draft[String(q.id)] ?? null}
               onChange={(v) => setValue(q, v)}
+              comment={typeof draft[commentKey(q.id)] === 'string' ? (draft[commentKey(q.id)] as string) : ''}
+              onComment={(v) => setComment(q, v)}
             />
           ))}
 
@@ -220,9 +231,10 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
 }
 
 function QuestionCard({
-  q, relationship, value, onChange,
+  q, relationship, value, onChange, comment, onComment,
 }: {
   q: Question; relationship: string; value: DraftValue; onChange: (v: DraftValue) => void
+  comment: string; onComment: (v: string) => void
 }) {
   if (q.type === 'open_text') {
     return (
@@ -269,6 +281,12 @@ function QuestionCard({
           Nu am observat
         </button>
       </div>
+      <Textarea
+        value={comment}
+        onChange={(e) => onComment(e.target.value)}
+        placeholder="Comentariu (opțional) — un exemplu concret ajută"
+        rows={2}
+      />
     </CardContent></Card>
   )
 }
