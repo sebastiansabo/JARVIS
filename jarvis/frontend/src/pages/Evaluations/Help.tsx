@@ -39,7 +39,7 @@ const ACCENT = {
 type Stage = { n: string; role: keyof typeof ACCENT; state: string; who: string; desc: string; gate?: string; calm?: boolean }
 const LIFECYCLE: Stage[] = [
   { n: '01', role: 'hr', state: 'Schiță', who: 'HR', desc: 'Șablon + populație (departamente sau organigramă Sincron) + calendar. Evaluările sunt generate.', gate: 'Prag · ≥3 colegi eligibili / participant' },
-  { n: '02', role: 'rev', state: 'Nominalizare', who: 'HR · Angajat', desc: 'Colegii sunt aleși automat din nodul de organigramă, sau nominalizați manual de HR și angajați.' },
+  { n: '02', role: 'rev', state: 'Nominalizare', who: 'HR', desc: 'Colegii sunt aleși automat din nodul de organigramă, sau nominalizați manual de HR.' },
   { n: '03', role: 'rev', state: 'Activ', who: 'Evaluatori', desc: 'Toți completează. Autosalvare, trimitere o singură dată.' },
   { n: '04', role: 'mgr', state: 'Calibrare', who: 'Manager', desc: 'Agregate provizorii + rezumat obligatoriu. Nu editează niciodată scorurile.', gate: 'Opțional · din Activ se poate publica direct', calm: true },
   { n: '05', role: 'rev', state: 'Publicat', who: 'Angajat', desc: 'Citește raportul, confirmă → deblochează planul.' },
@@ -79,7 +79,6 @@ const ROLES = [
   {
     key: 'rev' as const, badge: 'A', role: 'Angajat & Evaluator', tag: 'Partea de captare — mobile-first',
     items: [
-      ['Nominalizează-ți colegii.', 'Un banner în De completat te lasă să alegi cine te evaluează, din nodul tău de organigramă.'],
       ['Oferă feedback.', 'O competență per ecran, 1–5 sau „Nu am observat”, autosalvare la fiecare atingere.'],
       ['Trimite o singură dată.', 'Tranzacțional și imutabil — fără editări după.'],
       ['Citește-ți raportul', '— radar self vs. ceilalți, diferențe, Johari — apoi confirmă și construiești un plan de dezvoltare.'],
@@ -124,7 +123,7 @@ const JOHARI = [
 
 const NAV = [
   { key: 'hr' as const, role: 'HR', p2: 'Creează, lansează și monitorizează', stat: 'Bibliotecă (competențe + șabloane) · asistent Ciclu nou · centru de control · Nominalizări.', path: 'Evaluări 360 › Administrare' },
-  { key: 'rev' as const, role: 'Angajat', p2: 'Nominalizează · oferă · citește', stat: 'Auto-nominalizează colegi · completează evaluările atribuite · citește raportul publicat și planul.', path: 'Evaluări 360 › De completat / Rapoartele mele' },
+  { key: 'rev' as const, role: 'Angajat', p2: 'Oferă feedback · citește', stat: 'Completează evaluările atribuite · citește raportul publicat și planul de dezvoltare.', path: 'Evaluări 360 › De completat / Rapoartele mele' },
   { key: 'mgr' as const, role: 'Manager', p2: 'Calibrează și publică', stat: 'Rapoarte de echipă, rezumat obligatoriu, publicare gated de manager, planuri de dezvoltare partajate.', path: 'Evaluări 360 › Echipa' },
 ] as const
 
@@ -240,8 +239,8 @@ export default function Help() {
                 <p className="text-[13px] leading-relaxed text-foreground/80">Un <b>eșantion aleatoriu</b> de co-membri din nodul de organigramă Sincron al persoanei — așa o echipă mare nu mai produce mereu aceiași câțiva colegi (alfabetic). Revine la colegii din același departament când cineva nu e în organigramă.</p>
               </div>
               <div className="border-t border-dashed pt-3">
-                <p className="text-[13px] font-semibold">Nominalizare — HR & angajat</p>
-                <p className="text-[13px] leading-relaxed text-foreground/80">HR alege manual per participant în <Path>Cicluri › Nominalizări</Path>; fiecare angajat se poate auto-nominaliza dintr-un banner în <Path>De completat</Path>. Evaluările deja trimise sunt blocate și nu pot fi eliminate.</p>
+                <p className="text-[13px] font-semibold">Nominalizare — HR</p>
+                <p className="text-[13px] leading-relaxed text-foreground/80">HR alege manual colegii per participant în <Path>Cicluri › Nominalizări</Path>. Angajații nu își aleg singuri evaluatorii — selecția e controlată de HR. Evaluările deja trimise sunt blocate și nu pot fi eliminate.</p>
               </div>
             </CardContent>
           </Card>
