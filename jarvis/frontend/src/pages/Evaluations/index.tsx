@@ -6,6 +6,8 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import MyReports from './MyReports'
 import TeamReports from './TeamReports'
+import Evaluation360Tab from '../Hr/Evaluation360Tab'
+import { useAuthStore } from '@/stores/authStore'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,8 +23,9 @@ type DraftValue = string | number | null
 
 export default function Evaluations() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [view, setView] = useState<'todo' | 'reports' | 'team'>('todo')
-  const crumb = view === 'todo' ? 'De completat' : view === 'reports' ? 'Rapoartele mele' : 'Echipa'
+  const [view, setView] = useState<'todo' | 'reports' | 'team' | 'cycles'>('todo')
+  const isHrAdmin = useAuthStore((s) => s.user?.can_access_hr) ?? false
+  const crumb = { todo: 'De completat', reports: 'Rapoartele mele', team: 'Echipa', cycles: 'Cicluri' }[view]
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -30,11 +33,12 @@ export default function Evaluations() {
         title="Evaluări 360"
         breadcrumbs={[{ label: 'Evaluări 360' }, { label: crumb }]}
         actions={selectedId == null ? (
-          <Tabs value={view} onValueChange={(v) => setView(v as 'todo' | 'reports' | 'team')}>
+          <Tabs value={view} onValueChange={(v) => setView(v as 'todo' | 'reports' | 'team' | 'cycles')}>
             <TabsList>
               <TabsTrigger value="todo">De completat</TabsTrigger>
               <TabsTrigger value="reports">Rapoartele mele</TabsTrigger>
               <TabsTrigger value="team">Echipa</TabsTrigger>
+              {isHrAdmin && <TabsTrigger value="cycles">Cicluri</TabsTrigger>}
             </TabsList>
           </Tabs>
         ) : undefined}
@@ -43,7 +47,8 @@ export default function Evaluations() {
         ? <EvaluationForm assignmentId={selectedId} onBack={() => setSelectedId(null)} />
         : view === 'todo' ? <Inbox onOpen={setSelectedId} />
           : view === 'reports' ? <MyReports />
-            : <TeamReports />}
+            : view === 'team' ? <TeamReports />
+              : <Evaluation360Tab />}
     </div>
   )
 }

@@ -56,9 +56,9 @@ const navItemsDef: NavItem[] = [
       { path: '/app/hr/bonuses', label: 'Bonuses', icon: Award, moduleKey: 'hr_bonuses', v2Permission: 'hr.bonuses.view' },
       { path: '/app/hr/organigram', label: 'Organigram', icon: Network, moduleKey: 'hr_organigram', v2Permission: 'hr.structure.view' },
       { path: '/app/hr/courses', label: 'Cursuri', icon: GraduationCap, moduleKey: 'hr_courses' },
+      { path: '/app/evaluations', label: 'Evaluări 360', icon: Target },
     ],
   },
-  { path: '/app/evaluations', label: 'Evaluări 360', icon: Target },
   {
     path: '/app/marketing',
     label: 'Marketing',
