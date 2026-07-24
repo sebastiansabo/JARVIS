@@ -62,3 +62,25 @@ def test_johari_blind_spot():
     comp = build_participant_report(reviews, [1])['competencies'][0]
     assert comp['self'] == 5.0 and comp['others'] == 2.0
     assert comp['johari'] == 'blind_spot'   # self high, others low
+
+
+# ── Others denominator (n) — the report must never hide the sample size ──────
+
+def test_others_n_counts_visible_non_self_reviewers():
+    reviews = [review('self', {1: 5}), review('manager', {1: 4})] \
+        + [review('peer', {1: 3})] * 3 + [review('direct_report', {1: 4})] * 3
+    rep = build_participant_report(reviews, [1])
+    comp = rep['competencies'][0]
+    assert comp['others_n'] == 7   # 1 manager + 3 peers + 3 direct reports behind "others"
+    assert rep['others_n'] == 7    # report-level: distinct visible non-self reviewers
+
+
+def test_others_n_excludes_hidden_peer_group():
+    reviews = [review('self', {1: 5}), review('manager', {1: 4}),
+               review('peer', {1: 3}), review('peer', {1: 3})]  # only 2 peers → hidden
+    rep = build_participant_report(reviews, [1])
+    comp = rep['competencies'][0]
+    assert comp['categories']['peer']['hidden'] is True   # notice, not values
+    assert comp['others'] == 4.0                           # only the manager contributes
+    assert comp['others_n'] == 1                           # denominator excludes hidden peers
+    assert rep['others_n'] == 1

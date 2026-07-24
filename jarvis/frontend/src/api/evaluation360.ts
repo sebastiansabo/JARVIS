@@ -298,6 +298,8 @@ export interface CompetencyAgg {
   competency_name: string | null
   self: number | null
   others: number | null
+  /** Reviewers behind this competency's "others" composite (visible, non-self). */
+  others_n: number
   gap: number | null
   johari: string | null
   categories: Record<string, { n: number; score: number | null; hidden: boolean }>
@@ -307,6 +309,8 @@ export interface ReportAggregates {
   competencies: CompetencyAgg[]
   visible_relationships: string[]
   hidden_relationships: string[]
+  /** Report-level denominator behind "others" (visible non-self reviewers). */
+  others_n: number
 }
 
 export interface Report {
