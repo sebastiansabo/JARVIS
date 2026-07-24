@@ -55,22 +55,30 @@ def build_participant_report(reviews, competency_ids, min_n: int = anonymity.DEF
             }
 
         self_score = categories.get('self', {}).get('score')
-        others_scores = [
-            c['score'] for rel, c in categories.items()
+        contributing = [
+            c for rel, c in categories.items()
             if rel != 'self' and not c['hidden'] and c['score'] is not None
         ]
-        others = scoring.others_composite(others_scores)
+        others = scoring.others_composite([c['score'] for c in contributing])
+        # Denominator behind "others" for THIS competency: reviewers of the visible,
+        # non-self categories that actually contributed a score (never raw responses).
+        others_n = sum(c['n'] for c in contributing)
         competencies.append({
             'competency_id': cid,
             'self': self_score,
             'others': others,
+            'others_n': others_n,
             'gap': scoring.gap(self_score, others),
             'johari': scoring.johari_quadrant(self_score, others),
             'categories': categories,
         })
 
+    # Report-level denominator for the radar legend: visible non-self reviewers.
+    report_others_n = sum(reviewer_counts[rel] for rel in visible_set if rel != 'self')
+
     return {
         'competencies': competencies,
         'visible_relationships': visible,
         'hidden_relationships': hidden,
+        'others_n': report_others_n,
     }

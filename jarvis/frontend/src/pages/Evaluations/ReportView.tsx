@@ -38,7 +38,7 @@ export function ReportView({ report }: { report: Report }) {
                 <PolarAngleAxis dataKey="competency" tick={{ fontSize: 11 }} />
                 <PolarRadiusAxis domain={[1, 5]} tick={{ fontSize: 10 }} />
                 <Radar name="Eu" dataKey="self" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.25} />
-                <Radar name="Ceilalți" dataKey="others" stroke="#22c55e" fill="#22c55e" fillOpacity={0.2} />
+                <Radar name={`Ceilalți (n=${agg?.others_n ?? 0})`} dataKey="others" stroke="#22c55e" fill="#22c55e" fillOpacity={0.2} />
                 <Legend />
               </RadarChart>
             </ResponsiveContainer>
@@ -88,7 +88,7 @@ function GapRow({ c }: { c: CompetencyAgg }) {
       <span className="min-w-0 truncate text-sm">{c.competency_name ?? `#${c.competency_id}`}</span>
       <div className="flex items-center gap-3 shrink-0 text-sm tabular-nums">
         <span className="text-muted-foreground">eu {c.self ?? '—'}</span>
-        <span className="text-muted-foreground">ceilalți {c.others ?? '—'}</span>
+        <span className="text-muted-foreground">ceilalți {c.others ?? '—'}{c.others_n ? ` (n=${c.others_n})` : ''}</span>
         <Badge variant="outline" className={cn('tabular-nums', flagged ? 'text-amber-600 border-amber-200' : 'text-muted-foreground')}>
           {gap == null ? '—' : `${gap > 0 ? '+' : ''}${gap}`}
         </Badge>
