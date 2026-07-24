@@ -8,8 +8,9 @@ from hr.evaluation360.services.devplan_service import DevplanService, DevplanErr
 PART = {'id': 100, 'cycle_id': 5, 'employee_id': 10}
 
 
-def _svc(participant=None, existing_plan=None, checkin_owner=None, complete_row=None, manages=(10,)):
-    dp, cr, ev = MagicMock(), MagicMock(), MagicMock()
+def _svc(participant=None, existing_plan=None, checkin_owner=None, complete_row=None,
+         manages=(10,), report=None):
+    dp, cr, ev, rr = MagicMock(), MagicMock(), MagicMock(), MagicMock()
     cr.get_participant.return_value = participant
     dp.get_for_participant.return_value = existing_plan
     dp.create.return_value = {'id': 50}
@@ -17,8 +18,13 @@ def _svc(participant=None, existing_plan=None, checkin_owner=None, complete_row=
     dp.get_checkin_with_owner.return_value = checkin_owner
     dp.complete_checkin.return_value = complete_row
     dp.list_checkins.return_value = []
-    svc = DevplanService(dp, cr, ev, reports_resolver=lambda uid: list(manages))
+    rr.get_for_employee.return_value = report
+    svc = DevplanService(dp, cr, ev, report_repo=rr, reports_resolver=lambda uid: list(manages))
     return svc, dp, cr, ev
+
+
+def _report(*comps):
+    return {'aggregates_by_relationship': {'competencies': list(comps)}}
 
 
 def test_save_plan_creates_draft_without_event():
@@ -127,7 +133,48 @@ def test_hr_cannot_edit_own_plan():
 
 def test_participant_may_view_own_plan_readonly():
     # Subject can read their own plan even though they can't edit it.
-    svc, *_ = _svc(participant=PART, existing_plan={'id': 50, 'goals': []}, manages=())
+    svc, *_ = _svc(participant=PART, existing_plan={'id': 50, 'goals': [], 'status': 'finalized'}, manages=())
     out = svc.get_plan(5, 10, actor_id=10)  # not a manager, not HR
     assert out['can_edit'] is False
     assert out['participant_id'] == 100
+
+
+# ── plan generation (deterministic seed + AI draft) ──────────────────────────
+
+def test_seed_suggestion_picks_biggest_gap():
+    rep = _report(
+        {'competency_id': 1, 'competency_name': 'Comunicare', 'self': 3, 'others': 3.0, 'gap': 0.0},
+        {'competency_id': 2, 'competency_name': 'Colaborare', 'self': 5, 'others': 2.0, 'gap': 3.0},  # blind spot
+    )
+    svc, *_ = _svc(participant=PART, report=rep, manages=(10,))
+    out = svc.suggest_plan(5, 10, actor_id=7, mode='seed')
+    assert out['goals'][0]['competency_id'] == 2
+    assert 'Colaborare' in out['goals'][0]['title']
+
+
+def test_generate_requires_edit_permission():
+    svc, *_ = _svc(participant=PART, report=_report(), manages=())
+    with pytest.raises(DevplanError) as e:
+        svc.suggest_plan(5, 10, actor_id=10, mode='seed')  # the employee themselves
+    assert e.value.status == 403
+
+
+def test_ai_suggestion_parses_json_and_maps_competency(monkeypatch):
+    rep = _report({'competency_id': 2, 'competency_name': 'Colaborare', 'self': 5, 'others': 2.0, 'gap': 3.0})
+    fake = '```json\n{"synthesis":"Bun colaborator.","goals":[{"competency":"Colaborare","title":"Mentorat","description":"d","target_date":null}]}\n```'
+    monkeypatch.setattr('ai_agent.services.llm_client.ask', lambda *a, **k: fake)
+    svc, *_ = _svc(participant=PART, report=rep, manages=(10,))
+    out = svc.suggest_plan(5, 10, actor_id=7, mode='ai')
+    assert out['synthesis'] == 'Bun colaborator.'
+    assert out['goals'][0]['title'] == 'Mentorat'
+    assert out['goals'][0]['competency_id'] == 2   # name mapped back to id
+
+
+def test_ai_falls_back_to_seed_on_failure(monkeypatch):
+    rep = _report({'competency_id': 2, 'competency_name': 'Colaborare', 'self': 5, 'others': 2.0, 'gap': 3.0})
+    def boom(*a, **k):
+        raise RuntimeError('AI down')
+    monkeypatch.setattr('ai_agent.services.llm_client.ask', boom)
+    svc, *_ = _svc(participant=PART, report=rep, manages=(10,))
+    out = svc.suggest_plan(5, 10, actor_id=7, mode='ai')   # falls back, no crash
+    assert out['goals'][0]['competency_id'] == 2
