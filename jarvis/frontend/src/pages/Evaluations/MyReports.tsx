@@ -79,7 +79,13 @@ function ReportDetail({ cycleId, onBack }: { cycleId: number; onBack: () => void
         )}
       </div>
       <ReportView report={report} />
-      {userId && <DevPlan cycleId={report.cycle_id} employeeId={userId} />}
+      {userId && (
+        <DevPlan
+          cycleId={report.cycle_id}
+          employeeId={userId}
+          competencies={(report.aggregates_by_relationship?.competencies ?? []).map((c) => ({ id: c.competency_id, name: c.competency_name ?? `#${c.competency_id}` }))}
+        />
+      )}
     </div>
   )
 }
