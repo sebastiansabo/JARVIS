@@ -134,10 +134,20 @@ export interface MyAssignment {
 
 export type QuestionType = 'rating' | 'behavioral_frequency' | 'open_text' | 'forced_choice'
 
+/** Behavioral anchors for a competency, keyed by locale (spec §6.2, i18n per user). */
+export interface CompetencyAnchors {
+  min_label?: string
+  max_label?: string
+  levels?: string[]
+}
+
 export interface Question {
   id: number
   competency_id: number | null
   competency_name: string | null
+  competency_definition?: string | null
+  /** Per-locale anchor descriptors from the template; may be absent/empty on old data. */
+  competency_level_descriptors?: Record<string, CompetencyAnchors> | null
   type: QuestionType
   text_by_audience: Record<string, string>
   required: boolean

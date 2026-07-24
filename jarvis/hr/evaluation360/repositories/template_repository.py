@@ -25,7 +25,9 @@ class EvalTemplateRepository(BaseRepository):
         """Question blocks for a template, in display order, joined to their
         competency name."""
         return self.query_all(
-            '''SELECT q.*, c.name AS competency_name, c.cluster AS competency_cluster
+            '''SELECT q.*, c.name AS competency_name, c.cluster AS competency_cluster,
+                      c.definition AS competency_definition,
+                      c.level_descriptors AS competency_level_descriptors
                FROM eval_question_blocks q
                LEFT JOIN eval_competencies c ON c.id = q.competency_id
                WHERE q.template_id = %s
@@ -45,25 +47,29 @@ class EvalTemplateRepository(BaseRepository):
     def get_competency(self, cid):
         return self.query_one('SELECT * FROM eval_competencies WHERE id = %s', (cid,))
 
-    def create_competency(self, *, name, definition=None, cluster=None, created_by=None):
+    def create_competency(self, *, name, definition=None, cluster=None,
+                          level_descriptors=None, created_by=None):
         return self.execute(
-            '''INSERT INTO eval_competencies (name, definition, cluster, created_by)
-               VALUES (%s,%s,%s,%s) RETURNING *''',
-            (name, definition, cluster, created_by), returning=True)
+            '''INSERT INTO eval_competencies (name, definition, cluster, level_descriptors, created_by)
+               VALUES (%s,%s,%s,%s::jsonb,%s) RETURNING *''',
+            (name, definition, cluster, json.dumps(level_descriptors or {}), created_by),
+            returning=True)
 
     def update_competency(self, cid, fields):
         cur = self.get_competency(cid)
         if not cur:
             return None
+        level = fields.get('level_descriptors', cur.get('level_descriptors'))
         return self.execute(
             '''UPDATE eval_competencies
                SET name = %s, definition = %s, cluster = %s, is_active = %s,
-                   updated_at = CURRENT_TIMESTAMP
+                   level_descriptors = %s::jsonb, updated_at = CURRENT_TIMESTAMP
                WHERE id = %s RETURNING *''',
             (fields.get('name', cur['name']),
              fields.get('definition', cur['definition']),
              fields.get('cluster', cur['cluster']),
              fields.get('is_active', cur['is_active']),
+             json.dumps(level if level is not None else {}),
              cid), returning=True)
 
     # ── templates ────────────────────────────────────────────────────
