@@ -129,7 +129,7 @@ function questionText(q: Question, relationship: string): string {
     || 'Întrebare'
 }
 
-function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack: () => void }) {
+export function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack: () => void }) {
   const qc = useQueryClient()
   const formQ = useQuery({
     queryKey: ['eval360-form', assignmentId],
@@ -153,6 +153,9 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
     },
     onError: () => toast.error('Nu s-a putut trimite'),
   })
+  // Comment-quality nudge state (hooks MUST stay above the early returns below).
+  const nudgedRef = useRef<Set<number>>(new Set())
+  const nudgeM = useMutation({ mutationFn: (questionId: number) => eval360Api.commentNudge(assignmentId, questionId) })
 
   if (formQ.isLoading) return <Skeleton className="h-64 w-full" />
   if (formQ.isError || !formQ.data) return <p className="py-12 text-center text-sm text-muted-foreground">Nu s-a putut încărca evaluarea.</p>
@@ -171,10 +174,8 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
     saveM.mutate({ [k]: value })
   }
 
-  // Comment-quality nudge (spec §6.2): a short, non-empty comment gets one gentle
-  // prompt for a concrete example — fired once per question, never blocks submit.
-  const nudgedRef = useRef<Set<number>>(new Set())
-  const nudgeM = useMutation({ mutationFn: (questionId: number) => eval360Api.commentNudge(assignmentId, questionId) })
+  // A short, non-empty comment gets one gentle prompt for a concrete example —
+  // fired once per question, never blocks submit. (Hooks declared above.)
   const nudgeComment = (q: Question, value: string) => {
     const len = value.trim().length
     if (len > 0 && len < COMMENT_MIN && !nudgedRef.current.has(q.id)) {
