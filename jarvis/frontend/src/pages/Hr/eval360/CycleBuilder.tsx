@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Plus, ChevronLeft, ChevronRight, Check, Users, Search, X, Building2, FileText, CalendarClock,
+  Plus, ChevronLeft, ChevronRight, Check, Users, Search, X, Building2, FileText, CalendarClock, Network,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +17,7 @@ import {
 import { cn } from '@/lib/utils'
 import {
   eval360Api, eval360Library, eval360Population,
-  type Cycle, type EligibleEmployee,
+  type Cycle, type EligibleEmployee, type SincronOrgNode,
 } from '@/api/evaluation360'
 
 const STEPS = ['Detalii', 'Participanți', 'Confirmare'] as const
@@ -49,7 +49,10 @@ function BuilderBody({ onDone, onCancel }: { onDone: (c: Cycle) => void; onCance
 
   // Step 2 — population
   const [selected, setSelected] = useState<Record<number, EligibleEmployee>>({})
+  const [popSource, setPopSource] = useState<'dept' | 'sincron'>('dept')
   const [activeDepts, setActiveDepts] = useState<Set<string>>(new Set())
+  const [activeNodes, setActiveNodes] = useState<Set<number>>(new Set())
+  const [nodeMembers, setNodeMembers] = useState<Record<number, number[]>>({})
   const [search, setSearch] = useState('')
 
   const templatesQ = useQuery({ queryKey: ['eval360-templates'], queryFn: () => eval360Library.listTemplates() })
@@ -58,6 +61,21 @@ function BuilderBody({ onDone, onCancel }: { onDone: (c: Cycle) => void; onCance
 
   const deptQ = useQuery({ queryKey: ['eval360-departments'], queryFn: () => eval360Population.departments() })
   const departments = deptQ.data?.departments ?? []
+
+  const orgQ = useQuery({
+    queryKey: ['eval360-sincron-org'],
+    queryFn: () => eval360Population.sincronOrgTree(),
+    enabled: popSource === 'sincron',
+  })
+  // Group org nodes by company, preserving the server's ordering.
+  const orgByCompany = useMemo(() => {
+    const m = new Map<string, SincronOrgNode[]>()
+    for (const n of orgQ.data?.nodes ?? []) {
+      if (!m.has(n.company_name)) m.set(n.company_name, [])
+      m.get(n.company_name)!.push(n)
+    }
+    return [...m.entries()]
+  }, [orgQ.data])
 
   const searchQ = useQuery({
     queryKey: ['eval360-emp-search', search],
@@ -87,6 +105,35 @@ function BuilderBody({ onDone, onCancel }: { onDone: (c: Cycle) => void; onCance
         return next
       })
       setActiveDepts((prev) => new Set(prev).add(dept))
+    }
+  }
+
+  const toggleNode = async (node: SincronOrgNode) => {
+    if (activeNodes.has(node.id)) {
+      // Remove this node's members, keeping any still contributed by another active node.
+      const keep = new Set<number>()
+      for (const [nid, ids] of Object.entries(nodeMembers)) {
+        if (Number(nid) !== node.id && activeNodes.has(Number(nid))) ids.forEach((i) => keep.add(i))
+      }
+      const drop = nodeMembers[node.id] || []
+      setSelected((prev) => {
+        const next = { ...prev }
+        for (const id of drop) if (!keep.has(id)) delete next[id]
+        return next
+      })
+      setActiveNodes((prev) => { const s = new Set(prev); s.delete(node.id); return s })
+    } else {
+      const { employees } = await qc.fetchQuery({
+        queryKey: ['eval360-sincron-members', node.id],
+        queryFn: () => eval360Population.sincronOrgMembers(node.id),
+      })
+      setSelected((prev) => {
+        const next = { ...prev }
+        for (const e of employees) next[e.id] = e
+        return next
+      })
+      setNodeMembers((prev) => ({ ...prev, [node.id]: employees.map((e) => e.id) }))
+      setActiveNodes((prev) => new Set(prev).add(node.id))
     }
   }
 
@@ -184,27 +231,76 @@ function BuilderBody({ onDone, onCancel }: { onDone: (c: Cycle) => void; onCance
         {step === 1 && (
           <div className="space-y-4 py-1">
             <div>
-              <Label className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />Adaugă departamente întregi</Label>
-              {deptQ.isLoading ? <Skeleton className="mt-2 h-16 w-full" /> : (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {departments.map((d) => {
-                    const on = activeDepts.has(d.department)
-                    return (
-                      <button
-                        key={d.department}
-                        type="button"
-                        onClick={() => toggleDept(d.department)}
-                        className={cn(
-                          'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors',
-                          on ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-muted',
-                        )}
-                      >
-                        {on && <Check className="h-3.5 w-3.5" />}{d.department}
-                        <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">{d.count}</span>
-                      </button>
-                    )
-                  })}
-                </div>
+              {/* Source toggle: free-text departments vs the Sincron organigram */}
+              <div className="mb-3 inline-flex rounded-lg border bg-muted/40 p-0.5 text-sm">
+                <button type="button" onClick={() => setPopSource('dept')}
+                  className={cn('flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors',
+                    popSource === 'dept' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+                  <Building2 className="h-4 w-4" />Departamente
+                </button>
+                <button type="button" onClick={() => setPopSource('sincron')}
+                  className={cn('flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors',
+                    popSource === 'sincron' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+                  <Network className="h-4 w-4" />Organigramă Sincron
+                </button>
+              </div>
+
+              {popSource === 'sincron' ? (
+                orgQ.isLoading ? <Skeleton className="h-24 w-full" />
+                  : orgByCompany.length === 0 ? (
+                    <p className="py-3 text-sm text-muted-foreground">
+                      Organigrama Sincron nu are noduri în această bază de date.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {orgByCompany.map(([company, nodes]) => (
+                        <div key={company}>
+                          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{company}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {nodes.map((n) => {
+                              const on = activeNodes.has(n.id)
+                              const empty = n.member_count === 0
+                              return (
+                                <button key={n.id} type="button" disabled={empty}
+                                  onClick={() => toggleNode(n)}
+                                  style={{ marginLeft: (n.level - 1) * 12 }}
+                                  className={cn(
+                                    'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                                    empty ? 'cursor-not-allowed opacity-40'
+                                      : on ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-muted',
+                                  )}>
+                                  {on && <Check className="h-3.5 w-3.5" />}{n.name}
+                                  <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">{n.member_count}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+              ) : (
+                deptQ.isLoading ? <Skeleton className="h-16 w-full" /> : (
+                  <div className="flex flex-wrap gap-2">
+                    {departments.map((d) => {
+                      const on = activeDepts.has(d.department)
+                      return (
+                        <button
+                          key={d.department}
+                          type="button"
+                          onClick={() => toggleDept(d.department)}
+                          className={cn(
+                            'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                            on ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-muted',
+                          )}
+                        >
+                          {on && <Check className="h-3.5 w-3.5" />}{d.department}
+                          <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">{d.count}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
               )}
             </div>
 
@@ -232,7 +328,7 @@ function BuilderBody({ onDone, onCancel }: { onDone: (c: Cycle) => void; onCance
                 <p className="text-sm font-medium">Selectați ({selectedCount})</p>
                 {selectedCount > 0 && (
                   <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground"
-                    onClick={() => { setSelected({}); setActiveDepts(new Set()) }}>
+                    onClick={() => { setSelected({}); setActiveDepts(new Set()); setActiveNodes(new Set()); setNodeMembers({}) }}>
                     Golește
                   </Button>
                 )}

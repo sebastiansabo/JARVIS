@@ -105,6 +105,19 @@ export interface EligibleEmployee {
 
 export interface DepartmentInfo { department: string; count: number }
 
+/** A node in the Sincron organigram, with the count of members that resolve to
+ *  an active JARVIS user (= how many participants selecting it would add). */
+export interface SincronOrgNode {
+  id: number
+  company_id: number
+  company_name: string
+  parent_id: number | null
+  name: string
+  node_type: 'department' | 'role' | 'team'
+  level: number
+  member_count: number
+}
+
 // ── Reviewer (capture) ──────────────────────────────────────────────────────
 
 export interface MyAssignment {
@@ -209,6 +222,10 @@ export const eval360Population = {
     const suffix = qs.toString() ? `?${qs.toString()}` : ''
     return api.get<{ employees: EligibleEmployee[] }>(`${BASE}/eligible-employees${suffix}`)
   },
+  // Sincron organigram source
+  sincronOrgTree: () => api.get<{ nodes: SincronOrgNode[] }>(`${BASE}/sincron-org`),
+  sincronOrgMembers: (nodeId: number) =>
+    api.get<{ employees: EligibleEmployee[] }>(`${BASE}/sincron-org/${nodeId}/members`),
 }
 
 export const TEMPLATE_STATUS_LABEL: Record<TemplateSummary['status'], string> = {

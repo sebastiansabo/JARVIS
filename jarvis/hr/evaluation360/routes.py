@@ -160,6 +160,19 @@ def departments():
     return jsonify({'departments': CycleService().cycles.list_departments()})
 
 
+@eval360_bp.route('/api/sincron-org', methods=['GET'])
+@hr_required
+def sincron_org_tree():
+    # Sincron organigram as a population source (nodes + eligible-member counts).
+    return jsonify({'nodes': CycleService().cycles.sincron_org_tree()})
+
+
+@eval360_bp.route('/api/sincron-org/<int:node_id>/members', methods=['GET'])
+@hr_required
+def sincron_org_members(node_id):
+    return jsonify({'employees': CycleService().cycles.sincron_org_node_members(node_id)})
+
+
 # ── Competency library + form templates (HR authoring) ───────────────────────
 
 @eval360_bp.route('/api/competencies', methods=['GET'])
