@@ -54,7 +54,9 @@ describe('EvaluationForm', () => {
     resolve(FORM)
 
     // If any hook were declared after an early return, this loaded render would throw.
-    expect(await screen.findByText('Ana Pop')).toBeInTheDocument()
-    expect(screen.getByText('Comunicare')).toBeInTheDocument()
+    expect(await screen.findByText('Ana Pop')).toBeInTheDocument()          // header (subject name)
+    expect(screen.getByText('Pasul 1 din 1 · Comunicare')).toBeInTheDocument()  // stepper kicker
+    expect(screen.getByText('Continuă')).toBeInTheDocument()                // stepper nav
+    expect(screen.getByText('Nu am observat — exclus din scor')).toBeInTheDocument()
   })
 })
