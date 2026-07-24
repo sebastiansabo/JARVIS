@@ -173,6 +173,47 @@ def sincron_org_members(node_id):
     return jsonify({'employees': CycleService().cycles.sincron_org_node_members(node_id)})
 
 
+# ── Peer nomination (HR editor + employee self-nominate) ─────────────────────
+
+def _is_hr():
+    return bool(getattr(current_user, 'can_access_hr', False)
+                or getattr(current_user, 'is_hr_manager', False))
+
+
+@eval360_bp.route('/api/cycles/<int:cycle_id>/nomination-participants', methods=['GET'])
+@hr_required
+def nomination_participants(cycle_id):
+    return jsonify({'participants': CycleService().cycles.list_participants_named(cycle_id)})
+
+
+@eval360_bp.route('/api/me/nominations', methods=['GET'])
+@login_required
+def my_nominations():
+    return jsonify({'cycles': CycleService().cycles.participant_cycles(_actor_id())})
+
+
+@eval360_bp.route('/api/nominate/<int:cycle_id>/<int:subject_id>', methods=['GET'])
+@login_required
+def nomination_view(cycle_id, subject_id):
+    # HR may view any subject; an employee may view only their own.
+    if not _is_hr() and _actor_id() != subject_id:
+        return jsonify({'error': 'forbidden'}), 403
+    return jsonify(NominationService().nomination_view(cycle_id, subject_id))
+
+
+@eval360_bp.route('/api/nominate/<int:cycle_id>/<int:subject_id>', methods=['POST'])
+@login_required
+def nominate_peers(cycle_id, subject_id):
+    is_owner = _actor_id() == subject_id
+    if not _is_hr() and not is_owner:
+        return jsonify({'error': 'forbidden'}), 403
+    data = request.get_json() or {}
+    result = NominationService().set_peers(
+        cycle_id, subject_id, data.get('peer_ids', []), actor_id=_actor_id(),
+        source='self_nominated' if is_owner and not _is_hr() else 'hr_assigned')
+    return jsonify({'result': result})
+
+
 # ── Competency library + form templates (HR authoring) ───────────────────────
 
 @eval360_bp.route('/api/competencies', methods=['GET'])

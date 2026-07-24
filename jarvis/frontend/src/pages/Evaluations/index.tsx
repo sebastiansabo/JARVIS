@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Target, ChevronLeft, ChevronRight, Clock, Send, CheckCircle2 } from 'lucide-react'
+import { Target, ChevronLeft, ChevronRight, Clock, Send, CheckCircle2, UserPlus } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import MyReports from './MyReports'
 import TeamReports from './TeamReports'
 import Evaluation360Tab from '../Hr/Evaluation360Tab'
+import NominationEditor from '../Hr/eval360/NominationEditor'
 import { useAuthStore } from '@/stores/authStore'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -15,7 +16,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import {
-  eval360Api, RELATIONSHIP_LABEL, type MyAssignment, type Question, type Answer,
+  eval360Api, eval360Nomination, RELATIONSHIP_LABEL,
+  type MyAssignment, type Question, type Answer,
 } from '@/api/evaluation360'
 
 const NOT_OBSERVED = 'not_observed'
@@ -45,10 +47,43 @@ export default function Evaluations() {
       />
       {selectedId != null
         ? <EvaluationForm assignmentId={selectedId} onBack={() => setSelectedId(null)} />
-        : view === 'todo' ? <Inbox onOpen={setSelectedId} />
+        : view === 'todo' ? <div className="space-y-4"><NominationBanner /><Inbox onOpen={setSelectedId} /></div>
           : view === 'reports' ? <MyReports />
             : view === 'team' ? <TeamReports />
               : <Evaluation360Tab />}
+    </div>
+  )
+}
+
+function NominationBanner() {
+  const user = useAuthStore((s) => s.user)
+  const q = useQuery({ queryKey: ['eval360-my-nominations'], queryFn: () => eval360Nomination.myNominations() })
+  const [editCycle, setEditCycle] = useState<{ id: number; name: string } | null>(null)
+  const cycles = q.data?.cycles ?? []
+  if (!cycles.length || !user) return null
+
+  return (
+    <div className="space-y-2">
+      {cycles.map((c) => (
+        <div key={c.id} className="flex items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <UserPlus className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">Nominalizează-ți colegii</p>
+              <p className="truncate text-xs text-muted-foreground">{c.name} · {c.peer_count} aleși</p>
+            </div>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => setEditCycle({ id: c.id, name: c.name })}>Alege colegi</Button>
+        </div>
+      ))}
+      {editCycle && (
+        <NominationEditor
+          cycleId={editCycle.id} subjectId={user.id} subjectName={user.name ?? 'tine'}
+          title="Nominalizează-ți colegii" onClose={() => setEditCycle(null)}
+        />
+      )}
     </div>
   )
 }

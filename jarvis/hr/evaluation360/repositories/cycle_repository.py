@@ -48,6 +48,37 @@ class CycleRepository(BaseRepository):
         return self.query_all(
             'SELECT * FROM eval_participants WHERE cycle_id = %s ORDER BY id', (cycle_id,))
 
+    def list_participants_named(self, cycle_id):
+        """Participants joined to their user name + peer-reviewer count — for the
+        HR nomination editor (status only)."""
+        return self.query_all(
+            '''SELECT p.employee_id, u.name, u.department,
+                      (SELECT COUNT(*) FROM eval_assignments a
+                        WHERE a.cycle_id = p.cycle_id AND a.subject_id = p.employee_id
+                          AND a.relationship = 'peer'
+                          AND a.status IN ('pending_approval','invited','in_progress','submitted')) AS peer_count
+               FROM eval_participants p
+               JOIN users u ON u.id = p.employee_id
+               WHERE p.cycle_id = %s
+               ORDER BY u.name''',
+            (cycle_id,))
+
+    def participant_cycles(self, employee_id):
+        """Cycles where this user is a participant and nomination is still open
+        (draft/nomination/active) — drives the employee's self-nominate entry."""
+        return self.query_all(
+            '''SELECT c.id, c.name, c.status,
+                      (SELECT COUNT(*) FROM eval_assignments a
+                        WHERE a.cycle_id = c.id AND a.subject_id = %s
+                          AND a.relationship = 'peer'
+                          AND a.status IN ('pending_approval','invited','in_progress','submitted')) AS peer_count
+               FROM eval_participants p
+               JOIN eval_cycles c ON c.id = p.cycle_id
+               WHERE p.employee_id = %s
+                 AND c.status IN ('draft','nomination','active')
+               ORDER BY c.created_at DESC''',
+            (employee_id, employee_id))
+
     def get_participant(self, cycle_id, employee_id):
         return self.query_one(
             'SELECT * FROM eval_participants WHERE cycle_id = %s AND employee_id = %s',
@@ -81,6 +112,43 @@ class CycleRepository(BaseRepository):
                  AND u.department IS NOT NULL
                  AND u.department = (SELECT department FROM users WHERE id = %s)'''
             + extra + ' ORDER BY u.name')
+        if limit:
+            sql += ' LIMIT %s'
+            params.append(limit)
+        return self.query_all(sql, tuple(params))
+
+    def sincron_peer_pool(self, employee_id, limit=None, exclude_ids=None, randomized=True):
+        """Peers drawn from the subject's *Sincron org node(s)* — active JARVIS
+        users who share at least one org node with the subject (resolved through
+        the mapped Sincron employee). Random order by default so a large team
+        doesn't always yield the same alphabetical few."""
+        params = [employee_id, employee_id]
+        extra = ''
+        if exclude_ids:
+            extra = ' AND u.id <> ALL(%s)'
+            params.append(list(exclude_ids))
+        order = 'RANDOM()' if randomized else 'name'
+        sql = (
+            '''WITH subj_emp AS (
+                   SELECT sincron_employee_id, company_name
+                   FROM sincron_employees WHERE mapped_jarvis_user_id = %s
+               ),
+               subj_nodes AS (
+                   SELECT DISTINCT m.node_id
+                   FROM sincron_org_members m
+                   JOIN subj_emp s ON s.sincron_employee_id = m.sincron_employee_id
+                                  AND s.company_name = m.company_name
+               )
+               SELECT id, name FROM (
+                   SELECT DISTINCT u.id, u.name
+                   FROM sincron_org_members m
+                   JOIN subj_nodes sn ON sn.node_id = m.node_id
+                   JOIN sincron_employees se ON se.sincron_employee_id = m.sincron_employee_id
+                                            AND se.company_name = m.company_name
+                   JOIN users u ON u.id = se.mapped_jarvis_user_id
+                   WHERE u.is_active = TRUE AND u.id <> %s''' + extra
+            + f'''
+               ) x ORDER BY {order}''')
         if limit:
             sql += ' LIMIT %s'
             params.append(limit)

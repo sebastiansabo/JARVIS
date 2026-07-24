@@ -89,6 +89,42 @@ def test_generate_for_cycle_skips_participants_with_assignments():
     ar.create.assert_not_called()
 
 
+def test_set_peers_adds_new_and_keeps_submitted():
+    ar, ev = _repos()
+    ar.list_by_subject.return_value = [
+        {'id': 1, 'reviewer_id': 99, 'relationship': 'self', 'status': 'invited'},
+        {'id': 2, 'reviewer_id': 10, 'relationship': 'peer', 'status': 'invited'},
+        {'id': 3, 'reviewer_id': 11, 'relationship': 'peer', 'status': 'submitted'},
+    ]
+    svc = NominationService(assignment_repo=ar, event_repo=ev)
+    res = svc.set_peers(5, subject_id=1, peer_ids=[10, 20])
+    assert res['added'] == [20]              # 20 created, 10 already a peer
+    assert res['removed'] == []              # 11 submitted → never removed
+    ar.delete.assert_not_called()
+
+
+def test_set_peers_removes_unwanted_non_submitted_peer():
+    ar, ev = _repos()
+    ar.list_by_subject.return_value = [
+        {'id': 2, 'reviewer_id': 10, 'relationship': 'peer', 'status': 'invited'},
+        {'id': 3, 'reviewer_id': 11, 'relationship': 'peer', 'status': 'in_progress'},
+    ]
+    svc = NominationService(assignment_repo=ar, event_repo=ev)
+    res = svc.set_peers(5, subject_id=1, peer_ids=[10])   # drop 11
+    ar.delete.assert_called_once_with(3)
+    assert res['removed'] == [11]
+
+
+def test_set_peers_wont_add_an_existing_non_peer_reviewer():
+    ar, ev = _repos()
+    ar.list_by_subject.return_value = [
+        {'id': 1, 'reviewer_id': 99, 'relationship': 'manager', 'status': 'invited'},
+    ]
+    svc = NominationService(assignment_repo=ar, event_repo=ev)
+    res = svc.set_peers(5, subject_id=1, peer_ids=[99, 20])  # 99 is already the manager
+    assert res['added'] == [20]              # 99 skipped (already a non-peer reviewer)
+
+
 def test_generate_for_cycle_caps_direct_reports():
     ar, ev = _repos()
     ar.list_by_subject.return_value = []

@@ -32,6 +32,25 @@ class AssignmentRepository(BaseRepository):
             'SELECT * FROM eval_assignments WHERE cycle_id = %s AND subject_id = %s ORDER BY id',
             (cycle_id, subject_id))
 
+    def list_by_subject_named(self, cycle_id, subject_id):
+        """Assignments for a subject joined to the reviewer's name — for the
+        nomination/peer editor (still status only, no response content)."""
+        return self.query_all(
+            '''SELECT a.id, a.reviewer_id, a.relationship, a.source, a.status,
+                      COALESCE(u.name, a.external_email) AS reviewer_name
+               FROM eval_assignments a
+               LEFT JOIN users u ON u.id = a.reviewer_id
+               WHERE a.cycle_id = %s AND a.subject_id = %s
+               ORDER BY a.relationship, reviewer_name''',
+            (cycle_id, subject_id))
+
+    def delete(self, assignment_id):
+        """Hard-remove an assignment — only if it hasn't been submitted (a
+        submitted review is immutable and must never silently vanish)."""
+        return self.execute(
+            "DELETE FROM eval_assignments WHERE id = %s AND status <> 'submitted'",
+            (assignment_id,))
+
     def list_by_reviewer(self, reviewer_id, statuses=('invited', 'in_progress')):
         """A reviewer's inbox — their still-to-do assignments (joined to subject
         name + cycle name for display). Excludes submitted/declined/replaced."""

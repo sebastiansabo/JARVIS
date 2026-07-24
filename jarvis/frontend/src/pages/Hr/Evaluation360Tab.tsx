@@ -2,19 +2,21 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Target, AlertTriangle, ShieldCheck, Users, CheckCircle2, XCircle, Layers, Gauge,
+  Target, AlertTriangle, ShieldCheck, Users, CheckCircle2, XCircle, Layers, Gauge, UserPlus, ChevronRight,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { StatCard } from '@/components/shared/StatCard'
 import { cn } from '@/lib/utils'
 import CycleBuilder from './eval360/CycleBuilder'
 import TemplateLibrary from './eval360/TemplateLibrary'
+import NominationEditor from './eval360/NominationEditor'
 import {
-  eval360Api, NEXT_STATES, STATUS_LABEL, type CycleStatus,
+  eval360Api, eval360Nomination, NEXT_STATES, STATUS_LABEL, type CycleStatus,
 } from '@/api/evaluation360'
 
 function statusBadgeClass(status: CycleStatus): string {
@@ -267,9 +269,67 @@ function CyclesView({ search }: { search?: string }) {
               </div>
             </CardContent>
           </Card>
+
+          <HrNominations cycleId={selected.id} />
         </>
       )}
     </div>
+  )
+}
+
+function HrNominations({ cycleId }: { cycleId: number }) {
+  const [open, setOpen] = useState(false)
+  const [edit, setEdit] = useState<{ id: number; name: string } | null>(null)
+  const q = useQuery({
+    queryKey: ['eval360-nomination-participants', cycleId],
+    queryFn: () => eval360Nomination.participants(cycleId),
+    enabled: open,
+  })
+  const participants = q.data?.participants ?? []
+
+  return (
+    <Card>
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+        <div>
+          <p className="flex items-center gap-1.5 text-sm font-semibold"><UserPlus className="h-4 w-4" />Nominalizări colegi</p>
+          <p className="text-xs text-muted-foreground">Alege sau ajustează colegii (peers) care evaluează fiecare participant.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setOpen(true)}>Gestionează colegii</Button>
+      </CardContent>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Participanți — nominalizare colegi</DialogTitle></DialogHeader>
+          {q.isLoading ? (
+            <Skeleton className="h-48 w-full" />
+          ) : !participants.length ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Niciun participant în acest ciclu.</p>
+          ) : (
+            <div className="max-h-96 overflow-y-auto rounded-lg border divide-y">
+              {participants.map((p) => (
+                <button key={p.employee_id} type="button" onClick={() => setEdit({ id: p.employee_id, name: p.name })}
+                  className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm hover:bg-muted/50">
+                  <span className="min-w-0 truncate">
+                    {p.name}{p.department && <span className="ml-2 text-xs text-muted-foreground">{p.department}</span>}
+                  </span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <Badge variant="secondary" className="text-[11px]">{p.peer_count} colegi</Badge>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {edit && (
+        <NominationEditor
+          cycleId={cycleId} subjectId={edit.id} subjectName={edit.name}
+          title="Nominalizează colegi (HR)" onClose={() => setEdit(null)}
+        />
+      )}
+    </Card>
   )
 }
 

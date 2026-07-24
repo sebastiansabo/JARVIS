@@ -46,6 +46,7 @@ function BuilderBody({ onDone, onCancel }: { onDone: (c: Cycle) => void; onCance
   const [reviewEnd, setReviewEnd] = useState('')
   const [releaseAt, setReleaseAt] = useState('')
   const [autoPeers, setAutoPeers] = useState(4)
+  const [peerMode, setPeerMode] = useState<'auto' | 'manual'>('auto')
 
   // Step 2 — population
   const [selected, setSelected] = useState<Record<number, EligibleEmployee>>({})
@@ -151,7 +152,7 @@ function BuilderBody({ onDone, onCancel }: { onDone: (c: Cycle) => void; onCance
         },
         participant_ids: selectedList.map((e) => e.id),
       })
-      const { generated } = await eval360Api.generateAssignments(cycle.id, autoPeers)
+      const { generated } = await eval360Api.generateAssignments(cycle.id, peerMode === 'manual' ? 0 : autoPeers)
       return { cycle, generated }
     },
     onSuccess: ({ cycle, generated }) => {
@@ -360,14 +361,39 @@ function BuilderBody({ onDone, onCancel }: { onDone: (c: Cycle) => void; onCance
               <SummaryRow label="Sfârșit evaluare" value={reviewEnd || '—'} />
               <SummaryRow label="Publicare" value={releaseAt || '—'} />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cb-peers">Colegi (peers) per participant</Label>
-              <Input id="cb-peers" type="number" min={0} max={8} value={autoPeers}
-                onChange={(e) => setAutoPeers(Math.max(0, Math.min(8, Number(e.target.value) || 0)))} className="w-24" />
-              <p className="text-xs text-muted-foreground">
-                Se generează automat: autoevaluare + {autoPeers} colegi din același departament + subordonații direcți (dacă există).
-                Reviewerii sunt invitați imediat; ciclul rămâne în <span className="font-medium">Draft</span> până îl activezi.
-              </p>
+            <div className="space-y-2">
+              <Label>Cum se aleg colegii (peers)?</Label>
+              <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-sm">
+                <button type="button" onClick={() => setPeerMode('auto')}
+                  className={cn('rounded-md px-3 py-1.5 font-medium transition-colors',
+                    peerMode === 'auto' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+                  Automat
+                </button>
+                <button type="button" onClick={() => setPeerMode('manual')}
+                  className={cn('rounded-md px-3 py-1.5 font-medium transition-colors',
+                    peerMode === 'manual' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+                  Nominalizare
+                </button>
+              </div>
+
+              {peerMode === 'auto' ? (
+                <div className="space-y-1.5 pt-1">
+                  <Label htmlFor="cb-peers" className="text-xs text-muted-foreground">Colegi per participant</Label>
+                  <Input id="cb-peers" type="number" min={0} max={8} value={autoPeers}
+                    onChange={(e) => setAutoPeers(Math.max(0, Math.min(8, Number(e.target.value) || 0)))} className="w-24" />
+                  <p className="text-xs text-muted-foreground">
+                    Se generează automat: autoevaluare + {autoPeers} colegi din aceeași echipă din organigramă
+                    (fallback: același departament) + subordonații direcți (dacă există).
+                    Reviewerii sunt invitați imediat; ciclul rămâne în <span className="font-medium">Draft</span> până îl activezi.
+                  </p>
+                </div>
+              ) : (
+                <p className="pt-1 text-xs text-muted-foreground">
+                  Se generează doar autoevaluarea, managerul și subordonații direcți. Colegii se aleg manual după creare —
+                  de HR în <span className="font-medium">Cicluri → Nominalizări</span>, sau de fiecare angajat din
+                  <span className="font-medium"> De completat</span>. Ciclul rămâne în <span className="font-medium">Draft</span>.
+                </p>
+              )}
             </div>
           </div>
         )}
