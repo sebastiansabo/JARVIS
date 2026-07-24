@@ -2,22 +2,19 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Target, Plus, AlertTriangle, ShieldCheck, ChevronRight, Users, CheckCircle2, XCircle,
+  Target, AlertTriangle, ShieldCheck, Users, CheckCircle2, XCircle, Layers, Gauge,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog'
 import { StatCard } from '@/components/shared/StatCard'
 import { cn } from '@/lib/utils'
+import CycleBuilder from './eval360/CycleBuilder'
+import TemplateLibrary from './eval360/TemplateLibrary'
 import {
-  eval360Api, NEXT_STATES, STATUS_LABEL, type Cycle, type CycleStatus,
+  eval360Api, NEXT_STATES, STATUS_LABEL, type CycleStatus,
 } from '@/api/evaluation360'
 
 function statusBadgeClass(status: CycleStatus): string {
@@ -32,6 +29,34 @@ function statusBadgeClass(status: CycleStatus): string {
 }
 
 export default function Evaluation360Tab({ search }: { search?: string }) {
+  const [view, setView] = useState<'cycles' | 'library'>('cycles')
+  return (
+    <div className="space-y-4">
+      <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-sm">
+        <SegTab active={view === 'cycles'} onClick={() => setView('cycles')} icon={<Gauge className="h-4 w-4" />} label="Cicluri" />
+        <SegTab active={view === 'library'} onClick={() => setView('library')} icon={<Layers className="h-4 w-4" />} label="Bibliotecă" />
+      </div>
+      {view === 'library' ? <TemplateLibrary /> : <CyclesView search={search} />}
+    </div>
+  )
+}
+
+function SegTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: ReactNode; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors',
+        active ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {icon}{label}
+    </button>
+  )
+}
+
+function CyclesView({ search }: { search?: string }) {
   const qc = useQueryClient()
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
@@ -90,7 +115,7 @@ export default function Evaluation360Tab({ search }: { search?: string }) {
           <p className="text-sm font-medium">Niciun ciclu de evaluare 360</p>
           <p className="text-sm text-muted-foreground">Creează primul ciclu pentru a începe.</p>
         </div>
-        <CreateCycleDialog onCreated={(c) => { setSelectedId(c.id); qc.invalidateQueries({ queryKey: ['eval360-cycles'] }) }} />
+        <CycleBuilder onCreated={(c) => { setSelectedId(c.id); qc.invalidateQueries({ queryKey: ['eval360-cycles'] }) }} />
       </div>
     )
   }
@@ -110,7 +135,7 @@ export default function Evaluation360Tab({ search }: { search?: string }) {
             ))}
           </SelectContent>
         </Select>
-        <CreateCycleDialog onCreated={(c) => { setSelectedId(c.id); qc.invalidateQueries({ queryKey: ['eval360-cycles'] }) }} />
+        <CycleBuilder onCreated={(c) => { setSelectedId(c.id); qc.invalidateQueries({ queryKey: ['eval360-cycles'] }) }} />
       </div>
 
       {selected && (
@@ -268,61 +293,5 @@ function HealthRow({
         </span>
       )}
     </div>
-  )
-}
-
-function CreateCycleDialog({ onCreated }: { onCreated: (c: Cycle) => void }) {
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [reviewEnd, setReviewEnd] = useState('')
-  const [releaseAt, setReleaseAt] = useState('')
-
-  const createM = useMutation({
-    mutationFn: () => eval360Api.createCycle({
-      name: name.trim(),
-      timeline: {
-        ...(reviewEnd ? { review_end: reviewEnd } : {}),
-        ...(releaseAt ? { release_at: releaseAt } : {}),
-      },
-    }),
-    onSuccess: (res) => {
-      toast.success('Ciclu creat')
-      setOpen(false); setName(''); setReviewEnd(''); setReleaseAt('')
-      onCreated(res.cycle)
-    },
-    onError: () => toast.error('Nu s-a putut crea ciclul'),
-  })
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm"><Plus className="h-4 w-4 mr-1" />Ciclu nou</Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Ciclu de evaluare 360 nou</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="cycle-name">Nume</Label>
-            <Input id="cycle-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Q3 2026 · Evaluare 360" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="cycle-review-end">Sfârșit evaluare</Label>
-              <Input id="cycle-review-end" type="date" value={reviewEnd} onChange={(e) => setReviewEnd(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cycle-release">Publicare</Label>
-              <Input id="cycle-release" type="date" value={releaseAt} onChange={(e) => setReleaseAt(e.target.value)} />
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Anulează</Button>
-          <Button disabled={!name.trim() || createM.isPending} onClick={() => createM.mutate()}>
-            Creează<ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }

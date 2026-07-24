@@ -65,3 +65,65 @@ class CycleRepository(BaseRepository):
             (employee_id, employee_id),
         )
         return (row or {}).get('n', 0)
+
+    def peer_pool(self, employee_id, limit=None, exclude_ids=None):
+        """Same-department active colleagues (excludes self and ``exclude_ids``),
+        as the id/name rows an assignment fan-out can pick peers from."""
+        params = [employee_id, employee_id]
+        extra = ''
+        if exclude_ids:
+            extra = ' AND u.id <> ALL(%s)'
+            params.append(list(exclude_ids))
+        sql = (
+            '''SELECT u.id, u.name FROM users u
+               WHERE u.is_active = TRUE
+                 AND u.id <> %s
+                 AND u.department IS NOT NULL
+                 AND u.department = (SELECT department FROM users WHERE id = %s)'''
+            + extra + ' ORDER BY u.name')
+        if limit:
+            sql += ' LIMIT %s'
+            params.append(limit)
+        return self.query_all(sql, tuple(params))
+
+    # ── population picker (cycle builder) ────────────────────────────
+    def list_eligible_employees(self, search=None, department=None, limit=200):
+        """Active users for the population picker, with department for grouping."""
+        clauses = ['u.is_active = TRUE']
+        params = []
+        if search:
+            clauses.append('u.name ILIKE %s')
+            params.append(f'%{search}%')
+        if department:
+            clauses.append('u.department = %s')
+            params.append(department)
+        params.append(limit)
+        return self.query_all(
+            f'''SELECT u.id, u.name, u.department, u.company_id
+                FROM users u
+                WHERE {" AND ".join(clauses)}
+                ORDER BY u.department NULLS LAST, u.name
+                LIMIT %s''',
+            tuple(params))
+
+    def list_departments(self):
+        rows = self.query_all(
+            '''SELECT department, COUNT(*) AS n FROM users
+               WHERE is_active = TRUE AND department IS NOT NULL AND department <> ''
+               GROUP BY department ORDER BY department''')
+        return [{'department': r['department'], 'count': r['n']} for r in rows]
+
+    def employee_ids_for_filter(self, *, departments=None, company_ids=None):
+        """Resolve a population_filter to a concrete set of active employee ids."""
+        clauses = ['is_active = TRUE']
+        params = []
+        if departments:
+            clauses.append('department = ANY(%s)')
+            params.append(list(departments))
+        if company_ids:
+            clauses.append('company_id = ANY(%s)')
+            params.append(list(company_ids))
+        rows = self.query_all(
+            f'SELECT id FROM users WHERE {" AND ".join(clauses)} ORDER BY id',
+            tuple(params))
+        return [r['id'] for r in rows]

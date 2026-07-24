@@ -21,20 +21,40 @@ class CycleService:
 
     # ── creation ────────────────────────────────────────────────────
     def create_cycle(self, data, created_by):
+        population_filter = data.get('population_filter', {}) or {}
         cycle = self.cycles.create(
             name=data['name'],
             template_id=data.get('template_id'),
-            population_filter=data.get('population_filter', {}),
+            population_filter=population_filter,
             timeline=data.get('timeline', {}),
             anonymity_policy=data.get('anonymity_policy'),
             reminder_policy=data.get('reminder_policy'),
             release_policy=data.get('release_policy', 'manager_gated'),
             created_by=created_by,
         )
-        for emp_id in data.get('participant_ids', []):
+        # Explicit picks win; otherwise resolve the population filter to a set.
+        participant_ids = data.get('participant_ids')
+        if not participant_ids and (population_filter.get('departments')
+                                    or population_filter.get('company_ids')):
+            participant_ids = self.cycles.employee_ids_for_filter(
+                departments=population_filter.get('departments'),
+                company_ids=population_filter.get('company_ids'))
+        for emp_id in (participant_ids or []):
             self.cycles.add_participant(cycle['id'], emp_id)
         self.events.emit('cycle.created', cycle_id=cycle['id'], actor_id=created_by)
-        return cycle
+        return self.cycles.get(cycle['id'])
+
+    # ── reviewer fan-out (build step) ───────────────────────────────
+    def generate_assignments(self, cycle_id, auto_peers=4, due_at=None, actor_id=None):
+        """Create the reviewer assignments for every participant that has none
+        yet. Delegates the per-subject fan-out to the nomination service."""
+        from hr.evaluation360.services.nomination_service import NominationService
+        subject_ids = [p['employee_id'] for p in self.cycles.list_participants(cycle_id)]
+        summary = NominationService().generate_for_cycle(
+            cycle_id, subject_ids, auto_peers=auto_peers, due_at=due_at, actor_id=actor_id)
+        self.events.emit('cycle.assignments_generated', cycle_id=cycle_id,
+                         actor_id=actor_id, payload=summary)
+        return summary
 
     # ── dry-run validation (A6 / A7) ────────────────────────────────
     def dry_run(self, cycle_id):

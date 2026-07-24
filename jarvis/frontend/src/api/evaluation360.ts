@@ -45,8 +45,65 @@ export interface CreateCyclePayload {
   template_id?: number | null
   timeline?: Record<string, string>
   participant_ids?: number[]
+  population_filter?: { departments?: string[]; company_ids?: number[] }
   release_policy?: string
 }
+
+export interface GenerateSummary {
+  subjects: number
+  assignments: number
+  skipped: number
+}
+
+// ── Competency library + form templates (HR authoring) ──────────────────────
+
+export interface Competency {
+  id: number
+  name: string
+  definition: string | null
+  cluster: string | null
+  is_active: boolean
+  usage_count: number
+}
+
+export interface TemplateSummary {
+  id: number
+  name: string
+  version: number
+  status: 'draft' | 'published' | 'archived'
+  forked_from_id: number | null
+  competency_ids: number[]
+  question_count: number
+  cycle_count: number
+  created_at: string
+}
+
+/** One question block on a template. `text_by_audience` maps a relationship
+ *  (self/manager/peer/direct_report) to the prompt shown to that rater. */
+export interface TemplateQuestion {
+  id?: number
+  competency_id: number | null
+  competency_name?: string | null
+  type: QuestionType
+  text_by_audience: Record<string, string>
+  required: boolean
+  sort_order?: number
+}
+
+export interface TemplateDetail {
+  template: TemplateSummary
+  questions: TemplateQuestion[]
+  forked?: boolean
+}
+
+export interface EligibleEmployee {
+  id: number
+  name: string
+  department: string | null
+  company_id: number | null
+}
+
+export interface DepartmentInfo { department: string; count: number }
 
 // ── Reviewer (capture) ──────────────────────────────────────────────────────
 
@@ -100,6 +157,8 @@ export const eval360Api = {
     api.post<{ cycle: Cycle }>(`${BASE}/cycles/${id}/transition`, { target, waive_blocking }),
   progress: (id: number) => api.get<{ progress: Progress }>(`${BASE}/cycles/${id}/progress`),
   dryRun: (id: number) => api.get<{ dry_run: DryRun }>(`${BASE}/cycles/${id}/dry-run`),
+  generateAssignments: (id: number, autoPeers = 4) =>
+    api.post<{ generated: GenerateSummary }>(`${BASE}/cycles/${id}/generate-assignments`, { auto_peers: autoPeers }),
   nudge: (id: number, userId: number) =>
     api.post<{ ok: boolean }>(`${BASE}/cycles/${id}/nudge`, { user_id: userId }),
 
@@ -113,6 +172,49 @@ export const eval360Api = {
     api.post<{ ok: boolean }>(`${BASE}/assignments/${id}/submit`, { answers, device: 'web' }),
   selfDecline: (id: number, reason: string) =>
     api.patch<{ ok: boolean }>(`${BASE}/assignments/${id}/self-decline`, { reason }),
+}
+
+// ── Competency library + form templates (HR authoring) ──────────────────────
+
+export interface SaveTemplatePayload {
+  name?: string
+  competency_ids?: number[]
+  questions?: TemplateQuestion[]
+}
+
+export const eval360Library = {
+  listCompetencies: (includeInactive = false) =>
+    api.get<{ competencies: Competency[] }>(`${BASE}/competencies${includeInactive ? '?include_inactive=1' : ''}`),
+  createCompetency: (data: { name: string; cluster?: string; definition?: string }) =>
+    api.post<{ competency: Competency }>(`${BASE}/competencies`, data),
+  updateCompetency: (id: number, data: Partial<Pick<Competency, 'name' | 'cluster' | 'definition' | 'is_active'>>) =>
+    api.patch<{ competency: Competency }>(`${BASE}/competencies/${id}`, data),
+
+  listTemplates: (includeArchived = false) =>
+    api.get<{ templates: TemplateSummary[] }>(`${BASE}/templates${includeArchived ? '?include_archived=1' : ''}`),
+  getTemplate: (id: number) => api.get<TemplateDetail>(`${BASE}/templates/${id}`),
+  createTemplate: (data: SaveTemplatePayload) => api.post<TemplateDetail>(`${BASE}/templates`, data),
+  saveTemplate: (id: number, data: SaveTemplatePayload) => api.patch<TemplateDetail>(`${BASE}/templates/${id}`, data),
+  publishTemplate: (id: number) => api.post<TemplateDetail>(`${BASE}/templates/${id}/publish`),
+  forkTemplate: (id: number) => api.post<TemplateDetail>(`${BASE}/templates/${id}/fork`),
+  archiveTemplate: (id: number) => api.post<TemplateDetail>(`${BASE}/templates/${id}/archive`),
+}
+
+export const eval360Population = {
+  departments: () => api.get<{ departments: DepartmentInfo[] }>(`${BASE}/departments`),
+  eligibleEmployees: (params: { search?: string; department?: string } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.search) qs.set('search', params.search)
+    if (params.department) qs.set('department', params.department)
+    const suffix = qs.toString() ? `?${qs.toString()}` : ''
+    return api.get<{ employees: EligibleEmployee[] }>(`${BASE}/eligible-employees${suffix}`)
+  },
+}
+
+export const TEMPLATE_STATUS_LABEL: Record<TemplateSummary['status'], string> = {
+  draft: 'Ciornă',
+  published: 'Publicat',
+  archived: 'Arhivat',
 }
 
 // ── Reports ─────────────────────────────────────────────────────────────────
