@@ -21,11 +21,50 @@ def _svc(participant=None, existing_plan=None, checkin_owner=None, complete_row=
     return svc, dp, cr, ev
 
 
-def test_save_plan_creates_and_emits_devplan_created():
+def test_save_plan_creates_draft_without_event():
     svc, dp, _, ev = _svc(participant=PART, existing_plan=None)
-    svc.save_plan(5, 10, actor_id=7, goals=[{'text': 'x'}], linked_competencies=[1])  # 7 manages 10
+    svc.save_plan(5, 10, actor_id=7, goals=[{'title': 'x'}], linked_competencies=[1])  # 7 manages 10
     dp.create.assert_called_once()
+    assert dp.create.call_args.kwargs['status'] == 'draft'
+    ev.emit.assert_not_called()   # devplan.created now fires on finalize, not on save
+
+
+def test_finalize_requires_at_least_one_goal():
+    svc, *_ = _svc(participant=PART, existing_plan={'id': 50, 'goals': [], 'status': 'draft'})
+    with pytest.raises(DevplanError) as e:
+        svc.finalize_plan(5, 10, actor_id=7)
+    assert e.value.status == 400
+
+
+def test_finalize_sets_status_and_emits_devplan_created():
+    svc, dp, _, ev = _svc(participant=PART, existing_plan={'id': 50, 'goals': [{'title': 'g'}], 'status': 'draft'})
+    svc.finalize_plan(5, 10, actor_id=7)
+    dp.set_status.assert_called_once_with(50, 'finalized')
     assert ev.emit.call_args[0][0] == 'devplan.created'
+
+
+def test_finalize_idempotent_no_duplicate_event():
+    svc, _, __, ev = _svc(participant=PART, existing_plan={'id': 50, 'goals': [{'title': 'g'}], 'status': 'finalized'})
+    svc.finalize_plan(5, 10, actor_id=7)
+    ev.emit.assert_not_called()   # already finalized → no second D3 event
+
+
+def test_employee_does_not_see_draft_plan():
+    svc, *_ = _svc(participant=PART, existing_plan={'id': 50, 'goals': [{'title': 'g'}], 'status': 'draft'}, manages=())
+    out = svc.get_plan(5, 10, actor_id=10)   # the employee themselves
+    assert out['plan'] is None and out['can_edit'] is False
+
+
+def test_employee_sees_finalized_plan():
+    svc, *_ = _svc(participant=PART, existing_plan={'id': 50, 'goals': [{'title': 'g'}], 'status': 'finalized'}, manages=())
+    out = svc.get_plan(5, 10, actor_id=10)
+    assert out['plan'] is not None and out['can_edit'] is False
+
+
+def test_manager_sees_draft_plan():
+    svc, *_ = _svc(participant=PART, existing_plan={'id': 50, 'goals': [{'title': 'g'}], 'status': 'draft'}, manages=(10,))
+    out = svc.get_plan(5, 10, actor_id=7)   # manager of 10
+    assert out['plan'] is not None and out['can_edit'] is True
 
 
 def test_save_plan_updates_without_event():

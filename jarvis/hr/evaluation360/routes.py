@@ -496,6 +496,16 @@ def save_dev_plan(cycle_id, employee_id):
     return jsonify({'plan': plan})
 
 
+@eval360_bp.route('/api/dev-plan/<int:cycle_id>/<int:employee_id>/finalize', methods=['POST'])
+@login_required
+def finalize_dev_plan(cycle_id, employee_id):
+    try:
+        plan = DevplanService().finalize_plan(cycle_id, employee_id, _actor_id(), actor_is_hr=_is_hr())
+    except DevplanError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'plan': plan})
+
+
 @eval360_bp.route('/api/dev-plans/<int:plan_id>/checkins', methods=['POST'])
 @login_required
 def add_checkin(plan_id):
