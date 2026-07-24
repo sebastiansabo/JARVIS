@@ -8,8 +8,10 @@ import { cn } from '@/lib/utils'
 import { RELATIONSHIP_LABEL, JOHARI_LABEL, type Report, type CompetencyAgg } from '@/api/evaluation360'
 
 /** The shared body of a 360 report (radar · gaps · Johari · hidden notices ·
- *  manager summary). Chrome (back / acknowledge / release) is added by callers. */
-export function ReportView({ report }: { report: Report }) {
+ *  manager summary). Chrome (back / acknowledge / release) is added by callers.
+ *  `showManagerSummary` is false in calibration, where the manager's editor owns
+ *  that section (avoids rendering the summary twice). */
+export function ReportView({ report, showManagerSummary = true }: { report: Report; showManagerSummary?: boolean }) {
   const agg = report.aggregates_by_relationship
   const comps = agg?.competencies ?? []
   const radarData = comps.map((c) => ({
@@ -70,7 +72,7 @@ export function ReportView({ report }: { report: Report }) {
         })}
       </div>
 
-      {report.manager_summary && (
+      {showManagerSummary && report.manager_summary && (
         <Card><CardContent className="py-4">
           <p className="text-sm font-semibold mb-1">Rezumatul managerului</p>
           <p className="text-sm text-muted-foreground whitespace-pre-wrap">{report.manager_summary}</p>
