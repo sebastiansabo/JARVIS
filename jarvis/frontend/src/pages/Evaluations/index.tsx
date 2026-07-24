@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Target, ChevronLeft, ChevronRight, Clock, Send, CheckCircle2, HelpCircle } from 'lucide-react'
@@ -22,6 +22,7 @@ import {
 
 const NOT_OBSERVED = 'not_observed'
 const commentKey = (id: number) => `${id}:c`   // per-rating optional comment, stored alongside the value in draft
+const COMMENT_MIN = 40   // spec §6.2: comments shorter than this get one gentle "add an example" nudge
 const LOCALE = 'ro'   // spec §6.2: anchors are i18n per user; UI is single-locale for now
 type DraftValue = string | number | null
 
@@ -170,6 +171,18 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
     saveM.mutate({ [k]: value })
   }
 
+  // Comment-quality nudge (spec §6.2): a short, non-empty comment gets one gentle
+  // prompt for a concrete example — fired once per question, never blocks submit.
+  const nudgedRef = useRef<Set<number>>(new Set())
+  const nudgeM = useMutation({ mutationFn: (questionId: number) => eval360Api.commentNudge(assignmentId, questionId) })
+  const nudgeComment = (q: Question, value: string) => {
+    const len = value.trim().length
+    if (len > 0 && len < COMMENT_MIN && !nudgedRef.current.has(q.id)) {
+      nudgedRef.current.add(q.id)
+      nudgeM.mutate(q.id)
+    }
+  }
+
   const ratingQuestions = questions.filter((q) => q.type === 'rating' || q.type === 'behavioral_frequency')
   const answeredRequired = ratingQuestions
     .filter((q) => q.required)
@@ -235,6 +248,7 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
               onChange={(v) => setValue(q, v)}
               comment={typeof draft[commentKey(q.id)] === 'string' ? (draft[commentKey(q.id)] as string) : ''}
               onComment={(v) => setComment(q, v)}
+              onNudge={(v) => nudgeComment(q, v)}
             />
           ))}
 
@@ -253,11 +267,12 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
 }
 
 function QuestionCard({
-  q, relationship, value, onChange, comment, onComment,
+  q, relationship, value, onChange, comment, onComment, onNudge,
 }: {
   q: Question; relationship: string; value: DraftValue; onChange: (v: DraftValue) => void
-  comment: string; onComment: (v: string) => void
+  comment: string; onComment: (v: string) => void; onNudge: (v: string) => void
 }) {
+  const shortComment = comment.trim().length > 0 && comment.trim().length < COMMENT_MIN
   if (q.type === 'open_text') {
     return (
       <Card><CardContent className="py-4 space-y-2">
@@ -334,9 +349,13 @@ function QuestionCard({
       <Textarea
         value={comment}
         onChange={(e) => onComment(e.target.value)}
+        onBlur={(e) => onNudge(e.target.value)}
         placeholder="Comentariu (opțional) — un exemplu concret ajută"
         rows={2}
       />
+      {shortComment && (
+        <p className="text-xs text-amber-600">Ce a făcut concret? Un exemplu ajută.</p>
+      )}
     </CardContent></Card>
   )
 }

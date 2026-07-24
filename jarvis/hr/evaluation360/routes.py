@@ -349,6 +349,17 @@ def submit_response(assignment_id):
     return jsonify({'ok': True})
 
 
+@eval360_bp.route('/api/assignments/<int:assignment_id>/comment-nudge', methods=['POST'])
+@login_required
+def comment_nudge(assignment_id):
+    data = request.get_json() or {}
+    try:
+        ResponseService().record_comment_nudge(assignment_id, _actor_id(), data.get('question_id'))
+    except ResponseError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'ok': True})
+
+
 @eval360_bp.route('/api/assignments/<int:assignment_id>/self-decline', methods=['PATCH'])
 @login_required
 def self_decline(assignment_id):

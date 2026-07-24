@@ -91,6 +91,16 @@ class ResponseService:
                          payload={'answers': len(answers or [])})
         return row
 
+    def record_comment_nudge(self, assignment_id, reviewer_id, question_id=None):
+        """Telemetry for the comment-quality nudge (spec §6.2 — a short comment got
+        prompted for a concrete example). Feeds indicator B1; ownership-enforced,
+        never blocks the reviewer."""
+        a = self._owned(assignment_id, reviewer_id)
+        self.events.emit('comment.nudge_shown', cycle_id=a['cycle_id'],
+                         subject_id=a['subject_id'], assignment_id=assignment_id,
+                         actor_id=reviewer_id, payload={'question_id': question_id})
+        return True
+
     def self_decline(self, assignment_id, reviewer_id, reason):
         a = self._owned(assignment_id, reviewer_id)
         self.assignments.decline(assignment_id, reason)
