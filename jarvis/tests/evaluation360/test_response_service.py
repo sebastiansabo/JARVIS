@@ -82,3 +82,36 @@ def test_resume_returns_saved_draft():
     form = svc.get_form(1, 7)
     assert form['draft'] == {'q1': 3}
     assert form['is_submitted'] is False
+
+
+# ── Behavioral anchors (spec §6.2: anchor text before the scale) ─────────────
+
+def test_list_questions_query_selects_level_descriptors():
+    """The form query must join the competency's level_descriptors, otherwise the
+    behavioral anchors never reach the reviewer (the original bug)."""
+    from hr.evaluation360.repositories.template_repository import EvalTemplateRepository
+    repo = EvalTemplateRepository()
+    captured = {}
+
+    def _cap(sql, params=None):
+        captured['sql'] = sql
+        return []
+
+    repo.query_all = _cap
+    repo.list_questions(1)
+    assert 'level_descriptors' in captured['sql']
+
+
+def test_get_form_forwards_anchor_descriptors():
+    """get_form must surface the per-competency anchor payload to the client."""
+    q = {'id': 1, 'competency_id': 2, 'competency_name': 'Comunicare', 'type': 'rating',
+         'text_by_audience': {'peer': 'Cât de bine demonstrează: Comunicare?'},
+         'competency_level_descriptors': {
+             'ro': {'min_label': 'Rar', 'max_label': 'Constant',
+                    'levels': ['n1', 'n2', 'n3', 'n4', 'n5']}}}
+    svc, rr, ar, cr, tr, ev = _svc(assignment=dict(OWNED), cycle={'id': 5, 'template_id': 9})
+    tr.list_questions.return_value = [q]
+    form = svc.get_form(1, 7)
+    anchors = form['questions'][0]['competency_level_descriptors']
+    assert anchors['ro']['min_label'] == 'Rar'
+    assert len(anchors['ro']['levels']) == 5

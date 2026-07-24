@@ -17,12 +17,20 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import {
   eval360Api, RELATIONSHIP_LABEL,
-  type MyAssignment, type Question, type Answer,
+  type MyAssignment, type Question, type Answer, type CompetencyAnchors,
 } from '@/api/evaluation360'
 
 const NOT_OBSERVED = 'not_observed'
 const commentKey = (id: number) => `${id}:c`   // per-rating optional comment, stored alongside the value in draft
+const LOCALE = 'ro'   // spec §6.2: anchors are i18n per user; UI is single-locale for now
 type DraftValue = string | number | null
+
+/** The competency's behavioral anchors in the active locale, if the template carries them. */
+function anchorsFor(q: Question): CompetencyAnchors | undefined {
+  const map = q.competency_level_descriptors
+  if (!map || Array.isArray(map)) return undefined   // '[]' default → no anchors
+  return map[LOCALE] ?? Object.values(map)[0]
+}
 
 export default function Evaluations() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -252,10 +260,38 @@ function QuestionCard({
   }
 
   const notObserved = value === NOT_OBSERVED
+  const anchors = anchorsFor(q)
+  const hasLevels = anchors?.levels?.length === 5
   return (
     <Card><CardContent className="py-4 space-y-3">
       {q.competency_name && <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{q.competency_name}</p>}
       <p className="text-sm">{questionText(q, relationship)}{q.required && <span className="text-destructive"> *</span>}</p>
+
+      {/* Behavioral anchors (spec §6.2): shown before the scale, from template data */}
+      {(hasLevels || q.competency_definition) && (
+        <div className="rounded-md bg-muted/40 px-3 py-2">
+          {hasLevels ? (
+            <ul className="space-y-0.5">
+              {anchors!.levels!.map((lvl, i) => (
+                <li key={i} className="flex gap-2 text-xs text-muted-foreground">
+                  <span className="font-semibold text-foreground tabular-nums">{i + 1}</span>
+                  <span>{lvl}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted-foreground">{q.competency_definition}</p>
+          )}
+        </div>
+      )}
+
+      {(anchors?.min_label || anchors?.max_label) && (
+        <div className="flex justify-between px-0.5 text-[11px] font-medium text-muted-foreground">
+          <span>{anchors?.min_label}</span>
+          <span>{anchors?.max_label}</span>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         {[1, 2, 3, 4, 5].map((n) => (
           <button
