@@ -11,11 +11,29 @@ reach the output (indicator B6, fail-closed). Per competency:
 """
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict
 from statistics import mean
 
 from hr.evaluation360.domain import scoring
 from hr.evaluation360.domain import anonymity
+
+
+def _anonymous_comments(reviews, reviewer_counts, min_n):
+    """Unattributed comment wall: only comments from non-self relationship groups
+    that clear the min-n threshold (a group of 1–2 could be traced back). Ordered
+    by a stable content hash so the sequence never reveals reviewer/relationship."""
+    out = []
+    for r in reviews:
+        rel = r.get('relationship')
+        if rel == 'self' or reviewer_counts.get(rel, 0) < min_n:
+            continue
+        for a in r.get('answers', []):
+            c = (a.get('comment') or '').strip()
+            if c:
+                out.append(c)
+    out.sort(key=lambda s: hashlib.sha1(s.encode('utf-8')).hexdigest())
+    return out
 
 
 def build_participant_report(reviews, competency_ids, min_n: int = anonymity.DEFAULT_MIN_N):
@@ -81,4 +99,5 @@ def build_participant_report(reviews, competency_ids, min_n: int = anonymity.DEF
         'visible_relationships': visible,
         'hidden_relationships': hidden,
         'others_n': report_others_n,
+        'comments': _anonymous_comments(reviews, reviewer_counts, min_n),
     }

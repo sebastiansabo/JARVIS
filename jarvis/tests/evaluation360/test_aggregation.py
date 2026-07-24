@@ -57,6 +57,25 @@ def test_not_observed_excluded_from_category_mean():
     assert comp['categories']['peer']['score'] == 4.0  # the not-observed rating dropped
 
 
+def test_comments_wall_only_from_groups_that_clear_min_n():
+    """The comments wall is unattributed + shuffled and only includes groups that
+    clear the anonymity threshold — self, manager (n=1), and sub-threshold groups
+    are excluded so a comment can't be traced back."""
+    def rev(rel, comment):
+        return {'relationship': rel, 'answers': [{'competency_id': 1, 'rating': 4, 'not_observed': False, 'comment': comment}]}
+    reviews = [
+        rev('self', 'comentariul meu'),
+        rev('manager', 'de la manager'),
+        rev('peer', 'peer A'), rev('peer', 'peer B'), rev('peer', 'peer C'),          # 3 → visible
+        rev('direct_report', 'sub 1'), rev('direct_report', 'sub 2'),                 # 2 → below min-n
+    ]
+    comments = build_participant_report(reviews, [1])['comments']
+    assert set(comments) == {'peer A', 'peer B', 'peer C'}
+    assert 'comentariul meu' not in comments   # self never in the wall
+    assert 'de la manager' not in comments      # manager n=1 is identifiable
+    assert 'sub 1' not in comments and 'sub 2' not in comments  # below-threshold group excluded
+
+
 def test_not_observed_category_excluded_from_composite_and_denominator():
     """C1 end-to-end: a visible category whose members all marked 'not observed'
     contributes no score — excluded from the others composite AND its n, while
