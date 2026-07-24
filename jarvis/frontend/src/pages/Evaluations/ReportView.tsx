@@ -15,6 +15,14 @@ const JOHARI_COLOR: Record<string, string> = {
   agreed_growth: '#dc2626',       // bottom-left: self low, others low
 }
 
+// Honest empty states — copy instead of a bare "—" (an empty quadrant is meaningful).
+const JOHARI_EMPTY: Record<string, string> = {
+  confirmed_strength: 'Nicio competență aici încă.',
+  blind_spot: 'Niciun punct orb — te vezi cum te văd ceilalți.',
+  hidden_strength: 'Nicio competență ascunsă aici.',
+  agreed_growth: 'Nicio competență aici — semn bun.',
+}
+
 /** The shared body of a 360 report (radar · gaps · Johari · hidden notices ·
  *  manager summary). Chrome (back / acknowledge / release) is added by callers.
  *  `showManagerSummary` is false in calibration, where the manager's editor owns
@@ -90,7 +98,7 @@ export function ReportView({ report, showManagerSummary = true }: { report: Repo
               </p>
               {items.length ? (
                 <ul className="space-y-0.5">{items.map((c) => <li key={c.competency_id} className="text-sm">{c.competency_name ?? `#${c.competency_id}`}</li>)}</ul>
-              ) : <p className="text-xs text-muted-foreground">—</p>}
+              ) : <p className="text-xs text-muted-foreground">{JOHARI_EMPTY[key] ?? '—'}</p>}
             </CardContent></Card>
           )
         })}
