@@ -65,13 +65,24 @@ class AssignmentRepository(BaseRepository):
 
     def list_by_reviewer(self, reviewer_id, statuses=('invited', 'in_progress')):
         """A reviewer's inbox — their still-to-do assignments (joined to subject
-        name + cycle name for display). Excludes submitted/declined/replaced."""
+        name + cycle name for display), with per-assignment progress: ``total``
+        rating questions and how many are already ``answered`` in the draft (for
+        the "3/5" card). Excludes submitted/declined/replaced."""
         return self.query_all(
             '''SELECT a.*, u.name AS subject_name, c.name AS cycle_name,
-                      c.review_end AS review_end
+                      c.review_end AS review_end,
+                      (SELECT COUNT(*) FROM eval_question_blocks q
+                        WHERE q.template_id = c.template_id
+                          AND q.type IN ('rating', 'behavioral_frequency')) AS total,
+                      (SELECT COUNT(*) FROM eval_question_blocks q
+                        WHERE q.template_id = c.template_id
+                          AND q.type IN ('rating', 'behavioral_frequency')
+                          AND jsonb_exists(resp.draft_payload, q.id::text)
+                          AND (resp.draft_payload ->> q.id::text) IS NOT NULL) AS answered
                FROM eval_assignments a
                JOIN users u ON u.id = a.subject_id
                JOIN eval_cycles c ON c.id = a.cycle_id
+               LEFT JOIN eval_responses resp ON resp.assignment_id = a.id
                WHERE a.reviewer_id = %s AND a.status = ANY(%s)
                ORDER BY a.due_at NULLS LAST, a.id''',
             (reviewer_id, list(statuses)))

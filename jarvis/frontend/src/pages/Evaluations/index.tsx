@@ -107,6 +107,11 @@ function InboxRow({ a, onOpen }: { a: MyAssignment; onOpen: () => void }) {
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
+        {a.total > 0 && (
+          <span className="hidden items-center gap-1 text-xs text-muted-foreground sm:flex tabular-nums">
+            {a.answered}/{a.total} · ~{a.est_minutes} min
+          </span>
+        )}
         <Badge variant="secondary">{RELATIONSHIP_LABEL[a.relationship] ?? a.relationship}</Badge>
         {a.status === 'in_progress' && <Badge variant="outline" className="text-amber-600 border-amber-200">În lucru</Badge>}
         {a.review_end && <span className="hidden items-center gap-1 text-xs text-muted-foreground sm:flex"><Clock className="h-3 w-3" />{a.review_end}</span>}
@@ -197,7 +202,16 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
             </p>
           </div>
           {!is_submitted && (
-            <span className="text-xs text-muted-foreground">{answeredCount}/{ratingQuestions.length} completate</span>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {saveM.isError ? (
+                <span className="text-amber-600">Nesalvat</span>
+              ) : saveM.isPending ? (
+                <span>Se salvează…</span>
+              ) : saveM.isSuccess ? (
+                <span className="flex items-center gap-1 text-green-600"><CheckCircle2 className="h-3 w-3" /> Salvat</span>
+              ) : null}
+              <span className="tabular-nums">{answeredCount}/{ratingQuestions.length} completate</span>
+            </div>
           )}
         </CardContent>
       </Card>
