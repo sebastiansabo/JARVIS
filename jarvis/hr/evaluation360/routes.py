@@ -450,6 +450,17 @@ def manager_summary(report_id):
     return jsonify({'ok': True})
 
 
+@eval360_bp.route('/api/reports/<int:report_id>/schedule-debrief', methods=['POST'])
+@login_required
+def schedule_debrief(report_id):
+    data = request.get_json() or {}
+    try:
+        ReportService().schedule_debrief(report_id, _actor_id(), data.get('scheduled_at'))
+    except ReportError as e:
+        return jsonify({'error': str(e)}), e.status
+    return jsonify({'ok': True})
+
+
 # ── Development plans + check-ins (P5, co-owned by employee + manager) ────────
 
 @eval360_bp.route('/api/dev-plan/<int:cycle_id>/<int:employee_id>', methods=['GET'])

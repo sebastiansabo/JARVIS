@@ -82,3 +82,57 @@ def test_manager_summary_ok():
     svc, rr, *_ = _svc(report_owner={'id': 1, 'employee_id': 10, 'cycle_id': 5})
     assert svc.set_manager_summary(1, manager_id=7, summary='x' * 400) is True
     rr.set_manager_summary.assert_called_once()
+
+
+# ── Release gate (spec §5.4–5.5: summary 300–1500 + scheduled debrief) ────────
+
+def _releasable(**over):
+    rep = {'id': 1, 'cycle_id': 5, 'manager_summary': 'x' * 400,
+           'debrief_scheduled_at': '2026-08-01T10:00:00'}
+    rep.update(over)
+    return rep
+
+
+def test_release_rejects_missing_summary():
+    svc, rr, *_ = _svc(report=_releasable(manager_summary=None))
+    with pytest.raises(ReportError) as e:
+        svc.release(1, actor_id=7)
+    assert e.value.status == 422
+    rr.release.assert_not_called()
+
+
+def test_release_rejects_short_summary():
+    svc, rr, *_ = _svc(report=_releasable(manager_summary='prea scurt'))
+    with pytest.raises(ReportError) as e:
+        svc.release(1, actor_id=7)
+    assert e.value.status == 422
+    rr.release.assert_not_called()
+
+
+def test_release_rejects_without_debrief():
+    svc, rr, *_ = _svc(report=_releasable(debrief_scheduled_at=None))
+    with pytest.raises(ReportError) as e:
+        svc.release(1, actor_id=7)
+    assert e.value.status == 422
+    rr.release.assert_not_called()
+
+
+def test_release_succeeds_with_summary_and_debrief():
+    svc, rr, resp, cr, tr, ev = _svc(report=_releasable())
+    svc.release(1, actor_id=7)
+    rr.release.assert_called_once_with(1)
+    assert ev.emit.call_args.args[0] == 'report.released'
+
+
+def test_schedule_debrief_emits_event():
+    svc, rr, resp, cr, tr, ev = _svc(report_owner={'id': 1, 'employee_id': 10, 'cycle_id': 5})
+    assert svc.schedule_debrief(1, manager_id=7, scheduled_at='2026-08-01T10:00:00') is True
+    rr.schedule_debrief.assert_called_once()
+    assert ev.emit.call_args.args[0] == 'debrief.scheduled'
+
+
+def test_schedule_debrief_requires_direct_report():
+    svc, *_ = _svc(report_owner={'id': 1, 'employee_id': 99, 'cycle_id': 5})  # not managed
+    with pytest.raises(ReportError) as e:
+        svc.schedule_debrief(1, manager_id=7, scheduled_at='2026-08-01')
+    assert e.value.status == 403

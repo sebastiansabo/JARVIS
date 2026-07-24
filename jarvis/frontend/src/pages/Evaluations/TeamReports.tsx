@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ChevronLeft, ChevronRight, Send, Save } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Send, Save, CalendarClock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -34,9 +34,11 @@ export default function TeamReports() {
             <p className="text-xs text-muted-foreground">{r.cycle_name}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {r.needs_summary_backfill && <Badge variant="outline" className="text-red-600 border-red-200">Necesită rezumat</Badge>}
             {r.has_summary
               ? <Badge variant="secondary" className="text-green-600">Rezumat</Badge>
               : <Badge variant="outline" className="text-amber-600 border-amber-200">Fără rezumat</Badge>}
+            {r.debrief_scheduled && <Badge variant="secondary" className="text-green-600">Debrief</Badge>}
             {r.released && <Badge variant="secondary">Publicat</Badge>}
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </div>
@@ -51,6 +53,7 @@ function Calibration({ reportId, onBack }: { reportId: number; onBack: () => voi
   const q = useQuery({ queryKey: ['eval360-manager-report', reportId], queryFn: () => eval360Reports.managerReport(reportId) })
   const report = q.data?.report
   const [summary, setSummary] = useState('')
+  const [debriefAt, setDebriefAt] = useState('')
 
   useEffect(() => { if (report?.manager_summary) setSummary(report.manager_summary) }, [report])
 
@@ -58,15 +61,21 @@ function Calibration({ reportId, onBack }: { reportId: number; onBack: () => voi
     qc.invalidateQueries({ queryKey: ['eval360-manager-report', reportId] })
     qc.invalidateQueries({ queryKey: ['eval360-team-reports'] })
   }
+  const errMsg = (e: unknown) => e && typeof e === 'object' && 'data' in e ? String((e as { data?: { error?: string } }).data?.error ?? 'Eroare') : 'Eroare'
   const saveM = useMutation({
     mutationFn: () => eval360Reports.setSummary(reportId, summary),
     onSuccess: () => { toast.success('Rezumat salvat'); invalidate() },
-    onError: (e: unknown) => toast.error(e && typeof e === 'object' && 'data' in e ? String((e as { data?: { error?: string } }).data?.error ?? 'Eroare') : 'Eroare'),
+    onError: (e: unknown) => toast.error(errMsg(e)),
+  })
+  const debriefM = useMutation({
+    mutationFn: () => eval360Reports.scheduleDebrief(reportId, debriefAt || undefined),
+    onSuccess: () => { toast.success('Debrief programat'); invalidate() },
+    onError: (e: unknown) => toast.error(errMsg(e)),
   })
   const releaseM = useMutation({
     mutationFn: () => eval360Reports.managerRelease(reportId),
     onSuccess: () => { toast.success('Raport publicat'); invalidate(); onBack() },
-    onError: () => toast.error('Nu s-a putut publica'),
+    onError: (e: unknown) => toast.error(errMsg(e)),
   })
 
   if (q.isLoading) return <Skeleton className="h-72 w-full" />
@@ -75,6 +84,13 @@ function Calibration({ reportId, onBack }: { reportId: number; onBack: () => voi
   const released = !!report.released_at
   const len = summary.trim().length
   const summaryValid = len >= MIN && len <= MAX
+  // Release gate mirrors the server (spec §5.5): saved valid summary + scheduled debrief.
+  const summarySaved = !!report.manager_summary && report.manager_summary.trim().length >= MIN && report.manager_summary.trim().length <= MAX
+  const debriefScheduled = !!report.debrief_scheduled_at
+  const missing = [
+    !summarySaved && 'salvează rezumatul (300–1500)',
+    !debriefScheduled && 'programează un debrief',
+  ].filter(Boolean) as string[]
 
   return (
     <div className="space-y-4">
@@ -106,13 +122,39 @@ function Calibration({ reportId, onBack }: { reportId: number; onBack: () => voi
         )}
       </CardContent></Card>
 
-      {/* Release (manager-gated: requires a saved summary) */}
+      {/* Debrief scheduling (manager-gated release requires it) */}
+      {!released && (
+        <Card><CardContent className="py-4 space-y-2">
+          <p className="text-sm font-semibold">Debrief</p>
+          {debriefScheduled ? (
+            <p className="text-sm text-green-600">
+              Debrief programat: {new Date(report.debrief_scheduled_at as string).toLocaleString('ro-RO')}
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="datetime-local"
+                value={debriefAt}
+                onChange={(e) => setDebriefAt(e.target.value)}
+                className="rounded-md border bg-background px-2 py-1 text-sm"
+              />
+              <Button size="sm" variant="outline" disabled={!debriefAt || debriefM.isPending} onClick={() => debriefM.mutate()}>
+                <CalendarClock className="h-4 w-4 mr-1" /> Programează debrief
+              </Button>
+            </div>
+          )}
+        </CardContent></Card>
+      )}
+
+      {/* Release (manager-gated: requires a saved summary + a scheduled debrief) */}
       {released ? (
         <p className="text-sm text-green-600">Raport publicat către angajat.</p>
       ) : (
-        <div className="flex items-center justify-end gap-2">
-          {!report.manager_summary && <span className="text-xs text-muted-foreground">Salvează rezumatul înainte de publicare.</span>}
-          <Button disabled={!report.manager_summary || releaseM.isPending} onClick={() => releaseM.mutate()}>
+        <div className="flex flex-col items-end gap-1">
+          {missing.length > 0 && (
+            <span className="text-xs text-amber-600">Înainte de publicare: {missing.join(' · ')}</span>
+          )}
+          <Button disabled={missing.length > 0 || releaseM.isPending} onClick={() => releaseM.mutate()}>
             <Send className="h-4 w-4 mr-1" /> Publică raportul
           </Button>
         </div>

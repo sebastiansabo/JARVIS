@@ -61,7 +61,11 @@ class ReportRepository(BaseRepository):
                       u.name AS employee_name,
                       (r.released_at IS NOT NULL) AS released,
                       (r.acknowledged_at IS NOT NULL) AS acknowledged,
-                      (r.manager_summary IS NOT NULL) AS has_summary
+                      (r.manager_summary IS NOT NULL) AS has_summary,
+                      (r.debrief_scheduled_at IS NOT NULL) AS debrief_scheduled,
+                      (r.released_at IS NOT NULL
+                       AND (r.manager_summary IS NULL OR char_length(r.manager_summary) < 300))
+                        AS needs_summary_backfill
                FROM eval_reports r
                JOIN eval_participants p ON p.id = r.participant_id
                JOIN eval_cycles c ON c.id = r.cycle_id
@@ -94,3 +98,14 @@ class ReportRepository(BaseRepository):
     def set_manager_summary(self, report_id, summary):
         return self.execute(
             'UPDATE eval_reports SET manager_summary = %s WHERE id = %s', (summary, report_id))
+
+    def schedule_debrief(self, report_id, scheduled_at=None):
+        """Record the debrief time (unlocks release). Falls back to now() when the
+        caller doesn't supply a specific time."""
+        if scheduled_at:
+            return self.execute(
+                'UPDATE eval_reports SET debrief_scheduled_at = %s WHERE id = %s',
+                (scheduled_at, report_id))
+        return self.execute(
+            'UPDATE eval_reports SET debrief_scheduled_at = CURRENT_TIMESTAMP WHERE id = %s',
+            (report_id,))
