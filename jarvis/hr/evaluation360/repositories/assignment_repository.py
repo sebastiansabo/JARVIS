@@ -23,6 +23,18 @@ class AssignmentRepository(BaseRepository):
     def get(self, assignment_id):
         return self.query_one('SELECT * FROM eval_assignments WHERE id = %s', (assignment_id,))
 
+    def get_named(self, assignment_id):
+        """A single assignment joined to subject + cycle names — for the reviewer's
+        form header. Mirrors :func:`list_by_reviewer`'s projection."""
+        return self.query_one(
+            '''SELECT a.*, u.name AS subject_name, c.name AS cycle_name,
+                      c.review_end AS review_end
+               FROM eval_assignments a
+               JOIN users u ON u.id = a.subject_id
+               JOIN eval_cycles c ON c.id = a.cycle_id
+               WHERE a.id = %s''',
+            (assignment_id,))
+
     def list_by_cycle(self, cycle_id):
         return self.query_all(
             'SELECT * FROM eval_assignments WHERE cycle_id = %s ORDER BY id', (cycle_id,))

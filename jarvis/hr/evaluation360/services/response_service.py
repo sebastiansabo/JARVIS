@@ -42,6 +42,12 @@ class ResponseService:
 
     def get_form(self, assignment_id, reviewer_id):
         a = self._owned(assignment_id, reviewer_id)
+        # The reviewer must always see who they're rating — enrich the bare
+        # assignment row with the subject + cycle names for the form header.
+        named = self.assignments.get_named(assignment_id)
+        a = {**a,
+             'subject_name': (named or {}).get('subject_name'),
+             'cycle_name': (named or {}).get('cycle_name')}
         cycle = self.cycles.get(a['cycle_id'])
         questions = []
         if cycle and cycle.get('template_id'):
