@@ -60,7 +60,14 @@ export default function HubDrivingPanel() {
         </TabsList>
       </Tabs>
 
-      {companyId > 0 && tab === 'sessions' && <SessionsTab companyId={companyId} brand={brand} />}
+      {companyId > 0 && tab === 'sessions' && (
+        <SessionsTab
+          companyId={companyId}
+          brand={brand}
+          onActivate={(id) => setOverlay({ kind: 'activate', id })}
+          onReturn={(id) => setOverlay({ kind: 'return', id })}
+        />
+      )}
       {companyId > 0 && tab === 'calendar' && <CalendarTab companyId={companyId} brand={brand} />}
 
       {/* Full-screen overlay inside the Hub */}
