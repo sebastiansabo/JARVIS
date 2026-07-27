@@ -415,6 +415,22 @@ class FormService:
             logger.warning(f'Failed to resolve approver for user {user_id}: {e}')
             return None
 
+    @staticmethod
+    def _build_stakeholder_ids(primary_id, answers):
+        """Deduped [primary, second?] approver ids for either-approves routing."""
+        def _as_int(v):
+            try:
+                return int(v)
+            except (ValueError, TypeError):
+                return None
+        candidates = [primary_id, _as_int((answers or {}).get('f_bi_second_approver'))]
+        out, seen = [], set()
+        for a in candidates:
+            if a and a not in seen:
+                seen.add(a)
+                out.append(a)
+        return out
+
     # ============== Private Helpers ==============
 
     def _validate_answers(self, schema: List[Dict], answers: Dict) -> Optional[str]:
@@ -544,6 +560,9 @@ class FormService:
                 title_parts.append(str(answers['f_client_name']))
             title = ' — '.join(title_parts)
 
+            # Primary (org hierarchy) + optional second approver — either may approve.
+            stakeholder_ids = self._build_stakeholder_ids(approver_user_id, answers)
+
             context = {
                 'title': title,
                 'form_id': form['id'],
@@ -553,6 +572,7 @@ class FormService:
                 'respondent_name': respondent_info.get('name', ''),
                 'company_id': form.get('company_id'),
                 'approver_user_id': approver_user_id,
+                'stakeholder_approver_ids': stakeholder_ids,
                 'notify_on_submit': approval_config.get('notify_on_submit', []),
                 'notify_on_approve': approval_config.get('notify_on_approve', []),
                 'notify_on_reject': approval_config.get('notify_on_reject', []),
