@@ -87,12 +87,22 @@ FORM_SCHEMA = [
         'order': 7,
     },
     {
+        'id': 'f_bi_second_approver',
+        'type': 'user_select',
+        'label': 'Al doilea aprobator (opțional)',
+        'required': False,
+        'order': 8,
+        # Optional backup approver. Either approver can approve (min_approvals=1);
+        # leave empty for approval by the direct manager only.
+        'config': {'hint': 'Oricare dintre aprobatori poate aproba. Lasă gol pentru aprobare doar de managerul direct.'},
+    },
+    {
         'id': 'f_bi_notes',
         'type': 'long_text',
         'label': 'Detalii suplimentare',
         'required': False,
         'placeholder': 'Adăugați orice detalii relevante',
-        'order': 8,
+        'order': 9,
     },
 ]
 
