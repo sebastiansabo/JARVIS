@@ -1400,6 +1400,12 @@ function HubBonusesContent({ year, month }: { year: number; month: number }) {
     queryFn: () => profileApi.getHrEvents({ year, month }),
   })
 
+  // Hooks must run on every render before any early return (Rules of Hooks).
+  // expandedId previously sat below the `isLoading` / `bonuses.length === 0`
+  // returns, so switching to a month WITH bonuses (e.g. May) added a hook
+  // mid-render and crashed the panel ("Rendered more hooks than previous").
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+
   if (isLoading) return <Skeleton className="h-48 w-full" />
 
   const bonuses: ProfileBonus[] = data?.bonuses ?? []
@@ -1407,7 +1413,6 @@ function HubBonusesContent({ year, month }: { year: number; month: number }) {
     return <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">No bonuses for this month.</CardContent></Card>
   }
 
-  const [expandedId, setExpandedId] = useState<number | null>(null)
   const fmtDate = (d: string | null) => d ? new Date(d + 'T00:00').toLocaleDateString('ro-RO', { day: '2-digit', month: 'short' }) : ''
 
   return (
