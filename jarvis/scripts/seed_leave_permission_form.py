@@ -48,15 +48,16 @@ FORM_SCHEMA = [
     },
     {
         'id': 'f_bi_start_time',
-        'type': 'short_text',
+        'type': 'time',
         'label': 'Ora de început',
         'required': True,
         'placeholder': 'Ex: 09:00',
         'order': 4,
+        'config': {'defaultNow': True},  # prefill current time
     },
     {
         'id': 'f_bi_end_time',
-        'type': 'short_text',
+        'type': 'time',
         'label': 'Ora de sfârșit',
         'required': True,
         'placeholder': 'Ex: 11:00',
@@ -64,11 +65,18 @@ FORM_SCHEMA = [
     },
     {
         'id': 'f_bi_hours',
-        'type': 'number',
-        'label': 'Număr de ore',
+        'type': 'text',
+        'label': 'Durată',
         'required': True,
-        'placeholder': 'Ex: 2',
+        'placeholder': '—',
         'order': 6,
+        # Read-only, auto-computed from the start/end times; shown time-wise
+        # ("2 h 30 min"). Opens with a default 1-hour interval.
+        'config': {
+            'duration': {'start': 'f_bi_start_time', 'end': 'f_bi_end_time'},
+            'defaultMinutes': 60,
+            'hint': 'Se calculează automat din interval.',
+        },
     },
     {
         'id': 'f_bi_reason',
@@ -79,12 +87,14 @@ FORM_SCHEMA = [
         'order': 7,
     },
     {
-        'id': 'f_bi_destination',
-        'type': 'short_text',
-        'label': 'Destinația',
+        'id': 'f_bi_second_approver',
+        'type': 'user_select',
+        'label': 'Al doilea aprobator (opțional)',
         'required': False,
-        'placeholder': 'Unde vă deplasați',
         'order': 8,
+        # Optional backup approver. Either approver can approve (min_approvals=1);
+        # leave empty for approval by the direct manager only.
+        'config': {'hint': 'Oricare dintre aprobatori poate aproba. Lasă gol pentru aprobare doar de managerul direct.'},
     },
     {
         'id': 'f_bi_notes',

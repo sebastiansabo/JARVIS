@@ -13,6 +13,7 @@ export type FieldType =
   | 'checkbox'
   | 'date'
   | 'datetime'
+  | 'time'
   | 'file_upload'
   | 'heading'
   | 'paragraph'

@@ -1,4 +1,4 @@
-import { useState, useRef, lazy, Suspense, useEffect } from 'react'
+import { useState, useRef, lazy, Suspense, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +29,64 @@ interface FormRendererProps {
   defaultValues?: Record<string, unknown>
 }
 
+// ── Duration link (config-driven, e.g. a start/end time pair → a duration) ──
+// A field may declare `config.duration = { start, end }`: its value is the span
+// between the two time fields, formatted time-wise ("2 h 30 min"). It is
+// auto-computed and read-only — editing a time recomputes it. Times are
+// "HH:MM" strings.
+export type DurationLink = { hours: string; start: string; end: string }
+
+function parseHM(v: unknown): number | null {
+  if (typeof v !== 'string') return null
+  const s = v.trim()
+  let h: number, min: number
+  const m = s.match(/^(\d{1,2}):(\d{1,2})$/)
+  if (m) { h = +m[1]; min = +m[2] }
+  else if (/^\d{1,2}$/.test(s)) { h = +s; min = 0 }  // bare hour, e.g. "9" → 09:00
+  else return null
+  if (h > 23 || min > 59) return null
+  return h * 60 + min
+}
+
+// Format a whole-minute span time-wise, dropping a zero part:
+// "50 min", "2 h", "2 h 30 min".
+export function fmtDuration(mins: number): string {
+  const total = Math.max(0, Math.round(mins))
+  const h = Math.floor(total / 60), m = total % 60
+  if (h && m) return `${h} h ${m} min`
+  if (h) return `${h} h`
+  return `${m} min`
+}
+
+// Format an absolute minute-of-day as "HH:MM", clamped to a single day
+// (00:00–23:59) so a default interval never wraps past midnight.
+function minsToHM(mins: number): string {
+  const t = Math.max(0, Math.min(1439, Math.round(mins)))
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
+}
+
+// Apply every duration link touched by a change to `fieldId`, mutating `next`.
+// The duration field is read-only: a valid start/end interval fills it; an
+// invalid or still-incomplete one clears it (so the required check blocks submit).
+export function applyDurationLinks(links: DurationLink[], next: Record<string, unknown>, fieldId: string): void {
+  for (const link of links) {
+    if (fieldId === link.start || fieldId === link.end) {
+      const s = parseHM(next[link.start]), e = parseHM(next[link.end])
+      next[link.hours] = s !== null && e !== null && e > s ? fmtDuration(e - s) : ''
+    }
+  }
+}
+
+// Live validation for a duration link: returns a message when both times are
+// filled but the end is not strictly after the start (e.g. start later than
+// end), or null when the interval is valid or still incomplete.
+export function durationLinkError(link: DurationLink, answers: Record<string, unknown>): string | null {
+  const s = parseHM(answers[link.start]), e = parseHM(answers[link.end])
+  if (s === null || e === null) return null
+  if (e <= s) return 'Ora de sfârșit trebuie să fie după ora de început.'
+  return null
+}
+
 function isFieldVisible(field: FormField, answers: Record<string, unknown>): boolean {
   const rule = (field.config as Record<string, unknown> | undefined)?.showWhen as
     | { fieldId: string; operator: string; value: string }
@@ -47,11 +105,65 @@ function isFieldVisible(field: FormField, answers: Record<string, unknown>): boo
 }
 
 export function FormRenderer({ schema, onSubmit, submitting, submitLabel = 'Submit', defaultValues }: FormRendererProps) {
-  const [answers, setAnswers] = useState<Record<string, unknown>>(() => defaultValues || {})
+  const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
+    const init: Record<string, unknown> = { ...(defaultValues || {}) }
+    // Time fields with config.defaultNow prefill the current HH:MM.
+    for (const f of schema) {
+      if (f.type === 'time' && (f.config as Record<string, unknown> | undefined)?.defaultNow && !init[f.id]) {
+        const d = new Date()
+        init[f.id] = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      }
+    }
+    // Duration fields open with a default interval (config.defaultMinutes, else
+    // 60 min): end = start + interval (clamped to end-of-day), duration computed.
+    for (const f of schema) {
+      const d = (f.config as Record<string, unknown> | undefined)?.duration as { start?: string; end?: string } | undefined
+      if (!d?.start || !d?.end) continue
+      const s = parseHM(init[d.start])
+      if (s === null || (init[d.end] !== undefined && init[d.end] !== '')) continue
+      const mins = Number((f.config as Record<string, unknown> | undefined)?.defaultMinutes) || 60
+      const end = Math.min(s + mins, 1439)
+      if (end <= s) continue
+      init[d.end] = minsToHM(end)
+      init[f.id] = fmtDuration(end - s)
+    }
+    return init
+  })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  const durationLinks = useMemo<DurationLink[]>(() => {
+    const out: DurationLink[] = []
+    for (const f of schema) {
+      const d = (f.config as Record<string, unknown> | undefined)?.duration as { start?: string; end?: string } | undefined
+      if (d?.start && d?.end) out.push({ hours: f.id, start: d.start, end: d.end })
+    }
+    return out
+  }, [schema])
+
+  // Reactive interval validity: an invalid start/end (end not after start) shows
+  // a message under the end-time field immediately — not only on submit — and
+  // marks the start, end and duration fields invalid so they highlight red.
+  const { durationMessages, invalidFields } = useMemo(() => {
+    const durationMessages: Record<string, string> = {}
+    const invalidFields = new Set<string>()
+    for (const link of durationLinks) {
+      const err = durationLinkError(link, answers)
+      if (err) {
+        durationMessages[link.end] = err
+        invalidFields.add(link.start)
+        invalidFields.add(link.end)
+        invalidFields.add(link.hours)
+      }
+    }
+    return { durationMessages, invalidFields }
+  }, [durationLinks, answers])
+
   const setValue = (fieldId: string, value: unknown) => {
-    setAnswers((prev) => ({ ...prev, [fieldId]: value }))
+    setAnswers((prev) => {
+      const next = { ...prev, [fieldId]: value }
+      if (durationLinks.length) applyDurationLinks(durationLinks, next, fieldId)
+      return next
+    })
     if (errors[fieldId]) {
       setErrors((prev) => { const copy = { ...prev }; delete copy[fieldId]; return copy })
     }
@@ -101,7 +213,8 @@ export function FormRenderer({ schema, onSubmit, submitting, submitLabel = 'Subm
             key={field.id}
             field={field}
             value={answers[field.id]}
-            error={errors[field.id]}
+            error={durationMessages[field.id] ?? errors[field.id]}
+            invalid={invalidFields.has(field.id)}
             onChange={(val) => setValue(field.id, val)}
             onSetField={setValue}
             allAnswers={answers}
@@ -119,6 +232,7 @@ interface FieldProps {
   field: FormField
   value: unknown
   error?: string
+  invalid?: boolean
   onChange: (value: unknown) => void
   onSetField?: (fieldId: string, value: unknown) => void
   allAnswers?: Record<string, unknown>
@@ -593,7 +707,29 @@ function FpClientField({ field, value, error, onChange }: FieldProps) {
   )
 }
 
-function FieldComponent({ field, value, error, onChange, onSetField, allAnswers }: FieldProps) {
+function FieldComponent({ field, value, error, invalid, onChange, onSetField, allAnswers }: FieldProps) {
+  const cfg = field.config as Record<string, unknown> | undefined
+  // A duration-linked field (config.duration) is auto-computed from its start/end
+  // times, so it renders read-only regardless of its declared type.
+  if (cfg?.duration) {
+    const hint = cfg.hint as string | undefined
+    return (
+      <div className="space-y-1">
+        <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        <Input
+          type="text"
+          value={(value as string) ?? ''}
+          readOnly
+          tabIndex={-1}
+          aria-invalid={error || invalid ? true : undefined}
+          placeholder={field.placeholder}
+          className="bg-muted/50 text-muted-foreground cursor-default"
+        />
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+    )
+  }
   switch (field.type) {
     case 'heading':
       return <h2 className="text-lg font-bold pt-2">{field.label}</h2>
@@ -615,10 +751,12 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
 
     case 'short_text':
     case 'email':
-    case 'phone':
+    case 'phone': {
+      const hint = (field.config as Record<string, unknown> | undefined)?.hint as string | undefined
       return (
         <div className="space-y-1">
           <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+          {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
           <Input
             type={field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : 'text'}
             value={(value as string) ?? ''}
@@ -628,11 +766,14 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
       )
+    }
 
-    case 'number':
+    case 'number': {
+      const hint = (field.config as Record<string, unknown> | undefined)?.hint as string | undefined
       return (
         <div className="space-y-1">
           <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+          {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
           <Input
             type="number"
             value={(value as string) ?? ''}
@@ -642,6 +783,7 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
       )
+    }
 
     case 'long_text':
       return (
@@ -678,6 +820,20 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
             type="datetime-local"
             value={(value as string) ?? ''}
             onChange={(e) => onChange(e.target.value)}
+          />
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+      )
+
+    case 'time':
+      return (
+        <div className="space-y-1">
+          <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+          <Input
+            type="time"
+            value={(value as string) ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+            aria-invalid={error || invalid ? true : undefined}
           />
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>

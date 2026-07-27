@@ -13,6 +13,7 @@ import {
   Fingerprint,
   Gift,
   ClipboardList,
+  Plus,
   Car,
   MessageSquare,
   Clock,
@@ -27,11 +28,14 @@ import {
   Check,
   ScanLine,
   Users,
+  Target,
+  FileSpreadsheet,
 } from 'lucide-react'
+import { SincronTimesheetView } from '@/components/shared/SincronTimesheetView'
+import { PunchCard } from '@/components/shared/PunchCard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -73,11 +77,23 @@ const Digest = lazy(() => import('@/pages/Digest'))
 const VoucherRedeem = lazy(() => import('@/pages/Public/VoucherRedeem'))
 
 const VOUCHER_FORM_SLUG = 'voucher-issuance'
+// JARVIS-native "Bilet de Invoire" form — submissions land in the Învoiri list
+// (source: 'jarvis') via the connecteam service's form-submission merge.
+const LEAVE_FORM_SLUG = 'bilet-de-invoire'
 
 // ─── Types ──────────────────────────────────────────────
 
 type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals'
-type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits'
+type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits' | 'sincron'
+
+// Labels for the HR sub-sections — used both by the tile grid and the breadcrumb.
+const HR_SECTION_LABELS: Record<HrSubTab, string> = {
+  pontaje: 'Pontaje',
+  'team-pontaje': 'Team Pontaje',
+  bonuses: 'Bonusuri',
+  'leave-permits': 'Învoiri',
+  sincron: 'Sincron',
+}
 
 interface AppTile {
   key: NonNullable<ActiveModule>
@@ -296,15 +312,39 @@ export default function Hub() {
       {/* ── Active Module (inline content) ── */}
       {activeModule !== null ? (
         <div className="space-y-4 pb-20">
-          {/* Section title (skip for chat — has its own header) */}
-          {activeModule !== 'chat' && (
-            <h2 className="text-lg font-semibold">
-              {visibleTiles.find(t => t.key === activeModule)?.label || 'Section'}
-              {tileCounts[activeModule] > 0 && (
-                <span className="text-sm font-normal text-muted-foreground ml-1.5">({tileCounts[activeModule]})</span>
-              )}
-            </h2>
-          )}
+          {/* Breadcrumb nav — shown for every module (Digest/Connecteams runs
+              readOnly here, so it has no header of its own). For HR we append the
+              open sub-section (read from `hrtab`) so it reads Hub › HR › Pontaje. */}
+          {(() => {
+            const moduleLabel = visibleTiles.find(t => t.key === activeModule)?.label || 'Section'
+            const hrtab = activeModule === 'hr' ? (searchParams.get('hrtab') as HrSubTab | null) : null
+            const clearHrtab = () => setSearchParams((prev) => { const p = new URLSearchParams(prev); p.delete('hrtab'); return p }, { replace: true })
+            const trail: { label: string; onClick?: () => void }[] = [
+              { label: 'Hub', onClick: () => setActiveModule(null) },
+              { label: moduleLabel, onClick: hrtab ? clearHrtab : undefined },
+            ]
+            if (hrtab && HR_SECTION_LABELS[hrtab]) trail.push({ label: HR_SECTION_LABELS[hrtab] })
+            // On the Învoiri sub-section, surface the "+ Învoire" action inline in
+            // the breadcrumb. It opens the form via a URL flag so the modal can
+            // stay co-located with the list panel that refetches on submit.
+            const action = hrtab === 'leave-permits' ? (
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setSearchParams((prev) => { const p = new URLSearchParams(prev); p.set('newinvoire', '1'); return p })}
+              >
+                <Plus className="h-4 w-4" /> Învoire
+              </Button>
+            ) : undefined
+            return (
+              <HubCrumb
+                trail={trail}
+                onBack={hrtab ? clearHrtab : () => setActiveModule(null)}
+                count={hrtab ? undefined : tileCounts[activeModule]}
+                action={action}
+              />
+            )
+          })()}
 
           {activeModule === 'invoices' && <HubInvoicesPanel />}
           {activeModule === 'approvals' && <HubApprovalsPanel />}
@@ -1089,14 +1129,48 @@ function HubPagination({
   )
 }
 
+// ─── Breadcrumb ─────────────────────────────────────────
+// Shared Hub breadcrumb: inline back chevron + a clickable trail. The last
+// crumb is the current location (bold, non-clickable). Used by every module
+// panel so navigation is consistent across the Hub.
+function HubCrumb({ trail, onBack, count, action }: {
+  trail: { label: string; onClick?: () => void }[]
+  onBack: () => void
+  count?: number
+  action?: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-1.5 text-sm">
+      <Button variant="ghost" size="icon" className="h-8 w-8 -ml-1.5 shrink-0" onClick={onBack} aria-label="Înapoi">
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      {trail.map((c, i) => {
+        const isLast = i === trail.length - 1
+        return (
+          <span key={i} className="flex items-center gap-1.5">
+            {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />}
+            {c.onClick && !isLast ? (
+              <button onClick={c.onClick} className="font-medium text-muted-foreground transition-colors hover:text-foreground">{c.label}</button>
+            ) : (
+              <span className={isLast ? 'font-semibold' : 'font-medium text-muted-foreground'}>{c.label}</span>
+            )}
+          </span>
+        )
+      })}
+      {count != null && count > 0 && <span className="text-sm font-normal text-muted-foreground">({count})</span>}
+      {action && <div className="ml-auto shrink-0">{action}</div>}
+    </div>
+  )
+}
+
 // ─── HR Panel ───────────────────────────────────────────
 
 function HubHrPanel({ userId }: { userId: number }) {
+  const navigate = useNavigate()
   const [sp, setSp] = useSearchParams()
-  const subTab = (sp.get('hrtab') as HrSubTab) || 'pontaje'
-  const setSubTab = (tab: HrSubTab) => {
-    setSp((prev) => { const p = new URLSearchParams(prev); p.set('hrtab', tab); return p }, { replace: true })
-  }
+  const section = sp.get('hrtab') as HrSubTab | null
+  const openSection = (tab: HrSubTab | null) =>
+    setSp((prev) => { const p = new URLSearchParams(prev); if (tab) { p.set('hrtab', tab) } else { p.delete('hrtab') } return p }, { replace: true })
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -1129,49 +1203,71 @@ function HubHrPanel({ userId }: { userId: number }) {
   const bonusesCount = (bonusesData?.bonuses ?? []).length
   const lpCount = (lpData?.data ?? []).length
 
-  const availableTabs = useMemo(() => {
-    const tabs: { key: HrSubTab; label: string; icon: React.ElementType }[] = []
-    if (pontajeCount > 0) tabs.push({ key: 'pontaje', label: 'Pontaje', icon: Fingerprint })
-    if (teamCount > 0) tabs.push({ key: 'team-pontaje', label: 'Team Pontaje', icon: Users })
-    if (bonusesCount > 0) tabs.push({ key: 'bonuses', label: 'Bonuses', icon: Gift })
-    if (lpCount > 0) tabs.push({ key: 'leave-permits', label: 'Leave Permits', icon: ClipboardList })
-    return tabs
+  const dataTiles = useMemo(() => {
+    // Per-employee sections are always shown as tiles (empty state inside if no data
+    // that month). Team Pontaje is manager-only, so it stays data-gated.
+    const t: { key: HrSubTab; label: string; icon: React.ElementType; bg: string; count: number }[] = [
+      { key: 'pontaje', label: 'Pontaje', icon: Fingerprint, bg: 'bg-blue-600', count: pontajeCount },
+      { key: 'sincron', label: 'Sincron', icon: FileSpreadsheet, bg: 'bg-cyan-600', count: 0 },
+      { key: 'bonuses', label: 'Bonusuri', icon: Gift, bg: 'bg-amber-500', count: bonusesCount },
+      { key: 'leave-permits', label: 'Învoiri', icon: ClipboardList, bg: 'bg-rose-600', count: lpCount },
+    ]
+    if (teamCount > 0) t.push({ key: 'team-pontaje', label: 'Team Pontaje', icon: Users, bg: 'bg-teal-600', count: teamCount })
+    return t
   }, [pontajeCount, teamCount, bonusesCount, lpCount])
-
-  // Auto-select first available tab if current has no data
-  const effectiveTab = availableTabs.find(t => t.key === subTab) ? subTab : availableTabs[0]?.key ?? 'pontaje'
 
   const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 12) { setMonth(1); setYear(y => y + 1) } else setMonth(m => m + 1) }
+  const monthNav = (
+    <div className="flex items-center gap-2">
+      <Button variant="ghost" size="icon" className="h-11 w-11" onClick={prevMonth}><ChevronLeft className="h-5 w-5" /></Button>
+      <span className="text-sm font-medium flex-1 text-center">{MONTHS_RO[month - 1]} {year}</span>
+      <Button variant="ghost" size="icon" className="h-11 w-11" onClick={nextMonth}><ChevronRight className="h-5 w-5" /></Button>
+    </div>
+  )
 
-  if (availableTabs.length === 0) {
-    return <Card><CardContent className="py-12 text-center text-muted-foreground text-sm">No HR data for {MONTHS_RO[month - 1]} {year}.</CardContent></Card>
+  // ── Section view (a data tile was opened) ──
+  const activeSection = dataTiles.find(t => t.key === section) ? section : null
+  if (activeSection) {
+    return (
+      <div className="space-y-4">
+        {/* Back navigation is provided by the Hub breadcrumb above this panel. */}
+        {activeSection === 'pontaje' && <PunchCard />}
+        {monthNav}
+        {activeSection === 'pontaje' && <HubPontajeContent year={year} month={month} />}
+        {activeSection === 'sincron' && <SincronTimesheetView year={year} month={month} />}
+        {activeSection === 'team-pontaje' && <HubTeamPontajeContent year={year} month={month} />}
+        {activeSection === 'bonuses' && <HubBonusesContent year={year} month={month} />}
+        {activeSection === 'leave-permits' && <HubLeavePermitsContent userId={userId} year={year} month={month} />}
+      </div>
+    )
   }
 
+  // ── Grid landing (app-like tiles) — no month nav here; months live inside sections ──
   return (
-    <div className="space-y-4">
-      {availableTabs.length > 1 && (
-        <Tabs value={effectiveTab} onValueChange={(v) => setSubTab(v as HrSubTab)}>
-          <TabsList className="h-11 bg-muted/50 w-full">
-            {availableTabs.map((tab) => {
-              const Icon = tab.icon
-              return <TabsTrigger key={tab.key} value={tab.key} className="text-xs h-10 px-4 gap-1.5 flex-1"><Icon className="h-4 w-4" />{tab.label}</TabsTrigger>
-            })}
-          </TabsList>
-        </Tabs>
-      )}
-
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="h-11 w-11" onClick={prevMonth}><ChevronLeft className="h-5 w-5" /></Button>
-        <span className="text-sm font-medium flex-1 text-center">{MONTHS_RO[month - 1]} {year}</span>
-        <Button variant="ghost" size="icon" className="h-11 w-11" onClick={nextMonth}><ChevronRight className="h-5 w-5" /></Button>
-      </div>
-
-      {effectiveTab === 'pontaje' && <HubPontajeContent year={year} month={month} />}
-      {effectiveTab === 'team-pontaje' && <HubTeamPontajeContent year={year} month={month} />}
-      {effectiveTab === 'bonuses' && <HubBonusesContent year={year} month={month} />}
-      {effectiveTab === 'leave-permits' && <HubLeavePermitsContent userId={userId} year={year} month={month} />}
+    <div className="flex flex-wrap gap-6">
+      {dataTiles.map((t) => (
+        <HrTile key={t.key} label={t.label} icon={t.icon} bg={t.bg} count={t.count} onClick={() => openSection(t.key)} />
+      ))}
+      {/* Company-wide 360 — always available */}
+      <HrTile label="Evaluări 360" icon={Target} bg="bg-indigo-600" onClick={() => navigate('/app/evaluations')} />
     </div>
+  )
+}
+
+function HrTile({ label, icon: Icon, bg, count, onClick }: {
+  label: string; icon: React.ElementType; bg: string; count?: number; onClick: () => void
+}) {
+  return (
+    <button type="button" onClick={onClick} className="flex flex-col items-center gap-2 w-20 group">
+      <div className={cn('relative flex h-16 w-16 sm:h-14 sm:w-14 items-center justify-center rounded-xl text-white shadow-sm transition-transform group-hover:scale-105 group-hover:shadow-md', bg)}>
+        <Icon className="h-8 w-8 sm:h-7 sm:w-7" />
+        {count != null && count > 0 && (
+          <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border bg-background px-1 text-[10px] font-bold text-foreground shadow-sm">{count}</span>
+        )}
+      </div>
+      <p className="text-[11px] font-medium text-center leading-tight">{label}</p>
+    </button>
   )
 }
 
@@ -1366,67 +1462,111 @@ function HubBonusesContent({ year, month }: { year: number; month: number }) {
   )
 }
 
+// A leave submission's approval status → a small coloured badge.
+function LeaveStatusBadge({ status }: { status: string }) {
+  const s = (status || '').toLowerCase()
+  const ui = s === 'approved'
+    ? { label: 'Aprobat', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' }
+    : s === 'rejected'
+      ? { label: 'Respins', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-400' }
+      : { label: 'În așteptare', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400' }
+  return <Badge className={cn('text-[9px] border-transparent', ui.cls)}>{ui.label}</Badge>
+}
+
 function HubLeavePermitsContent({ userId, year, month }: { userId: number; year: number; month: number }) {
+  // All hooks stay above any early return — the query and the row-expand state
+  // must be called unconditionally on every render.
+  const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  // The "+ Învoire" trigger lives in the breadcrumb; it flags the form open via
+  // the URL so the modal can stay here with the list that refetches on submit.
+  const showForm = searchParams.get('newinvoire') === '1'
+  const closeForm = () => setSearchParams((prev) => { const p = new URLSearchParams(prev); p.delete('newinvoire'); return p }, { replace: true })
+
   const { data, isLoading } = useQuery({
     queryKey: ['hub', 'leave-permits', userId, year, month],
     queryFn: () => connecteamApi.getEmployeeSubmissions(userId, year, month),
   })
-
-  if (isLoading) return <Skeleton className="h-48 w-full" />
-
   const submissions: ConnecteamSubmission[] = data?.data ?? []
-  if (submissions.length === 0) {
-    return <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">No leave permits for this month.</CardContent></Card>
-  }
-
-  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   return (
-    <Card>
-      <CardContent className="px-0 pb-0">
-        <div className="divide-y">
-          {submissions.map((s) => {
-            const key = `${s.source ?? 'ct'}-${s.id}`
-            const isOpen = expandedId === key
-            const dateStr = s.leave_date ? new Date(s.leave_date + 'T00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short' }) : '—'
-            return (
-              <button
-                key={key}
-                type="button"
-                className="w-full text-left hover:bg-muted/30 transition-colors"
-                onClick={() => setExpandedId(isOpen ? null : key)}
-              >
-                <div className="flex items-center justify-between px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium">{dateStr}</p>
-                    <p className="text-[10px] text-muted-foreground">{s.leave_reason || 'Leave permit'}</p>
-                  </div>
-                  <span className="text-sm font-semibold tabular-nums shrink-0 ml-3">{s.leave_hours != null ? `${s.leave_hours}h` : '—'}</span>
-                </div>
-                {isOpen && (
-                  <div className="px-4 pb-3 grid grid-cols-2 gap-2 text-[11px]" onClick={(e) => e.stopPropagation()}>
-                    <div>
-                      <span className="text-muted-foreground">Time</span>
-                      <p className="font-medium">{s.leave_start_time?.slice(0, 5) || '—'} — {s.leave_end_time?.slice(0, 5) || '—'}</p>
+    <div className="space-y-3">
+
+      {isLoading ? (
+        <Skeleton className="h-48 w-full" />
+      ) : submissions.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">Nicio învoire pentru această lună. Apasă <span className="font-medium text-foreground">+ Învoire</span> pentru a completa un bilet.</CardContent></Card>
+      ) : (
+        <Card>
+          <CardContent className="px-0 pb-0">
+            <div className="divide-y">
+              {submissions.map((s) => {
+                const key = `${s.source ?? 'ct'}-${s.id}`
+                const isOpen = expandedId === key
+                const dateStr = s.leave_date ? new Date(s.leave_date + 'T00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short' }) : '—'
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className="w-full text-left hover:bg-muted/30 transition-colors"
+                    onClick={() => setExpandedId(isOpen ? null : key)}
+                  >
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium">{dateStr}</p>
+                        <p className="text-[10px] text-muted-foreground">{s.leave_reason || 'Leave permit'}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-3">
+                        <LeaveStatusBadge status={s.status} />
+                        {s.source === 'jarvis' && <Badge variant="secondary" className="text-[9px]">JARVIS</Badge>}
+                        <span className="text-sm font-semibold tabular-nums">{s.leave_hours != null ? `${s.leave_hours}h` : '—'}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">Source</span>
-                      <p className="font-medium">{s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}</p>
-                    </div>
-                    {s.leave_reason && (
-                      <div className="col-span-2">
-                        <span className="text-muted-foreground">Reason</span>
-                        <p className="font-medium">{s.leave_reason}</p>
+                    {isOpen && (
+                      <div className="px-4 pb-3 grid grid-cols-2 gap-2 text-[11px]" onClick={(e) => e.stopPropagation()}>
+                        <div>
+                          <span className="text-muted-foreground">Time</span>
+                          <p className="font-medium">{s.leave_start_time?.slice(0, 5) || '—'} — {s.leave_end_time?.slice(0, 5) || '—'}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Source</span>
+                          <p className="font-medium">{s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Aprobat de</span>
+                          <p className="font-medium">{s.approved_by || (s.status?.toLowerCase() === 'approved' ? '—' : 'În așteptare')}</p>
+                        </div>
+                        {s.leave_reason && (
+                          <div className="col-span-2">
+                            <span className="text-muted-foreground">Reason</span>
+                            <p className="font-medium">{s.leave_reason}</p>
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      </CardContent>
-    </Card>
+                  </button>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {showForm && (
+        <HubFormModal
+          slug={LEAVE_FORM_SLUG}
+          name="Bilet de Invoire"
+          onClose={closeForm}
+          onSubmitted={() => {
+            // The new submission lands in form_submissions and the connecteam
+            // service merges it into this list — refetch so it appears.
+            queryClient.invalidateQueries({ queryKey: ['hub', 'leave-permits'] })
+            closeForm()
+          }}
+        />
+      )}
+    </div>
   )
 }
 

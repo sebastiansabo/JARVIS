@@ -6,6 +6,7 @@ Manual-import only (Connecteam plan does not include API/webhooks).
 import hashlib
 import json
 import logging
+import re
 from datetime import datetime, date, time
 
 from ..repositories.connecteam_repository import ConnecteamRepository
@@ -30,6 +31,38 @@ def _safe_float(val):
         return float(val)
     except (ValueError, TypeError):
         return None
+
+
+def _hm_to_minutes(val):
+    """Parse an 'HH:MM' string to minutes since midnight, or None."""
+    if not isinstance(val, str):
+        return None
+    m = re.match(r'^(\d{1,2}):(\d{2})$', val.strip())
+    if not m:
+        return None
+    h, mi = int(m.group(1)), int(m.group(2))
+    if h > 23 or mi > 59:
+        return None
+    return h * 60 + mi
+
+
+def _leave_hours(answers):
+    """Leave duration in hours. Preferred: computed from the start/end times, so
+    it is robust to the display-formatted duration field ("1 h", "50 min").
+    Falls back to a legacy numeric f_bi_hours (older/Connecteam submissions)."""
+    s = _hm_to_minutes(answers.get('f_bi_start_time'))
+    e = _hm_to_minutes(answers.get('f_bi_end_time'))
+    if s is not None and e is not None and e > s:
+        return round((e - s) / 60, 2)
+    return _safe_float(answers.get('f_bi_hours'))
+
+
+def _decider_name(decisions):
+    """Name of the approver whose decision closed the request (approved/rejected)."""
+    for d in decisions or []:
+        if d.get('decision') in ('approved', 'rejected'):
+            return d.get('decided_by_name') or None
+    return None
 
 
 def _name_to_fake_ct_id(name: str) -> int:
@@ -324,7 +357,7 @@ class ConnecteamService:
 
             query = '''
                 SELECT fs.id, fs.form_id, f.name AS form_name,
-                       fs.answers, fs.status, fs.source,
+                       fs.answers, fs.status, fs.source, fs.approval_request_id,
                        fs.respondent_user_id, fs.created_at::text,
                        u.name AS respondent_name,
                        u.company AS respondent_company
@@ -347,12 +380,21 @@ class ConnecteamService:
             cursor.execute(query, tuple(params))
             rows = cursor.fetchall()
 
+            from core.approvals.repositories import DecisionRepository
+            dec_repo = DecisionRepository()
+
             results = []
             for row in rows:
                 r = dict_from_row(row) if not isinstance(row, dict) else dict(row)
                 answers = r.get('answers', {})
                 if isinstance(answers, str):
                     answers = json.loads(answers)
+
+                request_id = r.get('approval_request_id')
+                approved_by = (
+                    _decider_name(dec_repo.get_decisions_for_request(request_id))
+                    if request_id else None
+                ) or answers.get('f_bi_approved_by')
 
                 results.append({
                     'id': r['id'],
@@ -368,10 +410,10 @@ class ConnecteamService:
                     'leave_date': answers.get('f_bi_leave_date'),
                     'leave_start_time': answers.get('f_bi_start_time'),
                     'leave_end_time': answers.get('f_bi_end_time'),
-                    'leave_hours': _safe_float(answers.get('f_bi_hours')),
+                    'leave_hours': _leave_hours(answers),
                     'leave_reason': answers.get('f_bi_reason'),
                     'leave_destination': answers.get('f_bi_destination'),
-                    'approved_by': answers.get('f_bi_approved_by'),
+                    'approved_by': approved_by,
                     'status': r.get('status', 'new'),
                     'event_type': 'jarvis_form',
                     'entry_num': None,
@@ -429,7 +471,7 @@ class ConnecteamService:
 
             query = '''
                 SELECT fs.id, fs.form_id, f.name AS form_name,
-                       fs.answers, fs.status, fs.source,
+                       fs.answers, fs.status, fs.source, fs.approval_request_id,
                        fs.respondent_user_id, fs.created_at::text,
                        u.name AS respondent_name
                 FROM form_submissions fs
@@ -450,12 +492,21 @@ class ConnecteamService:
             cursor.execute(query, tuple(params))
             rows = cursor.fetchall()
 
+            from core.approvals.repositories import DecisionRepository
+            dec_repo = DecisionRepository()
+
             results = []
             for row in rows:
                 r = dict_from_row(row) if not isinstance(row, dict) else dict(row)
                 answers = r.get('answers', {})
                 if isinstance(answers, str):
                     answers = json.loads(answers)
+
+                request_id = r.get('approval_request_id')
+                approved_by = (
+                    _decider_name(dec_repo.get_decisions_for_request(request_id))
+                    if request_id else None
+                ) or answers.get('f_bi_approved_by')
 
                 results.append({
                     'id': r['id'],
@@ -469,10 +520,10 @@ class ConnecteamService:
                     'leave_date': answers.get('f_bi_leave_date'),
                     'leave_start_time': answers.get('f_bi_start_time'),
                     'leave_end_time': answers.get('f_bi_end_time'),
-                    'leave_hours': _safe_float(answers.get('f_bi_hours')),
+                    'leave_hours': _leave_hours(answers),
                     'leave_reason': answers.get('f_bi_reason'),
                     'leave_destination': answers.get('f_bi_destination'),
-                    'approved_by': None,
+                    'approved_by': approved_by,
                     'status': r.get('status', 'new'),
                     'event_type': 'jarvis_form',
                     'entry_num': None,
