@@ -71,15 +71,20 @@ def _configure_app(flask_app: Flask, config: AppConfig):
         'localhost' not in config.database_url
         and '127.0.0.1' not in config.database_url
     )
+    # Local-dev escape hatch: a localhost (http) frontend can't hold a Secure
+    # cookie, so allow insecure cookies when explicitly opted in — even when the
+    # DB is remote (e.g. running against staging). Defaults off: production and
+    # normal deploys are unchanged.
+    _secure_cookies = is_production and os.environ.get('DEV_INSECURE_COOKIES', '').lower() != 'true'
 
     # Remember Me cookie (30 days)
     flask_app.config['REMEMBER_COOKIE_DURATION'] = timedelta(days=30)
-    flask_app.config['REMEMBER_COOKIE_SECURE'] = is_production
+    flask_app.config['REMEMBER_COOKIE_SECURE'] = _secure_cookies
     flask_app.config['REMEMBER_COOKIE_HTTPONLY'] = True
     flask_app.config['REMEMBER_COOKIE_SAMESITE'] = 'Lax'
 
     # Session cookie hardening
-    flask_app.config['SESSION_COOKIE_SECURE'] = is_production
+    flask_app.config['SESSION_COOKIE_SECURE'] = _secure_cookies
     flask_app.config['SESSION_COOKIE_HTTPONLY'] = True
     flask_app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
