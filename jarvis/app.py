@@ -125,6 +125,9 @@ def _register_blueprints(flask_app: Flask):
     from admin_routes import admin_bp
     flask_app.register_blueprint(admin_bp)
 
+    from core.deeplink.routes import deeplink_bp
+    flask_app.register_blueprint(deeplink_bp)
+
     from hr import hr_bp
     flask_app.register_blueprint(hr_bp, url_prefix='/hr')
 
