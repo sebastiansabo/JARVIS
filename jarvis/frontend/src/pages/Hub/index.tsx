@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 import { SincronTimesheetView } from '@/components/shared/SincronTimesheetView'
 import { PunchCard } from '@/components/shared/PunchCard'
+import { InvoireForm } from '@/components/forms/InvoireForm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -77,9 +78,6 @@ const Digest = lazy(() => import('@/pages/Digest'))
 const VoucherRedeem = lazy(() => import('@/pages/Public/VoucherRedeem'))
 
 const VOUCHER_FORM_SLUG = 'voucher-issuance'
-// JARVIS-native "Bilet de Invoire" form — submissions land in the Învoiri list
-// (source: 'jarvis') via the connecteam service's form-submission merge.
-const LEAVE_FORM_SLUG = 'bilet-de-invoire'
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -1554,15 +1552,12 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
       )}
 
       {showForm && (
-        <HubFormModal
-          slug={LEAVE_FORM_SLUG}
-          name="Bilet de Invoire"
+        <InvoireForm
           onClose={closeForm}
           onSubmitted={() => {
-            // The new submission lands in form_submissions and the connecteam
-            // service merges it into this list — refetch so it appears.
+            // Code-defined form → /connecteam/api/submissions/leave-permit → the
+            // connecteam service merges it into this list; refetch so it appears.
             queryClient.invalidateQueries({ queryKey: ['hub', 'leave-permits'] })
-            closeForm()
           }}
         />
       )}
