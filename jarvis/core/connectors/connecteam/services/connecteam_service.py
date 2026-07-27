@@ -487,6 +487,63 @@ class ConnecteamService:
         )
         return all_subs
 
+    def get_pending_leave_approvals(self, user_id):
+        """Leave requests awaiting this user's approval (primary or backup approver).
+
+        Naturally scoped: only requests where the user is a current-step approver
+        are returned, so a non-approver gets an empty list.
+        """
+        from core.approvals.handlers._shared import _get_current_step_approvers
+        from database import get_db, get_cursor, release_db, dict_from_row
+        conn = get_db()
+        cursor = get_cursor(conn)
+        try:
+            cursor.execute('''
+                SELECT r.id AS request_id, r.entity_id AS submission_id,
+                       fs.answers, r.requested_at::text AS requested_at,
+                       u.name AS requester_name
+                FROM approval_requests r
+                JOIN form_submissions fs ON fs.id = r.entity_id
+                JOIN forms f ON f.id = fs.form_id
+                JOIN users u ON u.id = r.requested_by
+                WHERE r.entity_type = 'form_submission'
+                  AND r.status IN ('pending', 'in_progress')
+                  AND f.slug = %s
+                ORDER BY r.requested_at DESC
+            ''', (JARVIS_LEAVE_FORM_SLUG,))
+            rows = cursor.fetchall()
+        finally:
+            release_db(conn)
+
+        out = []
+        for row in rows:
+            r = dict_from_row(row) if not isinstance(row, dict) else dict(row)
+            if user_id not in (_get_current_step_approvers(r['request_id']) or []):
+                continue
+            answers = r.get('answers') or {}
+            if isinstance(answers, str):
+                answers = json.loads(answers)
+            out.append({
+                'request_id': r['request_id'],
+                'submission_id': r['submission_id'],
+                'requester_name': r.get('requester_name'),
+                'leave_date': answers.get('f_bi_leave_date'),
+                'leave_start_time': answers.get('f_bi_start_time'),
+                'leave_end_time': answers.get('f_bi_end_time'),
+                'leave_hours': _leave_hours(answers),
+                'leave_reason': answers.get('f_bi_reason'),
+                'requested_at': r.get('requested_at'),
+            })
+        return out
+
+    def decide_leave_approval(self, request_id, decision, user_id, comment=None):
+        """Approve/reject a leave request the user is a current-step approver for."""
+        from core.approvals.handlers._shared import _get_current_step_approvers
+        from core.approvals.engine import ApprovalEngine
+        if user_id not in (_get_current_step_approvers(request_id) or []):
+            raise PermissionError('Not an approver for this request')
+        return ApprovalEngine().decide(request_id, decision, user_id, comment=comment)
+
     def _get_jarvis_form_submissions(self, jarvis_user_id, year=None, month=None):
         """Fetch JARVIS internal 'Bilet de Invoire' form submissions for a user."""
         from database import get_db, get_cursor, release_db, dict_from_row
