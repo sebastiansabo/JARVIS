@@ -66,6 +66,18 @@ export interface ConnecteamSubmission {
   jarvis_user_company?: string | null
 }
 
+export interface LeaveApproval {
+  request_id: number
+  submission_id: number
+  requester_name: string | null
+  leave_date: string | null
+  leave_start_time: string | null
+  leave_end_time: string | null
+  leave_hours: number | null
+  leave_reason: string | null
+  requested_at: string | null
+}
+
 export interface ConversionRequest {
   id: number
   employee_user_id: number
@@ -94,6 +106,15 @@ export const connecteamApi = {
   submitLeavePermit: (answers: Record<string, unknown>) =>
     api.post<{ success: boolean; data: { submission_id: number } }>(
       `${BASE}/submissions/leave-permit`, { answers }
+    ),
+
+  // Leave requests awaiting the current user's approval (empty if not an approver).
+  getPendingLeaveApprovals: () =>
+    api.get<{ success: boolean; data: LeaveApproval[] }>(`${BASE}/leave-approvals/pending`),
+
+  decideLeaveApproval: (requestId: number, decision: 'approved' | 'rejected', comment?: string) =>
+    api.post<{ success: boolean; error?: string }>(
+      `${BASE}/leave-approvals/${requestId}/decide`, { decision, comment }
     ),
 
   getApprovers: (scope?: 'all') =>
