@@ -31,6 +31,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react'
 import { SincronTimesheetView } from '@/components/shared/SincronTimesheetView'
+import { PunchCard } from '@/components/shared/PunchCard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -80,6 +81,15 @@ const VOUCHER_FORM_SLUG = 'voucher-issuance'
 
 type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals'
 type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits' | 'sincron'
+
+// Labels for the HR sub-sections — used both by the tile grid and the breadcrumb.
+const HR_SECTION_LABELS: Record<HrSubTab, string> = {
+  pontaje: 'Pontaje',
+  'team-pontaje': 'Team Pontaje',
+  bonuses: 'Bonusuri',
+  'leave-permits': 'Învoiri',
+  sincron: 'Sincron',
+}
 
 interface AppTile {
   key: NonNullable<ActiveModule>
@@ -298,15 +308,25 @@ export default function Hub() {
       {/* ── Active Module (inline content) ── */}
       {activeModule !== null ? (
         <div className="space-y-4 pb-20">
-          {/* Section title (skip for chat — has its own header) */}
-          {activeModule !== 'chat' && (
-            <h2 className="text-lg font-semibold">
-              {visibleTiles.find(t => t.key === activeModule)?.label || 'Section'}
-              {tileCounts[activeModule] > 0 && (
-                <span className="text-sm font-normal text-muted-foreground ml-1.5">({tileCounts[activeModule]})</span>
-              )}
-            </h2>
-          )}
+          {/* Breadcrumb nav (skip for chat — has its own header). For HR we append
+              the open sub-section (read from `hrtab`) so it reads Hub › HR › Pontaje. */}
+          {activeModule !== 'chat' && (() => {
+            const moduleLabel = visibleTiles.find(t => t.key === activeModule)?.label || 'Section'
+            const hrtab = activeModule === 'hr' ? (searchParams.get('hrtab') as HrSubTab | null) : null
+            const clearHrtab = () => setSearchParams((prev) => { const p = new URLSearchParams(prev); p.delete('hrtab'); return p }, { replace: true })
+            const trail: { label: string; onClick?: () => void }[] = [
+              { label: 'Hub', onClick: () => setActiveModule(null) },
+              { label: moduleLabel, onClick: hrtab ? clearHrtab : undefined },
+            ]
+            if (hrtab && HR_SECTION_LABELS[hrtab]) trail.push({ label: HR_SECTION_LABELS[hrtab] })
+            return (
+              <HubCrumb
+                trail={trail}
+                onBack={hrtab ? clearHrtab : () => setActiveModule(null)}
+                count={hrtab ? undefined : tileCounts[activeModule]}
+              />
+            )
+          })()}
 
           {activeModule === 'invoices' && <HubInvoicesPanel />}
           {activeModule === 'approvals' && <HubApprovalsPanel />}
@@ -1091,6 +1111,38 @@ function HubPagination({
   )
 }
 
+// ─── Breadcrumb ─────────────────────────────────────────
+// Shared Hub breadcrumb: inline back chevron + a clickable trail. The last
+// crumb is the current location (bold, non-clickable). Used by every module
+// panel so navigation is consistent across the Hub.
+function HubCrumb({ trail, onBack, count }: {
+  trail: { label: string; onClick?: () => void }[]
+  onBack: () => void
+  count?: number
+}) {
+  return (
+    <div className="flex items-center gap-1.5 text-sm">
+      <Button variant="ghost" size="icon" className="h-8 w-8 -ml-1.5 shrink-0" onClick={onBack} aria-label="Înapoi">
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      {trail.map((c, i) => {
+        const isLast = i === trail.length - 1
+        return (
+          <span key={i} className="flex items-center gap-1.5">
+            {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />}
+            {c.onClick && !isLast ? (
+              <button onClick={c.onClick} className="font-medium text-muted-foreground transition-colors hover:text-foreground">{c.label}</button>
+            ) : (
+              <span className={isLast ? 'font-semibold' : 'font-medium text-muted-foreground'}>{c.label}</span>
+            )}
+          </span>
+        )
+      })}
+      {count != null && count > 0 && <span className="text-sm font-normal text-muted-foreground">({count})</span>}
+    </div>
+  )
+}
+
 // ─── HR Panel ───────────────────────────────────────────
 
 function HubHrPanel({ userId }: { userId: number }) {
@@ -1159,9 +1211,8 @@ function HubHrPanel({ userId }: { userId: number }) {
   if (activeSection) {
     return (
       <div className="space-y-4">
-        <button onClick={() => openSection(null)} className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
-          <ChevronLeft className="h-4 w-4" /> HR
-        </button>
+        {/* Back navigation is provided by the Hub breadcrumb above this panel. */}
+        {activeSection === 'pontaje' && <PunchCard />}
         {monthNav}
         {activeSection === 'pontaje' && <HubPontajeContent year={year} month={month} />}
         {activeSection === 'sincron' && <SincronTimesheetView year={year} month={month} />}
@@ -1172,20 +1223,14 @@ function HubHrPanel({ userId }: { userId: number }) {
     )
   }
 
-  // ── Grid landing (app-like tiles) ──
+  // ── Grid landing (app-like tiles) — no month nav here; months live inside sections ──
   return (
-    <div className="space-y-4">
-      {monthNav}
-      <div className="flex flex-wrap gap-6">
-        {dataTiles.map((t) => (
-          <HrTile key={t.key} label={t.label} icon={t.icon} bg={t.bg} count={t.count} onClick={() => openSection(t.key)} />
-        ))}
-        {/* Company-wide 360 — always available, even with no attendance/bonus data this month */}
-        <HrTile label="Evaluări 360" icon={Target} bg="bg-indigo-600" onClick={() => navigate('/app/evaluations')} />
-      </div>
-      {dataTiles.length === 0 && (
-        <p className="text-xs text-muted-foreground">Nu există date de pontaj / bonusuri / învoiri pentru {MONTHS_RO[month - 1]} {year}.</p>
-      )}
+    <div className="flex flex-wrap gap-6">
+      {dataTiles.map((t) => (
+        <HrTile key={t.key} label={t.label} icon={t.icon} bg={t.bg} count={t.count} onClick={() => openSection(t.key)} />
+      ))}
+      {/* Company-wide 360 — always available */}
+      <HrTile label="Evaluări 360" icon={Target} bg="bg-indigo-600" onClick={() => navigate('/app/evaluations')} />
     </div>
   )
 }
