@@ -28,6 +28,7 @@ NEW_FIELD_PATCH = {
     'placeholder': '—',
     'config': {
         'duration': {'start': 'f_bi_start_time', 'end': 'f_bi_end_time'},
+        'defaultMinutes': 60,
         'hint': 'Se calculează automat din interval.',
     },
 }
