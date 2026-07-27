@@ -37,9 +37,12 @@ export type DurationLink = { hours: string; start: string; end: string }
 
 function parseHM(v: unknown): number | null {
   if (typeof v !== 'string') return null
-  const m = v.trim().match(/^(\d{1,2}):(\d{1,2})$/)
-  if (!m) return null
-  const h = +m[1], min = +m[2]
+  const s = v.trim()
+  let h: number, min: number
+  const m = s.match(/^(\d{1,2}):(\d{1,2})$/)
+  if (m) { h = +m[1]; min = +m[2] }
+  else if (/^\d{1,2}$/.test(s)) { h = +s; min = 0 }  // bare hour, e.g. "9" → 09:00
+  else return null
   if (h > 23 || min > 59) return null
   return h * 60 + min
 }
@@ -85,7 +88,17 @@ function isFieldVisible(field: FormField, answers: Record<string, unknown>): boo
 }
 
 export function FormRenderer({ schema, onSubmit, submitting, submitLabel = 'Submit', defaultValues }: FormRendererProps) {
-  const [answers, setAnswers] = useState<Record<string, unknown>>(() => defaultValues || {})
+  const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
+    const init: Record<string, unknown> = { ...(defaultValues || {}) }
+    // Time fields with config.defaultNow prefill the current HH:MM.
+    for (const f of schema) {
+      if (f.type === 'time' && (f.config as Record<string, unknown> | undefined)?.defaultNow && !init[f.id]) {
+        const d = new Date()
+        init[f.id] = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      }
+    }
+    return init
+  })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const durationLinks = useMemo<DurationLink[]>(() => {
@@ -733,6 +746,19 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
           <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
           <Input
             type="datetime-local"
+            value={(value as string) ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+      )
+
+    case 'time':
+      return (
+        <div className="space-y-1">
+          <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+          <Input
+            type="time"
             value={(value as string) ?? ''}
             onChange={(e) => onChange(e.target.value)}
           />
