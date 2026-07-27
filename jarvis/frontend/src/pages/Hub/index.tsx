@@ -77,12 +77,13 @@ const EditProfileDialogLazy = lazy(() => import('@/pages/Profile/index').then(m 
 const FormRendererLazy = lazy(() => import('@/components/forms/FormRenderer').then(m => ({ default: m.FormRenderer })))
 const Digest = lazy(() => import('@/pages/Digest'))
 const VoucherRedeem = lazy(() => import('@/pages/Public/VoucherRedeem'))
+const HubDrivingPanel = lazy(() => import('@/pages/Hub/HubDrivingPanel'))
 
 const VOUCHER_FORM_SLUG = 'voucher-issuance'
 
 // ─── Types ──────────────────────────────────────────────
 
-type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals'
+type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals' | 'driving'
 type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits' | 'sincron'
 
 // Labels for the HR sub-sections — used both by the tile grid and the breadcrumb.
@@ -100,15 +101,18 @@ interface AppTile {
   icon: React.ElementType
   bg: string
   fg: string
+  /** When set, the tile navigates to a route instead of opening an in-page panel. */
+  route?: string
 }
 
-const appTiles: (AppTile & { shortLabel?: string })[] = [
+export const appTiles: (AppTile & { shortLabel?: string })[] = [
   { key: 'invoices', label: 'My Invoices', shortLabel: 'Invoices', icon: FileText, bg: 'bg-blue-600', fg: 'text-white' },
   { key: 'approvals', label: 'Approvals', icon: FileCheck, bg: 'bg-orange-600', fg: 'text-white' },
   { key: 'hr', label: 'HR', icon: Activity, bg: 'bg-emerald-600', fg: 'text-white' },
   { key: 'vouchers', label: 'Vouchers', icon: Ticket, bg: 'bg-amber-500', fg: 'text-white' },
   { key: 'forms', label: 'Forms', icon: ClipboardList, bg: 'bg-violet-600', fg: 'text-white' },
   { key: 'chat', label: 'Connecteams', shortLabel: 'Chat', icon: MessageSquare, bg: 'bg-pink-600', fg: 'text-white' },
+  { key: 'driving', label: 'Driving Sessions', shortLabel: 'Driving', icon: Car, bg: 'bg-teal-600', fg: 'text-white' },
 ]
 
 const MONTHS_RO = ['Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie', 'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie']
@@ -220,16 +224,18 @@ export default function Hub() {
     hr: -1, // always show — sub-tabs auto-hide when empty
     vouchers: Array.isArray(vouchersData) ? vouchersData.length : -1,
     forms: (formsCountData?.forms ?? []).length || -1,
+    driving: -1, // always show when allowed
   }
 
   const hasVouchersPerm = !authUser?.permissions || (authUser.permissions['vouchers.profile.view'] ?? true)
   const visibleTiles = useMemo(() => {
     return appTiles.filter((t) => {
       if (t.key === 'vouchers' && !hasVouchersPerm) return false
+      if (t.key === 'driving' && !authUser?.can_access_carpark) return false
       if (t.key !== 'approvals' && tileCounts[t.key] === 0) return false
       return true
     })
-  }, [hasVouchersPerm, tileCounts])
+  }, [hasVouchersPerm, tileCounts, authUser?.can_access_carpark])
 
   return (
     <div className="space-y-6 pb-16 sm:pb-0">
@@ -357,6 +363,11 @@ export default function Hub() {
           {activeModule === 'chat' && (
             <Suspense fallback={<div className="py-8 text-center text-muted-foreground text-sm">Loading...</div>}>
               <Digest readOnly />
+            </Suspense>
+          )}
+          {activeModule === 'driving' && (
+            <Suspense fallback={<div className="py-8 text-center text-muted-foreground text-sm">Loading...</div>}>
+              <HubDrivingPanel />
             </Suspense>
           )}
 
