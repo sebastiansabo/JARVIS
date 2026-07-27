@@ -37,6 +37,7 @@ import { InvoireForm } from '@/components/forms/InvoireForm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -1622,11 +1623,14 @@ function HubLeaveApprovalsContent() {
   })
   const items = data?.data ?? []
 
+  const [rejectingId, setRejectingId] = useState<number | null>(null)
+  const [rejectComment, setRejectComment] = useState('')
   const decide = useMutation({
-    mutationFn: ({ requestId, decision }: { requestId: number; decision: 'approved' | 'rejected' }) =>
-      connecteamApi.decideLeaveApproval(requestId, decision),
+    mutationFn: ({ requestId, decision, comment }: { requestId: number; decision: 'approved' | 'rejected'; comment?: string }) =>
+      connecteamApi.decideLeaveApproval(requestId, decision, comment),
     onSuccess: (_res, vars) => {
       toast.success(vars.decision === 'approved' ? 'Învoire aprobată.' : 'Învoire respinsă.')
+      setRejectingId(null); setRejectComment('')
       queryClient.invalidateQueries({ queryKey: ['hub', 'leave-approvals'] })
       queryClient.invalidateQueries({ queryKey: ['hub', 'leave-permits'] })
     },
@@ -1647,27 +1651,43 @@ function HubLeaveApprovalsContent() {
               : '—'
             const busy = decide.isPending && decide.variables?.requestId === it.request_id
             return (
-              <div key={it.request_id} className="px-4 py-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium">{it.requester_name || 'Angajat'}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {dateStr} · {it.leave_start_time?.slice(0, 5) || '—'}–{it.leave_end_time?.slice(0, 5) || '—'} · {it.leave_reason || 'Învoire'}
-                    </p>
+              <div key={it.request_id} className="px-4 py-4 space-y-3">
+                <p className="text-base leading-relaxed">
+                  <span className="font-semibold">{it.requester_name || 'Angajat'}</span>
+                  {' — '}
+                  <span className="text-muted-foreground">
+                    {dateStr} · {it.leave_start_time?.slice(0, 5) || '—'}–{it.leave_end_time?.slice(0, 5) || '—'}{it.leave_hours != null ? ` (${it.leave_hours}h)` : ''} · Motiv: {it.leave_reason || 'Învoire'}
+                  </span>
+                </p>
+                {rejectingId === it.request_id ? (
+                  <div className="space-y-2">
+                    <Textarea autoFocus rows={2} value={rejectComment}
+                      onChange={(e) => setRejectComment(e.target.value)}
+                      placeholder="Motivul respingerii (opțional)" className="text-base" />
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1 h-11 text-base"
+                        disabled={busy} onClick={() => { setRejectingId(null); setRejectComment('') }}>
+                        Anulează
+                      </Button>
+                      <Button className="flex-1 h-11 text-base bg-rose-600 hover:bg-rose-700 text-white"
+                        disabled={busy} onClick={() => decide.mutate({ requestId: it.request_id, decision: 'rejected', comment: rejectComment })}>
+                        Confirmă respingerea
+                      </Button>
+                    </div>
                   </div>
-                  <span className="text-sm font-semibold tabular-nums shrink-0">{it.leave_hours != null ? `${it.leave_hours}h` : ''}</span>
-                </div>
+                ) : (
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline"
-                    className="flex-1 border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-400"
-                    disabled={busy} onClick={() => decide.mutate({ requestId: it.request_id, decision: 'rejected' })}>
+                  <Button variant="outline"
+                    className="flex-1 h-11 text-base border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-400"
+                    disabled={busy} onClick={() => { setRejectingId(it.request_id); setRejectComment('') }}>
                     Respinge
                   </Button>
-                  <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  <Button className="flex-1 h-11 text-base bg-emerald-600 hover:bg-emerald-700 text-white"
                     disabled={busy} onClick={() => decide.mutate({ requestId: it.request_id, decision: 'approved' })}>
                     Aprobă
                   </Button>
                 </div>
+                )}
               </div>
             )
           })}
