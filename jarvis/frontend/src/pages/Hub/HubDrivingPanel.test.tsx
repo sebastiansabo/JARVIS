@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -8,13 +8,15 @@ vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: {
   getBrands: vi.fn().mockResolvedValue({ brands: [] }),
 } }))
 vi.mock('@/pages/FoiParcurs/index', () => ({
-  SessionsTab: ({ companyId }: { companyId: number }) => <div>sessions:{companyId}</div>,
+  SessionsTab: ({ companyId, onReturn }: { companyId: number; onReturn?: (id: number) => void }) => (
+    <div>sessions:{companyId}<button onClick={() => onReturn?.(11)}>mock-retur</button></div>
+  ),
 }))
 vi.mock('@/pages/FoiParcurs/CalendarTab', () => ({
   CalendarTab: ({ companyId }: { companyId: number }) => <div>calendar:{companyId}</div>,
 }))
 vi.mock('@/pages/FoiParcurs/TestDriveForm', () => ({ default: ({ onCancel }: { onCancel: () => void }) => <div>form<button onClick={onCancel}>x</button></div> }))
-vi.mock('@/pages/FoiParcurs/TestDriveReturn', () => ({ default: () => <div>return</div> }))
+vi.mock('@/pages/FoiParcurs/TestDriveReturn', () => ({ default: ({ id }: { id: number }) => <div>return-overlay:{id}</div> }))
 
 import HubDrivingPanel from './HubDrivingPanel'
 
@@ -24,6 +26,11 @@ function wrap(ui: React.ReactNode) {
 }
 
 describe('HubDrivingPanel', () => {
+  // usePersistedState reads/writes localStorage (e.g. the active tab), which
+  // otherwise leaks across tests in this file — reset so each test starts
+  // from the real defaults (tab='sessions', companyId=0).
+  beforeEach(() => localStorage.clear())
+
   it('renders the Sessions tab by default and can open the New overlay', async () => {
     wrap(<HubDrivingPanel />)
     expect(await screen.findByText(/sessions:11/)).toBeInTheDocument()
@@ -41,5 +48,11 @@ describe('HubDrivingPanel', () => {
     // in this project to fall back on).
     fireEvent.mouseDown(await screen.findByRole('tab', { name: /calendar/i }))
     expect(await screen.findByText(/calendar:11/)).toBeInTheDocument()
+  })
+
+  it('opens the return overlay when a session row requests return', async () => {
+    wrap(<HubDrivingPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /mock-retur/i }))
+    expect(await screen.findByText('return-overlay:11')).toBeInTheDocument()
   })
 })

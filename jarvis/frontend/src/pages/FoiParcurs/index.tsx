@@ -1009,7 +1009,7 @@ function ExportDialog({
   )
 }
 
-export function SessionsTab({ companyId, brand }: { companyId: number; brand: string }) {
+export function SessionsTab({ companyId, brand, onActivate, onReturn }: { companyId: number; brand: string; onActivate?: (id: number) => void; onReturn?: (id: number) => void }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
@@ -1318,7 +1318,7 @@ export function SessionsTab({ companyId, brand }: { companyId: number; brand: st
                           )}
                           {c.status === 'PLANNED' && (
                             <>
-                              <Button variant="outline" size="sm" onClick={() => navigate(`/app/foi-parcurs/test-drive?activate=${c.id}`)}>
+                              <Button variant="outline" size="sm" onClick={() => onActivate ? onActivate(c.id) : navigate(`/app/foi-parcurs/test-drive?activate=${c.id}`)}>
                                 <PlayCircle className="mr-1 h-3.5 w-3.5" />
                                 Începe sesiunea
                               </Button>
@@ -1346,13 +1346,23 @@ export function SessionsTab({ companyId, brand }: { companyId: number; brand: st
                             </a>
                           )}
                           {(ss.key === 'driving' || ss.key === 'intarziat') && (
-                            <Link
-                              to={`/app/foi-parcurs/test-drive/${c.id}/return`}
-                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <RotateCcw className="h-3.5 w-3.5" /> Retur
-                            </Link>
+                            onReturn ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                                onClick={(e) => { e.stopPropagation(); onReturn(c.id) }}
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" /> Retur
+                              </button>
+                            ) : (
+                              <Link
+                                to={`/app/foi-parcurs/test-drive/${c.id}/return`}
+                                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" /> Retur
+                              </Link>
+                            )
                           )}
                           {isAdmin && c.route_type === 'TD' && ss.key !== 'nealocat' && ss.key !== 'planificat' && (
                             <Button
