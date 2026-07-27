@@ -198,6 +198,28 @@ def get_employee_submissions(user_id):
         return safe_error_response(e)
 
 
+@connecteam_bp.route('/api/submissions/leave-permit', methods=['POST'])
+@api_login_required
+def create_leave_permit():
+    """Create a Bilet de Invoire from the code-defined Invoire module form.
+
+    Fields are owned by the frontend (no DB form schema); the submission is
+    stored as a form_submission and routed through the approval engine
+    (primary manager + optional second approver, either approves).
+    """
+    from forms.services.form_service import FormService, UserContext
+    data = request.get_json(silent=True) or {}
+    answers = data.get('answers') if isinstance(data.get('answers'), dict) else data
+    user = UserContext(user_id=current_user.id, company=getattr(current_user, 'company', None))
+    try:
+        result = FormService().submit_leave_permit(answers, user)
+    except Exception as e:
+        return safe_error_response(e)
+    if not result.success:
+        return jsonify({'success': False, 'error': result.error}), result.status_code
+    return jsonify({'success': True, 'data': result.data}), result.status_code
+
+
 @connecteam_bp.route('/api/submissions/recent', methods=['GET'])
 @admin_required
 def get_recent_submissions():

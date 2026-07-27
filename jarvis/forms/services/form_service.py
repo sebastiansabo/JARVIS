@@ -304,6 +304,63 @@ class FormService:
             response_data['hook_data'] = hook_data
         return ServiceResult(success=True, data=response_data, status_code=201)
 
+    LEAVE_FORM_SLUG = 'bilet-de-invoire'
+    LEAVE_REQUIRED_FIELDS = ('f_bi_leave_date', 'f_bi_start_time', 'f_bi_end_time', 'f_bi_reason')
+
+    @staticmethod
+    def _leave_permit_missing_fields(answers):
+        """Required fields absent/blank from a code-defined Invoire submission."""
+        a = answers or {}
+        return [k for k in FormService.LEAVE_REQUIRED_FIELDS if not str(a.get(k, '')).strip()]
+
+    def submit_leave_permit(self, answers: Dict, user: UserContext) -> ServiceResult:
+        """Create a Bilet de Invoire from the code-defined Invoire module form.
+
+        Unlike submit_internal, this does NOT depend on the DB form schema — the
+        fields are owned by the frontend Invoire module, so it never strips or
+        validates against a stored schema. It is still stored as a form_submission
+        and routed through the approval engine (primary + optional second approver
+        via answers['f_bi_second_approver']).
+        """
+        form = self.form_repo.get_by_slug(self.LEAVE_FORM_SLUG)
+        if not form:
+            return ServiceResult(success=False, error='Leave form not configured', status_code=404)
+
+        missing = self._leave_permit_missing_fields(answers)
+        if missing:
+            return ServiceResult(success=False, error=f'Missing required fields: {", ".join(missing)}',
+                                 status_code=400)
+
+        answers = _sanitize_answers(answers)
+        submission_id = self.submission_repo.create(
+            form_id=form['id'],
+            form_version=form.get('version', 1),
+            answers=answers,
+            form_schema_snapshot=[],
+            source='web_internal',
+            company_id=form.get('company_id'),
+            respondent_user_id=user.user_id,
+        )
+
+        if form.get('requires_approval'):
+            self._trigger_approval(form, submission_id, {
+                'user_id': user.user_id,
+                'explicit_approver_id': answers.get('f_bi_approver') or None,
+            })
+            # _trigger_approval's own linking is unreliable (engine.submit returns
+            # the full request row, not {'request_id': ...}), so link the request
+            # to the submission explicitly — the Hub resolves the real approver
+            # from the decision record via this id.
+            try:
+                from core.approvals.repositories import RequestRepository
+                req_id = RequestRepository().get_pending_for_entity('form_submission', submission_id)
+                if req_id:
+                    self.submission_repo.set_approval_request(submission_id, req_id)
+            except Exception as e:
+                logger.warning('Could not link approval request for leave permit %s: %s', submission_id, e)
+
+        return ServiceResult(success=True, data={'submission_id': submission_id}, status_code=201)
+
     # ============== Post-Submit Hooks ==============
 
     def _run_post_submit_hooks(self, form: dict, submission_id: int, answers: Dict, user_id: Optional[int]) -> Optional[Dict]:
