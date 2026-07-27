@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/stores/authStore'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import type { User } from './types'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -121,18 +122,16 @@ function V2Guard({ permKey, children }: { permKey: string; children: React.React
   return <>{children}</>
 }
 
-/** Block Viewers from accessing any route outside Hub — redirect to /app/hub. */
-function ViewerBlock({ children }: { children: React.ReactNode }) {
-  const user = useAuthStore((s) => s.user)
-  if (user?.role_name === 'Viewer') return <Navigate to="/app/hub" replace />
-  return <>{children}</>
-}
-
-/** Redirect /app to hub for Viewers, dashboard for everyone else. */
+/** Redirect /app to hub for Viewers, dashboard for everyone else.
+ *  Mobile-browser logins land on the Hub (the mobile-first view) for every role. */
 function DefaultRedirect() {
   const user = useAuthStore((s) => s.user)
   const isLoading = useAuthStore((s) => s.isLoading)
+  const isMobile = useIsMobile()
   if (isLoading) return <PageLoader />
+  if (isMobile) {
+    return <Navigate to="hub" replace />
+  }
   if (user?.role_name === 'Viewer') {
     return <Navigate to="hub" replace />
   }
@@ -168,7 +167,7 @@ export default function App() {
       <Route path="/app" element={<Layout />}>
         <Route index element={<DefaultRedirect />} />
         <Route path="dashboard" element={<DashboardOrRedirect />} />
-        <Route path="profile" element={<ViewerBlock><SuspensePage><Profile /></SuspensePage></ViewerBlock>} />
+        <Route path="profile" element={<SuspensePage><Profile /></SuspensePage>} />
         <Route path="hub" element={<SuspensePage><Hub /></SuspensePage>} />
 
         {/* Accounting — requires can_access_accounting */}
