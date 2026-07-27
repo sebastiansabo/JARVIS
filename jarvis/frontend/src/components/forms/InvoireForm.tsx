@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, Check, ChevronsUpDown } from 'lucide-react'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { connecteamApi } from '@/api/connecteam'
 import { fmtDuration, durationLinkError, type DurationLink } from './FormRenderer'
 
@@ -51,6 +53,16 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
     staleTime: 10 * 60_000,
   })
   const approvers = approversRes?.data ?? []
+
+  const [approverOpen, setApproverOpen] = useState(false)
+  const [approverSearch, setApproverSearch] = useState('')
+  const approverInputRef = useRef<HTMLInputElement>(null)
+  const selectedApproverName = secondApprover
+    ? (approvers.find((a) => String(a.id) === secondApprover)?.name ?? 'Doar managerul direct')
+    : 'Doar managerul direct'
+  const filteredApprovers = approverSearch.trim()
+    ? approvers.filter((a) => a.name.toLowerCase().includes(approverSearch.toLowerCase()))
+    : approvers
 
   const s = parseHM(start), e = parseHM(end)
   const durationStr = s !== null && e !== null && e > s ? fmtDuration(e - s) : ''
@@ -144,13 +156,39 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
           <div className="space-y-1">
             <Label>Al doilea aprobator (opțional)</Label>
             <p className="text-xs text-muted-foreground">Oricare dintre aprobatori poate aproba.</p>
-            <Select value={secondApprover || 'none'} onValueChange={(v) => setSecondApprover(v === 'none' ? '' : v)}>
-              <SelectTrigger><SelectValue placeholder="Doar managerul direct" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Doar managerul direct</SelectItem>
-                {approvers.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <Popover open={approverOpen} onOpenChange={(v) => { setApproverOpen(v); if (v) setTimeout(() => approverInputRef.current?.focus(), 0) }}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" aria-expanded={approverOpen} className="w-full justify-between font-normal">
+                  {selectedApproverName}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <div className="p-2 border-b">
+                  <Input ref={approverInputRef} placeholder="Caută utilizator..." value={approverSearch}
+                    onChange={(ev) => setApproverSearch(ev.target.value)} className="h-8" />
+                </div>
+                <div className="max-h-60 overflow-y-auto p-1">
+                  <button type="button"
+                    className={cn('flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer', !secondApprover && 'bg-accent')}
+                    onClick={() => { setSecondApprover(''); setApproverOpen(false); setApproverSearch('') }}>
+                    <Check className={cn('mr-2 h-4 w-4', secondApprover ? 'opacity-0' : 'opacity-100')} />
+                    Doar managerul direct
+                  </button>
+                  {filteredApprovers.map((a) => (
+                    <button type="button" key={a.id}
+                      className={cn('flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer', secondApprover === String(a.id) && 'bg-accent')}
+                      onClick={() => { setSecondApprover(String(a.id)); setApproverOpen(false); setApproverSearch('') }}>
+                      <Check className={cn('mr-2 h-4 w-4', secondApprover === String(a.id) ? 'opacity-100' : 'opacity-0')} />
+                      {a.name}
+                    </button>
+                  ))}
+                  {filteredApprovers.length === 0 && (
+                    <p className="px-2 py-2 text-sm text-muted-foreground">Niciun rezultat</p>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="space-y-1">
