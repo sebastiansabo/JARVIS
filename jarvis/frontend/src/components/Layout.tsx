@@ -115,12 +115,13 @@ export default function Layout() {
                 <Bot className="h-[22px] w-[22px] text-primary translate-y-[1px]" />
               </div>
             )}
-            <span
-              className="text-[17px] font-semibold tracking-tight leading-none"
+            <Link
+              to="/app"
+              className="text-[17px] font-semibold tracking-tight leading-none transition-opacity hover:opacity-80"
               title="Just AutoWorld's Real Very Intelligent System — crafted by Seba"
             >
               JARVIS
-            </span>
+            </Link>
           </div>
           <div className="flex items-center">
             {isViewer && (
