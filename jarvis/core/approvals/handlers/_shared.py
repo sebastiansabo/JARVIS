@@ -108,6 +108,13 @@ def _entity_link(entity_type, entity_id):
     return '/app/approvals'
 
 
+def _approval_deeplink(entity_type, entity_id, request_id):
+    """Notification target: form submissions route through the app-or-web landing."""
+    if entity_type == 'form_submission' and request_id:
+        return f'/go/approval/{request_id}'
+    return _entity_link(entity_type, entity_id)
+
+
 def _get_requester(request_id):
     """Get the user_id of who submitted the request."""
     try:

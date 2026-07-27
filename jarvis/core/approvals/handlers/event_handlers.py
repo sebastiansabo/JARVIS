@@ -3,10 +3,10 @@ import logging
 from ._shared import (
     _get_request, _get_requester, _get_current_step_approvers,
     _get_user_email, _get_users_email, _send_approval_email, _approval_email_base,
-    _entity_link, _notify_form_submission_users, _APP_BASE_URL,
+    _entity_link, _approval_deeplink, _notify_form_submission_users, _APP_BASE_URL,
 )
 from . import entity_form, entity_marketing, entity_invoice, entity_carpark, entity_leave_permit_conversion, entity_voucher
-from core.notifications.notify import notify_user, notify_users
+from core.notifications.notify import notify_user, notify_users, notify_with_push
 
 logger = logging.getLogger('jarvis.core.approvals.handlers')
 
@@ -31,17 +31,20 @@ def _on_submitted(payload):
 
     approver_ids = _get_current_step_approvers(request_id)
     if approver_ids:
-        notify_users(
+        # Form submissions route through the app-or-web landing; the push data
+        # carries the deep-link so tapping the notification opens the app.
+        link = _approval_deeplink(entity_type, entity_id, request_id)
+        notify_with_push(
             approver_ids,
             f'New approval request: {project_title}',
-            message=f'Please review and approve.',
-            link=_entity_link(entity_type, entity_id),
+            message='Please review and approve.',
+            link=link,
             entity_type=entity_type,
             entity_id=entity_id,
             type='approval',
+            push_data={'type': 'approval', 'request_id': str(request_id), 'link': link},
         )
         # Email approvers
-        link = _entity_link(entity_type, entity_id)
         for name, email in _get_users_email(approver_ids):
             body = f"""
             <p>Buna ziua {name},</p>
