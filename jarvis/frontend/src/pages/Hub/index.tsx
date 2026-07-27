@@ -28,7 +28,9 @@ import {
   ScanLine,
   Users,
   Target,
+  FileSpreadsheet,
 } from 'lucide-react'
+import { SincronTimesheetView } from '@/components/shared/SincronTimesheetView'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -77,7 +79,7 @@ const VOUCHER_FORM_SLUG = 'voucher-issuance'
 // ─── Types ──────────────────────────────────────────────
 
 type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals'
-type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits'
+type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits' | 'sincron'
 
 interface AppTile {
   key: NonNullable<ActiveModule>
@@ -1130,11 +1132,15 @@ function HubHrPanel({ userId }: { userId: number }) {
   const lpCount = (lpData?.data ?? []).length
 
   const dataTiles = useMemo(() => {
-    const t: { key: HrSubTab; label: string; icon: React.ElementType; bg: string; count: number }[] = []
-    if (pontajeCount > 0) t.push({ key: 'pontaje', label: 'Pontaje', icon: Fingerprint, bg: 'bg-blue-600', count: pontajeCount })
+    // Per-employee sections are always shown as tiles (empty state inside if no data
+    // that month). Team Pontaje is manager-only, so it stays data-gated.
+    const t: { key: HrSubTab; label: string; icon: React.ElementType; bg: string; count: number }[] = [
+      { key: 'pontaje', label: 'Pontaje', icon: Fingerprint, bg: 'bg-blue-600', count: pontajeCount },
+      { key: 'sincron', label: 'Sincron', icon: FileSpreadsheet, bg: 'bg-cyan-600', count: 0 },
+      { key: 'bonuses', label: 'Bonusuri', icon: Gift, bg: 'bg-amber-500', count: bonusesCount },
+      { key: 'leave-permits', label: 'Învoiri', icon: ClipboardList, bg: 'bg-rose-600', count: lpCount },
+    ]
     if (teamCount > 0) t.push({ key: 'team-pontaje', label: 'Team Pontaje', icon: Users, bg: 'bg-teal-600', count: teamCount })
-    if (bonusesCount > 0) t.push({ key: 'bonuses', label: 'Bonusuri', icon: Gift, bg: 'bg-amber-500', count: bonusesCount })
-    if (lpCount > 0) t.push({ key: 'leave-permits', label: 'Învoiri', icon: ClipboardList, bg: 'bg-rose-600', count: lpCount })
     return t
   }, [pontajeCount, teamCount, bonusesCount, lpCount])
 
@@ -1158,6 +1164,7 @@ function HubHrPanel({ userId }: { userId: number }) {
         </button>
         {monthNav}
         {activeSection === 'pontaje' && <HubPontajeContent year={year} month={month} />}
+        {activeSection === 'sincron' && <SincronTimesheetView year={year} month={month} />}
         {activeSection === 'team-pontaje' && <HubTeamPontajeContent year={year} month={month} />}
         {activeSection === 'bonuses' && <HubBonusesContent year={year} month={month} />}
         {activeSection === 'leave-permits' && <HubLeavePermitsContent userId={userId} year={year} month={month} />}
