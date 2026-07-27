@@ -308,9 +308,10 @@ export default function Hub() {
       {/* ── Active Module (inline content) ── */}
       {activeModule !== null ? (
         <div className="space-y-4 pb-20">
-          {/* Breadcrumb nav (skip for chat — has its own header). For HR we append
-              the open sub-section (read from `hrtab`) so it reads Hub › HR › Pontaje. */}
-          {activeModule !== 'chat' && (() => {
+          {/* Breadcrumb nav — shown for every module (Digest/Connecteams runs
+              readOnly here, so it has no header of its own). For HR we append the
+              open sub-section (read from `hrtab`) so it reads Hub › HR › Pontaje. */}
+          {(() => {
             const moduleLabel = visibleTiles.find(t => t.key === activeModule)?.label || 'Section'
             const hrtab = activeModule === 'hr' ? (searchParams.get('hrtab') as HrSubTab | null) : null
             const clearHrtab = () => setSearchParams((prev) => { const p = new URLSearchParams(prev); p.delete('hrtab'); return p }, { replace: true })
