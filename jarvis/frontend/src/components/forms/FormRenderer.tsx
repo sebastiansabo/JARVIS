@@ -58,6 +58,13 @@ export function fmtDuration(mins: number): string {
   return `${m} min`
 }
 
+// Format an absolute minute-of-day as "HH:MM", clamped to a single day
+// (00:00–23:59) so a default interval never wraps past midnight.
+function minsToHM(mins: number): string {
+  const t = Math.max(0, Math.min(1439, Math.round(mins)))
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
+}
+
 // Apply every duration link touched by a change to `fieldId`, mutating `next`.
 // The duration field is read-only: a valid start/end interval fills it; an
 // invalid or still-incomplete one clears it (so the required check blocks submit).
@@ -65,9 +72,19 @@ export function applyDurationLinks(links: DurationLink[], next: Record<string, u
   for (const link of links) {
     if (fieldId === link.start || fieldId === link.end) {
       const s = parseHM(next[link.start]), e = parseHM(next[link.end])
-      next[link.hours] = s !== null && e !== null && e >= s ? fmtDuration(e - s) : ''
+      next[link.hours] = s !== null && e !== null && e > s ? fmtDuration(e - s) : ''
     }
   }
+}
+
+// Live validation for a duration link: returns a message when both times are
+// filled but the end is not strictly after the start (e.g. start later than
+// end), or null when the interval is valid or still incomplete.
+export function durationLinkError(link: DurationLink, answers: Record<string, unknown>): string | null {
+  const s = parseHM(answers[link.start]), e = parseHM(answers[link.end])
+  if (s === null || e === null) return null
+  if (e <= s) return 'Ora de sfârșit trebuie să fie după ora de început.'
+  return null
 }
 
 function isFieldVisible(field: FormField, answers: Record<string, unknown>): boolean {
@@ -97,6 +114,19 @@ export function FormRenderer({ schema, onSubmit, submitting, submitLabel = 'Subm
         init[f.id] = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
       }
     }
+    // Duration fields open with a default interval (config.defaultMinutes, else
+    // 60 min): end = start + interval (clamped to end-of-day), duration computed.
+    for (const f of schema) {
+      const d = (f.config as Record<string, unknown> | undefined)?.duration as { start?: string; end?: string } | undefined
+      if (!d?.start || !d?.end) continue
+      const s = parseHM(init[d.start])
+      if (s === null || (init[d.end] !== undefined && init[d.end] !== '')) continue
+      const mins = Number((f.config as Record<string, unknown> | undefined)?.defaultMinutes) || 60
+      const end = Math.min(s + mins, 1439)
+      if (end <= s) continue
+      init[d.end] = minsToHM(end)
+      init[f.id] = fmtDuration(end - s)
+    }
     return init
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -109,6 +139,24 @@ export function FormRenderer({ schema, onSubmit, submitting, submitLabel = 'Subm
     }
     return out
   }, [schema])
+
+  // Reactive interval validity: an invalid start/end (end not after start) shows
+  // a message under the end-time field immediately — not only on submit — and
+  // marks the start, end and duration fields invalid so they highlight red.
+  const { durationMessages, invalidFields } = useMemo(() => {
+    const durationMessages: Record<string, string> = {}
+    const invalidFields = new Set<string>()
+    for (const link of durationLinks) {
+      const err = durationLinkError(link, answers)
+      if (err) {
+        durationMessages[link.end] = err
+        invalidFields.add(link.start)
+        invalidFields.add(link.end)
+        invalidFields.add(link.hours)
+      }
+    }
+    return { durationMessages, invalidFields }
+  }, [durationLinks, answers])
 
   const setValue = (fieldId: string, value: unknown) => {
     setAnswers((prev) => {
@@ -165,7 +213,8 @@ export function FormRenderer({ schema, onSubmit, submitting, submitLabel = 'Subm
             key={field.id}
             field={field}
             value={answers[field.id]}
-            error={errors[field.id]}
+            error={durationMessages[field.id] ?? errors[field.id]}
+            invalid={invalidFields.has(field.id)}
             onChange={(val) => setValue(field.id, val)}
             onSetField={setValue}
             allAnswers={answers}
@@ -183,6 +232,7 @@ interface FieldProps {
   field: FormField
   value: unknown
   error?: string
+  invalid?: boolean
   onChange: (value: unknown) => void
   onSetField?: (fieldId: string, value: unknown) => void
   allAnswers?: Record<string, unknown>
@@ -657,7 +707,7 @@ function FpClientField({ field, value, error, onChange }: FieldProps) {
   )
 }
 
-function FieldComponent({ field, value, error, onChange, onSetField, allAnswers }: FieldProps) {
+function FieldComponent({ field, value, error, invalid, onChange, onSetField, allAnswers }: FieldProps) {
   const cfg = field.config as Record<string, unknown> | undefined
   // A duration-linked field (config.duration) is auto-computed from its start/end
   // times, so it renders read-only regardless of its declared type.
@@ -672,6 +722,7 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
           value={(value as string) ?? ''}
           readOnly
           tabIndex={-1}
+          aria-invalid={error || invalid ? true : undefined}
           placeholder={field.placeholder}
           className="bg-muted/50 text-muted-foreground cursor-default"
         />
@@ -782,6 +833,7 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
             type="time"
             value={(value as string) ?? ''}
             onChange={(e) => onChange(e.target.value)}
+            aria-invalid={error || invalid ? true : undefined}
           />
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>

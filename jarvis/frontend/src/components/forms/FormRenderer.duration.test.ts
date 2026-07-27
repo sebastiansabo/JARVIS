@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyDurationLinks, fmtDuration, type DurationLink } from './FormRenderer'
+import { applyDurationLinks, durationLinkError, fmtDuration, type DurationLink } from './FormRenderer'
 
 // The Bilet de Invoire "Durată" field is a read-only duration link: it shows the
 // span between the start and end time fields, formatted time-wise ("2 h 30 min").
@@ -47,5 +47,31 @@ describe('applyDurationLinks', () => {
     const next: Record<string, unknown> = { start: '09:00', end: '' }
     applyDurationLinks(LINK, next, 'start')
     expect(next.hours).toBe('')
+  })
+
+  it('clears the duration for a zero-length interval (end equals start)', () => {
+    const next: Record<string, unknown> = { start: '09:00', end: '09:00' }
+    applyDurationLinks(LINK, next, 'end')
+    expect(next.hours).toBe('')
+  })
+})
+
+describe('durationLinkError', () => {
+  it('flags a start later than the end', () => {
+    expect(durationLinkError(LINK[0], { start: '19:00', end: '12:20' }))
+      .toBe('Ora de sfârșit trebuie să fie după ora de început.')
+  })
+
+  it('flags a zero-length interval', () => {
+    expect(durationLinkError(LINK[0], { start: '09:00', end: '09:00' }))
+      .toBe('Ora de sfârșit trebuie să fie după ora de început.')
+  })
+
+  it('passes a valid interval', () => {
+    expect(durationLinkError(LINK[0], { start: '09:00', end: '11:00' })).toBeNull()
+  })
+
+  it('does not flag an incomplete interval', () => {
+    expect(durationLinkError(LINK[0], { start: '09:00', end: '' })).toBeNull()
   })
 })

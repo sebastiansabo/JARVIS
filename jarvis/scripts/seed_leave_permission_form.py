@@ -71,9 +71,10 @@ FORM_SCHEMA = [
         'placeholder': '—',
         'order': 6,
         # Read-only, auto-computed from the start/end times; shown time-wise
-        # ("2 h 30 min").
+        # ("2 h 30 min"). Opens with a default 1-hour interval.
         'config': {
             'duration': {'start': 'f_bi_start_time', 'end': 'f_bi_end_time'},
+            'defaultMinutes': 60,
             'hint': 'Se calculează automat din interval.',
         },
     },

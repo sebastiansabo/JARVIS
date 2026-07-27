@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, fireEvent } from '@testing-library/react'
+import { render, fireEvent, screen } from '@testing-library/react'
 import { FormRenderer } from './FormRenderer'
 import type { FormField } from '@/types/forms'
 
@@ -17,8 +17,10 @@ const SCHEMA: FormField[] = [
   },
 ]
 
-function renderForm() {
-  const { container } = render(<FormRenderer schema={SCHEMA} onSubmit={() => {}} />)
+function renderForm(defaultValues?: Record<string, unknown>) {
+  const { container } = render(
+    <FormRenderer schema={SCHEMA} onSubmit={() => {}} defaultValues={defaultValues} />,
+  )
   const times = Array.from(container.querySelectorAll('input[type="time"]')) as HTMLInputElement[]
   const duration = container.querySelector('input[type="text"]') as HTMLInputElement
   return { start: times[0], end: times[1], duration }
@@ -51,5 +53,47 @@ describe('FormRenderer duration field', () => {
     fireEvent.change(start, { target: { value: '11:00' } })
     fireEvent.change(end, { target: { value: '09:00' } })
     expect(duration.value).toBe('')
+  })
+
+  it('opens with a default 1-hour interval', () => {
+    const { start, end, duration } = renderForm({ f_bi_start_time: '09:00' })
+    expect(start.value).toBe('09:00')
+    expect(end.value).toBe('10:00')
+    expect(duration.value).toBe('1 h')
+  })
+
+  it('shows an error when the start is later than the end', () => {
+    const { start, end, duration } = renderForm()
+    fireEvent.change(start, { target: { value: '19:00' } })
+    fireEvent.change(end, { target: { value: '12:20' } })
+    expect(screen.getByText('Ora de sfârșit trebuie să fie după ora de început.')).toBeInTheDocument()
+    expect(duration.value).toBe('')
+  })
+
+  it('marks both time fields invalid (red border) for a bad interval', () => {
+    const { start, end } = renderForm()
+    fireEvent.change(start, { target: { value: '13:58' } })
+    fireEvent.change(end, { target: { value: '12:30' } })
+    expect(start.getAttribute('aria-invalid')).toBe('true')
+    expect(end.getAttribute('aria-invalid')).toBe('true')
+  })
+
+  it('drops the red highlight once the interval is valid', () => {
+    const { start, end } = renderForm()
+    fireEvent.change(start, { target: { value: '13:58' } })
+    fireEvent.change(end, { target: { value: '12:30' } })
+    expect(start.getAttribute('aria-invalid')).toBe('true')
+    fireEvent.change(end, { target: { value: '15:00' } })
+    expect(start.getAttribute('aria-invalid')).toBeNull()
+    expect(end.getAttribute('aria-invalid')).toBeNull()
+  })
+
+  it('drops the error once the interval becomes valid', () => {
+    const { start, end } = renderForm()
+    fireEvent.change(start, { target: { value: '19:00' } })
+    fireEvent.change(end, { target: { value: '12:20' } })
+    expect(screen.queryByText('Ora de sfârșit trebuie să fie după ora de început.')).toBeInTheDocument()
+    fireEvent.change(end, { target: { value: '20:30' } })
+    expect(screen.queryByText('Ora de sfârșit trebuie să fie după ora de început.')).not.toBeInTheDocument()
   })
 })
