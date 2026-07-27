@@ -27,6 +27,7 @@ import {
   Check,
   ScanLine,
   Users,
+  Target,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -80,17 +81,23 @@ type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | '
 type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits'
 
 interface AppTile {
-  key: NonNullable<ActiveModule>
+  key: NonNullable<ActiveModule> | 'evaluations'
   label: string
   icon: React.ElementType
   bg: string
   fg: string
+  shortLabel?: string
+  /** Route-launcher tiles navigate here instead of opening an in-page panel. */
+  route?: string
 }
 
-const appTiles: (AppTile & { shortLabel?: string })[] = [
+const appTiles: AppTile[] = [
   { key: 'invoices', label: 'My Invoices', shortLabel: 'Invoices', icon: FileText, bg: 'bg-blue-600', fg: 'text-white' },
   { key: 'approvals', label: 'Approvals', icon: FileCheck, bg: 'bg-orange-600', fg: 'text-white' },
   { key: 'hr', label: 'HR', icon: Activity, bg: 'bg-emerald-600', fg: 'text-white' },
+  // 360 is a company-wide program (everyone may be assigned reviews + gets their own
+  // report), so it's a top-level route-launcher tile — the Administrare tab self-gates to HR.
+  { key: 'evaluations', label: 'Evaluări 360', shortLabel: '360', icon: Target, bg: 'bg-indigo-600', fg: 'text-white', route: '/app/evaluations' },
   { key: 'vouchers', label: 'Vouchers', icon: Ticket, bg: 'bg-amber-500', fg: 'text-white' },
   { key: 'forms', label: 'Forms', icon: ClipboardList, bg: 'bg-violet-600', fg: 'text-white' },
   { key: 'chat', label: 'Connecteams', shortLabel: 'Chat', icon: MessageSquare, bg: 'bg-pink-600', fg: 'text-white' },
@@ -210,11 +217,18 @@ export default function Hub() {
   const hasVouchersPerm = !authUser?.permissions || (authUser.permissions['vouchers.profile.view'] ?? true)
   const visibleTiles = useMemo(() => {
     return appTiles.filter((t) => {
+      if (t.route) return true   // route-launcher tiles (e.g. 360) are always shown
       if (t.key === 'vouchers' && !hasVouchersPerm) return false
       if (t.key !== 'approvals' && tileCounts[t.key] === 0) return false
       return true
     })
   }, [hasVouchersPerm, tileCounts])
+
+  // Route-launcher tiles navigate; panel tiles open the in-page module.
+  const handleTileSelect = useCallback((tile: AppTile) => {
+    if (tile.route) { navigate(tile.route); return }
+    setActiveModule(tile.key as ActiveModule)
+  }, [navigate, setActiveModule])
 
   return (
     <div className="space-y-6 pb-16 sm:pb-0">
@@ -327,7 +341,7 @@ export default function Hub() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           {/* Left 2/3 */}
           <div className="lg:col-span-2 space-y-6">
-            <HubAppsCard tiles={visibleTiles} onSelect={setActiveModule} />
+            <HubAppsCard tiles={visibleTiles} onSelect={handleTileSelect} />
 
             {/* Marketing Events & Bonuses Card */}
             <HubBonusCard />
@@ -423,7 +437,7 @@ export default function Hub() {
                 <button
                   key={tile.key}
                   type="button"
-                  onClick={() => setActiveModule(tile.key)}
+                  onClick={() => handleTileSelect(tile)}
                   className={cn('flex items-center justify-center h-9 rounded-full transition-all',
                     isActive
                       ? 'bg-zinc-700 dark:bg-zinc-600 text-white px-4 gap-1.5'
@@ -444,7 +458,7 @@ export default function Hub() {
 
 // ─── Apps Card (max 6, expandable) ──────────────────────
 
-function HubAppsCard({ tiles, onSelect }: { tiles: AppTile[]; onSelect: (key: NonNullable<ActiveModule>) => void }) {
+function HubAppsCard({ tiles, onSelect }: { tiles: AppTile[]; onSelect: (tile: AppTile) => void }) {
   const [showAll, setShowAll] = useState(false)
   const limit = 6
   const hasMore = tiles.length > limit
@@ -475,7 +489,7 @@ function HubAppsCard({ tiles, onSelect }: { tiles: AppTile[]; onSelect: (key: No
               <button
                 key={tile.key}
                 type="button"
-                onClick={() => onSelect(tile.key)}
+                onClick={() => onSelect(tile)}
                 className="flex flex-col items-center gap-2 w-20 group"
               >
                 <div className={cn('flex h-16 w-16 sm:h-14 sm:w-14 items-center justify-center rounded-xl shadow-sm transition-transform group-hover:scale-105 group-hover:shadow-md', tile.bg, tile.fg)}>
