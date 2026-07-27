@@ -37,6 +37,7 @@ import { InvoireForm } from '@/components/forms/InvoireForm'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -82,7 +83,7 @@ const VOUCHER_FORM_SLUG = 'voucher-issuance'
 // ─── Types ──────────────────────────────────────────────
 
 type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals'
-type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits' | 'leave-approvals' | 'sincron'
+type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits' | 'sincron'
 
 // Labels for the HR sub-sections — used both by the tile grid and the breadcrumb.
 const HR_SECTION_LABELS: Record<HrSubTab, string> = {
@@ -90,7 +91,6 @@ const HR_SECTION_LABELS: Record<HrSubTab, string> = {
   'team-pontaje': 'Team Pontaje',
   bonuses: 'Bonusuri',
   'leave-permits': 'Învoiri',
-  'leave-approvals': 'De aprobat',
   sincron: 'Sincron',
 }
 
@@ -1196,18 +1196,10 @@ function HubHrPanel({ userId }: { userId: number }) {
     queryKey: ['hub', 'team-pontaje', start, end],
     queryFn: () => profileApi.getTeamPontaje({ mode: 'range', start, end }),
   })
-  // Leave approvals awaiting me — only non-empty for approvers (managers).
-  const { data: leaveApprovalsData } = useQuery({
-    queryKey: ['hub', 'leave-approvals'],
-    queryFn: () => connecteamApi.getPendingLeaveApprovals(),
-  })
-
   const pontajeCount = (pontajeData?.history ?? []).length
-  const isManager = !!teamData?.is_manager
-  const teamCount = isManager ? (teamData?.summary?.length ?? 0) : 0
+  const teamCount = teamData?.is_manager ? (teamData?.summary?.length ?? 0) : 0
   const bonusesCount = (bonusesData?.bonuses ?? []).length
   const lpCount = (lpData?.data ?? []).length
-  const leaveApprovalsCount = (leaveApprovalsData?.data ?? []).length
 
   const dataTiles = useMemo(() => {
     // Per-employee sections are always shown as tiles (empty state inside if no data
@@ -1219,11 +1211,8 @@ function HubHrPanel({ userId }: { userId: number }) {
       { key: 'leave-permits', label: 'Învoiri', icon: ClipboardList, bg: 'bg-rose-600', count: lpCount },
     ]
     if (teamCount > 0) t.push({ key: 'team-pontaje', label: 'Team Pontaje', icon: Users, bg: 'bg-teal-600', count: teamCount })
-    // Managers always get "De aprobat" (their approval queue); also shown to any
-    // ad-hoc approver who currently has a request waiting.
-    if (isManager || leaveApprovalsCount > 0) t.push({ key: 'leave-approvals', label: 'De aprobat', icon: FileCheck, bg: 'bg-indigo-600', count: leaveApprovalsCount })
     return t
-  }, [pontajeCount, teamCount, bonusesCount, lpCount, isManager, leaveApprovalsCount])
+  }, [pontajeCount, teamCount, bonusesCount, lpCount])
 
   const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 12) { setMonth(1); setYear(y => y + 1) } else setMonth(m => m + 1) }
@@ -1242,13 +1231,12 @@ function HubHrPanel({ userId }: { userId: number }) {
       <div className="space-y-4">
         {/* Back navigation is provided by the Hub breadcrumb above this panel. */}
         {activeSection === 'pontaje' && <PunchCard />}
-        {activeSection !== 'leave-approvals' && monthNav}
+        {monthNav}
         {activeSection === 'pontaje' && <HubPontajeContent year={year} month={month} />}
         {activeSection === 'sincron' && <SincronTimesheetView year={year} month={month} />}
         {activeSection === 'team-pontaje' && <HubTeamPontajeContent year={year} month={month} />}
         {activeSection === 'bonuses' && <HubBonusesContent year={year} month={month} />}
         {activeSection === 'leave-permits' && <HubLeavePermitsContent userId={userId} year={year} month={month} />}
-        {activeSection === 'leave-approvals' && <HubLeaveApprovalsContent />}
       </div>
     )
   }
@@ -1500,10 +1488,34 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
   })
   const submissions: ConnecteamSubmission[] = data?.data ?? []
 
+  // "De aprobat" is a tab inside the Învoiri zone, shown only when the user is an
+  // approver with pending requests. Falls back to "mine" when nothing's pending.
+  const [view, setView] = useState<'mine' | 'approve'>('mine')
+  const { data: approvalsData } = useQuery({
+    queryKey: ['hub', 'leave-approvals'],
+    queryFn: () => connecteamApi.getPendingLeaveApprovals(),
+  })
+  const approvalsCount = approvalsData?.data?.length ?? 0
+  const activeView = approvalsCount === 0 ? 'mine' : view
+
   return (
     <div className="space-y-3">
+      {approvalsCount > 0 && (
+        <div className="flex gap-1 rounded-lg bg-muted p-1">
+          <button type="button" onClick={() => setView('mine')}
+            className={cn('flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors', activeView === 'mine' ? 'bg-background shadow-sm' : 'text-muted-foreground')}>
+            Cererile mele
+          </button>
+          <button type="button" onClick={() => setView('approve')}
+            className={cn('flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors', activeView === 'approve' ? 'bg-background shadow-sm' : 'text-muted-foreground')}>
+            De aprobat ({approvalsCount})
+          </button>
+        </div>
+      )}
 
-      {isLoading ? (
+      {activeView === 'approve' ? (
+        <HubLeaveApprovalsContent />
+      ) : isLoading ? (
         <Skeleton className="h-48 w-full" />
       ) : submissions.length === 0 ? (
         <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">Nicio învoire pentru această lună. Apasă <span className="font-medium text-foreground">+ Învoire</span> pentru a completa un bilet.</CardContent></Card>
@@ -1526,6 +1538,12 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
                       <div>
                         <p className="text-sm font-medium">{dateStr}</p>
                         <p className="text-[10px] text-muted-foreground">{s.leave_reason || 'Leave permit'}</p>
+                        {s.status?.toLowerCase() === 'approved' && s.approved_by && (
+                          <p className="text-[10px] text-emerald-600 dark:text-emerald-400">Aprobat de {s.approved_by}</p>
+                        )}
+                        {s.status?.toLowerCase() !== 'approved' && s.status?.toLowerCase() !== 'rejected' && s.pending_approvers?.length ? (
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400">Așteaptă: {s.pending_approvers.join(', ')}</p>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2 shrink-0 ml-3">
                         <LeaveStatusBadge status={s.status} />
@@ -1605,11 +1623,14 @@ function HubLeaveApprovalsContent() {
   })
   const items = data?.data ?? []
 
+  const [rejectingId, setRejectingId] = useState<number | null>(null)
+  const [rejectComment, setRejectComment] = useState('')
   const decide = useMutation({
-    mutationFn: ({ requestId, decision }: { requestId: number; decision: 'approved' | 'rejected' }) =>
-      connecteamApi.decideLeaveApproval(requestId, decision),
+    mutationFn: ({ requestId, decision, comment }: { requestId: number; decision: 'approved' | 'rejected'; comment?: string }) =>
+      connecteamApi.decideLeaveApproval(requestId, decision, comment),
     onSuccess: (_res, vars) => {
       toast.success(vars.decision === 'approved' ? 'Învoire aprobată.' : 'Învoire respinsă.')
+      setRejectingId(null); setRejectComment('')
       queryClient.invalidateQueries({ queryKey: ['hub', 'leave-approvals'] })
       queryClient.invalidateQueries({ queryKey: ['hub', 'leave-permits'] })
     },
@@ -1630,27 +1651,45 @@ function HubLeaveApprovalsContent() {
               : '—'
             const busy = decide.isPending && decide.variables?.requestId === it.request_id
             return (
-              <div key={it.request_id} className="px-4 py-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium">{it.requester_name || 'Angajat'}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {dateStr} · {it.leave_start_time?.slice(0, 5) || '—'}–{it.leave_end_time?.slice(0, 5) || '—'} · {it.leave_reason || 'Învoire'}
+              <div key={it.request_id} className="px-4 py-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-base font-semibold">{it.requester_name || 'Angajat'}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {dateStr} · {it.leave_start_time?.slice(0, 5) || '—'}–{it.leave_end_time?.slice(0, 5) || '—'} · Motiv: {it.leave_reason || 'Învoire'}
                     </p>
                   </div>
-                  <span className="text-sm font-semibold tabular-nums shrink-0">{it.leave_hours != null ? `${it.leave_hours}h` : ''}</span>
+                  <span className="text-base font-semibold tabular-nums shrink-0">{it.leave_hours != null ? `${it.leave_hours}h` : ''}</span>
                 </div>
+                {rejectingId === it.request_id ? (
+                  <div className="space-y-2">
+                    <Textarea autoFocus rows={2} value={rejectComment}
+                      onChange={(e) => setRejectComment(e.target.value)}
+                      placeholder="Motivul respingerii (opțional)" className="text-base" />
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1 h-11 text-base"
+                        disabled={busy} onClick={() => { setRejectingId(null); setRejectComment('') }}>
+                        Anulează
+                      </Button>
+                      <Button className="flex-1 h-11 text-base bg-rose-600 hover:bg-rose-700 text-white"
+                        disabled={busy} onClick={() => decide.mutate({ requestId: it.request_id, decision: 'rejected', comment: rejectComment })}>
+                        Confirmă respingerea
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline"
-                    className="flex-1 border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-400"
-                    disabled={busy} onClick={() => decide.mutate({ requestId: it.request_id, decision: 'rejected' })}>
+                  <Button variant="outline"
+                    className="flex-1 h-11 text-base border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-400"
+                    disabled={busy} onClick={() => { setRejectingId(it.request_id); setRejectComment('') }}>
                     Respinge
                   </Button>
-                  <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  <Button className="flex-1 h-11 text-base bg-emerald-600 hover:bg-emerald-700 text-white"
                     disabled={busy} onClick={() => decide.mutate({ requestId: it.request_id, decision: 'approved' })}>
                     Aprobă
                   </Button>
                 </div>
+                )}
               </div>
             )
           })}
