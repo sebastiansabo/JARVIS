@@ -65,15 +65,16 @@ FORM_SCHEMA = [
     },
     {
         'id': 'f_bi_hours',
-        'type': 'number',
-        'label': 'Număr de ore',
+        'type': 'text',
+        'label': 'Durată',
         'required': True,
-        'placeholder': 'Ex: 2',
+        'placeholder': '—',
         'order': 6,
-        # Auto-computed from the start/end times; editing it shifts the end time.
+        # Read-only, auto-computed from the start/end times; shown time-wise
+        # ("2 h 30 min").
         'config': {
             'duration': {'start': 'f_bi_start_time', 'end': 'f_bi_end_time'},
-            'hint': 'Se calculează automat din interval. Dacă îl editezi, ora de sfârșit se ajustează.',
+            'hint': 'Se calculează automat din interval.',
         },
     },
     {

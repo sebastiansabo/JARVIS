@@ -29,10 +29,11 @@ interface FormRendererProps {
   defaultValues?: Record<string, unknown>
 }
 
-// ── Duration link (config-driven, e.g. start/end time ↔ hours) ──
-// A field may declare `config.duration = { start, end }`: its value is the number
-// of hours between the two time fields. Editing a time recomputes the hours;
-// editing the hours recomputes the end time. Times are "HH:MM" strings.
+// ── Duration link (config-driven, e.g. a start/end time pair → a duration) ──
+// A field may declare `config.duration = { start, end }`: its value is the span
+// between the two time fields, formatted time-wise ("2 h 30 min"). It is
+// auto-computed and read-only — editing a time recomputes it. Times are
+// "HH:MM" strings.
 export type DurationLink = { hours: string; start: string; end: string }
 
 function parseHM(v: unknown): number | null {
@@ -47,25 +48,24 @@ function parseHM(v: unknown): number | null {
   return h * 60 + min
 }
 
-function fmtHM(mins: number): string {
-  const t = ((Math.round(mins) % 1440) + 1440) % 1440
-  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
-}
-
-function hoursToStr(mins: number): string {
-  return String(Math.round((mins / 60) * 100) / 100)
+// Format a whole-minute span time-wise, dropping a zero part:
+// "50 min", "2 h", "2 h 30 min".
+export function fmtDuration(mins: number): string {
+  const total = Math.max(0, Math.round(mins))
+  const h = Math.floor(total / 60), m = total % 60
+  if (h && m) return `${h} h ${m} min`
+  if (h) return `${h} h`
+  return `${m} min`
 }
 
 // Apply every duration link touched by a change to `fieldId`, mutating `next`.
+// The duration field is read-only: a valid start/end interval fills it; an
+// invalid or still-incomplete one clears it (so the required check blocks submit).
 export function applyDurationLinks(links: DurationLink[], next: Record<string, unknown>, fieldId: string): void {
   for (const link of links) {
     if (fieldId === link.start || fieldId === link.end) {
       const s = parseHM(next[link.start]), e = parseHM(next[link.end])
-      if (s !== null && e !== null && e >= s) next[link.hours] = hoursToStr(e - s)
-    } else if (fieldId === link.hours) {
-      const s = parseHM(next[link.start])
-      const h = parseFloat(String(next[link.hours]))
-      if (s !== null && !Number.isNaN(h) && h >= 0) next[link.end] = fmtHM(s + h * 60)
+      next[link.hours] = s !== null && e !== null && e >= s ? fmtDuration(e - s) : ''
     }
   }
 }
@@ -658,6 +658,27 @@ function FpClientField({ field, value, error, onChange }: FieldProps) {
 }
 
 function FieldComponent({ field, value, error, onChange, onSetField, allAnswers }: FieldProps) {
+  const cfg = field.config as Record<string, unknown> | undefined
+  // A duration-linked field (config.duration) is auto-computed from its start/end
+  // times, so it renders read-only regardless of its declared type.
+  if (cfg?.duration) {
+    const hint = cfg.hint as string | undefined
+    return (
+      <div className="space-y-1">
+        <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        <Input
+          type="text"
+          value={(value as string) ?? ''}
+          readOnly
+          tabIndex={-1}
+          placeholder={field.placeholder}
+          className="bg-muted/50 text-muted-foreground cursor-default"
+        />
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+    )
+  }
   switch (field.type) {
     case 'heading':
       return <h2 className="text-lg font-bold pt-2">{field.label}</h2>
