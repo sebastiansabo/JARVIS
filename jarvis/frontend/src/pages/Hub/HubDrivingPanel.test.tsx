@@ -15,7 +15,11 @@ vi.mock('@/pages/FoiParcurs/index', () => ({
 vi.mock('@/pages/FoiParcurs/CalendarTab', () => ({
   CalendarTab: ({ companyId }: { companyId: number }) => <div>calendar:{companyId}</div>,
 }))
-vi.mock('@/pages/FoiParcurs/TestDriveForm', () => ({ default: ({ onCancel }: { onCancel: () => void }) => <div>form<button onClick={onCancel}>x</button></div> }))
+vi.mock('@/pages/FoiParcurs/TestDriveForm', () => ({
+  default: ({ onDone, onCancel }: { onDone?: (c: unknown) => void; onCancel: () => void }) => (
+    <div>form<button onClick={onCancel}>x</button><button onClick={() => onDone?.({ id: 1 })}>done</button></div>
+  ),
+}))
 vi.mock('@/pages/FoiParcurs/TestDriveReturn', () => ({ default: ({ id }: { id: number }) => <div>return-overlay:{id}</div> }))
 
 import HubDrivingPanel from './HubDrivingPanel'
@@ -54,5 +58,24 @@ describe('HubDrivingPanel', () => {
     wrap(<HubDrivingPanel />)
     fireEvent.click(await screen.findByRole('button', { name: /mock-retur/i }))
     expect(await screen.findByText('return-overlay:11')).toBeInTheDocument()
+  })
+
+  it('invalidates the sessions list and closes the overlay when the New form completes', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const spy = vi.spyOn(qc, 'invalidateQueries')
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><HubDrivingPanel /></MemoryRouter>
+      </QueryClientProvider>
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /driving session nou/i }))
+    expect(screen.getByText('form')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /done/i }))
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['foi-contracts-all'] })
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['odometer-history'] })
+    expect(screen.queryByText('form')).not.toBeInTheDocument()
   })
 })

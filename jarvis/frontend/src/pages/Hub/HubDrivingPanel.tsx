@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -19,6 +19,7 @@ export default function HubDrivingPanel() {
   const [companyId, setCompanyId] = usePersistedState<number>('hub-driving-company', 0)
   const [brand, setBrand] = usePersistedState<string>('hub-driving-brand', '')
   const [overlay, setOverlay] = useState<Overlay>(null)
+  const queryClient = useQueryClient()
 
   const { data: companiesData } = useQuery({ queryKey: ['fp-companies'], queryFn: () => foiParcursApi.getCompanies() })
   const companies = companiesData?.companies ?? []
@@ -33,6 +34,11 @@ export default function HubDrivingPanel() {
   }, [brandsData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const closeOverlay = () => setOverlay(null)
+  const handleOverlayDone = () => {
+    queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+    queryClient.invalidateQueries({ queryKey: ['odometer-history'] })
+    setOverlay(null)
+  }
 
   return (
     <div className="space-y-4">
@@ -77,13 +83,13 @@ export default function HubDrivingPanel() {
             <Button variant="ghost" size="icon" onClick={closeOverlay}><X className="h-5 w-5" /></Button>
           </div>
           {overlay.kind === 'new' && (
-            <TestDriveForm embedded initialCompanyId={companyId || undefined} onDone={closeOverlay} onCancel={closeOverlay} />
+            <TestDriveForm embedded initialCompanyId={companyId || undefined} onDone={handleOverlayDone} onCancel={closeOverlay} />
           )}
           {overlay.kind === 'activate' && (
-            <TestDriveForm embedded activateId={overlay.id} onDone={closeOverlay} onCancel={closeOverlay} />
+            <TestDriveForm embedded activateId={overlay.id} onDone={handleOverlayDone} onCancel={closeOverlay} />
           )}
           {overlay.kind === 'return' && (
-            <TestDriveReturn embedded id={overlay.id} onDone={closeOverlay} onCancel={closeOverlay} />
+            <TestDriveReturn embedded id={overlay.id} onDone={handleOverlayDone} onCancel={closeOverlay} />
           )}
         </div>
       )}
