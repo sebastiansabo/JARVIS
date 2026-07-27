@@ -1,12 +1,12 @@
 import { Outlet, Link } from 'react-router-dom'
-import { Menu, MapPin, LogOut, Bot } from 'lucide-react'
+import { Menu, MapPin, UserCircle, Bot } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { fetchColumnDefaults } from '@/lib/columnDefaults'
 import { Sidebar } from './Sidebar'
 import { ThemeToggle } from './ThemeToggle'
-import { AiAgentWidget, AiAgentPanel } from './AiAgentWidget'
 import { NotificationBell } from './NotificationBell'
+import { AiAgentWidget, AiAgentPanel } from './AiAgentWidget'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -132,14 +132,15 @@ export default function Layout() {
                 <div className="h-[44px] w-[44px] flex items-center justify-center">
                   <ThemeToggle />
                 </div>
-                <a href="/logout" className="h-[44px] w-[44px] flex items-center justify-center text-muted-foreground">
-                  <LogOut className="h-[22px] w-[22px]" />
-                </a>
               </>
             )}
             <div className="h-[44px] w-[44px] flex items-center justify-center">
               <NotificationBell />
             </div>
+            {/* My Account (logout lives inside the account page). */}
+            <Link to="/app/profile" className="h-[44px] w-[44px] flex items-center justify-center text-muted-foreground">
+              <UserCircle className="h-[22px] w-[22px]" />
+            </Link>
           </div>
         </header>
 
