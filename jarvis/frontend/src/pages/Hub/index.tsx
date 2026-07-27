@@ -1203,7 +1203,8 @@ function HubHrPanel({ userId }: { userId: number }) {
   })
 
   const pontajeCount = (pontajeData?.history ?? []).length
-  const teamCount = teamData?.is_manager ? (teamData.summary?.length ?? 0) : 0
+  const isManager = !!teamData?.is_manager
+  const teamCount = isManager ? (teamData?.summary?.length ?? 0) : 0
   const bonusesCount = (bonusesData?.bonuses ?? []).length
   const lpCount = (lpData?.data ?? []).length
   const leaveApprovalsCount = (leaveApprovalsData?.data ?? []).length
@@ -1218,10 +1219,11 @@ function HubHrPanel({ userId }: { userId: number }) {
       { key: 'leave-permits', label: 'Învoiri', icon: ClipboardList, bg: 'bg-rose-600', count: lpCount },
     ]
     if (teamCount > 0) t.push({ key: 'team-pontaje', label: 'Team Pontaje', icon: Users, bg: 'bg-teal-600', count: teamCount })
-    // Approver-only: show "De aprobat" when leave requests await my decision.
-    if (leaveApprovalsCount > 0) t.push({ key: 'leave-approvals', label: 'De aprobat', icon: FileCheck, bg: 'bg-indigo-600', count: leaveApprovalsCount })
+    // Managers always get "De aprobat" (their approval queue); also shown to any
+    // ad-hoc approver who currently has a request waiting.
+    if (isManager || leaveApprovalsCount > 0) t.push({ key: 'leave-approvals', label: 'De aprobat', icon: FileCheck, bg: 'bg-indigo-600', count: leaveApprovalsCount })
     return t
-  }, [pontajeCount, teamCount, bonusesCount, lpCount, leaveApprovalsCount])
+  }, [pontajeCount, teamCount, bonusesCount, lpCount, isManager, leaveApprovalsCount])
 
   const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 12) { setMonth(1); setYear(y => y + 1) } else setMonth(m => m + 1) }
