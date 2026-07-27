@@ -1248,7 +1248,7 @@ function HubHrPanel({ userId }: { userId: number }) {
         <HrTile key={t.key} label={t.label} icon={t.icon} bg={t.bg} count={t.count} onClick={() => openSection(t.key)} />
       ))}
       {/* Company-wide 360 — always available */}
-      <HrTile label="Evaluări 360" icon={Target} bg="bg-indigo-600" onClick={() => navigate('/app/evaluations')} />
+      <HrTile label="Evaluări 360" icon={Target} bg="bg-indigo-600" onClick={() => navigate('/app/evaluations?ctx=hub')} />
     </div>
   )
 }

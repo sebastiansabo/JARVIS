@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Target, ChevronLeft, ChevronRight, Clock, Send, CheckCircle2, HelpCircle } from 'lucide-react'
@@ -39,6 +39,10 @@ export default function Evaluations() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [view, setView] = useState<'todo' | 'reports' | 'team' | 'cycles' | 'help'>('todo')
   const isHrAdmin = useAuthStore((s) => s.user?.can_access_hr) ?? false
+  // Opened from the Hub (personal view) → hide the HR "Administrare" tab even for
+  // HR admins; the full admin set stays in the HR-sidebar entry.
+  const [searchParams] = useSearchParams()
+  const isHubContext = searchParams.get('ctx') === 'hub'
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -61,7 +65,7 @@ export default function Evaluations() {
                 <TabsTrigger value="todo">De completat</TabsTrigger>
                 <TabsTrigger value="reports">Rapoartele mele</TabsTrigger>
                 <TabsTrigger value="team">Echipa</TabsTrigger>
-                {isHrAdmin && <TabsTrigger value="cycles">Administrare</TabsTrigger>}
+                {isHrAdmin && !isHubContext && <TabsTrigger value="cycles">Administrare</TabsTrigger>}
                 <TabsTrigger value="help"><HelpCircle className="mr-1 h-3.5 w-3.5" />Ajutor</TabsTrigger>
               </TabsList>
             </Tabs>
