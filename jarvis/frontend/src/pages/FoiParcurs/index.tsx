@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
@@ -1009,7 +1009,7 @@ function ExportDialog({
   )
 }
 
-function SessionsTab({ companyId, brand }: { companyId: number; brand: string }) {
+export function SessionsTab({ companyId, brand }: { companyId: number; brand: string }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
@@ -1344,6 +1344,15 @@ function SessionsTab({ companyId, brand }: { companyId: number; brand: string })
                                 <FileText className="h-4 w-4" />
                               </Button>
                             </a>
+                          )}
+                          {(ss.key === 'driving' || ss.key === 'intarziat') && (
+                            <Link
+                              to={`/app/foi-parcurs/test-drive/${c.id}/return`}
+                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" /> Retur
+                            </Link>
                           )}
                           {isAdmin && c.route_type === 'TD' && ss.key !== 'nealocat' && ss.key !== 'planificat' && (
                             <Button

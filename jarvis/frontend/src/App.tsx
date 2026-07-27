@@ -59,6 +59,7 @@ const Ticketing = lazy(() => import('./pages/Ticketing'))
 const TicketDetail = lazy(() => import('./pages/Ticketing/TicketDetail'))
 const FoiParcurs = lazy(() => import('./pages/FoiParcurs'))
 const TestDriveForm = lazy(() => import('./pages/FoiParcurs/TestDriveForm'))
+const TestDriveReturn = lazy(() => import('./pages/FoiParcurs/TestDriveReturn'))
 const ServiceCatalog = lazy(() => import('./pages/Service/Catalog'))
 const Hub = lazy(() => import('./pages/Hub'))
 
@@ -240,6 +241,7 @@ export default function App() {
         {/* Foi de Parcurs — requires can_access_carpark */}
         <Route path="foi-parcurs" element={<Guard flag="can_access_carpark"><SuspensePage><FoiParcurs /></SuspensePage></Guard>} />
         <Route path="foi-parcurs/test-drive" element={<Guard flag="can_access_carpark"><SuspensePage><TestDriveForm /></SuspensePage></Guard>} />
+        <Route path="foi-parcurs/test-drive/:id/return" element={<Guard flag="can_access_carpark"><SuspensePage><TestDriveReturn /></SuspensePage></Guard>} />
 
         {/* Service Catalog */}
         <Route path="service/catalog" element={<SuspensePage><ServiceCatalog /></SuspensePage>} />
