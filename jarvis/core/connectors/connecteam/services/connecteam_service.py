@@ -6,6 +6,7 @@ Manual-import only (Connecteam plan does not include API/webhooks).
 import hashlib
 import json
 import logging
+import re
 from datetime import datetime, date, time
 
 from ..repositories.connecteam_repository import ConnecteamRepository
@@ -30,6 +31,30 @@ def _safe_float(val):
         return float(val)
     except (ValueError, TypeError):
         return None
+
+
+def _hm_to_minutes(val):
+    """Parse an 'HH:MM' string to minutes since midnight, or None."""
+    if not isinstance(val, str):
+        return None
+    m = re.match(r'^(\d{1,2}):(\d{2})$', val.strip())
+    if not m:
+        return None
+    h, mi = int(m.group(1)), int(m.group(2))
+    if h > 23 or mi > 59:
+        return None
+    return h * 60 + mi
+
+
+def _leave_hours(answers):
+    """Leave duration in hours. Preferred: computed from the start/end times, so
+    it is robust to the display-formatted duration field ("1 h", "50 min").
+    Falls back to a legacy numeric f_bi_hours (older/Connecteam submissions)."""
+    s = _hm_to_minutes(answers.get('f_bi_start_time'))
+    e = _hm_to_minutes(answers.get('f_bi_end_time'))
+    if s is not None and e is not None and e > s:
+        return round((e - s) / 60, 2)
+    return _safe_float(answers.get('f_bi_hours'))
 
 
 def _name_to_fake_ct_id(name: str) -> int:
@@ -368,7 +393,7 @@ class ConnecteamService:
                     'leave_date': answers.get('f_bi_leave_date'),
                     'leave_start_time': answers.get('f_bi_start_time'),
                     'leave_end_time': answers.get('f_bi_end_time'),
-                    'leave_hours': _safe_float(answers.get('f_bi_hours')),
+                    'leave_hours': _leave_hours(answers),
                     'leave_reason': answers.get('f_bi_reason'),
                     'leave_destination': answers.get('f_bi_destination'),
                     'approved_by': answers.get('f_bi_approved_by'),
@@ -469,10 +494,10 @@ class ConnecteamService:
                     'leave_date': answers.get('f_bi_leave_date'),
                     'leave_start_time': answers.get('f_bi_start_time'),
                     'leave_end_time': answers.get('f_bi_end_time'),
-                    'leave_hours': _safe_float(answers.get('f_bi_hours')),
+                    'leave_hours': _leave_hours(answers),
                     'leave_reason': answers.get('f_bi_reason'),
                     'leave_destination': answers.get('f_bi_destination'),
-                    'approved_by': None,
+                    'approved_by': answers.get('f_bi_approved_by'),
                     'status': r.get('status', 'new'),
                     'event_type': 'jarvis_form',
                     'entry_num': None,

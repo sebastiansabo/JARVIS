@@ -324,11 +324,24 @@ export default function Hub() {
               { label: moduleLabel, onClick: hrtab ? clearHrtab : undefined },
             ]
             if (hrtab && HR_SECTION_LABELS[hrtab]) trail.push({ label: HR_SECTION_LABELS[hrtab] })
+            // On the Învoiri sub-section, surface the "+ Învoire" action inline in
+            // the breadcrumb. It opens the form via a URL flag so the modal can
+            // stay co-located with the list panel that refetches on submit.
+            const action = hrtab === 'leave-permits' ? (
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setSearchParams((prev) => { const p = new URLSearchParams(prev); p.set('newinvoire', '1'); return p })}
+              >
+                <Plus className="h-4 w-4" /> Învoire
+              </Button>
+            ) : undefined
             return (
               <HubCrumb
                 trail={trail}
                 onBack={hrtab ? clearHrtab : () => setActiveModule(null)}
                 count={hrtab ? undefined : tileCounts[activeModule]}
+                action={action}
               />
             )
           })()}
@@ -1120,10 +1133,11 @@ function HubPagination({
 // Shared Hub breadcrumb: inline back chevron + a clickable trail. The last
 // crumb is the current location (bold, non-clickable). Used by every module
 // panel so navigation is consistent across the Hub.
-function HubCrumb({ trail, onBack, count }: {
+function HubCrumb({ trail, onBack, count, action }: {
   trail: { label: string; onClick?: () => void }[]
   onBack: () => void
   count?: number
+  action?: React.ReactNode
 }) {
   return (
     <div className="flex items-center gap-1.5 text-sm">
@@ -1144,6 +1158,7 @@ function HubCrumb({ trail, onBack, count }: {
         )
       })}
       {count != null && count > 0 && <span className="text-sm font-normal text-muted-foreground">({count})</span>}
+      {action && <div className="ml-auto shrink-0">{action}</div>}
     </div>
   )
 }
@@ -1447,12 +1462,27 @@ function HubBonusesContent({ year, month }: { year: number; month: number }) {
   )
 }
 
+// A leave submission's approval status → a small coloured badge.
+function LeaveStatusBadge({ status }: { status: string }) {
+  const s = (status || '').toLowerCase()
+  const ui = s === 'approved'
+    ? { label: 'Aprobat', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' }
+    : s === 'rejected'
+      ? { label: 'Respins', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-400' }
+      : { label: 'În așteptare', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400' }
+  return <Badge className={cn('text-[9px] border-transparent', ui.cls)}>{ui.label}</Badge>
+}
+
 function HubLeavePermitsContent({ userId, year, month }: { userId: number; year: number; month: number }) {
-  // All hooks stay above any early return — the query, the row-expand state, and
-  // the "new invoire" form state must be called unconditionally on every render.
+  // All hooks stay above any early return — the query and the row-expand state
+  // must be called unconditionally on every render.
   const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [showForm, setShowForm] = useState(false)
+  // The "+ Învoire" trigger lives in the breadcrumb; it flags the form open via
+  // the URL so the modal can stay here with the list that refetches on submit.
+  const showForm = searchParams.get('newinvoire') === '1'
+  const closeForm = () => setSearchParams((prev) => { const p = new URLSearchParams(prev); p.delete('newinvoire'); return p }, { replace: true })
 
   const { data, isLoading } = useQuery({
     queryKey: ['hub', 'leave-permits', userId, year, month],
@@ -1460,17 +1490,8 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
   })
   const submissions: ConnecteamSubmission[] = data?.data ?? []
 
-  const newInvoireBtn = (
-    <Button size="sm" onClick={() => setShowForm(true)} className="gap-1.5">
-      <Plus className="h-4 w-4" /> Învoire
-    </Button>
-  )
-
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
-        {newInvoireBtn}
-      </div>
 
       {isLoading ? (
         <Skeleton className="h-48 w-full" />
@@ -1497,6 +1518,7 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
                         <p className="text-[10px] text-muted-foreground">{s.leave_reason || 'Leave permit'}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 ml-3">
+                        <LeaveStatusBadge status={s.status} />
                         {s.source === 'jarvis' && <Badge variant="secondary" className="text-[9px]">JARVIS</Badge>}
                         <span className="text-sm font-semibold tabular-nums">{s.leave_hours != null ? `${s.leave_hours}h` : '—'}</span>
                       </div>
@@ -1510,6 +1532,10 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
                         <div>
                           <span className="text-muted-foreground">Source</span>
                           <p className="font-medium">{s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Aprobat de</span>
+                          <p className="font-medium">{s.approved_by || (s.status?.toLowerCase() === 'approved' ? '—' : 'În așteptare')}</p>
                         </div>
                         {s.leave_reason && (
                           <div className="col-span-2">
@@ -1531,11 +1557,12 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
         <HubFormModal
           slug={LEAVE_FORM_SLUG}
           name="Bilet de Invoire"
-          onClose={() => setShowForm(false)}
+          onClose={closeForm}
           onSubmitted={() => {
             // The new submission lands in form_submissions and the connecteam
             // service merges it into this list — refetch so it appears.
             queryClient.invalidateQueries({ queryKey: ['hub', 'leave-permits'] })
+            closeForm()
           }}
         />
       )}
