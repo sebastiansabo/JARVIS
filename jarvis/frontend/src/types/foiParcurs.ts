@@ -351,6 +351,20 @@ export interface ActivateTestDrivePayload {
   departure_damage?: TdDamageItem[]
 }
 
+// ── Return (completion) Test Drive Payload — PUT /test-drive/:id/return.
+// Fuel level uses the return gauge set (Gol…Plin), distinct from departure. ──
+export type ReturnFuelLevel = 'Gol' | '1/4' | '1/2' | '3/4' | 'Plin'
+
+export interface ReturnTestDrivePayload {
+  km_end: number
+  fuel_gauge_end_level: ReturnFuelLevel
+  return_damage: TdDamageItem[]
+  return_notes?: string
+  advisor_signature: string
+  client_signature: string
+  return_datetime?: string
+}
+
 // ── Vehicle conflict — GET /vehicles/{vin}/conflicts response row. Matches
 // FoiParcursRepository.find_conflicts()'s SELECT list exactly (no td_status —
 // the backend query doesn't derive/select it). ──
