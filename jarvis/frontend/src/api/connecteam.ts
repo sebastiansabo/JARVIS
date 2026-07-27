@@ -89,6 +89,12 @@ export const connecteamApi = {
       `${BASE}/submissions/employee/${userId}${qs({ year, month })}`
     ),
 
+  // Create a Bilet de Invoire via the code-defined Invoire module form.
+  submitLeavePermit: (answers: Record<string, unknown>) =>
+    api.post<{ success: boolean; data: { submission_id: number } }>(
+      `${BASE}/submissions/leave-permit`, { answers }
+    ),
+
   getApprovers: (scope?: 'all') =>
     api.get<{ success: boolean; data: { id: number; name: string }[] }>(`${BASE}/approvers${scope ? '?scope=all' : ''}`),
 
