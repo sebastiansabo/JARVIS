@@ -1531,10 +1531,29 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
                           <span className="text-muted-foreground">Source</span>
                           <p className="font-medium">{s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}</p>
                         </div>
-                        <div>
-                          <span className="text-muted-foreground">Aprobat de</span>
-                          <p className="font-medium">{s.approved_by || (s.status?.toLowerCase() === 'approved' ? '—' : 'În așteptare')}</p>
-                        </div>
+                        {(() => {
+                          const st = s.status?.toLowerCase()
+                          if (st === 'approved')
+                            return (
+                              <div>
+                                <span className="text-muted-foreground">Aprobat de</span>
+                                <p className="font-medium">{s.approved_by || '—'}</p>
+                              </div>
+                            )
+                          if (st === 'rejected')
+                            return (
+                              <div>
+                                <span className="text-muted-foreground">Respins de</span>
+                                <p className="font-medium">{s.approved_by || '—'}</p>
+                              </div>
+                            )
+                          return (
+                            <div>
+                              <span className="text-muted-foreground">Așteaptă aprobare de la</span>
+                              <p className="font-medium">{s.pending_approvers?.length ? s.pending_approvers.join(', ') : 'Manager direct'}</p>
+                            </div>
+                          )
+                        })()}
                         {s.leave_reason && (
                           <div className="col-span-2">
                             <span className="text-muted-foreground">Reason</span>
