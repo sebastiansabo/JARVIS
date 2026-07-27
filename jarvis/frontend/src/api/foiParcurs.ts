@@ -11,6 +11,7 @@ import type {
   TestDriveFormPayload,
   PlanTestDrivePayload,
   ActivateTestDrivePayload,
+  ReturnTestDrivePayload,
   VehicleConflict,
   CrmClient,
   CreateCrmClientPayload,
@@ -227,6 +228,10 @@ export const foiParcursApi = {
 
   getTestDrive: (id: number) =>
     api.get<{ success: boolean; contract: FoiContract; inspection: FpVehicleInspection | null }>(`${BASE}/test-drive/${id}`),
+
+  // ── Record vehicle return → complete a test drive (PLANNED/FILLED → COMPLETED) ──
+  submitTestDriveReturn: (id: number, data: ReturnTestDrivePayload) =>
+    api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/return`, data),
 
   // ── Vehicle Inspections ──
   getInspections: (vehicleId: number) =>
