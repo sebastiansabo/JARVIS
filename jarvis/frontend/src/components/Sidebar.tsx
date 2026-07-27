@@ -544,6 +544,24 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
               </>
             ) : (
             <>
+              {user?.role_name !== 'Viewer' && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    to="/app/hub"
+                    className={cn(
+                      'flex items-center justify-center rounded-md p-2 transition-colors',
+                      location.pathname === '/app/hub'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-accent',
+                    )}
+                  >
+                    <Home className="h-5 w-5 shrink-0" />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="right">Hub</TooltipContent>
+              </Tooltip>
+              )}
               {user?.can_access_approvals && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -650,6 +668,20 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
             )
           ) : (
             <>
+              {user?.role_name !== 'Viewer' && (
+              <Link
+                to="/app/hub"
+                className={cn(
+                  'flex items-center gap-3 rounded-md px-3 py-2 transition-colors',
+                  location.pathname === '/app/hub'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-accent',
+                )}
+              >
+                <Home className="h-5 w-5 shrink-0" />
+                <span className="flex-1 text-sm font-medium">Hub</span>
+              </Link>
+              )}
               {user?.can_access_approvals && (
               <Link
                 to="/app/approvals"
