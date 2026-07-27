@@ -82,7 +82,7 @@ const VOUCHER_FORM_SLUG = 'voucher-issuance'
 // ─── Types ──────────────────────────────────────────────
 
 type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals'
-type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits' | 'leave-approvals' | 'sincron'
+type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits' | 'sincron'
 
 // Labels for the HR sub-sections — used both by the tile grid and the breadcrumb.
 const HR_SECTION_LABELS: Record<HrSubTab, string> = {
@@ -90,7 +90,6 @@ const HR_SECTION_LABELS: Record<HrSubTab, string> = {
   'team-pontaje': 'Team Pontaje',
   bonuses: 'Bonusuri',
   'leave-permits': 'Învoiri',
-  'leave-approvals': 'De aprobat',
   sincron: 'Sincron',
 }
 
@@ -1196,18 +1195,10 @@ function HubHrPanel({ userId }: { userId: number }) {
     queryKey: ['hub', 'team-pontaje', start, end],
     queryFn: () => profileApi.getTeamPontaje({ mode: 'range', start, end }),
   })
-  // Leave approvals awaiting me — only non-empty for approvers (managers).
-  const { data: leaveApprovalsData } = useQuery({
-    queryKey: ['hub', 'leave-approvals'],
-    queryFn: () => connecteamApi.getPendingLeaveApprovals(),
-  })
-
   const pontajeCount = (pontajeData?.history ?? []).length
-  const isManager = !!teamData?.is_manager
-  const teamCount = isManager ? (teamData?.summary?.length ?? 0) : 0
+  const teamCount = teamData?.is_manager ? (teamData?.summary?.length ?? 0) : 0
   const bonusesCount = (bonusesData?.bonuses ?? []).length
   const lpCount = (lpData?.data ?? []).length
-  const leaveApprovalsCount = (leaveApprovalsData?.data ?? []).length
 
   const dataTiles = useMemo(() => {
     // Per-employee sections are always shown as tiles (empty state inside if no data
@@ -1219,11 +1210,8 @@ function HubHrPanel({ userId }: { userId: number }) {
       { key: 'leave-permits', label: 'Învoiri', icon: ClipboardList, bg: 'bg-rose-600', count: lpCount },
     ]
     if (teamCount > 0) t.push({ key: 'team-pontaje', label: 'Team Pontaje', icon: Users, bg: 'bg-teal-600', count: teamCount })
-    // Managers always get "De aprobat" (their approval queue); also shown to any
-    // ad-hoc approver who currently has a request waiting.
-    if (isManager || leaveApprovalsCount > 0) t.push({ key: 'leave-approvals', label: 'De aprobat', icon: FileCheck, bg: 'bg-indigo-600', count: leaveApprovalsCount })
     return t
-  }, [pontajeCount, teamCount, bonusesCount, lpCount, isManager, leaveApprovalsCount])
+  }, [pontajeCount, teamCount, bonusesCount, lpCount])
 
   const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 12) { setMonth(1); setYear(y => y + 1) } else setMonth(m => m + 1) }
@@ -1242,13 +1230,12 @@ function HubHrPanel({ userId }: { userId: number }) {
       <div className="space-y-4">
         {/* Back navigation is provided by the Hub breadcrumb above this panel. */}
         {activeSection === 'pontaje' && <PunchCard />}
-        {activeSection !== 'leave-approvals' && monthNav}
+        {monthNav}
         {activeSection === 'pontaje' && <HubPontajeContent year={year} month={month} />}
         {activeSection === 'sincron' && <SincronTimesheetView year={year} month={month} />}
         {activeSection === 'team-pontaje' && <HubTeamPontajeContent year={year} month={month} />}
         {activeSection === 'bonuses' && <HubBonusesContent year={year} month={month} />}
         {activeSection === 'leave-permits' && <HubLeavePermitsContent userId={userId} year={year} month={month} />}
-        {activeSection === 'leave-approvals' && <HubLeaveApprovalsContent />}
       </div>
     )
   }
@@ -1500,10 +1487,34 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
   })
   const submissions: ConnecteamSubmission[] = data?.data ?? []
 
+  // "De aprobat" is a tab inside the Învoiri zone, shown only when the user is an
+  // approver with pending requests. Falls back to "mine" when nothing's pending.
+  const [view, setView] = useState<'mine' | 'approve'>('mine')
+  const { data: approvalsData } = useQuery({
+    queryKey: ['hub', 'leave-approvals'],
+    queryFn: () => connecteamApi.getPendingLeaveApprovals(),
+  })
+  const approvalsCount = approvalsData?.data?.length ?? 0
+  const activeView = approvalsCount === 0 ? 'mine' : view
+
   return (
     <div className="space-y-3">
+      {approvalsCount > 0 && (
+        <div className="flex gap-1 rounded-lg bg-muted p-1">
+          <button type="button" onClick={() => setView('mine')}
+            className={cn('flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors', activeView === 'mine' ? 'bg-background shadow-sm' : 'text-muted-foreground')}>
+            Cererile mele
+          </button>
+          <button type="button" onClick={() => setView('approve')}
+            className={cn('flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors', activeView === 'approve' ? 'bg-background shadow-sm' : 'text-muted-foreground')}>
+            De aprobat ({approvalsCount})
+          </button>
+        </div>
+      )}
 
-      {isLoading ? (
+      {activeView === 'approve' ? (
+        <HubLeaveApprovalsContent />
+      ) : isLoading ? (
         <Skeleton className="h-48 w-full" />
       ) : submissions.length === 0 ? (
         <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">Nicio învoire pentru această lună. Apasă <span className="font-medium text-foreground">+ Învoire</span> pentru a completa un bilet.</CardContent></Card>
@@ -1526,6 +1537,12 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
                       <div>
                         <p className="text-sm font-medium">{dateStr}</p>
                         <p className="text-[10px] text-muted-foreground">{s.leave_reason || 'Leave permit'}</p>
+                        {s.status?.toLowerCase() === 'approved' && s.approved_by && (
+                          <p className="text-[10px] text-emerald-600 dark:text-emerald-400">Aprobat de {s.approved_by}</p>
+                        )}
+                        {s.status?.toLowerCase() !== 'approved' && s.status?.toLowerCase() !== 'rejected' && s.pending_approvers?.length ? (
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400">Așteaptă: {s.pending_approvers.join(', ')}</p>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2 shrink-0 ml-3">
                         <LeaveStatusBadge status={s.status} />
