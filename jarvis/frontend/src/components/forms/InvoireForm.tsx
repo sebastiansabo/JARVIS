@@ -46,6 +46,18 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
   const [secondApprover, setSecondApprover] = useState('')
   const [notes, setNotes] = useState('')
   const [attempted, setAttempted] = useState(false)
+  const [endTouched, setEndTouched] = useState(false)
+
+  // Default to a 1-hour interval: the end follows the start (+1h) until the user
+  // edits the end time manually.
+  const changeStart = (v: string) => {
+    setStart(v)
+    if (!endTouched) {
+      const m = parseHM(v)
+      if (m !== null) setEnd(toHM(m + 60))
+    }
+  }
+  const changeEnd = (v: string) => { setEnd(v); setEndTouched(true) }
 
   const { data: approversRes } = useQuery({
     queryKey: ['leave-approvers'],
@@ -123,12 +135,12 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Ora de început{req}</Label>
-              <Input type="time" value={start} onChange={(ev) => setStart(ev.target.value)}
+              <Input type="time" value={start} onChange={(ev) => changeStart(ev.target.value)}
                 aria-invalid={attempted && invalid.start ? true : undefined} />
             </div>
             <div className="space-y-1">
               <Label>Ora de sfârșit{req}</Label>
-              <Input type="time" value={end} onChange={(ev) => setEnd(ev.target.value)}
+              <Input type="time" value={end} onChange={(ev) => changeEnd(ev.target.value)}
                 aria-invalid={(attempted && invalid.end) || !!intervalError ? true : undefined} />
             </div>
           </div>
