@@ -27,6 +27,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install gunicorn
 
+# Install Playwright's Chromium browser + OS libraries it needs.
+# The playwright pip package alone does NOT download the browser binary;
+# without this, foi-de-parcurs PDF generation fails at runtime with
+# "Executable doesn't exist at /root/.cache/ms-playwright/...".
+RUN playwright install --with-deps chromium
+
 # Copy application code
 COPY jarvis/ ./jarvis/
 
