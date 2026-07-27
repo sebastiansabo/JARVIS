@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { fetchColumnDefaults } from '@/lib/columnDefaults'
 import { Sidebar } from './Sidebar'
 import { ThemeToggle } from './ThemeToggle'
+import { NotificationBell } from './NotificationBell'
 import { AiAgentWidget, AiAgentPanel } from './AiAgentWidget'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
@@ -133,6 +134,9 @@ export default function Layout() {
                 </div>
               </>
             )}
+            <div className="h-[44px] w-[44px] flex items-center justify-center">
+              <NotificationBell />
+            </div>
             {/* My Account (logout lives inside the account page). */}
             <Link to="/app/profile" className="h-[44px] w-[44px] flex items-center justify-center text-muted-foreground">
               <UserCircle className="h-[22px] w-[22px]" />
