@@ -79,20 +79,12 @@ FORM_SCHEMA = [
         'order': 7,
     },
     {
-        'id': 'f_bi_destination',
-        'type': 'short_text',
-        'label': 'Destinația',
-        'required': False,
-        'placeholder': 'Unde vă deplasați',
-        'order': 8,
-    },
-    {
         'id': 'f_bi_notes',
         'type': 'long_text',
         'label': 'Detalii suplimentare',
         'required': False,
         'placeholder': 'Adăugați orice detalii relevante',
-        'order': 9,
+        'order': 8,
     },
 ]
 
