@@ -57,6 +57,14 @@ def _leave_hours(answers):
     return _safe_float(answers.get('f_bi_hours'))
 
 
+def _decider_name(decisions):
+    """Name of the approver whose decision closed the request (approved/rejected)."""
+    for d in decisions or []:
+        if d.get('decision') in ('approved', 'rejected'):
+            return d.get('decided_by_name') or None
+    return None
+
+
 def _name_to_fake_ct_id(name: str) -> int:
     """Generate a deterministic fake Connecteam user ID from a name."""
     h = hashlib.md5(name.strip().upper().encode()).hexdigest()
@@ -349,7 +357,7 @@ class ConnecteamService:
 
             query = '''
                 SELECT fs.id, fs.form_id, f.name AS form_name,
-                       fs.answers, fs.status, fs.source,
+                       fs.answers, fs.status, fs.source, fs.approval_request_id,
                        fs.respondent_user_id, fs.created_at::text,
                        u.name AS respondent_name,
                        u.company AS respondent_company
@@ -372,12 +380,21 @@ class ConnecteamService:
             cursor.execute(query, tuple(params))
             rows = cursor.fetchall()
 
+            from core.approvals.repositories import DecisionRepository
+            dec_repo = DecisionRepository()
+
             results = []
             for row in rows:
                 r = dict_from_row(row) if not isinstance(row, dict) else dict(row)
                 answers = r.get('answers', {})
                 if isinstance(answers, str):
                     answers = json.loads(answers)
+
+                request_id = r.get('approval_request_id')
+                approved_by = (
+                    _decider_name(dec_repo.get_decisions_for_request(request_id))
+                    if request_id else None
+                ) or answers.get('f_bi_approved_by')
 
                 results.append({
                     'id': r['id'],
@@ -396,7 +413,7 @@ class ConnecteamService:
                     'leave_hours': _leave_hours(answers),
                     'leave_reason': answers.get('f_bi_reason'),
                     'leave_destination': answers.get('f_bi_destination'),
-                    'approved_by': answers.get('f_bi_approved_by'),
+                    'approved_by': approved_by,
                     'status': r.get('status', 'new'),
                     'event_type': 'jarvis_form',
                     'entry_num': None,
@@ -454,7 +471,7 @@ class ConnecteamService:
 
             query = '''
                 SELECT fs.id, fs.form_id, f.name AS form_name,
-                       fs.answers, fs.status, fs.source,
+                       fs.answers, fs.status, fs.source, fs.approval_request_id,
                        fs.respondent_user_id, fs.created_at::text,
                        u.name AS respondent_name
                 FROM form_submissions fs
@@ -475,12 +492,21 @@ class ConnecteamService:
             cursor.execute(query, tuple(params))
             rows = cursor.fetchall()
 
+            from core.approvals.repositories import DecisionRepository
+            dec_repo = DecisionRepository()
+
             results = []
             for row in rows:
                 r = dict_from_row(row) if not isinstance(row, dict) else dict(row)
                 answers = r.get('answers', {})
                 if isinstance(answers, str):
                     answers = json.loads(answers)
+
+                request_id = r.get('approval_request_id')
+                approved_by = (
+                    _decider_name(dec_repo.get_decisions_for_request(request_id))
+                    if request_id else None
+                ) or answers.get('f_bi_approved_by')
 
                 results.append({
                     'id': r['id'],
@@ -497,7 +523,7 @@ class ConnecteamService:
                     'leave_hours': _leave_hours(answers),
                     'leave_reason': answers.get('f_bi_reason'),
                     'leave_destination': answers.get('f_bi_destination'),
-                    'approved_by': answers.get('f_bi_approved_by'),
+                    'approved_by': approved_by,
                     'status': r.get('status', 'new'),
                     'event_type': 'jarvis_form',
                     'entry_num': None,
