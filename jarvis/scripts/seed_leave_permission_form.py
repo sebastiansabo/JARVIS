@@ -69,6 +69,11 @@ FORM_SCHEMA = [
         'required': True,
         'placeholder': 'Ex: 2',
         'order': 6,
+        # Auto-computed from the start/end times; editing it shifts the end time.
+        'config': {
+            'duration': {'start': 'f_bi_start_time', 'end': 'f_bi_end_time'},
+            'hint': 'Se calculează automat din interval. Dacă îl editezi, ora de sfârșit se ajustează.',
+        },
     },
     {
         'id': 'f_bi_reason',
