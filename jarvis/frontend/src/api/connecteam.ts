@@ -56,6 +56,7 @@ export interface ConnecteamSubmission {
   leave_reason: string | null
   leave_destination: string | null
   approved_by: string | null
+  pending_approvers?: string[]
   status: string
   event_type: string
   entry_num: number
