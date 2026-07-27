@@ -13,6 +13,7 @@ import {
   Fingerprint,
   Gift,
   ClipboardList,
+  Plus,
   Car,
   MessageSquare,
   Clock,
@@ -76,6 +77,9 @@ const Digest = lazy(() => import('@/pages/Digest'))
 const VoucherRedeem = lazy(() => import('@/pages/Public/VoucherRedeem'))
 
 const VOUCHER_FORM_SLUG = 'voucher-issuance'
+// JARVIS-native "Bilet de Invoire" form — submissions land in the Învoiri list
+// (source: 'jarvis') via the connecteam service's form-submission merge.
+const LEAVE_FORM_SLUG = 'bilet-de-invoire'
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -1444,66 +1448,98 @@ function HubBonusesContent({ year, month }: { year: number; month: number }) {
 }
 
 function HubLeavePermitsContent({ userId, year, month }: { userId: number; year: number; month: number }) {
+  // All hooks stay above any early return — the query, the row-expand state, and
+  // the "new invoire" form state must be called unconditionally on every render.
+  const queryClient = useQueryClient()
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
+
   const { data, isLoading } = useQuery({
     queryKey: ['hub', 'leave-permits', userId, year, month],
     queryFn: () => connecteamApi.getEmployeeSubmissions(userId, year, month),
   })
-
-  if (isLoading) return <Skeleton className="h-48 w-full" />
-
   const submissions: ConnecteamSubmission[] = data?.data ?? []
-  if (submissions.length === 0) {
-    return <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">No leave permits for this month.</CardContent></Card>
-  }
 
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const newInvoireBtn = (
+    <Button size="sm" onClick={() => setShowForm(true)} className="gap-1.5">
+      <Plus className="h-4 w-4" /> Învoire
+    </Button>
+  )
 
   return (
-    <Card>
-      <CardContent className="px-0 pb-0">
-        <div className="divide-y">
-          {submissions.map((s) => {
-            const key = `${s.source ?? 'ct'}-${s.id}`
-            const isOpen = expandedId === key
-            const dateStr = s.leave_date ? new Date(s.leave_date + 'T00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short' }) : '—'
-            return (
-              <button
-                key={key}
-                type="button"
-                className="w-full text-left hover:bg-muted/30 transition-colors"
-                onClick={() => setExpandedId(isOpen ? null : key)}
-              >
-                <div className="flex items-center justify-between px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium">{dateStr}</p>
-                    <p className="text-[10px] text-muted-foreground">{s.leave_reason || 'Leave permit'}</p>
-                  </div>
-                  <span className="text-sm font-semibold tabular-nums shrink-0 ml-3">{s.leave_hours != null ? `${s.leave_hours}h` : '—'}</span>
-                </div>
-                {isOpen && (
-                  <div className="px-4 pb-3 grid grid-cols-2 gap-2 text-[11px]" onClick={(e) => e.stopPropagation()}>
-                    <div>
-                      <span className="text-muted-foreground">Time</span>
-                      <p className="font-medium">{s.leave_start_time?.slice(0, 5) || '—'} — {s.leave_end_time?.slice(0, 5) || '—'}</p>
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        {newInvoireBtn}
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-48 w-full" />
+      ) : submissions.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">Nicio învoire pentru această lună. Apasă <span className="font-medium text-foreground">+ Învoire</span> pentru a completa un bilet.</CardContent></Card>
+      ) : (
+        <Card>
+          <CardContent className="px-0 pb-0">
+            <div className="divide-y">
+              {submissions.map((s) => {
+                const key = `${s.source ?? 'ct'}-${s.id}`
+                const isOpen = expandedId === key
+                const dateStr = s.leave_date ? new Date(s.leave_date + 'T00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short' }) : '—'
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className="w-full text-left hover:bg-muted/30 transition-colors"
+                    onClick={() => setExpandedId(isOpen ? null : key)}
+                  >
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium">{dateStr}</p>
+                        <p className="text-[10px] text-muted-foreground">{s.leave_reason || 'Leave permit'}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-3">
+                        {s.source === 'jarvis' && <Badge variant="secondary" className="text-[9px]">JARVIS</Badge>}
+                        <span className="text-sm font-semibold tabular-nums">{s.leave_hours != null ? `${s.leave_hours}h` : '—'}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">Source</span>
-                      <p className="font-medium">{s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}</p>
-                    </div>
-                    {s.leave_reason && (
-                      <div className="col-span-2">
-                        <span className="text-muted-foreground">Reason</span>
-                        <p className="font-medium">{s.leave_reason}</p>
+                    {isOpen && (
+                      <div className="px-4 pb-3 grid grid-cols-2 gap-2 text-[11px]" onClick={(e) => e.stopPropagation()}>
+                        <div>
+                          <span className="text-muted-foreground">Time</span>
+                          <p className="font-medium">{s.leave_start_time?.slice(0, 5) || '—'} — {s.leave_end_time?.slice(0, 5) || '—'}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Source</span>
+                          <p className="font-medium">{s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}</p>
+                        </div>
+                        {s.leave_reason && (
+                          <div className="col-span-2">
+                            <span className="text-muted-foreground">Reason</span>
+                            <p className="font-medium">{s.leave_reason}</p>
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      </CardContent>
-    </Card>
+                  </button>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {showForm && (
+        <HubFormModal
+          slug={LEAVE_FORM_SLUG}
+          name="Bilet de Invoire"
+          onClose={() => setShowForm(false)}
+          onSubmitted={() => {
+            // The new submission lands in form_submissions and the connecteam
+            // service merges it into this list — refetch so it appears.
+            queryClient.invalidateQueries({ queryKey: ['hub', 'leave-permits'] })
+          }}
+        />
+      )}
+    </div>
   )
 }
 
