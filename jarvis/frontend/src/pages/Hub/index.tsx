@@ -27,11 +27,11 @@ import {
   Check,
   ScanLine,
   Users,
+  Target,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -1092,11 +1092,11 @@ function HubPagination({
 // ─── HR Panel ───────────────────────────────────────────
 
 function HubHrPanel({ userId }: { userId: number }) {
+  const navigate = useNavigate()
   const [sp, setSp] = useSearchParams()
-  const subTab = (sp.get('hrtab') as HrSubTab) || 'pontaje'
-  const setSubTab = (tab: HrSubTab) => {
-    setSp((prev) => { const p = new URLSearchParams(prev); p.set('hrtab', tab); return p }, { replace: true })
-  }
+  const section = sp.get('hrtab') as HrSubTab | null
+  const openSection = (tab: HrSubTab | null) =>
+    setSp((prev) => { const p = new URLSearchParams(prev); if (tab) { p.set('hrtab', tab) } else { p.delete('hrtab') } return p }, { replace: true })
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -1129,49 +1129,73 @@ function HubHrPanel({ userId }: { userId: number }) {
   const bonusesCount = (bonusesData?.bonuses ?? []).length
   const lpCount = (lpData?.data ?? []).length
 
-  const availableTabs = useMemo(() => {
-    const tabs: { key: HrSubTab; label: string; icon: React.ElementType }[] = []
-    if (pontajeCount > 0) tabs.push({ key: 'pontaje', label: 'Pontaje', icon: Fingerprint })
-    if (teamCount > 0) tabs.push({ key: 'team-pontaje', label: 'Team Pontaje', icon: Users })
-    if (bonusesCount > 0) tabs.push({ key: 'bonuses', label: 'Bonuses', icon: Gift })
-    if (lpCount > 0) tabs.push({ key: 'leave-permits', label: 'Leave Permits', icon: ClipboardList })
-    return tabs
+  const dataTiles = useMemo(() => {
+    const t: { key: HrSubTab; label: string; icon: React.ElementType; bg: string; count: number }[] = []
+    if (pontajeCount > 0) t.push({ key: 'pontaje', label: 'Pontaje', icon: Fingerprint, bg: 'bg-blue-600', count: pontajeCount })
+    if (teamCount > 0) t.push({ key: 'team-pontaje', label: 'Team Pontaje', icon: Users, bg: 'bg-teal-600', count: teamCount })
+    if (bonusesCount > 0) t.push({ key: 'bonuses', label: 'Bonusuri', icon: Gift, bg: 'bg-amber-500', count: bonusesCount })
+    if (lpCount > 0) t.push({ key: 'leave-permits', label: 'Învoiri', icon: ClipboardList, bg: 'bg-rose-600', count: lpCount })
+    return t
   }, [pontajeCount, teamCount, bonusesCount, lpCount])
-
-  // Auto-select first available tab if current has no data
-  const effectiveTab = availableTabs.find(t => t.key === subTab) ? subTab : availableTabs[0]?.key ?? 'pontaje'
 
   const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 12) { setMonth(1); setYear(y => y + 1) } else setMonth(m => m + 1) }
+  const monthNav = (
+    <div className="flex items-center gap-2">
+      <Button variant="ghost" size="icon" className="h-11 w-11" onClick={prevMonth}><ChevronLeft className="h-5 w-5" /></Button>
+      <span className="text-sm font-medium flex-1 text-center">{MONTHS_RO[month - 1]} {year}</span>
+      <Button variant="ghost" size="icon" className="h-11 w-11" onClick={nextMonth}><ChevronRight className="h-5 w-5" /></Button>
+    </div>
+  )
 
-  if (availableTabs.length === 0) {
-    return <Card><CardContent className="py-12 text-center text-muted-foreground text-sm">No HR data for {MONTHS_RO[month - 1]} {year}.</CardContent></Card>
+  // ── Section view (a data tile was opened) ──
+  const activeSection = dataTiles.find(t => t.key === section) ? section : null
+  if (activeSection) {
+    return (
+      <div className="space-y-4">
+        <button onClick={() => openSection(null)} className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
+          <ChevronLeft className="h-4 w-4" /> HR
+        </button>
+        {monthNav}
+        {activeSection === 'pontaje' && <HubPontajeContent year={year} month={month} />}
+        {activeSection === 'team-pontaje' && <HubTeamPontajeContent year={year} month={month} />}
+        {activeSection === 'bonuses' && <HubBonusesContent year={year} month={month} />}
+        {activeSection === 'leave-permits' && <HubLeavePermitsContent userId={userId} year={year} month={month} />}
+      </div>
+    )
   }
 
+  // ── Grid landing (app-like tiles) ──
   return (
     <div className="space-y-4">
-      {availableTabs.length > 1 && (
-        <Tabs value={effectiveTab} onValueChange={(v) => setSubTab(v as HrSubTab)}>
-          <TabsList className="h-11 bg-muted/50 w-full">
-            {availableTabs.map((tab) => {
-              const Icon = tab.icon
-              return <TabsTrigger key={tab.key} value={tab.key} className="text-xs h-10 px-4 gap-1.5 flex-1"><Icon className="h-4 w-4" />{tab.label}</TabsTrigger>
-            })}
-          </TabsList>
-        </Tabs>
-      )}
-
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="h-11 w-11" onClick={prevMonth}><ChevronLeft className="h-5 w-5" /></Button>
-        <span className="text-sm font-medium flex-1 text-center">{MONTHS_RO[month - 1]} {year}</span>
-        <Button variant="ghost" size="icon" className="h-11 w-11" onClick={nextMonth}><ChevronRight className="h-5 w-5" /></Button>
+      {monthNav}
+      <div className="flex flex-wrap gap-6">
+        {dataTiles.map((t) => (
+          <HrTile key={t.key} label={t.label} icon={t.icon} bg={t.bg} count={t.count} onClick={() => openSection(t.key)} />
+        ))}
+        {/* Company-wide 360 — always available, even with no attendance/bonus data this month */}
+        <HrTile label="Evaluări 360" icon={Target} bg="bg-indigo-600" onClick={() => navigate('/app/evaluations')} />
       </div>
-
-      {effectiveTab === 'pontaje' && <HubPontajeContent year={year} month={month} />}
-      {effectiveTab === 'team-pontaje' && <HubTeamPontajeContent year={year} month={month} />}
-      {effectiveTab === 'bonuses' && <HubBonusesContent year={year} month={month} />}
-      {effectiveTab === 'leave-permits' && <HubLeavePermitsContent userId={userId} year={year} month={month} />}
+      {dataTiles.length === 0 && (
+        <p className="text-xs text-muted-foreground">Nu există date de pontaj / bonusuri / învoiri pentru {MONTHS_RO[month - 1]} {year}.</p>
+      )}
     </div>
+  )
+}
+
+function HrTile({ label, icon: Icon, bg, count, onClick }: {
+  label: string; icon: React.ElementType; bg: string; count?: number; onClick: () => void
+}) {
+  return (
+    <button type="button" onClick={onClick} className="flex flex-col items-center gap-2 w-20 group">
+      <div className={cn('relative flex h-16 w-16 sm:h-14 sm:w-14 items-center justify-center rounded-xl text-white shadow-sm transition-transform group-hover:scale-105 group-hover:shadow-md', bg)}>
+        <Icon className="h-8 w-8 sm:h-7 sm:w-7" />
+        {count != null && count > 0 && (
+          <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border bg-background px-1 text-[10px] font-bold text-foreground shadow-sm">{count}</span>
+        )}
+      </div>
+      <p className="text-[11px] font-medium text-center leading-tight">{label}</p>
+    </button>
   )
 }
 
