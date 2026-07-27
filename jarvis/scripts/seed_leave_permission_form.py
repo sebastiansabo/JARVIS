@@ -48,15 +48,16 @@ FORM_SCHEMA = [
     },
     {
         'id': 'f_bi_start_time',
-        'type': 'short_text',
+        'type': 'time',
         'label': 'Ora de început',
         'required': True,
         'placeholder': 'Ex: 09:00',
         'order': 4,
+        'config': {'defaultNow': True},  # prefill current time
     },
     {
         'id': 'f_bi_end_time',
-        'type': 'short_text',
+        'type': 'time',
         'label': 'Ora de sfârșit',
         'required': True,
         'placeholder': 'Ex: 11:00',
