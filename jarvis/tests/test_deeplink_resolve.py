@@ -4,8 +4,11 @@ IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit'
 DESKTOP = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit'
 
 
-def test_desktop_redirects_to_web():
-    assert resolve_deeplink(DESKTOP, 5) == ('redirect', '/app/approvals?request=5')
+WEB = '/app/hub?module=hr&hrtab=leave-approvals'
+
+
+def test_desktop_redirects_to_hub_approvals_tab():
+    assert resolve_deeplink(DESKTOP, 5) == ('redirect', WEB)
 
 
 def test_mobile_gets_interstitial_app_url():
@@ -15,4 +18,4 @@ def test_mobile_gets_interstitial_app_url():
 
 
 def test_missing_user_agent_defaults_to_web():
-    assert resolve_deeplink('', 9) == ('redirect', '/app/approvals?request=9')
+    assert resolve_deeplink('', 9) == ('redirect', WEB)

@@ -220,6 +220,34 @@ def create_leave_permit():
     return jsonify({'success': True, 'data': result.data}), result.status_code
 
 
+@connecteam_bp.route('/api/leave-approvals/pending', methods=['GET'])
+@api_login_required
+def get_pending_leave_approvals():
+    """Leave requests awaiting the current user's approval (empty if not an approver)."""
+    try:
+        data = service.get_pending_leave_approvals(current_user.id)
+        return jsonify({'success': True, 'data': data})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@connecteam_bp.route('/api/leave-approvals/<int:request_id>/decide', methods=['POST'])
+@api_login_required
+def decide_leave_approval(request_id):
+    """Approve or reject a leave request the current user is an approver for."""
+    data = request.get_json(silent=True) or {}
+    decision = data.get('decision')
+    if decision not in ('approved', 'rejected'):
+        return jsonify({'success': False, 'error': "decision must be 'approved' or 'rejected'"}), 400
+    try:
+        service.decide_leave_approval(request_id, decision, current_user.id, comment=data.get('comment'))
+        return jsonify({'success': True})
+    except PermissionError:
+        return jsonify({'success': False, 'error': 'Not an approver for this request'}), 403
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @connecteam_bp.route('/api/submissions/recent', methods=['GET'])
 @admin_required
 def get_recent_submissions():

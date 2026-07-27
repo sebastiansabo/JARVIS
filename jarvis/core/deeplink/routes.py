@@ -6,13 +6,16 @@ deeplink_bp = Blueprint('deeplink', __name__)
 _MOBILE_UA = ('iphone', 'ipad', 'ipod', 'android')
 
 
+# The approver lands on the Hub "De aprobat" tab (their pending-approval queue).
+_WEB_URL = '/app/hub?module=hr&hrtab=leave-approvals'
+
+
 def resolve_deeplink(user_agent, request_id):
     """('redirect', web_url) on desktop, ('interstitial', app_url) on mobile."""
-    web_url = f'/app/approvals?request={request_id}'
     ua = (user_agent or '').lower()
     if any(tok in ua for tok in _MOBILE_UA):
         return 'interstitial', f'com.jarvis.mobile2://approvals?request={request_id}'
-    return 'redirect', web_url
+    return 'redirect', _WEB_URL
 
 
 _INTERSTITIAL = """<!doctype html><html lang="ro"><head><meta charset="utf-8">
@@ -35,7 +38,4 @@ def approval_landing(request_id):
     kind, target = resolve_deeplink(request.headers.get('User-Agent', ''), request_id)
     if kind == 'redirect':
         return redirect(target)
-    return render_template_string(
-        _INTERSTITIAL, app_url=target,
-        web_url=f'/app/approvals?request={request_id}',
-    )
+    return render_template_string(_INTERSTITIAL, app_url=target, web_url=_WEB_URL)
