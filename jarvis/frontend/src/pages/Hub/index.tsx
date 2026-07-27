@@ -1652,13 +1652,15 @@ function HubLeaveApprovalsContent() {
             const busy = decide.isPending && decide.variables?.requestId === it.request_id
             return (
               <div key={it.request_id} className="px-4 py-4 space-y-3">
-                <p className="text-base leading-relaxed">
-                  <span className="font-semibold">{it.requester_name || 'Angajat'}</span>
-                  {' — '}
-                  <span className="text-muted-foreground">
-                    {dateStr} · {it.leave_start_time?.slice(0, 5) || '—'}–{it.leave_end_time?.slice(0, 5) || '—'}{it.leave_hours != null ? ` (${it.leave_hours}h)` : ''} · Motiv: {it.leave_reason || 'Învoire'}
-                  </span>
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-base font-semibold">{it.requester_name || 'Angajat'}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {dateStr} · {it.leave_start_time?.slice(0, 5) || '—'}–{it.leave_end_time?.slice(0, 5) || '—'} · Motiv: {it.leave_reason || 'Învoire'}
+                    </p>
+                  </div>
+                  <span className="text-base font-semibold tabular-nums shrink-0">{it.leave_hours != null ? `${it.leave_hours}h` : ''}</span>
+                </div>
                 {rejectingId === it.request_id ? (
                   <div className="space-y-2">
                     <Textarea autoFocus rows={2} value={rejectComment}
