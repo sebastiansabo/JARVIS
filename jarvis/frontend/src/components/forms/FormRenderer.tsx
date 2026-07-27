@@ -1,4 +1,4 @@
-import { useState, useRef, lazy, Suspense, useEffect } from 'react'
+import { useState, useRef, lazy, Suspense, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +29,44 @@ interface FormRendererProps {
   defaultValues?: Record<string, unknown>
 }
 
+// ── Duration link (config-driven, e.g. start/end time ↔ hours) ──
+// A field may declare `config.duration = { start, end }`: its value is the number
+// of hours between the two time fields. Editing a time recomputes the hours;
+// editing the hours recomputes the end time. Times are "HH:MM" strings.
+export type DurationLink = { hours: string; start: string; end: string }
+
+function parseHM(v: unknown): number | null {
+  if (typeof v !== 'string') return null
+  const m = v.trim().match(/^(\d{1,2}):(\d{1,2})$/)
+  if (!m) return null
+  const h = +m[1], min = +m[2]
+  if (h > 23 || min > 59) return null
+  return h * 60 + min
+}
+
+function fmtHM(mins: number): string {
+  const t = ((Math.round(mins) % 1440) + 1440) % 1440
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
+}
+
+function hoursToStr(mins: number): string {
+  return String(Math.round((mins / 60) * 100) / 100)
+}
+
+// Apply every duration link touched by a change to `fieldId`, mutating `next`.
+export function applyDurationLinks(links: DurationLink[], next: Record<string, unknown>, fieldId: string): void {
+  for (const link of links) {
+    if (fieldId === link.start || fieldId === link.end) {
+      const s = parseHM(next[link.start]), e = parseHM(next[link.end])
+      if (s !== null && e !== null && e >= s) next[link.hours] = hoursToStr(e - s)
+    } else if (fieldId === link.hours) {
+      const s = parseHM(next[link.start])
+      const h = parseFloat(String(next[link.hours]))
+      if (s !== null && !Number.isNaN(h) && h >= 0) next[link.end] = fmtHM(s + h * 60)
+    }
+  }
+}
+
 function isFieldVisible(field: FormField, answers: Record<string, unknown>): boolean {
   const rule = (field.config as Record<string, unknown> | undefined)?.showWhen as
     | { fieldId: string; operator: string; value: string }
@@ -50,8 +88,21 @@ export function FormRenderer({ schema, onSubmit, submitting, submitLabel = 'Subm
   const [answers, setAnswers] = useState<Record<string, unknown>>(() => defaultValues || {})
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  const durationLinks = useMemo<DurationLink[]>(() => {
+    const out: DurationLink[] = []
+    for (const f of schema) {
+      const d = (f.config as Record<string, unknown> | undefined)?.duration as { start?: string; end?: string } | undefined
+      if (d?.start && d?.end) out.push({ hours: f.id, start: d.start, end: d.end })
+    }
+    return out
+  }, [schema])
+
   const setValue = (fieldId: string, value: unknown) => {
-    setAnswers((prev) => ({ ...prev, [fieldId]: value }))
+    setAnswers((prev) => {
+      const next = { ...prev, [fieldId]: value }
+      if (durationLinks.length) applyDurationLinks(durationLinks, next, fieldId)
+      return next
+    })
     if (errors[fieldId]) {
       setErrors((prev) => { const copy = { ...prev }; delete copy[fieldId]; return copy })
     }
@@ -615,10 +666,12 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
 
     case 'short_text':
     case 'email':
-    case 'phone':
+    case 'phone': {
+      const hint = (field.config as Record<string, unknown> | undefined)?.hint as string | undefined
       return (
         <div className="space-y-1">
           <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+          {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
           <Input
             type={field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : 'text'}
             value={(value as string) ?? ''}
@@ -628,11 +681,14 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
       )
+    }
 
-    case 'number':
+    case 'number': {
+      const hint = (field.config as Record<string, unknown> | undefined)?.hint as string | undefined
       return (
         <div className="space-y-1">
           <Label>{field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}</Label>
+          {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
           <Input
             type="number"
             value={(value as string) ?? ''}
@@ -642,6 +698,7 @@ function FieldComponent({ field, value, error, onChange, onSetField, allAnswers 
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
       )
+    }
 
     case 'long_text':
       return (
