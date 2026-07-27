@@ -65,6 +65,35 @@ def _decider_name(decisions):
     return None
 
 
+def _pending_approver_names(request_id, submission_id=None):
+    """Names of the approver(s) a still-pending request is currently waiting on.
+
+    Falls back to looking the request up by entity when the submission has no
+    linked approval_request_id (older submissions created before linking)."""
+    try:
+        from core.approvals.repositories import RequestRepository
+        if not request_id and submission_id:
+            request_id = RequestRepository().get_pending_for_entity('form_submission', submission_id)
+        if not request_id:
+            return []
+        from core.approvals.handlers._shared import _get_current_step_approvers
+        from database import get_db, get_cursor, release_db
+        ids = _get_current_step_approvers(request_id)
+        if not ids:
+            return []
+        conn = get_db()
+        try:
+            cur = get_cursor(conn)
+            placeholders = ','.join(['%s'] * len(ids))
+            cur.execute(f'SELECT name FROM users WHERE id IN ({placeholders})', list(ids))
+            return [(r['name'] if isinstance(r, dict) else r[0]) for r in cur.fetchall()]
+        finally:
+            release_db(conn)
+    except Exception as e:
+        logger.warning('Pending approver lookup failed for request %s: %s', request_id, e)
+        return []
+
+
 def _name_to_fake_ct_id(name: str) -> int:
     """Generate a deterministic fake Connecteam user ID from a name."""
     h = hashlib.md5(name.strip().upper().encode()).hexdigest()
@@ -391,10 +420,15 @@ class ConnecteamService:
                     answers = json.loads(answers)
 
                 request_id = r.get('approval_request_id')
+                status = r.get('status', 'new')
                 approved_by = (
                     _decider_name(dec_repo.get_decisions_for_request(request_id))
                     if request_id else None
                 ) or answers.get('f_bi_approved_by')
+                pending_approvers = (
+                    _pending_approver_names(request_id, r['id'])
+                    if status not in ('approved', 'rejected') else []
+                )
 
                 results.append({
                     'id': r['id'],
@@ -414,6 +448,7 @@ class ConnecteamService:
                     'leave_reason': answers.get('f_bi_reason'),
                     'leave_destination': answers.get('f_bi_destination'),
                     'approved_by': approved_by,
+                    'pending_approvers': pending_approvers,
                     'status': r.get('status', 'new'),
                     'event_type': 'jarvis_form',
                     'entry_num': None,
@@ -503,10 +538,15 @@ class ConnecteamService:
                     answers = json.loads(answers)
 
                 request_id = r.get('approval_request_id')
+                status = r.get('status', 'new')
                 approved_by = (
                     _decider_name(dec_repo.get_decisions_for_request(request_id))
                     if request_id else None
                 ) or answers.get('f_bi_approved_by')
+                pending_approvers = (
+                    _pending_approver_names(request_id, r['id'])
+                    if status not in ('approved', 'rejected') else []
+                )
 
                 results.append({
                     'id': r['id'],
@@ -524,6 +564,7 @@ class ConnecteamService:
                     'leave_reason': answers.get('f_bi_reason'),
                     'leave_destination': answers.get('f_bi_destination'),
                     'approved_by': approved_by,
+                    'pending_approvers': pending_approvers,
                     'status': r.get('status', 'new'),
                     'event_type': 'jarvis_form',
                     'entry_num': None,

@@ -56,6 +56,7 @@ export interface ConnecteamSubmission {
   leave_reason: string | null
   leave_destination: string | null
   approved_by: string | null
+  pending_approvers?: string[]
   status: string
   event_type: string
   entry_num: number
@@ -87,6 +88,12 @@ export const connecteamApi = {
   getEmployeeSubmissions: (userId: number, year?: number, month?: number) =>
     api.get<{ success: boolean; data: ConnecteamSubmission[] }>(
       `${BASE}/submissions/employee/${userId}${qs({ year, month })}`
+    ),
+
+  // Create a Bilet de Invoire via the code-defined Invoire module form.
+  submitLeavePermit: (answers: Record<string, unknown>) =>
+    api.post<{ success: boolean; data: { submission_id: number } }>(
+      `${BASE}/submissions/leave-permit`, { answers }
     ),
 
   getApprovers: (scope?: 'all') =>
