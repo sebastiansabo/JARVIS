@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Target, ChevronLeft, ChevronRight, Clock, Send, CheckCircle2, HelpCircle } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import MyReports from './MyReports'
 import TeamReports from './TeamReports'
@@ -40,34 +39,35 @@ export default function Evaluations() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [view, setView] = useState<'todo' | 'reports' | 'team' | 'cycles' | 'help'>('todo')
   const isHrAdmin = useAuthStore((s) => s.user?.can_access_hr) ?? false
-  const crumb = { todo: 'De completat', reports: 'Rapoartele mele', team: 'Echipa', cycles: 'Administrare', help: 'Ajutor' }[view]
 
   return (
     <div className="space-y-4 md:space-y-6">
-      {/* Back to the HR grid — the app sidebar is empty for Viewers on this route */}
       {selectedId == null && (
-        <button
-          onClick={() => navigate('/app/hub?module=hr')}
-          className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft className="h-4 w-4" /> Înapoi la HR
-        </button>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
+          {/* Breadcrumb: HR (clickable = back) › Evaluări 360 — Viewers have no sidebar here */}
+          <nav className="flex min-w-0 items-center gap-2">
+            <button
+              onClick={() => navigate('/app/hub?module=hr')}
+              className="shrink-0 text-base font-medium text-muted-foreground transition-colors hover:text-foreground sm:text-lg"
+            >
+              HR
+            </button>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+            <h1 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">Evaluări 360</h1>
+          </nav>
+          <div className="w-full sm:ml-auto sm:w-auto">
+            <Tabs value={view} onValueChange={(v) => setView(v as 'todo' | 'reports' | 'team' | 'cycles' | 'help')}>
+              <TabsList>
+                <TabsTrigger value="todo">De completat</TabsTrigger>
+                <TabsTrigger value="reports">Rapoartele mele</TabsTrigger>
+                <TabsTrigger value="team">Echipa</TabsTrigger>
+                {isHrAdmin && <TabsTrigger value="cycles">Administrare</TabsTrigger>}
+                <TabsTrigger value="help"><HelpCircle className="mr-1 h-3.5 w-3.5" />Ajutor</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+        </div>
       )}
-      <PageHeader
-        title="Evaluări 360"
-        breadcrumbs={[{ label: 'Evaluări 360' }, { label: crumb }]}
-        actions={selectedId == null ? (
-          <Tabs value={view} onValueChange={(v) => setView(v as 'todo' | 'reports' | 'team' | 'cycles' | 'help')}>
-            <TabsList>
-              <TabsTrigger value="todo">De completat</TabsTrigger>
-              <TabsTrigger value="reports">Rapoartele mele</TabsTrigger>
-              <TabsTrigger value="team">Echipa</TabsTrigger>
-              {isHrAdmin && <TabsTrigger value="cycles">Administrare</TabsTrigger>}
-              <TabsTrigger value="help"><HelpCircle className="mr-1 h-3.5 w-3.5" />Ajutor</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        ) : undefined}
-      />
       {selectedId != null
         ? <EvaluationForm assignmentId={selectedId} onBack={() => setSelectedId(null)} />
         : view === 'todo' ? <Inbox onOpen={setSelectedId} />
