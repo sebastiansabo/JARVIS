@@ -88,20 +88,32 @@ function useDebounce(value: string, delay: number) {
   return debounced
 }
 
+interface TestDriveFormProps {
+  embedded?: boolean
+  activateId?: number
+  initialCompanyId?: number
+  onDone?: (contract: FoiContract) => void
+  onCancel?: () => void
+}
+
 // ── Component ──
-export default function TestDriveForm() {
+export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, onDone, onCancel }: TestDriveFormProps = {}) {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
 
   // ── Activation mode — reopens this form pre-filled from a PLANNED draft ──
   const [searchParams] = useSearchParams()
-  const activateId = searchParams.get('activate') ? Number(searchParams.get('activate')) : null
+  const activateId = activateIdProp ?? (searchParams.get('activate') ? Number(searchParams.get('activate')) : null)
   const isActivating = activateId != null
 
   // Company & vehicle
   const [companyId, setCompanyId] = useState<number | null>(null)
   const [vehicleId, setVehicleId] = useState<number | null>(null)
   const [selectedVehicle, setSelectedVehicle] = useState<FpVehicle | null>(null)
+
+  // Embedded mode may seed the company from the caller (e.g. Hub panel) — only
+  // when not already set by the user/route, and only once a value is provided.
+  useEffect(() => { if (initialCompanyId && companyId == null) setCompanyId(initialCompanyId) }, [initialCompanyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Client (CRM)
   const [clientSearch, setClientSearch] = useState('')
@@ -287,11 +299,11 @@ export default function TestDriveForm() {
 
   const submitMutation = useMutation({
     mutationFn: (payload: TestDriveFormPayload) => foiParcursApi.submitTestDrive(payload),
-    onSuccess: (data) => setSubmittedContract(data.contract),
+    onSuccess: (data) => { if (embedded) onDone?.(data.contract); else setSubmittedContract(data.contract) },
   })
   const planMutation = useMutation({
     mutationFn: (payload: PlanTestDrivePayload) => foiParcursApi.planTestDrive(payload),
-    onSuccess: (data) => setSubmittedContract(data.contract),
+    onSuccess: (data) => { if (embedded) onDone?.(data.contract); else setSubmittedContract(data.contract) },
   })
 
   // ── VIN-conflict soft-block (shared by Trimite + Planifică) ──
@@ -372,7 +384,7 @@ export default function TestDriveForm() {
 
   const activateMutation = useMutation({
     mutationFn: (payload: ActivateTestDrivePayload) => foiParcursApi.activateTestDrive(activateId!, payload),
-    onSuccess: (data) => setSubmittedContract(data.contract),
+    onSuccess: (data) => { if (embedded) onDone?.(data.contract); else setSubmittedContract(data.contract) },
   })
 
   function handleActivate() {
@@ -398,6 +410,10 @@ export default function TestDriveForm() {
     withConflictCheck(selectedVehicle.vin, () => activateMutation.mutate(payload), activateId)
   }
 
+  // Back/cancel out of the form — routes to the parent's onCancel callback
+  // when embedded (e.g. the Hub panel), else the standalone route's nav.
+  const handleBack = () => { if (embedded) onCancel?.(); else navigate('/app/foi-parcurs') }
+
   function resetForm() {
     setCompanyId(null); setVehicleId(null); setSelectedVehicle(null)
     setClientSearch(''); setSelectedClient(null); setShowManualCreate(false)
@@ -411,7 +427,7 @@ export default function TestDriveForm() {
     setConditionsAccepted(false); setShowConditions(false)
     setSubmittedContract(null); setAttempted(false)
     setConflictList([]); setShowConflicts(false); setPendingRun(null)
-    if (isActivating) navigate('/app/foi-parcurs/test-drive', { replace: true })
+    if (isActivating) { if (embedded) onCancel?.(); else navigate('/app/foi-parcurs/test-drive', { replace: true }) }
   }
 
   // ── Success Screen ──
@@ -444,7 +460,7 @@ export default function TestDriveForm() {
             )}
             <div className="flex gap-3 justify-center pt-2">
               <Button variant="outline" onClick={resetForm}><Plus className="h-4 w-4 mr-1" />Test Drive Nou</Button>
-              <Button onClick={() => navigate('/app/foi-parcurs')}><ArrowLeft className="h-4 w-4 mr-1" />Înapoi la Driving Hub</Button>
+              <Button onClick={handleBack}><ArrowLeft className="h-4 w-4 mr-1" />Înapoi la Driving Hub</Button>
             </div>
           </CardContent>
         </Card>
@@ -457,7 +473,7 @@ export default function TestDriveForm() {
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-12">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/app/foi-parcurs')}>
+        <Button variant="ghost" size="icon" aria-label="Înapoi" onClick={handleBack}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
