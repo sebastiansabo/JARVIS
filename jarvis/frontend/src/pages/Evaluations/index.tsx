@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Target, ChevronLeft, ChevronRight, Clock, Send, CheckCircle2, HelpCircle } from 'lucide-react'
@@ -35,6 +36,7 @@ function anchorsFor(q: Question): CompetencyAnchors | undefined {
 }
 
 export default function Evaluations() {
+  const navigate = useNavigate()
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [view, setView] = useState<'todo' | 'reports' | 'team' | 'cycles' | 'help'>('todo')
   const isHrAdmin = useAuthStore((s) => s.user?.can_access_hr) ?? false
@@ -42,6 +44,15 @@ export default function Evaluations() {
 
   return (
     <div className="space-y-4 md:space-y-6">
+      {/* Back to the HR grid — the app sidebar is empty for Viewers on this route */}
+      {selectedId == null && (
+        <button
+          onClick={() => navigate('/app/hub?module=hr')}
+          className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+        >
+          <ChevronLeft className="h-4 w-4" /> Înapoi la HR
+        </button>
+      )}
       <PageHeader
         title="Evaluări 360"
         breadcrumbs={[{ label: 'Evaluări 360' }, { label: crumb }]}
