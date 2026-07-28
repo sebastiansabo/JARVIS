@@ -19,8 +19,11 @@ import pytest
 from decimal import Decimal
 
 from database import get_db, get_cursor, release_db
-from accounting.facturare.services.invoice_state_machine import InvoiceStateMachine
+from accounting.facturare.services.invoice_state_machine import (
+    InvoiceStateMachine, InvoiceStateMachineError,
+)
 from accounting.facturare.repositories.invoice_storage_repository import InvoiceStorageRepository
+from accounting.facturare.models import InvoiceTypeEnum, InvoiceStateEnum
 
 # supplier_id=16 (AUTOWORLD S.R.L.) and customer_id=18 are pre-existing rows
 # (same convention as test_document_numbers_repo.py).
@@ -61,6 +64,45 @@ def anexa3():
 
     # CASCADE from contract deletion removes anexa -> lines -> invoices
     # -> invoice_links -> document_numbers.
+    cur.execute("DELETE FROM facturare_contracts WHERE id=%s", (contract_id,))
+    conn.commit()
+    release_db(conn)
+
+
+@pytest.fixture
+def other_anexa_same_supplier():
+    """A second, unrelated contract -> anexa -> 1 line, same SUPPLIER_ID as anexa3.
+
+    Used to hold a throwaway "Invoice A" that pre-owns a document_number, so a
+    later invoice on a DIFFERENT anexa (same supplier) collides via the
+    cross-invoice EXCLUDE constraint rather than the anexa-scoped
+    _check_invoice_number_unique check.
+    """
+    conn = get_db(); cur = get_cursor(conn)
+    ref = f"TEST-SM-NUM-OTHER-{uuid.uuid4().hex[:8].upper()}"
+    cur.execute(
+        """INSERT INTO facturare_contracts (contract_ref, supplier_id, customer_id)
+           VALUES (%s, %s, %s) RETURNING id""",
+        (ref, SUPPLIER_ID, CUSTOMER_ID))
+    contract_id = cur.fetchone()["id"]
+
+    anexa_number = random.randint(900000, 999999)
+    cur.execute(
+        """INSERT INTO facturare_anexas (contract_id, anexa_number)
+           VALUES (%s, %s) RETURNING id""",
+        (contract_id, anexa_number))
+    anexa_id = cur.fetchone()["id"]
+
+    cur.execute(
+        """INSERT INTO facturare_anexa_lines
+           (anexa_id, line_number, model, selling_price_eur, list_price_eur)
+           VALUES (%s, 1, 'ThrowawayModel', %s, %s) RETURNING id""",
+        (anexa_id, Decimal("10000"), Decimal("10000")))
+    line_id = cur.fetchone()["id"]
+    conn.commit()
+
+    yield anexa_id, line_id
+
     cur.execute("DELETE FROM facturare_contracts WHERE id=%s", (contract_id,))
     conn.commit()
     release_db(conn)
@@ -157,3 +199,52 @@ def test_storno_persists_own_number_for_single_car(sm, repo, anexa3):
     m = repo.get_document_number_map(storno.id)
     assert m == {target_line: storno_base}
     assert m[target_line] == storno_base  # position 0 == the storno's own invoice_number
+
+
+# ── Case 4: cross-invoice document-number collision must be a clean reject ──
+#
+# If a NEW invoice's number is already owned by a DIFFERENT invoice of the same
+# supplier+series (excl_facturare_docnum_cross_invoice), _persist_document_numbers
+# must not leave the just-created invoice committed with no document-number
+# rows. It must delete the orphan and raise a clean InvoiceStateMachineError.
+
+def test_issue_proforma_rejects_cross_invoice_number_collision(sm, repo, anexa3, other_anexa_same_supplier):
+    anexa_id, line_ids = anexa3
+    other_anexa_id, other_line_id = other_anexa_same_supplier
+    collision_number = _rand_base()
+
+    # Throwaway "Invoice A" on a DIFFERENT anexa (same supplier) that already
+    # owns `collision_number` in the "proforma" series.
+    invoice_a = repo.create_invoice(
+        anexa_id=other_anexa_id,
+        invoice_type=InvoiceTypeEnum.PROFORMA,
+        invoice_state=InvoiceStateEnum.DRAFT,
+        sequence_number=1,
+        total_amount_eur=Decimal("10000"),
+        invoice_number=collision_number,
+        line_ids=[other_line_id],
+        doc_mode="per_car",
+    )
+    repo.replace_document_numbers(invoice_a["id"], SUPPLIER_ID, [{
+        "line_id": other_line_id, "position": 0,
+        "document_number": collision_number, "series": "proforma",
+    }])
+
+    before_count = repo.query_one(
+        "SELECT COUNT(*) AS cnt FROM facturare_invoices WHERE anexa_id = %s AND invoice_number = %s",
+        (anexa_id, collision_number))["cnt"]
+    assert before_count == 0
+
+    with pytest.raises(InvoiceStateMachineError, match="already used"):
+        sm.issue_proforma(
+            anexa_id, Decimal("10000"),
+            invoice_number=collision_number, line_ids=[line_ids[0]],
+            created_by_user_id=USER_ID,
+        )
+
+    # No orphan invoice B remains: the invoice create_invoice() committed must
+    # have been deleted once the document-number collision was detected.
+    after_count = repo.query_one(
+        "SELECT COUNT(*) AS cnt FROM facturare_invoices WHERE anexa_id = %s AND invoice_number = %s",
+        (anexa_id, collision_number))["cnt"]
+    assert after_count == 0
