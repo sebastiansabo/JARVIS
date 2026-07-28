@@ -12,8 +12,8 @@ vi.mock('@/pages/Hub/DrivingSessionsList', () => ({
     <div>sessions:{companyId}<button onClick={() => onReturn?.(11)}>mock-retur</button></div>
   ),
 }))
-vi.mock('@/pages/FoiParcurs/CalendarTab', () => ({
-  CalendarTab: ({ companyId }: { companyId: number }) => <div>calendar:{companyId}</div>,
+vi.mock('@/pages/Hub/DrivingCalendar', () => ({
+  default: ({ companyId }: { companyId: number }) => <div>calendar:{companyId}</div>,
 }))
 vi.mock('@/pages/FoiParcurs/TestDriveForm', () => ({
   default: ({ onDone, onCancel }: { onDone?: (c: unknown) => void; onCancel: () => void }) => (
