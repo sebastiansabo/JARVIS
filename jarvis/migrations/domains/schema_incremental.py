@@ -2153,8 +2153,15 @@ def _create_schema_incremental_continued(conn, cursor):
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='general_conditions_text') THEN
                 ALTER TABLE foi_de_parcurs ADD COLUMN general_conditions_text TEXT;
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='missed_at') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN missed_at TIMESTAMP WITH TIME ZONE;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='late_notified_at') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN late_notified_at TIMESTAMP WITH TIME ZONE;
+            END IF;
         END $$;
     ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_fp_planned_departure ON foi_de_parcurs(departure_datetime) WHERE status = 'PLANNED'")
 
     # ── Foi de Parcurs — Test Drive RETURN fields ──
     cursor.execute('''
