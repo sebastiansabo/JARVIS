@@ -2328,5 +2328,26 @@ def _create_schema_incremental_continued(conn, cursor):
         CREATE INDEX IF NOT EXISTS idx_facturare_docnum_invoice
         ON facturare_document_numbers (invoice_id)
     """)
+    # ── HR Department Pulse — backend-aggregated 360 qualitative votes ──
+    # Rolling per-voter × department-node × perspective × competency vote scoped
+    # to a Sincron org node. Re-voting UPDATEs the same row (the UNIQUE upsert
+    # key) so a voter's latest vote always counts and there is no month history.
+    # ON DELETE CASCADE from both FKs cleans up when a user or node is removed.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS hr_dept_pulse_votes (
+            id SERIAL PRIMARY KEY,
+            voter_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            department_node_id INTEGER NOT NULL REFERENCES sincron_org_nodes(id) ON DELETE CASCADE,
+            perspective VARCHAR(20) NOT NULL,
+            competency_key VARCHAR(40) NOT NULL,
+            rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE (voter_user_id, department_node_id, perspective, competency_key)
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_hr_dept_pulse_votes_node_perspective
+        ON hr_dept_pulse_votes(department_node_id, perspective)
+    ''')
 
     conn.commit()
