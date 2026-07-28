@@ -27,6 +27,7 @@ def run_session_lifecycle():
                         'Sesiune ratată la start',
                         f'{client} — {veh} la {when}. Reprogramează sau activează.',
                         link=f"/sales/test-drive/{row['id']}",
+                        push_data={'link': f"/sales/test-drive/{row['id']}"},
                         entity_type='foi_parcurs_td',
                         entity_id=row['id'],
                         category='system',
