@@ -92,6 +92,18 @@ def _line_to_dict(row):
     }
 
 
+def _resolve_doc_no(docnum_map: dict, line_id, fallback):
+    """Per-car document number: the stored value from facturare_document_numbers
+    (keyed by car line_id) when present, else the pre-backfill positional
+    derivation (base_no [+ idx]) passed in as `fallback`.
+
+    Shared by the anexa-detail display, the document-items list, and the PDF
+    generator so all UI/PDF consumers agree with the numbers actually
+    allocated/persisted at issue time (see get_document_number_map).
+    """
+    return docnum_map.get(line_id, fallback)
+
+
 # ── Contracts ────────────────────────────────────────────────────
 
 @facturare_bp.route("/facturare/api/contracts")
@@ -604,6 +616,8 @@ def api_get_anexa_detail(anexa_id):
         covered = inv.get("line_ids") or list(all_line_ids)  # null = all
         doc_mode = inv.get("doc_mode", "per_car")
         base_no = inv.get("invoice_number")
+        # Stored per-car document numbers for this invoice (facturare_document_numbers).
+        docnum = _repo.get_document_number_map(inv["id"])
         # Per-car share: car_price × rounded_pct (detect nearest whole % from total)
         covered_total = sum(line_prices.get(lid, 0) for lid in covered)
         raw_pct = (inv["total_amount_eur"] / covered_total) if covered_total else 0
@@ -615,8 +629,10 @@ def api_get_anexa_detail(anexa_id):
                 line_coverage[lid] = []
             share = round(line_prices.get(lid, 0) * pct)
             share_ron = 0
-            # Per-vehicle document number: matches PDF renderer logic (start_no + idx)
-            display_no = base_no + idx if base_no is not None and doc_mode != 'single_doc' and len(covered) > 1 else base_no
+            # Per-vehicle document number: prefer the stored number; fall back
+            # to the pre-backfill derivation (matches PDF renderer logic: start_no + idx).
+            fallback_no = base_no + idx if base_no is not None and doc_mode != 'single_doc' and len(covered) > 1 else base_no
+            display_no = _resolve_doc_no(docnum, lid, fallback_no)
             line_coverage[lid].append({
                 "invoice_id": inv["id"],
                 "invoice_type": inv["invoice_type"],
@@ -1259,6 +1275,9 @@ def api_document_items():
         total_amount = float(inv["total_amount_eur"])
         split_mode = inv.get("split_mode", "equal")
         start_no = inv.get("invoice_number") or inv["invoice_id"]
+        # Stored per-car document numbers for this invoice, fetched once (not
+        # per car) — facturare_document_numbers.
+        docnum = _repo.get_document_number_map(inv["invoice_id"])
         raw_pct = (total_amount / total_selling) if total_selling else 0
         rounded_pct = round(raw_pct * 100) / 100
         pct = rounded_pct if abs(raw_pct - rounded_pct) < 0.005 else raw_pct
@@ -1266,12 +1285,16 @@ def api_document_items():
         for idx, l in enumerate(inv_lines):
             selling = float(l["selling_price_eur"])
             car_amount = round(selling * pct)
+            # Prefer the stored number for this car; fall back to the
+            # pre-backfill positional derivation (start_no + idx).
+            fallback_no = start_no + idx if start_no else None
+            doc_number = _resolve_doc_no(docnum, l["id"], fallback_no)
 
             items.append({
                 "invoice_id": inv["invoice_id"],
                 "invoice_type": inv["invoice_type"],
                 "sequence_number": inv["sequence_number"],
-                "doc_number": start_no + idx if start_no else None,
+                "doc_number": doc_number,
                 "car_index": idx,
                 "issued_date": str(inv["issued_date"]) if inv.get("issued_date") else None,
                 "kurs_applied": float(inv["kurs_applied"]) if inv.get("kurs_applied") else None,
@@ -1328,6 +1351,10 @@ def api_generate_pdf(invoice_id):
     else:
         lines = all_lines
 
+    # Stored document numbers per car line_id (populated by the numbering
+    # module). Consumers below prefer these over the positional derivation.
+    docnum = _repo.get_document_number_map(invoice_id)
+
     # Build supplier/customer dicts
     sup_row = _repo.query_one(
         "SELECT company, vat, reg_no, iban, bank, swift, street, city, county FROM companies WHERE id = %s",
@@ -1369,9 +1396,13 @@ def api_generate_pdf(invoice_id):
             all_invoices = [inv for inv in all_invoices if inv["id"] in reversed_inv_ids]
         storno_line_set = set(inv_line_ids) if inv_line_ids else {l["id"] for l in all_lines}
         line_map = {l["id"]: l for l in all_lines}
+        # Stored document numbers per reversed invoice, fetched once each (not
+        # once per car) — used for the "Ref: Factura Nr." text below.
+        reversed_docnum = {inv["id"]: _repo.get_document_number_map(inv["id"]) for inv in all_invoices}
 
         # Per car: collect reversed invoices and their per-car share
         storno_groups = []  # list of list[OrderLine] — one group per car
+        storno_group_line_ids = []  # parallel list: car line_id for each group
         for l in lines:
             lid = l["id"]
             car_items = []
@@ -1390,11 +1421,14 @@ def api_generate_pdf(invoice_id):
                 car_share = round(inv_total * (selling / inv_selling_sum))
                 base_no = inv.get("invoice_number") or inv["id"]
                 inv_doc_mode = inv.get("doc_mode", "per_car")
-                # Per-vehicle document number: matches PDF renderer logic (start_no + idx)
+                # Per-vehicle document number for the REVERSED invoice: prefer
+                # its stored number for this car; fall back to the
+                # pre-backfill derivation (matches PDF renderer logic: start_no + idx).
                 if inv_doc_mode != 'single_doc' and raw_list and len(raw_list) > 1 and lid in raw_list:
-                    inv_no = base_no + raw_list.index(lid)
+                    fallback_no = base_no + raw_list.index(lid)
                 else:
-                    inv_no = base_no
+                    fallback_no = base_no
+                inv_no = _resolve_doc_no(reversed_docnum.get(inv["id"], {}), lid, fallback_no)
                 inv_date = inv.get("issued_date")
                 date_fmt = ""
                 if inv_date:
@@ -1418,6 +1452,7 @@ def api_generate_pdf(invoice_id):
                 ))
             if car_items:
                 storno_groups.append(car_items)
+                storno_group_line_ids.append(lid)
 
         # Flat order_lines for fallback (single-doc mode etc.)
         order_lines = [item for group in storno_groups for item in group]
@@ -1506,12 +1541,28 @@ def api_generate_pdf(invoice_id):
             idx = int(car_idx)
             if 0 <= idx < len(storno_groups):
                 storno_groups = [storno_groups[idx]]
-        pdf_bytes = renderer.render_storno_multipage(storno_groups, start_no)
+                storno_group_line_ids = [storno_group_line_ids[idx]]
+        # Per-car stored document number for THIS storno invoice; fall back to
+        # today's start_no + page_idx derivation (render_storno_multipage's
+        # own logic) when the map has no entry for that car.
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas as rc
+        buf = io.BytesIO()
+        c = rc.Canvas(buf, pagesize=A4)
+        for page_idx, car_items in enumerate(storno_groups):
+            page_no = _resolve_doc_no(docnum, storno_group_line_ids[page_idx], start_no + page_idx)
+            renderer._render_storno_page(c, page_no, car_items)
+            c.showPage()
+        c.save()
+        pdf_bytes = buf.getvalue()
         return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
 
     # Single-document mode: all cars as line items in one PDF
     if doc_mode == "single_doc":
-        pdf_bytes = renderer.render_single_doc_to_bytes(order_lines, start_no)
+        # All covered cars share ONE stored number under single_doc mode; any
+        # car's map entry is representative. Fall back to today's start_no.
+        single_doc_no = _resolve_doc_no(docnum, lines[0]["id"], start_no) if lines else start_no
+        pdf_bytes = renderer.render_single_doc_to_bytes(order_lines, single_doc_no)
         return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
 
     # Single car PDF via ?car=N
@@ -1520,7 +1571,8 @@ def api_generate_pdf(invoice_id):
         idx = int(car_idx)
         if 0 <= idx < len(order_lines):
             line = order_lines[idx]
-            inv_no = start_no if doc_mode == 'single_doc' else start_no + idx
+            fallback_no = start_no if doc_mode == 'single_doc' else start_no + idx
+            inv_no = _resolve_doc_no(docnum, lines[idx]["id"], fallback_no)
             renderer.note = _note_for_car(idx)
             single_buf = io.BytesIO()
             from reportlab.lib.pagesizes import A4
@@ -1537,7 +1589,8 @@ def api_generate_pdf(invoice_id):
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for i, line in enumerate(order_lines):
-                inv_no = start_no if doc_mode == 'single_doc' else start_no + i
+                fallback_no = start_no if doc_mode == 'single_doc' else start_no + i
+                inv_no = _resolve_doc_no(docnum, lines[i]["id"], fallback_no)
                 renderer.note = _note_for_car(i)
                 single_buf = io.BytesIO()
                 from reportlab.lib.pagesizes import A4
@@ -1558,14 +1611,28 @@ def api_generate_pdf(invoice_id):
             buf = io.BytesIO()
             c = rc.Canvas(buf, pagesize=A4)
             for i, line in enumerate(order_lines):
-                inv_no = start_no + (0 if doc_mode == 'single_doc' else i)
+                fallback_no = start_no + (0 if doc_mode == 'single_doc' else i)
+                inv_no = _resolve_doc_no(docnum, lines[i]["id"], fallback_no)
                 renderer.note = _note_for_car(i)
                 renderer.render_one(c, inv_no, line)
                 c.showPage()
             c.save()
             pdf_bytes = buf.getvalue()
         else:
-            pdf_bytes = renderer.render_all_to_bytes(order_lines, start_no, same_number=(doc_mode == 'single_doc'))
+            # Manual per-car loop (mirrors render_all_to_bytes) so each page
+            # can use the stored document number for its car; falls back to
+            # render_all_to_bytes' own start_no [+ i] derivation when unmapped.
+            from reportlab.lib.pagesizes import A4
+            from reportlab.pdfgen import canvas as rc
+            buf = io.BytesIO()
+            c = rc.Canvas(buf, pagesize=A4)
+            for i, line in enumerate(order_lines):
+                fallback_no = start_no + (0 if doc_mode == 'single_doc' else i)
+                inv_no = _resolve_doc_no(docnum, lines[i]["id"], fallback_no)
+                renderer.render_one(c, inv_no, line)
+                c.showPage()
+            c.save()
+            pdf_bytes = buf.getvalue()
         return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
 
 
