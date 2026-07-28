@@ -258,6 +258,19 @@ class FoiParcursRepository(BaseRepository):
             return self.get_contract_by_id(row['id']) or row
         return row
 
+    def reschedule_session(self, contract_id: int, departure_datetime, return_datetime) -> dict:
+        """Move a PLANNED/MISSED session to a new time and revive it to PLANNED,
+        clearing the missed/late-notify stamps. Guarded to those two statuses."""
+        sql = (
+            "UPDATE foi_de_parcurs SET departure_datetime = %s, return_datetime = %s, "
+            "status = 'PLANNED', missed_at = NULL, late_notified_at = NULL, updated_at = NOW() "
+            "WHERE id = %s AND route_type = 'TD' AND status IN ('PLANNED', 'MISSED') RETURNING *"
+        )
+        row = self.execute(sql, (departure_datetime, return_datetime, contract_id), returning=True)
+        if row and row.get('id'):
+            return self.get_contract_by_id(row['id']) or row
+        return row
+
     def record_return(self, contract_id: int, data: dict) -> dict:
         """Update a TD contract with return data (km/fuel/damage/signatures) and mark COMPLETED.
 
