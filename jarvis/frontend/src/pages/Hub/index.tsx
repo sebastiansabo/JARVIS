@@ -232,7 +232,9 @@ export default function Hub() {
     return appTiles.filter((t) => {
       if (t.key === 'vouchers' && !hasVouchersPerm) return false
       if (t.key === 'driving' && !authUser?.can_access_carpark) return false
-      if (t.key !== 'approvals' && tileCounts[t.key] === 0) return false
+      // Vouchers stays visible even at 0 (permission-gated above) — like approvals;
+      // other tiles auto-hide when empty.
+      if (t.key !== 'approvals' && t.key !== 'vouchers' && tileCounts[t.key] === 0) return false
       return true
     })
   }, [hasVouchersPerm, tileCounts, authUser?.can_access_carpark])
