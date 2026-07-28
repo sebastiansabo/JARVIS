@@ -33,7 +33,7 @@
 
 ---
 
-### Task B1: Migration — `missed_at`, `late_notified_at`, planned-departure index
+### Task 1: Migration — `missed_at`, `late_notified_at`, planned-departure index
 
 **Files:**
 - Modify: `jarvis/migrations/domains/schema_incremental.py` (the existing `foi_de_parcurs` `DO $$` block near line 2115–2152)
@@ -79,7 +79,7 @@ git commit -m "feat(foi-parcurs): add missed_at/late_notified_at + planned-depar
 
 ---
 
-### Task B2: Lifecycle single-source-of-truth + derived status SQL
+### Task 2: Lifecycle single-source-of-truth + derived status SQL
 
 **Files:**
 - Create: `jarvis/foi_parcurs/session_lifecycle.py`
@@ -205,7 +205,7 @@ git commit -m "feat(foi-parcurs): derive late/missed td_status via shared sessio
 
 ---
 
-### Task B3: Free the vehicle — exclude missed/past-grace from `find_conflicts`
+### Task 3: Free the vehicle — exclude missed/past-grace from `find_conflicts`
 
 **Files:**
 - Modify: `jarvis/foi_parcurs/repositories/foi_parcurs_repository.py` (`find_conflicts`, the status filter ~line 324-325)
@@ -263,7 +263,7 @@ git commit -m "feat(foi-parcurs): free the vehicle from missed/past-grace sessio
 
 ---
 
-### Task B4: Reschedule / revive endpoint
+### Task 4: Reschedule / revive endpoint
 
 **Files:**
 - Modify: `jarvis/foi_parcurs/routes/test_drive.py` (add `api_reschedule_test_drive` after `api_update_plan`, ~line 332)
@@ -430,7 +430,7 @@ git commit -m "feat(foi-parcurs): reschedule/revive endpoint for late + missed s
 
 ---
 
-### Task B5: Sweeper job — notify newly-late, archive past-grace
+### Task 5: Sweeper job — notify newly-late, archive past-grace
 
 **Files:**
 - Create: `jarvis/tasks/foi_parcurs_sessions.py`
@@ -527,13 +527,15 @@ In `foi_parcurs_repository.py`:
         self.execute('UPDATE foi_de_parcurs SET late_notified_at = NOW() WHERE id = %s', (contract_id,))
 
     def archive_missed_sessions(self) -> int:
-        """Flip PLANNED TD rows past the 8h grace to MISSED. Returns the count."""
-        rows = self.query_all(
+        """Flip PLANNED TD rows past the 8h grace to MISSED. Returns the count.
+
+        `BaseRepository.execute(..., returning=False)` commits and returns the
+        rowcount — exactly the number archived — so no RETURNING is needed."""
+        return self.execute(
             "UPDATE foi_de_parcurs SET status = 'MISSED', missed_at = NOW(), updated_at = NOW() "
             "WHERE route_type = 'TD' AND status = 'PLANNED' "
-            "AND departure_datetime + INTERVAL '8 hours' < NOW() RETURNING id"
-        )
-        return len(rows or [])
+            "AND departure_datetime + INTERVAL '8 hours' < NOW()"
+        ) or 0
 
     def get_advisor_user_id(self, advisor_name):
         """Resolve a session's advisor (by name) to a users.id, or None."""
@@ -546,7 +548,7 @@ In `foi_parcurs_repository.py`:
         return row['id'] if row else None
 ```
 
-(If `self.query_all` does not support an `UPDATE … RETURNING`, use `self.execute(sql, returning='all')` per this repo's convention — check a neighboring method; `find_conflicts` uses `self.query_all` for SELECT. Confirm the write-returning helper on `BaseRepository` and use it.)
+Repo helper reference (confirmed on `BaseRepository`): `query_all(sql, params)` → list of dicts (SELECT); `query_one(sql, params)` → one dict; `execute(sql, params, returning=False)` → commits, returns rowcount; `execute(sql, params, returning=True)` → commits, returns one dict (`fetchone`). `get_sessions_pending_late_notify` uses `query_all` (SELECT); `mark_late_notified` uses `execute` (write, no return); `reschedule_session` uses `execute(returning=True)` (one updated row by id).
 
 - [ ] **Step 4: Add the job module**
 
@@ -641,7 +643,7 @@ git commit -m "feat(foi-parcurs): sweeper job — notify missed-at-start + archi
 
 ---
 
-### Task B6: Full backend suite green + regression check
+### Task 6: Full backend suite green + regression check
 
 **Files:** none (verification only)
 
