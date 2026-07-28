@@ -16,20 +16,44 @@ os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')
 
 # jarvis/conftest.py installs a MagicMock for psycopg2 (and .pool/.extras/.errors)
 # in sys.modules at collection time, before any test module or sub-package
-# conftest.py runs. DB-backed dept_pulse tests need the REAL driver, so bypass
-# the mock here — once, centrally, for every test in this package — before
-# anything below (or any dept_pulse test module) does `from database import
-# ...`, which internally does `import psycopg2`.
+# conftest.py runs. DB-backed dept_pulse tests need the REAL driver. Two steps,
+# in order, are required — the second is essential for a FULL-suite run:
 #
-# Gated by isinstance(..., MagicMock) so this is idempotent: a no-op once the
-# real driver is already bound in sys.modules (e.g. on a second dept_pulse
-# test module importing in the same session), and it never touches a
-# genuine (non-mock) module some other test may have already installed.
+#   1. Drop the mock modules from sys.modules so a fresh `import psycopg2`
+#      resolves the real driver.
+#   2. In a full-suite run, an earlier test package imports `database` (which
+#      does `import psycopg2` + `from psycopg2 import pool` at its top and lazily
+#      builds a module-global `_connection_pool`) BEFORE this package's conftest
+#      runs. That already-imported `database` captured the MOCKS into its own
+#      namespace (`database.psycopg2` / `database.pool` / `database.RealDictCursor`)
+#      and may hold a mock `_connection_pool`. Step 1 alone can't fix that — those
+#      are separate references. So rebind them to the real driver and drop the
+#      pool, forcing the next get_db() (used by BaseRepository → DeptPulseRepository)
+#      to build a real pool against the real DATABASE_URL.
+#
+# Both steps are gated on isinstance(..., MagicMock) so the whole block is
+# idempotent and a strict no-op once the real driver is already bound (isolated
+# dept_pulse runs, reruns) — it never disturbs a genuine already-real
+# environment or any other suite's modules.
 for _mod_name in ('psycopg2', 'psycopg2.pool', 'psycopg2.extras', 'psycopg2.errors'):
     if isinstance(sys.modules.get(_mod_name), MagicMock):
         del sys.modules[_mod_name]
 
 import psycopg2  # noqa: F401  (real driver now, per the bypass above)
+import psycopg2.pool  # noqa: F401
+from psycopg2.extras import RealDictCursor as _RealDictCursor
+
+# Force an already-imported `database` module off the mocks it captured.
+_db = sys.modules.get('database')
+if _db is not None and (
+    isinstance(getattr(_db, 'psycopg2', None), MagicMock)
+    or isinstance(getattr(_db, 'pool', None), MagicMock)
+):
+    _db.psycopg2 = psycopg2
+    _db.pool = psycopg2.pool
+    _db.RealDictCursor = _RealDictCursor
+    _db._connection_pool = None  # drop mock pool → next get_db() builds a real one
+
 import pytest
 from database import get_db, get_cursor, release_db
 
