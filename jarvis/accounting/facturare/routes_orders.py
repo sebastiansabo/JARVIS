@@ -1674,24 +1674,21 @@ def api_generate_eurofib(invoice_id):
                     list_price=float(car["list_price_eur"]), selling_price=selling,
                     advance=-car_amount, rest=None,
                     kurs=ri_kurs,
+                    # A storno is ONE invoice: every reversed-advance row carries the
+                    # storno's own number (else the 2nd row incremented into the FINAL's).
+                    start_no=start_no,
                 ))
     else:
-        # For FINAL: use kurs from the last advance invoice in this anexa
+        # For FINAL: derive each car's kurs from the advances it reverses so the
+        # final's RON equals the storno's RON (see _final_blended_kurs).
+        from datetime import timedelta as _td
         _final_kurs_date_set = False
+        final_kurs_acc = {}
         if inv_type_str == "FINAL":
-            from datetime import timedelta as _td
-            last_advance = _repo.query_one(
-                "SELECT kurs_applied, issued_date FROM facturare_invoices "
-                "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number DESC LIMIT 1",
-                (anexa["id"],))
-            if last_advance and last_advance.get("kurs_applied"):
-                kurs = float(last_advance["kurs_applied"])
-                adv_date = last_advance.get("issued_date")
-                if adv_date and isinstance(adv_date, str):
-                    adv_date = date_type.fromisoformat(adv_date)
-                if adv_date:
-                    kurs_date = adv_date - _td(days=1)
-                    _final_kurs_date_set = True
+            final_kurs_acc, last_adv_date = _final_blended_kurs(_repo, anexa["id"], all_lines)
+            if last_adv_date:
+                kurs_date = last_adv_date - _td(days=1)
+                _final_kurs_date_set = True
 
         order_lines = []
         for l in lines:
@@ -1701,21 +1698,26 @@ def api_generate_eurofib(invoice_id):
             else:
                 car_advance = round(total_amount / max(len(lines), 1))
 
-            # For FINAL: look up venituri rule per line
+            # For FINAL: look up venituri rule per line + blended kurs
             line_kostenstelle = None
             line_konto_credit = None
+            line_kurs = None
             if inv_type_str == "FINAL":
                 nr_cmd = l.get("nr_comanda") or ""
                 rule = _repo.match_venituri_rule(contract["supplier_id"], nr_cmd)
                 if rule:
                     line_konto_credit = rule["konto_venituri"]
                     line_kostenstelle = rule["kostenstelle"]
+                ron_sum, _eur_sum = final_kurs_acc.get(l["id"], (0.0, 0.0))
+                if ron_sum and car_advance:
+                    line_kurs = ron_sum / car_advance   # RON ÷ EUR ⇒ betrag = storno RON
 
             order_lines.append(OrderLine(
                 comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
                 model=l["model"], culoare=l.get("culoare") or "",
                 list_price=float(l["list_price_eur"]), selling_price=selling,
                 advance=car_advance, rest=selling,
+                kurs=line_kurs,
                 kostenstelle=line_kostenstelle,
                 konto_credit_override=line_konto_credit,
             ))
@@ -1785,6 +1787,50 @@ def api_generate_eurofib(invoice_id):
 
     return send_file(io.BytesIO(xlsx_bytes), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                      as_attachment=True, download_name=dl_name)
+
+
+def _final_blended_kurs(repo, anexa_id, all_lines):
+    """Per-car RON/EUR totals of the advances covering each line.
+
+    Returns ({line_id: [ron_sum, eur_sum]}, last_advance_date) where ron_sum is
+    the summed RON of the advances reversed for that car — each at its own rate,
+    matching the storno rows. The FINAL invoice's per-car kurs is then
+    ron_sum / final_eur, so the final's RON equals the storno's RON and the
+    client ledger nets to zero (instead of applying one advance's rate to the
+    whole amount).
+    """
+    import json as _json
+    advances = repo.query_all(
+        "SELECT total_amount_eur, kurs_applied, issued_date, line_ids "
+        "FROM facturare_invoices "
+        "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number",
+        (anexa_id,))
+    prices = {l["id"]: float(l["selling_price_eur"]) for l in all_lines}
+    all_ids = set(prices)
+    acc = {}          # line_id -> [ron_sum, eur_sum]
+    last_date = None
+    for adv in advances or []:
+        adv_kurs = float(adv["kurs_applied"]) if adv.get("kurs_applied") else None
+        if not adv_kurs:
+            continue
+        adv_eur = float(adv["total_amount_eur"])
+        raw = adv.get("line_ids")
+        if isinstance(raw, str):
+            raw = _json.loads(raw)
+        adv_lids = set(raw) if raw else all_ids
+        covered = sum(prices.get(x, 0) for x in adv_lids) or 1
+        for lid in adv_lids:
+            share = round(prices.get(lid, 0) / covered * adv_eur, 2)
+            slot = acc.setdefault(lid, [0.0, 0.0])
+            slot[0] += share * adv_kurs
+            slot[1] += share
+        adv_date = adv.get("issued_date")
+        if isinstance(adv_date, str):
+            from datetime import date as _date
+            adv_date = _date.fromisoformat(adv_date)
+        if adv_date and (last_date is None or adv_date > last_date):
+            last_date = adv_date
+    return acc, last_date
 
 
 def _build_eurofib_batch(inv_row):
@@ -1866,22 +1912,18 @@ def _build_eurofib_batch(inv_row):
                     list_price=float(car["list_price_eur"]), selling_price=selling,
                     advance=-car_amount, rest=None,
                     kurs=ri_kurs,
+                    # A storno is ONE invoice: every reversed-advance row carries the
+                    # storno's own number (else the 2nd row incremented into the FINAL's).
+                    start_no=start_no,
                 ))
     else:
         _final_kurs_date_set = False
+        final_kurs_acc = {}
         if inv_type_str == "FINAL":
-            last_advance = _repo.query_one(
-                "SELECT kurs_applied, issued_date FROM facturare_invoices "
-                "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number DESC LIMIT 1",
-                (anexa["id"],))
-            if last_advance and last_advance.get("kurs_applied"):
-                kurs = float(last_advance["kurs_applied"])
-                adv_date = last_advance.get("issued_date")
-                if adv_date and isinstance(adv_date, str):
-                    adv_date = date_type.fromisoformat(adv_date)
-                if adv_date:
-                    kurs_date = adv_date - timedelta(days=1)
-                    _final_kurs_date_set = True
+            final_kurs_acc, last_adv_date = _final_blended_kurs(_repo, anexa["id"], all_lines)
+            if last_adv_date:
+                kurs_date = last_adv_date - timedelta(days=1)
+                _final_kurs_date_set = True
 
         order_lines = []
         for l in lines:
@@ -1892,17 +1934,22 @@ def _build_eurofib_batch(inv_row):
                 car_advance = round(total_amount / max(len(lines), 1))
             line_kostenstelle = None
             line_konto_credit = None
+            line_kurs = None
             if inv_type_str == "FINAL":
                 nr_cmd = l.get("nr_comanda") or ""
                 rule = _repo.match_venituri_rule(contract["supplier_id"], nr_cmd)
                 if rule:
                     line_konto_credit = rule["konto_venituri"]
                     line_kostenstelle = rule["kostenstelle"]
+                ron_sum, _eur_sum = final_kurs_acc.get(l["id"], (0.0, 0.0))
+                if ron_sum and car_advance:
+                    line_kurs = ron_sum / car_advance   # RON ÷ EUR ⇒ betrag = storno RON
             order_lines.append(OrderLine(
                 comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
                 model=l["model"], culoare=l.get("culoare") or "",
                 list_price=float(l["list_price_eur"]), selling_price=selling,
                 advance=car_advance, rest=selling,
+                kurs=line_kurs,
                 kostenstelle=line_kostenstelle, konto_credit_override=line_konto_credit,
             ))
 
