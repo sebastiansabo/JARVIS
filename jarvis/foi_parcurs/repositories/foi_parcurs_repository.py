@@ -3,23 +3,9 @@
 import json
 import logging
 from core.base_repository import BaseRepository
+from foi_parcurs.session_lifecycle import TD_STATUS_SQL as _TD_STATUS_SQL
 
 logger = logging.getLogger('jarvis.foi_parcurs.repository')
-
-
-# Derived three-state status for Test Drive contracts, surfaced on the list and
-# detail endpoints so the mobile app can badge each row without re-deriving:
-#   complete   → the return form was submitted (status COMPLETED)
-#   incomplete → the expected arrival time (return_datetime) has passed but no
-#                return form was submitted yet
-#   driving    → still out (no return yet, arrival time not passed / not set)
-_TD_STATUS_SQL = (
-    "CASE "
-    "WHEN fp.status = 'COMPLETED' THEN 'complete' "
-    "WHEN fp.return_datetime IS NOT NULL AND fp.return_datetime < NOW() THEN 'incomplete' "
-    "ELSE 'driving' "
-    "END AS td_status"
-)
 
 
 # Lean column set for the LIST endpoint — every scalar the sessions/contracts/
