@@ -9,6 +9,15 @@ from datetime import timedelta
 
 GRACE_HOURS = 8
 
+# TD datetimes are naive Bucharest wall-clock (stored as digits, displayed
+# as-is) even though the columns are timestamptz. Production's DB session runs
+# in UTC, so comparing them against bare NOW() fires ~2-3h late there (NOW()
+# would be a UTC instant, not the Bucharest wall-clock the row was written
+# with). Every SQL comparison against "now" for these columns must therefore
+# go through this local-wall-clock expression instead of bare NOW() — mirrors
+# the same compensation record_return already applies to its auto return time.
+NOW_LOCAL_SQL = "(NOW() AT TIME ZONE 'Europe/Bucharest')::timestamptz"
+
 
 def derive_planned_substatus(departure_dt, now):
     """Sub-status of a PLANNED row: 'planned' | 'late' | 'missed'."""
@@ -27,10 +36,10 @@ TD_STATUS_SQL = (
     "CASE "
     "WHEN fp.status = 'COMPLETED' THEN 'complete' "
     "WHEN fp.status = 'MISSED' THEN 'missed' "
-    f"WHEN fp.status = 'PLANNED' AND fp.departure_datetime + INTERVAL '{GRACE_HOURS} hours' < NOW() THEN 'missed' "
-    "WHEN fp.status = 'PLANNED' AND fp.departure_datetime < NOW() THEN 'late' "
+    f"WHEN fp.status = 'PLANNED' AND fp.departure_datetime + INTERVAL '{GRACE_HOURS} hours' < {NOW_LOCAL_SQL} THEN 'missed' "
+    f"WHEN fp.status = 'PLANNED' AND fp.departure_datetime < {NOW_LOCAL_SQL} THEN 'late' "
     "WHEN fp.status = 'PLANNED' THEN 'planned' "
-    "WHEN fp.return_datetime IS NOT NULL AND fp.return_datetime < NOW() THEN 'incomplete' "
+    f"WHEN fp.return_datetime IS NOT NULL AND fp.return_datetime < {NOW_LOCAL_SQL} THEN 'incomplete' "
     "ELSE 'driving' "
     "END AS td_status"
 )

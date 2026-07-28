@@ -3,7 +3,7 @@
 import json
 import logging
 from core.base_repository import BaseRepository
-from foi_parcurs.session_lifecycle import TD_STATUS_SQL as _TD_STATUS_SQL
+from foi_parcurs.session_lifecycle import TD_STATUS_SQL as _TD_STATUS_SQL, NOW_LOCAL_SQL, GRACE_HOURS
 
 logger = logging.getLogger('jarvis.foi_parcurs.repository')
 
@@ -279,8 +279,8 @@ class FoiParcursRepository(BaseRepository):
             "COALESCE(fp.client_name, c.name) AS client_name, fp.vin, fp.departure_datetime "
             "FROM foi_de_parcurs fp LEFT JOIN fp_clients c ON c.id = fp.client_id "
             "WHERE fp.route_type = 'TD' AND fp.status = 'PLANNED' "
-            "AND fp.departure_datetime < NOW() "
-            "AND fp.departure_datetime + INTERVAL '8 hours' >= NOW() "
+            f"AND fp.departure_datetime < {NOW_LOCAL_SQL} "
+            f"AND fp.departure_datetime + INTERVAL '{GRACE_HOURS} hours' >= {NOW_LOCAL_SQL} "
             "AND fp.late_notified_at IS NULL"
         )
         return self.query_all(sql)
@@ -296,7 +296,7 @@ class FoiParcursRepository(BaseRepository):
         return self.execute(
             "UPDATE foi_de_parcurs SET status = 'MISSED', missed_at = NOW(), updated_at = NOW() "
             "WHERE route_type = 'TD' AND status = 'PLANNED' "
-            "AND departure_datetime + INTERVAL '8 hours' < NOW()"
+            f"AND departure_datetime + INTERVAL '{GRACE_HOURS} hours' < {NOW_LOCAL_SQL}"
         ) or 0
 
     def get_advisor_user_id(self, advisor_name):
@@ -364,7 +364,7 @@ class FoiParcursRepository(BaseRepository):
             # past the 8h grace (archived on the next sweeper pass). In-grace 'late'
             # rows still block — the client may yet show up.
             "AND fp.status <> 'MISSED' "
-            "AND NOT (fp.status = 'PLANNED' AND fp.departure_datetime + INTERVAL '8 hours' < NOW()) "
+            f"AND NOT (fp.status = 'PLANNED' AND fp.departure_datetime + INTERVAL '{GRACE_HOURS} hours' < {NOW_LOCAL_SQL}) "
             f"{exclude_sql} "
             "ORDER BY fp.departure_datetime ASC"
         )
