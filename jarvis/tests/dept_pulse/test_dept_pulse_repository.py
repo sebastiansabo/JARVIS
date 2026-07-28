@@ -3,10 +3,28 @@ import os
 
 os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')
 
+import pytest
 import psycopg2  # noqa: F401
 from core.profile.repositories.dept_pulse_repository import DeptPulseRepository
 
+from .conftest import REAL_DB_AVAILABLE
+
 repo = DeptPulseRepository()
+
+
+@pytest.fixture(autouse=True)
+def _require_real_db():
+    """Most tests below take the `pulse_org` fixture, which already skips
+    when REAL_DB_AVAILABLE is False. `test_unmapped_user_resolves_to_none`
+    doesn't (it needs no seeded org), but it still calls the repository
+    directly and would otherwise hit a mocked cursor in a no-DB run — so
+    guard the whole module here too.
+    """
+    if not REAL_DB_AVAILABLE:
+        pytest.skip(
+            'Real Postgres not available (DATABASE_URL unreachable or psycopg2 '
+            'mocked) — skipping dept_pulse repository tests'
+        )
 
 
 def test_member_resolves_own_department(pulse_org):
