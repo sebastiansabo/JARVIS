@@ -7,13 +7,13 @@ vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: {
   getCompanies: vi.fn().mockResolvedValue({ companies: [{ id: 11, company: 'PREMIUM' }] }),
   getBrands: vi.fn().mockResolvedValue({ brands: [] }),
 } }))
-vi.mock('@/pages/FoiParcurs/index', () => ({
-  SessionsTab: ({ companyId, onReturn }: { companyId: number; onReturn?: (id: number) => void }) => (
+vi.mock('@/pages/Hub/DrivingSessionsList', () => ({
+  default: ({ companyId, onReturn }: { companyId: number; onReturn?: (id: number) => void }) => (
     <div>sessions:{companyId}<button onClick={() => onReturn?.(11)}>mock-retur</button></div>
   ),
 }))
-vi.mock('@/pages/FoiParcurs/CalendarTab', () => ({
-  CalendarTab: ({ companyId }: { companyId: number }) => <div>calendar:{companyId}</div>,
+vi.mock('@/pages/Hub/DrivingCalendar', () => ({
+  default: ({ companyId }: { companyId: number }) => <div>calendar:{companyId}</div>,
 }))
 vi.mock('@/pages/FoiParcurs/TestDriveForm', () => ({
   default: ({ onDone, onCancel }: { onDone?: (c: unknown) => void; onCancel: () => void }) => (
