@@ -232,7 +232,9 @@ export default function Hub() {
     return appTiles.filter((t) => {
       if (t.key === 'vouchers' && !hasVouchersPerm) return false
       if (t.key === 'driving' && !authUser?.can_access_carpark) return false
-      if (t.key !== 'approvals' && tileCounts[t.key] === 0) return false
+      // Vouchers stays visible even at 0 (permission-gated above) — like approvals;
+      // other tiles auto-hide when empty.
+      if (t.key !== 'approvals' && t.key !== 'vouchers' && tileCounts[t.key] === 0) return false
       return true
     })
   }, [hasVouchersPerm, tileCounts, authUser?.can_access_carpark])
@@ -1149,26 +1151,26 @@ function HubCrumb({ trail, onBack, count, action }: {
   count?: number
   action?: React.ReactNode
 }) {
+  // iOS nav-bar style: a single large "‹ <previous>" back button (the crumb
+  // onBack returns to) + the current page as a bold title. Bigger tap target
+  // than the old inline chevron, and clearer on mobile.
+  const title = trail[trail.length - 1]?.label ?? ''
+  const backLabel = trail.length >= 2 ? trail[trail.length - 2].label : 'Hub'
   return (
-    <div className="flex items-center gap-1.5 text-sm">
-      <Button variant="ghost" size="icon" className="h-8 w-8 -ml-1.5 shrink-0" onClick={onBack} aria-label="Înapoi">
-        <ChevronLeft className="h-4 w-4" />
-      </Button>
-      {trail.map((c, i) => {
-        const isLast = i === trail.length - 1
-        return (
-          <span key={i} className="flex items-center gap-1.5">
-            {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />}
-            {c.onClick && !isLast ? (
-              <button onClick={c.onClick} className="font-medium text-muted-foreground transition-colors hover:text-foreground">{c.label}</button>
-            ) : (
-              <span className={isLast ? 'font-semibold' : 'font-medium text-muted-foreground'}>{c.label}</span>
-            )}
-          </span>
-        )
-      })}
-      {count != null && count > 0 && <span className="text-sm font-normal text-muted-foreground">({count})</span>}
-      {action && <div className="ml-auto shrink-0">{action}</div>}
+    <div className="flex items-center gap-2">
+      <button
+        onClick={onBack}
+        aria-label="Înapoi"
+        className="-ml-1.5 flex h-11 shrink-0 items-center gap-0.5 rounded-lg pl-1.5 pr-2.5 text-[15px] font-medium text-primary transition-colors hover:bg-accent active:scale-95"
+      >
+        <ChevronLeft className="h-5 w-5" />
+        {backLabel}
+      </button>
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        <h2 className="truncate text-lg font-semibold leading-tight">{title}</h2>
+        {count != null && count > 0 && <span className="shrink-0 text-sm font-normal text-muted-foreground">({count})</span>}
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   )
 }
