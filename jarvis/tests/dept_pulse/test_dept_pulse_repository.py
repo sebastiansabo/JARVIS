@@ -41,3 +41,47 @@ def test_available_departments_for_manager(pulse_org):
 def test_available_departments_for_member(pulse_org):
     depts = repo.available_departments(pulse_org['user_A'])
     assert [d['node_id'] for d in depts] == [pulse_org['node_C']]
+
+
+import pytest
+from psycopg2.errors import CheckViolation
+
+
+def test_rolling_upsert_updates_same_row(pulse_org):
+    a, node = pulse_org['user_A'], pulse_org['node_C']
+    repo.upsert_vote(a, node, 'self', 'communication', 4)
+    repo.upsert_vote(a, node, 'self', 'communication', 2)  # re-vote
+    mine = repo.get_my_votes(a, node)
+    cells = [(v['perspective'], v['competency_key'], v['rating']) for v in mine]
+    assert cells == [('self', 'communication', 2)]  # one row, latest value
+
+
+def test_delete_on_zero_removes_vote(pulse_org):
+    a, node = pulse_org['user_A'], pulse_org['node_C']
+    repo.upsert_vote(a, node, 'peer', 'teamwork', 5)
+    repo.delete_vote(a, node, 'peer', 'teamwork')
+    assert repo.get_my_votes(a, node) == []
+
+
+def test_aggregate_average_and_distinct_voters(pulse_org):
+    node = pulse_org['node_C']
+    repo.upsert_vote(pulse_org['user_A'], node, 'peer', 'communication', 4)
+    repo.upsert_vote(pulse_org['user_B'], node, 'peer', 'communication', 5)
+    repo.upsert_vote(pulse_org['user_C'], node, 'peer', 'communication', 3)
+    agg = {(r['perspective'], r['competency_key']): r for r in repo.get_aggregate(node)}
+    cell = agg[('peer', 'communication')]
+    assert cell['avg'] == 4.0
+    assert cell['voters'] == 3
+    assert repo.get_voter_count(node) == 3
+
+
+def test_voter_count_below_floor(pulse_org):
+    node = pulse_org['node_C']
+    repo.upsert_vote(pulse_org['user_A'], node, 'manager', 'initiative', 4)
+    repo.upsert_vote(pulse_org['user_B'], node, 'manager', 'initiative', 2)
+    assert repo.get_voter_count(node) == 2  # < MIN_VOTERS — route will blank aggregate
+
+
+def test_upsert_rejects_out_of_range_rating(pulse_org):
+    with pytest.raises(CheckViolation):
+        repo.upsert_vote(pulse_org['user_A'], pulse_org['node_C'], 'self', 'communication', 6)
