@@ -68,6 +68,40 @@ FINAL_ROW = {
     "issued_date": "2026-07-27", "line_ids": [840],
 }
 
+# Stored document numbers per invoice (facturare_document_numbers), keyed by
+# invoice id — this is what the export now reads instead of deriving.
+DOCNUM_MAP_BY_INVOICE = {
+    100: {840: 9103805},  # storno
+    101: {840: 9103806},  # final
+}
+
+# ── Canned scenario data (multi-car anexa, ids 838/839/840) ──────
+LINE_838 = {
+    "id": 838, "anexa_id": 2, "line_number": 1, "nr_comanda": "838-1",
+    "model": "Model A", "culoare": "", "list_price_eur": 0,
+    "selling_price_eur": 10000, "qty": 1,
+}
+LINE_839 = {
+    "id": 839, "anexa_id": 2, "line_number": 2, "nr_comanda": "838-2",
+    "model": "Model B", "culoare": "", "list_price_eur": 0,
+    "selling_price_eur": 10000, "qty": 1,
+}
+LINE_840_MULTI = {
+    "id": 840, "anexa_id": 2, "line_number": 3, "nr_comanda": "838-3",
+    "model": "Model C", "culoare": "", "list_price_eur": 0,
+    "selling_price_eur": 10000, "qty": 1,
+}
+ADVANCE_3CAR = {  # single_doc: all three cars share ONE stored number
+    "id": 200, "invoice_type": "INVOICE", "invoice_number": 300, "anexa_id": 2,
+    "total_amount_eur": 9126, "split_mode": "equal", "kurs_applied": 5.0,
+    "issued_date": "2026-07-27", "line_ids": [838, 839, 840],
+}
+ADVANCE_2CAR = {  # per_car: each car has its OWN stored number
+    "id": 201, "invoice_type": "INVOICE", "invoice_number": 301, "anexa_id": 2,
+    "total_amount_eur": 6084, "split_mode": "equal", "kurs_applied": 5.0,
+    "issued_date": "2026-07-27", "line_ids": [838, 839],
+}
+
 
 class FakeRepo:
     """Returns canned rows for the 352716 scenario; dispatches raw SQL by substring."""
@@ -80,6 +114,9 @@ class FakeRepo:
 
     def get_lines_by_anexa(self, anexa_id):
         return [dict(LINE_840)]
+
+    def get_document_number_map(self, invoice_id):
+        return dict(DOCNUM_MAP_BY_INVOICE.get(invoice_id, {}))
 
     def match_venituri_rule(self, supplier_id, nr_comanda):
         return None  # FINAL falls back to konto_config credit (707128)
@@ -107,6 +144,27 @@ class FakeRepo:
         return []
 
 
+class MultiCarFakeRepo(FakeRepo):
+    """3-car anexa (line ids 838/839/840) used for the multi-car advance tests.
+
+    Only `get_document_number_map` is scenario-specific — the caller supplies
+    the stored map (single_doc: all cars share one number; per_car: each car
+    has its own).
+    """
+
+    def __init__(self, docnum_map):
+        self._docnum_map = docnum_map
+
+    def get_anexa_by_id(self, anexa_id):
+        return {"id": 2, "contract_id": 1, "anexa_number": 99}
+
+    def get_lines_by_anexa(self, anexa_id):
+        return [dict(LINE_838), dict(LINE_839), dict(LINE_840_MULTI)]
+
+    def get_document_number_map(self, invoice_id):
+        return dict(self._docnum_map)
+
+
 @pytest.fixture(autouse=True)
 def fake_repo(monkeypatch):
     monkeypatch.setattr(routes_orders, "_repo", FakeRepo())
@@ -125,6 +183,8 @@ def _betrag(ws, row):
 
 
 def test_storno_lines_share_the_storno_invoice_number():
+    """Belegnummer comes from DOCNUM_MAP_BY_INVOICE[100] = {840: 9103805}, not
+    derived — every reversed-advance row of car 840 gets that stored number."""
     ws = _render(STORNO_ROW)
     # Two reversed advances → rows 3/4 (line 0) and 5/6 (line 1)
     belegnummers = {ws.cell(row=r, column=COL_BELEGNUMMER).value for r in (3, 4, 5, 6)}
@@ -137,6 +197,7 @@ def test_storno_lines_share_the_storno_invoice_number():
 
 
 def test_final_ron_equals_summed_storno_ron():
+    """Belegnummer comes from DOCNUM_MAP_BY_INVOICE[101] = {840: 9103806}."""
     ws = _render(FINAL_ROW)
     assert ws.cell(row=3, column=COL_BELEGNUMMER).value == 9103806
     assert ws.cell(row=3, column=COL_FWBETRAG).value == 22900
@@ -157,3 +218,26 @@ def test_daily_export_storno_plus_final_nets_to_zero():
 
     net = sum(_betrag(ws, r) for r in (3, 5, 7))
     assert abs(net) < 0.01, f"storno + final should net to zero, got {net}"
+
+
+def test_multi_car_advance_single_doc_shares_stored_number(monkeypatch):
+    """single_doc: all three cars were stored under the SAME document number.
+
+    The old `start_no + idx` derivation would have produced 9103042/43/44 for
+    the three rows — wrong, since this invoice's per-car numbers were actually
+    stored identically (single_doc mode). The export must read the map.
+    """
+    monkeypatch.setattr(routes_orders, "_repo", MultiCarFakeRepo(
+        {838: 9103042, 839: 9103042, 840: 9103042}))
+    ws = _render(ADVANCE_3CAR)
+    belegnummers = [ws.cell(row=r, column=COL_BELEGNUMMER).value for r in (3, 5, 7)]
+    assert belegnummers == [9103042, 9103042, 9103042]
+
+
+def test_multi_car_advance_per_car_stored_numbers(monkeypatch):
+    """per_car: each car was stored with its OWN document number."""
+    monkeypatch.setattr(routes_orders, "_repo", MultiCarFakeRepo(
+        {838: 9103042, 839: 9103043}))
+    ws = _render(ADVANCE_2CAR)
+    belegnummers = [ws.cell(row=r, column=COL_BELEGNUMMER).value for r in (3, 5)]
+    assert belegnummers == [9103042, 9103043]
