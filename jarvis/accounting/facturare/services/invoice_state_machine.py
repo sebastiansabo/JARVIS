@@ -12,6 +12,8 @@ import json as _json
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 
+import psycopg2.errors
+
 ONE = Decimal("1")
 
 from ..models import StoredInvoice, InvoiceTypeEnum, InvoiceStateEnum, InvoiceLinkTypeEnum
@@ -101,7 +103,21 @@ class InvoiceStateMachine:
         ordered = self._ordered_line_ids(inv_row, anexa_id)
         rows = allocate(inv_row["invoice_type"], inv_row.get("invoice_number"),
                         inv_row.get("doc_mode", "per_car"), ordered)
-        self.repo.replace_document_numbers(inv_row["id"], supplier_id, rows)
+        try:
+            self.repo.replace_document_numbers(inv_row["id"], supplier_id, rows)
+        except psycopg2.errors.ExclusionViolation:
+            # This invoice's number is already owned by a DIFFERENT invoice of
+            # the same supplier+series (excl_facturare_docnum_cross_invoice).
+            # create_invoice() already committed the invoice row above, so we
+            # must delete it here — otherwise it's left committed with no
+            # document-number rows and a retry would create a duplicate
+            # invoice. The FK from facturare_document_numbers and
+            # facturare_invoice_links is ON DELETE CASCADE, so this single
+            # delete cleans up everything for this invoice.
+            self.repo.delete_invoice(inv_row["id"])
+            raise InvoiceStateMachineError(
+                f"Invoice number {inv_row.get('invoice_number')} is already "
+                f"used by another invoice for this supplier")
 
     # ── Issue Proforma ───────────────────────────────────────────
 
