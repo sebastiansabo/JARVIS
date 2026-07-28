@@ -84,3 +84,67 @@ class DeptPulseRepository(BaseRepository):
 
     def is_eligible(self, user_id: int, node_id: int) -> bool:
         return node_id in self.eligible_node_ids(user_id)
+
+    # ── Aggregate (anonymous) ──
+
+    def get_voter_count(self, node_id: int) -> int:
+        row = self.query_one(
+            "SELECT COUNT(DISTINCT voter_user_id) AS n FROM hr_dept_pulse_votes WHERE department_node_id = %s",
+            (node_id,),
+        )
+        return int(row['n']) if row else 0
+
+    def get_aggregate(self, node_id: int) -> list[dict]:
+        """Anonymous per-perspective × competency average + distinct voter count.
+        voter_user_id never leaves the server. avg comes back as float via
+        dict_from_row's Decimal coercion."""
+        return self.query_all(
+            """
+            SELECT perspective, competency_key,
+                   ROUND(AVG(rating)::numeric, 2) AS avg,
+                   COUNT(DISTINCT voter_user_id)  AS voters
+            FROM hr_dept_pulse_votes
+            WHERE department_node_id = %s
+            GROUP BY perspective, competency_key
+            """,
+            (node_id,),
+        )
+
+    # ── Caller's own votes ──
+
+    def get_my_votes(self, user_id: int, node_id: int) -> list[dict]:
+        return self.query_all(
+            """
+            SELECT perspective, competency_key, rating
+            FROM hr_dept_pulse_votes
+            WHERE voter_user_id = %s AND department_node_id = %s
+            ORDER BY perspective, competency_key
+            """,
+            (user_id, node_id),
+        )
+
+    # ── Write ──
+
+    def upsert_vote(self, user_id: int, node_id: int, perspective: str,
+                    competency_key: str, rating: int) -> None:
+        self.execute(
+            """
+            INSERT INTO hr_dept_pulse_votes
+                (voter_user_id, department_node_id, perspective, competency_key, rating, updated_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (voter_user_id, department_node_id, perspective, competency_key)
+            DO UPDATE SET rating = EXCLUDED.rating, updated_at = NOW()
+            """,
+            (user_id, node_id, perspective, competency_key, rating),
+        )
+
+    def delete_vote(self, user_id: int, node_id: int, perspective: str,
+                    competency_key: str) -> None:
+        self.execute(
+            """
+            DELETE FROM hr_dept_pulse_votes
+            WHERE voter_user_id = %s AND department_node_id = %s
+              AND perspective = %s AND competency_key = %s
+            """,
+            (user_id, node_id, perspective, competency_key),
+        )
