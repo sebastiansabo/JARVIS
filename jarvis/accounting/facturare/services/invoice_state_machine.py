@@ -8,6 +8,7 @@
 Entity hierarchy: Contract → Anexa → Invoices.
 Vehicle lines live on the Anexa, not on invoices.
 """
+import json as _json
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -15,6 +16,7 @@ ONE = Decimal("1")
 
 from ..models import StoredInvoice, InvoiceTypeEnum, InvoiceStateEnum, InvoiceLinkTypeEnum
 from ..repositories.invoice_storage_repository import InvoiceStorageRepository
+from .document_numbering import allocate
 
 logger = logging.getLogger("jarvis.facturare.state_machine")
 
@@ -67,6 +69,39 @@ class InvoiceStateMachine:
             raise InvoiceStateMachineError(
                 f"Invoice number {invoice_number} already used on this anexa "
                 f"({row['invoice_type']} #{row['sequence_number']})")
+
+    def _supplier_id_for_anexa(self, anexa_id: int) -> int:
+        anexa = self.repo.get_anexa_by_id(anexa_id)
+        contract = self.repo.get_contract_by_id(anexa["contract_id"])
+        return contract["supplier_id"]
+
+    def _ordered_line_ids(self, inv_row: dict, anexa_id: int) -> list[int]:
+        """Return the line_ids in the exact order they were stored on inv_row.
+
+        Falls back to all anexa lines (in line_number order) when the invoice
+        covers the whole anexa (line_ids is None) — this matches the order
+        every other consumer (PDF/eurofib/backfill) uses in that case.
+        """
+        raw = inv_row.get("line_ids")
+        if isinstance(raw, str):
+            raw = _json.loads(raw)
+        if raw:
+            return list(raw)
+        return [l["id"] for l in self.repo.get_lines_by_anexa(anexa_id)]
+
+    def _persist_document_numbers(self, inv_row: dict, anexa_id: int) -> None:
+        """Allocate + store per-document numbers for a just-created invoice row.
+
+        Ordering/doc_mode are derived from what create_invoice actually STORED
+        on inv_row (not from method-local variables) so that Task 6/7 consumers
+        and the Task 5 backfill — which map position -> car from the stored
+        line_ids — stay consistent with what's persisted here.
+        """
+        supplier_id = self._supplier_id_for_anexa(anexa_id)
+        ordered = self._ordered_line_ids(inv_row, anexa_id)
+        rows = allocate(inv_row["invoice_type"], inv_row.get("invoice_number"),
+                        inv_row.get("doc_mode", "per_car"), ordered)
+        self.repo.replace_document_numbers(inv_row["id"], supplier_id, rows)
 
     # ── Issue Proforma ───────────────────────────────────────────
 
@@ -146,6 +181,7 @@ class InvoiceStateMachine:
             doc_mode=doc_mode,
         )
         logger.info("Proforma #%d created: anexa=%s amount=%s EUR lines=%s mode=%s", seq, anexa_id, amount_eur, line_ids or "all", doc_mode)
+        self._persist_document_numbers(inv_row, anexa_id)
         return StoredInvoice.from_row(inv_row)
 
     # ── Issue Invoice ────────────────────────────────────────────
@@ -207,6 +243,7 @@ class InvoiceStateMachine:
         )
 
         logger.info("Invoice #%d created: anexa=%s amount=%s EUR", sequence_number, anexa_id, proforma_amount)
+        self._persist_document_numbers(inv_row, anexa_id)
         return StoredInvoice.from_row(inv_row)
 
     # ── Issue Storno ─────────────────────────────────────────────
@@ -313,6 +350,7 @@ class InvoiceStateMachine:
             )
 
         logger.info("Storno #%d created: anexa=%s amount=%s EUR lines=%s", seq, anexa_id, -storno_total, line_ids or "all")
+        self._persist_document_numbers(inv_row, anexa_id)
         return StoredInvoice.from_row(inv_row)
 
     # ── Issue Final ──────────────────────────────────────────────
@@ -429,6 +467,7 @@ class InvoiceStateMachine:
         )
 
         logger.info("Final #%d created: anexa=%s amount=%s EUR lines=%s", seq, anexa_id, final_total, line_ids or "all")
+        self._persist_document_numbers(inv_row, anexa_id)
         return StoredInvoice.from_row(inv_row)
 
     # ── Query helpers ────────────────────────────────────────────
