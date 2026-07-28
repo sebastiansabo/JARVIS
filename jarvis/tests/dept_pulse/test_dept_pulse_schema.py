@@ -1,30 +1,21 @@
-"""Task 1 — hr_dept_pulse_votes schema. Runs against localhost/defaultdb only."""
+"""Task 1 — hr_dept_pulse_votes schema. Runs against localhost/defaultdb when a
+real Postgres is reachable; skips cleanly under CI's mocked/unreachable DB.
+
+The psycopg2 mock-drop/rebind + real-DB probe now lives centrally in this
+package's conftest.py (REAL_DB_AVAILABLE), which also restores the pre-probe
+mock state on failure so a no-DB run doesn't leak real-driver bindings into
+other test packages collected in the same pytest session. This module just
+consults that flag and skips (matching the idiom in
+tests/foi_parcurs/test_session_lifecycle_tz.py's `_real_repo_or_skip`).
+"""
 import os
-import sys
 
 os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')
 
-# jarvis/conftest.py mocks sys.modules['psycopg2'] (and .pool/.extras/.errors)
-# at collection time, before this module is ever imported. A plain `import
-# psycopg2` here would just re-bind to that already-installed mock, so this
-# test — which needs a genuine connection to real localhost Postgres, per its
-# purpose — explicitly drops the mock out of sys.modules first, so that both
-# this module's own `import psycopg2` and `database`'s internal `import
-# psycopg2` (triggered by the `from database import ...` below) resolve to
-# the real driver.
-#
-# This only works because this test file is meant to be run in its own
-# pytest invocation (see the module's stated test command), so `database`
-# has not yet been imported — and therefore not yet cached with the mock
-# bound in — by any other test module in the same process.
-from unittest.mock import MagicMock as _ConftestMockType
-for _mod_name in ('psycopg2', 'psycopg2.pool', 'psycopg2.extras', 'psycopg2.errors'):
-    if isinstance(sys.modules.get(_mod_name), _ConftestMockType):
-        del sys.modules[_mod_name]
-
-import psycopg2  # noqa: F401  (real driver now, per the bypass above)
 import pytest
 from database import get_db, get_cursor, release_db
+
+from .conftest import REAL_DB_AVAILABLE
 
 
 def _run_migration():
@@ -42,6 +33,11 @@ def _run_migration():
 
 @pytest.fixture(scope='module', autouse=True)
 def ensure_migrated():
+    if not REAL_DB_AVAILABLE:
+        pytest.skip(
+            'Real Postgres not available (DATABASE_URL unreachable or psycopg2 '
+            'mocked) — skipping dept_pulse schema tests'
+        )
     _run_migration()
 
 

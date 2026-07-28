@@ -7,6 +7,39 @@ Topology:
 Eligibility consequences the tests rely on:
   - M (responsable of P) is eligible for P and its descendant C.
   - A/B/C (members of C) are eligible for C only — NOT for parent P.
+
+CI-safety (final-review fix):
+jarvis/conftest.py installs a MagicMock for psycopg2 (and .pool/.extras/.errors)
+in sys.modules at collection time so the rest of the suite can run without a
+real DB. This package's tests are DB-backed (Task 1/2), so they need the real
+driver — but CI (`.github/workflows/ci.yml`) runs `pytest tests/ -x -q` with a
+placeholder DATABASE_URL and NO Postgres service container. Blindly dropping
+the mock and rebinding `database` to the real driver (as this file used to do,
+unconditionally) makes the very first `get_db()` raise
+`OperationalError: connection refused` in CI, and with `-x` that halts the
+whole run.
+
+The fix, mirroring the skip-guard idiom in
+tests/foi_parcurs/test_session_lifecycle_tz.py (`_real_repo_or_skip`):
+  1. PROBE once, here, at collection time: attempt the mock-drop/rebind, then
+     a real `get_db()` → `SELECT 1` → release. Success sets
+     `REAL_DB_AVAILABLE = True`; any failure (refused connection, missing DB,
+     still mocked, psycopg2 not importable, ...) sets it False.
+  2. On failure, RESTORE the exact sys.modules / `database`-module state that
+     existed before we touched anything, so a no-DB run doesn't leave the
+     process nudged into "real driver" mode for any other test package
+     collected in the same pytest session (rebinding is otherwise
+     process-global, since `database` is a singleton module).
+  3. DB-dependent tests (this file's `pulse_org` fixture, and
+     test_dept_pulse_schema.py's `ensure_migrated` fixture) check
+     `REAL_DB_AVAILABLE` and `pytest.skip(...)` when it's False.
+     test_dept_pulse_routes.py monkeypatches every repository method and never
+     touches the DB, so it does not consult this flag and keeps running.
+
+The probe/restore dance is idempotent: re-running it in the same process (or
+in an isolated dept_pulse-only invocation) is a strict no-op once the real
+driver is already bound, and a strict no-op restore when nothing was ever
+mocked to begin with.
 """
 import os
 import sys
@@ -14,47 +47,113 @@ from unittest.mock import MagicMock
 
 os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')
 
-# jarvis/conftest.py installs a MagicMock for psycopg2 (and .pool/.extras/.errors)
-# in sys.modules at collection time, before any test module or sub-package
-# conftest.py runs. DB-backed dept_pulse tests need the REAL driver. Two steps,
-# in order, are required — the second is essential for a FULL-suite run:
-#
-#   1. Drop the mock modules from sys.modules so a fresh `import psycopg2`
-#      resolves the real driver.
-#   2. In a full-suite run, an earlier test package imports `database` (which
-#      does `import psycopg2` + `from psycopg2 import pool` at its top and lazily
-#      builds a module-global `_connection_pool`) BEFORE this package's conftest
-#      runs. That already-imported `database` captured the MOCKS into its own
-#      namespace (`database.psycopg2` / `database.pool` / `database.RealDictCursor`)
-#      and may hold a mock `_connection_pool`. Step 1 alone can't fix that — those
-#      are separate references. So rebind them to the real driver and drop the
-#      pool, forcing the next get_db() (used by BaseRepository → DeptPulseRepository)
-#      to build a real pool against the real DATABASE_URL.
-#
-# Both steps are gated on isinstance(..., MagicMock) so the whole block is
-# idempotent and a strict no-op once the real driver is already bound (isolated
-# dept_pulse runs, reruns) — it never disturbs a genuine already-real
-# environment or any other suite's modules.
-for _mod_name in ('psycopg2', 'psycopg2.pool', 'psycopg2.extras', 'psycopg2.errors'):
-    if isinstance(sys.modules.get(_mod_name), MagicMock):
-        del sys.modules[_mod_name]
-
-import psycopg2  # noqa: F401  (real driver now, per the bypass above)
-import psycopg2.pool  # noqa: F401
-from psycopg2.extras import RealDictCursor as _RealDictCursor
-
-# Force an already-imported `database` module off the mocks it captured.
-_db = sys.modules.get('database')
-if _db is not None and (
-    isinstance(getattr(_db, 'psycopg2', None), MagicMock)
-    or isinstance(getattr(_db, 'pool', None), MagicMock)
-):
-    _db.psycopg2 = psycopg2
-    _db.pool = psycopg2.pool
-    _db.RealDictCursor = _RealDictCursor
-    _db._connection_pool = None  # drop mock pool → next get_db() builds a real one
-
 import pytest
+
+_MOCK_MODULE_NAMES = ('psycopg2', 'psycopg2.pool', 'psycopg2.extras', 'psycopg2.errors')
+
+# Snapshot exactly what's in sys.modules for these names *before* we touch
+# anything (the root conftest.py's MagicMocks, in the common case) so a failed
+# probe can put things back exactly as they were.
+_saved_sys_modules = {name: sys.modules.get(name) for name in _MOCK_MODULE_NAMES}
+
+# Snapshot whether `database` was already imported, and if so, the attributes
+# it captured at its own import time (possibly mocks, possibly already-real).
+_db_preexisting = 'database' in sys.modules
+_saved_db_attrs = None
+if _db_preexisting:
+    _db_mod = sys.modules['database']
+    _saved_db_attrs = {
+        'psycopg2': getattr(_db_mod, 'psycopg2', None),
+        'pool': getattr(_db_mod, 'pool', None),
+        'RealDictCursor': getattr(_db_mod, 'RealDictCursor', None),
+        '_connection_pool': getattr(_db_mod, '_connection_pool', None),
+    }
+
+
+def _drop_mocks_and_bind_real_driver():
+    """Drop mocked psycopg2* from sys.modules and rebind an already-imported
+    `database` module onto the real driver (see module docstring for why the
+    rebind of an already-imported `database` is necessary in a full-suite
+    run). Gated on isinstance(..., MagicMock) throughout, so it's a no-op once
+    the real driver is already bound.
+    """
+    for _name in _MOCK_MODULE_NAMES:
+        if isinstance(sys.modules.get(_name), MagicMock):
+            del sys.modules[_name]
+
+    import psycopg2 as _psycopg2
+    import psycopg2.pool as _psycopg2_pool
+    from psycopg2.extras import RealDictCursor as _RealDictCursor
+
+    _db_mod = sys.modules.get('database')
+    if _db_mod is not None and (
+        isinstance(getattr(_db_mod, 'psycopg2', None), MagicMock)
+        or isinstance(getattr(_db_mod, 'pool', None), MagicMock)
+    ):
+        _db_mod.psycopg2 = _psycopg2
+        _db_mod.pool = _psycopg2_pool
+        _db_mod.RealDictCursor = _RealDictCursor
+        _db_mod._connection_pool = None  # drop mock pool → next get_db() builds a real one
+
+
+def _restore_pre_probe_state():
+    """Undo `_drop_mocks_and_bind_real_driver()` (and any `database` import
+    triggered by the probe itself) so a no-DB run leaves the process exactly
+    as it would have been if this package's conftest never ran — no other
+    test package collected in the same session gets flipped into
+    real-DB-mode.
+    """
+    for _name in _MOCK_MODULE_NAMES:
+        _saved = _saved_sys_modules.get(_name)
+        if _saved is not None:
+            sys.modules[_name] = _saved
+        else:
+            sys.modules.pop(_name, None)
+
+    if _db_preexisting:
+        _db_mod = sys.modules.get('database')
+        if _db_mod is not None and _saved_db_attrs is not None:
+            _db_mod.psycopg2 = _saved_db_attrs['psycopg2']
+            _db_mod.pool = _saved_db_attrs['pool']
+            _db_mod.RealDictCursor = _saved_db_attrs['RealDictCursor']
+            _db_mod._connection_pool = _saved_db_attrs['_connection_pool']
+    else:
+        # `database` was not imported before our probe touched anything, so
+        # any `database` module now in sys.modules was imported *by* the
+        # probe and is bound to the real driver. Drop it entirely so the next
+        # `import database` (by this package or any other) re-executes
+        # cleanly against the just-restored mocks.
+        sys.modules.pop('database', None)
+
+
+def _probe_real_db():
+    """Attempt the rebind + a real `SELECT 1`. Returns True iff a genuine,
+    reachable Postgres answered. On ANY failure — connection refused, DB
+    missing, still mocked (defensive: the value check below catches a
+    MagicMock row degrading to a non-{'one': 1} result even if the rebind
+    somehow didn't take), psycopg2 not importable, etc. — restores the
+    pre-probe state and returns False.
+    """
+    try:
+        _drop_mocks_and_bind_real_driver()
+        from database import get_db, get_cursor, release_db
+        conn = get_db()
+        try:
+            cur = get_cursor(conn)
+            cur.execute('SELECT 1 AS one')
+            row = cur.fetchone()
+            if not row or row.get('one') != 1:
+                raise RuntimeError('probe query did not return a real row (mocked cursor?)')
+        finally:
+            release_db(conn)
+        return True
+    except Exception:
+        _restore_pre_probe_state()
+        return False
+
+
+REAL_DB_AVAILABLE = _probe_real_db()
+
 from database import get_db, get_cursor, release_db
 
 _MARK = 'PULSE_TEST_CO'  # sincron_employees.company_name marker for cleanup
@@ -78,6 +177,12 @@ def _ensure_table(cur):
 
 @pytest.fixture
 def pulse_org():
+    if not REAL_DB_AVAILABLE:
+        pytest.skip(
+            'Real Postgres not available (DATABASE_URL unreachable or psycopg2 '
+            'mocked) — skipping dept_pulse DB-backed test'
+        )
+
     conn = get_db()
     conn.autocommit = False
     cur = get_cursor(conn)
