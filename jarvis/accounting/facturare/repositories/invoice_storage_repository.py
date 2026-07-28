@@ -225,3 +225,29 @@ class InvoiceStorageRepository(BaseRepository):
             """INSERT INTO facturare_invoice_links (source_invoice_id, target_invoice_id, link_type)
                VALUES (%s,%s,%s) RETURNING *""",
             (source_invoice_id, target_invoice_id, link_type.value), returning=True)
+
+    # ── Document numbers registry ────────────────────────────────
+
+    def replace_document_numbers(self, invoice_id, supplier_id, rows):
+        """Delete-then-insert the document number rows for an invoice.
+
+        Idempotent: calling this twice with the same rows yields the same
+        stored state (no duplicate-key errors), since existing rows for the
+        invoice are removed first within the same transaction.
+        """
+        def _work(cursor):
+            cursor.execute("DELETE FROM facturare_document_numbers WHERE invoice_id=%s", (invoice_id,))
+            for r in rows:
+                cursor.execute(
+                    """INSERT INTO facturare_document_numbers
+                       (invoice_id, supplier_id, series, line_id, position, document_number)
+                       VALUES (%s,%s,%s,%s,%s,%s)""",
+                    (invoice_id, supplier_id, r["series"], r["line_id"], r["position"], r["document_number"]))
+        return self.execute_many(_work)
+
+    def get_document_number_map(self, invoice_id):
+        """Return {line_id: document_number} for an invoice, skipping None numbers."""
+        rows = self.query_all(
+            "SELECT line_id, document_number FROM facturare_document_numbers "
+            "WHERE invoice_id=%s AND document_number IS NOT NULL", (invoice_id,))
+        return {r["line_id"]: r["document_number"] for r in (rows or [])}
