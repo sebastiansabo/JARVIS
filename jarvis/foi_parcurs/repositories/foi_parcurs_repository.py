@@ -309,6 +309,11 @@ class FoiParcursRepository(BaseRepository):
             "AND COALESCE(fp.return_datetime, fp.departure_datetime) >= %s "
             "AND ( fp.status = 'PLANNED' "
             "      OR (fp.status <> 'COMPLETED' AND fp.status <> 'PENDING') ) "
+            # A missed slot frees the vehicle: drop MISSED and PLANNED rows already
+            # past the 8h grace (archived on the next sweeper pass). In-grace 'late'
+            # rows still block — the client may yet show up.
+            "AND fp.status <> 'MISSED' "
+            "AND NOT (fp.status = 'PLANNED' AND fp.departure_datetime + INTERVAL '8 hours' < NOW()) "
             f"{exclude_sql} "
             "ORDER BY fp.departure_datetime ASC"
         )
