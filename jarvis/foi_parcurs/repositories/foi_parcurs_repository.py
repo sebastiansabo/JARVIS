@@ -3,23 +3,9 @@
 import json
 import logging
 from core.base_repository import BaseRepository
+from foi_parcurs.session_lifecycle import TD_STATUS_SQL as _TD_STATUS_SQL, NOW_LOCAL_SQL, GRACE_HOURS
 
 logger = logging.getLogger('jarvis.foi_parcurs.repository')
-
-
-# Derived three-state status for Test Drive contracts, surfaced on the list and
-# detail endpoints so the mobile app can badge each row without re-deriving:
-#   complete   → the return form was submitted (status COMPLETED)
-#   incomplete → the expected arrival time (return_datetime) has passed but no
-#                return form was submitted yet
-#   driving    → still out (no return yet, arrival time not passed / not set)
-_TD_STATUS_SQL = (
-    "CASE "
-    "WHEN fp.status = 'COMPLETED' THEN 'complete' "
-    "WHEN fp.return_datetime IS NOT NULL AND fp.return_datetime < NOW() THEN 'incomplete' "
-    "ELSE 'driving' "
-    "END AS td_status"
-)
 
 
 # Lean column set for the LIST endpoint — every scalar the sessions/contracts/
@@ -272,6 +258,57 @@ class FoiParcursRepository(BaseRepository):
             return self.get_contract_by_id(row['id']) or row
         return row
 
+    def reschedule_session(self, contract_id: int, departure_datetime, return_datetime) -> dict:
+        """Move a PLANNED/MISSED session to a new time and revive it to PLANNED,
+        clearing the missed/late-notify stamps. Guarded to those two statuses."""
+        sql = (
+            "UPDATE foi_de_parcurs SET departure_datetime = %s, return_datetime = %s, "
+            "status = 'PLANNED', missed_at = NULL, late_notified_at = NULL, updated_at = NOW() "
+            "WHERE id = %s AND route_type = 'TD' AND status IN ('PLANNED', 'MISSED') RETURNING *"
+        )
+        row = self.execute(sql, (departure_datetime, return_datetime, contract_id), returning=True)
+        if row and row.get('id'):
+            return self.get_contract_by_id(row['id']) or row
+        return row
+
+    def get_sessions_pending_late_notify(self) -> list:
+        """PLANNED TD rows whose start just passed (still in the 8h grace) and
+        that haven't been late-notified yet."""
+        sql = (
+            "SELECT fp.id, fp.advisor_name, "
+            "COALESCE(fp.client_name, c.name) AS client_name, fp.vin, fp.departure_datetime "
+            "FROM foi_de_parcurs fp LEFT JOIN fp_clients c ON c.id = fp.client_id "
+            "WHERE fp.route_type = 'TD' AND fp.status = 'PLANNED' "
+            f"AND fp.departure_datetime < {NOW_LOCAL_SQL} "
+            f"AND fp.departure_datetime + INTERVAL '{GRACE_HOURS} hours' >= {NOW_LOCAL_SQL} "
+            "AND fp.late_notified_at IS NULL"
+        )
+        return self.query_all(sql)
+
+    def mark_late_notified(self, contract_id: int) -> None:
+        self.execute('UPDATE foi_de_parcurs SET late_notified_at = NOW() WHERE id = %s', (contract_id,))
+
+    def archive_missed_sessions(self) -> int:
+        """Flip PLANNED TD rows past the 8h grace to MISSED. Returns the count.
+
+        `BaseRepository.execute(..., returning=False)` commits and returns the
+        rowcount — exactly the number archived — so no RETURNING is needed."""
+        return self.execute(
+            "UPDATE foi_de_parcurs SET status = 'MISSED', missed_at = NOW(), updated_at = NOW() "
+            "WHERE route_type = 'TD' AND status = 'PLANNED' "
+            f"AND departure_datetime + INTERVAL '{GRACE_HOURS} hours' < {NOW_LOCAL_SQL}"
+        ) or 0
+
+    def get_advisor_user_id(self, advisor_name):
+        """Resolve a session's advisor (by name) to a users.id, or None."""
+        name = (advisor_name or '').strip()
+        if not name:
+            return None
+        row = self.query_one(
+            'SELECT id FROM users WHERE LOWER(name) = LOWER(%s) ORDER BY id LIMIT 1', (name,)
+        )
+        return row['id'] if row else None
+
     def record_return(self, contract_id: int, data: dict) -> dict:
         """Update a TD contract with return data (km/fuel/damage/signatures) and mark COMPLETED.
 
@@ -323,6 +360,11 @@ class FoiParcursRepository(BaseRepository):
             "AND COALESCE(fp.return_datetime, fp.departure_datetime) >= %s "
             "AND ( fp.status = 'PLANNED' "
             "      OR (fp.status <> 'COMPLETED' AND fp.status <> 'PENDING') ) "
+            # A missed slot frees the vehicle: drop MISSED and PLANNED rows already
+            # past the 8h grace (archived on the next sweeper pass). In-grace 'late'
+            # rows still block — the client may yet show up.
+            "AND fp.status <> 'MISSED' "
+            f"AND NOT (fp.status = 'PLANNED' AND fp.departure_datetime + INTERVAL '{GRACE_HOURS} hours' < {NOW_LOCAL_SQL}) "
             f"{exclude_sql} "
             "ORDER BY fp.departure_datetime ASC"
         )
