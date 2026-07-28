@@ -2296,10 +2296,26 @@ def _create_schema_incremental_continued(conn, cursor):
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
     """)
+    cursor.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
+    # The number may repeat across the cars of ONE single_doc invoice, but must
+    # not be reused by a DIFFERENT invoice. Enforced with an exclusion constraint
+    # (a plain UNIQUE index would reject single_doc multi-car rows).
+    cursor.execute("DROP INDEX IF EXISTS uq_facturare_docnum_series")
     cursor.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_facturare_docnum_series
-        ON facturare_document_numbers (supplier_id, series, document_number)
-        WHERE document_number IS NOT NULL
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'excl_facturare_docnum_cross_invoice'
+            ) THEN
+                ALTER TABLE facturare_document_numbers
+                    ADD CONSTRAINT excl_facturare_docnum_cross_invoice
+                    EXCLUDE USING gist (
+                        supplier_id     WITH =,
+                        series          WITH =,
+                        document_number WITH =,
+                        invoice_id      WITH <>
+                    ) WHERE (document_number IS NOT NULL);
+            END IF;
+        END $$;
     """)
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_facturare_docnum_invoice

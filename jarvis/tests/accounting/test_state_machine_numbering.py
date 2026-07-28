@@ -19,9 +19,7 @@ import pytest
 from decimal import Decimal
 
 from database import get_db, get_cursor, release_db
-from accounting.facturare.services.invoice_state_machine import (
-    InvoiceStateMachine, InvoiceStateMachineError,
-)
+from accounting.facturare.services.invoice_state_machine import InvoiceStateMachine
 from accounting.facturare.repositories.invoice_storage_repository import InvoiceStorageRepository
 
 # supplier_id=16 (AUTOWORLD S.R.L.) and customer_id=18 are pre-existing rows
@@ -104,28 +102,10 @@ def test_issue_proforma_persists_per_car_numbers(sm, repo, anexa3):
 
 # ── Case 2: single_doc mode over 3 lines ─────────────────────────
 #
-# BLOCKED by a pre-existing schema defect from Task 2, not introduced here:
-# `uq_facturare_docnum_series` is a plain UNIQUE(supplier_id, series,
-# document_number) index. single_doc invoices intentionally store the SAME
-# document_number on every covered car's row (one physical document, many
-# cars) — the 2nd such row always collides with the 1st under a plain unique
-# index. This is not a hypothetical edge case: localhost (prod-derived) data
-# has 16 single_doc invoices covering 2-63 cars each (e.g. anexa 9 proforma
-# invoice_number=166 over 29 cars; anexa 14 invoice_number=353 over 59 cars).
-# Fixing this requires changing the constraint itself (e.g. an EXCLUDE
-# constraint via btree_gist: EXCLUDE USING gist (supplier_id WITH =,
-# series WITH =, document_number WITH =, invoice_id WITH <>) WHERE
-# (document_number IS NOT NULL) — unique ACROSS invoices, permissive WITHIN
-# one) — which touches Task 2's already-committed/reviewed deliverable and a
-# fiscal-numbering invariant, plus needs the btree_gist extension on
-# staging/prod. That is a schema-owner decision, not made in this task — see
-# task-4-report.md for the full writeup and recommended fix.
-@pytest.mark.xfail(
-    reason="Task 2's uq_facturare_docnum_series (plain UNIQUE) rejects the "
-           "2nd+ row of a multi-car single_doc invoice sharing one document_"
-           "number; needs an EXCLUDE-constraint fix owned outside Task 4.",
-    strict=True,
-)
+# All 3 cars of a single_doc invoice share ONE document_number. This works
+# because Task 2's uniqueness rule is now an EXCLUDE constraint
+# (excl_facturare_docnum_cross_invoice) that only forbids reuse ACROSS
+# different invoices, permitting the same number within one invoice's rows.
 def test_issue_proforma_persists_single_doc_numbers(sm, repo, anexa3):
     anexa_id, line_ids = anexa3
     base = _rand_base()
