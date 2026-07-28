@@ -353,6 +353,14 @@ def api_reschedule_test_drive(id):
             return jsonify({'success': False, 'error': 'Invalid departure_datetime'}), 400
         if dep_dt.date() < datetime.now(timezone.utc).date():
             return jsonify({'success': False, 'error': 'Cannot reschedule to a past date'}), 400
+        ret = data.get('return_datetime')
+        if ret:
+            try:
+                ret_dt = datetime.fromisoformat(str(ret).replace('Z', '+00:00'))
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Invalid return_datetime'}), 400
+            if ret_dt < dep_dt:
+                return jsonify({'success': False, 'error': 'return_datetime cannot be before departure_datetime'}), 400
         updated = _fp_repo.reschedule_session(id, departure, data.get('return_datetime'))
         if not (updated and updated.get('id')):
             return jsonify({'success': False, 'error': 'Session is no longer reschedulable'}), 409
