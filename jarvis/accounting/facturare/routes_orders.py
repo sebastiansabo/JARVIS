@@ -1614,6 +1614,9 @@ def api_generate_eurofib(invoice_id):
     if not konto_row or not konto_row.get("konto_credit"):
         return error_response("Konto config not set for this supplier/type. Go to Settings tab.", 400)
 
+    # Stored document numbers per car line_id (populated by the numbering module).
+    docnum = _repo.get_document_number_map(invoice_id)
+
     # Build per-car order lines
     inv_type_str = inv_row["invoice_type"]
     total_amount = float(inv_row["total_amount_eur"])
@@ -1674,9 +1677,11 @@ def api_generate_eurofib(invoice_id):
                     list_price=float(car["list_price_eur"]), selling_price=selling,
                     advance=-car_amount, rest=None,
                     kurs=ri_kurs,
-                    # A storno is ONE invoice: every reversed-advance row carries the
-                    # storno's own number (else the 2nd row incremented into the FINAL's).
-                    start_no=start_no,
+                    # Stored document number for THIS car. A storno is ONE invoice, so
+                    # every reversed-advance row of the same car shares that car's
+                    # stored number. Pre-backfill fallback: the storno's own start_no
+                    # (else the 2nd row would increment into the FINAL's number).
+                    start_no=docnum.get(car["id"], start_no),
                 ))
     else:
         # For FINAL: derive each car's kurs from the advances it reverses so the
@@ -1720,6 +1725,9 @@ def api_generate_eurofib(invoice_id):
                 kurs=line_kurs,
                 kostenstelle=line_kostenstelle,
                 konto_credit_override=line_konto_credit,
+                # Stored document number for THIS car; None falls through to the
+                # renderer's default (cfg.invoice.start_no + idx) pre-backfill.
+                start_no=docnum.get(l["id"]),
             ))
 
     # Compute kurs_date (day before issued_date)
@@ -1840,6 +1848,8 @@ def _build_eurofib_batch(inv_row):
     from datetime import date as date_type, timedelta
 
     invoice_id = inv_row["id"]
+    # Stored document numbers per car line_id (populated by the numbering module).
+    docnum = _repo.get_document_number_map(invoice_id)
     anexa = _repo.get_anexa_by_id(inv_row["anexa_id"])
     contract = _repo.get_contract_by_id(anexa["contract_id"])
     all_lines = _repo.get_lines_by_anexa(anexa["id"])
@@ -1912,9 +1922,11 @@ def _build_eurofib_batch(inv_row):
                     list_price=float(car["list_price_eur"]), selling_price=selling,
                     advance=-car_amount, rest=None,
                     kurs=ri_kurs,
-                    # A storno is ONE invoice: every reversed-advance row carries the
-                    # storno's own number (else the 2nd row incremented into the FINAL's).
-                    start_no=start_no,
+                    # Stored document number for THIS car. A storno is ONE invoice, so
+                    # every reversed-advance row of the same car shares that car's
+                    # stored number. Pre-backfill fallback: the storno's own start_no
+                    # (else the 2nd row would increment into the FINAL's number).
+                    start_no=docnum.get(car["id"], start_no),
                 ))
     else:
         _final_kurs_date_set = False
@@ -1951,6 +1963,9 @@ def _build_eurofib_batch(inv_row):
                 advance=car_advance, rest=selling,
                 kurs=line_kurs,
                 kostenstelle=line_kostenstelle, konto_credit_override=line_konto_credit,
+                # Stored document number for THIS car; None falls through to the
+                # renderer's default (cfg.invoice.start_no + idx) pre-backfill.
+                start_no=docnum.get(l["id"]),
             ))
 
     # Compute kurs_date
