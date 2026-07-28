@@ -22,6 +22,8 @@ if JARVIS_ROOT not in sys.path:
     sys.path.insert(0, JARVIS_ROOT)
 os.environ.setdefault("DATABASE_URL", "postgresql://localhost/defaultdb")
 
+import psycopg2
+import psycopg2.errors
 import pytest
 from decimal import Decimal
 
@@ -254,3 +256,25 @@ def test_dry_run_predicts_collision_and_writes_nothing(repo, seeded):
     finally:
         release_db(conn)
     assert after == before, "dry run must not write anything"
+
+
+def test_backfill_does_not_swallow_non_collision_integrity_errors(repo, seeded, monkeypatch):
+    """Only a genuine ExclusionViolation (the cross-invoice number clash the
+    EXCLUDE constraint is designed to reject) may be recorded as a
+    `collisions` entry. Any OTHER IntegrityError (NotNullViolation,
+    ForeignKeyViolation, CheckViolation, ...) signals a real data/schema bug
+    and must propagate and blow up the run instead of being silently
+    mislabeled as a collision.
+    """
+    original_replace = repo.replace_document_numbers
+    inv_x_id = seeded["inv_x_id"]
+
+    def _replace_with_injected_error(invoice_id, supplier_id, rows):
+        if invoice_id == inv_x_id:
+            raise psycopg2.errors.NotNullViolation("simulated non-collision integrity error")
+        return original_replace(invoice_id, supplier_id, rows)
+
+    monkeypatch.setattr(repo, "replace_document_numbers", _replace_with_injected_error)
+
+    with pytest.raises(psycopg2.errors.NotNullViolation):
+        backfill(repo, apply=True)
