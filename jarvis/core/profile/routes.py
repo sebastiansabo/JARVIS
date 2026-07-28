@@ -7,12 +7,20 @@ from flask import jsonify, request, redirect, Response
 from flask_login import login_required, current_user
 
 from . import profile_bp
-from core.profile.repositories import ProfileRepository
+from core.profile.repositories import ProfileRepository, DeptPulseRepository
 from core.auth.repositories.user_repository import UserRepository
 from core.utils.api_helpers import safe_error_response
 
 _profile_repo = ProfileRepository()
 _user_repo = UserRepository()
+_dept_pulse_repo = DeptPulseRepository()
+
+# Fixed allow-lists — the rater-role keys are unchanged (peer stays 'peer';
+# only its mobile label becomes 'Colegi'). Competency keys match the mobile card.
+_VALID_DP_PERSPECTIVES = {'self', 'peer', 'manager'}
+_VALID_DP_COMPETENCIES = {
+    'communication', 'teamwork', 'initiative', 'problemSolving', 'professionalism',
+}
 
 
 def _has_invoice_edit_permission(user) -> bool:
@@ -889,5 +897,91 @@ def api_profile_sincron_timesheet():
             'month': month,
             'timesheet': data,
         })
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@profile_bp.route('/api/dept-pulse')
+@login_required
+def api_profile_dept_pulse():
+    """Anonymous department-pulse aggregate + the caller's own votes.
+
+    Resolves the caller's Sincron department when ?department is omitted; when
+    present, requires eligibility (else 403). Aggregate is blanked below the
+    3-voter anonymity floor; my_votes is always returned.
+    """
+    try:
+        uid = current_user.id
+        requested = request.args.get('department', type=int)
+        available = _dept_pulse_repo.available_departments(uid)
+
+        if requested is not None:
+            if not _dept_pulse_repo.is_eligible(uid, requested):
+                return jsonify({'error': 'Not eligible for this department'}), 403
+            dept = _dept_pulse_repo.get_department(requested)
+        else:
+            dept = _dept_pulse_repo.resolve_department(uid)
+
+        min_voters = DeptPulseRepository.MIN_VOTERS
+        if not dept:
+            return jsonify({
+                'department': None,
+                'available_departments': available,
+                'voter_count': 0,
+                'min_voters': min_voters,
+                'aggregate': [],
+                'my_votes': [],
+            })
+
+        node_id = dept['node_id']
+        voter_count = _dept_pulse_repo.get_voter_count(node_id)
+        aggregate = _dept_pulse_repo.get_aggregate(node_id) if voter_count >= min_voters else []
+        my_votes = _dept_pulse_repo.get_my_votes(uid, node_id)
+
+        return jsonify({
+            'department': {
+                'node_id': node_id,
+                'name': dept['name'],
+                'company_id': dept.get('company_id'),
+            },
+            'available_departments': available,
+            'voter_count': voter_count,
+            'min_voters': min_voters,
+            'aggregate': aggregate,
+            'my_votes': my_votes,
+        })
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@profile_bp.route('/api/dept-pulse', methods=['POST'])
+@login_required
+def api_profile_dept_pulse_vote():
+    """Upsert (or clear, on rating 0/null) one of the caller's votes."""
+    try:
+        uid = current_user.id
+        data = request.get_json(silent=True) or {}
+        node_id = data.get('department_node_id')
+        perspective = data.get('perspective')
+        competency = data.get('competency_key')
+        rating = data.get('rating')
+
+        if not isinstance(node_id, int):
+            return jsonify({'error': 'department_node_id required'}), 400
+        if perspective not in _VALID_DP_PERSPECTIVES:
+            return jsonify({'error': 'invalid perspective'}), 400
+        if competency not in _VALID_DP_COMPETENCIES:
+            return jsonify({'error': 'invalid competency_key'}), 400
+        if not _dept_pulse_repo.is_eligible(uid, node_id):
+            return jsonify({'error': 'Not eligible for this department'}), 403
+
+        if rating in (0, None):
+            _dept_pulse_repo.delete_vote(uid, node_id, perspective, competency)
+        elif isinstance(rating, int) and 1 <= rating <= 5:
+            _dept_pulse_repo.upsert_vote(uid, node_id, perspective, competency, rating)
+        else:
+            return jsonify({'error': 'rating must be an integer 0-5'}), 400
+
+        return jsonify({'ok': True})
     except Exception as e:
         return safe_error_response(e)
