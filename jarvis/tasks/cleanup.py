@@ -27,6 +27,7 @@ from tasks.hr_courses import check_course_cert_expiry
 from tasks.carpark import cleanup_vin_cache
 from tasks.holidays import populate_holidays
 from tasks.telemetry import close_stale_sessions, cleanup_old_telemetry
+from tasks.foi_parcurs_sessions import run_session_lifecycle
 
 logger = get_logger('jarvis.tasks')
 
@@ -393,6 +394,17 @@ def start_scheduler():
         hour=3,
         minute=0,
         id='telemetry_cleanup_old_data',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    # Foi de Parcurs — TD session lifecycle: notify missed-at-start + archive past-grace (every 10 minutes)
+    scheduler.add_job(
+        run_session_lifecycle,
+        'interval',
+        minutes=10,
+        id='foi_parcurs_sessions',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,
