@@ -331,6 +331,45 @@ def api_update_plan(id):
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
 
+@foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>/reschedule', methods=['PUT'])
+@login_required
+def api_reschedule_test_drive(id):
+    """Reschedule a PLANNED (late) or MISSED session to a new future time,
+    reviving it to PLANNED. VIN conflicts are soft-checked client-side (the
+    conflicts endpoint), mirroring plan/activate — this endpoint only moves it."""
+    data = request.get_json(silent=True) or {}
+    departure = data.get('departure_datetime')
+    if not departure:
+        return jsonify({'success': False, 'error': 'departure_datetime is required'}), 400
+    try:
+        contract = _fp_repo.get_contract_by_id(id)
+        if not contract:
+            return jsonify({'success': False, 'error': 'Not found'}), 404
+        if contract.get('route_type') != 'TD' or contract.get('status') not in ('PLANNED', 'MISSED'):
+            return jsonify({'success': False, 'error': 'Only planned or missed sessions can be rescheduled'}), 409
+        try:
+            dep_dt = datetime.fromisoformat(str(departure).replace('Z', '+00:00'))
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid departure_datetime'}), 400
+        if dep_dt.date() < datetime.now(timezone.utc).date():
+            return jsonify({'success': False, 'error': 'Cannot reschedule to a past date'}), 400
+        ret = data.get('return_datetime')
+        if ret:
+            try:
+                ret_dt = datetime.fromisoformat(str(ret).replace('Z', '+00:00'))
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Invalid return_datetime'}), 400
+            if ret_dt < dep_dt:
+                return jsonify({'success': False, 'error': 'return_datetime cannot be before departure_datetime'}), 400
+        updated = _fp_repo.reschedule_session(id, departure, data.get('return_datetime'))
+        if not (updated and updated.get('id')):
+            return jsonify({'success': False, 'error': 'Session is no longer reschedulable'}), 409
+        return jsonify({'success': True, 'contract': updated})
+    except Exception as e:
+        logger.exception('Failed to reschedule test drive %s', id)
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+
 def _autosend_completed_contract(contract_id):
     """Email the finished contract PDF to the client + consilier once a TD is
     completed. Best-effort — recipients are deduped and failures are logged, never
