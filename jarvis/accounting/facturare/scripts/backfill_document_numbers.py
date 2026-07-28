@@ -42,7 +42,7 @@ from ..services.invoice_state_machine import InvoiceStateMachine
 
 logger = logging.getLogger("jarvis.facturare.backfill_document_numbers")
 
-_COLLISION_ERRORS = (psycopg2.errors.ExclusionViolation, psycopg2.IntegrityError)
+_COLLISION_ERRORS = (psycopg2.errors.ExclusionViolation,)
 
 
 class _LineCachingRepo:
