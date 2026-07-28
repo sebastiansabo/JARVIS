@@ -2283,4 +2283,27 @@ def _create_schema_incremental_continued(conn, cursor):
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS alimentari JSONB DEFAULT '[]'")
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS evenimente JSONB DEFAULT '[]'")
 
+    # facturare per-document number registry (additive; never mutates facturare_invoices)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS facturare_document_numbers (
+            id SERIAL PRIMARY KEY,
+            invoice_id INTEGER NOT NULL REFERENCES facturare_invoices(id) ON DELETE CASCADE,
+            supplier_id INTEGER NOT NULL,
+            series VARCHAR(16) NOT NULL,
+            line_id INTEGER NOT NULL,
+            position INTEGER NOT NULL,
+            document_number INTEGER,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    """)
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_facturare_docnum_series
+        ON facturare_document_numbers (supplier_id, series, document_number)
+        WHERE document_number IS NOT NULL
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_facturare_docnum_invoice
+        ON facturare_document_numbers (invoice_id)
+    """)
+
     conn.commit()
