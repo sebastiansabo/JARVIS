@@ -30,7 +30,7 @@
 
 ---
 
-### Task M1: `late`/`missed` statuses + badges
+### Task 1: `late`/`missed` statuses + badges
 
 **Files:**
 - Modify: `src/hooks/useApi.ts` (`TdStatus` ~946, `deriveTdStatus` ~958, `tdStatusBadge` ~972, `td_status` field ~699)
@@ -151,7 +151,7 @@ git commit -m "feat(test-drive): derive late/missed session statuses + badges"
 
 ---
 
-### Task M2: `useRescheduleTestDrive` hook
+### Task 2: `useRescheduleTestDrive` hook
 
 **Files:**
 - Modify: `src/hooks/useApi.ts` (near `useUpdatePlan` / `useActivateTestDrive`, ~line 1055-1087)
@@ -199,7 +199,7 @@ git commit -m "feat(test-drive): useRescheduleTestDrive mutation hook"
 
 ---
 
-### Task M3: `RescheduleSheet` component + validation helper
+### Task 3: `RescheduleSheet` component + validation helper
 
 **Files:**
 - Create: `src/pages/Sales/TestDrive/RescheduleSheet.tsx`
@@ -377,7 +377,7 @@ git commit -m "feat(test-drive): RescheduleSheet + reschedule validation helper"
 
 ---
 
-### Task M4: List — route `missed` to archived + `Reprogramează` row action
+### Task 4: List — route `missed` to archived + `Reprogramează` row action
 
 **Files:**
 - Modify: `src/pages/Sales/TestDrive/index.tsx` (filter ~line 70-77; `SessionRow` ~line 220-301)
@@ -456,7 +456,7 @@ git commit -m "feat(test-drive): archive missed sessions + reschedule action in 
 
 ---
 
-### Task M5: Detail — late/missed actions
+### Task 5: Detail — late/missed actions
 
 **Files:**
 - Modify: `src/pages/Sales/TestDrive/Detail.tsx`
@@ -516,7 +516,7 @@ git commit -m "feat(test-drive): late/missed actions on the session detail page"
 
 ---
 
-### Task M6: Deep-link, build, sync, verify
+### Task 6: Deep-link, build, sync, verify
 
 **Files:**
 - Verify: `src/services/deepLinks.ts` (push tap → route), `src/services/pushNotifications.ts`
