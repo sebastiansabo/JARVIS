@@ -252,7 +252,7 @@ def start_scheduler():
                 coalesce=True,
             )
 
-    # Sincron — daily timesheet sync (04:00 UTC / 07:00 Romania)
+    # Sincron — weekly timesheet sync (Mon 04:00 UTC / 07:00 Romania)
     _sincron_cron = {}
     try:
         import json as _json2
@@ -282,6 +282,7 @@ def start_scheduler():
             scheduler.add_job(
                 sync_sincron_timesheets,
                 'cron',
+                day_of_week=_sincron_settings.get('day_of_week', 'mon'),
                 hour=_sincron_settings.get('hour', 4),
                 minute=_sincron_settings.get('minute', 0),
                 id='sincron_sync_timesheets',
