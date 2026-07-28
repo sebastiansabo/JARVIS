@@ -24,6 +24,7 @@ def test_notifies_pending_and_marks_then_archives():
     assert args[0] == [42]
     assert args[1] == 'Sesiune ratată la start'
     assert kwargs['link'] == '/sales/test-drive/11'
+    assert kwargs['push_data'] == {'link': '/sales/test-drive/11'}
     repo.mark_late_notified.assert_called_once_with(11)
     repo.archive_missed_sessions.assert_called_once()
 
