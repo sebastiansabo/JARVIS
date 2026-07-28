@@ -271,6 +271,44 @@ class FoiParcursRepository(BaseRepository):
             return self.get_contract_by_id(row['id']) or row
         return row
 
+    def get_sessions_pending_late_notify(self) -> list:
+        """PLANNED TD rows whose start just passed (still in the 8h grace) and
+        that haven't been late-notified yet."""
+        sql = (
+            "SELECT fp.id, fp.advisor_name, "
+            "COALESCE(fp.client_name, c.name) AS client_name, fp.vin, fp.departure_datetime "
+            "FROM foi_de_parcurs fp LEFT JOIN fp_clients c ON c.id = fp.client_id "
+            "WHERE fp.route_type = 'TD' AND fp.status = 'PLANNED' "
+            "AND fp.departure_datetime < NOW() "
+            "AND fp.departure_datetime + INTERVAL '8 hours' >= NOW() "
+            "AND fp.late_notified_at IS NULL"
+        )
+        return self.query_all(sql)
+
+    def mark_late_notified(self, contract_id: int) -> None:
+        self.execute('UPDATE foi_de_parcurs SET late_notified_at = NOW() WHERE id = %s', (contract_id,))
+
+    def archive_missed_sessions(self) -> int:
+        """Flip PLANNED TD rows past the 8h grace to MISSED. Returns the count.
+
+        `BaseRepository.execute(..., returning=False)` commits and returns the
+        rowcount — exactly the number archived — so no RETURNING is needed."""
+        return self.execute(
+            "UPDATE foi_de_parcurs SET status = 'MISSED', missed_at = NOW(), updated_at = NOW() "
+            "WHERE route_type = 'TD' AND status = 'PLANNED' "
+            "AND departure_datetime + INTERVAL '8 hours' < NOW()"
+        ) or 0
+
+    def get_advisor_user_id(self, advisor_name):
+        """Resolve a session's advisor (by name) to a users.id, or None."""
+        name = (advisor_name or '').strip()
+        if not name:
+            return None
+        row = self.query_one(
+            'SELECT id FROM users WHERE LOWER(name) = LOWER(%s) ORDER BY id LIMIT 1', (name,)
+        )
+        return row['id'] if row else None
+
     def record_return(self, contract_id: int, data: dict) -> dict:
         """Update a TD contract with return data (km/fuel/damage/signatures) and mark COMPLETED.
 
