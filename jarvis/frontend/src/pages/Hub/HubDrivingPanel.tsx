@@ -6,7 +6,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { usePersistedState } from '@/lib/utils'
 import { foiParcursApi } from '@/api/foiParcurs'
-import { SessionsTab } from '@/pages/FoiParcurs/index'
+import DrivingSessionsList from '@/pages/Hub/DrivingSessionsList'
 import { CalendarTab } from '@/pages/FoiParcurs/CalendarTab'
 import TestDriveForm from '@/pages/FoiParcurs/TestDriveForm'
 import TestDriveReturn from '@/pages/FoiParcurs/TestDriveReturn'
@@ -42,20 +42,22 @@ export default function HubDrivingPanel() {
 
   return (
     <div className="space-y-4">
-      {/* Selector + primary action */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={String(companyId)} onValueChange={(v) => setCompanyId(Number(v))}>
-          <SelectTrigger className="w-56"><SelectValue placeholder="Selectează compania" /></SelectTrigger>
-          <SelectContent>{companies.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>)}</SelectContent>
-        </Select>
-        {brands.length > 0 && (
-          <Select value={brand} onValueChange={setBrand}>
-            <SelectTrigger className="w-44"><SelectValue placeholder="Brand" /></SelectTrigger>
-            <SelectContent>{brands.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+      {/* Company / brand selectors + primary action — mobile-first (iOS) */}
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <Select value={String(companyId)} onValueChange={(v) => setCompanyId(Number(v))}>
+            <SelectTrigger className="h-11 flex-1 rounded-xl text-base"><SelectValue placeholder="Selectează compania" /></SelectTrigger>
+            <SelectContent>{companies.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>)}</SelectContent>
           </Select>
-        )}
-        <Button className="ml-auto" onClick={() => setOverlay({ kind: 'new' })}>
-          <Plus className="h-4 w-4 mr-1.5" /> Driving Session nou
+          {brands.length > 0 && (
+            <Select value={brand} onValueChange={setBrand}>
+              <SelectTrigger className="h-11 w-32 shrink-0 rounded-xl text-base"><SelectValue placeholder="Brand" /></SelectTrigger>
+              <SelectContent>{brands.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+            </Select>
+          )}
+        </div>
+        <Button className="h-11 w-full rounded-xl text-base font-semibold" onClick={() => setOverlay({ kind: 'new' })}>
+          <Plus className="mr-1.5 h-4 w-4" /> Driving Session nou
         </Button>
       </div>
 
@@ -67,7 +69,7 @@ export default function HubDrivingPanel() {
       </Tabs>
 
       {companyId > 0 && tab === 'sessions' && (
-        <SessionsTab
+        <DrivingSessionsList
           companyId={companyId}
           brand={brand}
           onActivate={(id) => setOverlay({ kind: 'activate', id })}
