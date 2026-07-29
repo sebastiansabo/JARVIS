@@ -44,6 +44,24 @@ def get_invoice_pdf(invoice_id: int):
         return safe_error_response(e)
 
 
+@efactura_bp.route('/api/invoices/<int:invoice_id>/preview', methods=['GET'])
+@api_login_required
+@efactura_access_required
+def get_invoice_preview(invoice_id: int):
+    """In-app preview of an e-Factura invoice — parses the stored UBL XML locally
+    (fetching once from ANAF descarcare only if not stored). No transformare/PDF call."""
+    try:
+        from ..services.invoice_xml_service import get_invoice_xml_by_efactura_id
+        xml_content = get_invoice_xml_by_efactura_id(invoice_id)
+        if not xml_content:
+            return jsonify({'success': False, 'error': 'No e-Factura content available'}), 404
+
+        from ..invoice_preview import build_invoice_preview
+        return jsonify(build_invoice_preview(xml_content))
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @efactura_bp.route('/api/anaf/export-pdf/<message_id>', methods=['GET'])
 @api_login_required
 @efactura_access_required

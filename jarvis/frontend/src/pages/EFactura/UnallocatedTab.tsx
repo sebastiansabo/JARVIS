@@ -53,6 +53,7 @@ import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
 import type { EFacturaInvoiceFilters } from '@/types/efactura'
 import { type InvoiceRow, type ColumnDef, columnDefMap, fmtDate } from './unallocated/UnallocatedColumns'
 import { ColumnToggle, loadColumns, saveColumns } from './unallocated/UnallocatedColumnToggle'
+import { InvoicePreviewModal } from '@/pages/Profile/InvoicePreviewModal'
 
 // ── Main Component ──────────────────────────────────────────
 export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenCount = 0, showFilters = false, search = '', companyId }: { showHidden: boolean; onShowHiddenChange?: (v: boolean) => void; hiddenCount?: number; showFilters?: boolean; search?: string; companyId?: number }) {
@@ -68,6 +69,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   const [sendDialog, setSendDialog] = useState<{ ids: number[] } | null>(null)
   const [sendObserverIds, setSendObserverIds] = useState<number[]>([])
   const [viewInvoice, setViewInvoice] = useState<InvoiceRow | null>(null)
+  const [previewId, setPreviewId] = useState<number | null>(null)
   const [editInvoice, setEditInvoice] = useState<InvoiceRow | null>(null)
   const [overrides, setOverrides] = useState({
     type_override: '',
@@ -785,9 +787,9 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-7 w-7 text-red-600 dark:text-red-400"
-                            title="Export PDF"
-                            onClick={() => window.open(efacturaApi.getInvoicePdfUrl(inv.id), '_blank')}
+                            className="h-7 w-7"
+                            title="Previzualizare factură"
+                            onClick={() => setPreviewId(inv.id)}
                           >
                             <FileText className="h-3.5 w-3.5" />
                           </Button>
@@ -1021,9 +1023,9 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
             <Button
               variant="outline"
               size="sm"
-              onClick={() => viewInvoice && window.open(efacturaApi.getInvoicePdfUrl(viewInvoice.id), '_blank')}
+              onClick={() => viewInvoice && setPreviewId(viewInvoice.id)}
             >
-              <FileText className="mr-1.5 h-3.5 w-3.5" /> Export PDF
+              <FileText className="mr-1.5 h-3.5 w-3.5" /> Previzualizare
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1244,6 +1246,10 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {previewId !== null && (
+        <InvoicePreviewModal invoiceId={previewId} source="efactura" onClose={() => setPreviewId(null)} />
+      )}
     </div>
   )
 }

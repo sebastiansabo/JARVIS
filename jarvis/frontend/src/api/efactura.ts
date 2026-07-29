@@ -22,6 +22,7 @@ import type {
   DistinctSupplier,
   ErrorStats,
 } from '@/types/efactura'
+import type { InvoicePreview } from './profile'
 
 const BASE = '/efactura/api'
 
@@ -58,6 +59,7 @@ export const efacturaApi = {
     return res.data
   },
   getInvoicePdfUrl: (id: number) => `${BASE}/invoices/${id}/pdf`,
+  getInvoicePreview: (id: number) => api.get<InvoicePreview>(`${BASE}/invoices/${id}/preview`),
   downloadArtifactUrl: (id: number, type: string) => `${BASE}/invoices/${id}/download/${type}`,
 
   // ── Unallocated Invoices ──────────────────────────────────
