@@ -54,6 +54,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { StatCard } from '@/components/shared/StatCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
+import { InvoicePreviewModal } from './InvoicePreviewModal'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
@@ -1930,6 +1931,7 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
+  const [previewId, setPreviewId] = useState<number | null>(null)
 
   const isArchivedView = archiveView === 'archived'
   const canEdit = isArchivedView ? false : (user?.can_edit_invoices || (user?.permissions?.['invoices.records.edit'] ?? false) || isOrgResponsable)
@@ -2131,12 +2133,24 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                 ] satisfies MobileCardField<ProfileInvoice>[]}
                 getRowId={(inv) => inv.id}
                 actions={(inv) => inv.drive_link ? (
-                  <button
-                    onClick={() => handleDownloadPdf(inv)}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {inv.drive_link.startsWith('/efactura/') && (
+                      <button
+                        onClick={() => setPreviewId(inv.id)}
+                        className="text-muted-foreground hover:text-foreground"
+                        title="Previzualizare factură"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDownloadPdf(inv)}
+                      className="text-muted-foreground hover:text-foreground"
+                      title="Descarcă PDF"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 ) : null}
               />
             ) : (
@@ -2213,12 +2227,24 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
                             </TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()}>
                               {inv.drive_link && (
-                                <button
-                                  onClick={() => handleDownloadPdf(inv)}
-                                  className="text-muted-foreground hover:text-foreground"
-                                >
-                                  <ExternalLink className="h-3.5 w-3.5" />
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  {inv.drive_link.startsWith('/efactura/') && (
+                                    <button
+                                      onClick={() => setPreviewId(inv.id)}
+                                      className="text-muted-foreground hover:text-foreground"
+                                      title="Previzualizare factură"
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleDownloadPdf(inv)}
+                                    className="text-muted-foreground hover:text-foreground"
+                                    title="Descarcă PDF"
+                                  >
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
                               )}
                             </TableCell>
                           </TableRow>
@@ -2266,6 +2292,10 @@ function InvoicesPanel({ orgDepartments, isOrgResponsable }: { orgDepartments: s
           }}
           invalidateQueryKeys={[['profile', 'invoices'], ['profile', 'invoice-detail'], ['invoices']]}
         />
+      )}
+
+      {previewId !== null && (
+        <InvoicePreviewModal invoiceId={previewId} onClose={() => setPreviewId(null)} />
       )}
     </Card>
   )
