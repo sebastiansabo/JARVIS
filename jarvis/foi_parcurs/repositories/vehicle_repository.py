@@ -17,6 +17,9 @@ class FPVehicleRepository(BaseRepository):
         'SELECT v.id, v.vin, v.mark, v.brand, v.model, v.color, v.fuel_type, '
         'v.fuel_tank_capacity_liters, v.battery_capacity_kwh, v.odometer_km, '
         'v.company_id, v.car_id, v.registration_number, v.is_active, '
+        # Lockout state so the Driving Park + session car pickers can show a car
+        # as blocked (disabled) with its reason.
+        'v.locked_out, v.lockout_category, v.lockout_note, v.lockout_until, '
         'v.created_at, v.updated_at, v.vignette_valid_until, v.itp_valid_until, '
         'v.insurance_valid_until, c.company AS company_name, '
         # Cheap doc-availability flags so clients (mobile Parc Auto) know which
@@ -100,4 +103,36 @@ class FPVehicleRepository(BaseRepository):
         return self.execute(
             'UPDATE fp_vehicles SET is_active = FALSE, updated_at = NOW() WHERE id = %s',
             (vehicle_id,),
+        )
+
+    # ── Lockout: block a car from the driving park ──────────────────────────
+
+    def lock_vehicle(self, vehicle_id, category, note, until, user_id):
+        """Lock a car out of the driving park (blocks new sessions)."""
+        return self.execute(
+            '''UPDATE fp_vehicles
+               SET locked_out = TRUE, lockout_category = %s, lockout_note = %s,
+                   lockout_until = %s, locked_by = %s, locked_at = NOW(), updated_at = NOW()
+               WHERE id = %s RETURNING *''',
+            (category, note, until, user_id, vehicle_id),
+            returning=True,
+        )
+
+    def unlock_vehicle(self, vehicle_id):
+        """Clear a car's lockout, making it available again."""
+        return self.execute(
+            '''UPDATE fp_vehicles
+               SET locked_out = FALSE, lockout_category = NULL, lockout_note = NULL,
+                   lockout_until = NULL, locked_by = NULL, locked_at = NULL, updated_at = NOW()
+               WHERE id = %s RETURNING *''',
+            (vehicle_id,),
+            returning=True,
+        )
+
+    def get_lock_by_vin(self, vin):
+        """Current lockout state for a VIN (for session-create validation)."""
+        return self.query_one(
+            'SELECT locked_out, lockout_category, lockout_note, lockout_until '
+            'FROM fp_vehicles WHERE vin = %s',
+            (vin,),
         )

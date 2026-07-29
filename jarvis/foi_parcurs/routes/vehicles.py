@@ -86,6 +86,36 @@ def api_get_vehicle_document(vehicle_id, doc_type):
     return jsonify({'success': True, 'type': doc_type, 'filename': filename, 'data_url': data_url})
 
 
+_LOCKOUT_CATEGORIES = ('service', 'damage', 'paperwork', 'other')
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/vehicles/<int:vehicle_id>/lock', methods=['POST'])
+@login_required
+def api_lock_vehicle(vehicle_id):
+    """Lock a car out of the driving park (blocks new sessions for its VIN)."""
+    from flask_login import current_user
+    data = request.get_json() or {}
+    category = data.get('category')
+    if category not in _LOCKOUT_CATEGORIES:
+        return jsonify({'success': False, 'error': 'Invalid lockout category'}), 400
+    note = (data.get('note') or '').strip() or None
+    until = data.get('until') or None
+    row = _vehicle_repo.lock_vehicle(vehicle_id, category, note, until, getattr(current_user, 'id', None))
+    if not row:
+        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+    return jsonify({'success': True})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/vehicles/<int:vehicle_id>/unlock', methods=['POST'])
+@login_required
+def api_unlock_vehicle(vehicle_id):
+    """Clear a car's lockout, making it available in the driving park again."""
+    row = _vehicle_repo.unlock_vehicle(vehicle_id)
+    if not row:
+        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+    return jsonify({'success': True})
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/odometer-history', methods=['GET'])
 @login_required
 def api_odometer_history():
