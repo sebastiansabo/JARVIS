@@ -11,27 +11,66 @@ Topology:
 """
 import os
 import sys
-import importlib
 from unittest.mock import MagicMock
 
 os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')
 
 # ── CI-safe real-psycopg2 bypass + probe (mirrors tests/dept_pulse/conftest.py) ──
-_SAVED = {}
+# The probe both drops mocked psycopg2* from sys.modules AND mutates the
+# already-imported `database` singleton (_db.psycopg2/_db.pool/_db._connection_pool).
+# On the failure path (no reachable DB, e.g. CI) BOTH must be restored, or
+# `database` is left bound to the real driver with a nulled pool and the next
+# get_db() anywhere in the suite raises OperationalError. See dept_pulse's
+# _restore_pre_probe_state() — this mirrors it.
 REAL_DB_AVAILABLE = False
 
+_MOCK_MODULE_NAMES = ('psycopg2', 'psycopg2.pool', 'psycopg2.extras', 'psycopg2.errors')
 
-def _restore():
-    for name, mod in _SAVED.items():
-        if mod is not None:
-            sys.modules[name] = mod
+# Snapshot the psycopg2* sys.modules entries (root conftest's MagicMocks in CI)
+# BEFORE we touch anything, so a failed probe can put them back exactly.
+_saved_sys_modules = {name: sys.modules.get(name) for name in _MOCK_MODULE_NAMES}
+
+# Snapshot whether `database` was already imported and, if so, the attrs the
+# probe is about to mutate — so the failure path can undo the mutation.
+_db_preexisting = 'database' in sys.modules
+_saved_db_attrs = None
+if _db_preexisting:
+    _db_mod = sys.modules['database']
+    _saved_db_attrs = {
+        'psycopg2': getattr(_db_mod, 'psycopg2', None),
+        'pool': getattr(_db_mod, 'pool', None),
+        'RealDictCursor': getattr(_db_mod, 'RealDictCursor', None),
+        '_connection_pool': getattr(_db_mod, '_connection_pool', None),
+    }
+
+
+def _restore_pre_probe_state():
+    """Undo the probe's sys.modules drops AND its `database`-singleton mutation
+    so a no-DB run leaves the process exactly as if this conftest never ran."""
+    for name in _MOCK_MODULE_NAMES:
+        saved = _saved_sys_modules.get(name)
+        if saved is not None:
+            sys.modules[name] = saved
+        else:
+            sys.modules.pop(name, None)
+
+    if _db_preexisting:
+        _db_mod = sys.modules.get('database')
+        if _db_mod is not None and _saved_db_attrs is not None:
+            _db_mod.psycopg2 = _saved_db_attrs['psycopg2']
+            _db_mod.pool = _saved_db_attrs['pool']
+            _db_mod.RealDictCursor = _saved_db_attrs['RealDictCursor']
+            _db_mod._connection_pool = _saved_db_attrs['_connection_pool']
+    else:
+        # `database` was imported by the probe itself and is bound to the real
+        # driver — drop it so the next `import database` re-executes cleanly
+        # against the just-restored mocks.
+        sys.modules.pop('database', None)
 
 
 def _probe_real_db():
     global REAL_DB_AVAILABLE
-    names = ('psycopg2', 'psycopg2.pool', 'psycopg2.extras', 'psycopg2.errors')
-    for n in names:
-        _SAVED[n] = sys.modules.get(n)
+    for n in _MOCK_MODULE_NAMES:
         if isinstance(sys.modules.get(n), MagicMock):
             del sys.modules[n]
     try:
@@ -53,7 +92,7 @@ def _probe_real_db():
             release_db(conn)
     except Exception:
         REAL_DB_AVAILABLE = False
-        _restore()
+        _restore_pre_probe_state()
 
 
 _probe_real_db()
