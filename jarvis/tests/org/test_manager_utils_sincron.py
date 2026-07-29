@@ -70,3 +70,18 @@ def test_visible_tree_l0_company(org_fixture):
     assert [c['company_id'] for c in tree['companies']] == [org_fixture['company_id']]
     assert tree['companies'][0]['id'] == f"company-{org_fixture['company_id']}"
     assert tree['nodes'] == []  # L0 is not a Sincron responsable here
+
+
+def test_managed_node_filter_in_scope(org_fixture):
+    # M (responsable@P) can query a node inside their own subtree
+    assert set(get_managed_employee_ids(org_fixture['user_M'], node_id=org_fixture['node_Ch'])) == {org_fixture['user_A'], org_fixture['user_B']}
+
+
+def test_managed_node_filter_out_of_scope_returns_empty(org_fixture):
+    # M cannot query a node in a company they neither manage nor are L0 for
+    assert get_managed_employee_ids(org_fixture['user_M'], node_id=org_fixture['node_Z']) == []
+
+
+def test_managed_node_filter_l0_can_query_company_node(org_fixture):
+    # L0 of company CT may query any node in CT
+    assert set(get_managed_employee_ids(org_fixture['user_L0'], node_id=org_fixture['node_Ch'])) == {org_fixture['user_A'], org_fixture['user_B']}
