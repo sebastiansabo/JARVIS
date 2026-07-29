@@ -1259,6 +1259,21 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
             (jarvis_invoice_id,)
         )
 
+    def get_xml_source_info_by_id(self, invoice_id: int) -> Optional[dict]:
+        """Same as get_xml_source_info but keyed by the e-Factura invoice PK
+        (used by the accounting/e-Factura preview, which has the efactura id, not
+        a jarvis_invoice_id)."""
+        return self.query_one(
+            '''SELECT i.id, i.cif_owner, i.xml_content,
+                      COALESCE(r.download_id, r.message_id) AS download_id
+               FROM efactura_invoices i
+               LEFT JOIN efactura_invoice_refs r ON r.invoice_id = i.id
+               WHERE i.id = %s
+               ORDER BY r.created_at DESC NULLS LAST
+               LIMIT 1''',
+            (invoice_id,)
+        )
+
     def save_xml_content(self, invoice_id: int, xml_content: str) -> None:
         """Cache freshly-fetched UBL XML back onto the invoice row."""
         self.execute(
