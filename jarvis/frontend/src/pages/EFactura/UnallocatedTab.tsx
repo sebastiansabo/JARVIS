@@ -779,8 +779,8 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                             size="icon"
                             variant="ghost"
                             className="h-7 w-7 text-blue-600 dark:text-blue-400"
-                            title="View Details"
-                            onClick={() => setViewInvoice(inv)}
+                            title="Previzualizare factură"
+                            onClick={() => setPreviewId(inv.id)}
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
@@ -788,8 +788,8 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                             size="icon"
                             variant="ghost"
                             className="h-7 w-7"
-                            title="Previzualizare factură"
-                            onClick={() => setPreviewId(inv.id)}
+                            title="Detalii / mapări"
+                            onClick={() => setViewInvoice(inv)}
                           >
                             <FileText className="h-3.5 w-3.5" />
                           </Button>
