@@ -46,8 +46,20 @@ export interface FpVehicle {
   registration_doc?: string | null
   offer_doc?: string | null
   is_active: boolean
+  // Lockout — car blocked from the driving park (blocks new sessions).
+  locked_out?: boolean
+  lockout_category?: 'service' | 'damage' | 'paperwork' | 'other' | null
+  lockout_note?: string | null
+  lockout_until?: string | null
   created_at: string
   updated_at: string
+}
+
+export const LOCKOUT_LABELS: Record<'service' | 'damage' | 'paperwork' | 'other', string> = {
+  service: 'În service',
+  damage: 'Avariat',
+  paperwork: 'Acte lipsă/expirate',
+  other: 'Altele',
 }
 
 // ── Fuel Gauge ──
@@ -170,6 +182,7 @@ export interface FoiContract {
   fuel_end_liters: number
   fuel_consumed_liters: number
   itinerary: string
+  general_observation?: string | null
   advisor_name: string
   signature_ai_generated: string
   // 'PLANNED' — draft session created ahead of time (Plan a Driving Session,
@@ -309,6 +322,7 @@ export interface TestDriveFormPayload {
   fuel_end_liters?: number
   fuel_consumed_liters?: number
   itinerary?: string
+  general_observation?: string
   departure_datetime: string
   return_datetime?: string
   advisor_name: string
@@ -349,6 +363,7 @@ export interface ActivateTestDrivePayload {
   departure_datetime?: string
   return_datetime?: string
   departure_damage?: TdDamageItem[]
+  general_observation?: string
 }
 
 // ── Return (completion) Test Drive Payload — PUT /test-drive/:id/return.

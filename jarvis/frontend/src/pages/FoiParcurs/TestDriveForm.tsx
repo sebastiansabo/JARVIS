@@ -8,6 +8,7 @@ import { useVehicleConflicts } from '@/hooks/useVehicleConflicts'
 import {
   usesFuelTank,
   usesBattery,
+  LOCKOUT_LABELS,
   type FuelGaugeLevel,
   type CrmClient,
   type FpVehicle,
@@ -21,6 +22,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -132,6 +134,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const [odometerStart, setOdometerStart] = useState('')
   const [estimatedKm, setEstimatedKm] = useState('')
   const [fuelGaugeStart, setFuelGaugeStart] = useState<FuelGaugeLevel | ''>('')
+  const [generalObservation, setGeneralObservation] = useState('')
 
   // Advisor & signatures
   const [advisorName, setAdvisorName] = useState(user?.name ?? '')
@@ -197,6 +200,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     setEstimatedKm(String(c.distance_km ?? ''))
     setFuelGaugeStart((c.fuel_gauge_start_level as FuelGaugeLevel) || '')
     setAdvisorName(c.advisor_name || '')
+    setGeneralObservation(c.general_observation ?? '')
     setDepartureDamage(fromDamagePayload(c.departure_damage))
     if (c.client_id && c.client_name) {
       setSelectedClient({ id: c.client_id, display_name: c.client_name, phone: c.client_phone ?? null })
@@ -349,6 +353,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(driverLicensePhoto ? { driver_license_photo: driverLicensePhoto } : {}),
       ...(driverLicenseNumber.trim() ? { driver_license_number: driverLicenseNumber.trim() } : {}),
       ...(driverLicenseExpiry.trim() ? { driver_license_expiry: driverLicenseExpiry.trim() } : {}),
+      ...(generalObservation.trim() ? { general_observation: generalObservation.trim() } : {}),
     }
   }
 
@@ -406,6 +411,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(returnDatetime ? { return_datetime: returnDatetime } : {}),
       ...(damagePayload.length ? { departure_damage: damagePayload } : {}),
       ...(conditionsRequired ? { general_conditions_accepted: conditionsAccepted } : {}),
+      ...(generalObservation.trim() ? { general_observation: generalObservation.trim() } : {}),
     }
     withConflictCheck(selectedVehicle.vin, () => activateMutation.mutate(payload), activateId)
   }
@@ -421,6 +427,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     setDepartureDatetime(localDatetimeValue(new Date()))
     setReturnDatetime(localDatetimeValue(new Date(Date.now() + 60 * 60 * 1000)))
     setOdometerStart(''); setEstimatedKm(''); setFuelGaugeStart('')
+    setGeneralObservation('')
     setClientSignature('')
     setShowDamage(false); setDepartureDamage(makeEmptyDamageState())
     setGdprConsent(false); setInspectionAcceptance(false)
@@ -510,8 +517,9 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
               </SelectTrigger>
               <SelectContent>
                 {vehiclesForCompany.map((v) => (
-                  <SelectItem key={v.id} value={String(v.id)}>
+                  <SelectItem key={v.id} value={String(v.id)} disabled={!!v.locked_out}>
                     {[v.mark, v.model].filter(Boolean).join(' ') || '—'} — {v.registration_number || v.vin}
+                    {v.locked_out ? ` · 🔒 Blocat${v.lockout_category ? ` (${LOCKOUT_LABELS[v.lockout_category]})` : ''}` : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -538,6 +546,16 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
               {latestInspection.condition_notes && <p><span className="text-muted-foreground">Note:</span> {latestInspection.condition_notes}</p>}
             </div>
           )}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Observații generale</Label>
+            <Textarea
+              value={generalObservation}
+              onChange={(e) => setGeneralObservation(e.target.value)}
+              placeholder="Observații despre sesiune (stare mașină, mențiuni, etc.)"
+              rows={3}
+              className="text-sm"
+            />
+          </div>
         </CardContent>
       </Card>
 
