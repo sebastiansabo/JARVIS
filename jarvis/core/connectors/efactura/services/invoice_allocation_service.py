@@ -20,6 +20,20 @@ _company_repo = _CompanyRepo()
 get_companies_with_vat = _company_repo.get_all_with_vat_and_brands
 
 
+def net_vat_fields(invoice_value, net_value):
+    """Decide net-based budgeting and the VAT rate from an invoice's gross
+    (invoice_value) and net (net_value) totals.
+
+    Net budgeting is enabled for ANY non-zero net value — including negative
+    invoices (storno / credit notes), which must also be budgeted on net, not
+    gross. Returns (subtract_vat: bool, vat_rate: float | None).
+    """
+    if not net_value:  # None or 0 → no usable net, keep gross budgeting
+        return False, None
+    vat_rate = round((invoice_value - net_value) / net_value * 100, 2)
+    return True, vat_rate
+
+
 class InvoiceAllocationService:
     def __init__(self):
         self.invoice_repo = EFacturaInvoiceRepository()
@@ -395,13 +409,9 @@ class InvoiceAllocationService:
                 # PDF link to e-Factura export endpoint
                 drive_link = f"/efactura/api/invoices/{inv['id']}/pdf"
 
-                # Calculate VAT rate if we have both gross and net values
-                vat_rate = None
-                subtract_vat = False
-                if net_value and net_value > 0:
-                    subtract_vat = True
-                    # VAT rate = (gross - net) / net * 100
-                    vat_rate = round((invoice_value - net_value) / net_value * 100, 2)
+                # Enable net-based budgeting for any non-zero net (incl. negative
+                # storno/credit-note invoices). VAT rate = (gross - net) / net * 100.
+                subtract_vat, vat_rate = net_vat_fields(invoice_value, net_value)
 
                 values.append(f"(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())")
                 params.extend([
