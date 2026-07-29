@@ -137,9 +137,11 @@ class FakeRepo:
     def query_all(self, sql, params=None):
         if "facturare_invoice_links" in sql:
             return [{"source_invoice_id": 91}, {"source_invoice_id": 92}]
+        if "invoice_type = 'STORNO'" in sql:          # matching-storno lookup (final)
+            return [{"id": 100, "total_amount_eur": -22900, "line_ids": [840]}]
         if "id IN" in sql:                            # reversed invoices for storno
             return [dict(ADV_A), dict(ADV_B)]
-        if "invoice_type = 'INVOICE'" in sql:         # all advances for anexa
+        if "invoice_type = 'INVOICE'" in sql:         # all advances for anexa (fallback)
             return [dict(ADV_A), dict(ADV_B)]
         return []
 
@@ -241,3 +243,69 @@ def test_multi_car_advance_per_car_stored_numbers(monkeypatch):
     ws = _render(ADVANCE_2CAR)
     belegnummers = [ws.cell(row=r, column=COL_BELEGNUMMER).value for r in (3, 5)]
     assert belegnummers == [9103042, 9103043]
+
+
+# ── Double-advance scenario (prod: Taigo Prime, car 714, anexa 17) ───
+# A car that received TWO advances — a 10% advance (@ 5.0924) closed by an
+# earlier storno, and a ~100% advance (@ 5.2460) reversed by THIS final's
+# storno. The final must mirror ONLY its matching storno (16,113 € @ 5.2460 =
+# 84,528.80 RON), not the blend of both advances (which inflated the rate to
+# ~5.7552 → 92,734.18, the reported bug).
+CAR_714 = {
+    "id": 714, "anexa_id": 3, "line_number": 1, "nr_comanda": "714",
+    "model": "Taigo Prime 1.0", "culoare": "", "list_price_eur": 0,
+    "selling_price_eur": 16113, "qty": 1,
+}
+ADV_10PCT = {  # 10% advance — NOT reversed by this final's storno
+    "id": 920, "total_amount_eur": 1611, "kurs_applied": 5.0924,
+    "issued_date": "2026-04-24", "line_ids": [714],
+}
+ADV_100PCT = {  # ~100% advance — reversed by storno 300
+    "id": 921, "total_amount_eur": 16113, "kurs_applied": 5.2460,
+    "issued_date": "2026-06-24", "line_ids": [714],
+}
+STORNO_714 = {
+    "id": 300, "invoice_type": "STORNO", "invoice_number": 9103789, "anexa_id": 3,
+    "total_amount_eur": -16113, "split_mode": "equal", "kurs_applied": 5.2460,
+    "issued_date": "2026-07-27", "line_ids": [714],
+}
+FINAL_714 = {
+    "id": 301, "invoice_type": "FINAL", "invoice_number": 9103790, "anexa_id": 3,
+    "total_amount_eur": 16113, "split_mode": "proportional", "kurs_applied": 5.7552,
+    "issued_date": "2026-07-27", "line_ids": [714],
+}
+
+
+class DoubleAdvanceFakeRepo(FakeRepo):
+    """Car 714: two advances, but the final's storno reverses only the 100% one."""
+
+    def get_anexa_by_id(self, anexa_id):
+        return {"id": 3, "contract_id": 1, "anexa_number": 17}
+
+    def get_lines_by_anexa(self, anexa_id):
+        return [dict(CAR_714)]
+
+    def get_document_number_map(self, invoice_id):
+        return {714: 9103790}
+
+    def query_all(self, sql, params=None):
+        if "facturare_invoice_links" in sql:          # storno 300 reverses ONLY the 100%
+            return [{"source_invoice_id": 921}]
+        if "invoice_type = 'STORNO'" in sql:
+            return [dict(STORNO_714)]
+        if "id IN" in sql:                            # advances the matching storno reverses
+            return [dict(ADV_100PCT)]
+        if "invoice_type = 'INVOICE'" in sql:         # fallback: BOTH advances cover the car
+            return [dict(ADV_10PCT), dict(ADV_100PCT)]
+        return []
+
+
+def test_final_mirrors_matching_storno_not_all_advances(monkeypatch):
+    """The final's RON must equal its matching storno's RON (84,528.80 @ 5.2460),
+    NOT the blend of every advance covering the car (which gave ~92,734 @ 5.7552).
+    """
+    monkeypatch.setattr(routes_orders, "_repo", DoubleAdvanceFakeRepo())
+    ws = _render(FINAL_714)
+    assert ws.cell(row=3, column=COL_FWBETRAG).value == 16113
+    assert round(ws.cell(row=3, column=COL_KURS).value, 4) == 5.2460
+    assert _betrag(ws, 3) == 84528.80

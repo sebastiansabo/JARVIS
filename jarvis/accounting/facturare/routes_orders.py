@@ -1757,7 +1757,7 @@ def api_generate_eurofib(invoice_id):
         _final_kurs_date_set = False
         final_kurs_acc = {}
         if inv_type_str == "FINAL":
-            final_kurs_acc, last_adv_date = _final_blended_kurs(_repo, anexa["id"], all_lines)
+            final_kurs_acc, last_adv_date = _final_blended_kurs(_repo, inv_row, all_lines)
             if last_adv_date:
                 kurs_date = last_adv_date - _td(days=1)
                 _final_kurs_date_set = True
@@ -1864,24 +1864,65 @@ def api_generate_eurofib(invoice_id):
                      as_attachment=True, download_name=dl_name)
 
 
-def _final_blended_kurs(repo, anexa_id, all_lines):
-    """Per-car RON/EUR totals of the advances covering each line.
+def _final_blended_kurs(repo, inv_row, all_lines):
+    """Per-car RON/EUR from the advances reversed by THIS final's matching storno.
 
-    Returns ({line_id: [ron_sum, eur_sum]}, last_advance_date) where ron_sum is
-    the summed RON of the advances reversed for that car — each at its own rate,
-    matching the storno rows. The FINAL invoice's per-car kurs is then
-    ron_sum / final_eur, so the final's RON equals the storno's RON and the
-    client ledger nets to zero (instead of applying one advance's rate to the
-    whole amount).
+    A final must net to zero against the storno it closes. That storno is the
+    STORNO on the same anexa whose line_ids equal the final's and whose |EUR|
+    equals the final's EUR (a 1:1 pairing in production). We sum ONLY the
+    advances that storno reverses — each at its own rate — so the final's RON
+    equals the storno's RON. Summing every advance that merely *covers* the car
+    would double-count when the car also received a separate advance (e.g. an
+    earlier 10% advance closed by a different storno), inflating the rate.
+
+    Falls back to all of the anexa's advances when no matching storno is found.
+    Returns ({line_id: [ron_sum, eur_sum]}, last_advance_date).
     """
     import json as _json
-    advances = repo.query_all(
-        "SELECT total_amount_eur, kurs_applied, issued_date, line_ids "
-        "FROM facturare_invoices "
-        "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number",
-        (anexa_id,))
+    anexa_id = inv_row["anexa_id"]
+    final_eur = abs(float(inv_row["total_amount_eur"]))
+    fraw = inv_row.get("line_ids")
+    if isinstance(fraw, str):
+        fraw = _json.loads(fraw)
     prices = {l["id"]: float(l["selling_price_eur"]) for l in all_lines}
     all_ids = set(prices)
+    final_lids = set(fraw) if fraw else all_ids
+
+    # The storno this final closes: same cars, same |EUR|, most recent.
+    matching_storno_id = None
+    stornos = repo.query_all(
+        "SELECT id, total_amount_eur, line_ids FROM facturare_invoices "
+        "WHERE anexa_id = %s AND invoice_type = 'STORNO' ORDER BY id DESC",
+        (anexa_id,))
+    for s in stornos or []:
+        sraw = s.get("line_ids")
+        if isinstance(sraw, str):
+            sraw = _json.loads(sraw)
+        s_lids = set(sraw) if sraw else all_ids
+        if s_lids == final_lids and abs(abs(float(s["total_amount_eur"])) - final_eur) < 0.01:
+            matching_storno_id = s["id"]
+            break
+
+    # Advances to reverse: those the matching storno reverses (else all — fallback).
+    advances = None
+    if matching_storno_id is not None:
+        links = repo.query_all(
+            "SELECT source_invoice_id FROM facturare_invoice_links "
+            "WHERE target_invoice_id = %s AND link_type = 'REVERSES'",
+            (matching_storno_id,))
+        adv_ids = [l["source_invoice_id"] for l in (links or [])]
+        if adv_ids:
+            ph = ",".join(["%s"] * len(adv_ids))
+            advances = repo.query_all(
+                "SELECT total_amount_eur, kurs_applied, issued_date, line_ids "
+                "FROM facturare_invoices WHERE id IN ({})".format(ph),
+                tuple(adv_ids))
+    if advances is None:
+        advances = repo.query_all(
+            "SELECT total_amount_eur, kurs_applied, issued_date, line_ids "
+            "FROM facturare_invoices "
+            "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number",
+            (anexa_id,))
     acc = {}          # line_id -> [ron_sum, eur_sum]
     last_date = None
     for adv in advances or []:
@@ -1999,7 +2040,7 @@ def _build_eurofib_batch(inv_row):
         _final_kurs_date_set = False
         final_kurs_acc = {}
         if inv_type_str == "FINAL":
-            final_kurs_acc, last_adv_date = _final_blended_kurs(_repo, anexa["id"], all_lines)
+            final_kurs_acc, last_adv_date = _final_blended_kurs(_repo, inv_row, all_lines)
             if last_adv_date:
                 kurs_date = last_adv_date - timedelta(days=1)
                 _final_kurs_date_set = True
