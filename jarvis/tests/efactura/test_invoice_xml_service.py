@@ -74,3 +74,22 @@ def test_anaf_failure_returns_none(monkeypatch):
 def test_no_efactura_record_returns_none(monkeypatch):
     monkeypatch.setattr(EFacturaInvoiceRepository, 'get_xml_source_info', lambda self, jid: None)
     assert svc.get_invoice_xml_by_jarvis_id(99) is None
+
+
+def test_by_efactura_id_uses_by_id_lookup(monkeypatch):
+    monkeypatch.setattr(EFacturaInvoiceRepository, 'get_xml_source_info_by_id',
+                        lambda self, eid: {'id': eid, 'cif_owner': 'RO1', 'xml_content': '<Invoice/>', 'download_id': 'D1'})
+    assert svc.get_invoice_xml_by_efactura_id(7) == '<Invoice/>'
+
+
+def test_by_efactura_id_missing_fetches_and_caches(monkeypatch):
+    saved = {}
+    monkeypatch.setattr(EFacturaInvoiceRepository, 'get_xml_source_info_by_id',
+                        lambda self, eid: {'id': eid, 'cif_owner': 'RO1', 'xml_content': None, 'download_id': 'D9'})
+    monkeypatch.setattr(EFacturaInvoiceRepository, 'save_xml_content',
+                        lambda self, iid, xml: saved.update(id=iid, xml=xml))
+    client = type('C', (), {'download_message': lambda self, did: _zip_with('<Invoice>ef</Invoice>')})()
+    monkeypatch.setattr(efsvc, 'EFacturaService', _fake_efactura_service(client))
+
+    assert svc.get_invoice_xml_by_efactura_id(7) == '<Invoice>ef</Invoice>'
+    assert saved == {'id': 7, 'xml': '<Invoice>ef</Invoice>'}
