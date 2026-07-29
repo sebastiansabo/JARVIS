@@ -30,3 +30,27 @@ def test_is_manager_l0(org_fixture):
 def test_is_manager_plain_member_false(org_fixture):
     assert is_manager(org_fixture['user_A']) is False   # only a member
     assert is_manager(org_fixture['user_X']) is False   # in company, no org node
+
+
+def test_managed_sincron_descent(org_fixture):
+    got = set(get_managed_employee_ids(org_fixture['user_M']))
+    # M responsable @ P -> members of P (D) + descendant Ch (A,B); U unmapped excluded; X not in org
+    assert got == {org_fixture['user_A'], org_fixture['user_B'], org_fixture['user_D']}
+    assert org_fixture['user_X'] not in got
+    assert org_fixture['user_M'] not in got  # excludes self
+
+
+def test_managed_node_filter(org_fixture):
+    got = set(get_managed_employee_ids(org_fixture['user_M'], node_id=org_fixture['node_Ch']))
+    assert got == {org_fixture['user_A'], org_fixture['user_B']}  # Ch + descendants only
+
+
+def test_managed_l0_whole_company(org_fixture):
+    got = set(get_managed_employee_ids(org_fixture['user_L0']))
+    # L0 sees all active company users except self
+    assert got == {org_fixture['user_M'], org_fixture['user_A'], org_fixture['user_B'],
+                   org_fixture['user_D'], org_fixture['user_X']}
+
+
+def test_managed_non_manager_empty(org_fixture):
+    assert get_managed_employee_ids(org_fixture['user_A']) == []
