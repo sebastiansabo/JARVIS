@@ -78,6 +78,41 @@ def api_db_invoice_detail(invoice_id):
     return jsonify(invoice)
 
 
+@invoices_bp.route('/api/db/invoices/<int:invoice_id>/preview')
+@login_required
+def api_db_invoice_preview(invoice_id):
+    """In-app e-Factura preview — parses the stored UBL XML locally (no ANAF PDF).
+
+    Same permission + scope gating as the invoice-detail route; keyed by jarvis
+    invoice id. 404 if the invoice has no e-Factura content.
+    """
+    if not _check_invoice_perm('view'):
+        return error_response('You do not have permission to view invoices', 403)
+
+    invoice = _invoice_repo.get_with_allocations(invoice_id)
+    if not invoice:
+        return error_response('Invoice not found', 404)
+
+    # Scope check: restrict visibility based on permission scope (mirrors detail route).
+    scope = _get_invoice_scope('view')
+    if scope == 'own':
+        user_ids = {a.get('responsible_user_id') for a in invoice.get('allocations', []) if a}
+        if current_user.id not in user_ids:
+            return error_response('Invoice not found', 404)
+    elif scope == 'department':
+        org_filter = _get_org_filter_for_scope(scope)
+        if org_filter and not _allocation_repo.invoice_matches_org_filter(invoice_id, org_filter):
+            return error_response('Invoice not found', 404)
+
+    from core.connectors.efactura.services.invoice_xml_service import get_invoice_xml_by_jarvis_id
+    xml_content = get_invoice_xml_by_jarvis_id(invoice_id)
+    if not xml_content:
+        return error_response('No e-Factura content available for this invoice', 404)
+
+    from core.connectors.efactura.invoice_preview import build_invoice_preview
+    return jsonify(build_invoice_preview(xml_content))
+
+
 @invoices_bp.route('/api/db/invoices/archive-counts')
 @login_required
 def api_db_archive_counts():
