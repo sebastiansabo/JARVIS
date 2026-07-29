@@ -19,7 +19,7 @@ _LIST_COLUMNS = (
     'fp.year, fp.month, fp.route_type, fp.slot_number, fp.km_start, fp.km_end, '
     'fp.distance_km, fp.fuel_tank_capacity_liters, fp.fuel_gauge_start_level, '
     'fp.fuel_gauge_end_level, fp.fuel_start_liters, fp.fuel_end_liters, '
-    'fp.fuel_consumed_liters, fp.itinerary, fp.advisor_name, fp.status, '
+    'fp.fuel_consumed_liters, fp.itinerary, fp.general_observation, fp.advisor_name, fp.status, '
     'fp.created_at, fp.updated_at, fp.registration_number, fp.departure_datetime, '
     'fp.return_datetime, fp.returned_at, fp.return_notes, fp.source, '
     'fp.driver_license_number, fp.driver_license_expiry, fp.gdpr_consent, '

@@ -12,6 +12,8 @@ import {
   Trash2,
   RotateCcw,
   Archive,
+  Lock,
+  Unlock,
   Car,
   Pencil,
   XIcon,
@@ -29,6 +31,7 @@ import {
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import LockVehicleDialog from './LockVehicleDialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -2037,6 +2040,18 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
     },
   })
 
+  // Lockout — block/unblock a car from the driving park.
+  const [lockingVehicle, setLockingVehicle] = useState<FpVehicle | null>(null)
+  const lockMutation = useMutation({
+    mutationFn: (p: { id: number; category: 'service' | 'damage' | 'paperwork' | 'other'; note?: string; until?: string | null }) =>
+      foiParcursApi.lockVehicle(p.id, { category: p.category, note: p.note, until: p.until }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] }); setLockingVehicle(null) },
+  })
+  const unlockMutation = useMutation({
+    mutationFn: (id: number) => foiParcursApi.unlockVehicle(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] }),
+  })
+
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -2228,6 +2243,9 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                       {!v.is_active && (
                         <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Arhivat</span>
                       )}
+                      {v.is_active && v.locked_out && (
+                        <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">🔒 Blocat</span>
+                      )}
                     </TableCell>
                   )}
                   {show('mark') && <TableCell>{v.mark}</TableCell>}
@@ -2269,6 +2287,15 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                           <Button variant="ghost" size="sm" onClick={() => startEdit(v)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
+                          {v.locked_out ? (
+                            <Button variant="ghost" size="sm" title="Deblochează mașina" onClick={() => unlockMutation.mutate(v.id)} disabled={unlockMutation.isPending}>
+                              <Unlock className="h-4 w-4 text-red-600 dark:text-red-400" />
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" size="sm" title="Blochează în parcul auto" onClick={() => setLockingVehicle(v)}>
+                              <Lock className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -2335,6 +2362,15 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {lockingVehicle && (
+        <LockVehicleDialog
+          vehicle={lockingVehicle}
+          submitting={lockMutation.isPending}
+          onClose={() => setLockingVehicle(null)}
+          onSubmit={(d) => lockMutation.mutate({ id: lockingVehicle.id, ...d })}
+        />
+      )}
     </div>
   )
 }
