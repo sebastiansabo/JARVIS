@@ -48,10 +48,18 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
   const [cursor, setCursor] = useState(() => new Date())
   const [selected, setSelected] = useState<FoiContract | null>(null)
 
+  // Fetch the visible month's range (± a week to cover the grid's leading/
+  // trailing days) so navigating to PAST months loads their (archived) sessions
+  // too — not just the most-recently-created ones.
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const rangeFrom = ymd(new Date(new Date(cursor.getFullYear(), cursor.getMonth(), 1).getTime() - 7 * 864e5))
+  const rangeTo = ymd(new Date(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getTime() + 7 * 864e5))
+  const monthKey = `${cursor.getFullYear()}-${cursor.getMonth()}`
+
   const { data, isLoading } = useQuery({
-    queryKey: ['foi-contracts-all', companyId],
+    queryKey: ['foi-contracts-all', companyId, monthKey],
     queryFn: () =>
-      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC' }),
+      foiParcursApi.getContracts({ company_id: companyId || undefined, route_type: 'TD', date_from: rangeFrom, date_to: rangeTo, per_page: 2000, sort_by: 'created_at', sort_dir: 'DESC' }),
     staleTime: 30_000,
   })
   const { data: vehiclesData } = useQuery({
@@ -118,6 +126,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
             const key = dayKey(d)
             const inMonth = d.getMonth() === currentMonth
             const isToday = key === todayKey
+            const isPast = key < todayKey
             const events = byDay.get(key) ?? []
             return (
               <div
@@ -140,7 +149,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
                         key={c.id}
                         type="button"
                         onClick={() => setSelected(c)}
-                        className={cn('w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium text-white hover:opacity-90', ss.badgeClass)}
+                        className={cn('w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium text-white hover:opacity-90', ss.badgeClass, isPast && 'opacity-60')}
                         title={`${time} ${carLabel} — ${c.client_name || '—'}`}
                       >
                         {time} {carLabel}

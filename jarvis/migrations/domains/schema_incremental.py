@@ -1890,6 +1890,7 @@ def _create_schema_incremental_continued(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_contract ON foi_de_parcurs(contract_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_client ON foi_de_parcurs(client_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_status ON foi_de_parcurs(status)')
+    cursor.execute('ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS general_observation TEXT')
     # Migrate: drop FK on client_id if exists, make nullable, add new columns
     cursor.execute('''
         DO $$ BEGIN
@@ -1965,6 +1966,17 @@ def _create_schema_incremental_continued(conn, cursor):
                 ALTER TABLE fp_vehicles ADD COLUMN fuel_type VARCHAR(20) NOT NULL DEFAULT 'Diesel';
             END IF;
         END $$;
+    ''')
+
+    # ── Foi de Parcurs — vehicle lockout (block a car from the driving park) ──
+    cursor.execute('''
+        ALTER TABLE fp_vehicles
+            ADD COLUMN IF NOT EXISTS locked_out BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS lockout_category VARCHAR(20),
+            ADD COLUMN IF NOT EXISTS lockout_note TEXT,
+            ADD COLUMN IF NOT EXISTS lockout_until DATE,
+            ADD COLUMN IF NOT EXISTS locked_by BIGINT,
+            ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP WITH TIME ZONE
     ''')
 
     # ── Foi de Parcurs — KM configs per company ──
