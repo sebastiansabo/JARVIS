@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { profileApi, type InvoicePreview } from '@/api/profile'
+import { efacturaApi } from '@/api/efactura'
 
 function money(value: string | null | undefined, currency: string): string {
   const n = Number(value)
@@ -134,15 +135,22 @@ function PreviewBody({ p }: { p: InvoicePreview }) {
   )
 }
 
-export function InvoicePreviewModal({ invoiceId, onClose }: { invoiceId: number; onClose: () => void }) {
+export function InvoicePreviewModal({ invoiceId, onClose, source = 'profile' }: {
+  invoiceId: number
+  onClose: () => void
+  /** 'profile' → /profile/api (by jarvis invoice id); 'efactura' → /efactura/api (by e-Factura id). */
+  source?: 'profile' | 'efactura'
+}) {
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['profile', 'invoice-preview', invoiceId],
-    queryFn: () => profileApi.getInvoicePreview(invoiceId),
+    queryKey: [source, 'invoice-preview', invoiceId],
+    queryFn: () => source === 'efactura'
+      ? efacturaApi.getInvoicePreview(invoiceId)
+      : profileApi.getInvoicePreview(invoiceId),
   })
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+      <DialogContent className="max-h-[85vh] w-[95vw] max-w-[1120px] overflow-y-auto sm:max-w-[1120px]">
         <DialogHeader>
           <DialogTitle>
             Previzualizare factură{data?.invoice_number ? ` #${data.invoice_number}` : ''}

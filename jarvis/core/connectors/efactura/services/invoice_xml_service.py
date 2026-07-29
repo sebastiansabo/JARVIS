@@ -29,15 +29,10 @@ def extract_invoice_xml_from_zip(zip_bytes: bytes) -> Optional[str]:
     return None
 
 
-def get_invoice_xml_by_jarvis_id(jarvis_invoice_id: int) -> Optional[str]:
-    """UBL XML for a jarvis invoice's e-Factura record.
-
-    Returns the stored copy if present; otherwise fetches it once from ANAF's descarcare
-    endpoint, caches it back, and returns it. None when unavailable (no e-Factura record,
-    no download id, or ANAF fetch failed).
-    """
-    repo = EFacturaInvoiceRepository()
-    info = repo.get_xml_source_info(jarvis_invoice_id)
+def _resolve_xml(info: Optional[dict]) -> Optional[str]:
+    """Given an {id, cif_owner, xml_content, download_id} row, return the UBL XML:
+    the stored copy, or fetched once from ANAF descarcare (and cached back). None if
+    unavailable (no record, no download id, or ANAF fetch failed)."""
     if not info:
         return None
     if info.get('xml_content'):
@@ -56,16 +51,26 @@ def get_invoice_xml_by_jarvis_id(jarvis_invoice_id: int) -> Optional[str]:
     except Exception as e:
         logger.warning(
             "descarcare fetch failed for preview",
-            extra={'jarvis_invoice_id': jarvis_invoice_id, 'error': str(e)},
+            extra={'invoice_id': info.get('id'), 'error': str(e)},
         )
         return None
 
     if xml:
         try:
-            repo.save_xml_content(info['id'], xml)
+            EFacturaInvoiceRepository().save_xml_content(info['id'], xml)
         except Exception as e:
             logger.warning(
                 "failed to cache fetched xml",
-                extra={'invoice_id': info['id'], 'error': str(e)},
+                extra={'invoice_id': info.get('id'), 'error': str(e)},
             )
     return xml
+
+
+def get_invoice_xml_by_jarvis_id(jarvis_invoice_id: int) -> Optional[str]:
+    """UBL XML for a jarvis invoice's e-Factura record (profile preview)."""
+    return _resolve_xml(EFacturaInvoiceRepository().get_xml_source_info(jarvis_invoice_id))
+
+
+def get_invoice_xml_by_efactura_id(invoice_id: int) -> Optional[str]:
+    """UBL XML for an e-Factura invoice by its PK (accounting/e-Factura preview)."""
+    return _resolve_xml(EFacturaInvoiceRepository().get_xml_source_info_by_id(invoice_id))
