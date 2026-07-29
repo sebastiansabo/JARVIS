@@ -170,31 +170,29 @@ def get_visible_tree(manager_user_id):
 
 
 def is_manager(user_id):
-    """Check if a user is a responsable on any organigram node or company."""
+    """True if the user is a Sincron organigram responsable or a company_responsables (L0)."""
     conn = get_db()
     try:
         cursor = get_cursor(conn)
-
-        # Check structure_node_members
+        # (a) Sincron responsable via mapped user
         cursor.execute("""
-            SELECT COUNT(*) AS cnt FROM structure_node_members
-            WHERE user_id = %s AND role = 'responsable'
+            SELECT 1
+            FROM sincron_org_members som
+            JOIN sincron_employees se
+              ON se.sincron_employee_id = som.sincron_employee_id
+             AND se.company_name = som.company_name
+            WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
+              AND som.role = 'responsable'
+            LIMIT 1
         """, (user_id,))
-        row = cursor.fetchone()
-        if row and row['cnt'] > 0:
+        if cursor.fetchone():
             return True
-
-        # Check company_responsables (L0)
+        # (b) L0 (unchanged)
         try:
-            cursor.execute("""
-                SELECT COUNT(*) AS cnt FROM company_responsables
-                WHERE user_id = %s
-            """, (user_id,))
-            row = cursor.fetchone()
-            return row['cnt'] > 0 if row else False
+            cursor.execute("SELECT 1 FROM company_responsables WHERE user_id = %s LIMIT 1", (user_id,))
+            return cursor.fetchone() is not None
         except Exception:
+            conn.rollback()
             return False
-
-
     finally:
         release_db(conn)
