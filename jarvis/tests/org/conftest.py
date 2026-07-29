@@ -8,6 +8,11 @@ Topology:
       sincron_org_members: M responsable@P; A,B member@Ch; D member@P;
                            U(unmapped) member@Ch
       X: in company CT but in NO sincron node
+
+    company DZ (SECOND isolated test company; out-of-scope for CT's M/L0)
+      user E (company_id=DZ)
+      sincron_org_nodes: Z (level 1, company_id=DZ)
+      sincron_org_members: E member@Z
 """
 import os
 import sys
@@ -101,6 +106,7 @@ import pytest
 from database import get_db, get_cursor, release_db
 
 _MARK = 'ZZ_ORG_TEST_CO'
+_MARK_DZ = 'ZZ_ORG_TEST_DZ'
 
 
 @pytest.fixture
@@ -153,15 +159,44 @@ def org_fixture():
         mem(ids['node_Ch'], 'ORG_B', 'member')
         mem(ids['node_P'], 'ORG_D', 'member')
         mem(ids['node_Ch'], 'ORG_U', 'member')  # unmapped
+
+        # ── Second isolated company (DZ) — out-of-scope node for CT's M/L0 ──
+        cur.execute("INSERT INTO companies (company, vat) VALUES (%s, %s) RETURNING id",
+                    (_MARK_DZ, 'ZZORGTESTVATDZ'))
+        ids['company_dz'] = cur.fetchone()['id']
+        cid_dz = ids['company_dz']
+
+        cur.execute(
+            "INSERT INTO users (name, email, company_id, is_active) VALUES (%s, %s, %s, TRUE) RETURNING id",
+            ('Org E', 'org_e@example.invalid', cid_dz),
+        )
+        ids['user_E'] = cur.fetchone()['id']
+
+        cur.execute("""INSERT INTO sincron_employees
+                         (sincron_employee_id, company_name, mapped_jarvis_user_id, is_active)
+                       VALUES (%s, %s, %s, TRUE)""", ('ORG_E', _MARK_DZ, ids['user_E']))
+
+        cur.execute("""INSERT INTO sincron_org_nodes (company_id, parent_id, name, node_type, level)
+                       VALUES (%s, NULL, 'Org Z', 'department', 1) RETURNING id""", (cid_dz,))
+        ids['node_Z'] = cur.fetchone()['id']
+
+        cur.execute("""INSERT INTO sincron_org_members (node_id, sincron_employee_id, company_name, role)
+                       VALUES (%s, %s, %s, %s)""", (ids['node_Z'], 'ORG_E', _MARK_DZ, 'member'))
+
         conn.commit()
         yield ids
     finally:
+        cur.execute("DELETE FROM sincron_org_nodes WHERE id = %s", (ids.get('node_Z'),))  # cascades its member
+        cur.execute("DELETE FROM sincron_employees WHERE company_name = %s", (_MARK_DZ,))
+        cur.execute("DELETE FROM users WHERE id = %s", (ids.get('user_E'),))
+        cur.execute("DELETE FROM companies WHERE id = %s", (ids.get('company_dz'),))
+
         cur.execute("DELETE FROM sincron_org_nodes WHERE id IN (%s, %s)",
                     (ids.get('node_Ch'), ids.get('node_P')))  # cascades to members
         cur.execute("DELETE FROM sincron_employees WHERE company_name = %s", (_MARK,))
         cur.execute("DELETE FROM company_responsables WHERE company_id = %s", (ids.get('company_id'),))
         cur.execute("DELETE FROM users WHERE id = ANY(%s)",
-                    ([v for k, v in ids.items() if k.startswith('user_')],))
+                    ([v for k, v in ids.items() if k.startswith('user_') and k != 'user_E'],))
         cur.execute("DELETE FROM companies WHERE id = %s", (ids.get('company_id'),))
         conn.commit()
         release_db(conn)
