@@ -76,22 +76,20 @@ def get_managed_employee_ids(manager_user_id, node_id=None):
 
 
 def get_visible_tree(manager_user_id):
-    """Get the organigram tree visible to this manager for filtering.
+    """Organigram tree visible to this manager (for filtering), from the Sincron organigram.
 
-    Returns a flat list of nodes (with parent_id for building the tree in the frontend).
-    Includes:
-      - L0: companies (if user is in company_responsables)
-      - All nodes where user is responsable + their descendants
+    Returns L0 companies (company_responsables, unchanged) + the caller's Sincron
+    responsable node(s) and their descendants as a flat node list.
     """
     conn = get_db()
     try:
         cursor = get_cursor(conn)
 
-        # L0 companies
+        # L0 companies (UNCHANGED)
         l0_companies = []
         try:
             cursor.execute("""
-                SELECT c.id, c.company as name, 0 as level
+                SELECT c.id, c.company AS name, 0 AS level
                 FROM company_responsables cr
                 JOIN companies c ON c.id = cr.company_id
                 WHERE cr.user_id = %s
@@ -102,31 +100,29 @@ def get_visible_tree(manager_user_id):
         except Exception:
             conn.rollback()
 
-        # Get all visible nodes via recursive descent
+        # Sincron nodes: caller's responsable node(s) + descendants
         cursor.execute("""
             WITH RECURSIVE resp_nodes AS (
-                SELECT sn.id
-                FROM structure_node_members snm
-                JOIN structure_nodes sn ON sn.id = snm.node_id
-                WHERE snm.user_id = %s AND snm.role = 'responsable'
+                SELECT som.node_id AS id
+                FROM sincron_org_members som
+                JOIN sincron_employees se
+                  ON se.sincron_employee_id = som.sincron_employee_id AND se.company_name = som.company_name
+                WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE AND som.role = 'responsable'
             ),
             descendants AS (
                 SELECT id FROM resp_nodes
                 UNION ALL
-                SELECT sn.id FROM structure_nodes sn JOIN descendants d ON sn.parent_id = d.id
+                SELECT sn.id FROM sincron_org_nodes sn JOIN descendants d ON sn.parent_id = d.id
             )
-            SELECT DISTINCT sn.id, sn.name, sn.level, sn.parent_id, sn.company_id
-            FROM descendants d
-            JOIN structure_nodes sn ON sn.id = d.id
-            ORDER BY sn.level, sn.name
+            SELECT DISTINCT n.id, n.name, n.level, n.parent_id, n.company_id
+            FROM descendants d JOIN sincron_org_nodes n ON n.id = d.id
+            ORDER BY n.level, n.name
         """, (manager_user_id,))
         nodes = [{'id': r['id'], 'name': r['name'], 'level': r['level'],
                   'parent_id': r['parent_id'], 'company_id': r['company_id']}
                  for r in cursor.fetchall()]
 
         return {'companies': l0_companies, 'nodes': nodes}
-
-
     finally:
         release_db(conn)
 

@@ -54,3 +54,19 @@ def test_managed_l0_whole_company(org_fixture):
 
 def test_managed_non_manager_empty(org_fixture):
     assert get_managed_employee_ids(org_fixture['user_A']) == []
+
+
+def test_visible_tree_sincron_nodes(org_fixture):
+    tree = get_visible_tree(org_fixture['user_M'])
+    node_ids = {n['id'] for n in tree['nodes']}
+    assert node_ids == {org_fixture['node_P'], org_fixture['node_Ch']}
+    assert tree['companies'] == []  # M is not L0
+    ch = next(n for n in tree['nodes'] if n['id'] == org_fixture['node_Ch'])
+    assert ch['parent_id'] == org_fixture['node_P'] and ch['level'] == 2
+
+
+def test_visible_tree_l0_company(org_fixture):
+    tree = get_visible_tree(org_fixture['user_L0'])
+    assert [c['company_id'] for c in tree['companies']] == [org_fixture['company_id']]
+    assert tree['companies'][0]['id'] == f"company-{org_fixture['company_id']}"
+    assert tree['nodes'] == []  # L0 is not a Sincron responsable here
