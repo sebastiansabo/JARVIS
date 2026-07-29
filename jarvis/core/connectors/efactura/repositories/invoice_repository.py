@@ -1237,3 +1237,31 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
         if row is None:
             return None
         return row.get('xml_content')
+
+    def get_xml_source_info(self, jarvis_invoice_id: int) -> Optional[dict]:
+        """Resolve preview inputs for a jarvis invoice's e-Factura record.
+
+        Returns {id, cif_owner, xml_content, download_id} (download_id from the latest
+        ANAF ref, for the on-demand descarcare fallback), or None if there is no
+        e-Factura invoice linked to this jarvis invoice.
+
+        ANAF's descarcare endpoint keys off the message id, and the sync populates
+        `message_id` (the download_id column is often left NULL) — so coalesce to it.
+        """
+        return self.query_one(
+            '''SELECT i.id, i.cif_owner, i.xml_content,
+                      COALESCE(r.download_id, r.message_id) AS download_id
+               FROM efactura_invoices i
+               LEFT JOIN efactura_invoice_refs r ON r.invoice_id = i.id
+               WHERE i.jarvis_invoice_id = %s
+               ORDER BY r.created_at DESC NULLS LAST
+               LIMIT 1''',
+            (jarvis_invoice_id,)
+        )
+
+    def save_xml_content(self, invoice_id: int, xml_content: str) -> None:
+        """Cache freshly-fetched UBL XML back onto the invoice row."""
+        self.execute(
+            'UPDATE efactura_invoices SET xml_content = %s, updated_at = NOW() WHERE id = %s',
+            (xml_content, invoice_id)
+        )

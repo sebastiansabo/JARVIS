@@ -10,6 +10,35 @@ export interface ProfileUpdatePayload {
   contract_work_date?: string
 }
 
+export interface InvoicePreviewLine {
+  line_number: number
+  description: string
+  quantity: string
+  unit: string
+  unit_price: string
+  line_amount: string
+  vat_rate: string
+  vat_amount: string
+  seller_item_id: string | null
+  buyer_item_id: string | null
+  commodity_code: string | null
+}
+
+export interface InvoicePreview {
+  invoice_number: string
+  invoice_series: string | null
+  issue_date: string | null
+  due_date: string | null
+  currency: string
+  seller: { name: string; cif: string; address: string | null; reg_number: string | null }
+  buyer: { name: string; cif: string; address: string | null }
+  totals: { without_vat: string; vat: string; total: string }
+  vat_breakdown: { rate: string; taxable: string; amount: string }[]
+  line_items: InvoicePreviewLine[]
+  payment: { means: string | null; terms: string | null; bank_account: string | null }
+  note: string | null
+}
+
 export const profileApi = {
   getSummary: () => api.get<ProfileSummary>('/profile/api/summary'),
 
@@ -36,6 +65,8 @@ export const profileApi = {
   },
 
   getInvoiceDetail: (id: number) => api.get<Invoice>(`/profile/api/invoices/${id}`),
+
+  getInvoicePreview: (id: number) => api.get<InvoicePreview>(`/profile/api/invoices/${id}/preview`),
 
   updateAllocations: (invoiceId: number, data: { allocations: Record<string, unknown>[] }) =>
     api.put<{ success: boolean }>(`/profile/api/invoices/${invoiceId}/allocations`, data),
