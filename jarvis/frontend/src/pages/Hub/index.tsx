@@ -499,7 +499,7 @@ export default function Hub() {
 
 function HubAppsCard({ tiles, onSelect }: { tiles: AppTile[]; onSelect: (key: NonNullable<ActiveModule>) => void }) {
   const [showAll, setShowAll] = useState(false)
-  const limit = 6
+  const limit = 8
   const hasMore = tiles.length > limit
   const displayed = showAll ? tiles : tiles.slice(0, limit)
 
