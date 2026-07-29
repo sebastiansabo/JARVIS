@@ -6,6 +6,38 @@ crossing the core→hr layer boundary.
 from database import get_db, get_cursor, release_db
 
 
+def _node_in_scope(cursor, manager_user_id, node_id):
+    """True if node_id is within the caller's visibility: a descendant of one of
+    their Sincron responsable nodes, OR any node in a company they are L0
+    (company_responsables) for."""
+    cursor.execute("""
+        WITH RECURSIVE resp_nodes AS (
+            SELECT som.node_id AS id
+            FROM sincron_org_members som
+            JOIN sincron_employees se
+              ON se.sincron_employee_id = som.sincron_employee_id AND se.company_name = som.company_name
+            WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE AND som.role = 'responsable'
+        ),
+        descendants AS (
+            SELECT id FROM resp_nodes
+            UNION ALL
+            SELECT sn.id FROM sincron_org_nodes sn JOIN descendants d ON sn.parent_id = d.id
+        )
+        SELECT 1 FROM descendants WHERE id = %s LIMIT 1
+    """, (manager_user_id, node_id))
+    if cursor.fetchone():
+        return True
+    try:
+        cursor.execute("""
+            SELECT 1 FROM sincron_org_nodes n
+            JOIN company_responsables cr ON cr.company_id = n.company_id
+            WHERE n.id = %s AND cr.user_id = %s LIMIT 1
+        """, (node_id, manager_user_id))
+        return cursor.fetchone() is not None
+    except Exception:
+        return False
+
+
 def get_managed_employee_ids(manager_user_id, node_id=None):
     """User IDs of team members under this user in the SINCRON organigram.
 
@@ -17,6 +49,8 @@ def get_managed_employee_ids(manager_user_id, node_id=None):
         cursor = get_cursor(conn)
 
         if node_id:
+            if not _node_in_scope(cursor, manager_user_id, node_id):
+                return []
             cursor.execute("""
                 WITH RECURSIVE descendants AS (
                     SELECT id FROM sincron_org_nodes WHERE id = %s
