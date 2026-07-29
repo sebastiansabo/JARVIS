@@ -84,6 +84,9 @@ export const foiParcursApi = {
     company_id?: number
     status?: string
     batch_id?: string
+    route_type?: string
+    date_from?: string
+    date_to?: string
     page?: number
     per_page?: number
     sort_by?: string
@@ -134,6 +137,12 @@ export const foiParcursApi = {
 
   deleteVehicle: (id: number) =>
     api.delete<{ success: boolean }>(`${BASE}/vehicles/${id}`),
+
+  // ── Lockout: block/unblock a car from the driving park ──
+  lockVehicle: (id: number, data: { category: 'service' | 'damage' | 'paperwork' | 'other'; note?: string; until?: string | null }) =>
+    api.post<{ success: boolean }>(`${BASE}/vehicles/${id}/lock`, data),
+  unlockVehicle: (id: number) =>
+    api.post<{ success: boolean }>(`${BASE}/vehicles/${id}/unlock`, {}),
 
   // ── Companies ──
   getCompanies: () =>
