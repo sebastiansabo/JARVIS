@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Skeleton } from '@/components/ui/skeleton'
 import { profileApi, type InvoicePreview } from '@/api/profile'
 import { efacturaApi } from '@/api/efactura'
+import { invoicesApi } from '@/api/invoices'
 
 function money(value: string | null | undefined, currency: string): string {
   const n = Number(value)
@@ -135,17 +136,20 @@ function PreviewBody({ p }: { p: InvoicePreview }) {
   )
 }
 
+const PREVIEW_FETCHERS = {
+  profile: (id: number) => profileApi.getInvoicePreview(id),   // /profile/api, by jarvis invoice id (ownership-scoped)
+  efactura: (id: number) => efacturaApi.getInvoicePreview(id), // /efactura/api, by e-Factura PK (efactura access)
+  invoices: (id: number) => invoicesApi.getInvoicePreview(id), // /api/db/invoices, by jarvis invoice id (accounting scope)
+} as const
+
 export function InvoicePreviewModal({ invoiceId, onClose, source = 'profile' }: {
   invoiceId: number
   onClose: () => void
-  /** 'profile' → /profile/api (by jarvis invoice id); 'efactura' → /efactura/api (by e-Factura id). */
-  source?: 'profile' | 'efactura'
+  source?: keyof typeof PREVIEW_FETCHERS
 }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: [source, 'invoice-preview', invoiceId],
-    queryFn: () => source === 'efactura'
-      ? efacturaApi.getInvoicePreview(invoiceId)
-      : profileApi.getInvoicePreview(invoiceId),
+    queryFn: () => PREVIEW_FETCHERS[source](invoiceId),
   })
 
   return (
