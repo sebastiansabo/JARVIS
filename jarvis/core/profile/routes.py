@@ -273,6 +273,26 @@ def api_profile_invoice_pdf(invoice_id):
         return safe_error_response(e)
 
 
+@profile_bp.route('/api/invoices/<int:invoice_id>/preview')
+@login_required
+def api_profile_invoice_preview(invoice_id):
+    """In-app preview of an e-Factura invoice — parses the stored XML locally (no ANAF call)."""
+    try:
+        if not _profile_repo.is_invoice_visible_to_user(current_user.id, invoice_id):
+            return jsonify({'error': 'Invoice not found'}), 404
+
+        # Prefer the stored XML; fall back to fetching it on demand from ANAF descarcare.
+        from core.connectors.efactura.services.invoice_xml_service import get_invoice_xml_by_jarvis_id
+        xml_content = get_invoice_xml_by_jarvis_id(invoice_id)
+        if not xml_content:
+            return jsonify({'error': 'No e-Factura content available for this invoice'}), 404
+
+        from core.connectors.efactura.invoice_preview import build_invoice_preview
+        return jsonify(build_invoice_preview(xml_content))
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @profile_bp.route('/api/invoices/<int:invoice_id>/allocations', methods=['PUT'])
 @login_required
 def api_profile_update_allocations(invoice_id):
