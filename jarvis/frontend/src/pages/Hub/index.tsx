@@ -51,6 +51,7 @@ import { MobileCardList, type MobileCardField } from '@/components/shared/Mobile
 import { InvoiceLinkedDocs } from '@/components/shared/InvoiceLinkedDocs'
 import { AllocationEditor, allocationsToRows, rowsToApiPayload } from '@/pages/Accounting/AllocationEditor'
 import { EditInvoiceDialog } from '@/pages/Accounting/EditInvoiceDialog'
+import { InvoicePreviewModal } from '@/pages/Profile/InvoicePreviewModal'
 import { dedupeMergedAllocations } from '@/pages/Accounting/allocationUtils'
 import { LineItemAllocationsView } from '@/pages/Accounting/LineItemAllocationsView'
 import { useAuthStore } from '@/stores/authStore'
@@ -561,6 +562,7 @@ function HubInvoicesPanel() {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
+  const [previewId, setPreviewId] = useState<number | null>(null)
 
   const isArchivedView = archiveView === 'archived'
   const canEdit = isArchivedView ? false : (user?.can_edit_invoices || (user?.permissions?.['invoices.records.edit'] ?? false))
@@ -749,12 +751,24 @@ function HubInvoicesPanel() {
                 ] satisfies MobileCardField<ProfileInvoice>[]}
                 getRowId={(inv) => inv.id}
                 actions={(inv) => inv.drive_link ? (
-                  <button
-                    onClick={() => handleDownloadPdf(inv)}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {inv.drive_link.startsWith('/efactura/') && (
+                      <button
+                        onClick={() => setPreviewId(inv.id)}
+                        className="text-muted-foreground hover:text-foreground"
+                        title="Previzualizare factură"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDownloadPdf(inv)}
+                      className="text-muted-foreground hover:text-foreground"
+                      title="Descarcă PDF"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 ) : null}
               />
             ) : (
@@ -828,12 +842,24 @@ function HubInvoicesPanel() {
                             </TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()}>
                               {inv.drive_link && (
-                                <button
-                                  onClick={() => handleDownloadPdf(inv)}
-                                  className="text-muted-foreground hover:text-foreground"
-                                >
-                                  <ExternalLink className="h-3.5 w-3.5" />
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  {inv.drive_link.startsWith('/efactura/') && (
+                                    <button
+                                      onClick={() => setPreviewId(inv.id)}
+                                      className="text-muted-foreground hover:text-foreground"
+                                      title="Previzualizare factură"
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleDownloadPdf(inv)}
+                                    className="text-muted-foreground hover:text-foreground"
+                                    title="Descarcă PDF"
+                                  >
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
                               )}
                             </TableCell>
                           </TableRow>
@@ -881,6 +907,10 @@ function HubInvoicesPanel() {
           }}
           invalidateQueryKeys={[['hub', 'invoices'], ['profile', 'invoices'], ['profile', 'invoice-detail'], ['invoices']]}
         />
+      )}
+
+      {previewId !== null && (
+        <InvoicePreviewModal invoiceId={previewId} source="profile" onClose={() => setPreviewId(null)} />
       )}
     </Card>
   )
