@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, memo, useEffect, useRef } from 'react'
+import { InvoicePreviewModal } from '@/pages/Profile/InvoicePreviewModal'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useIsMobile, useIsTablet, useIsNarrow } from '@/hooks/useMediaQuery'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -109,7 +110,16 @@ export default function Accounting() {
   const [archiveView, setArchiveView] = useState<'active' | 'archived' | 'all'>('active')
   const [search, setSearch] = useState('')
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
+  const [previewId, setPreviewId] = useState<number | null>(null)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
+
+  // The "Link" cell (rendered by module-level columnDefs) fires this event for
+  // e-Factura-parsed invoices so we can open the in-app preview from here.
+  useEffect(() => {
+    const handler = (e: Event) => setPreviewId((e as CustomEvent<{ id: number }>).detail.id)
+    window.addEventListener('accounting-invoice-preview', handler)
+    return () => window.removeEventListener('accounting-invoice-preview', handler)
+  }, [])
   const [deleteIds, setDeleteIds] = useState<number[] | null>(null)
   const [permanentDeleteIds, setPermanentDeleteIds] = useState<number[] | null>(null)
   const [sort, setSort] = usePersistedState<SortState | null>('accounting-sort', null)
@@ -778,6 +788,10 @@ export default function Accounting() {
         />
       )}
 
+      {previewId !== null && (
+        <InvoicePreviewModal invoiceId={previewId} source="invoices" onClose={() => setPreviewId(null)} />
+      )}
+
       {/* Delete confirmation */}
       <ConfirmDialog
         open={!!deleteIds}
@@ -884,9 +898,21 @@ const columnDefs: ColumnDef[] = [
     label: 'Drive Link',
     render: (inv) =>
       inv.drive_link ? (
-        <a href={inv.drive_link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs truncate block max-w-[120px]">
-          Link
-        </a>
+        // e-Factura-parsed invoices open the in-app preview (invoice details) directly;
+        // other links stay as external drive links.
+        inv.drive_link.startsWith('/efactura/') ? (
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('accounting-invoice-preview', { detail: { id: inv.id } }))}
+            className="text-primary hover:underline text-xs truncate block max-w-[120px] text-left"
+          >
+            Link
+          </button>
+        ) : (
+          <a href={inv.drive_link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs truncate block max-w-[120px]">
+            Link
+          </a>
+        )
       ) : (
         <span className="text-muted-foreground text-xs">-</span>
       ),
