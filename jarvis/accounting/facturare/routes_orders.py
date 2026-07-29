@@ -1918,6 +1918,14 @@ def _final_blended_kurs(repo, inv_row, all_lines):
                 "FROM facturare_invoices WHERE id IN ({})".format(ph),
                 tuple(adv_ids))
     if advances is None:
+        # No matching storno (or it reverses nothing) → fall back to ALL anexa
+        # advances, i.e. the old blended-rate behaviour. This can over-count when
+        # a car has advances the matching storno doesn't reverse, so log it —
+        # this bug was previously only caught by a prod audit.
+        logger.warning(
+            "final_blended_kurs: no matching storno for final invoice %s "
+            "(anexa %s, eur %s) — falling back to all anexa advances",
+            inv_row.get("id"), anexa_id, final_eur)
         advances = repo.query_all(
             "SELECT total_amount_eur, kurs_applied, issued_date, line_ids "
             "FROM facturare_invoices "
