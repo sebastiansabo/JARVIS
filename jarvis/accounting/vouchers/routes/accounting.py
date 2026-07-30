@@ -331,24 +331,43 @@ def reissue_voucher(voucher_id):
         notes=f"Reissued from {original['voucher_code']}",
     )
 
-    # Submit for approval
+    # Submit for approval — same core/approvals contract as create_voucher
+    # (context must carry approver identity or the manager never sees it), and
+    # fail closed: if approval routing fails, roll back the reissued voucher.
+    approver = _service.resolve_approver(current_user.id, original['company_id'])
+    if not approver:
+        _repo.delete_voucher(new_voucher['id'])
+        return error_response('Nu s-a putut determina un aprobator pentru voucher', 400)
+
     try:
         from core.approvals.engine import ApprovalEngine
-        approver_id = _service.resolve_approver(current_user.id, original['company_id'])
         context = {
-            'title': f"Voucher Reissue — {original['client_name']}",
-            'approver_user_id': approver_id['id'] if approver_id else None,
+            'title': f"Voucher {new_voucher['voucher_code']} — {original['client_name']}",
             'voucher_code': new_voucher['voucher_code'],
             'original_code': original['voucher_code'],
+            'client_name': original['client_name'],
+            'voucher_type': original['voucher_type'],
+            'company_id': original['company_id'],
+            'approver_user_id': approver['id'],
+            'stakeholder_approver_ids': [approver['id']],
         }
-        ApprovalEngine().submit(
+        approval = ApprovalEngine().submit(
             entity_type='voucher',
             entity_id=new_voucher['id'],
             context=context,
             requested_by=current_user.id,
         )
+        if not approval:
+            raise RuntimeError('ApprovalEngine.submit returned no approval request')
+        _repo.update_status(
+            new_voucher['id'], status='pending_approval',
+            approval_request_id=approval.get('id'),
+        )
     except Exception:
-        logger.exception('Failed to submit reissued voucher for approval')
+        logger.error('Failed to submit reissued voucher %s for approval — rolling back',
+                     new_voucher['voucher_code'], exc_info=True)
+        _repo.delete_voucher(new_voucher['id'])
+        return error_response('Trimiterea spre aprobare a eșuat', 400)
 
     return jsonify({'success': True, 'voucher': _repo.get_by_id(new_voucher['id'])})
 
