@@ -139,10 +139,20 @@ export const foiParcursApi = {
     api.delete<{ success: boolean }>(`${BASE}/vehicles/${id}`),
 
   // ── Lockout: block/unblock a car from the driving park ──
-  lockVehicle: (id: number, data: { category: 'service' | 'damage' | 'paperwork' | 'other'; note?: string; until?: string | null }) =>
+  lockVehicle: (id: number, data: { category: string; note?: string; until?: string | null }) =>
     api.post<{ success: boolean }>(`${BASE}/vehicles/${id}/lock`, data),
   unlockVehicle: (id: number) =>
     api.post<{ success: boolean }>(`${BASE}/vehicles/${id}/unlock`, {}),
+
+  // ── Lockout reasons (configurable, editable in Settings → Motive blocare) ──
+  getLockoutReasons: (activeOnly = false) =>
+    api.get<{ success: boolean; reasons: import('@/types/foiParcurs').LockoutReason[] }>(
+      `${BASE}/lockout-reasons`, { active_only: String(activeOnly) },
+    ),
+  createLockoutReason: (data: { label: string; sort_order?: number }) =>
+    api.post<{ success: boolean; reason: import('@/types/foiParcurs').LockoutReason }>(`${BASE}/lockout-reasons`, data),
+  updateLockoutReason: (id: number, data: { label?: string; sort_order?: number; is_active?: boolean }) =>
+    api.put<{ success: boolean; reason: import('@/types/foiParcurs').LockoutReason }>(`${BASE}/lockout-reasons/${id}`, data),
 
   // ── Companies ──
   getCompanies: () =>
