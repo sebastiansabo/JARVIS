@@ -11,7 +11,7 @@ Endpoints:
 """
 import logging
 import time
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from flask import jsonify, request
 from flask_login import login_required, current_user
@@ -34,6 +34,16 @@ _sm = InvoiceStateMachine(_repo)
 _perm_repo = PermissionRepository()
 
 TYPE_LABELS = {"PROFORMA": "Proforma", "INVOICE": "Factura", "STORNO": "Storno", "FINAL": "Final"}
+
+
+def _round_half_up(value) -> int:
+    """Round to the nearest whole EUR with halves going up (1014.50 -> 1015).
+
+    Python's built-in round() uses banker's rounding (round-half-to-even), so a
+    5% advance landing exactly on X.50 with an even X rounds DOWN (1014.50 ->
+    1014). Per-car advance amounts must round half up per the accounting spec.
+    """
+    return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 # ── Document items cache (in-memory, per doc_type key) ──────────
 _doc_items_cache: dict[str, tuple[float, list]] = {}  # key -> (timestamp, items)
@@ -613,7 +623,7 @@ def api_get_anexa_detail(anexa_id):
         for idx, lid in enumerate(covered):
             if lid not in line_coverage:
                 line_coverage[lid] = []
-            share = round(line_prices.get(lid, 0) * pct)
+            share = _round_half_up(line_prices.get(lid, 0) * pct)
             share_ron = 0
             # Per-vehicle document number: matches PDF renderer logic (start_no + idx)
             display_no = base_no + idx if base_no is not None and doc_mode != 'single_doc' and len(covered) > 1 else base_no
@@ -873,7 +883,7 @@ def api_anexa_status_export(anexa_id):
         for lid in inv_lids:
             if lid not in line_data:
                 continue
-            share = round(abs(amt) * (prices[lid] / covered_total))
+            share = _round_half_up(abs(amt) * (prices[lid] / covered_total))
             if inv["invoice_type"] == "PROFORMA":
                 line_data[lid]["prof"] += share
             elif inv["invoice_type"] == "INVOICE":
@@ -1265,7 +1275,7 @@ def api_document_items():
 
         for idx, l in enumerate(inv_lines):
             selling = float(l["selling_price_eur"])
-            car_amount = round(selling * pct)
+            car_amount = _round_half_up(selling * pct)
 
             items.append({
                 "invoice_id": inv["invoice_id"],
@@ -1387,7 +1397,7 @@ def api_generate_pdf(invoice_id):
                 # Per-car share of this invoice
                 inv_total = float(inv["total_amount_eur"])
                 inv_selling_sum = sum(float(line_map[x]["selling_price_eur"]) for x in inv_lines if x in line_map) or 1
-                car_share = round(inv_total * (selling / inv_selling_sum))
+                car_share = _round_half_up(inv_total * (selling / inv_selling_sum))
                 base_no = inv.get("invoice_number") or inv["id"]
                 inv_doc_mode = inv.get("doc_mode", "per_car")
                 # Per-vehicle document number: matches PDF renderer logic (start_no + idx)
@@ -1432,9 +1442,9 @@ def api_generate_pdf(invoice_id):
         for l in lines:
             selling = float(l["selling_price_eur"])
             if split_mode == "proportional" and total_selling > 0:
-                car_advance = round(total_amount * (selling / total_selling))
+                car_advance = _round_half_up(total_amount * (selling / total_selling))
             else:
-                car_advance = round(total_amount / max(len(lines), 1))
+                car_advance = _round_half_up(total_amount / max(len(lines), 1))
 
             order_lines.append(OrderLine(
                 comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
@@ -1697,9 +1707,9 @@ def api_generate_eurofib(invoice_id):
         for l in lines:
             selling = float(l["selling_price_eur"])
             if split_mode == "proportional" and total_selling > 0:
-                car_advance = round(total_amount * (selling / total_selling))
+                car_advance = _round_half_up(total_amount * (selling / total_selling))
             else:
-                car_advance = round(total_amount / max(len(lines), 1))
+                car_advance = _round_half_up(total_amount / max(len(lines), 1))
 
             # For FINAL: look up venituri rule per line
             line_kostenstelle = None
@@ -1887,9 +1897,9 @@ def _build_eurofib_batch(inv_row):
         for l in lines:
             selling = float(l["selling_price_eur"])
             if split_mode == "proportional" and total_selling > 0:
-                car_advance = round(total_amount * (selling / total_selling))
+                car_advance = _round_half_up(total_amount * (selling / total_selling))
             else:
-                car_advance = round(total_amount / max(len(lines), 1))
+                car_advance = _round_half_up(total_amount / max(len(lines), 1))
             line_kostenstelle = None
             line_konto_credit = None
             if inv_type_str == "FINAL":
