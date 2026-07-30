@@ -1979,6 +1979,32 @@ def _create_schema_incremental_continued(conn, cursor):
             ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP WITH TIME ZONE
     ''')
 
+    # ── Foi de Parcurs — configurable lockout reasons (editable in Settings) ──
+    # fp_vehicles.lockout_category stores the reason's stable `slug`; the label
+    # is editable here without orphaning existing locks. Seeded with the four
+    # historical categories so already-locked cars keep their label.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_lockout_reasons (
+            id BIGSERIAL PRIMARY KEY,
+            slug VARCHAR(40) NOT NULL UNIQUE,
+            label VARCHAR(80) NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('''
+        INSERT INTO fp_lockout_reasons (slug, label, sort_order) VALUES
+            ('service',   'În service',            1),
+            ('damage',    'Avariat',               2),
+            ('paperwork', 'Acte lipsă/expirate',   3),
+            ('other',     'Altele',                4)
+        ON CONFLICT (slug) DO NOTHING
+    ''')
+    # Widen lockout_category so custom reason slugs (up to 40 chars) fit.
+    cursor.execute("ALTER TABLE fp_vehicles ALTER COLUMN lockout_category TYPE VARCHAR(40)")
+
     # ── Foi de Parcurs — KM configs per company ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS fp_km_configs (

@@ -1,23 +1,36 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { LOCKOUT_LABELS, type FpVehicle } from '@/types/foiParcurs'
-
-type Cat = 'service' | 'damage' | 'paperwork' | 'other'
+import { foiParcursApi } from '@/api/foiParcurs'
+import type { FpVehicle } from '@/types/foiParcurs'
 
 export default function LockVehicleDialog({ vehicle, onClose, onSubmit, submitting }: {
   vehicle: FpVehicle
   onClose: () => void
-  onSubmit: (data: { category: Cat; note?: string; until?: string | null }) => void
+  onSubmit: (data: { category: string; note?: string; until?: string | null }) => void
   submitting: boolean
 }) {
-  const [category, setCategory] = useState<Cat>('service')
+  // Reasons are configurable (FP Settings → Motive blocare); show only active ones.
+  const { data: reasonsData } = useQuery({
+    queryKey: ['fp-lockout-reasons', 'active'],
+    queryFn: () => foiParcursApi.getLockoutReasons(true),
+    staleTime: 60_000,
+  })
+  const reasons = reasonsData?.reasons ?? []
+  const [category, setCategory] = useState('')
   const [note, setNote] = useState('')
   const [until, setUntil] = useState('')
+
+  // Default to the first active reason once loaded.
+  useEffect(() => {
+    if (!category && reasons.length) setCategory(reasons[0].slug)
+  }, [reasons]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="sm:max-w-md">
@@ -30,11 +43,11 @@ export default function LockVehicleDialog({ vehicle, onClose, onSubmit, submitti
           </p>
           <div className="space-y-1.5">
             <Label className="text-xs">Motiv</Label>
-            <Select value={category} onValueChange={(v) => setCategory(v as Cat)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger><SelectValue placeholder="Alege motivul" /></SelectTrigger>
               <SelectContent>
-                {(Object.keys(LOCKOUT_LABELS) as Cat[]).map((k) => (
-                  <SelectItem key={k} value={k}>{LOCKOUT_LABELS[k]}</SelectItem>
+                {reasons.map((r) => (
+                  <SelectItem key={r.slug} value={r.slug}>{r.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -51,7 +64,10 @@ export default function LockVehicleDialog({ vehicle, onClose, onSubmit, submitti
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Anulează</Button>
-          <Button onClick={() => onSubmit({ category, note: note.trim() || undefined, until: until || null })} disabled={submitting}>
+          <Button
+            onClick={() => onSubmit({ category, note: note.trim() || undefined, until: until || null })}
+            disabled={submitting || !category}
+          >
             {submitting ? 'Se blochează…' : 'Blochează'}
           </Button>
         </DialogFooter>
