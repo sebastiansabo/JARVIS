@@ -58,7 +58,13 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
   const byDay = useMemo(() => {
     const map = new Map<string, FoiContract[]>()
     for (const c of data?.contracts ?? []) {
-      if (brand && c.vin && (vinVehicle.get(c.vin)?.mark ?? '').trim() !== brand) continue
+      // Match on the vehicle's `brand` (catalog name in the dropdown, e.g. "MG
+      // Motor") with a fallback to `mark` (short code, e.g. "MG"). See the same
+      // note in DrivingSessionsList — filtering on `mark` alone hid MG sessions.
+      if (brand && c.vin) {
+        const vh = vinVehicle.get(c.vin)
+        if ((vh?.brand ?? '').trim() !== brand && (vh?.mark ?? '').trim() !== brand) continue
+      }
       const k = sessionStatus(c).key
       if (k !== 'planificat' && k !== 'driving' && k !== 'intarziat') continue
       const key = dayKeyOf(c.departure_datetime)
