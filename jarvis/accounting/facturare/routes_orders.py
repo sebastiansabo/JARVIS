@@ -45,6 +45,25 @@ def _round_half_up(value) -> int:
     """
     return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
+
+def _snap_pct(total_amount, total_selling) -> float:
+    """Effective advance percentage, snapped to the nearest whole % when within
+    0.5% of one.
+
+    The stored proforma/invoice total is itself a rounded figure (e.g. a 5%
+    advance of 8128.20 is stored as 8128.00), so re-deriving each car by slicing
+    that total — total_amount * selling / total_selling — loses the exact .50 and
+    rounds a 20290 car down to 1014. Snapping the ratio back to a clean 0.05 lets
+    each car be computed as selling * pct (1014.50 -> 1015), matching the per-line
+    coverage/document-list computation. Non-whole percentages fall through to the
+    raw ratio unchanged.
+    """
+    if not total_selling:
+        return 0.0
+    raw = total_amount / total_selling
+    snapped = round(raw * 100) / 100
+    return snapped if abs(raw - snapped) < 0.005 else raw
+
 # ── Document items cache (in-memory, per doc_type key) ──────────
 _doc_items_cache: dict[str, tuple[float, list]] = {}  # key -> (timestamp, items)
 _DOC_ITEMS_TTL = 60  # seconds
@@ -1397,7 +1416,7 @@ def api_generate_pdf(invoice_id):
                 # Per-car share of this invoice
                 inv_total = float(inv["total_amount_eur"])
                 inv_selling_sum = sum(float(line_map[x]["selling_price_eur"]) for x in inv_lines if x in line_map) or 1
-                car_share = _round_half_up(inv_total * (selling / inv_selling_sum))
+                car_share = _round_half_up(selling * _snap_pct(inv_total, inv_selling_sum))
                 base_no = inv.get("invoice_number") or inv["id"]
                 inv_doc_mode = inv.get("doc_mode", "per_car")
                 # Per-vehicle document number: matches PDF renderer logic (start_no + idx)
@@ -1442,7 +1461,7 @@ def api_generate_pdf(invoice_id):
         for l in lines:
             selling = float(l["selling_price_eur"])
             if split_mode == "proportional" and total_selling > 0:
-                car_advance = _round_half_up(total_amount * (selling / total_selling))
+                car_advance = _round_half_up(selling * _snap_pct(total_amount, total_selling))
             else:
                 car_advance = _round_half_up(total_amount / max(len(lines), 1))
 
@@ -1707,7 +1726,7 @@ def api_generate_eurofib(invoice_id):
         for l in lines:
             selling = float(l["selling_price_eur"])
             if split_mode == "proportional" and total_selling > 0:
-                car_advance = _round_half_up(total_amount * (selling / total_selling))
+                car_advance = _round_half_up(selling * _snap_pct(total_amount, total_selling))
             else:
                 car_advance = _round_half_up(total_amount / max(len(lines), 1))
 
@@ -1897,7 +1916,7 @@ def _build_eurofib_batch(inv_row):
         for l in lines:
             selling = float(l["selling_price_eur"])
             if split_mode == "proportional" and total_selling > 0:
-                car_advance = _round_half_up(total_amount * (selling / total_selling))
+                car_advance = _round_half_up(selling * _snap_pct(total_amount, total_selling))
             else:
                 car_advance = _round_half_up(total_amount / max(len(lines), 1))
             line_kostenstelle = None
