@@ -136,3 +136,41 @@ class FPVehicleRepository(BaseRepository):
             'FROM fp_vehicles WHERE vin = %s',
             (vin,),
         )
+
+    # ── Lockout reasons (configurable, editable in Settings) ────────────────
+
+    def list_lockout_reasons(self, active_only=False):
+        """All lockout reasons ordered for display. active_only for the picker."""
+        where = 'WHERE is_active = TRUE' if active_only else ''
+        return self.query_all(
+            f'SELECT id, slug, label, sort_order, is_active '
+            f'FROM fp_lockout_reasons {where} ORDER BY sort_order, label'
+        )
+
+    def get_active_lockout_slugs(self):
+        """Slugs currently valid for locking a car (for lock-endpoint validation)."""
+        rows = self.query_all('SELECT slug FROM fp_lockout_reasons WHERE is_active = TRUE')
+        return {r['slug'] for r in (rows or [])}
+
+    def slug_exists(self, slug):
+        return self.query_one('SELECT 1 FROM fp_lockout_reasons WHERE slug = %s', (slug,)) is not None
+
+    def create_lockout_reason(self, slug, label, sort_order=0):
+        return self.execute(
+            '''INSERT INTO fp_lockout_reasons (slug, label, sort_order)
+               VALUES (%s, %s, %s) RETURNING *''',
+            (slug, label, sort_order),
+            returning=True,
+        )
+
+    def get_lockout_reason(self, reason_id):
+        return self.query_one('SELECT * FROM fp_lockout_reasons WHERE id = %s', (reason_id,))
+
+    def update_lockout_reason(self, reason_id, label, sort_order, is_active):
+        return self.execute(
+            '''UPDATE fp_lockout_reasons
+               SET label = %s, sort_order = %s, is_active = %s, updated_at = NOW()
+               WHERE id = %s RETURNING *''',
+            (label, sort_order, is_active, reason_id),
+            returning=True,
+        )

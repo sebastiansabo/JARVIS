@@ -86,7 +86,16 @@ def api_get_vehicle_document(vehicle_id, doc_type):
     return jsonify({'success': True, 'type': doc_type, 'filename': filename, 'data_url': data_url})
 
 
+import re
+
+# Fallback if the fp_lockout_reasons table is empty (should be seeded).
 _LOCKOUT_CATEGORIES = ('service', 'damage', 'paperwork', 'other')
+
+
+def _slugify_reason(label):
+    """URL/DB-safe slug (≤40 chars) from a reason label."""
+    s = re.sub(r'[^a-z0-9]+', '-', (label or '').strip().lower()).strip('-')
+    return s[:40] or 'reason'
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/vehicles/<int:vehicle_id>/lock', methods=['POST'])
@@ -96,7 +105,8 @@ def api_lock_vehicle(vehicle_id):
     from flask_login import current_user
     data = request.get_json() or {}
     category = data.get('category')
-    if category not in _LOCKOUT_CATEGORIES:
+    valid = _vehicle_repo.get_active_lockout_slugs() or set(_LOCKOUT_CATEGORIES)
+    if category not in valid:
         return jsonify({'success': False, 'error': 'Invalid lockout category'}), 400
     note = (data.get('note') or '').strip() or None
     until = data.get('until') or None
@@ -114,6 +124,56 @@ def api_unlock_vehicle(vehicle_id):
     if not row:
         return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
     return jsonify({'success': True})
+
+
+# ── Lockout reasons (configurable, editable in Settings → Motive blocare) ──
+
+@foi_parcurs_bp.route('/api/foi-parcurs/lockout-reasons', methods=['GET'])
+@login_required
+def api_list_lockout_reasons():
+    """List lockout reasons. ?active_only=true for the lock/vehicle pickers."""
+    active_only = request.args.get('active_only', 'false').lower() == 'true'
+    reasons = _vehicle_repo.list_lockout_reasons(active_only=active_only)
+    return jsonify({'success': True, 'reasons': reasons or []})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/lockout-reasons', methods=['POST'])
+@login_required
+def api_create_lockout_reason():
+    """Add a new lockout reason. Slug is derived from the label (kept unique)."""
+    data = request.get_json() or {}
+    label = (data.get('label') or '').strip()
+    if not label:
+        return jsonify({'success': False, 'error': 'label is required'}), 400
+    base = _slugify_reason(label)
+    slug, i = base, 2
+    while _vehicle_repo.slug_exists(slug):
+        slug = f'{base[:37]}-{i}'
+        i += 1
+    sort_order = _to_int_or_none(data.get('sort_order')) or 0
+    row = _vehicle_repo.create_lockout_reason(slug, label, sort_order)
+    return jsonify({'success': True, 'reason': row})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/lockout-reasons/<int:reason_id>', methods=['PUT'])
+@login_required
+def api_update_lockout_reason(reason_id):
+    """Edit a lockout reason's label/order or deactivate it (soft; slug is stable
+    so already-locked cars keep their reference)."""
+    existing = _vehicle_repo.get_lockout_reason(reason_id)
+    if not existing:
+        return jsonify({'success': False, 'error': 'Reason not found'}), 404
+    data = request.get_json() or {}
+    label = (data.get('label') or existing['label']).strip()
+    if not label:
+        return jsonify({'success': False, 'error': 'label is required'}), 400
+    sort_order = _to_int_or_none(data.get('sort_order'))
+    if sort_order is None:
+        sort_order = existing['sort_order']
+    is_active = data.get('is_active')
+    is_active = existing['is_active'] if is_active is None else bool(is_active)
+    row = _vehicle_repo.update_lockout_reason(reason_id, label, sort_order, is_active)
+    return jsonify({'success': True, 'reason': row})
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/odometer-history', methods=['GET'])

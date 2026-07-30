@@ -71,3 +71,56 @@ def test_general_observation_persisted_and_trimmed(client, monkeypatch):
     resp = client.post('/api/foi-parcurs/test-drive', json=_body(general_observation='  zgârietură portieră  '))
     assert resp.status_code == 200, resp.get_json()
     assert captured['general_observation'] == 'zgârietură portieră'
+
+
+def test_submit_allowed_when_locked_but_override(client, monkeypatch):
+    """A blocked car proceeds when the form sends the confirmed allow_locked flag."""
+    captured = {}
+    _stub_create(monkeypatch, captured)
+    monkeypatch.setattr(td_routes._vehicle_repo, 'get_lock_by_vin',
+                        lambda vin: {'locked_out': True, 'lockout_category': 'service', 'lockout_note': 'x'})
+    resp = client.post('/api/foi-parcurs/test-drive', json=_body(allow_locked=True))
+    assert resp.status_code == 200, resp.get_json()
+
+
+# ── Configurable lockout reasons ────────────────────────────────────────────
+
+def test_lockout_reasons_list(client, monkeypatch):
+    monkeypatch.setattr(
+        td_routes._vehicle_repo, 'list_lockout_reasons',
+        lambda active_only=False: [{'id': 1, 'slug': 'service', 'label': 'În service', 'sort_order': 1, 'is_active': True}],
+    )
+    resp = client.get('/api/foi-parcurs/lockout-reasons')
+    assert resp.status_code == 200
+    assert resp.get_json()['reasons'][0]['slug'] == 'service'
+
+
+def test_create_lockout_reason_derives_slug(client, monkeypatch):
+    monkeypatch.setattr(td_routes._vehicle_repo, 'slug_exists', lambda slug: False)
+    captured = {}
+    def fake_create(slug, label, sort_order=0):
+        captured.update(slug=slug, label=label)
+        return {'id': 9, 'slug': slug, 'label': label, 'sort_order': sort_order, 'is_active': True}
+    monkeypatch.setattr(td_routes._vehicle_repo, 'create_lockout_reason', fake_create)
+    resp = client.post('/api/foi-parcurs/lockout-reasons', json={'label': 'Rezervat / VIP'})
+    assert resp.status_code == 200, resp.get_json()
+    assert captured['slug'] == 'rezervat-vip'
+    assert captured['label'] == 'Rezervat / VIP'
+
+
+def test_create_lockout_reason_requires_label(client):
+    resp = client.post('/api/foi-parcurs/lockout-reasons', json={'label': '   '})
+    assert resp.status_code == 400
+
+
+def test_lock_rejects_unknown_category(client, monkeypatch):
+    monkeypatch.setattr(td_routes._vehicle_repo, 'get_active_lockout_slugs', lambda: {'service', 'damage'})
+    resp = client.post('/api/foi-parcurs/vehicles/1/lock', json={'category': 'nonsense'})
+    assert resp.status_code == 400
+
+
+def test_lock_accepts_active_db_category(client, monkeypatch):
+    monkeypatch.setattr(td_routes._vehicle_repo, 'get_active_lockout_slugs', lambda: {'service', 'reserved'})
+    monkeypatch.setattr(td_routes._vehicle_repo, 'lock_vehicle', lambda *a, **k: {'id': 1, 'locked_out': True})
+    resp = client.post('/api/foi-parcurs/vehicles/1/lock', json={'category': 'reserved'})
+    assert resp.status_code == 200, resp.get_json()

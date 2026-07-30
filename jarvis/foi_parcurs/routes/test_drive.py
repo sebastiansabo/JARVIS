@@ -48,12 +48,14 @@ def api_submit_test_drive():
     if missing:
         return jsonify({'success': False, 'error': f'Missing: {", ".join(missing)}'}), 400
 
-    # Block new sessions for a car locked out of the driving park.
-    _lock = _vehicle_repo.get_lock_by_vin(data['vin'])
-    if _lock and _lock.get('locked_out'):
-        _cat, _note = _lock.get('lockout_category'), _lock.get('lockout_note')
-        msg = 'Mașină blocată în parcul auto' + (f' ({_cat})' if _cat else '') + (f': {_note}' if _note else '')
-        return jsonify({'success': False, 'error': msg, 'locked_out': True}), 409
+    # Block new sessions for a car locked out of the driving park — unless the
+    # user explicitly overrode it (allow_locked) after confirming the warning.
+    if not data.get('allow_locked'):
+        _lock = _vehicle_repo.get_lock_by_vin(data['vin'])
+        if _lock and _lock.get('locked_out'):
+            _cat, _note = _lock.get('lockout_category'), _lock.get('lockout_note')
+            msg = 'Mașină blocată în parcul auto' + (f' ({_cat})' if _cat else '') + (f': {_note}' if _note else '')
+            return jsonify({'success': False, 'error': msg, 'locked_out': True}), 409
 
     if not is_draft and _company_gdpr_text(data.get('company_id')).strip() and not data.get('gdpr_consent'):
         return jsonify({'success': False, 'error': 'GDPR consent is required'}), 400
@@ -197,12 +199,13 @@ def api_activate_test_drive(id):
             return jsonify({'success': False, 'error': 'Not found'}), 404
         if contract.get('route_type') != 'TD' or contract.get('status') != 'PLANNED':
             return jsonify({'success': False, 'error': 'Contract is not a PLANNED draft'}), 400
-        # Block activation if the car has since been locked out of the driving park.
-        _lock = _vehicle_repo.get_lock_by_vin(contract.get('vin'))
-        if _lock and _lock.get('locked_out'):
-            _cat, _note = _lock.get('lockout_category'), _lock.get('lockout_note')
-            msg = 'Mașină blocată în parcul auto' + (f' ({_cat})' if _cat else '') + (f': {_note}' if _note else '')
-            return jsonify({'success': False, 'error': msg, 'locked_out': True}), 409
+        # Block activation if the car has since been locked out — unless overridden.
+        if not data.get('allow_locked'):
+            _lock = _vehicle_repo.get_lock_by_vin(contract.get('vin'))
+            if _lock and _lock.get('locked_out'):
+                _cat, _note = _lock.get('lockout_category'), _lock.get('lockout_note')
+                msg = 'Mașină blocată în parcul auto' + (f' ({_cat})' if _cat else '') + (f': {_note}' if _note else '')
+                return jsonify({'success': False, 'error': msg, 'locked_out': True}), 409
         if not data.get('client_signature'):
             return jsonify({'success': False, 'error': 'client_signature is required'}), 400
 
