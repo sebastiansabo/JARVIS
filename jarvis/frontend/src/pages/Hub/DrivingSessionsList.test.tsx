@@ -64,3 +64,39 @@ describe('DrivingSessionsList', () => {
     expect(screen.getByText('VF1')).toBeInTheDocument()
   })
 })
+
+describe('DrivingSessionsList brand matching', () => {
+  // The brand dropdown is populated from the brand catalog (e.g. "MG Motor"),
+  // while fp_vehicles keeps the short manufacturer code in `mark` ("MG") and the
+  // catalog name in `brand` ("MG Motor"). Filtering on `mark` alone hid every MG
+  // session (Autoworld PLUS: 55 invisible). Match on `brand`, fall back to `mark`.
+  beforeEach(() => {
+    getContracts.mockResolvedValue({
+      contracts: [
+        { id: 101, status: 'PLANNED', vin: 'VMG1', client_name: 'Client MG', advisor_name: 'Ana', departure_datetime: '2026-07-28T10:00', km_start: 10 },
+        { id: 102, status: 'PLANNED', vin: 'VMAZ1', client_name: 'Client Mazda', advisor_name: 'Bob', departure_datetime: '2026-07-28T11:00', km_start: 20 },
+      ], total: 2, page: 1, per_page: 1000,
+    })
+    getVehicles.mockResolvedValue({ vehicles: [
+      { vin: 'VMG1', mark: 'MG', brand: 'MG Motor', model: '4' },       // mark != catalog brand
+      { vin: 'VMAZ1', mark: 'Mazda', brand: 'Mazda', model: 'CX-60' },  // mark == brand (fallback)
+    ] })
+  })
+
+  it('shows an MG session under "MG Motor" (matches vehicle.brand, not mark)', async () => {
+    wrap(<DrivingSessionsList companyId={9} brand="MG Motor" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(await screen.findByText('Client MG')).toBeInTheDocument()
+    expect(screen.queryByText('Client Mazda')).not.toBeInTheDocument()
+  })
+
+  it('falls back to mark when brand equals the mark (Mazda)', async () => {
+    wrap(<DrivingSessionsList companyId={9} brand="Mazda" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(await screen.findByText('Client Mazda')).toBeInTheDocument()
+    expect(screen.queryByText('Client MG')).not.toBeInTheDocument()
+  })
+
+  it('hides sessions whose brand and mark both differ from the selection', async () => {
+    wrap(<DrivingSessionsList companyId={9} brand="Audi" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(await screen.findByText(/nicio sesiune activ/i)).toBeInTheDocument()
+  })
+})

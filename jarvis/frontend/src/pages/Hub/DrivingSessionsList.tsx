@@ -61,7 +61,14 @@ export default function DrivingSessionsList({ companyId, brand, onActivate, onRe
   const items = useMemo(() => {
     const q = search.trim().toLowerCase()
     return (data?.contracts ?? []).filter((c) => {
-      if (brand && c.vin && (vinVehicle.get(c.vin)?.mark ?? '').trim() !== brand) return false
+      // Match the selected brand against the vehicle's `brand` (the dealer/catalog
+      // name that populates the dropdown, e.g. "MG Motor"), falling back to `mark`
+      // (the short manufacturer code, e.g. "MG"). They differ for some marques, so
+      // comparing only `mark` used to hide every session (see MG on Autoworld PLUS).
+      if (brand && c.vin) {
+        const vh = vinVehicle.get(c.vin)
+        if ((vh?.brand ?? '').trim() !== brand && (vh?.mark ?? '').trim() !== brand) return false
+      }
       const isComplete = sessionStatus(c).key === 'finalizat'
       if (showArchived ? !isComplete : isComplete) return false
       if (q) {
