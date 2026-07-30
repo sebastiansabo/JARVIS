@@ -72,17 +72,18 @@ class VoucherService:
 
         Returns: Created voucher dict with approver info
 
-        Raises: ValueError if no approver can be resolved
+        Raises: ValueError if no approver can be resolved, or if submission
+            to the approval engine fails. In the latter case the voucher row
+            (already inserted) is deleted so no orphan pending voucher is
+            left behind (fail closed — design doc §6.A5).
         """
-        # Resolve approver
+        # Resolve approver BEFORE inserting the voucher — fail closed.
         approver = self.resolve_approver(
             user_id, company_id,
             explicit_approver_id=data.get('approver_user_id')
         )
         if not approver:
-            raise ValueError(
-                'Your account has no configured superior. Contact admin.'
-            )
+            raise ValueError('Nu s-a putut determina un aprobator pentru voucher')
 
         # Create voucher
         voucher = self.repo.create(
@@ -101,17 +102,23 @@ class VoucherService:
             notes=data.get('notes'),
         )
 
-        # Submit to approval engine
+        # Submit to approval engine — fail closed: if this fails, roll back
+        # the voucher row rather than leaving an orphan pending_approval
+        # voucher with no approval request behind it.
         try:
             from core.approvals.engine import ApprovalEngine
             engine = ApprovalEngine()
             context = {
+                'title': f"Voucher {voucher['voucher_code']} — {voucher['client_name']}",
                 'voucher_code': voucher['voucher_code'],
                 'client_name': voucher['client_name'],
                 'voucher_type': voucher['voucher_type'],
                 'value_lei': str(voucher.get('value_lei') or ''),
                 'discount_code': voucher.get('discount_code') or '',
                 'discount_percentage': str(voucher.get('discount_percentage') or ''),
+                'company_id': company_id,
+                'approver_user_id': approver['id'],
+                'stakeholder_approver_ids': [approver['id']],
             }
             approval = engine.submit(
                 entity_type='voucher',
@@ -119,17 +126,20 @@ class VoucherService:
                 context=context,
                 requested_by=user_id,
             )
-            if approval:
-                self.repo.update_status(
-                    voucher['id'],
-                    status='pending_approval',
-                    approval_request_id=approval.get('id'),
-                )
-        except Exception:
-            logger.exception('Failed to submit voucher %s for approval', voucher['voucher_code'])
-
-        # Notify approver
-        self._notify_approver(voucher, approver)
+            if not approval:
+                raise RuntimeError('ApprovalEngine.submit returned no approval request')
+            self.repo.update_status(
+                voucher['id'],
+                status='pending_approval',
+                approval_request_id=approval.get('id'),
+            )
+        except Exception as e:
+            logger.error(
+                'Failed to submit voucher %s for approval — rolling back voucher creation',
+                voucher['voucher_code'], exc_info=True,
+            )
+            self.repo.delete_voucher(voucher['id'])
+            raise ValueError('Trimiterea spre aprobare a eșuat') from e
 
         voucher['approver_name'] = approver['name']
         return voucher
@@ -198,27 +208,11 @@ class VoucherService:
         return result
 
     # -- Notifications -----------------------------------------------
-
-    def _notify_approver(self, voucher: dict, approver: dict):
-        try:
-            from core.services.notification_service import send_email
-            send_email(
-                to_email=approver['email'],
-                subject=f"Voucher {voucher['voucher_code']} awaiting your approval",
-                html_body=f"""
-                <p>A new voucher requires your approval:</p>
-                <ul>
-                    <li><strong>Code:</strong> {voucher['voucher_code']}</li>
-                    <li><strong>Client:</strong> {voucher['client_name']}</li>
-                    <li><strong>Contract:</strong> {voucher['contract_number']}</li>
-                    <li><strong>VIN:</strong> {voucher['car_vin']}</li>
-                    <li><strong>Type:</strong> {voucher['voucher_type']}</li>
-                </ul>
-                <p>Please review and approve or reject in JARVIS.</p>
-                """,
-            )
-        except Exception:
-            logger.exception('Failed to notify approver for voucher %s', voucher['voucher_code'])
+    # NOTE: the approver is now notified by the approval engine's own
+    # `_on_submitted` hook (context carries `approver_user_id` /
+    # `stakeholder_approver_ids` as of Slice 1 — design doc §6.A2), so the
+    # old service-level `_notify_approver` email was retired to avoid a
+    # duplicate notification.
 
     def _notify_issuer_approved(self, voucher: dict):
         try:
