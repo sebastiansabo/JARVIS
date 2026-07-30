@@ -42,6 +42,9 @@ export interface VoucherCreatePayload {
   service_items?: string[] | null
   approver_user_id?: number | null
   notes?: string | null
+  start_date?: string | null
+  client_email?: string | null
+  client_cif?: string | null
 }
 
 export interface VoucherSummary {
