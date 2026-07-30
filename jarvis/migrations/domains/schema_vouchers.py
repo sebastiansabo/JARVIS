@@ -123,6 +123,23 @@ def create_schema_vouchers(conn, cursor):
           AND flow_id IN (SELECT id FROM approval_flows WHERE entity_type IN ('voucher', 'form_submission'))
     ''')
 
+    # Seed the voucher-approval flow idempotently (previously DB-only / admin-UI
+    # created — a fresh DB had neither, so ApprovalEngine.submit('voucher', ...)
+    # would raise NoMatchingFlowError). WHERE NOT EXISTS makes this a no-op
+    # where the flow already exists (staging/prod).
+    cursor.execute('''
+        INSERT INTO approval_flows (name, slug, entity_type, is_active, priority, created_by)
+        SELECT 'Voucher Approval', 'voucher-approval', 'voucher', TRUE, 1, 1
+        WHERE NOT EXISTS (SELECT 1 FROM approval_flows WHERE slug = 'voucher-approval')
+    ''')
+    cursor.execute('''
+        INSERT INTO approval_steps (flow_id, name, step_order, approver_type, notify_on_pending, notify_on_decision)
+        SELECT f.id, 'Manager Approval', 1, 'context_approver', TRUE, TRUE
+        FROM approval_flows f
+        WHERE f.slug = 'voucher-approval'
+          AND NOT EXISTS (SELECT 1 FROM approval_steps s WHERE s.flow_id = f.id)
+    ''')
+
     # ── Service Catalog ─────────────────────────────────
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS voucher_service_catalog (
