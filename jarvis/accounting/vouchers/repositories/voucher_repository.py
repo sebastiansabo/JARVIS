@@ -50,7 +50,8 @@ class VoucherRepository(BaseRepository):
                value_lei=None, discount_code=None,
                discount_percentage=None, service_items=None,
                approver_user_id=None, notes=None,
-               client_email=None, form_submission_id=None) -> dict:
+               client_email=None, form_submission_id=None,
+               start_date=None, client_cif=None) -> dict:
         """Insert a new voucher. Retries on code collision. Returns full row."""
         for attempt in range(5):
             code = _generate_voucher_code()
@@ -60,9 +61,10 @@ class VoucherRepository(BaseRepository):
                         (company_id, voucher_code, client_name, contract_number,
                          car_vin, validity_months, issued_by_user_id, voucher_type,
                          value_lei, discount_code, discount_percentage, service_items,
-                         status, approver_user_id, notes, client_email, form_submission_id)
+                         status, approver_user_id, notes, client_email, form_submission_id,
+                         start_date, client_cif)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            'pending_approval', %s, %s, %s, %s)
+                            'pending_approval', %s, %s, %s, %s, %s, %s)
                     RETURNING *
                 ''', (
                     company_id, code, client_name, contract_number,
@@ -70,6 +72,7 @@ class VoucherRepository(BaseRepository):
                     value_lei, discount_code, discount_percentage,
                     json.dumps(service_items) if service_items else None,
                     approver_user_id, notes, client_email, form_submission_id,
+                    start_date, client_cif,
                 ), returning=True)
                 return row
             except Exception as e:
