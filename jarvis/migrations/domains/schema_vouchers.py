@@ -107,6 +107,28 @@ def create_schema_vouchers(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_deleted_at ON vouchers(deleted_at) WHERE deleted_at IS NULL')
 
+    # Full persistence (design doc §6.B1): activation anchor + client identifiers.
+    # start_date/client_cif are new; client_email is a safety net for fresh DBs
+    # (already added out-of-band on staging/local — see design doc §5.1).
+    cursor.execute('''
+        DO $$ BEGIN
+            ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS start_date DATE;
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+    ''')
+    cursor.execute('''
+        DO $$ BEGIN
+            ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS client_cif VARCHAR(20);
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+    ''')
+    cursor.execute('''
+        DO $$ BEGIN
+            ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS client_email VARCHAR(255);
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+    ''')
+
     # Add 'archived' to voucher status constraint
     cursor.execute('''
         DO $$ BEGIN

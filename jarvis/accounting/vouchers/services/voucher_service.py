@@ -100,6 +100,9 @@ class VoucherService:
             service_items=data.get('service_items'),
             approver_user_id=approver['id'],
             notes=data.get('notes'),
+            start_date=data.get('start_date'),
+            client_email=data.get('client_email'),
+            client_cif=data.get('client_cif'),
         )
 
         # Submit to approval engine — fail closed: if this fails, roll back
@@ -151,8 +154,15 @@ class VoucherService:
             logger.warning('Voucher %s not found for activation', voucher_id)
             return
 
-        # Use f_start_date from form submission if available, else today
-        start = date.today()
+        # Anchor on the voucher's own start_date (Slice 2 — design doc §6.B5).
+        # Falls back to today when NULL, preserving existing behavior.
+        start = voucher.get('start_date') or date.today()
+        if isinstance(start, str):
+            start = date.fromisoformat(start[:10])
+
+        # Path A (Forms) fallback: if this voucher was created via a form
+        # submission, its own f_start_date answer still wins when present —
+        # kept until Path A is fully removed (design doc §3 item 6).
         if voucher.get('form_submission_id'):
             try:
                 from forms.repositories import SubmissionRepository
