@@ -32,10 +32,7 @@ import {
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/shared/ColumnToggle'
-import { FormRenderer } from '@/components/forms/FormRenderer'
-import { useVoucherSchema } from '@/hooks/useVoucherSchema'
-import { formsApi } from '@/api/forms'
-import { api } from '@/api/client'
+import VoucherIssueForm from './VoucherIssueForm'
 import { useAuthStore } from '@/stores/authStore'
 import { vouchersApi } from '@/api/vouchers'
 import { organizationApi } from '@/api/organization'
@@ -248,35 +245,6 @@ export default function Vouchers() {
   const allColKeys = allColumns.map((c) => c.key)
   const { visibleColumns, setVisibleColumns, defaultColumns: defaultColState } = useColumnState('voucherColumns', defaultCols, allColKeys)
 
-  const { data: formData } = useQuery({
-    queryKey: ['voucher-form-schema'],
-    queryFn: () => vouchersApi.getFormSchema(),
-    enabled: view === 'issue',
-    staleTime: 5 * 60_000,
-  })
-
-  const { schema: issueSchema, defaultValues: voucherDefaults, needsSignatureSave } =
-    useVoucherSchema(formData?.schema ?? [], 'voucher-issuance')
-
-  const submitFormMutation = useMutation({
-    mutationFn: async (answers: Record<string, unknown>) => {
-      if (!formData?.id) throw new Error('Form not loaded')
-      if (needsSignatureSave && answers.f_signature && typeof answers.f_signature === 'string') {
-        await api.put('/profile/api/signature', { signature: answers.f_signature })
-      }
-      const { f_signature: _, ...formAnswers } = answers
-      return formsApi.submitInternal(formData.id, formAnswers)
-    },
-    onSuccess: () => {
-      toast.success('Voucher submitted for approval!')
-      setView('tracking')
-      queryClient.invalidateQueries({ queryKey: ['vouchers-accounting'] })
-    },
-    onError: (err: unknown) => {
-      toast.error(err instanceof Error ? err.message : 'Submission failed')
-    },
-  })
-
   if (view === 'issue') {
     return (
       <div className="space-y-4 p-6">
@@ -287,17 +255,12 @@ export default function Vouchers() {
           <h1 className="text-2xl font-bold">Issue Voucher</h1>
         </div>
         <div className="mx-auto max-w-2xl rounded-lg border p-6">
-          {issueSchema.length ? (
-            <FormRenderer
-              schema={issueSchema}
-              onSubmit={(answers) => submitFormMutation.mutate(answers)}
-              submitting={submitFormMutation.isPending}
-              submitLabel="Issue Voucher"
-              defaultValues={voucherDefaults}
-            />
-          ) : (
-            <div className="py-8 text-center text-muted-foreground">Loading form...</div>
-          )}
+          <VoucherIssueForm
+            onSuccess={() => {
+              setView('tracking')
+              queryClient.invalidateQueries({ queryKey: ['vouchers-accounting'] })
+            }}
+          />
         </div>
       </div>
     )
