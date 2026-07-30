@@ -282,6 +282,10 @@ export interface CreateCrmClientPayload {
   city?: string
   county?: string
   country?: string
+  /** Company (persoană juridică) fields — backend sets client_type='company'. */
+  is_company?: boolean
+  company_name?: string
+  cui?: string
 }
 
 // ── Driver-license OCR (Claude vision) ──

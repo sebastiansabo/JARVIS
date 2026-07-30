@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -156,6 +157,9 @@ export function CreateClientPanel({
   const [name, setName] = useState(prefill?.full_name ?? '')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
+  const [isCompany, setIsCompany] = useState(false)
+  const [companyName, setCompanyName] = useState('')
+  const [cui, setCui] = useState('')
   const [licenseNumber, setLicenseNumber] = useState(prefill?.license_number ?? '')
   const [licenseExpiry, setLicenseExpiry] = useState(prefill?.expiry_date ?? '')
   const [address, setAddress] = useState(prefill?.address ?? '')
@@ -192,6 +196,13 @@ export function CreateClientPanel({
         ...(city.trim() ? { city: city.trim() } : {}),
         ...(county.trim() ? { county: county.trim() } : {}),
         ...(country.trim() ? { country: country.trim() } : {}),
+        ...(isCompany
+          ? {
+              is_company: true,
+              ...(companyName.trim() ? { company_name: companyName.trim() } : {}),
+              ...(cui.trim() ? { cui: cui.trim() } : {}),
+            }
+          : {}),
       },
       {
         onSuccess: (res) => {
@@ -208,6 +219,22 @@ export function CreateClientPanel({
   return (
     <div className="space-y-2.5 rounded-md border bg-muted/40 p-3">
       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Client nou</p>
+      <div className="flex items-center gap-2 pt-0.5">
+        <Checkbox id="is-company" checked={isCompany} onCheckedChange={(v) => setIsCompany(v === true)} />
+        <Label htmlFor="is-company" className="text-xs leading-normal cursor-pointer">Persoană juridică (firmă)</Label>
+      </div>
+      {isCompany && (
+        <>
+          <div className="space-y-1">
+            <Label className="text-xs">Denumire firmă</Label>
+            <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Denumire firmă" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">CUI</Label>
+            <Input value={cui} onChange={(e) => setCui(e.target.value)} placeholder="CUI / CIF" />
+          </div>
+        </>
+      )}
       <div className="space-y-1">
         <Label className="text-xs">Nume complet *</Label>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nume și prenume" />
