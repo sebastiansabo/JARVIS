@@ -21,6 +21,29 @@ class VoucherCreate(BaseModel):
     service_items: Optional[list[str]] = None
     approver_user_id: Optional[int] = None
     notes: Optional[str] = None
+    start_date: Optional[date] = None
+    client_email: Optional[str] = None
+    client_cif: Optional[str] = None
+
+    @field_validator('client_email')
+    @classmethod
+    def validate_client_email(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if '@' not in v:
+            raise ValueError('client_email must be a valid email address')
+        return v
+
+    @field_validator('client_cif')
+    @classmethod
+    def validate_client_cif(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip().upper()
+        return v or None
 
     @field_validator('car_vin')
     @classmethod
@@ -99,6 +122,9 @@ class VoucherRead(BaseModel):
     redeemed_by_name: Optional[str] = None
     redemption_notes: Optional[str] = None
     notes: Optional[str] = None
+    start_date: Optional[date] = None
+    client_email: Optional[str] = None
+    client_cif: Optional[str] = None
     days_remaining: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
