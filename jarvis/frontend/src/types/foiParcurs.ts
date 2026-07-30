@@ -48,18 +48,30 @@ export interface FpVehicle {
   is_active: boolean
   // Lockout — car blocked from the driving park (blocks new sessions).
   locked_out?: boolean
-  lockout_category?: 'service' | 'damage' | 'paperwork' | 'other' | null
+  lockout_category?: string | null
   lockout_note?: string | null
   lockout_until?: string | null
   created_at: string
   updated_at: string
 }
 
-export const LOCKOUT_LABELS: Record<'service' | 'damage' | 'paperwork' | 'other', string> = {
+// Legacy fallback labels for the four seeded reasons. The live list is now
+// configurable (fp_lockout_reasons) and fetched via foiParcursApi.getLockoutReasons;
+// this map only backs the label when the reasons query hasn't loaded yet.
+export const LOCKOUT_LABELS: Record<string, string> = {
   service: 'În service',
   damage: 'Avariat',
   paperwork: 'Acte lipsă/expirate',
   other: 'Altele',
+}
+
+/** A configurable driving-park lockout reason (editable in FP Settings). */
+export interface LockoutReason {
+  id: number
+  slug: string
+  label: string
+  sort_order: number
+  is_active: boolean
 }
 
 // ── Fuel Gauge ──
@@ -340,6 +352,8 @@ export interface TestDriveFormPayload {
   driver_license_number?: string
   driver_license_expiry?: string
   general_conditions_accepted?: boolean
+  /** Override the driving-park lockout block, set after the user confirms. */
+  allow_locked?: boolean
 }
 
 // ── Plan (draft) Test Drive Payload — POST /test-drive with status:'PLANNED'.
@@ -368,6 +382,8 @@ export interface ActivateTestDrivePayload {
   return_datetime?: string
   departure_damage?: TdDamageItem[]
   general_observation?: string
+  /** Override the driving-park lockout block, set after the user confirms. */
+  allow_locked?: boolean
 }
 
 // ── Return (completion) Test Drive Payload — PUT /test-drive/:id/return.

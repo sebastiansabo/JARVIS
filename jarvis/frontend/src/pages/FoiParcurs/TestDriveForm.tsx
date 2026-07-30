@@ -173,15 +173,49 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   })
   const companies = companiesData?.companies ?? []
 
+  // Fetch ALL vehicles (incl. archived + blocked) under a distinct key so we
+  // don't collide with the active-only ['fp-vehicles'] cache other views use.
   const { data: vehiclesData } = useQuery({
-    queryKey: ['fp-vehicles'],
-    queryFn: () => foiParcursApi.getVehicles(true),
+    queryKey: ['fp-vehicles', 'all'],
+    queryFn: () => foiParcursApi.getVehicles(false),
   })
   const allVehicles = vehiclesData?.vehicles ?? []
   const vehiclesForCompany = useMemo(
     () => (companyId ? allVehicles.filter((v) => v.company_id === companyId) : []),
     [allVehicles, companyId],
   )
+  // Default picker hides archived (is_active=false) + blocked cars; a toggle
+  // reveals them (selectable, badged). Blocked cars require a confirm (below).
+  const [showAllVehicles, setShowAllVehicles] = useState(false)
+  const visibleVehicles = useMemo(() => {
+    const base = showAllVehicles
+      ? vehiclesForCompany
+      : vehiclesForCompany.filter((v) => v.is_active !== false && !v.locked_out)
+    // Keep the currently-selected car in the list even if the toggle would hide
+    // it (e.g. a blocked car selected earlier), so the trigger still renders it.
+    if (selectedVehicle && !base.some((v) => v.id === selectedVehicle.id)) {
+      const sel = vehiclesForCompany.find((v) => v.id === selectedVehicle.id)
+      if (sel) return [sel, ...base]
+    }
+    return base
+  }, [vehiclesForCompany, showAllVehicles, selectedVehicle])
+  const hasHiddenVehicles = useMemo(
+    () => vehiclesForCompany.some((v) => v.is_active === false || v.locked_out),
+    [vehiclesForCompany],
+  )
+  const [pendingLockedVehicle, setPendingLockedVehicle] = useState<FpVehicle | null>(null)
+
+  // Configurable lockout-reason labels (slug → label) for the blocked badge.
+  const { data: lockoutReasonsData } = useQuery({
+    queryKey: ['fp-lockout-reasons', 'all'],
+    queryFn: () => foiParcursApi.getLockoutReasons(false),
+    staleTime: 60_000,
+  })
+  const reasonLabel = useMemo(() => {
+    const map: Record<string, string> = { ...LOCKOUT_LABELS }
+    for (const r of lockoutReasonsData?.reasons ?? []) map[r.slug] = r.label
+    return (slug?: string | null) => (slug ? (map[slug] ?? slug) : '')
+  }, [lockoutReasonsData])
 
   // ── Load + prefill the PLANNED draft being activated ──
   const { data: draftData, isLoading: loadingDraft } = useQuery({
@@ -248,18 +282,22 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     if (match) setCompanyId(match.id)
   }, [companies, user?.company, companyId])
 
+  const commitVehicle = useCallback((v: FpVehicle | null) => {
+    setVehicleId(v?.id ?? null)
+    setSelectedVehicle(v)
+    // Prefill the starting odometer from the car's latest reading across ALL
+    // its sessions (mileage_floor), falling back to the stored odometer.
+    const floor = v?.mileage_floor ?? v?.odometer_km
+    if (floor != null) setOdometerStart(String(floor))
+  }, [])
   const handleVehicleChange = useCallback(
     (vId: string) => {
-      const id = Number(vId)
-      setVehicleId(id)
-      const v = vehiclesForCompany.find((x) => x.id === id) ?? null
-      setSelectedVehicle(v)
-      // Prefill the starting odometer from the car's latest reading across ALL
-      // its sessions (mileage_floor), falling back to the stored odometer.
-      const floor = v?.mileage_floor ?? v?.odometer_km
-      if (floor != null) setOdometerStart(String(floor))
+      const v = vehiclesForCompany.find((x) => x.id === Number(vId)) ?? null
+      // A blocked car needs an explicit confirmation before it's selected.
+      if (v?.locked_out) { setPendingLockedVehicle(v); return }
+      commitVehicle(v)
     },
-    [vehiclesForCompany],
+    [vehiclesForCompany, commitVehicle],
   )
 
   // ── Per-field validity (drives red highlight after a submit attempt) ──
@@ -354,6 +392,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(driverLicenseNumber.trim() ? { driver_license_number: driverLicenseNumber.trim() } : {}),
       ...(driverLicenseExpiry.trim() ? { driver_license_expiry: driverLicenseExpiry.trim() } : {}),
       ...(generalObservation.trim() ? { general_observation: generalObservation.trim() } : {}),
+      ...(vehicle.locked_out ? { allow_locked: true } : {}),
     }
   }
 
@@ -412,6 +451,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(damagePayload.length ? { departure_damage: damagePayload } : {}),
       ...(conditionsRequired ? { general_conditions_accepted: conditionsAccepted } : {}),
       ...(generalObservation.trim() ? { general_observation: generalObservation.trim() } : {}),
+      ...(selectedVehicle.locked_out ? { allow_locked: true } : {}),
     }
     withConflictCheck(selectedVehicle.vin, () => activateMutation.mutate(payload), activateId)
   }
@@ -516,14 +556,21 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                 <SelectValue placeholder={companyId ? 'Selectează vehiculul' : 'Selectează întâi compania'} />
               </SelectTrigger>
               <SelectContent>
-                {vehiclesForCompany.map((v) => (
-                  <SelectItem key={v.id} value={String(v.id)} disabled={!!v.locked_out}>
+                {visibleVehicles.map((v) => (
+                  <SelectItem key={v.id} value={String(v.id)}>
                     {[v.mark, v.model].filter(Boolean).join(' ') || '—'} — {v.registration_number || v.vin}
-                    {v.locked_out ? ` · 🔒 Blocat${v.lockout_category ? ` (${LOCKOUT_LABELS[v.lockout_category]})` : ''}` : ''}
+                    {v.is_active === false ? ' · 🗄 Arhivat' : ''}
+                    {v.locked_out ? ` · 🔒 Blocat${v.lockout_category ? ` (${reasonLabel(v.lockout_category)})` : ''}` : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {companyId != null && (hasHiddenVehicles || showAllVehicles) && (
+              <label className="flex items-center gap-2 pt-1 text-xs text-muted-foreground cursor-pointer">
+                <Checkbox checked={showAllVehicles} onCheckedChange={(c) => setShowAllVehicles(c === true)} />
+                Arată și mașini arhivate/blocate
+              </label>
+            )}
           </div>
           {selectedVehicle && (
             <div className="rounded-md border bg-muted/50 p-3 space-y-1 text-sm">
@@ -818,6 +865,33 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           setPendingRun(null)
         }}
       />
+      {/* Blocked-car override confirm — the car stays selectable only after this. */}
+      {pendingLockedVehicle && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setPendingLockedVehicle(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-5 w-5" />
+              <h3 className="text-base font-semibold">Mașină blocată</h3>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {[pendingLockedVehicle.mark, pendingLockedVehicle.model].filter(Boolean).join(' ')} — {pendingLockedVehicle.registration_number || pendingLockedVehicle.vin}
+            </p>
+            <p className="mt-1 text-sm">
+              Motiv: <span className="font-medium">{reasonLabel(pendingLockedVehicle.lockout_category) || 'Blocată'}</span>
+              {pendingLockedVehicle.lockout_note ? ` — ${pendingLockedVehicle.lockout_note}` : ''}
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Poți genera o foaie de parcurs pentru această mașină doar dacă confirmi.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setPendingLockedVehicle(null)}>Anulează</Button>
+              <Button className="flex-1" onClick={() => { commitVehicle(pendingLockedVehicle); setPendingLockedVehicle(null) }}>
+                Continuă oricum
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
