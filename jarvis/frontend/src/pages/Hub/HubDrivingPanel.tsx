@@ -85,12 +85,13 @@ export default function HubDrivingPanel() {
         />
       )}
 
-      {/* iOS-style modal sheet inside the Hub — centered phone-width column so
-          the shared (desktop-oriented) forms read as mobile screens. Full-screen
-          on phones, a floating rounded card on wider viewports. */}
+      {/* iOS-style modal sheet inside the Hub — full-screen on phones, a centered
+          floating card on desktop. Widened to the form's own natural column
+          (max-w-2xl, ~50% wider than the old max-w-md) so the fields aren't
+          cramped on desktop while staying full-width and responsive on phones. */}
       {overlay && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-sm">
-          <div className="mx-auto min-h-full w-full max-w-md bg-background shadow-2xl sm:my-8 sm:min-h-0 sm:rounded-2xl">
+          <div className="mx-auto min-h-full w-full max-w-2xl bg-background shadow-2xl sm:my-8 sm:min-h-0 sm:rounded-2xl">
             <div className="sticky top-0 z-10 flex items-center justify-end border-b bg-background/95 p-2 backdrop-blur sm:rounded-t-2xl">
               <Button variant="ghost" size="icon" onClick={closeOverlay}><X className="h-5 w-5" /></Button>
             </div>
