@@ -30,9 +30,13 @@ _veh_repo = FPVehicleRepository()
 
 
 def _period(c: dict):
-    """(year, month) for a session — explicit columns, falling back to created_at."""
-    d = c.get('created_at')
-    dt = d if isinstance(d, datetime) else None
+    """(year, month) for a session — explicit columns, falling back to created_at.
+
+    `get_contracts` returns rows via `dict_from_row`, which serializes `created_at`
+    to an ISO *string*, so parse it with `_as_dt` rather than isinstance-checking
+    for `datetime` (that check always failed on string rows, dropping every session
+    with NULL year/month — i.e. all test-drive sessions — and blanking the sheet)."""
+    dt = _as_dt(c.get('created_at'))
     return (c.get('year') or (dt.year if dt else None),
             c.get('month') or (dt.month if dt else None))
 
