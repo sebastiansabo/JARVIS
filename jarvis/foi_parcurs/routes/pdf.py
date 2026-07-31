@@ -82,10 +82,14 @@ def _consilier_contact(advisor_name):
     return out
 
 
-def _render_td_email(contract, dealer, consilier):
+def _render_td_email(contract, dealer, consilier, simple=False):
     """Build (subject, plain-text body, html body) for the test-drive contract
     email — a plain, standard-looking mail (HTML paragraphs, no icons, no
-    formatting tricks). Any placeholder without a value has its line omitted."""
+    formatting tricks). Any placeholder without a value has its line omitted.
+
+    `simple=True` is the start-of-session email: just a short greeting to the
+    client + the consilier's contact block + the contract PDF attached — no
+    review request, QR, offer document or thank-you-for-today framing."""
     contract_nr = str(contract.get('contract_id') or contract.get('id') or '')
     client_name = (contract.get('client_name') or '').strip()
     vehicul = ' '.join(x for x in (
@@ -105,6 +109,23 @@ def _render_td_email(contract, dealer, consilier):
                                   ('VIN', vin), ('Data', data_td)) if v]
     cons = [(l, v) for l, v in (('Nume', cons_nume), ('Telefon', cons_tel),
                                 ('Email', cons_email)) if v]
+
+    if simple:
+        # Start-of-session mail: client greeting + consilier contact only.
+        e = _html.escape
+        subject = 'Contract test drive — AUTOWORLD'
+        T = [f'Bună ziua {client_name},' if client_name else 'Bună ziua,',
+             'Atașat găsiți contractul de test drive.']
+        if cons:
+            T.append('Consilier\n' + '\n'.join(f'{l}: {v}' for l, v in cons))
+        T.append('Cu stimă,\nEchipa AUTOWORLD')
+        H = [f'<p>Bună ziua {e(client_name)},</p>' if client_name else '<p>Bună ziua,</p>',
+             '<p>Atașat găsiți contractul de test drive.</p>']
+        if cons:
+            H.append('<p><strong>Consilier</strong><br>'
+                     + '<br>'.join(f'{l}: {e(v)}' for l, v in cons) + '</p>')
+        H.append('<p>Cu stimă,<br>Echipa AUTOWORLD</p>')
+        return subject, '\n\n'.join(T), '\n'.join(H)
 
     # ---- plain-text alternative ----
     T = [f'Bună ziua {client_name},' if client_name else 'Bună ziua,',
@@ -185,10 +206,11 @@ def api_download_pdf(id, pdf_type):
                      download_name=f'foaie-parcurs-{contract["contract_id"]}-{pdf_type}.pdf')
 
 
-def email_contract_pdf(contract, to_email, pdf_type='legal'):
+def email_contract_pdf(contract, to_email, pdf_type='legal', simple=False):
     """Render + send the test-drive contract email (PDF + review QR attached) to
     one recipient. Returns (ok: bool, err: str). Reused by the manual email route
-    and the auto-send on TD completion."""
+    and the auto-send on TD completion. `simple=True` sends the simplified
+    start-of-session mail with ONLY the contract PDF (no review QR / offer doc)."""
     to_email = (to_email or '').strip()
     if not to_email or not _EMAIL_RE.match(to_email):
         return False, 'Adresă de email invalidă sau lipsă.'
@@ -208,21 +230,22 @@ def email_contract_pdf(contract, to_email, pdf_type='legal'):
     contract_code = contract.get('contract_id') or cid
     dealer = get_dealer_config(contract.get('company_name'), contract.get('vehicle_brand'))
     consilier = _consilier_contact(contract.get('advisor_name'))
-    subject, text_body, html_body = _render_td_email(contract, dealer, consilier)
+    subject, text_body, html_body = _render_td_email(contract, dealer, consilier, simple=simple)
     attachments = [(f'foaie-parcurs-{contract_code}.pdf', pdf_bytes)]
-    qr = _qr_png(dealer.get('review_url'))
-    if qr:
-        attachments.append(('recenzie-google-qr.png', qr))
+    if not simple:
+        qr = _qr_png(dealer.get('review_url'))
+        if qr:
+            attachments.append(('recenzie-google-qr.png', qr))
 
-    # Attach the vehicle's offer document, only if one is on file.
-    try:
-        vin = contract.get('vin')
-        veh = _vehicle_repo.get_by_vin(vin) if vin else None
-        offer_fn, offer_bytes = _decode_doc((veh or {}).get('offer_doc') or '', 'oferta')
-        if offer_bytes:
-            attachments.append((offer_fn, offer_bytes))
-    except Exception:
-        logger.warning('Could not attach offer for contract %s', contract.get('id'), exc_info=True)
+        # Attach the vehicle's offer document, only if one is on file.
+        try:
+            vin = contract.get('vin')
+            veh = _vehicle_repo.get_by_vin(vin) if vin else None
+            offer_fn, offer_bytes = _decode_doc((veh or {}).get('offer_doc') or '', 'oferta')
+            if offer_bytes:
+                attachments.append((offer_fn, offer_bytes))
+        except Exception:
+            logger.warning('Could not attach offer for contract %s', contract.get('id'), exc_info=True)
 
     return send_email(to_email=to_email, subject=subject, html_body=html_body,
                       text_body=text_body, attachments=attachments, from_name='AUTOWORLD')

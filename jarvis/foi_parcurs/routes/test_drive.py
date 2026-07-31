@@ -180,6 +180,13 @@ def api_submit_test_drive():
             except Exception:
                 logger.exception('PDF generation failed for contract %s', contract.get('contract_id'))
 
+            # Email the client (+ consilier) the contract at the start of the drive
+            # (simplified mail — contract PDF only, no review QR / offer doc).
+            try:
+                _autosend_contract(contract['id'], simple=True)
+            except Exception:
+                logger.warning('Start-of-session email failed for contract %s', contract.get('id'), exc_info=True)
+
         return jsonify({'success': True, 'contract': contract})
 
     except Exception as e:
@@ -277,6 +284,13 @@ def api_activate_test_drive(id):
             updated['pdf_custom_path'] = custom_path
         except Exception:
             logger.exception('PDF generation failed activating contract %s', id)
+
+        # Email the client (+ consilier) the contract as the drive starts
+        # (simplified mail — contract PDF only).
+        try:
+            _autosend_contract(id, simple=True)
+        except Exception:
+            logger.warning('Start-of-session email failed for contract %s', id, exc_info=True)
 
         return jsonify({'success': True, 'contract': updated})
     except Exception as e:
@@ -389,11 +403,13 @@ def api_reschedule_test_drive(id):
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
 
-def _autosend_completed_contract(contract_id):
-    """Email the finished contract PDF to the client + consilier once a TD is
-    completed. Best-effort — recipients are deduped and failures are logged, never
-    raised. Client email comes from crm_clients (where TD clients live), the
-    consilier's from the users table (by advisor_name)."""
+def _autosend_contract(contract_id, simple=False):
+    """Email the contract PDF to the client + consilier. Best-effort — recipients
+    are deduped and failures are logged, never raised. Client email comes from
+    crm_clients (where TD clients live), the consilier's from the users table (by
+    advisor_name). `simple=True` sends the simplified start-of-session mail
+    (contract PDF only); the completion auto-send keeps the full mail (review QR +
+    offer doc)."""
     from .pdf import email_contract_pdf, _consilier_contact
     full = _fp_repo.get_contract_by_id(contract_id)
     if not full:
@@ -415,7 +431,7 @@ def _autosend_completed_contract(contract_id):
 
     for addr in recipients:
         try:
-            ok, err = email_contract_pdf(full, addr)
+            ok, err = email_contract_pdf(full, addr, simple=simple)
             if not ok:
                 logger.warning('Auto-email to %s failed for contract %s: %s', addr, contract_id, err)
         except Exception:
@@ -486,7 +502,7 @@ def api_return_test_drive(id):
 
         # On completion, auto-send the finished contract to the client + consilier.
         try:
-            _autosend_completed_contract(id)
+            _autosend_contract(id)
         except Exception:
             logger.warning('Auto-send on completion failed for contract %s', id, exc_info=True)
 
