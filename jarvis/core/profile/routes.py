@@ -358,9 +358,14 @@ def api_profile_update_invoice_metadata(invoice_id):
         _perm_repo = PermissionRepository()
         perm = _perm_repo.check_permission_v2(current_user.role_id, 'invoices', 'records', 'edit')
         has_own_edit = perm.get('has_permission') and perm.get('scope') == 'own'
-        if not is_manager(current_user.id) and not has_own_edit:
+
+        # Must be an org responsable (L0-L5) OR have invoice edit permission
+        # (any scope). Mirrors the allocations route so department/all-scoped
+        # users can edit invoices visible to them from the hub/profile.
+        has_edit_perm = _has_invoice_edit_permission(current_user)
+        if not is_manager(current_user.id) and not has_edit_perm and not has_own_edit:
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
-        if has_own_edit and not is_manager(current_user.id):
+        if has_own_edit and not is_manager(current_user.id) and not has_edit_perm:
             from accounting.invoices.repositories import AllocationRepository
             if not AllocationRepository().user_has_allocation(invoice_id, current_user.id):
                 return jsonify({'success': False, 'error': 'Permission denied'}), 403
