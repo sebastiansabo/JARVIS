@@ -57,6 +57,13 @@ export interface FpVehicle {
   lockout_category?: string | null
   lockout_note?: string | null
   lockout_until?: string | null
+  // Scheduled blocks (to-do #3) — set by the list query's LATERAL joins.
+  /** True when a scheduled block window is active today (car un-bookable). */
+  blocked_now?: boolean
+  active_block_category?: string | null
+  active_block_end?: string | null
+  next_block_start?: string | null
+  next_block_end?: string | null
   // Archival reason — why the car left the fleet (shown on archived rows).
   archive_category?: string | null
   archive_note?: string | null
@@ -82,6 +89,18 @@ export interface LockoutReason {
   label: string
   sort_order: number
   is_active: boolean
+}
+
+/** A scheduled block window for a car (to-do #3). `category` is a lockout-reason slug. */
+export interface ScheduledBlock {
+  id: number
+  vehicle_id: number
+  category: string | null
+  note?: string | null
+  start_date: string
+  end_date: string
+  is_active: boolean
+  state: 'active' | 'upcoming' | 'past' | 'cancelled'
 }
 
 /** A configurable vehicle-archival reason (editable in FP Settings → Motive arhivare). */
