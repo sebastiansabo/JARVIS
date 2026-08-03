@@ -2060,6 +2060,7 @@ interface VehicleFormValue {
   odometer_km: string
   norma_combustibil: string
   norma_energie: string
+  category: string
   company_id: string
   vignette_valid_until: string
   itp_valid_until: string
@@ -2075,7 +2076,7 @@ function emptyVehicleForm(companyId?: number): VehicleFormValue {
   return {
     car_id: '', vin: '', registration_number: '', mark: '', model: '', color: '',
     fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0,
-    odometer_km: '', norma_combustibil: '', norma_energie: '', company_id: companyId ? String(companyId) : '',
+    odometer_km: '', norma_combustibil: '', norma_energie: '', category: '', company_id: companyId ? String(companyId) : '',
     vignette_valid_until: '', itp_valid_until: '', insurance_valid_until: '',
     insurance_doc: '', talon_doc: '', civ_doc: '', registration_doc: '', offer_doc: '',
   }
@@ -2095,6 +2096,7 @@ function vehicleToForm(v: FpVehicle): VehicleFormValue {
     odometer_km: v.odometer_km != null ? String(v.odometer_km) : '',
     norma_combustibil: v.norma_combustibil != null ? String(v.norma_combustibil) : '',
     norma_energie: v.norma_energie != null ? String(v.norma_energie) : '',
+    category: v.category || '',
     company_id: v.company_id ? String(v.company_id) : '',
     vignette_valid_until: v.vignette_valid_until ? String(v.vignette_valid_until).slice(0, 10) : '',
     itp_valid_until: v.itp_valid_until ? String(v.itp_valid_until).slice(0, 10) : '',
@@ -2289,6 +2291,10 @@ function VehicleFormFields({
         </div>
       )}
       <div className="space-y-1.5">
+        <Label className="text-xs">Categorie</Label>
+        <Input value={value.category} onChange={(e) => onChange({ category: e.target.value })} placeholder="ex. AUTOTURISM M1G" />
+      </div>
+      <div className="space-y-1.5">
         <Label className="text-xs">Company</Label>
         <Select value={value.company_id} onValueChange={(v) => onChange({ company_id: v })}>
           <SelectTrigger><SelectValue placeholder="Select company..." /></SelectTrigger>
@@ -2374,6 +2380,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
         odometer_km: newVehicle.odometer_km.trim() === '' ? null : Number(newVehicle.odometer_km),
         norma_combustibil: newVehicle.norma_combustibil.trim() === '' ? null : Number(newVehicle.norma_combustibil),
         norma_energie: newVehicle.norma_energie.trim() === '' ? null : Number(newVehicle.norma_energie),
+        category: newVehicle.category.trim() || null,
         company_id: newVehicle.company_id ? Number(newVehicle.company_id) : undefined,
         vignette_valid_until: newVehicle.vignette_valid_until || undefined,
         itp_valid_until: newVehicle.itp_valid_until || undefined,
@@ -2497,6 +2504,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
         odometer_km: editForm.odometer_km.trim() === '' ? null : Number(editForm.odometer_km),
         norma_combustibil: editForm.norma_combustibil.trim() === '' ? null : Number(editForm.norma_combustibil),
         norma_energie: editForm.norma_energie.trim() === '' ? null : Number(editForm.norma_energie),
+        category: editForm.category.trim() || null,
         company_id: editForm.company_id ? Number(editForm.company_id) : null,
         vignette_valid_until: editForm.vignette_valid_until || null,
         itp_valid_until: editForm.itp_valid_until || null,
