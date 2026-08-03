@@ -329,6 +329,10 @@ def _register_hooks(flask_app: Flask):
             "img-src 'self' data: https:; "
             "font-src 'self' data:; "
             "connect-src 'self' https:; "
+            # blob: needed to preview generated PDFs in an <iframe>/<object>
+            # (e.g. Foaie de Parcurs preview) — without it default-src blocks them.
+            "frame-src 'self' blob:; "
+            "object-src 'self' blob:; "
             "frame-ancestors 'self'"
         )
         if flask_app.config.get('SESSION_COOKIE_SECURE'):
