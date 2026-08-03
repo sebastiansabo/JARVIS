@@ -155,7 +155,7 @@ export const foiParcursApi = {
   getVehicle: (id: number) =>
     api.get<{ success: boolean; vehicle: FpVehicle }>(`${BASE}/vehicles/${id}`),
 
-  createVehicle: (data: { vin: string; registration_number?: string; car_id?: string; mark: string; brand?: string; model: string; color?: string; fuel_type: string; fuel_tank_capacity_liters?: number | null; battery_capacity_kwh?: number | null; odometer_km?: number | null; norma_combustibil?: number | null; norma_energie?: number | null; company_id?: number; vignette_valid_until?: string; itp_valid_until?: string; insurance_valid_until?: string; insurance_doc?: string; talon_doc?: string; civ_doc?: string; registration_doc?: string; offer_doc?: string }) =>
+  createVehicle: (data: { vin: string; registration_number?: string; car_id?: string; mark: string; brand?: string; model: string; color?: string; fuel_type: string; fuel_tank_capacity_liters?: number | null; battery_capacity_kwh?: number | null; odometer_km?: number | null; norma_combustibil?: number | null; norma_energie?: number | null; category?: string | null; company_id?: number; vignette_valid_until?: string; itp_valid_until?: string; insurance_valid_until?: string; insurance_doc?: string; talon_doc?: string; civ_doc?: string; registration_doc?: string; offer_doc?: string }) =>
     api.post<{ success: boolean; vehicle: FpVehicle }>(`${BASE}/vehicles`, data),
 
   updateVehicle: (id: number, data: Partial<FpVehicle>) =>
