@@ -502,37 +502,28 @@ def _register_routes(flask_app: Flask):
                                    as_attachment=True,
                                    mimetype='application/vnd.android.package-archive')
 
-    def _serve_versioned_apk(apk_file, manifest_file):
-        # Stable URL, overwritten each build → always the latest. no-store so no
-        # stale cached APK. The saved file is named with the version (e.g.
-        # jarvis2_0_6.apk) from the CI-published manifest, while the URL itself
-        # stays stable for the QR.
+    @flask_app.route('/download/jarvis2.apk')
+    def download_apk_v2():
+        # JARVIS Mobile 2.0 (com.jarvis.mobile2). Stable URL, overwritten each
+        # build → always the latest. no-store so no stale cached APK. The saved
+        # file is named with the version (e.g. jarvis2_0_6.apk) from the
+        # CI-published manifest, while the URL itself stays stable for the QR.
         import json as _json
         downloads_dir = os.path.join(flask_app.static_folder, 'downloads')
-        download_name = apk_file
+        download_name = 'jarvis2.apk'
         try:
-            with open(os.path.join(downloads_dir, manifest_file)) as _f:
+            with open(os.path.join(downloads_dir, 'jarvis2-version.json')) as _f:
                 _ver = _json.load(_f).get('version')
             if _ver:
                 download_name = f"jarvis{_ver.replace('.', '_')}.apk"
         except Exception:
             pass
-        resp = send_from_directory(downloads_dir, apk_file,
+        resp = send_from_directory(downloads_dir, 'jarvis2.apk',
                                    as_attachment=True,
                                    download_name=download_name,
                                    mimetype='application/vnd.android.package-archive')
         resp.headers['Cache-Control'] = 'no-store, max-age=0'
         return resp
-
-    @flask_app.route('/download/jarvis2.apk')
-    def download_apk_v2():
-        # JARVIS Mobile 2.0 (com.jarvis.mobile2)
-        return _serve_versioned_apk('jarvis2.apk', 'jarvis2-version.json')
-
-    @flask_app.route('/download/jarvis3.apk')
-    def download_apk_v3():
-        # JARVIS 3 (com.jarvis.mobile3), published by jarvis-mobile-3 CI
-        return _serve_versioned_apk('jarvis3.apk', 'jarvis3-version.json')
 
     @flask_app.route('/download')
     def download_page():
