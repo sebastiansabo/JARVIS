@@ -5,11 +5,15 @@ from typing import Optional, List, Dict, Any
 from datetime import date
 
 from core.utils.logging_config import get_logger
+from core.organization.repositories import CompanyRepository as _CompanyRepo
 from ..config import InvoiceDirection
 from ..repositories import EFacturaInvoiceRepository
 from .base import ServiceResult, _iso
 
 logger = get_logger('jarvis.core.connectors.efactura.invoice_visibility_service')
+
+_company_repo = _CompanyRepo()
+get_companies_with_vat = _company_repo.get_all_with_vat_and_brands
 
 
 class InvoiceVisibilityService:
@@ -116,6 +120,10 @@ class InvoiceVisibilityService:
 
         total_pages = (total + limit - 1) // limit if limit > 0 else 1
 
+        # Company id -> name map so the Bin can show/filter by company (mirrors Unallocated)
+        companies = get_companies_with_vat()
+        company_map = {c['id']: c['company'] for c in companies}
+
         return ServiceResult(success=True, data={
             'invoices': [
                 {
@@ -129,6 +137,9 @@ class InvoiceVisibilityService:
                     'total_amount': str(inv.get('total_amount', 0)),
                     'total_vat': str(inv.get('total_vat', 0)),
                     'currency': inv.get('currency'),
+                    'company_id': inv.get('company_id'),
+                    'company_name': company_map.get(inv.get('company_id')),
+                    'cif_owner': inv.get('cif_owner'),
                     'created_at': _iso(inv.get('created_at')),
                     'deleted_at': _iso(inv.get('deleted_at')),
                     'type_name': inv.get('type_name'),
@@ -136,6 +147,7 @@ class InvoiceVisibilityService:
                 }
                 for inv in invoices
             ],
+            'companies': [{'id': c['id'], 'name': c['company']} for c in companies],
             'pagination': {
                 'current_page': page,
                 'total_pages': total_pages,

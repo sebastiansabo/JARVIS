@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { RotateCcw, Trash2, Archive } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -7,16 +7,23 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { QueryError } from '@/components/QueryError'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/hooks/useAuth'
 import { efacturaApi } from '@/api/efactura'
+import type { EFacturaInvoiceFilters } from '@/types/efactura'
 import { columnDefMap, type ColumnDef, type InvoiceRow } from './unallocated/UnallocatedColumns'
+import { EfacturaFilterBar } from './EfacturaFilterBar'
 
 const BIN_COLUMNS = ['supplier', 'invoice_number', 'date', 'direction', 'amount', 'company']
 
 export default function BinTab({ search = '' }: { search?: string }) {
   const qc = useQueryClient()
+  const { user } = useAuth()
   const [page, setPage] = useState(1)
+  const [filters, setFilters] = useState<EFacturaInvoiceFilters>({})
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [confirmPurge, setConfirmPurge] = useState<number[] | null>(null)
+  const autoInitRef = useRef(false)
+  const autoFallbackRef = useRef(false)
 
   const cols = useMemo(
     () => BIN_COLUMNS.map((k) => columnDefMap.get(k)).filter(Boolean) as ColumnDef[],
@@ -24,12 +31,42 @@ export default function BinTab({ search = '' }: { search?: string }) {
   )
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['efactura-bin', { page, search }],
-    queryFn: () => efacturaApi.getBin({ page, limit: 50, search: search || undefined }),
+    queryKey: ['efactura-bin', { page, search, ...filters }],
+    queryFn: () => efacturaApi.getBin({ ...filters, page, limit: 50, search: search || undefined }),
   })
 
   const invoices = (data?.invoices ?? []) as InvoiceRow[]
+  const companies = data?.companies ?? []
   const pagination = data?.pagination
+
+  // Auto-select the user's main company on first load (once).
+  useEffect(() => {
+    if (autoInitRef.current || user == null) return
+    autoInitRef.current = true
+    if (user.company_id != null) {
+      setFilters((f) => ({ ...f, company_id: user.company_id }))
+      setPage(1)
+    } else {
+      autoFallbackRef.current = true // no main company → stay on "All"
+    }
+  }, [user])
+
+  // If the auto-selected main company has no rows in the Bin, fall back to "All" (once).
+  useEffect(() => {
+    if (autoFallbackRef.current || isLoading || !pagination) return
+    if (filters.company_id == null || filters.company_id !== user?.company_id) return
+    autoFallbackRef.current = true
+    if (pagination.total === 0) {
+      setFilters((f) => ({ ...f, company_id: undefined }))
+      setPage(1)
+    }
+  }, [pagination, isLoading, filters.company_id, user])
+
+  const updateFilters = (patch: Partial<EFacturaInvoiceFilters>) => {
+    setFilters((f) => ({ ...f, ...patch }))
+    setPage(1)
+    setSelectedIds(new Set())
+  }
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['efactura-bin'] })
@@ -70,6 +107,19 @@ export default function BinTab({ search = '' }: { search?: string }) {
 
   return (
     <div className="space-y-4">
+      {/* Filters — always visible */}
+      <EfacturaFilterBar
+        companies={companies}
+        companyId={filters.company_id ?? undefined}
+        direction={filters.direction ?? undefined}
+        startDate={filters.start_date ?? undefined}
+        endDate={filters.end_date ?? undefined}
+        onCompanyChange={(v) => updateFilters({ company_id: v })}
+        onDirectionChange={(v) => updateFilters({ direction: v as EFacturaInvoiceFilters['direction'] })}
+        onDateRangeChange={(s, e) => updateFilters({ start_date: s, end_date: e })}
+        onClear={() => { setFilters({}); setPage(1); setSelectedIds(new Set()) }}
+      />
+
       {/* Bulk actions */}
       {selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded border bg-muted/30 px-3 py-2">
@@ -143,7 +193,7 @@ export default function BinTab({ search = '' }: { search?: string }) {
           <span>{pagination.total} in Bin</span>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</Button>
-            <span>Page {pagination.page} / {pagination.total_pages}</span>
+            <span>Page {page} / {pagination.total_pages}</span>
             <Button size="sm" variant="outline" disabled={page >= pagination.total_pages} onClick={() => setPage((p) => p + 1)}>Next</Button>
           </div>
         </div>
