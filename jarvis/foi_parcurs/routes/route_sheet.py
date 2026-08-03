@@ -25,6 +25,7 @@ def api_route_sheet_pdf():
             user_name=(getattr(current_user, 'name', None) or getattr(current_user, 'email', None)),
             regenerate=bool(data.get('regenerate')),
             norma=data.get('norma'),
+            norma_energie=data.get('norma_energie'),
             alimentari=data.get('alimentari') or [],
             events=data.get('events') or [],
         )
