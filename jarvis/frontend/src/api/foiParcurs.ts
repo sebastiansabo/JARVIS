@@ -16,6 +16,7 @@ import type {
   CrmClient,
   CreateCrmClientPayload,
   DriverLicenseOcrData,
+  MktProject,
 } from '../types/foiParcurs'
 
 export interface RouteSheetAlimentare {
@@ -266,6 +267,13 @@ export const foiParcursApi = {
 
   createCrmClient: (data: CreateCrmClientPayload) =>
     api.post<{ success: boolean; client: CrmClient }>(`${BASE}/crm-clients`, data),
+
+  // ── Marketing projects (campaign/event) — login-gated type-to-search so a
+  //    consilier without marketing access can tie a Test Drive to a campaign ──
+  searchMktProjects: (q: string, companyId?: number, limit = 20) =>
+    api.get<{ success: boolean; projects: MktProject[] }>(
+      `${BASE}/mkt-projects/search${qs({ q, company_id: companyId, limit })}`,
+    ),
 
   // ── Driver-license OCR (Claude vision) ──
   driverLicenseOcr: (image: string) =>
