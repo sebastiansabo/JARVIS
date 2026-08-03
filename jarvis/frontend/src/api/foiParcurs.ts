@@ -29,6 +29,29 @@ export interface GapFillContract {
   client_name: string
   km_start: number
   km_end: number
+  // Optional "client extra" documentation captured in the redistribute dialog.
+  advisor_name?: string
+  client_signature?: string
+  driver_license_photo?: string
+  driver_license_number?: string
+  driver_license_expiry?: string
+}
+
+export interface AbsorbGapMiddle {
+  client_name?: string
+  km: number
+  date?: string
+}
+
+export interface AbsorbGapPayload {
+  vin: string
+  year: number
+  month: number
+  before_id: number
+  after_id: number
+  before_km: number
+  after_km: number
+  middles?: AbsorbGapMiddle[]
 }
 
 export interface SessionImportResult {
@@ -300,10 +323,25 @@ export const foiParcursApi = {
       `${BASE}/route-sheets${qs({ company_id: companyId || undefined, year, month })}`,
     ),
 
-  // Redistribute an odometer gap into up to 3 synthetic "gap-fill" sessions.
+  // Redistribute an odometer gap by documenting a "client extra" — a synthetic
+  // gap-fill session that may carry consilier / license photo / signature.
   redistributeGap: (vin: string, year: number, month: number, contracts: GapFillContract[]) =>
     api.post<{ success: boolean; inserted: number }>(
       `${BASE}/route-sheet/redistribute-gap`, { vin, year, month, contracts },
+    ),
+
+  // Close an odometer gap by tiling it across the two bounding sessions and up
+  // to 3 documented middle entries. before_km + Σmiddles + after_km == gap.
+  absorbGap: (payload: AbsorbGapPayload) =>
+    api.post<{ success: boolean; before_id: number; after_id: number; before_km: number; after_km: number; middles_inserted: number; gap: number }>(
+      `${BASE}/route-sheet/absorb-gap`, payload,
+    ),
+
+  // Distribute a gap across a window of EXISTING sessions (no new rows): each
+  // allocation gives a session its new distance; the window re-tiles contiguously.
+  retileGap: (payload: { vin: string; year: number; month: number; allocations: { id: number; distance: number }[] }) =>
+    api.post<{ success: boolean; sessions: number; span: number }>(
+      `${BASE}/route-sheet/retile-gap`, payload,
     ),
 
   // ── Bulk session import (tenant-scoped Excel) ──

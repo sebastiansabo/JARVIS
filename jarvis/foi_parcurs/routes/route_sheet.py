@@ -3,7 +3,9 @@
 sheets for a period. Regenerating overwrites the stored copy."""
 from flask import Response
 from ._shared import foi_parcurs_bp, jsonify, request, login_required, current_user, logger
-from ..services.route_sheet_service import generate_and_store, render_xlsx, list_stored, redistribute_gap
+from ..services.route_sheet_service import (
+    generate_and_store, render_xlsx, list_stored, redistribute_gap, absorb_gap, retile_gap,
+)
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/pdf', methods=['POST'])
@@ -77,6 +79,63 @@ def api_redistribute_gap():
         logger.exception('Gap redistribute failed for %s %s-%s', vin, year, month)
         return jsonify({'success': False, 'error': str(e)[:200]}), 500
     return jsonify({'success': True, 'inserted': n})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/absorb-gap', methods=['POST'])
+@login_required
+def api_absorb_gap():
+    """Close an odometer gap by tiling it across the two bounding sessions and
+    up to 3 documented middle entries. before_km grows the earlier session,
+    each middle fills the next slice, after_km pulls the later session back.
+    before_km + Σmiddles + after_km must equal the gap."""
+    data = request.get_json(silent=True) or {}
+    vin = (data.get('vin') or '').strip()
+    year, month = data.get('year'), data.get('month')
+    before_id, after_id = data.get('before_id'), data.get('after_id')
+    before_km, after_km = data.get('before_km'), data.get('after_km')
+    middles = data.get('middles') or []
+    if (not vin or not year or not month or not before_id or not after_id
+            or before_km is None or after_km is None):
+        return jsonify({'success': False,
+                        'error': 'vin, year, month, before_id, after_id, before_km și after_km sunt obligatorii'}), 400
+    if len(middles) > 3:
+        return jsonify({'success': False, 'error': 'Maxim 3 șoferi intermediari'}), 400
+    try:
+        result = absorb_gap(
+            vin, int(year), int(month), int(before_id), int(after_id),
+            int(before_km), int(after_km), middles=middles,
+            user_name=(getattr(current_user, 'name', None) or getattr(current_user, 'email', None)))
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        logger.exception('Gap absorb failed for %s %s-%s', vin, year, month)
+        return jsonify({'success': False, 'error': str(e)[:200]}), 500
+    return jsonify({'success': True, **result})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/retile-gap', methods=['POST'])
+@login_required
+def api_retile_gap():
+    """Distribute a gap across a window of EXISTING sessions (no new rows).
+    `allocations` = ordered [{id, distance}] whose new distances re-tile the
+    window contiguously; their sum must equal the window span."""
+    data = request.get_json(silent=True) or {}
+    vin = (data.get('vin') or '').strip()
+    year, month = data.get('year'), data.get('month')
+    allocations = data.get('allocations') or []
+    if not vin or not year or not month or len(allocations) < 2:
+        return jsonify({'success': False,
+                        'error': 'vin, year, month și minim două sesiuni sunt obligatorii'}), 400
+    try:
+        result = retile_gap(
+            vin, int(year), int(month), allocations,
+            user_name=(getattr(current_user, 'name', None) or getattr(current_user, 'email', None)))
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        logger.exception('Gap retile failed for %s %s-%s', vin, year, month)
+        return jsonify({'success': False, 'error': str(e)[:200]}), 500
+    return jsonify({'success': True, **result})
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/route-sheets', methods=['GET'])

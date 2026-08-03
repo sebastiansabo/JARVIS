@@ -434,14 +434,9 @@ from core.base_repository import BaseRepository  # noqa: E402
 _store = BaseRepository()
 
 
-def redistribute_gap(vin: str, year: int, month: int, items: list, user_name=None) -> int:
-    """Insert up to 3 synthetic 'gap-fill' sessions that redistribute an
-    odometer gap's mileage across drivers. Each item: {date, client_name,
-    km_start, km_end}. Returns the number inserted. Idempotent per km range."""
-    items = [it for it in (items or []) if it][:3]
-    if not items:
-        return 0
-
+def _gap_context(vin: str):
+    """(company_id, registration_number, tank_liters, td_km_max) used when
+    inserting gap-fill rows — shared by redistribute_gap and absorb_gap."""
     veh = _veh_repo.get_by_vin(vin) or {}
     ref = _fp_repo.query_one('SELECT company_id, registration_number FROM foi_de_parcurs WHERE vin=%s LIMIT 1', (vin,)) or {}
     company_id = ref.get('company_id') or veh.get('company_id')
@@ -449,7 +444,181 @@ def redistribute_gap(vin: str, year: int, month: int, items: list, user_name=Non
         raise ValueError('Company nu a putut fi determinată pentru acest VIN')
     reg = ref.get('registration_number') or veh.get('registration_number') or ''
     tank = veh.get('fuel_tank_capacity_liters') or 50
+    td_max = 50
+    try:
+        km_cfg = _fp_repo.query_one('SELECT td_km_max FROM fp_km_configs WHERE company_id=%s', (company_id,))
+        if km_cfg and km_cfg.get('td_km_max'):
+            td_max = int(km_cfg['td_km_max'])
+    except Exception:
+        logger.warning('td_km_max lookup failed', exc_info=True)
+    return company_id, reg, tank, td_max
 
+
+def _insert_gap_fill(vin, year, month, ctx, item, user_name) -> int:
+    """Insert one synthetic 'gap-fill' session covering item km_start→km_end.
+    item may also carry advisor_name / client_signature / driver_license_* for a
+    fully-documented "client extra". Idempotent per km range. Returns 0 or 1."""
+    company_id, reg, tank, td_max = ctx
+    ks, ke = int(item['km_start']), int(item['km_end'])
+    if ke <= ks:
+        return 0
+    dist = ke - ks
+    client = (item.get('client_name') or '').strip()
+    date = (item.get('date') or '').strip()
+    dep = f'{date} 10:00:00' if date else None
+    route_type = 'TD' if dist <= td_max else 'Comodat'
+    # Optional "client extra" documentation — advisor (consilier), the signed
+    # client signature and the driver-license photo/number/expiry.
+    advisor = (item.get('advisor_name') or user_name or 'Redistribuire')
+    client_sig = item.get('client_signature') or ''
+    dl_photo = item.get('driver_license_photo') or None
+    dl_number = (item.get('driver_license_number') or '').strip() or None
+    dl_expiry = (item.get('driver_license_expiry') or '').strip() or None
+    cid = f'GAPFILL_{re.sub(r"[^A-Za-z0-9]", "", vin)[-6:]}_{year}{month:02d}_{ks}_{ke}'
+    _fp_repo.execute(
+        '''INSERT INTO foi_de_parcurs
+             (contract_id, vin, company_id, year, month, route_type, slot_number,
+              km_start, km_end, distance_km, registration_number,
+              fuel_tank_capacity_liters, fuel_gauge_start_level, fuel_gauge_end_level,
+              fuel_start_liters, fuel_end_liters, fuel_consumed_liters,
+              status, advisor_name, client_name, itinerary, departure_datetime, source,
+              client_signature, driver_license_photo, driver_license_number, driver_license_expiry)
+           VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s,%s,'1','1',0,0,0,
+                   'COMPLETED',%s,%s,'',%s,'gap-fill',%s,%s,%s,%s)
+           ON CONFLICT (contract_id) DO UPDATE SET
+             km_start=EXCLUDED.km_start, km_end=EXCLUDED.km_end,
+             distance_km=EXCLUDED.distance_km, client_name=EXCLUDED.client_name,
+             departure_datetime=EXCLUDED.departure_datetime, route_type=EXCLUDED.route_type,
+             advisor_name=EXCLUDED.advisor_name, client_signature=EXCLUDED.client_signature,
+             driver_license_photo=EXCLUDED.driver_license_photo,
+             driver_license_number=EXCLUDED.driver_license_number,
+             driver_license_expiry=EXCLUDED.driver_license_expiry''',
+        (cid, vin, company_id, year, month, route_type, ks, ke, dist, reg, tank,
+         advisor, client, dep, client_sig, dl_photo, dl_number, dl_expiry),
+    )
+    return 1
+
+
+def redistribute_gap(vin: str, year: int, month: int, items: list, user_name=None) -> int:
+    """Insert up to 3 documented "client extra" gap-fill sessions. Each item:
+    {date, client_name, km_start, km_end} and OPTIONALLY {advisor_name,
+    client_signature, driver_license_photo, driver_license_number,
+    driver_license_expiry}. Returns the number inserted. Idempotent per km range."""
+    items = [it for it in (items or []) if it][:3]
+    if not items:
+        return 0
+    ctx = _gap_context(vin)
+    inserted = 0
+    for it in items:
+        try:
+            inserted += _insert_gap_fill(vin, year, month, ctx, it, user_name)
+        except (KeyError, TypeError, ValueError):
+            continue
+    return inserted
+
+
+def absorb_gap(vin: str, year: int, month: int, before_id: int, after_id: int,
+               before_km: int, after_km: int, middles=None, user_name=None) -> dict:
+    """Close an odometer gap by TILING it left→right, leaving no orphan km:
+      • `before_km` grows the earlier session's km_end forward,
+      • each `middles` entry ({km, client_name?, date?}) becomes a documented
+        gap-fill row filling the next contiguous slice (max 3, in order),
+      • `after_km` pulls the later session's km_start back.
+    before_km + Σmiddles + after_km must equal the gap. distance_km/route_type
+    are recomputed on the two bounding rows and an audit note is stamped."""
+    before = _fp_repo.query_one(
+        'SELECT id, km_start, km_end, company_id FROM foi_de_parcurs WHERE id=%s AND vin=%s',
+        (before_id, vin)) or {}
+    after = _fp_repo.query_one(
+        'SELECT id, km_start, km_end, company_id FROM foi_de_parcurs WHERE id=%s AND vin=%s',
+        (after_id, vin)) or {}
+    if not before or not after:
+        raise ValueError('Sesiunile care mărginesc gap-ul nu au fost găsite')
+
+    b_start, b_end = int(before['km_start']), int(before['km_end'])
+    a_start, a_end = int(after['km_start']), int(after['km_end'])
+    gap = a_start - b_end
+    if gap <= 0:
+        raise ValueError('Nu există un gap între aceste sesiuni')
+
+    middles = [m for m in (middles or []) if m][:3]
+    try:
+        kb, ka = int(before_km), int(after_km)
+        mids = [(int(m['km']), (m.get('client_name') or '').strip(), (m.get('date') or '').strip())
+                for m in middles]
+    except (KeyError, TypeError, ValueError):
+        raise ValueError('KM alocați sunt invalizi')
+    if kb < 0 or ka < 0 or any(km <= 0 for km, _, _ in mids):
+        raise ValueError('KM alocați trebuie să fie pozitivi')
+    total = kb + ka + sum(km for km, _, _ in mids)
+    if total != gap:
+        raise ValueError(f'Suma alocată ({total} km) trebuie să fie egală cu gap-ul ({gap} km)')
+
+    ctx = _gap_context(vin)
+    td_max = ctx[3]
+
+    def _extend(row_id, new_start, new_end, added):
+        dist = new_end - new_start
+        rtype = 'TD' if dist <= td_max else 'Comodat'
+        _fp_repo.execute(
+            '''UPDATE foi_de_parcurs
+                 SET km_start=%s, km_end=%s, distance_km=%s, route_type=%s,
+                     general_observation = TRIM(BOTH ' ' FROM
+                       COALESCE(general_observation, '') || %s)
+               WHERE id=%s''',
+            (new_start, new_end, dist, rtype, f' [KM ajustat +{added} km prin redistribuire gap]', row_id),
+        )
+
+    cursor = b_end
+    if kb > 0:
+        _extend(before_id, b_start, b_end + kb, kb)
+        cursor = b_end + kb
+    inserted = 0
+    for km, name, date in mids:
+        inserted += _insert_gap_fill(
+            vin, year, month, ctx,
+            {'client_name': name, 'km_start': cursor, 'km_end': cursor + km, 'date': date}, user_name)
+        cursor += km
+    if ka > 0:
+        _extend(after_id, a_start - ka, a_end, ka)
+    return {'before_id': before_id, 'after_id': after_id, 'before_km': kb, 'after_km': ka,
+            'middles_inserted': inserted, 'gap': gap}
+
+
+def retile_gap(vin: str, year: int, month: int, allocations: list, user_name=None) -> dict:
+    """Distribute a gap across a window of consecutive EXISTING sessions — no new
+    rows. `allocations`: ordered [{id, distance}] giving each session its NEW
+    distance. The window is re-tiled contiguously from the first session's
+    km_start; the sum of new distances must equal the window span
+    (first.km_start → last.km_end), which is exactly the original distances plus
+    the gap. Each touched session's km/route_type is updated in place."""
+    allocations = [a for a in (allocations or []) if a]
+    if len(allocations) < 2:
+        raise ValueError('Sunt necesare cel puțin două sesiuni')
+    rows = []
+    for a in allocations:
+        r = _fp_repo.query_one(
+            'SELECT id, km_start, km_end, company_id FROM foi_de_parcurs WHERE id=%s AND vin=%s',
+            (a.get('id'), vin))
+        if not r:
+            raise ValueError('O sesiune din fereastră nu a fost găsită')
+        try:
+            dist = int(a.get('distance'))
+        except (TypeError, ValueError):
+            raise ValueError('Distanțe invalide')
+        if dist < 0:
+            raise ValueError('Distanțele trebuie să fie pozitive')
+        rows.append([r, dist])
+
+    rows.sort(key=lambda x: (int(x[0]['km_start']), int(x[0]['km_end'])))
+    first_start = int(rows[0][0]['km_start'])
+    last_end = int(rows[-1][0]['km_end'])
+    span = last_end - first_start
+    total = sum(d for _, d in rows)
+    if total != span:
+        raise ValueError(f'Suma distanțelor ({total} km) trebuie să fie egală cu intervalul ferestrei ({span} km)')
+
+    company_id = rows[0][0].get('company_id')
     td_max = 50
     try:
         km_cfg = _fp_repo.query_one('SELECT td_km_max FROM fp_km_configs WHERE company_id=%s', (company_id,))
@@ -458,38 +627,21 @@ def redistribute_gap(vin: str, year: int, month: int, items: list, user_name=Non
     except Exception:
         logger.warning('td_km_max lookup failed', exc_info=True)
 
-    inserted = 0
-    for it in items:
-        try:
-            ks, ke = int(it['km_start']), int(it['km_end'])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if ke <= ks:
-            continue
-        dist = ke - ks
-        client = (it.get('client_name') or '').strip()
-        date = (it.get('date') or '').strip()
-        dep = f'{date} 10:00:00' if date else None
-        route_type = 'TD' if dist <= td_max else 'Comodat'
-        cid = f'GAPFILL_{re.sub(r"[^A-Za-z0-9]", "", vin)[-6:]}_{year}{month:02d}_{ks}_{ke}'
+    cursor = first_start
+    updated = 0
+    for r, dist in rows:
+        orig_dist = int(r['km_end']) - int(r['km_start'])
+        new_start, new_end = cursor, cursor + dist
+        rtype = 'TD' if dist <= td_max else 'Comodat'
+        note = f' [KM ajustat +{dist - orig_dist} km prin redistribuire gap]' if dist != orig_dist else ''
         _fp_repo.execute(
-            '''INSERT INTO foi_de_parcurs
-                 (contract_id, vin, company_id, year, month, route_type, slot_number,
-                  km_start, km_end, distance_km, registration_number,
-                  fuel_tank_capacity_liters, fuel_gauge_start_level, fuel_gauge_end_level,
-                  fuel_start_liters, fuel_end_liters, fuel_consumed_liters,
-                  status, advisor_name, client_name, itinerary, departure_datetime, source)
-               VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s,%s,'1','1',0,0,0,
-                       'COMPLETED',%s,%s,'',%s,'gap-fill')
-               ON CONFLICT (contract_id) DO UPDATE SET
-                 km_start=EXCLUDED.km_start, km_end=EXCLUDED.km_end,
-                 distance_km=EXCLUDED.distance_km, client_name=EXCLUDED.client_name,
-                 departure_datetime=EXCLUDED.departure_datetime, route_type=EXCLUDED.route_type''',
-            (cid, vin, company_id, year, month, route_type, ks, ke, dist, reg, tank,
-             (user_name or 'Redistribuire'), client, dep),
-        )
-        inserted += 1
-    return inserted
+            '''UPDATE foi_de_parcurs SET km_start=%s, km_end=%s, distance_km=%s, route_type=%s,
+                 general_observation = TRIM(BOTH ' ' FROM COALESCE(general_observation,'') || %s)
+               WHERE id=%s''',
+            (new_start, new_end, dist, rtype, note, r['id']))
+        cursor = new_end
+        updated += 1
+    return {'sessions': updated, 'span': span}
 
 
 def get_stored_pdf(vin: str, year: int, month: int) -> bytes | None:
