@@ -105,7 +105,7 @@ class CompanyRepository(BaseRepository):
     def update(self, company_id: int, company: str = None, vat: str = None, parent_company_id: object = 'UNSET', logo_url: object = 'UNSET',
                reg_no: object = 'UNSET', iban: object = 'UNSET', bank: object = 'UNSET', swift: object = 'UNSET',
                street: object = 'UNSET', city: object = 'UNSET', county: object = 'UNSET', postal_code: object = 'UNSET',
-               administrator: object = 'UNSET', gdpr_text: object = 'UNSET') -> bool:
+               administrator: object = 'UNSET', gdpr_text: object = 'UNSET', alert_email: object = 'UNSET') -> bool:
         """Update a company. Returns True if updated."""
         def _work(cursor):
             # Check for circular references if parent is being changed
@@ -127,7 +127,7 @@ class CompanyRepository(BaseRepository):
             if logo_url != 'UNSET':
                 updates.append('logo_url = %s')
                 params.append(logo_url)
-            for col, val in [('reg_no', reg_no), ('iban', iban), ('bank', bank), ('swift', swift), ('street', street), ('city', city), ('county', county), ('postal_code', postal_code), ('administrator', administrator), ('gdpr_text', gdpr_text)]:
+            for col, val in [('reg_no', reg_no), ('iban', iban), ('bank', bank), ('swift', swift), ('street', street), ('city', city), ('county', county), ('postal_code', postal_code), ('administrator', administrator), ('gdpr_text', gdpr_text), ('alert_email', alert_email)]:
                 if val != 'UNSET':
                     updates.append(f'{col} = %s')
                     params.append(val)

@@ -38,12 +38,14 @@ def check_course_cert_expiry():
             notified = 0
 
             for cert in expiring:
-                cooldown_key = f"hr_course_expiry:{cert['id']}"
+                # 7-day cooldown per certification via smart_notification_state
+                # (alert_type, entity_type, entity_id) — its actual schema.
                 cursor.execute('''
                     SELECT 1 FROM smart_notification_state
-                    WHERE notification_key = %s
-                      AND last_sent_at > CURRENT_TIMESTAMP - INTERVAL '7 days'
-                ''', (cooldown_key,))
+                    WHERE alert_type = 'hr_course_expiry'
+                      AND entity_type = 'hr_certification' AND entity_id = %s
+                      AND last_alerted_at > CURRENT_TIMESTAMP - INTERVAL '7 days'
+                ''', (cert['id'],))
                 if cursor.fetchone():
                     continue  # Already notified recently
 
@@ -74,11 +76,11 @@ def check_course_cert_expiry():
 
                 # Update cooldown
                 cursor.execute('''
-                    INSERT INTO smart_notification_state (notification_key, last_sent_at)
-                    VALUES (%s, CURRENT_TIMESTAMP)
-                    ON CONFLICT (notification_key)
-                    DO UPDATE SET last_sent_at = CURRENT_TIMESTAMP
-                ''', (cooldown_key,))
+                    INSERT INTO smart_notification_state (alert_type, entity_type, entity_id, last_alerted_at)
+                    VALUES ('hr_course_expiry', 'hr_certification', %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (alert_type, entity_type, entity_id)
+                    DO UPDATE SET last_alerted_at = CURRENT_TIMESTAMP
+                ''', (cert['id'],))
 
                 notified += 1
 
