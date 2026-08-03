@@ -16,7 +16,7 @@ class FPVehicleRepository(BaseRepository):
     _LIST_SELECT = (
         'SELECT v.id, v.vin, v.mark, v.brand, v.model, v.color, v.fuel_type, '
         'v.fuel_tank_capacity_liters, v.battery_capacity_kwh, v.odometer_km, '
-        'v.norma_combustibil, v.norma_energie, '
+        'v.norma_combustibil, v.norma_energie, v.category, '
         'v.company_id, v.car_id, v.registration_number, v.is_active, '
         # Lockout state so the Driving Park + session car pickers can show a car
         # as blocked (disabled) with its reason.
@@ -62,10 +62,10 @@ class FPVehicleRepository(BaseRepository):
             '''INSERT INTO fp_vehicles
                (vin, registration_number, car_id, mark, brand, model, color,
                 fuel_type, fuel_tank_capacity_liters, battery_capacity_kwh, odometer_km,
-                norma_combustibil, norma_energie, company_id,
+                norma_combustibil, norma_energie, category, company_id,
                 vignette_valid_until, itp_valid_until, insurance_valid_until,
                 insurance_doc, talon_doc, civ_doc, registration_doc, offer_doc)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                        %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *''',
             (data['vin'], data.get('registration_number'), data.get('car_id'),
              data['mark'], data.get('brand'), data['model'], data.get('color'),
@@ -75,6 +75,7 @@ class FPVehicleRepository(BaseRepository):
              data.get('odometer_km'),
              data.get('norma_combustibil'),
              data.get('norma_energie'),
+             data.get('category'),
              data.get('company_id'),
              data.get('vignette_valid_until'), data.get('itp_valid_until'),
              data.get('insurance_valid_until'), data.get('insurance_doc'),
@@ -89,7 +90,7 @@ class FPVehicleRepository(BaseRepository):
         params = []
         for col in ('vin', 'registration_number', 'car_id', 'mark', 'brand', 'model', 'color',
                     'fuel_type', 'fuel_tank_capacity_liters', 'battery_capacity_kwh', 'odometer_km',
-                    'norma_combustibil', 'norma_energie', 'company_id', 'is_active',
+                    'norma_combustibil', 'norma_energie', 'category', 'company_id', 'is_active',
                     'vignette_valid_until', 'itp_valid_until', 'insurance_valid_until',
                     'insurance_doc', 'talon_doc', 'civ_doc', 'registration_doc', 'offer_doc'):
             if col in data:

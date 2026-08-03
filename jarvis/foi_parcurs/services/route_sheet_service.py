@@ -185,6 +185,7 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
             'make': veh.get('mark') or '',
             'model': veh.get('model') or '',
             'fuel_type': veh.get('fuel_type') or '',
+            'category': veh.get('category') or '',
             'registration_number': veh.get('registration_number') or (sessions[0].get('registration_number') if sessions else '') or '',
         },
         'period': {'year': year, 'month': month, 'label': f'{_MONTHS_RO[month]} {year}' if 1 <= month <= 12 else f'{month}/{year}'},
@@ -502,6 +503,7 @@ table.alim {{ flex:1; margin-top:0; }}
       <td class="k">Nr. înmatriculare</td><td>{e(v['registration_number'] or '—')}</td></tr>
   <tr><td class="k">Vehicul</td><td>{e((v['make'] + ' ' + v['model']).strip() or '—')}</td>
       <td class="k">VIN</td><td>{e(v['vin'])}</td></tr>
+  <tr><td class="k">Categorie</td><td colspan="3">{e(v.get('category') or '—')}</td></tr>
 </table>
 <table class="trips">
   <thead><tr>
@@ -865,7 +867,7 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
 
     ws['A1'] = 'Foaie de Parcurs'; ws['A1'].font = Font(bold=True, size=14)
     ws['A2'] = f"{v['make']} {v['model']}".strip(); ws['A3'] = f"VIN: {v['vin']}"
-    ws['A4'] = f"Nr. înmatriculare: {v['registration_number'] or '—'}"
+    ws['A4'] = f"Nr. înmatriculare: {v['registration_number'] or '—'}  ·  Categorie: {v.get('category') or '—'}"
     ws['A5'] = f"Companie: {data['company']['name'] or '—'}"
     ws['A6'] = f"Perioada: {data['period']['label']}"
 
