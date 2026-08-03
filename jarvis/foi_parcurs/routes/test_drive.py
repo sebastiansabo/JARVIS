@@ -40,10 +40,14 @@ def api_submit_test_drive():
     # `itinerary` is intentionally NOT required — the mobile Test Drive form
     # dropped the Traseu/Itinerariu field. It's still stored when provided
     # (e.g. by the web form) via data.get('itinerary', '') below.
-    required = ['company_id', 'vin', 'client_id', 'odometer_start', 'estimated_km',
-                'fuel_gauge_start_level', 'departure_datetime', 'advisor_name']
-    if not is_draft:
-        required += ['client_signature']
+    if is_draft:
+        # Planning a session only needs the car, the client (name) and the
+        # date. Odometer/fuel/advisor/signature are all deferred to activation.
+        required = ['company_id', 'vin', 'client_id', 'departure_datetime']
+    else:
+        required = ['company_id', 'vin', 'client_id', 'odometer_start', 'estimated_km',
+                    'fuel_gauge_start_level', 'departure_datetime', 'advisor_name',
+                    'client_signature']
     missing = [f for f in required if not data.get(f)]
     if missing:
         return jsonify({'success': False, 'error': f'Missing: {", ".join(missing)}'}), 400
@@ -77,7 +81,7 @@ def api_submit_test_drive():
     try:
         # Derive fuel liters from gauge levels × tank capacity (single source of truth).
         tank = int(data.get('fuel_tank_capacity_liters', 0))
-        start_level = data['fuel_gauge_start_level']
+        start_level = data.get('fuel_gauge_start_level') or '1'
         end_level = data.get('fuel_gauge_end_level', start_level)
         try:
             start_fraction = parse_fuel_level(str(start_level))
@@ -111,9 +115,9 @@ def api_submit_test_drive():
             'client_phone': client_phone,
             'route_type': 'TD',
             'slot_number': 0,
-            'km_start': int(data['odometer_start']),
-            'km_end': int(data.get('odometer_end', 0)) or int(data['odometer_start']),
-            'distance_km': int(data.get('estimated_km', 0)),
+            'km_start': int(data.get('odometer_start') or 0),
+            'km_end': int(data.get('odometer_end') or 0) or int(data.get('odometer_start') or 0),
+            'distance_km': int(data.get('estimated_km') or 0),
             'fuel_tank_capacity_liters': tank,
             'fuel_gauge_start_level': start_level,
             'fuel_gauge_end_level': end_level,
@@ -122,7 +126,7 @@ def api_submit_test_drive():
             'fuel_consumed_liters': fuel_consumed_liters,
             'itinerary': data.get('itinerary', ''),
             'general_observation': (data.get('general_observation') or '').strip() or None,
-            'advisor_name': data['advisor_name'],
+            'advisor_name': data.get('advisor_name', ''),
             'signature_ai_generated': data.get('advisor_signature', ''),
             'client_signature': data.get('client_signature', ''),
             'departure_datetime': data['departure_datetime'],
