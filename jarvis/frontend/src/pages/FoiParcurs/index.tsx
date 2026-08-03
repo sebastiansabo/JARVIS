@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -41,7 +41,9 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -66,7 +68,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import SignatureCanvas from '@/components/shared/SignatureCanvas'
+import { DriverLicenseSection } from './CreateClientPanel'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { useAuthStore } from '@/stores/authStore'
 import { foiParcursApi, type StoredRouteSheet, type RouteSheetAlimentare, type RouteSheetEvent, type SessionImportResult } from '@/api/foiParcurs'
@@ -290,7 +294,13 @@ function SessionImportDialog({ companyId, open, onOpenChange }: {
 // the odometer jumps between logged sessions (km the car moved without a logged
 // drive). Gap rows carry only the distance + the date the gap was spotted (the
 // session that revealed it) — no client/traseu — as a legal continuity marker.
-export type GapRow = { id: string; date: string; dateFrom: string; dateTo: string; kmStart: number; kmEnd: number; distance: number }
+export type GapNeighbor = { id: number; client: string; kmStart: number; kmEnd: number }
+export type GapRow = {
+  id: string; date: string; dateFrom: string; dateTo: string
+  kmStart: number; kmEnd: number; distance: number
+  // The two logged sessions the gap sits between — targets for "absorb".
+  before: GapNeighbor; after: GapNeighbor
+}
 type DetailRow =
   | { gap: false; session: FoiContract }
   | ({ gap: true } & GapRow)
@@ -302,13 +312,18 @@ function withGaps(sessions: FoiContract[]): DetailRow[] {
   const rows: DetailRow[] = []
   let prevEnd: number | null = null
   let prevSession: FoiContract | null = null
+  const neighbor = (s: FoiContract): GapNeighbor => ({
+    id: s.id, client: s.client_name || s.advisor_name || '—',
+    kmStart: s.km_start ?? 0, kmEnd: s.km_end ?? 0,
+  })
   for (const c of sorted) {
     const start = c.km_start ?? 0
-    if (prevEnd != null && start > prevEnd) {
+    if (prevEnd != null && start > prevEnd && prevSession) {
       rows.push({
         gap: true, id: `gap-${c.id}`, date: c.created_at,
-        dateFrom: prevSession?.created_at ?? c.created_at, dateTo: c.created_at,
+        dateFrom: prevSession.created_at ?? c.created_at, dateTo: c.created_at,
         kmStart: prevEnd, kmEnd: start, distance: start - prevEnd,
+        before: neighbor(prevSession), after: neighbor(c),
       })
     }
     rows.push({ gap: false, session: c })
@@ -325,7 +340,7 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
   const queryClient = useQueryClient()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [previewVin, setPreviewVin] = useState<string | null>(null)
-  const [redistribute, setRedistribute] = useState<{ vin: string; gap: GapRow } | null>(null)
+  const [redistribute, setRedistribute] = useState<{ vin: string; gap: GapRow; sessions: WinSession[] } | null>(null)
   const now = new Date()
   const [filterYear, setFilterYear] = useState<number>(now.getFullYear())
   const [filterMonth, setFilterMonth] = useState<number>(now.getMonth() + 1) // 0 = all months
@@ -533,7 +548,15 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
                                         <TableCell><Badge variant="outline" className="text-xs">Gap</Badge></TableCell>
                                         <TableCell className="text-right">
                                           <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
-                                            onClick={() => setRedistribute({ vin: sheet.vin, gap: row })}>
+                                            onClick={() => setRedistribute({
+                                              vin: sheet.vin, gap: row,
+                                              sessions: [...sheet.sessions]
+                                                .sort((a, b) => (a.km_start ?? 0) - (b.km_start ?? 0) || (a.km_end ?? 0) - (b.km_end ?? 0))
+                                                .map((s) => ({
+                                                  id: s.id, kmStart: s.km_start ?? 0, kmEnd: s.km_end ?? 0,
+                                                  driver: s.client_name || s.advisor_name || '—',
+                                                })),
+                                            })}>
                                             Redistribuie
                                           </Button>
                                         </TableCell>
@@ -617,46 +640,262 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
   )
 }
 
-// ── Redistribute an odometer gap into up to 3 synthetic "gap-fill" sessions ──
+// ── Rezolvă gap: EITHER absorb the km across the bounding sessions + up to 3
+//    documented middle entries, OR document up to 3 "client extra" drivers. ──
+// A session ordered along the odometer — the window the gap is distributed over.
+type WinSession = { id: number; kmStart: number; kmEnd: number; driver: string }
+// One session in the Absorb window: `km` is its NEW distance (draggable), `min`
+// its original distance (can't shrink below — the gap only ever adds km).
+type Seg = { id: number; driver: string; km: number; min: number }
+type ExtraClient = {
+  client_name: string; advisor_name: string; km: string
+  client_signature: string; license_photo: string | null
+  license_number: string; license_expiry: string
+}
+const emptyExtraClient = (km: number, advisor: string): ExtraClient => ({
+  client_name: '', advisor_name: advisor, km: km ? String(km) : '',
+  client_signature: '', license_photo: null, license_number: '', license_expiry: '',
+})
+
+// A single horizontal bar for the whole gap; drag the dividers between segments
+// to move km from one neighbour to the next. Segment widths always sum to the
+// gap, so it can never over-allocate.
+const SEG_COLORS = ['bg-sky-500', 'bg-amber-500', 'bg-violet-500', 'bg-emerald-500', 'bg-rose-500']
+function GapSplitBar({ segs, gapDist, onChange }: {
+  segs: Seg[]; gapDist: number; onChange: (segs: Seg[]) => void
+}) {
+  const barRef = useRef<HTMLDivElement>(null)
+  const dragIdx = useRef<number | null>(null)
+
+  const bounds: number[] = []          // bounds[i] = cumulative km at end of seg i
+  let acc = 0
+  for (const s of segs) { acc += s.km; bounds.push(acc) }
+  const startOf = (i: number) => (i === 0 ? 0 : bounds[i - 1])
+  const pct = (km: number) => `${gapDist ? (km / gapDist) * 100 : 0}%`
+
+  const moveDivider = (clientX: number) => {
+    const idx = dragIdx.current
+    if (idx == null || !barRef.current) return
+    const rect = barRef.current.getBoundingClientRect()
+    const kmAtMouse = Math.round(((clientX - rect.left) / rect.width) * gapDist)
+    const pairStart = startOf(idx)
+    const pairTotal = segs[idx].km + segs[idx + 1].km
+    // Neither neighbour may drop below its original distance (`min`).
+    const lo = segs[idx].min
+    const hi = pairTotal - segs[idx + 1].min
+    const leftKm = Math.max(lo, Math.min(hi, kmAtMouse - pairStart))
+    onChange(segs.map((s, i) =>
+      i === idx ? { ...s, km: leftKm } : i === idx + 1 ? { ...s, km: pairTotal - leftKm } : s))
+  }
+
+  return (
+    <div
+      ref={barRef}
+      className="relative h-11 rounded-md overflow-hidden border flex select-none touch-none"
+      onPointerMove={(e) => { if (dragIdx.current != null) moveDivider(e.clientX) }}
+      onPointerUp={() => { dragIdx.current = null }}
+      onPointerLeave={() => { dragIdx.current = null }}
+    >
+      {segs.map((s, i) => (
+        <div key={i} className={`h-full ${SEG_COLORS[i % SEG_COLORS.length]} opacity-85 flex flex-col items-center justify-center text-white overflow-hidden`}
+          style={{ width: pct(s.km) }}>
+          {s.km > 0 && (
+            <>
+              <span className="truncate px-1 text-[10px] leading-none font-medium max-w-full">{s.driver || '—'}</span>
+              <span className="text-[10px] leading-tight tabular-nums">{s.km}</span>
+            </>
+          )}
+        </div>
+      ))}
+      {segs.slice(0, -1).map((_, i) => (
+        <div key={`d${i}`}
+          onPointerDown={(e) => { dragIdx.current = i; (e.currentTarget as Element).setPointerCapture?.(e.pointerId) }}
+          className="absolute top-0 h-full w-4 -ml-2 cursor-ew-resize flex items-center justify-center z-10"
+          style={{ left: pct(bounds[i]) }}>
+          <div className="h-full w-0.5 bg-white/90" />
+          <div className="absolute h-5 w-2.5 rounded-sm bg-white border border-slate-300 shadow" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ExtraClientCard({ idx, c, canRemove, onChange, onRemove }: {
+  idx: number; c: ExtraClient; canRemove: boolean
+  onChange: (patch: Partial<ExtraClient>) => void; onRemove: () => void
+}) {
+  return (
+    <div className="rounded-md border p-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-muted-foreground">Client {idx + 1}</span>
+        {canRemove && (
+          <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={onRemove}>
+            <XIcon className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+      <div className="grid grid-cols-[1fr_90px] gap-2">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Nume client (șofer) *</Label>
+          <Input className="h-8" placeholder="Nume client" value={c.client_name} onChange={(e) => onChange({ client_name: e.target.value })} />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">KM *</Label>
+          <Input type="number" min={1} className="h-8" value={c.km} onChange={(e) => onChange({ km: e.target.value })} />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Consilier</Label>
+        <Input className="h-8" placeholder="Nume consilier" value={c.advisor_name} onChange={(e) => onChange({ advisor_name: e.target.value })} />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Permis de conducere (poză)</Label>
+        <DriverLicenseSection
+          photo={c.license_photo}
+          onPhotoChange={(v) => onChange({ license_photo: v })}
+          hasClient={!!c.client_name.trim()}
+          onSelectClient={(cl) => onChange({ client_name: cl.display_name || cl.name || c.client_name })}
+          onLicenseNumber={(v) => onChange({ license_number: v })}
+          onLicenseExpiry={(v) => onChange({ license_expiry: v })}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Semnătură client *</Label>
+        {c.client_signature ? (
+          <div className="space-y-2">
+            <div className="border rounded-lg p-2 bg-white"><img src={c.client_signature} alt="Semnătură client" className="max-h-[90px] mx-auto" /></div>
+            <Button type="button" variant="outline" size="sm" onClick={() => onChange({ client_signature: '' })}>Resemnează</Button>
+          </div>
+        ) : (
+          <SignatureCanvas onSave={(s) => onChange({ client_signature: s })} onClear={() => onChange({ client_signature: '' })} width={460} height={180} />
+        )}
+      </div>
+    </div>
+  )
+}
+
 function GapRedistributeDialog({ data, year, month, onClose }: {
-  data: { vin: string; gap: GapRow } | null
+  data: { vin: string; gap: GapRow; sessions: WinSession[] } | null
   year: number
   month: number
   onClose: (changed: boolean) => void
 }) {
-  type Row = { date: string; client_name: string; km_start: string; km_end: string }
-  const [rows, setRows] = useState<Row[]>([])
+  const user = useAuthStore((s) => s.user)
+  const gap = data?.gap
+  const gapDist = gap?.distance ?? 0
+  const sessions = data?.sessions ?? []
+  const upperIdx = gap ? sessions.findIndex((s) => s.id === gap.before.id) : -1
+  const lowerIdx = gap ? sessions.findIndex((s) => s.id === gap.after.id) : -1
+  const [mode, setMode] = useState<'absorb' | 'extra'>('absorb')
+  const [win, setWin] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
+  const [segs, setSegs] = useState<Seg[]>([])
+  const [date, setDate] = useState('')
+  const [clients, setClients] = useState<ExtraClient[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const gap = data?.gap
   const isoDay = (s: string) => (s ? new Date(s).toISOString().slice(0, 10) : '')
   const dFrom = gap ? isoDay(gap.dateFrom) : ''
   const dTo = gap ? isoDay(gap.dateTo) : ''
 
+  // Fresh distribution for a window [start,end]: each session at its original
+  // distance, with the whole in-window gap placed on the immediate upper neighbour.
+  const buildSegs = (start: number, end: number): Seg[] => {
+    const winS = sessions.slice(start, end + 1)
+    if (!winS.length) return []
+    const span = winS[winS.length - 1].kmEnd - winS[0].kmStart
+    const origSum = winS.reduce((t, s) => t + (s.kmEnd - s.kmStart), 0)
+    const gapKm = span - origSum
+    return winS.map((s) => {
+      const orig = s.kmEnd - s.kmStart
+      return { id: s.id, driver: s.driver, min: orig, km: orig + (s.id === gap?.before.id ? gapKm : 0) }
+    })
+  }
+
   useEffect(() => {
-    if (!gap) return
-    // seed one row spanning the whole gap, dated at the upper bound
-    setRows([{ date: dTo || dFrom, client_name: '', km_start: String(gap.kmStart), km_end: String(gap.kmEnd) }])
+    if (!gap || upperIdx < 0 || lowerIdx < 0) return
+    setMode('absorb')
+    setWin({ start: upperIdx, end: lowerIdx })
+    setSegs(buildSegs(upperIdx, lowerIdx))
+    setDate(dTo || dFrom)
+    setClients([emptyExtraClient(gap.distance, user?.name ?? '')])
     setError('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.gap?.id])
 
-  const setRow = (i: number, k: keyof Row, v: string) =>
-    setRows((p) => p.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)))
-  const addRow = () => setRows((p) => (p.length >= 3 ? p : [...p, { date: dTo || dFrom, client_name: '', km_start: '', km_end: '' }]))
-  const removeRow = (i: number) => setRows((p) => p.filter((_, idx) => idx !== i))
+  const setWindow = (start: number, end: number) => { setWin({ start, end }); setSegs(buildSegs(start, end)) }
+  // Add ANY session (need not be adjacent): the window grows to cover it and
+  // everything in between, so the re-tile stays contiguous.
+  const addSession = (idx: number) => setWindow(Math.min(win.start, idx), Math.max(win.end, idx))
+  const removeUp = () => { if (win.start < upperIdx) setWindow(win.start + 1, win.end) }
+  const removeDown = () => { if (win.end > lowerIdx) setWindow(win.start, win.end - 1) }
+  // Back to the starting point: just the two neighbours, whole gap on the upper one.
+  const resetAbsorb = () => setWindow(upperIdx, lowerIdx)
 
-  const save = async () => {
-    if (!gap || !data) return
-    const contracts = rows
-      .filter((r) => r.km_start !== '' && r.km_end !== '')
-      .map((r) => ({ date: r.date, client_name: r.client_name.trim(), km_start: Number(r.km_start), km_end: Number(r.km_end) }))
-    if (!contracts.length) return setError('Adaugă cel puțin un rând cu KM.')
-    for (const c of contracts) {
-      if (c.km_end <= c.km_start) return setError('KM end trebuie să fie mai mare decât KM start.')
-      if (c.km_start < gap.kmStart || c.km_end > gap.kmEnd) return setError(`KM trebuie să fie în intervalul gap-ului (${gap.kmStart} – ${gap.kmEnd}).`)
+  const setClient = (i: number, patch: Partial<ExtraClient>) =>
+    setClients((p) => p.map((c, idx) => (idx === i ? { ...c, ...patch } : c)))
+  const addClient = () => setClients((p) => (p.length >= 3 ? p : [...p, emptyExtraClient(0, user?.name ?? '')]))
+  const removeClient = (i: number) => setClients((p) => p.filter((_, idx) => idx !== i))
+
+  const num = (s: string) => Number(s || 0)
+  const extraSum = clients.reduce((s, c) => s + num(c.km), 0)
+  const winSpan = segs.reduce((t, s) => t + s.km, 0) // = window km span; bar fills 100%
+  const minSum = segs.reduce((t, s) => t + s.min, 0)
+  const windowGapTotal = winSpan - minSum // all unaccounted km inside the window (may span >1 gap)
+  const extraGaps = windowGapTotal - gapDist // >0 when the window also covers other gaps
+  const outOfWindow = sessions.map((_, i) => i).filter((i) => i < win.start || i > win.end)
+
+  // Re-tiled km range each session covers (row labels), anchored at the window start.
+  const ranges: { from: number; to: number }[] = []
+  if (segs.length && sessions[win.start]) {
+    let cur = sessions[win.start].kmStart
+    for (const s of segs) { ranges.push({ from: cur, to: cur + s.km }); cur += s.km }
+  }
+
+  const canSaveAbsorb = !!gap && segs.length >= 2
+  const canSaveExtra = !!gap && extraSum === gapDist &&
+    clients.every((c) => c.client_name.trim() && c.client_signature && num(c.km) > 0)
+  const canSave = mode === 'absorb' ? canSaveAbsorb : canSaveExtra
+
+  const saveAbsorb = async () => {
+    if (!gap || !data || segs.length < 2) return
+    setSaving(true); setError('')
+    try {
+      await foiParcursApi.retileGap({
+        vin: data.vin, year, month,
+        allocations: segs.map((s) => ({ id: s.id, distance: s.km })),
+      })
+      onClose(true)
+    } catch (e: any) {
+      setError(e?.data?.error || e?.message || 'Redistribuirea a eșuat')
+    } finally {
+      setSaving(false)
     }
+  }
+
+  const saveExtra = async () => {
+    if (!gap || !data) return
+    for (const c of clients) {
+      if (!c.client_name.trim()) return setError('Fiecare client trebuie să aibă un nume.')
+      if (num(c.km) <= 0) return setError('Fiecare client trebuie să aibă KM > 0.')
+      if (!c.client_signature) return setError('Fiecare client trebuie să semneze.')
+    }
+    if (extraSum !== gapDist) return setError(`Suma KM (${extraSum}) trebuie să fie ${gapDist} km.`)
+    let cursor = gap.kmStart
+    const contracts = clients.map((c) => {
+      const km = num(c.km)
+      const item = {
+        date, client_name: c.client_name.trim(),
+        km_start: cursor, km_end: cursor + km,
+        advisor_name: c.advisor_name.trim() || undefined,
+        client_signature: c.client_signature,
+        driver_license_photo: c.license_photo || undefined,
+        driver_license_number: c.license_number.trim() || undefined,
+        driver_license_expiry: c.license_expiry.trim() || undefined,
+      }
+      cursor += km
+      return item
+    })
     setSaving(true); setError('')
     try {
       await foiParcursApi.redistributeGap(data.vin, year, month, contracts)
@@ -668,42 +907,140 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
     }
   }
 
+  const Tally = ({ sum }: { sum: number }) => (
+    <div className={`text-xs font-medium ${sum === gapDist ? 'text-emerald-600' : 'text-red-600'}`}>
+      Alocat {sum} / {gapDist} km {sum === gapDist ? '✓' : `(${gapDist - sum > 0 ? '−' : '+'}${Math.abs(gapDist - sum)})`}
+    </div>
+  )
+
   return (
     <Dialog open={!!data} onOpenChange={(o) => { if (!o) onClose(false) }}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="w-[95vw] max-w-[1080px] sm:max-w-[1080px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Redistribuie gap</DialogTitle>
+          <DialogTitle>Rezolvă gap</DialogTitle>
         </DialogHeader>
         {gap && (
-          <p className="text-sm text-muted-foreground">
-            {gap.distance} km nejustificați ({gap.kmStart} → {gap.kmEnd}) · între {dFrom} și {dTo} · max 3 șoferi
-          </p>
+          <>
+            <p className="text-sm text-muted-foreground">
+              {gap.distance} km nejustificați ({gap.kmStart} → {gap.kmEnd}) · între {dFrom} și {dTo}
+            </p>
+            <Tabs value={mode} onValueChange={(v) => { setMode(v as 'absorb' | 'extra'); setError('') }}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="absorb">Absorb în sesiuni</TabsTrigger>
+                <TabsTrigger value="extra">Client extra</TabsTrigger>
+              </TabsList>
+
+              {/* ── Absorb: distribute the gap across a window of EXISTING sessions (no new lines) ── */}
+              <TabsContent value="absorb" className="space-y-3 pt-2">
+                <p className="text-xs text-muted-foreground">
+                  Distribuie km-ii între sesiunile existente — trage de separatoare. Adaugă orice altă sesiune din lună (nu doar vecinii) cu selectorul de mai jos. Nu se creează linii noi.
+                </p>
+
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs">
+                    <span className="font-medium">Total de distribuit: {windowGapTotal} km</span>
+                    {extraGaps > 0 && (
+                      <span className="ml-1 text-amber-600">· fereastra acoperă și alte gap-uri (+{extraGaps} km)</span>
+                    )}
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={resetAbsorb}>
+                    <RotateCcw className="mr-1 h-3.5 w-3.5" /> Resetează
+                  </Button>
+                </div>
+
+                <GapSplitBar segs={segs} gapDist={winSpan} onChange={setSegs} />
+
+                <div className="rounded-md border divide-y text-sm">
+                  {segs.map((s, i) => {
+                    const r = ranges[i]
+                    const extra = s.km - s.min
+                    const absIdx = win.start + i
+                    const isOutermostAdded =
+                      (absIdx === win.start && win.start < upperIdx) ||
+                      (absIdx === win.end && win.end > lowerIdx)
+                    return (
+                      <div key={s.id} className="flex items-center gap-2 p-2">
+                        <span className={`h-3 w-3 rounded-sm ${SEG_COLORS[i % SEG_COLORS.length]} opacity-85 shrink-0`} />
+                        <span className="flex-1 font-medium truncate">{s.driver}</span>
+                        <span className="text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">{r?.from} → {r?.to}</span>
+                        <Badge variant="outline" className="tabular-nums">{s.km} km</Badge>
+                        {extra > 0 && <Badge className="bg-emerald-600 hover:bg-emerald-600 tabular-nums">+{extra}</Badge>}
+                        {isOutermostAdded && (
+                          <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                            onClick={absIdx === win.start ? removeUp : removeDown}>
+                            <XIcon className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {outOfWindow.length > 0 && (
+                  <Select value="" onValueChange={(v) => addSession(Number(v))}>
+                    <SelectTrigger className="h-8 text-sm w-full">
+                      <SelectValue placeholder="+ Adaugă o sesiune din lună (oricare)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {outOfWindow.some((i) => i < win.start) && (
+                        <SelectGroup>
+                          <SelectLabel>Mai sus (înainte de gap)</SelectLabel>
+                          {outOfWindow.filter((i) => i < win.start).map((idx) => (
+                            <SelectItem key={sessions[idx].id} value={String(idx)}>
+                              {sessions[idx].driver} · {sessions[idx].kmStart}–{sessions[idx].kmEnd} km
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                      {outOfWindow.some((i) => i > win.end) && (
+                        <SelectGroup>
+                          <SelectLabel>Mai jos (după gap)</SelectLabel>
+                          {outOfWindow.filter((i) => i > win.end).map((idx) => (
+                            <SelectItem key={sessions[idx].id} value={String(idx)}>
+                              {sessions[idx].driver} · {sessions[idx].kmStart}–{sessions[idx].kmEnd} km
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                    </SelectContent>
+                  </Select>
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  Adăugarea unei sesiuni mai îndepărtate include automat și sesiunile dintre ele (rămâne continuu). Pentru un șofer nou documentat, folosește fila <b>Client extra</b>.
+                </p>
+              </TabsContent>
+
+              {/* ── Client extra: up to 3 documented drivers tiling the gap ── */}
+              <TabsContent value="extra" className="space-y-3 pt-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Data</Label>
+                    <Input type="date" min={dFrom} max={dTo} className="h-8 w-[160px]" value={date} onChange={(e) => setDate(e.target.value)} />
+                  </div>
+                  <Tally sum={extraSum} />
+                </div>
+                {clients.map((c, i) => (
+                  <ExtraClientCard
+                    key={i} idx={i} c={c} canRemove={clients.length > 1}
+                    onChange={(patch) => setClient(i, patch)} onRemove={() => removeClient(i)}
+                  />
+                ))}
+                {clients.length < 3 && (
+                  <Button type="button" variant="outline" size="sm" className="h-7" onClick={addClient}>
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Adaugă client
+                  </Button>
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  Clienții acoperă gap-ul în ordine ({gap.kmStart} → {gap.kmEnd}); suma KM trebuie să fie {gap.distance}.
+                </p>
+              </TabsContent>
+            </Tabs>
+          </>
         )}
-        <div className="space-y-2">
-          <div className="grid grid-cols-[130px_1fr_90px_90px_32px] gap-1.5 text-xs text-muted-foreground px-0.5">
-            <span>Data</span><span>Client (Șofer)</span><span>KM start</span><span>KM end</span><span />
-          </div>
-          {rows.map((r, i) => (
-            <div key={i} className="grid grid-cols-[130px_1fr_90px_90px_32px] gap-1.5 items-center">
-              <Input type="date" min={dFrom} max={dTo} className="h-8 text-xs" value={r.date} onChange={(e) => setRow(i, 'date', e.target.value)} />
-              <Input className="h-8 text-xs" placeholder="Nume șofer" value={r.client_name} onChange={(e) => setRow(i, 'client_name', e.target.value)} />
-              <Input type="number" className="h-8 text-xs" value={r.km_start} onChange={(e) => setRow(i, 'km_start', e.target.value)} />
-              <Input type="number" className="h-8 text-xs" value={r.km_end} onChange={(e) => setRow(i, 'km_end', e.target.value)} />
-              <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeRow(i)}>
-                <XIcon className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          ))}
-          {rows.length < 3 && (
-            <Button type="button" variant="outline" size="sm" className="h-7" onClick={addRow}>
-              <Plus className="mr-1 h-3.5 w-3.5" /> Adaugă șofer
-            </Button>
-          )}
-        </div>
         {error && <div className="text-sm text-red-600">{error}</div>}
         <DialogFooter>
           <Button variant="outline" onClick={() => onClose(false)} disabled={saving}>Anulează</Button>
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={mode === 'absorb' ? saveAbsorb : saveExtra} disabled={saving || !canSave}>
             {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
             Salvează
           </Button>
