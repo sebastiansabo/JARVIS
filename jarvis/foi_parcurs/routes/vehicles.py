@@ -144,12 +144,12 @@ def api_create_scheduled_block(vehicle_id):
     from flask_login import current_user
     veh = _vehicle_repo.get_identity(vehicle_id)
     if not veh:
-        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+        return jsonify({'success': False, 'error': 'Vehicul negăsit'}), 404
     data = request.get_json() or {}
     category = data.get('category')
     valid = _vehicle_repo.get_active_lockout_slugs() or set(_LOCKOUT_CATEGORIES)
     if category not in valid:
-        return jsonify({'success': False, 'error': 'Invalid block reason'}), 400
+        return jsonify({'success': False, 'error': 'Motiv de blocare invalid'}), 400
     start_date = (data.get('start_date') or '').strip()
     end_date = (data.get('end_date') or '').strip()
     if not start_date or not end_date or end_date < start_date:
@@ -173,7 +173,7 @@ def api_cancel_scheduled_block(vehicle_id, block_id):
     """Soft-cancel a scheduled block (keeps history)."""
     existing = _vehicle_repo.get_scheduled_block(block_id)
     if not existing or existing.get('vehicle_id') != vehicle_id:
-        return jsonify({'success': False, 'error': 'Block not found'}), 404
+        return jsonify({'success': False, 'error': 'Blocare negăsită'}), 404
     _vehicle_repo.cancel_scheduled_block(block_id)
     return jsonify({'success': True})
 
