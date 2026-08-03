@@ -57,6 +57,10 @@ export interface FpVehicle {
   lockout_category?: string | null
   lockout_note?: string | null
   lockout_until?: string | null
+  // Archival reason — why the car left the fleet (shown on archived rows).
+  archive_category?: string | null
+  archive_note?: string | null
+  archived_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -73,6 +77,15 @@ export const LOCKOUT_LABELS: Record<string, string> = {
 
 /** A configurable driving-park lockout reason (editable in FP Settings). */
 export interface LockoutReason {
+  id: number
+  slug: string
+  label: string
+  sort_order: number
+  is_active: boolean
+}
+
+/** A configurable vehicle-archival reason (editable in FP Settings → Motive arhivare). */
+export interface ArchiveReason {
   id: number
   slug: string
   label: string

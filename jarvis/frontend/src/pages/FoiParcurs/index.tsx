@@ -32,6 +32,7 @@ import {
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import LockVehicleDialog from './LockVehicleDialog'
+import ArchiveVehicleDialog from './ArchiveVehicleDialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -2415,10 +2416,14 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
     },
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => foiParcursApi.deleteVehicle(id),
+  // Archive a vehicle WITH a reason (Motive arhivare picker in the dialog).
+  const [archivingVehicle, setArchivingVehicle] = useState<FpVehicle | null>(null)
+  const archiveMutation = useMutation({
+    mutationFn: (p: { id: number; category: string; note?: string }) =>
+      foiParcursApi.archiveVehicle(p.id, { category: p.category, note: p.note }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
+      setArchivingVehicle(null)
     },
   })
 
@@ -2694,12 +2699,8 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                             size="sm"
                             className="text-destructive hover:text-destructive"
                             title="Arhivează vehiculul"
-                            onClick={() => {
-                              if (confirm('Arhivezi acest vehicul? Nu va mai apărea în listă (poate fi restaurat).')) {
-                                deleteMutation.mutate(v.id)
-                              }
-                            }}
-                            disabled={deleteMutation.isPending}
+                            onClick={() => setArchivingVehicle(v)}
+                            disabled={archiveMutation.isPending}
                           >
                             <Archive className="h-4 w-4" />
                           </Button>
@@ -2762,6 +2763,15 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
           submitting={lockMutation.isPending}
           onClose={() => setLockingVehicle(null)}
           onSubmit={(d) => lockMutation.mutate({ id: lockingVehicle.id, ...d })}
+        />
+      )}
+
+      {archivingVehicle && (
+        <ArchiveVehicleDialog
+          vehicle={archivingVehicle}
+          submitting={archiveMutation.isPending}
+          onClose={() => setArchivingVehicle(null)}
+          onSubmit={(d) => archiveMutation.mutate({ id: archivingVehicle.id, ...d })}
         />
       )}
     </div>
@@ -3095,6 +3105,9 @@ function SettingsTab() {
 
       {/* Section 3: Lockout reasons (Motive blocare) */}
       <LockoutReasonsSettings />
+
+      {/* Section 4: Archive reasons (Motive arhivare) */}
+      <ArchiveReasonsSettings />
     </div>
   )
 }
@@ -3173,6 +3186,118 @@ function LockoutReasonRow({ reason, onSaved }: { reason: import('@/types/foiParc
   const saveMut = useMutation({
     mutationFn: (patch: { label?: string; sort_order?: number; is_active?: boolean }) =>
       foiParcursApi.updateLockoutReason(reason.id, patch),
+    onSuccess: onSaved,
+  })
+
+  return (
+    <div className={`flex items-center gap-2 py-2${!reason.is_active ? ' opacity-60' : ''}`}>
+      <Input value={label} onChange={(e) => setLabel(e.target.value)} className="flex-1 h-8 text-sm" />
+      <Input
+        type="number"
+        value={order}
+        onChange={(e) => setOrder(e.target.value)}
+        className="h-8 w-16 text-sm"
+        title="Ordine"
+      />
+      {reason.is_active
+        ? <Badge variant="outline" className="text-[10px]">Activ</Badge>
+        : <Badge variant="secondary" className="text-[10px]">Inactiv</Badge>}
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8"
+        disabled={!dirty || !label.trim() || saveMut.isPending}
+        onClick={() => saveMut.mutate({ label: label.trim(), sort_order: Number(order) || 0 })}
+      >
+        Salvează
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-8 text-xs"
+        disabled={saveMut.isPending}
+        onClick={() => saveMut.mutate({ is_active: !reason.is_active })}
+      >
+        {reason.is_active ? 'Dezactivează' : 'Activează'}
+      </Button>
+    </div>
+  )
+}
+
+// ── Archive Reasons Settings — configurable "Motive arhivare" ──
+function ArchiveReasonsSettings() {
+  const queryClient = useQueryClient()
+  const [newLabel, setNewLabel] = useState('')
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['fp-archive-reasons'] })
+    queryClient.invalidateQueries({ queryKey: ['fp-archive-reasons', 'active'] })
+  }
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['fp-archive-reasons', 'all'],
+    queryFn: () => foiParcursApi.getArchiveReasons(false),
+    staleTime: 30_000,
+  })
+  const reasons = data?.reasons ?? []
+
+  const createMut = useMutation({
+    mutationFn: (label: string) => foiParcursApi.createArchiveReason({ label, sort_order: reasons.length + 1 }),
+    onSuccess: () => { setNewLabel(''); invalidate() },
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Archive className="h-5 w-5 text-muted-foreground" />
+        <h3 className="text-lg font-semibold">Motive arhivare</h3>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Motivele disponibile când arhivezi o mașină din parcul auto. Redenumește, reordonează sau dezactivează-le
+        (dezactivarea le ascunde la arhivări noi fără a afecta mașinile deja arhivate).
+      </p>
+
+      <Card className="p-4 space-y-3 max-w-2xl">
+        {/* Add new */}
+        <div className="flex items-end gap-2">
+          <div className="flex-1 space-y-1">
+            <Label className="text-xs">Motiv nou</Label>
+            <Input
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              placeholder="Ex: Vândut, Casat…"
+              onKeyDown={(e) => { if (e.key === 'Enter' && newLabel.trim()) createMut.mutate(newLabel.trim()) }}
+            />
+          </div>
+          <Button onClick={() => createMut.mutate(newLabel.trim())} disabled={!newLabel.trim() || createMut.isPending}>
+            <Plus className="h-4 w-4 mr-1" /> Adaugă
+          </Button>
+        </div>
+
+        {/* List */}
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground py-4">Se încarcă…</p>
+        ) : reasons.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4">Niciun motiv configurat.</p>
+        ) : (
+          <div className="divide-y">
+            {reasons.map((r) => (
+              <ArchiveReasonRow key={r.id} reason={r} onSaved={invalidate} />
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+function ArchiveReasonRow({ reason, onSaved }: { reason: import('@/types/foiParcurs').ArchiveReason; onSaved: () => void }) {
+  const [label, setLabel] = useState(reason.label)
+  const [order, setOrder] = useState(String(reason.sort_order))
+  const dirty = label.trim() !== reason.label || Number(order) !== reason.sort_order
+
+  const saveMut = useMutation({
+    mutationFn: (patch: { label?: string; sort_order?: number; is_active?: boolean }) =>
+      foiParcursApi.updateArchiveReason(reason.id, patch),
     onSuccess: onSaved,
   })
 
