@@ -17,6 +17,7 @@ import type {
   CreateCrmClientPayload,
   DriverLicenseOcrData,
   MktProject,
+  ScheduledBlock,
 } from '../types/foiParcurs'
 
 export interface RouteSheetAlimentare {
@@ -184,6 +185,21 @@ export const foiParcursApi = {
     api.post<{ success: boolean; reason: import('@/types/foiParcurs').LockoutReason }>(`${BASE}/lockout-reasons`, data),
   updateLockoutReason: (id: number, data: { label?: string; sort_order?: number; is_active?: boolean }) =>
     api.put<{ success: boolean; reason: import('@/types/foiParcurs').LockoutReason }>(`${BASE}/lockout-reasons/${id}`, data),
+
+  // ── Scheduled blocks (to-do #3): future auto-block windows ──
+  getScheduledBlocks: (vehicleId: number) =>
+    api.get<{ success: boolean; blocks: ScheduledBlock[] }>(
+      `${BASE}/vehicles/${vehicleId}/scheduled-blocks`,
+    ),
+  createScheduledBlock: (
+    vehicleId: number,
+    data: { category: string; start_date: string; end_date: string; note?: string; allow_conflicts?: boolean },
+  ) =>
+    api.post<{ success: boolean; block?: ScheduledBlock; conflicts?: VehicleConflict[]; error?: string }>(
+      `${BASE}/vehicles/${vehicleId}/scheduled-blocks`, data,
+    ),
+  cancelScheduledBlock: (vehicleId: number, blockId: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/vehicles/${vehicleId}/scheduled-blocks/${blockId}`),
 
   // ── Archive reasons (configurable, editable in Settings → Motive arhivare) ──
   getArchiveReasons: (activeOnly = false) =>
