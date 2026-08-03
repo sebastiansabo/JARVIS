@@ -7,6 +7,7 @@ rendered with Playwright. Excel output is a deterministic tabular log.
 See docs/superpowers/specs/2026-07-22-monthly-foaie-parcurs-design.md
 """
 import io
+import os
 import re
 import json
 import html
@@ -20,6 +21,11 @@ from .pdf_service import _build_prestator_intro, _PRESTATOR_FALLBACK
 logger = logging.getLogger(__name__)
 
 _MODEL = 'claude-sonnet-4-6'
+# The Foaie de Parcurs is structured data → the prose is generated from a
+# deterministic template by default. The AI is only an OPTIONAL polish pass,
+# enabled per-deploy via FP_ROUTESHEET_AI (off by default: reliable, fast, and
+# it can't invent filler like "vehiculul nu a înregistrat curse de tip Comodat").
+_AI_ENHANCE = os.environ.get('FP_ROUTESHEET_AI', '').strip().lower() in ('1', 'true', 'yes', 'on')
 _MONTHS_RO = [
     '', 'ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie',
     'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie',
@@ -150,7 +156,10 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
             'date': _fmt_date(c.get('departure_datetime') or c.get('created_at')),
             'iso': _iso_date(c.get('departure_datetime') or c.get('created_at')),
             'plecare': _fmt_dt(c.get('departure_datetime')),
-            'sosire': _fmt_dt(c.get('return_datetime')),
+            # Sosire: the return date/time; if the return isn't recorded, assume a
+            # same-day trip and show the departure date (a multi-day return keeps
+            # its own different date).
+            'sosire': _fmt_dt(c.get('return_datetime')) or _fmt_date(c.get('departure_datetime')),
             'km_start': c.get('km_start') or 0,
             'km_end': c.get('km_end') or 0,
             'distance_km': dist,
@@ -175,6 +184,7 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
             'vin': vin,
             'make': veh.get('mark') or '',
             'model': veh.get('model') or '',
+            'fuel_type': veh.get('fuel_type') or '',
             'registration_number': veh.get('registration_number') or (sessions[0].get('registration_number') if sessions else '') or '',
         },
         'period': {'year': year, 'month': month, 'label': f'{_MONTHS_RO[month]} {year}' if 1 <= month <= 12 else f'{month}/{year}'},
@@ -184,18 +194,39 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
     }
 
 
-# ── AI: tie Comodat-with-promo-project sessions to their event + monthly summary ──
-# TD and project-less Comodat trips already have a deterministic `traseu` (from the
-# Settings rules); AI only writes the promovare framing for sessions tied to a
-# marketing project, plus the monthly summary. Returns {'trips': {id: text}, 'summary'}.
+# ── Prose: deterministic template (default) with optional AI polish ──
+# The route sheet is structured data, so each trip already has a deterministic
+# `traseu` (from the Settings rules) and the monthly summary is templated from
+# the totals. When FP_ROUTESHEET_AI is on, the AI rephrases Comodat/promo trips
+# and may replace the summary. Returns {'trips': {id: text}, 'summary'}.
+
+def _template_summary(data: dict) -> str:
+    """Factual monthly summary from the structured totals — describes only the
+    activity that happened (never the absence of a trip category)."""
+    tot = data['totals']
+    td = sum(1 for t in data['trips'] if t['is_td'])
+    comodat = tot['sessions'] - td
+    parts = []
+    if td:
+        parts.append(f'{td} test drive')
+    if comodat:
+        parts.append(f'{comodat} comodat')
+    if not parts:
+        return ''
+    v = data['vehicle']
+    return (f"În {data['period']['label']}, {v['make']} {v['model']} a efectuat "
+            f"{tot['sessions']} curse ({', '.join(parts)}), total {tot['km']} km.")
+
 
 def _ai_prose(data: dict) -> dict:
-    """Fill traseu for Comodat sessions that have a promo project ('participare la
-    …, în scop de promovare') + a monthly summary. Never raises; falls back to the
-    deterministic traseu already on each trip."""
-    fallback = {'trips': {t['id']: t['traseu'] for t in data['trips']}, 'summary': ''}
-    if not data['trips']:
-        return fallback
+    """Deterministic template prose (each trip's `traseu` + a factual summary).
+    The AI is an OPTIONAL polish pass (FP_ROUTESHEET_AI) that rephrases Comodat
+    promo trips; on failure or when disabled the template stands. Never raises."""
+    template = {'trips': {t['id']: (t['traseu'] or '').strip() for t in data['trips']},
+                'summary': _template_summary(data)}
+    if not _AI_ENHANCE or not data['trips']:
+        return template
+    fallback = template
     # Normalize events to {name, start, end}; an event can be tied to a session
     # ONLY if the session's date falls within [start, end].
     events = []
@@ -223,6 +254,10 @@ def _ai_prose(data: dict) -> dict:
          'eveniment_eligibil': _eligible_event(t.get('iso', ''))}
         for t in data['trips'] if not t['is_td']
     ]
+    # No Comodat/promo activity → nothing to summarize. Skip the AI so it can't
+    # write filler like "vehiculul nu a înregistrat curse de tip Comodat".
+    if not to_fill:
+        return fallback
 
     system = (
         'Ești asistent pentru foi de parcurs auto (document legal românesc). '
@@ -233,7 +268,9 @@ def _ai_prose(data: dict) -> dict:
         'Folosește proiect_promovare al cursei dacă există; altfel folosește exact '
         'eveniment_eligibil (deja filtrat pe data cursei). NU lega o cursă de un eveniment '
         'dacă eveniment_eligibil este gol — în acest caz păstrează un scop generic. '
-        'Scrie și un rezumat lunar de 1-2 fraze. Răspunde STRICT în JSON, fără alt text.'
+        'Scrie și un rezumat lunar de 1-2 fraze care descrie DOAR activitatea reală; '
+        'NU menționa absența unui tip de cursă sau lipsa deplasărilor. '
+        'Răspunde STRICT în JSON, fără alt text.'
     )
     prompt = (
         'Vehicul: {make} {model} ({vin}). Perioada: {period}.\n'
@@ -254,9 +291,9 @@ def _ai_prose(data: dict) -> dict:
         for t in data['trips']:
             ai_txt = ai_trips.get(str(t['id'])) or ai_trips.get(t['id'])
             out_trips[t['id']] = (ai_txt or t['traseu'] or '').strip()
-        return {'trips': out_trips, 'summary': (parsed.get('summary') or '').strip()}
+        return {'trips': out_trips, 'summary': (parsed.get('summary') or template['summary']).strip()}
     except Exception:
-        logger.warning('Route-sheet AI prose failed; using deterministic traseu', exc_info=True)
+        logger.warning('Route-sheet AI enhance failed; using template prose', exc_info=True)
         return fallback
 
 
@@ -278,6 +315,82 @@ def _rows_with_gaps(trips: list) -> list:
 
 
 # ── HTML skeleton (locked numbers) + Playwright render ──
+
+def _fuel_section_html(unit: str, norma, entries: list, km, consum_efectiv=None) -> str:
+    """One consumption section — Combustibil (l) or Energie (kWh) — as HTML.
+    A hybrid renders both; every entry carries its receipt value (lei)."""
+    e = html.escape
+    is_e = unit == 'kWh'
+    title = 'Energie' if is_e else 'Combustibil'
+    qty_h = 'kWh' if is_e else 'Litri'
+    op = 'încărcare' if is_e else 'alimentare'
+    op_pl = 'încărcări' if is_e else 'alimentări'
+    rows = ''.join(
+        f'<tr><td>{e(str(a.get("date", "") or "—"))}</td>'
+        f'<td>{e(str(a.get("bon", "") or "—"))}</td>'
+        f'<td class="n">{float(a.get("liters", 0) or 0):g}</td>'
+        f'<td class="n">{float(a.get("lei", 0) or 0):g}</td></tr>'
+        for a in entries
+    ) or f'<tr><td colspan="4" class="empty">Fără {op_pl} înregistrate.</td></tr>'
+    total = round(sum(float(a.get('liters', 0) or 0) for a in entries), 2)
+    cost = round(sum(float(a.get('lei', 0) or 0) for a in entries), 2)
+    pret = round(cost / total, 2) if total else None
+    consum_normat = round(float(norma) * km / 100, 2) if norma else None
+    kv = [
+        f'<tr><td class="k">Normă consum</td><td>{norma if norma is not None else "—"} {unit}/100 km</td></tr>',
+        f'<tr><td class="k">Consum normat</td><td>{consum_normat if consum_normat is not None else "—"} {unit}</td></tr>',
+    ]
+    if consum_efectiv is not None:
+        kv.append(f'<tr><td class="k">Consum efectiv</td><td>{consum_efectiv:g} {unit}</td></tr>')
+    kv.append(f'<tr><td class="k">Cost total {title.lower()}</td><td>{cost:g} lei</td></tr>')
+    kv.append(f'<tr><td class="k">Preț mediu</td><td>{pret if pret is not None else "—"} lei/{unit}</td></tr>')
+    return f"""<div class="fuel-section"><div class="fuel-title">{title}</div>
+<div class="fuel">
+  <table class="kv">{''.join(kv)}</table>
+  <table class="trips alim">
+    <thead><tr><th>Data {op}</th><th>Bon fiscal</th><th>{qty_h}</th><th>Valoare (lei)</th></tr></thead>
+    <tbody>{rows}
+      <tr class="totals"><td>Total</td><td></td><td class="n">{total:g}</td><td class="n">{cost:g}</td></tr>
+    </tbody>
+  </table>
+</div></div>"""
+
+
+def _xlsx_fuel_section(ws, start_row, unit, norma, entries, km, consum_efectiv, head, fill, bold):
+    """Write one Combustibil (l) / Energie (kWh) section to the worksheet; returns
+    the next free row so a hybrid can stack both sections."""
+    from openpyxl.styles import Alignment
+    is_e = unit == 'kWh'
+    title = 'Energie' if is_e else 'Combustibil'
+    op = 'încărcare' if is_e else 'alimentare'
+    consum_normat = round(float(norma) * km / 100, 2) if norma else None
+    cost = round(sum(float(a.get('lei', 0) or 0) for a in entries), 2)
+    total = round(sum(float(a.get('liters', 0) or 0) for a in entries), 2)
+    pret = round(cost / total, 2) if total else None
+    row = start_row
+    ws.cell(row=row, column=1, value=title).font = bold
+    ws.cell(row=row + 1, column=1, value=f'Normă consum ({unit}/100km)'); ws.cell(row=row + 1, column=2, value=float(norma) if norma else None)
+    ws.cell(row=row + 2, column=1, value=f'Consum normat ({unit})'); ws.cell(row=row + 2, column=2, value=consum_normat)
+    row += 3
+    if consum_efectiv is not None:
+        ws.cell(row=row, column=1, value=f'Consum efectiv ({unit})'); ws.cell(row=row, column=2, value=consum_efectiv); row += 1
+    ws.cell(row=row, column=1, value=f'Cost total {title.lower()} (lei)'); ws.cell(row=row, column=2, value=cost); row += 1
+    ws.cell(row=row, column=1, value=f'Preț mediu (lei/{unit})'); ws.cell(row=row, column=2, value=pret); row += 2
+    for col, h in enumerate([f'Data {op}', 'Bon fiscal', 'kWh' if is_e else 'Litri', 'Valoare (lei)'], start=1):
+        cell = ws.cell(row=row, column=col, value=h)
+        cell.font = head; cell.fill = fill; cell.alignment = Alignment(horizontal='center')
+    row += 1
+    for a in entries:
+        ws.cell(row=row, column=1, value=str(a.get('date', '') or ''))
+        ws.cell(row=row, column=2, value=str(a.get('bon', '') or ''))
+        ws.cell(row=row, column=3, value=float(a.get('liters', 0) or 0))
+        ws.cell(row=row, column=4, value=float(a.get('lei', 0) or 0))
+        row += 1
+    ws.cell(row=row, column=1, value='Total').font = bold
+    ws.cell(row=row, column=3, value=total).font = bold
+    ws.cell(row=row, column=4, value=cost).font = bold
+    return row + 2
+
 
 def _skeleton_html(data: dict, prose: dict) -> str:
     e = html.escape
@@ -314,32 +427,24 @@ def _skeleton_html(data: dict, prose: dict) -> str:
     tot = data['totals']
     summary_html = f'<p class="summary">{e(prose["summary"])}</p>' if prose.get('summary') else ''
 
-    # Fuel block (Normă + Alimentări are user-entered; consum efectiv from sessions)
+    # Fuel/charging sections. A car may have a fuel tank (Benzină/Diesel/Hybrid)
+    # and/or a battery (Electric/Hybrid) — a hybrid shows BOTH sections. Each
+    # alimentare entry carries a unit ('l' by default, 'kWh' for charging).
     fuel = data.get('fuel', {}) or {}
     alim = fuel.get('alimentari') or []
-    alim_rows = ''.join(
-        f'<tr><td>{e(str(a.get("date", "") or "—"))}</td>'
-        f'<td>{e(str(a.get("bon", "") or "—"))}</td>'
-        f'<td class="n">{float(a.get("liters", 0) or 0):g}</td></tr>'
-        for a in alim
-    ) or '<tr><td colspan="3" class="empty">Fără alimentări înregistrate.</td></tr>'
-    alim_total = round(sum(float(a.get('liters', 0) or 0) for a in alim), 2)
-    norma = fuel.get('norma')
-    consum_normat = round((float(norma) * tot['km'] / 100), 2) if norma else None
-    fuel_block = f"""
-<div class="fuel">
-  <table class="kv">
-    <tr><td class="k">Normă consum</td><td>{norma if norma is not None else '—'} l/100 km</td></tr>
-    <tr><td class="k">Consum normat</td><td>{consum_normat if consum_normat is not None else '—'} l</td></tr>
-    <tr><td class="k">Consum efectiv</td><td>{tot.get('consum_efectiv', 0):g} l</td></tr>
-  </table>
-  <table class="trips alim">
-    <thead><tr><th>Data alimentare</th><th>Bon fiscal</th><th>Litri</th></tr></thead>
-    <tbody>{alim_rows}
-      <tr class="totals"><td colspan="2">Total alimentat</td><td class="n">{alim_total:g}</td></tr>
-    </tbody>
-  </table>
-</div>"""
+    fuel_entries = [a for a in alim if (a.get('unit') or 'l') != 'kWh']
+    energy_entries = [a for a in alim if a.get('unit') == 'kWh']
+    ft = v.get('fuel_type') or ''
+    uses_tank = ft in ('Benzina', 'Diesel', 'Hybrid')
+    uses_batt = ft in ('Electric', 'Hybrid')
+    if not uses_tank and not uses_batt:
+        uses_tank = True  # unknown fuel_type → treat as a fuel car
+    sections = []
+    if uses_tank:
+        sections.append(_fuel_section_html('l', fuel.get('norma'), fuel_entries, tot['km'], tot.get('consum_efectiv', 0)))
+    if uses_batt:
+        sections.append(_fuel_section_html('kWh', fuel.get('norma_energie'), energy_entries, tot['km'], None))
+    fuel_block = '\n'.join(sections)
 
     # Signatures — Întocmit = generating user's stored signature (image);
     # Aprobat = blank line (superior signs manually).
@@ -375,7 +480,9 @@ tr.totals td {{ font-weight:700; background:#f2f2f6; }}
 tr.gap td {{ background:#fff7ed; font-style:italic; color:#9a6a00; }}
 .empty {{ text-align:center; color:#888; }}
 .summary {{ margin-top:12px; font-size:10.5px; line-height:1.5; }}
-.fuel {{ display:flex; gap:16px; margin-top:12px; align-items:flex-start; }}
+.fuel-section {{ margin-top:12px; }}
+.fuel-title {{ font-weight:700; font-size:11px; margin-bottom:2px; color:#1a1a2e; }}
+.fuel {{ display:flex; gap:16px; align-items:flex-start; }}
 .fuel .kv {{ border-collapse:collapse; }}
 .fuel .kv td {{ padding:3px 8px; font-size:10px; border:0.5px solid #cfcfd8; }}
 .fuel .kv td.k {{ color:#555; background:#f7f7fa; }}
@@ -658,7 +765,7 @@ def get_stored_pdf(vin: str, year: int, month: int) -> bytes | None:
 def list_stored(company_id: int | None, year: int, month: int) -> list:
     """Metadata for every stored sheet in a period (badge + modal prefill)."""
     return _store.query_all(
-        'SELECT vin, session_count, total_km, norma_combustibil, alimentari, evenimente, '
+        'SELECT vin, session_count, total_km, norma_combustibil, norma_energie, alimentari, evenimente, '
         'generated_by_name, generated_at '
         'FROM fp_route_sheets WHERE (%s IS NULL OR company_id=%s) AND year=%s AND month=%s',
         (company_id, company_id, year, month),
@@ -672,12 +779,13 @@ def _save_sheet(data: dict, pdf_bytes: bytes, prose: dict, user_id, user_name) -
     _store.execute(
         '''INSERT INTO fp_route_sheets
              (vin, company_id, year, month, pdf_bytes, ai_summary, ai_trips_json,
-              norma_combustibil, alimentari, evenimente, session_count, total_km,
+              norma_combustibil, norma_energie, alimentari, evenimente, session_count, total_km,
               generated_by, generated_by_name, updated_at)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
            ON CONFLICT (vin, year, month) DO UPDATE SET
              pdf_bytes=EXCLUDED.pdf_bytes, ai_summary=EXCLUDED.ai_summary,
              ai_trips_json=EXCLUDED.ai_trips_json, norma_combustibil=EXCLUDED.norma_combustibil,
+             norma_energie=EXCLUDED.norma_energie,
              alimentari=EXCLUDED.alimentari, evenimente=EXCLUDED.evenimente,
              session_count=EXCLUDED.session_count,
              total_km=EXCLUDED.total_km, generated_by=EXCLUDED.generated_by,
@@ -685,7 +793,7 @@ def _save_sheet(data: dict, pdf_bytes: bytes, prose: dict, user_id, user_name) -
         (data['vehicle']['vin'], data['company'].get('id'),
          data['period']['year'], data['period']['month'], Binary(pdf_bytes),
          prose.get('summary', ''), Json(prose.get('trips', {})),
-         fuel.get('norma'), Json(fuel.get('alimentari') or []),
+         fuel.get('norma'), fuel.get('norma_energie'), Json(fuel.get('alimentari') or []),
          Json(data.get('events') or []),
          data['totals']['sessions'], data['totals']['km'], user_id, user_name),
     )
@@ -714,10 +822,12 @@ def _user_signature(user_id) -> str | None:
 
 
 def generate_and_store(vin: str, year: int, month: int, user_id=None, user_name=None,
-                       regenerate: bool = False, norma=None, alimentari=None, events=None) -> bytes:
+                       regenerate: bool = False, norma=None, norma_energie=None,
+                       alimentari=None, events=None) -> bytes:
     """Return the stored PDF (unless `regenerate`), else build it with AI +
     Playwright, persist it to fp_route_sheets, and return the bytes. `norma`
-    (l/100km) and `alimentari` (list of {date, bon, liters}) are user-entered.
+    (l/100km) and `alimentari` (list of {date, bon, liters, lei}) are user-entered;
+    when `norma` is omitted it falls back to the car's profile normă.
     `events` (list of {name, date}) are promo events the AI ties Comodat sessions
     to. The generating user's stored signature is embedded in the 'Întocmit' box."""
     if not regenerate:
@@ -725,7 +835,11 @@ def generate_and_store(vin: str, year: int, month: int, user_id=None, user_name=
         if cached is not None:
             return cached
     data = aggregate_month(vin, year, month)
-    data['fuel'] = {'norma': norma, 'alimentari': alimentari or []}
+    if norma is None or norma_energie is None:  # fall back to the car-profile norms
+        veh = _veh_repo.get_by_vin(vin) or {}
+        norma = norma if norma is not None else veh.get('norma_combustibil')
+        norma_energie = norma_energie if norma_energie is not None else veh.get('norma_energie')
+    data['fuel'] = {'norma': norma, 'norma_energie': norma_energie, 'alimentari': alimentari or []}
     data['events'] = events or []
     data['signatures'] = {'intocmit': _user_signature(user_id), 'intocmit_name': user_name or ''}
     prose = _ai_prose(data)
@@ -788,35 +902,29 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
     ws.cell(row=r, column=6, value=tot['km_end']).font = bold
     ws.cell(row=r, column=7, value=tot['km']).font = bold
 
-    # Fuel block — Normă + Alimentări come from the stored sheet (user-entered)
+    # Fuel/charging sections — Normă + Alimentări from the stored sheet (norms
+    # fall back to the car profile). A hybrid renders both Combustibil + Energie.
+    veh = _veh_repo.get_by_vin(vin) or {}
+    ft = veh.get('fuel_type') or ''
+    uses_tank = ft in ('Benzina', 'Diesel', 'Hybrid')
+    uses_batt = ft in ('Electric', 'Hybrid')
+    if not uses_tank and not uses_batt:
+        uses_tank = True
     stored = _store.query_one(
-        'SELECT norma_combustibil, alimentari FROM fp_route_sheets WHERE vin=%s AND year=%s AND month=%s',
+        'SELECT norma_combustibil, norma_energie, alimentari FROM fp_route_sheets WHERE vin=%s AND year=%s AND month=%s',
         (vin, year, month),
     ) or {}
-    norma = stored.get('norma_combustibil')
+    norma = stored.get('norma_combustibil') if stored.get('norma_combustibil') is not None else veh.get('norma_combustibil')
+    norma_energie = stored.get('norma_energie') if stored.get('norma_energie') is not None else veh.get('norma_energie')
     alimentari = stored.get('alimentari') or []
-    consum_normat = round(float(norma) * tot['km'] / 100, 2) if norma else None
+    fuel_entries = [a for a in alimentari if (a.get('unit') or 'l') != 'kWh']
+    energy_entries = [a for a in alimentari if a.get('unit') == 'kWh']
 
-    fr = r + 3
-    ws.cell(row=fr, column=1, value='Combustibil').font = bold
-    ws.cell(row=fr + 1, column=1, value='Normă consum (l/100km)'); ws.cell(row=fr + 1, column=2, value=float(norma) if norma else None)
-    ws.cell(row=fr + 2, column=1, value='Consum normat (l)'); ws.cell(row=fr + 2, column=2, value=consum_normat)
-    ws.cell(row=fr + 3, column=1, value='Consum efectiv (l)'); ws.cell(row=fr + 3, column=2, value=tot.get('consum_efectiv', 0))
-
-    ar = fr + 5
-    for col, h in enumerate(['Data alimentare', 'Bon fiscal', 'Litri'], start=1):
-        cell = ws.cell(row=ar, column=col, value=h)
-        cell.font = head; cell.fill = fill; cell.alignment = Alignment(horizontal='center')
-    ar += 1
-    alim_total = 0.0
-    for a in alimentari:
-        ws.cell(row=ar, column=1, value=str(a.get('date', '') or ''))
-        ws.cell(row=ar, column=2, value=str(a.get('bon', '') or ''))
-        ws.cell(row=ar, column=3, value=float(a.get('liters', 0) or 0))
-        alim_total += float(a.get('liters', 0) or 0)
-        ar += 1
-    ws.cell(row=ar, column=1, value='Total alimentat').font = bold
-    ws.cell(row=ar, column=3, value=round(alim_total, 2)).font = bold
+    row = r + 3
+    if uses_tank:
+        row = _xlsx_fuel_section(ws, row, 'l', norma, fuel_entries, tot['km'], tot.get('consum_efectiv', 0), head, fill, bold)
+    if uses_batt:
+        row = _xlsx_fuel_section(ws, row, 'kWh', norma_energie, energy_entries, tot['km'], None, head, fill, bold)
 
     widths = [20, 20, 42, 22, 12, 12, 12]
     for i, w in enumerate(widths, start=1):
