@@ -18,6 +18,7 @@ import {
   type ActivateTestDrivePayload,
   type VehicleConflict,
   type FoiContract,
+  type MktProject,
 } from '@/types/foiParcurs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -53,6 +54,7 @@ import {
   AlertTriangle,
   CalendarPlus,
   PlayCircle,
+  Megaphone,
 } from 'lucide-react'
 import { CreateClientPanel, DriverLicenseSection } from './CreateClientPanel'
 import {
@@ -122,6 +124,11 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const debouncedSearch = useDebounce(clientSearch, 350)
   const [selectedClient, setSelectedClient] = useState<CrmClient | null>(null)
   const [showManualCreate, setShowManualCreate] = useState(false)
+
+  // Campaign / event (optional marketing project) — type-to-search, like mobile
+  const [mktProject, setMktProject] = useState<MktProject | null>(null)
+  const [projectSearch, setProjectSearch] = useState('')
+  const debouncedProjectSearch = useDebounce(projectSearch, 350)
 
   // Driver license
   const [driverLicensePhoto, setDriverLicensePhoto] = useState<string | null>(null)
@@ -239,6 +246,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     if (c.client_id && c.client_name) {
       setSelectedClient({ id: c.client_id, display_name: c.client_name, phone: c.client_phone ?? null })
     }
+    if (c.mkt_project_id) setMktProject({ id: c.mkt_project_id, name: c.mkt_project_name ?? null })
   }, [draftData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -273,6 +281,15 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     enabled: debouncedSearch.trim().length >= 2 && !selectedClient,
   })
   const clientResults = clientSearchData?.clients ?? []
+
+  // Campaign/event search — type-to-search (>=2 chars), not scoped by company
+  // (matches the mobile form). Optional field, nothing gates on it.
+  const { data: projectSearchData, isFetching: isSearchingProjects } = useQuery({
+    queryKey: ['fp-mkt-project-search', debouncedProjectSearch],
+    queryFn: () => foiParcursApi.searchMktProjects(debouncedProjectSearch, undefined, 20),
+    enabled: debouncedProjectSearch.trim().length >= 2 && !mktProject,
+  })
+  const projectResults = projectSearchData?.projects ?? []
 
   // Auto-select the logged-in user's company by name (still switchable)
   useEffect(() => {
@@ -392,6 +409,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(driverLicenseNumber.trim() ? { driver_license_number: driverLicenseNumber.trim() } : {}),
       ...(driverLicenseExpiry.trim() ? { driver_license_expiry: driverLicenseExpiry.trim() } : {}),
       ...(generalObservation.trim() ? { general_observation: generalObservation.trim() } : {}),
+      ...(mktProject ? { mkt_project_id: Number(mktProject.id) } : {}),
       ...(vehicle.locked_out ? { allow_locked: true } : {}),
     }
   }
@@ -451,6 +469,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(damagePayload.length ? { departure_damage: damagePayload } : {}),
       ...(conditionsRequired ? { general_conditions_accepted: conditionsAccepted } : {}),
       ...(generalObservation.trim() ? { general_observation: generalObservation.trim() } : {}),
+      ...(mktProject ? { mkt_project_id: Number(mktProject.id) } : {}),
       ...(selectedVehicle.locked_out ? { allow_locked: true } : {}),
     }
     withConflictCheck(selectedVehicle.vin, () => activateMutation.mutate(payload), activateId)
@@ -463,6 +482,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   function resetForm() {
     setCompanyId(null); setVehicleId(null); setSelectedVehicle(null)
     setClientSearch(''); setSelectedClient(null); setShowManualCreate(false)
+    setMktProject(null); setProjectSearch('')
     setDriverLicensePhoto(null); setDriverLicenseNumber(''); setDriverLicenseExpiry('')
     setDepartureDatetime(localDatetimeValue(new Date()))
     setReturnDatetime(localDatetimeValue(new Date(Date.now() + 60 * 60 * 1000)))
@@ -576,6 +596,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
             <div className="rounded-md border bg-muted/50 p-3 space-y-1 text-sm">
               <p><span className="text-muted-foreground">Marca/Model:</span> {selectedVehicle.mark} {selectedVehicle.model}</p>
               <p><span className="text-muted-foreground">Nr. înmatriculare:</span> {selectedVehicle.registration_number || '—'}</p>
+              <p><span className="text-muted-foreground">VIN:</span> {selectedVehicle.vin || '—'}</p>
               <p><span className="text-muted-foreground">Combustibil:</span> {selectedVehicle.fuel_type}</p>
               <p><span className="text-muted-foreground">Capacitate:</span> {[
                 usesFuelTank(selectedVehicle.fuel_type) && selectedVehicle.fuel_tank_capacity_liters ? `${selectedVehicle.fuel_tank_capacity_liters} L` : null,
@@ -667,6 +688,57 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
               <Button type="button" variant="outline" className="w-full border-dashed" onClick={() => setShowManualCreate(true)}>
                 <UserPlus className="h-4 w-4 mr-2" />Adaugă client manual
               </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Campanie / Eveniment (opțional) ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2"><Megaphone className="h-4 w-4" />Campanie / Eveniment</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {mktProject ? (
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-sm py-1 px-3">
+                {mktProject.name || `Campanie #${mktProject.id}`}
+                {mktProject.status && ` — ${mktProject.status}`}
+              </Badge>
+              <Button variant="ghost" size="sm" onClick={() => { setMktProject(null); setProjectSearch('') }}>
+                <X className="h-4 w-4 mr-1" />Schimbă
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2 relative">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Caută campanie sau eveniment (opțional)..."
+                  value={projectSearch}
+                  onChange={(e) => setProjectSearch(e.target.value)}
+                />
+                {isSearchingProjects && <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 text-muted-foreground animate-spin" />}
+              </div>
+              {debouncedProjectSearch.trim().length >= 2 && !isSearchingProjects && projectResults.length === 0 && (
+                <p className="text-xs text-muted-foreground">Nicio campanie găsită.</p>
+              )}
+              {projectResults.length > 0 && (
+                <div className="border rounded-md divide-y max-h-60 overflow-y-auto">
+                  {projectResults.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-accent text-sm transition-colors flex items-center justify-between gap-2"
+                      onClick={() => { setMktProject(p); setProjectSearch('') }}
+                    >
+                      <span className="font-medium truncate">{p.name || '—'}</span>
+                      {p.status && <span className="text-xs text-muted-foreground shrink-0">{p.status}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </CardContent>
