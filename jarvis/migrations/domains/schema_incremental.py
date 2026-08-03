@@ -2096,6 +2096,15 @@ def _create_schema_incremental_continued(conn, cursor):
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='odometer_km') THEN
                 ALTER TABLE fp_vehicles ADD COLUMN odometer_km INTEGER;
             END IF;
+            -- Per-car fuel-consumption norm (l/100km); prefills the monthly Foaie
+            -- de Parcurs Normă (a per-sheet value still overrides it).
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='norma_combustibil') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN norma_combustibil NUMERIC(5,2);
+            END IF;
+            -- Energy-consumption norm (kWh/100km) for electric/hybrid cars.
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='norma_energie') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN norma_energie NUMERIC(5,2);
+            END IF;
             -- Vehicle documents + validity dates (rovinietă/vignette, ITP, RCA
             -- insurance validity; talon/CIV/insurance/registration scans as base64).
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='vignette_valid_until') THEN
@@ -2325,6 +2334,7 @@ def _create_schema_incremental_continued(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_route_sheets_period ON fp_route_sheets(company_id, year, month)')
     # fuel fields added after the table's initial release (idempotent for existing DBs)
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS norma_combustibil NUMERIC(6,2)")
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS norma_energie NUMERIC(6,2)")
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS alimentari JSONB DEFAULT '[]'")
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS evenimente JSONB DEFAULT '[]'")
 
