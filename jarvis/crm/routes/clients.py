@@ -80,15 +80,17 @@ def api_client_detail(client_id):
 
     deals, _ = _deal_repo.search(client_id=client_id, limit=200)
 
-    # Fallback: if 0 deals by client_id, search by buyer_name and auto-relink
+    # Fallback: if 0 deals by client_id, find deals with an EXACT-name match and
+    # attribute only genuinely-orphaned ones (client_id IS NULL). Never a
+    # substring match, never a reassignment of another client's deals.
     if not deals:
         display_name = client.get('display_name') or ''
         if display_name:
-            # Try clean name (without nr_reg) for broader match
+            # Match on the clean name (nr_reg stripped), exact/normalized
             clean_name, _ = _parse_name_nr_reg(display_name)
             fallback = _deal_repo.search_by_buyer_name(clean_name, limit=200)
             if fallback:
-                logger.info('Found %d orphan deals for "%s" by buyer_name, relinking to client %s',
+                logger.info('Found %d exact-name deals for "%s", attributing orphans to client %s',
                             len(fallback), clean_name, client_id)
                 try:
                     _deal_repo.relink_to_client(clean_name, client_id)
