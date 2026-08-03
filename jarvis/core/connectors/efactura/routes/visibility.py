@@ -158,6 +158,7 @@ def list_deleted_invoices():
     List deleted invoices (bin).
 
     Query params:
+        company_id: Filter by company ID
         direction: 'received' or 'sent'
         start_date: Filter from date (YYYY-MM-DD)
         end_date: Filter to date (YYYY-MM-DD)
@@ -166,6 +167,7 @@ def list_deleted_invoices():
         limit: Page size (default 50, max 200)
     """
     try:
+        company_id = request.args.get('company_id', type=int)
         direction = request.args.get('direction')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
@@ -184,6 +186,7 @@ def list_deleted_invoices():
         end = date.fromisoformat(end_date) if end_date else None
 
         result = _vis_service.list_deleted_invoices(
+            company_id=company_id,
             direction=direction_enum,
             start_date=start,
             end_date=end,
@@ -195,6 +198,7 @@ def list_deleted_invoices():
         return jsonify({
             'success': True,
             'data': result.data['invoices'],
+            'companies': result.data['companies'],
             'pagination': result.data['pagination'],
         })
 
