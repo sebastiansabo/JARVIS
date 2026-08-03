@@ -126,6 +126,58 @@ def api_unlock_vehicle(vehicle_id):
     return jsonify({'success': True})
 
 
+# ── Scheduled blocks (to-do #3): future date-windows that auto-block a car ──
+
+@foi_parcurs_bp.route('/api/foi-parcurs/vehicles/<int:vehicle_id>/scheduled-blocks', methods=['GET'])
+@login_required
+def api_list_scheduled_blocks(vehicle_id):
+    """All scheduled block windows for a car (active/upcoming/past/cancelled)."""
+    blocks = _vehicle_repo.list_scheduled_blocks(vehicle_id)
+    return jsonify({'success': True, 'blocks': blocks or []})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/vehicles/<int:vehicle_id>/scheduled-blocks', methods=['POST'])
+@login_required
+def api_create_scheduled_block(vehicle_id):
+    """Schedule a block over [start_date, end_date]. Warns (409) on overlapping
+    open TD sessions unless allow_conflicts is set."""
+    from flask_login import current_user
+    veh = _vehicle_repo.get_identity(vehicle_id)
+    if not veh:
+        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+    data = request.get_json() or {}
+    category = data.get('category')
+    valid = _vehicle_repo.get_active_lockout_slugs() or set(_LOCKOUT_CATEGORIES)
+    if category not in valid:
+        return jsonify({'success': False, 'error': 'Invalid block reason'}), 400
+    start_date = (data.get('start_date') or '').strip()
+    end_date = (data.get('end_date') or '').strip()
+    if not start_date or not end_date or end_date < start_date:
+        return jsonify({'success': False, 'error': 'Interval invalid (data sfârșit înainte de start)'}), 400
+    # Warn-but-allow: overlapping open sessions across the whole window.
+    if not data.get('allow_conflicts'):
+        conflicts = _fp_repo.find_conflicts(veh['vin'], start_date, f'{end_date} 23:59:59')
+        if conflicts:
+            return jsonify({'success': False, 'conflicts': conflicts,
+                            'error': 'Există sesiuni care se suprapun cu intervalul'}), 409
+    note = (data.get('note') or '').strip() or None
+    row = _vehicle_repo.create_scheduled_block(
+        vehicle_id, category, note, start_date, end_date, getattr(current_user, 'id', None))
+    return jsonify({'success': True, 'block': row})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/vehicles/<int:vehicle_id>/scheduled-blocks/<int:block_id>',
+                      methods=['DELETE'])
+@login_required
+def api_cancel_scheduled_block(vehicle_id, block_id):
+    """Soft-cancel a scheduled block (keeps history)."""
+    existing = _vehicle_repo.get_scheduled_block(block_id)
+    if not existing or existing.get('vehicle_id') != vehicle_id:
+        return jsonify({'success': False, 'error': 'Block not found'}), 404
+    _vehicle_repo.cancel_scheduled_block(block_id)
+    return jsonify({'success': True})
+
+
 # ── Lockout reasons (configurable, editable in Settings → Motive blocare) ──
 
 @foi_parcurs_bp.route('/api/foi-parcurs/lockout-reasons', methods=['GET'])
