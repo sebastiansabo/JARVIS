@@ -619,6 +619,9 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
         year={filterYear}
         month={filterMonth}
         stored={previewVin ? storedByVin.get(previewVin) ?? null : null}
+        vehicleNorma={previewVin ? vinMap.get(previewVin)?.norma_combustibil ?? null : null}
+        vehicleNormaEnergie={previewVin ? vinMap.get(previewVin)?.norma_energie ?? null : null}
+        vehicleFuelType={previewVin ? vinMap.get(previewVin)?.fuel_type ?? null : null}
         onClose={() => {
           setPreviewVin(null)
           queryClient.invalidateQueries({ queryKey: ['fp-route-sheets'] })
@@ -1051,16 +1054,20 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
 }
 
 // ── Foaie de Parcurs — collect Normă/Alimentări, generate (AI), preview, download ──
-type AlimRow = { date: string; bon: string; liters: string }
+type AlimRow = { date: string; bon: string; liters: string; lei: string; unit: 'l' | 'kWh' }
 type EventRow = { name: string; start: string; end: string }
 
-function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
-  vin: string | null; year: number; month: number; stored: StoredRouteSheet | null; onClose: () => void
+function RouteSheetPreviewDialog({ vin, year, month, stored, vehicleNorma, vehicleNormaEnergie, vehicleFuelType, onClose }: {
+  vin: string | null; year: number; month: number; stored: StoredRouteSheet | null
+  vehicleNorma: number | null; vehicleNormaEnergie: number | null; vehicleFuelType: string | null; onClose: () => void
 }) {
+  const usesTank = usesFuelTank(vehicleFuelType || undefined)
+  const usesBatt = usesBattery(vehicleFuelType || undefined)
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [norma, setNorma] = useState('')
+  const [normaEnergie, setNormaEnergie] = useState('')
   const [alim, setAlim] = useState<AlimRow[]>([])
   const [events, setEvents] = useState<EventRow[]>([])
 
@@ -1080,13 +1087,13 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
     setLoading(true); setError('')
     try {
       const alimentari: RouteSheetAlimentare[] = alim
-        .filter((a) => a.date || a.bon || a.liters)
-        .map((a) => ({ date: a.date, bon: a.bon, liters: Number(a.liters || 0) }))
+        .filter((a) => a.date || a.bon || a.liters || a.lei)
+        .map((a) => ({ date: a.date, bon: a.bon, liters: Number(a.liters || 0), lei: Number(a.lei || 0), unit: a.unit }))
       const evPayload: RouteSheetEvent[] = events
         .filter((e) => e.name.trim())
         .map((e) => ({ name: e.name.trim(), start: e.start, end: e.end || e.start }))
       const blob = await foiParcursApi.generateRouteSheetPdf(vin, year, month, {
-        regenerate, norma: norma ? Number(norma) : null, alimentari, events: evPayload,
+        regenerate, norma: norma ? Number(norma) : null, norma_energie: normaEnergie ? Number(normaEnergie) : null, alimentari, events: evPayload,
       })
       setUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
     } catch (e: any) {
@@ -1094,15 +1101,23 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
     } finally {
       setLoading(false)
     }
-  }, [vin, year, month, norma, alim, events])
+  }, [vin, year, month, norma, normaEnergie, alim, events])
 
   // On open: prefill the form from the stored sheet, and if one exists show it.
   useEffect(() => {
     if (!vin) return
-    setNorma(stored?.norma_combustibil != null ? String(stored.norma_combustibil) : '')
+    // Prefill Normă from the stored sheet, else fall back to the car profile.
+    setNorma(
+      stored?.norma_combustibil != null ? String(stored.norma_combustibil)
+        : vehicleNorma != null ? String(vehicleNorma) : '',
+    )
+    setNormaEnergie(
+      stored?.norma_energie != null ? String(stored.norma_energie)
+        : vehicleNormaEnergie != null ? String(vehicleNormaEnergie) : '',
+    )
     setAlim(
       Array.isArray(stored?.alimentari)
-        ? stored!.alimentari!.map((a) => ({ date: a.date || '', bon: a.bon || '', liters: String(a.liters ?? '') }))
+        ? stored!.alimentari!.map((a) => ({ date: a.date || '', bon: a.bon || '', liters: String(a.liters ?? ''), lei: String(a.lei ?? ''), unit: a.unit === 'kWh' ? 'kWh' : 'l' as 'l' | 'kWh' }))
         : [],
     )
     setEvents(
@@ -1118,8 +1133,42 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
 
   const setRow = (i: number, k: keyof AlimRow, v: string) =>
     setAlim((p) => p.map((a, idx) => (idx === i ? { ...a, [k]: v } : a)))
-  const addRow = () => setAlim((p) => [...p, { date: '', bon: '', liters: '' }])
+  const addRow = (unit: 'l' | 'kWh') => setAlim((p) => [...p, { date: periodMin, bon: '', liters: '', lei: '', unit }])
   const removeRow = (i: number) => setAlim((p) => p.filter((_, idx) => idx !== i))
+  // Entries carry their original index so the two sections can edit the shared list.
+  const fuelEntries = alim.map((a, i) => ({ a, i })).filter((x) => x.a.unit !== 'kWh')
+  const energyEntries = alim.map((a, i) => ({ a, i })).filter((x) => x.a.unit === 'kWh')
+  const consumSection = (kind: 'l' | 'kWh', entries: { a: AlimRow; i: number }[], normaVal: string, setNormaVal: (v: string) => void) => {
+    const isE = kind === 'kWh'
+    return (
+      <>
+        <div className="space-y-1.5">
+          <Label className="text-xs">{isE ? 'Normă energie (kWh/100 km)' : 'Normă consum (l/100 km)'}</Label>
+          <Input type="number" step="0.1" value={normaVal} onChange={(e) => setNormaVal(e.target.value)} placeholder={isE ? 'ex. 17.5' : 'ex. 6.5'} />
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">{isE ? 'Încărcări' : 'Alimentări'}</Label>
+            <Button type="button" variant="outline" size="sm" className="h-7" onClick={() => addRow(kind)}>
+              <Plus className="mr-1 h-3.5 w-3.5" /> Adaugă
+            </Button>
+          </div>
+          {entries.length === 0 && <p className="text-xs text-muted-foreground">{isE ? 'Nicio încărcare. Adaugă bonurile de energie.' : 'Nicio alimentare. Adaugă bonurile de combustibil.'}</p>}
+          {entries.map(({ a, i }) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <Input type="date" className="h-8 w-[118px] shrink-0 text-xs" value={a.date} onChange={(e) => setRow(i, 'date', e.target.value)} />
+              <Input className="h-8 flex-1 min-w-0 text-xs" placeholder="Bon" value={a.bon} onChange={(e) => setRow(i, 'bon', e.target.value)} />
+              <Input type="number" step="0.01" className="h-8 w-20 shrink-0 text-xs" placeholder={isE ? 'kWh' : 'Litri'} value={a.liters} onChange={(e) => setRow(i, 'liters', e.target.value)} />
+              <Input type="number" step="0.01" className="h-8 w-20 shrink-0 text-xs" placeholder="Lei" value={a.lei} onChange={(e) => setRow(i, 'lei', e.target.value)} />
+              <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeRow(i)}>
+                <XIcon className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </>
+    )
+  }
 
   const setEventRow = (i: number, k: keyof EventRow, v: string) =>
     setEvents((p) => p.map((e, idx) => (idx === i ? { ...e, [k]: v } : e)))
@@ -1140,29 +1189,8 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, onClose }: {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[380px_1fr] flex-1 overflow-hidden">
           {/* Left: user-entered fuel inputs */}
           <div className="space-y-3 overflow-y-auto pr-1">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Normă consum (l/100 km)</Label>
-              <Input type="number" step="0.1" value={norma} onChange={(e) => setNorma(e.target.value)} placeholder="ex. 6.5" />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">Alimentări</Label>
-                <Button type="button" variant="outline" size="sm" className="h-7" onClick={addRow}>
-                  <Plus className="mr-1 h-3.5 w-3.5" /> Adaugă
-                </Button>
-              </div>
-              {alim.length === 0 && <p className="text-xs text-muted-foreground">Nicio alimentare. Adaugă bonurile de combustibil.</p>}
-              {alim.map((a, i) => (
-                <div key={i} className="flex items-center gap-1.5">
-                  <Input type="date" className="h-8 w-[118px] shrink-0 text-xs" value={a.date} onChange={(e) => setRow(i, 'date', e.target.value)} />
-                  <Input className="h-8 flex-1 min-w-0 text-xs" placeholder="Bon" value={a.bon} onChange={(e) => setRow(i, 'bon', e.target.value)} />
-                  <Input type="number" step="0.01" className="h-8 w-24 shrink-0 text-xs" placeholder="Litri" value={a.liters} onChange={(e) => setRow(i, 'liters', e.target.value)} />
-                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeRow(i)}>
-                    <XIcon className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
+            {usesTank && consumSection('l', fuelEntries, norma, setNorma)}
+            {usesBatt && consumSection('kWh', energyEntries, normaEnergie, setNormaEnergie)}
 
             {/* Evenimente — tie Comodat sessions to promo events (AI). Import from
                 the HR calendar (period) or add manually. */}
@@ -2030,6 +2058,8 @@ interface VehicleFormValue {
   fuel_tank_capacity_liters: number
   battery_capacity_kwh: number
   odometer_km: string
+  norma_combustibil: string
+  norma_energie: string
   company_id: string
   vignette_valid_until: string
   itp_valid_until: string
@@ -2045,7 +2075,7 @@ function emptyVehicleForm(companyId?: number): VehicleFormValue {
   return {
     car_id: '', vin: '', registration_number: '', mark: '', model: '', color: '',
     fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0,
-    odometer_km: '', company_id: companyId ? String(companyId) : '',
+    odometer_km: '', norma_combustibil: '', norma_energie: '', company_id: companyId ? String(companyId) : '',
     vignette_valid_until: '', itp_valid_until: '', insurance_valid_until: '',
     insurance_doc: '', talon_doc: '', civ_doc: '', registration_doc: '', offer_doc: '',
   }
@@ -2063,6 +2093,8 @@ function vehicleToForm(v: FpVehicle): VehicleFormValue {
     fuel_tank_capacity_liters: v.fuel_tank_capacity_liters ?? 0,
     battery_capacity_kwh: v.battery_capacity_kwh ?? 0,
     odometer_km: v.odometer_km != null ? String(v.odometer_km) : '',
+    norma_combustibil: v.norma_combustibil != null ? String(v.norma_combustibil) : '',
+    norma_energie: v.norma_energie != null ? String(v.norma_energie) : '',
     company_id: v.company_id ? String(v.company_id) : '',
     vignette_valid_until: v.vignette_valid_until ? String(v.vignette_valid_until).slice(0, 10) : '',
     itp_valid_until: v.itp_valid_until ? String(v.itp_valid_until).slice(0, 10) : '',
@@ -2244,6 +2276,18 @@ function VehicleFormFields({
         <Label className="text-xs">Starting odometer (km)</Label>
         <Input type="number" min={0} value={value.odometer_km} onChange={(e) => onChange({ odometer_km: e.target.value })} placeholder="e.g., 12" />
       </div>
+      {usesFuelTank(value.fuel_type) && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Normă consum (l/100 km)</Label>
+          <Input type="number" min={0} step="0.1" value={value.norma_combustibil} onChange={(e) => onChange({ norma_combustibil: e.target.value })} placeholder="ex. 6.5" />
+        </div>
+      )}
+      {usesBattery(value.fuel_type) && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Normă energie (kWh/100 km)</Label>
+          <Input type="number" min={0} step="0.1" value={value.norma_energie} onChange={(e) => onChange({ norma_energie: e.target.value })} placeholder="ex. 17.5" />
+        </div>
+      )}
       <div className="space-y-1.5">
         <Label className="text-xs">Company</Label>
         <Select value={value.company_id} onValueChange={(v) => onChange({ company_id: v })}>
@@ -2328,6 +2372,8 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
         fuel_tank_capacity_liters: usesFuelTank(newVehicle.fuel_type) ? newVehicle.fuel_tank_capacity_liters : null,
         battery_capacity_kwh: usesBattery(newVehicle.fuel_type) ? newVehicle.battery_capacity_kwh : null,
         odometer_km: newVehicle.odometer_km.trim() === '' ? null : Number(newVehicle.odometer_km),
+        norma_combustibil: newVehicle.norma_combustibil.trim() === '' ? null : Number(newVehicle.norma_combustibil),
+        norma_energie: newVehicle.norma_energie.trim() === '' ? null : Number(newVehicle.norma_energie),
         company_id: newVehicle.company_id ? Number(newVehicle.company_id) : undefined,
         vignette_valid_until: newVehicle.vignette_valid_until || undefined,
         itp_valid_until: newVehicle.itp_valid_until || undefined,
@@ -2449,6 +2495,8 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
         fuel_tank_capacity_liters: usesFuelTank(ft) ? Number(editForm.fuel_tank_capacity_liters) : null,
         battery_capacity_kwh: usesBattery(ft) ? Number(editForm.battery_capacity_kwh) : null,
         odometer_km: editForm.odometer_km.trim() === '' ? null : Number(editForm.odometer_km),
+        norma_combustibil: editForm.norma_combustibil.trim() === '' ? null : Number(editForm.norma_combustibil),
+        norma_energie: editForm.norma_energie.trim() === '' ? null : Number(editForm.norma_energie),
         company_id: editForm.company_id ? Number(editForm.company_id) : null,
         vignette_valid_until: editForm.vignette_valid_until || null,
         itp_valid_until: editForm.itp_valid_until || null,

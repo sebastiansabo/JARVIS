@@ -290,6 +290,8 @@ def api_create_vehicle():
             'fuel_tank_capacity_liters': fuel_liters,
             'battery_capacity_kwh': battery_kwh,
             'odometer_km': _to_int_or_none(data.get('odometer_km')),
+            'norma_combustibil': _to_num_or_none(data.get('norma_combustibil')),
+            'norma_energie': _to_num_or_none(data.get('norma_energie')),
             'company_id': company_id,
             'vignette_valid_until': (data.get('vignette_valid_until') or '').strip() or None,
             'itp_valid_until': (data.get('itp_valid_until') or '').strip() or None,

@@ -22,6 +22,8 @@ export interface RouteSheetAlimentare {
   date: string
   bon: string
   liters: number
+  lei?: number
+  unit?: 'l' | 'kWh'
 }
 
 export interface GapFillContract {
@@ -73,6 +75,7 @@ export interface StoredRouteSheet {
   session_count: number
   total_km: number
   norma_combustibil: number | null
+  norma_energie: number | null
   alimentari: RouteSheetAlimentare[] | null
   evenimente: RouteSheetEvent[] | null
   generated_by_name: string | null
@@ -152,7 +155,7 @@ export const foiParcursApi = {
   getVehicle: (id: number) =>
     api.get<{ success: boolean; vehicle: FpVehicle }>(`${BASE}/vehicles/${id}`),
 
-  createVehicle: (data: { vin: string; registration_number?: string; car_id?: string; mark: string; brand?: string; model: string; color?: string; fuel_type: string; fuel_tank_capacity_liters?: number | null; battery_capacity_kwh?: number | null; odometer_km?: number | null; company_id?: number; vignette_valid_until?: string; itp_valid_until?: string; insurance_valid_until?: string; insurance_doc?: string; talon_doc?: string; civ_doc?: string; registration_doc?: string; offer_doc?: string }) =>
+  createVehicle: (data: { vin: string; registration_number?: string; car_id?: string; mark: string; brand?: string; model: string; color?: string; fuel_type: string; fuel_tank_capacity_liters?: number | null; battery_capacity_kwh?: number | null; odometer_km?: number | null; norma_combustibil?: number | null; norma_energie?: number | null; company_id?: number; vignette_valid_until?: string; itp_valid_until?: string; insurance_valid_until?: string; insurance_doc?: string; talon_doc?: string; civ_doc?: string; registration_doc?: string; offer_doc?: string }) =>
     api.post<{ success: boolean; vehicle: FpVehicle }>(`${BASE}/vehicles`, data),
 
   updateVehicle: (id: number, data: Partial<FpVehicle>) =>
@@ -298,13 +301,13 @@ export const foiParcursApi = {
   // user-entered fuel data; regenerate rebuilds + overwrites the stored copy.
   generateRouteSheetPdf: async (
     vin: string, year: number, month: number,
-    opts: { regenerate?: boolean; norma?: number | null; alimentari?: RouteSheetAlimentare[]; events?: RouteSheetEvent[] } = {},
+    opts: { regenerate?: boolean; norma?: number | null; norma_energie?: number | null; alimentari?: RouteSheetAlimentare[]; events?: RouteSheetEvent[] } = {},
   ): Promise<Blob> => {
     const res = await fetch(`${BASE}/route-sheet/pdf`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ vin, year, month, regenerate: !!opts.regenerate, norma: opts.norma ?? null, alimentari: opts.alimentari ?? [], events: opts.events ?? [] }),
+      body: JSON.stringify({ vin, year, month, regenerate: !!opts.regenerate, norma: opts.norma ?? null, norma_energie: opts.norma_energie ?? null, alimentari: opts.alimentari ?? [], events: opts.events ?? [] }),
     })
     if (!res.ok) {
       let msg = 'Generarea foii de parcurs a eșuat'
