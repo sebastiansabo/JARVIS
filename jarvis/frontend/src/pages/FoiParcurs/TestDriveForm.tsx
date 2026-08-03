@@ -584,13 +584,16 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                 <SelectValue placeholder={companyId ? 'Selectează vehiculul' : 'Selectează întâi compania'} />
               </SelectTrigger>
               <SelectContent>
-                {visibleVehicles.map((v) => (
-                  <SelectItem key={v.id} value={String(v.id)}>
-                    {[v.mark, v.model].filter(Boolean).join(' ') || '—'} — {v.registration_number || v.vin}
-                    {v.is_active === false ? ' · 🗄 Arhivat' : ''}
-                    {(v.locked_out || v.blocked_now) ? ` · 🔒 Blocat${(v.locked_out ? v.lockout_category : v.active_block_category) ? ` (${reasonLabel(v.locked_out ? v.lockout_category : v.active_block_category)})` : ''}` : ''}
-                  </SelectItem>
-                ))}
+                {visibleVehicles.map((v) => {
+                  const blockCategory = v.locked_out ? v.lockout_category : v.active_block_category
+                  return (
+                    <SelectItem key={v.id} value={String(v.id)}>
+                      {[v.mark, v.model].filter(Boolean).join(' ') || '—'} — {v.registration_number || v.vin}
+                      {v.is_active === false ? ' · 🗄 Arhivat' : ''}
+                      {(v.locked_out || v.blocked_now) ? ` · 🔒 Blocat${blockCategory ? ` (${reasonLabel(blockCategory)})` : ''}` : ''}
+                    </SelectItem>
+                  )
+                })}
               </SelectContent>
             </Select>
             {companyId != null && (hasHiddenVehicles || showAllVehicles) && (
@@ -957,7 +960,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
               {[pendingLockedVehicle.mark, pendingLockedVehicle.model].filter(Boolean).join(' ')} — {pendingLockedVehicle.registration_number || pendingLockedVehicle.vin}
             </p>
             <p className="mt-1 text-sm">
-              Motiv: <span className="font-medium">{reasonLabel(pendingLockedVehicle.lockout_category) || 'Blocată'}</span>
+              Motiv: <span className="font-medium">{reasonLabel(pendingLockedVehicle.locked_out ? pendingLockedVehicle.lockout_category : pendingLockedVehicle.active_block_category) || 'Blocată'}</span>
               {pendingLockedVehicle.lockout_note ? ` — ${pendingLockedVehicle.lockout_note}` : ''}
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
