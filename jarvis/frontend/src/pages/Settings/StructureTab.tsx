@@ -495,6 +495,7 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
   const [postalCode, setPostalCode] = useState('')
   const [administrator, setAdministrator] = useState('')
   const [gdprText, setGdprText] = useState('')
+  const [alertEmail, setAlertEmail] = useState('')
 
   const resetForm = () => {
     if (company) {
@@ -506,9 +507,10 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
       setCounty((company as any).county || ''); setPostalCode((company as any).postal_code || '')
       setAdministrator((company as any).administrator || '')
       setGdprText((company as any).gdpr_text || '')
+      setAlertEmail((company as any).alert_email || '')
     } else {
       setName(''); setVat(''); setParentId('none'); setLogoPreview(null)
-      setRegNo(''); setIban(''); setBank(''); setSwift(''); setStreet(''); setCity(''); setCounty(''); setPostalCode(''); setAdministrator(''); setGdprText('')
+      setRegNo(''); setIban(''); setBank(''); setSwift(''); setStreet(''); setCity(''); setCounty(''); setPostalCode(''); setAdministrator(''); setGdprText(''); setAlertEmail('')
     }
   }
 
@@ -597,6 +599,10 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
             <Label>Administrator</Label>
             <Input value={administrator} onChange={(e) => setAdministrator(e.target.value)} placeholder="e.g. Ioan Mezei" />
           </div>
+          <div className="grid gap-2">
+            <Label>Email alerte auto (rovinietă / RCA / ITP)</Label>
+            <Input type="email" value={alertEmail} onChange={(e) => setAlertEmail(e.target.value)} placeholder="ex. flota@companie.ro" />
+          </div>
           <div className="space-y-1.5">
             <Label>Text GDPR (prelucrarea datelor)</Label>
             <textarea
@@ -652,7 +658,7 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             disabled={!name || isPending}
-            onClick={() => onSave({ company: name, vat: vat || undefined, parent_company_id: parentId === 'none' ? null : Number(parentId), reg_no: regNo || undefined, iban: iban || undefined, bank: bank || undefined, swift: swift || undefined, street: street || undefined, city: city || undefined, county: county || undefined, postal_code: postalCode || undefined, administrator: administrator || undefined, gdpr_text: gdprText || undefined } as any)}
+            onClick={() => onSave({ company: name, vat: vat || undefined, parent_company_id: parentId === 'none' ? null : Number(parentId), reg_no: regNo || undefined, iban: iban || undefined, bank: bank || undefined, swift: swift || undefined, street: street || undefined, city: city || undefined, county: county || undefined, postal_code: postalCode || undefined, administrator: administrator || undefined, gdpr_text: gdprText || undefined, alert_email: alertEmail || undefined } as any)}
           >
             {isPending ? 'Saving...' : 'Save'}
           </Button>

@@ -212,6 +212,11 @@ def create_schema_core(conn, cursor):
                 ALTER TABLE companies ADD COLUMN administrator TEXT;
                 UPDATE companies SET administrator = 'Ioan Mezei' WHERE UPPER(company) LIKE '%AUTOWORLD%';
             END IF;
+            -- Fleet alert email: where vehicle document-expiry (rovinietă/RCA/ITP)
+            -- notifications for this company's cars are sent.
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'alert_email') THEN
+                ALTER TABLE companies ADD COLUMN alert_email VARCHAR(255);
+            END IF;
         END $$;
     ''')
 
