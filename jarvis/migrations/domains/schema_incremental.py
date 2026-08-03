@@ -2105,6 +2105,10 @@ def _create_schema_incremental_continued(conn, cursor):
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='norma_energie') THEN
                 ALTER TABLE fp_vehicles ADD COLUMN norma_energie NUMERIC(5,2);
             END IF;
+            -- Vehicle category shown on the Foaie de Parcurs (e.g. "AUTOTURISM M1G").
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='category') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN category VARCHAR(60);
+            END IF;
             -- Vehicle documents + validity dates (rovinietă/vignette, ITP, RCA
             -- insurance validity; talon/CIV/insurance/registration scans as base64).
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fp_vehicles' AND column_name='vignette_valid_until') THEN
