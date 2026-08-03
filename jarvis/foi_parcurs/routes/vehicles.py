@@ -176,6 +176,74 @@ def api_update_lockout_reason(reason_id):
     return jsonify({'success': True, 'reason': row})
 
 
+# ── Archive a car (soft-delete) with a reason ─────────────────────────────
+
+@foi_parcurs_bp.route('/api/foi-parcurs/vehicles/<int:vehicle_id>/archive', methods=['POST'])
+@login_required
+def api_archive_vehicle(vehicle_id):
+    """Archive a car out of the fleet (soft-delete, restorable) with a reason
+    picked from the configurable Motive arhivare list."""
+    data = request.get_json() or {}
+    category = data.get('category')
+    if category not in (_vehicle_repo.get_active_archive_slugs() or set()):
+        return jsonify({'success': False, 'error': 'Invalid archive reason'}), 400
+    note = (data.get('note') or '').strip() or None
+    row = _vehicle_repo.archive_vehicle(vehicle_id, category, note)
+    if not row:
+        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+    return jsonify({'success': True})
+
+
+# ── Archive reasons (configurable, editable in Settings → Motive arhivare) ──
+
+@foi_parcurs_bp.route('/api/foi-parcurs/archive-reasons', methods=['GET'])
+@login_required
+def api_list_archive_reasons():
+    """List archive reasons. ?active_only=true for the archive picker."""
+    active_only = request.args.get('active_only', 'false').lower() == 'true'
+    reasons = _vehicle_repo.list_archive_reasons(active_only=active_only)
+    return jsonify({'success': True, 'reasons': reasons or []})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/archive-reasons', methods=['POST'])
+@login_required
+def api_create_archive_reason():
+    """Add a new archive reason. Slug is derived from the label (kept unique)."""
+    data = request.get_json() or {}
+    label = (data.get('label') or '').strip()
+    if not label:
+        return jsonify({'success': False, 'error': 'label is required'}), 400
+    base = _slugify_reason(label)
+    slug, i = base, 2
+    while _vehicle_repo.archive_slug_exists(slug):
+        slug = f'{base[:37]}-{i}'
+        i += 1
+    sort_order = _to_int_or_none(data.get('sort_order')) or 0
+    row = _vehicle_repo.create_archive_reason(slug, label, sort_order)
+    return jsonify({'success': True, 'reason': row})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/archive-reasons/<int:reason_id>', methods=['PUT'])
+@login_required
+def api_update_archive_reason(reason_id):
+    """Edit an archive reason's label/order or deactivate it (soft; slug is
+    stable so already-archived cars keep their reference)."""
+    existing = _vehicle_repo.get_archive_reason(reason_id)
+    if not existing:
+        return jsonify({'success': False, 'error': 'Reason not found'}), 404
+    data = request.get_json() or {}
+    label = (data.get('label') or existing['label']).strip()
+    if not label:
+        return jsonify({'success': False, 'error': 'label is required'}), 400
+    sort_order = _to_int_or_none(data.get('sort_order'))
+    if sort_order is None:
+        sort_order = existing['sort_order']
+    is_active = data.get('is_active')
+    is_active = existing['is_active'] if is_active is None else bool(is_active)
+    row = _vehicle_repo.update_archive_reason(reason_id, label, sort_order, is_active)
+    return jsonify({'success': True, 'reason': row})
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/odometer-history', methods=['GET'])
 @login_required
 def api_odometer_history():

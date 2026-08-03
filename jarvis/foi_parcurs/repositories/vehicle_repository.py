@@ -21,6 +21,8 @@ class FPVehicleRepository(BaseRepository):
         # Lockout state so the Driving Park + session car pickers can show a car
         # as blocked (disabled) with its reason.
         'v.locked_out, v.lockout_category, v.lockout_note, v.lockout_until, '
+        # Archival reason so the Driving Park can show why an archived car left.
+        'v.archive_category, v.archive_note, v.archived_at, '
         'v.created_at, v.updated_at, v.vignette_valid_until, v.itp_valid_until, '
         'v.insurance_valid_until, c.company AS company_name, '
         # Cheap doc-availability flags so clients (mobile Parc Auto) know which
@@ -110,6 +112,18 @@ class FPVehicleRepository(BaseRepository):
             (vehicle_id,),
         )
 
+    def archive_vehicle(self, vehicle_id, category, note):
+        """Soft-delete a car WITH a reason: stores the reason slug, an optional
+        note and the archival timestamp (mirrors lock_vehicle)."""
+        return self.execute(
+            '''UPDATE fp_vehicles
+               SET is_active = FALSE, archive_category = %s, archive_note = %s,
+                   archived_at = NOW(), updated_at = NOW()
+               WHERE id = %s RETURNING *''',
+            (category, note, vehicle_id),
+            returning=True,
+        )
+
     # ── Lockout: block a car from the driving park ──────────────────────────
 
     def lock_vehicle(self, vehicle_id, category, note, until, user_id):
@@ -174,6 +188,44 @@ class FPVehicleRepository(BaseRepository):
     def update_lockout_reason(self, reason_id, label, sort_order, is_active):
         return self.execute(
             '''UPDATE fp_lockout_reasons
+               SET label = %s, sort_order = %s, is_active = %s, updated_at = NOW()
+               WHERE id = %s RETURNING *''',
+            (label, sort_order, is_active, reason_id),
+            returning=True,
+        )
+
+    # ── Archive reasons (configurable, editable in Settings → Motive arhivare) ─
+
+    def list_archive_reasons(self, active_only=False):
+        """All archive reasons ordered for display. active_only for the picker."""
+        where = 'WHERE is_active = TRUE' if active_only else ''
+        return self.query_all(
+            f'SELECT id, slug, label, sort_order, is_active '
+            f'FROM fp_archive_reasons {where} ORDER BY sort_order, label'
+        )
+
+    def get_active_archive_slugs(self):
+        """Slugs currently valid for archiving a car (for archive-endpoint validation)."""
+        rows = self.query_all('SELECT slug FROM fp_archive_reasons WHERE is_active = TRUE')
+        return {r['slug'] for r in (rows or [])}
+
+    def archive_slug_exists(self, slug):
+        return self.query_one('SELECT 1 FROM fp_archive_reasons WHERE slug = %s', (slug,)) is not None
+
+    def create_archive_reason(self, slug, label, sort_order=0):
+        return self.execute(
+            '''INSERT INTO fp_archive_reasons (slug, label, sort_order)
+               VALUES (%s, %s, %s) RETURNING *''',
+            (slug, label, sort_order),
+            returning=True,
+        )
+
+    def get_archive_reason(self, reason_id):
+        return self.query_one('SELECT * FROM fp_archive_reasons WHERE id = %s', (reason_id,))
+
+    def update_archive_reason(self, reason_id, label, sort_order, is_active):
+        return self.execute(
+            '''UPDATE fp_archive_reasons
                SET label = %s, sort_order = %s, is_active = %s, updated_at = NOW()
                WHERE id = %s RETURNING *''',
             (label, sort_order, is_active, reason_id),

@@ -165,6 +165,10 @@ export const foiParcursApi = {
   deleteVehicle: (id: number) =>
     api.delete<{ success: boolean }>(`${BASE}/vehicles/${id}`),
 
+  // ── Archive: soft-delete a car with a reason (restorable via updateVehicle) ──
+  archiveVehicle: (id: number, data: { category: string; note?: string }) =>
+    api.post<{ success: boolean }>(`${BASE}/vehicles/${id}/archive`, data),
+
   // ── Lockout: block/unblock a car from the driving park ──
   lockVehicle: (id: number, data: { category: string; note?: string; until?: string | null }) =>
     api.post<{ success: boolean }>(`${BASE}/vehicles/${id}/lock`, data),
@@ -180,6 +184,16 @@ export const foiParcursApi = {
     api.post<{ success: boolean; reason: import('@/types/foiParcurs').LockoutReason }>(`${BASE}/lockout-reasons`, data),
   updateLockoutReason: (id: number, data: { label?: string; sort_order?: number; is_active?: boolean }) =>
     api.put<{ success: boolean; reason: import('@/types/foiParcurs').LockoutReason }>(`${BASE}/lockout-reasons/${id}`, data),
+
+  // ── Archive reasons (configurable, editable in Settings → Motive arhivare) ──
+  getArchiveReasons: (activeOnly = false) =>
+    api.get<{ success: boolean; reasons: import('@/types/foiParcurs').ArchiveReason[] }>(
+      `${BASE}/archive-reasons`, { active_only: String(activeOnly) },
+    ),
+  createArchiveReason: (data: { label: string; sort_order?: number }) =>
+    api.post<{ success: boolean; reason: import('@/types/foiParcurs').ArchiveReason }>(`${BASE}/archive-reasons`, data),
+  updateArchiveReason: (id: number, data: { label?: string; sort_order?: number; is_active?: boolean }) =>
+    api.put<{ success: boolean; reason: import('@/types/foiParcurs').ArchiveReason }>(`${BASE}/archive-reasons/${id}`, data),
 
   // ── Companies ──
   getCompanies: () =>
