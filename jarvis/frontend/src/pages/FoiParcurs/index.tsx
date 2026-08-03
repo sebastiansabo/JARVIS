@@ -2646,12 +2646,12 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                       )}
                       {v.is_active && (v.locked_out || v.blocked_now) && (
                         <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                          🔒 Blocat{v.blocked_now && !v.locked_out && v.active_block_end ? ` până ${v.active_block_end}` : ''}
+                          🔒 Blocat{v.blocked_now && !v.locked_out && v.active_block_end ? ` până ${fmtValidity(v.active_block_end)}` : ''}
                         </span>
                       )}
                       {v.is_active && !v.locked_out && !v.blocked_now && v.next_block_start && (
                         <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                          🗓 Programat {v.next_block_start}
+                          🗓 Programat {fmtValidity(v.next_block_start)}
                         </span>
                       )}
                     </TableCell>
