@@ -28,10 +28,12 @@ import {
   FileSpreadsheet,
   PlayCircle,
   Loader2,
+  CalendarClock,
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import LockVehicleDialog from './LockVehicleDialog'
+import ScheduleBlockDialog from './ScheduleBlockDialog'
 import ArchiveVehicleDialog from './ArchiveVehicleDialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -2437,6 +2439,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
 
   // Lockout — block/unblock a car from the driving park.
   const [lockingVehicle, setLockingVehicle] = useState<FpVehicle | null>(null)
+  const [schedulingVehicle, setSchedulingVehicle] = useState<FpVehicle | null>(null)
   const lockMutation = useMutation({
     mutationFn: (p: { id: number; category: string; note?: string; until?: string | null }) =>
       foiParcursApi.lockVehicle(p.id, { category: p.category, note: p.note, until: p.until }),
@@ -2641,8 +2644,15 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                       {!v.is_active && (
                         <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Arhivat</span>
                       )}
-                      {v.is_active && v.locked_out && (
-                        <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">🔒 Blocat</span>
+                      {v.is_active && (v.locked_out || v.blocked_now) && (
+                        <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                          🔒 Blocat{v.blocked_now && !v.locked_out && v.active_block_end ? ` până ${v.active_block_end}` : ''}
+                        </span>
+                      )}
+                      {v.is_active && !v.locked_out && !v.blocked_now && v.next_block_start && (
+                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                          🗓 Programat {v.next_block_start}
+                        </span>
                       )}
                     </TableCell>
                   )}
@@ -2694,6 +2704,10 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                               <Lock className="h-4 w-4" />
                             </Button>
                           )}
+                          <Button variant="ghost" size="sm" title="Programează blocare"
+                            onClick={() => setSchedulingVehicle(v)}>
+                            <CalendarClock className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -2763,6 +2777,13 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
           submitting={lockMutation.isPending}
           onClose={() => setLockingVehicle(null)}
           onSubmit={(d) => lockMutation.mutate({ id: lockingVehicle.id, ...d })}
+        />
+      )}
+
+      {schedulingVehicle && (
+        <ScheduleBlockDialog
+          vehicle={schedulingVehicle}
+          onClose={() => setSchedulingVehicle(null)}
         />
       )}
 
