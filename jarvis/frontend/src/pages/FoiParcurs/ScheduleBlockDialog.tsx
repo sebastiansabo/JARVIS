@@ -14,6 +14,13 @@ const STATE_LABEL: Record<string, string> = {
   active: 'Activ', upcoming: 'Programat', past: 'Trecut', cancelled: 'Anulat',
 }
 
+// Matches the `fmtValidity` convention used across the Foi de Parcurs pages
+// (index.tsx) for displaying dates: ro-RO locale → "DD.MM.YYYY".
+function fmt(dateStr: string): string {
+  const d = new Date(dateStr)
+  return Number.isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('ro-RO')
+}
+
 export default function ScheduleBlockDialog({ vehicle, onClose }: {
   vehicle: FpVehicle
   onClose: () => void
@@ -41,7 +48,7 @@ export default function ScheduleBlockDialog({ vehicle, onClose }: {
 
   const datesValid = startDate && endDate && endDate >= startDate
   // Live overlap check across the whole window (reuses the conflicts endpoint).
-  const { data: conflictData } = useQuery({
+  const { data: conflictData, isFetching: isCheckingConflicts } = useQuery({
     queryKey: ['fp-conflicts', vehicle.vin, startDate, endDate],
     queryFn: () => foiParcursApi.getVehicleConflicts(vehicle.vin, { from: startDate, to: `${endDate} 23:59:59` }),
     enabled: !!datesValid,
@@ -60,10 +67,16 @@ export default function ScheduleBlockDialog({ vehicle, onClose }: {
       setError(''); setNote(''); setStartDate(''); setEndDate('')
       refetchBlocks(); qc.invalidateQueries({ queryKey: ['fp-vehicles'] })
     },
+    onError: (err: any) => {
+      setError(err?.data?.error || err?.message || 'Nu s-a putut salva blocarea. Încearcă din nou.')
+    },
   })
   const cancelMut = useMutation({
     mutationFn: (blockId: number) => foiParcursApi.cancelScheduledBlock(vehicle.id, blockId),
     onSuccess: () => { refetchBlocks(); qc.invalidateQueries({ queryKey: ['fp-vehicles'] }) },
+    onError: (err: any) => {
+      setError(err?.data?.error || err?.message || 'Nu s-a putut anula blocarea.')
+    },
   })
 
   const submit = () => {
@@ -90,7 +103,7 @@ export default function ScheduleBlockDialog({ vehicle, onClose }: {
                 <div key={b.id} className="flex items-center justify-between text-xs">
                   <span>
                     <span className="font-medium">{STATE_LABEL[b.state]}</span>{' '}
-                    {b.start_date} → {b.end_date} · {reasonLabel(b.category)}
+                    {fmt(b.start_date)} → {fmt(b.end_date)} · {reasonLabel(b.category)}
                   </span>
                   <Button variant="ghost" size="sm" className="h-6 w-6 p-0"
                     title="Anulează blocarea" onClick={() => cancelMut.mutate(b.id)}
@@ -140,7 +153,7 @@ export default function ScheduleBlockDialog({ vehicle, onClose }: {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Închide</Button>
-          <Button onClick={submit} disabled={createMut.isPending || !datesValid || !category}>
+          <Button onClick={submit} disabled={createMut.isPending || !datesValid || !category || isCheckingConflicts}>
             {createMut.isPending ? 'Se programează…'
               : conflicts.length > 0 ? 'Programează oricum' : 'Programează'}
           </Button>

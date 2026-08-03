@@ -87,3 +87,17 @@ def test_list(client, monkeypatch):
                         lambda vid: [{'id': 1, 'state': 'upcoming'}])
     r = client.get('/api/foi-parcurs/vehicles/3/scheduled-blocks')
     assert r.status_code == 200 and r.get_json()['blocks'][0]['state'] == 'upcoming'
+
+
+def test_create_vehicle_not_found_returns_404(client, monkeypatch):
+    monkeypatch.setattr(vroutes._vehicle_repo, 'get_identity', lambda vid: None)
+    r = client.post('/api/foi-parcurs/vehicles/3/scheduled-blocks',
+                    json={'category': 'service', 'start_date': '2026-09-01', 'end_date': '2026-09-03'})
+    assert r.status_code == 404
+
+
+def test_cancel_wrong_vehicle_returns_404(client, monkeypatch):
+    monkeypatch.setattr(vroutes._vehicle_repo, 'get_scheduled_block',
+                        lambda bid: {'id': 5, 'vehicle_id': 999})
+    r = client.delete('/api/foi-parcurs/vehicles/3/scheduled-blocks/5')
+    assert r.status_code == 404
