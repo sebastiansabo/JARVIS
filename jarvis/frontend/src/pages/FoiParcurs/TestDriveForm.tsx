@@ -197,7 +197,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const visibleVehicles = useMemo(() => {
     const base = showAllVehicles
       ? vehiclesForCompany
-      : vehiclesForCompany.filter((v) => v.is_active !== false && !v.locked_out)
+      : vehiclesForCompany.filter((v) => v.is_active !== false && !v.locked_out && !v.blocked_now)
     // Keep the currently-selected car in the list even if the toggle would hide
     // it (e.g. a blocked car selected earlier), so the trigger still renders it.
     if (selectedVehicle && !base.some((v) => v.id === selectedVehicle.id)) {
@@ -207,7 +207,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     return base
   }, [vehiclesForCompany, showAllVehicles, selectedVehicle])
   const hasHiddenVehicles = useMemo(
-    () => vehiclesForCompany.some((v) => v.is_active === false || v.locked_out),
+    () => vehiclesForCompany.some((v) => v.is_active === false || v.locked_out || v.blocked_now),
     [vehiclesForCompany],
   )
   const [pendingLockedVehicle, setPendingLockedVehicle] = useState<FpVehicle | null>(null)
@@ -311,7 +311,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     (vId: string) => {
       const v = vehiclesForCompany.find((x) => x.id === Number(vId)) ?? null
       // A blocked car needs an explicit confirmation before it's selected.
-      if (v?.locked_out) { setPendingLockedVehicle(v); return }
+      if (v?.locked_out || v?.blocked_now) { setPendingLockedVehicle(v); return }
       commitVehicle(v)
     },
     [vehiclesForCompany, commitVehicle],
@@ -417,7 +417,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(driverLicenseExpiry.trim() ? { driver_license_expiry: driverLicenseExpiry.trim() } : {}),
       ...(generalObservation.trim() ? { general_observation: generalObservation.trim() } : {}),
       ...(mktProject ? { mkt_project_id: Number(mktProject.id) } : {}),
-      ...(vehicle.locked_out ? { allow_locked: true } : {}),
+      ...(vehicle.locked_out || vehicle.blocked_now ? { allow_locked: true } : {}),
     }
   }
 
@@ -478,7 +478,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(conditionsRequired ? { general_conditions_accepted: conditionsAccepted } : {}),
       ...(generalObservation.trim() ? { general_observation: generalObservation.trim() } : {}),
       ...(mktProject ? { mkt_project_id: Number(mktProject.id) } : {}),
-      ...(selectedVehicle.locked_out ? { allow_locked: true } : {}),
+      ...(selectedVehicle.locked_out || selectedVehicle.blocked_now ? { allow_locked: true } : {}),
     }
     withConflictCheck(selectedVehicle.vin, () => activateMutation.mutate(payload), activateId)
   }
@@ -588,7 +588,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                   <SelectItem key={v.id} value={String(v.id)}>
                     {[v.mark, v.model].filter(Boolean).join(' ') || '—'} — {v.registration_number || v.vin}
                     {v.is_active === false ? ' · 🗄 Arhivat' : ''}
-                    {v.locked_out ? ` · 🔒 Blocat${v.lockout_category ? ` (${reasonLabel(v.lockout_category)})` : ''}` : ''}
+                    {(v.locked_out || v.blocked_now) ? ` · 🔒 Blocat${(v.locked_out ? v.lockout_category : v.active_block_category) ? ` (${reasonLabel(v.locked_out ? v.lockout_category : v.active_block_category)})` : ''}` : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
