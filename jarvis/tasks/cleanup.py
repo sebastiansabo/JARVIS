@@ -25,6 +25,7 @@ from tasks.verification import run_end_of_month_verification
 from tasks.hr_attendance import check_missing_punches, send_pontaje_digest, send_monthly_pontaje_summary, send_hr_weekly_digest
 from tasks.hr_courses import check_course_cert_expiry
 from tasks.foi_parcurs_expiry import check_vehicle_document_expiry
+from tasks.foi_parcurs_blocks import check_scheduled_blocks
 from tasks.carpark import cleanup_vin_cache
 from tasks.holidays import populate_holidays
 from tasks.telemetry import close_stale_sessions, cleanup_old_telemetry
@@ -311,6 +312,18 @@ def start_scheduler():
         hour=8,
         minute=45,
         id='fp_vehicle_document_expiry',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # Foi de Parcurs — scheduled-block start/end notifications (08:50 daily)
+    scheduler.add_job(
+        check_scheduled_blocks,
+        'cron',
+        hour=8,
+        minute=50,
+        id='fp_scheduled_block_boundaries',
         replace_existing=True,
         misfire_grace_time=3600,
         coalesce=True,
