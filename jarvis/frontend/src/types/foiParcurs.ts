@@ -215,6 +215,19 @@ export interface FoiContract {
   return_datetime?: string | null
   returned_at?: string | null
   departure_damage?: TdDamageItem[] | null
+  // Optional marketing project (campaign/event) this session is tied to.
+  mkt_project_id?: number | null
+  mkt_project_name?: string | null
+}
+
+// ── Marketing project (campaign/event) a Test Drive can optionally be tied to.
+// Backed by GET /api/foi-parcurs/mkt-projects/search. ──
+export interface MktProject {
+  id: number | string
+  name?: string | null
+  status?: string | null
+  company_id?: number | null
+  brand_id?: number | null
 }
 
 // ── Create Contract Payload ──
@@ -358,6 +371,8 @@ export interface TestDriveFormPayload {
   driver_license_number?: string
   driver_license_expiry?: string
   general_conditions_accepted?: boolean
+  /** Optional marketing project (campaign/event) this Test Drive is tied to. */
+  mkt_project_id?: number
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
 }
@@ -388,6 +403,8 @@ export interface ActivateTestDrivePayload {
   return_datetime?: string
   departure_damage?: TdDamageItem[]
   general_observation?: string
+  /** Optional marketing project (campaign/event) this Test Drive is tied to. */
+  mkt_project_id?: number
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
 }
