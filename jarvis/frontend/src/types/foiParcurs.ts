@@ -33,6 +33,8 @@ export interface FpVehicle {
   norma_combustibil?: number | null
   /** Per-car energy-consumption norm (kWh/100km) for electric/hybrid cars. */
   norma_energie?: number | null
+  /** Vehicle category shown on the Foaie de Parcurs (e.g. "AUTOTURISM M1G"). */
+  category?: string | null
   /** Highest known mileage: max(odometer_km, greatest km_end across the car's
    *  non-draft sessions). Drives the TD form's start prefill + "below mileage" warning. */
   mileage_floor?: number | null
