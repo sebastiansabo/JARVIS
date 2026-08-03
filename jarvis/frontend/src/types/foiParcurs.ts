@@ -29,6 +29,10 @@ export interface FpVehicle {
   fuel_tank_capacity_liters: number | null
   battery_capacity_kwh?: number | null
   odometer_km?: number | null
+  /** Per-car fuel-consumption norm (l/100km); prefills the monthly sheet's Normă. */
+  norma_combustibil?: number | null
+  /** Per-car energy-consumption norm (kWh/100km) for electric/hybrid cars. */
+  norma_energie?: number | null
   /** Highest known mileage: max(odometer_km, greatest km_end across the car's
    *  non-draft sessions). Drives the TD form's start prefill + "below mileage" warning. */
   mileage_floor?: number | null
