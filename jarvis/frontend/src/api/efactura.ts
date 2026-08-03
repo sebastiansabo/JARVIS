@@ -135,10 +135,13 @@ export const efacturaApi = {
     return res.count
   },
   getBin: async (filters: Partial<EFacturaInvoiceFilters> = {}) => {
-    const res = await api.get<{ success: boolean; data: EFacturaInvoice[]; pagination: Pagination }>(
-      `${BASE}/invoices/bin${buildQs(filters as Record<string, unknown>)}`,
-    )
-    return { invoices: res.data, pagination: res.pagination }
+    const res = await api.get<{
+      success: boolean
+      data: EFacturaInvoice[]
+      companies: { id: number; name: string; cif?: string }[]
+      pagination: Pagination
+    }>(`${BASE}/invoices/bin${buildQs(filters as Record<string, unknown>)}`)
+    return { invoices: res.data, companies: res.companies ?? [], pagination: res.pagination }
   },
   getBinCount: async () => {
     const res = await api.get<{ success: boolean; count: number }>(`${BASE}/invoices/bin/count`)
