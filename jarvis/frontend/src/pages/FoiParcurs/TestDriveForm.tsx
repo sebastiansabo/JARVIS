@@ -344,14 +344,21 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const formValid = !Object.values(missing).some(Boolean)
   // A PLANNED draft defers signature/GDPR/license to activation — mirrors the
   // backend's `required` list for status:'PLANNED' (no client_signature/gdpr_consent).
+  // Planning a draft only needs the car, the client (name) and the departure
+  // date/time — KM/fuel/advisor/signature/GDPR are all deferred to activation.
   const draftValid = !(
-    missing.company || missing.vehicle || missing.client || missing.departure ||
-    missing.odometer || missing.estimated || missing.fuel || missing.advisor || missing.returnInvalid
+    missing.company || missing.vehicle || missing.client || missing.departure || missing.returnInvalid
   )
   // Activating a PLANNED draft only needs the deferred client signature on top of
   // the draft fields — the activate endpoint requires client_signature, defaults
   // gdpr_consent to true, and never reads a driver-license photo (so don't gate on it).
-  const activateValid = draftValid && !missing.clientSig && !missing.conditions
+  // Activation (car actually goes out) keeps the operational fields required —
+  // only *planning* was relaxed to name + date.
+  const activateValid = !(
+    missing.company || missing.vehicle || missing.client || missing.departure ||
+    missing.odometer || missing.estimated || missing.fuel || missing.advisor || missing.returnInvalid ||
+    missing.clientSig || missing.conditions
+  )
   const err = (bad: boolean) => attempted && bad
 
   const damagedZoneCount = toDamagePayload(departureDamage).length
@@ -431,7 +438,8 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
 
   function handlePlan() {
     if (planMutation.isPending || submitMutation.isPending || checking) return
-    if (!draftValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
+    // Planning only needs the car + client (name) + departure date.
+    if (!draftValid || !selectedVehicle?.vin || !selectedClient) {
       setAttempted(true)
       return
     }
