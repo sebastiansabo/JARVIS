@@ -23,6 +23,11 @@ class FPVehicleRepository(BaseRepository):
         'v.locked_out, v.lockout_category, v.lockout_note, v.lockout_until, '
         # Archival reason so the Driving Park can show why an archived car left.
         'v.archive_category, v.archive_note, v.archived_at, '
+        # Scheduled-block awareness so pickers/tables can show a car blocked by a
+        # window (blocked_now) and flag an upcoming one, without pulling the table.
+        '(ab.active_block_end IS NOT NULL) AS blocked_now, '
+        'ab.active_block_category, ab.active_block_end, '
+        'nb.next_block_start, nb.next_block_end, '
         'v.created_at, v.updated_at, v.vignette_valid_until, v.itp_valid_until, '
         'v.insurance_valid_until, c.company AS company_name, '
         # Cheap doc-availability flags so clients (mobile Parc Auto) know which
@@ -39,7 +44,20 @@ class FPVehicleRepository(BaseRepository):
         "(SELECT MAX(f.km_end) FROM foi_de_parcurs f "
         "WHERE f.vin = v.vin AND f.status <> 'PLANNED'), 0)) AS mileage_floor "
         'FROM fp_vehicles v '
-        'LEFT JOIN companies c ON c.id = v.company_id'
+        'LEFT JOIN companies c ON c.id = v.company_id '
+        'LEFT JOIN LATERAL ('
+        '  SELECT b.category AS active_block_category, b.end_date AS active_block_end '
+        '  FROM fp_vehicle_blocks b '
+        '  WHERE b.vehicle_id = v.id AND b.is_active '
+        '    AND CURRENT_DATE BETWEEN b.start_date AND b.end_date '
+        '  ORDER BY b.end_date DESC LIMIT 1'
+        ') ab ON TRUE '
+        'LEFT JOIN LATERAL ('
+        '  SELECT b.start_date AS next_block_start, b.end_date AS next_block_end '
+        '  FROM fp_vehicle_blocks b '
+        '  WHERE b.vehicle_id = v.id AND b.is_active AND b.start_date > CURRENT_DATE '
+        '  ORDER BY b.start_date ASC LIMIT 1'
+        ') nb ON TRUE'
     )
 
     def get_all(self, active_only=True):
@@ -181,11 +199,93 @@ class FPVehicleRepository(BaseRepository):
         )
 
     def get_lock_by_vin(self, vin):
-        """Current lockout state for a VIN (for session-create validation)."""
+        """Effective lockout for a VIN: a manual lockout OR an active scheduled
+        block window (CURRENT_DATE within [start,end] of an active block). Manual
+        lock takes precedence. Shape matches the old manual-only return so the TD
+        gates (test_drive.py) work unchanged; adds `lock_source`."""
         return self.query_one(
-            'SELECT locked_out, lockout_category, lockout_note, lockout_until '
-            'FROM fp_vehicles WHERE vin = %s',
+            '''
+            SELECT
+                (v.locked_out OR b.id IS NOT NULL) AS locked_out,
+                CASE WHEN v.locked_out THEN v.lockout_category ELSE b.category END AS lockout_category,
+                CASE WHEN v.locked_out THEN v.lockout_note     ELSE b.note     END AS lockout_note,
+                CASE WHEN v.locked_out THEN v.lockout_until     ELSE b.end_date END AS lockout_until,
+                CASE WHEN v.locked_out THEN 'manual'
+                     WHEN b.id IS NOT NULL THEN 'scheduled' END AS lock_source
+            FROM fp_vehicles v
+            LEFT JOIN LATERAL (
+                SELECT id, category, note, end_date
+                FROM fp_vehicle_blocks
+                WHERE vehicle_id = v.id AND is_active
+                  AND CURRENT_DATE BETWEEN start_date AND end_date
+                ORDER BY end_date DESC LIMIT 1
+            ) b ON TRUE
+            WHERE v.vin = %s
+            ''',
             (vin,),
+        )
+
+    # ── Scheduled blocks (to-do #3): future date-windows that auto-block a car ──
+
+    def get_identity(self, vehicle_id):
+        """Lean identity row for a car (no document blobs) for block routes/cron."""
+        return self.query_one(
+            'SELECT id, vin, company_id, mark, model, registration_number '
+            'FROM fp_vehicles WHERE id = %s',
+            (vehicle_id,),
+        )
+
+    def list_scheduled_blocks(self, vehicle_id):
+        """All block windows for a car (newest first) with a computed state."""
+        return self.query_all(
+            '''
+            SELECT id, vehicle_id, category, note, start_date, end_date,
+                   is_active, created_by, created_at,
+                   CASE WHEN NOT is_active THEN 'cancelled'
+                        WHEN CURRENT_DATE > end_date THEN 'past'
+                        WHEN CURRENT_DATE BETWEEN start_date AND end_date THEN 'active'
+                        ELSE 'upcoming' END AS state
+            FROM fp_vehicle_blocks
+            WHERE vehicle_id = %s
+            ORDER BY start_date DESC, id DESC
+            ''',
+            (vehicle_id,),
+        )
+
+    def create_scheduled_block(self, vehicle_id, category, note, start_date, end_date, user_id):
+        return self.execute(
+            '''INSERT INTO fp_vehicle_blocks
+                 (vehicle_id, category, note, start_date, end_date, created_by)
+               VALUES (%s, %s, %s, %s, %s, %s) RETURNING *''',
+            (vehicle_id, category, note, start_date, end_date, user_id),
+            returning=True,
+        )
+
+    def get_scheduled_block(self, block_id):
+        return self.query_one('SELECT * FROM fp_vehicle_blocks WHERE id = %s', (block_id,))
+
+    def cancel_scheduled_block(self, block_id):
+        """Soft-cancel a scheduled block (keeps history)."""
+        return self.execute(
+            'UPDATE fp_vehicle_blocks SET is_active = FALSE, updated_at = NOW() '
+            'WHERE id = %s RETURNING *',
+            (block_id,),
+            returning=True,
+        )
+
+    def get_blocks_starting_or_ending_today(self):
+        """Active blocks whose window starts or ends today (for the notify cron)."""
+        return self.query_all(
+            '''
+            SELECT b.id, b.vehicle_id, b.category, b.start_date, b.end_date,
+                   v.vin, v.mark, v.model, v.registration_number, v.company_id,
+                   CASE WHEN b.start_date = CURRENT_DATE THEN 'start' ELSE 'end' END AS boundary
+            FROM fp_vehicle_blocks b
+            JOIN fp_vehicles v ON v.id = b.vehicle_id
+            WHERE b.is_active
+              AND (b.start_date = CURRENT_DATE OR b.end_date = CURRENT_DATE)
+            ORDER BY b.vehicle_id
+            ''',
         )
 
     # ── Lockout reasons (configurable, editable in Settings) ────────────────
