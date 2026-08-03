@@ -87,9 +87,11 @@ export default function EFactura() {
         ) : undefined}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${showFilters ? 'bg-muted' : ''}`} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
-              <SlidersHorizontal className="h-4 w-4" />
-            </Button>
+            {isOnMappingsTab && (
+              <Button variant="ghost" size="icon" className={`hidden md:inline-flex ${showFilters ? 'bg-muted' : ''}`} onClick={() => setShowFilters(s => !s)} title="Toggle filters">
+                <SlidersHorizontal className="h-4 w-4" />
+              </Button>
+            )}
             {isOnMappingsTab && (
               <Button size="icon" className="hidden md:inline-flex" onClick={() => setMappingAddTrigger(n => n + 1)} title="Add Mapping / Type">
                 <Plus className="h-4 w-4" />
@@ -166,7 +168,7 @@ export default function EFactura() {
       <Suspense fallback={<TabLoader />}>
         <Routes>
           <Route index element={<Navigate to="unallocated" replace />} />
-          <Route path="unallocated" element={<UnallocatedTab showHidden={showHidden} onShowHiddenChange={setShowHidden} hiddenCount={hiddenCount ?? 0} showFilters={showFilters} search={search} />} />
+          <Route path="unallocated" element={<UnallocatedTab showHidden={showHidden} onShowHiddenChange={setShowHidden} hiddenCount={hiddenCount ?? 0} search={search} />} />
           <Route path="mappings" element={<MappingsTab showFilters={showFilters} addTrigger={mappingAddTrigger} />} />
           <Route path="bin" element={<BinTab search={search} />} />
           {/* Redirect removed/old routes */}

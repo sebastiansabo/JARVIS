@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useIsMobile } from '@/hooks/useMediaQuery'
+import { useAuth } from '@/hooks/useAuth'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -13,7 +14,6 @@ import {
   FileText,
   Trash2,
   CheckSquare,
-  SlidersHorizontal,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,13 +34,11 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { QueryError } from '@/components/QueryError'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { DateField } from '@/components/ui/date-field'
 import { cn, usePersistedState } from '@/lib/utils'
 import { efacturaApi } from '@/api/efactura'
 import { organizationApi } from '@/api/organization'
@@ -53,16 +51,19 @@ import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
 import type { EFacturaInvoiceFilters } from '@/types/efactura'
 import { type InvoiceRow, type ColumnDef, columnDefMap, fmtDate } from './unallocated/UnallocatedColumns'
 import { ColumnToggle, loadColumns, saveColumns } from './unallocated/UnallocatedColumnToggle'
+import { EfacturaFilterBar } from './EfacturaFilterBar'
 import { InvoicePreviewModal } from '@/pages/Profile/InvoicePreviewModal'
 
 // ── Main Component ──────────────────────────────────────────
-export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenCount = 0, showFilters = false, search = '', companyId }: { showHidden: boolean; onShowHiddenChange?: (v: boolean) => void; hiddenCount?: number; showFilters?: boolean; search?: string; companyId?: number }) {
+export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenCount = 0, search = '' }: { showHidden: boolean; onShowHiddenChange?: (v: boolean) => void; hiddenCount?: number; search?: string }) {
   const qc = useQueryClient()
   const isMobile = useIsMobile()
+  const { user } = useAuth()
+  const autoInitRef = useRef(false)
+  const autoFallbackRef = useRef(false)
   const [savedLimit, setSavedLimit] = usePersistedState('efactura-page-size', 50)
   const [filters, setFilters] = useState<EFacturaInvoiceFilters>({ page: 1, limit: savedLimit })
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
-  const [filtersOpen, setFiltersOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
   const [confirmAction, setConfirmAction] = useState<{ action: string; ids: number[] } | null>(null)
@@ -94,11 +95,16 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   // +3 for checkbox + tags + actions columns
   const totalColSpan = activeCols.length + 3
 
-  // Sync external company filter from parent
+  // Auto-select the user's main company on first load (once).
   useEffect(() => {
-    setFilters((f) => ({ ...f, company_id: companyId, page: 1 }))
-    setSelectedIds(new Set())
-  }, [companyId])
+    if (autoInitRef.current || user == null) return
+    autoInitRef.current = true
+    if (user.company_id != null) {
+      setFilters((f) => ({ ...f, company_id: user.company_id, page: 1 }))
+    } else {
+      autoFallbackRef.current = true // no main company → stay on "All"
+    }
+  }, [user])
 
   const updateFilter = (key: string, value: string | number | boolean | undefined) => {
     setFilters((f) => ({ ...f, [key]: value || undefined, page: 1 }))
@@ -274,6 +280,16 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   const isLoading = unallocLoading || (showHidden && hiddenLoading)
   const pagination = unallocData?.pagination
 
+  // If the auto-selected main company has no rows, fall back to "All companies" (once).
+  useEffect(() => {
+    if (autoFallbackRef.current || unallocLoading || !pagination) return
+    if (filters.company_id == null || filters.company_id !== user?.company_id) return
+    autoFallbackRef.current = true
+    if (pagination.total === 0) {
+      setFilters((f) => ({ ...f, company_id: undefined, page: 1 }))
+    }
+  }, [pagination, unallocLoading, filters.company_id, user])
+
   // Entity tags for e-factura invoices
   const efacturaIds = useMemo(() => invoices.map((i) => i.id), [invoices])
   const { data: efacturaTagsMap = {} } = useQuery({
@@ -432,144 +448,57 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      {(() => {
-        const activeFilterCount = [
-          filters.company_id != null,
-          filters.direction != null,
-          filters.start_date,
-          filters.end_date,
-          filterTagIds.length > 0,
-        ].filter(Boolean).length
-
-        const filterControls = (
-          <>
-            {companies.length > 0 && (
-              <Select
-                value={filters.company_id?.toString() ?? 'all'}
-                onValueChange={(v) => updateFilter('company_id', v === 'all' ? undefined : Number(v))}
-              >
-                <SelectTrigger className={isMobile ? 'w-full' : 'w-[200px]'}>
-                  <SelectValue placeholder="All companies" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All companies</SelectItem>
-                  {companies.map((c) => (
-                    <SelectItem key={c.id} value={c.id.toString()}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
-            <Select
-              value={filters.direction ?? 'all'}
-              onValueChange={(v) => updateFilter('direction', v === 'all' ? undefined : v)}
-            >
-              <SelectTrigger className={isMobile ? 'w-full' : 'w-[130px]'}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="received">Received</SelectItem>
-                <SelectItem value="sent">Sent</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <DateField
-              mode="range"
-              startDate={filters.start_date ?? ''}
-              endDate={filters.end_date ?? ''}
-              onRangeChange={(s, e) => {
-                setFilters((f) => ({ ...f, start_date: s || undefined, end_date: e || undefined, page: 1 }))
-                setSelectedIds(new Set())
-              }}
-            />
-          </>
-        )
-
-        const clearFilters = () => {
+      {/* Filters — always visible */}
+      <EfacturaFilterBar
+        companies={companies}
+        companyId={filters.company_id ?? undefined}
+        direction={filters.direction ?? undefined}
+        startDate={filters.start_date ?? undefined}
+        endDate={filters.end_date ?? undefined}
+        onCompanyChange={(v) => updateFilter('company_id', v)}
+        onDirectionChange={(v) => updateFilter('direction', v)}
+        onDateRangeChange={(s, e) => {
+          setFilters((f) => ({ ...f, start_date: s, end_date: e, page: 1 }))
+          setSelectedIds(new Set())
+        }}
+        onClear={() => {
           setFilters((f) => ({ page: 1, limit: f.limit }))
           setFilterTagIds([])
           setSelectedIds(new Set())
-        }
-
-        if (isMobile) {
-          return (
-            <>
-              <div className="flex gap-2">
-                <Button variant="outline" size="icon" className="shrink-0" onClick={() => setFiltersOpen(true)}>
-                  <SlidersHorizontal className="h-4 w-4" />
-                  {activeFilterCount > 0 && (
-                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
-                      {activeFilterCount}
-                    </span>
-                  )}
-                </Button>
-                <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
-                {selectMode ? (
-                  <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { setSelectedIds(new Set()); setSelectMode(false) }}>Cancel</Button>
-                ) : (
-                  <Button variant="outline" size="icon" className="shrink-0" onClick={() => setSelectMode(true)} title="Select">
-                    <CheckSquare className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-              <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-                <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto px-4">
-                  <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
-                  <div className="grid grid-cols-2 gap-2 py-4">
-                    {filterControls}
-                    <div className="col-span-2 flex gap-2 pt-2">
-                      {activeFilterCount > 0 && (
-                        <Button variant="outline" onClick={() => { clearFilters(); setFiltersOpen(false) }} className="flex-1">
-                          Clear All
-                        </Button>
-                      )}
-                      <Button onClick={() => setFiltersOpen(false)} className="flex-1">
-                        Apply
-                      </Button>
-                    </div>
-                  </div>
-                </SheetContent>
-              </Sheet>
-            </>
+        }}
+      >
+        <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
+        {isMobile && (
+          selectMode ? (
+            <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { setSelectedIds(new Set()); setSelectMode(false) }}>Cancel</Button>
+          ) : (
+            <Button variant="outline" size="icon" className="shrink-0" onClick={() => setSelectMode(true)} title="Select">
+              <CheckSquare className="h-4 w-4" />
+            </Button>
           )
-        }
-
-        if (!showFilters) return null
-        return (
-          <div className="flex flex-wrap items-center gap-2">
-            {filterControls}
-            <TagFilter selectedTagIds={filterTagIds} onChange={setFilterTagIds} iconOnly />
-            {activeFilterCount > 0 && (
-              <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
-            )}
-            <div className="ml-auto flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-destructive"
-                disabled={filters.company_id == null || clearLoading}
-                onClick={handleClearClick}
-                title={filters.company_id == null ? 'Select a company to clear' : "Clear this company's unallocated list to the Bin"}
-              >
-                <Trash2 className="mr-1 h-3 w-3" /> Clear
-              </Button>
-              {onShowHiddenChange && (
-                <div className="flex items-center gap-1.5">
-                  <Switch id="show-hidden" checked={showHidden} onCheckedChange={onShowHiddenChange} />
-                  <Label htmlFor="show-hidden" className="text-xs cursor-pointer text-muted-foreground whitespace-nowrap">
-                    Show Hidden ({hiddenCount})
-                  </Label>
-                </div>
-              )}
-              <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-destructive"
+            disabled={filters.company_id == null || clearLoading}
+            onClick={handleClearClick}
+            title={filters.company_id == null ? 'Select a company to clear' : "Clear this company's unallocated list to the Bin"}
+          >
+            <Trash2 className="mr-1 h-3 w-3" /> Clear
+          </Button>
+          {onShowHiddenChange && (
+            <div className="flex items-center gap-1.5">
+              <Switch id="show-hidden" checked={showHidden} onCheckedChange={onShowHiddenChange} />
+              <Label htmlFor="show-hidden" className="text-xs cursor-pointer text-muted-foreground whitespace-nowrap">
+                Show Hidden ({hiddenCount})
+              </Label>
             </div>
-          </div>
-        )
-      })()}
+          )}
+          {!isMobile && <ColumnToggle visibleColumns={visibleColumns} onChange={setVisibleColumns} />}
+        </div>
+      </EfacturaFilterBar>
 
       {/* Bulk actions */}
       {selectedIds.size > 0 && (
