@@ -2005,6 +2005,37 @@ def _create_schema_incremental_continued(conn, cursor):
     # Widen lockout_category so custom reason slugs (up to 40 chars) fit.
     cursor.execute("ALTER TABLE fp_vehicles ALTER COLUMN lockout_category TYPE VARCHAR(40)")
 
+    # ── Foi de Parcurs — vehicle archival reason (why a car left the fleet) ──
+    # Mirrors the lockout model: archive_category stores a stable slug from the
+    # configurable fp_archive_reasons list; the label is editable without
+    # orphaning already-archived cars. archived_at records when it happened.
+    cursor.execute('''
+        ALTER TABLE fp_vehicles
+            ADD COLUMN IF NOT EXISTS archive_category VARCHAR(40),
+            ADD COLUMN IF NOT EXISTS archive_note TEXT,
+            ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_archive_reasons (
+            id BIGSERIAL PRIMARY KEY,
+            slug VARCHAR(40) NOT NULL UNIQUE,
+            label VARCHAR(80) NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('''
+        INSERT INTO fp_archive_reasons (slug, label, sort_order) VALUES
+            ('sold',        'Vândut',                   1),
+            ('returned',    'Returnat (leasing/flotă)', 2),
+            ('scrapped',    'Casat',                    3),
+            ('transferred', 'Transferat',               4),
+            ('other',       'Altele',                   5)
+        ON CONFLICT (slug) DO NOTHING
+    ''')
+
     # ── Foi de Parcurs — KM configs per company ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS fp_km_configs (
