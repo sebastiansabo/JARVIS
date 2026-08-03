@@ -2005,6 +2005,31 @@ def _create_schema_incremental_continued(conn, cursor):
     # Widen lockout_category so custom reason slugs (up to 40 chars) fit.
     cursor.execute("ALTER TABLE fp_vehicles ALTER COLUMN lockout_category TYPE VARCHAR(40)")
 
+    # ── Foi de Parcurs — scheduled vehicle blocks (to-do #3) ──
+    # One row per scheduled block window for a car. Enforcement is dynamic: a car
+    # is "blocked now" if CURRENT_DATE falls inside an active window (see
+    # FPVehicleRepository.get_lock_by_vin / _LIST_SELECT). No cron flips a flag.
+    # `category` stores a reason slug from the shared fp_lockout_reasons list.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_vehicle_blocks (
+            id BIGSERIAL PRIMARY KEY,
+            vehicle_id BIGINT NOT NULL,
+            category VARCHAR(40),
+            note TEXT,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by BIGINT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            CONSTRAINT fp_vehicle_blocks_dates_chk CHECK (end_date >= start_date)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_vehicle_blocks_vehicle '
+                   'ON fp_vehicle_blocks(vehicle_id, start_date, end_date)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_vehicle_blocks_active '
+                   'ON fp_vehicle_blocks(vehicle_id) WHERE is_active')
+
     # ── Foi de Parcurs — vehicle archival reason (why a car left the fleet) ──
     # Mirrors the lockout model: archive_category stores a stable slug from the
     # configurable fp_archive_reasons list; the label is editable without
