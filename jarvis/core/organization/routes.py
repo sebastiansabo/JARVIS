@@ -289,6 +289,7 @@ def api_update_company_config(company_id):
             postal_code=data.get('postal_code', 'UNSET'),
             administrator=data.get('administrator', 'UNSET'),
             gdpr_text=data.get('gdpr_text', 'UNSET'),
+            alert_email=data.get('alert_email', 'UNSET'),
         )
         if success:
             return jsonify({'success': True})

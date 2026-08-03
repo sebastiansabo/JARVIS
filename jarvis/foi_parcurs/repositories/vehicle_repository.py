@@ -112,6 +112,38 @@ class FPVehicleRepository(BaseRepository):
             (vehicle_id,),
         )
 
+    def get_documents_expiring(self, days_ahead: int = 30) -> list:
+        """Active cars whose Rovinietă / RCA / ITP is expired or within
+        `days_ahead`. One row per (car, document): {id, vin, mark, model,
+        registration_number, company_id, doc, valid_until, days} — `days` is
+        negative when the document has already expired."""
+        return self.query_all(
+            '''
+            SELECT id, vin, mark, model, registration_number, company_id,
+                   'Rovinietă' AS doc, vignette_valid_until AS valid_until,
+                   (vignette_valid_until - CURRENT_DATE) AS days
+              FROM fp_vehicles
+             WHERE is_active AND vignette_valid_until IS NOT NULL
+               AND vignette_valid_until <= CURRENT_DATE + %s
+            UNION ALL
+            SELECT id, vin, mark, model, registration_number, company_id,
+                   'RCA (asigurare)', insurance_valid_until,
+                   (insurance_valid_until - CURRENT_DATE)
+              FROM fp_vehicles
+             WHERE is_active AND insurance_valid_until IS NOT NULL
+               AND insurance_valid_until <= CURRENT_DATE + %s
+            UNION ALL
+            SELECT id, vin, mark, model, registration_number, company_id,
+                   'ITP', itp_valid_until,
+                   (itp_valid_until - CURRENT_DATE)
+              FROM fp_vehicles
+             WHERE is_active AND itp_valid_until IS NOT NULL
+               AND itp_valid_until <= CURRENT_DATE + %s
+            ORDER BY days
+            ''',
+            (days_ahead, days_ahead, days_ahead),
+        )
+
     def archive_vehicle(self, vehicle_id, category, note):
         """Soft-delete a car WITH a reason: stores the reason slug, an optional
         note and the archival timestamp (mirrors lock_vehicle)."""
