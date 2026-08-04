@@ -4,6 +4,7 @@ import { Plus, Clock, AlertTriangle, CalendarDays, ChevronRight, MapPin, X, Sear
 import { cn } from '@/lib/utils'
 import { fieldSalesApi, type FSVisit, type FSClientSearch } from '@/api/fieldSales'
 import { VisitDetailDialog } from '@/pages/FieldSales/VisitDetailDialog'
+import NoteCaptureModal from '@/pages/FieldSales/NoteCaptureModal'
 
 const VISIT_TYPE_LABELS: Record<string, string> = {
   fleet_review: 'Revizuire flota', renewal_discussion: 'Discutie reinnoire',
@@ -333,6 +334,23 @@ export default function HubFieldSalesPanel() {
           />
         </OverlaySheet>
       )}
+
+      {/* Note-capture / finalize-with-AI-structured-note overlay. The /note
+          endpoint completes the visit server-side, so saving here IS the
+          finalize action triggered by the card's "Finalizeaza" button. */}
+      {overlay?.kind === 'note' && (() => {
+        const v = visits.find(x => x.id === overlay.id)
+        return (
+          <OverlaySheet onClose={() => setOverlay(null)}>
+            <NoteCaptureModal
+              visitId={overlay.id}
+              clientId={v?.client_id ?? 0}
+              onDone={() => { queryClient.invalidateQueries({ queryKey: ['field-sales-visits', date] }); setOverlay(null) }}
+              onCancel={() => setOverlay(null)}
+            />
+          </OverlaySheet>
+        )
+      })()}
     </div>
   )
 }
