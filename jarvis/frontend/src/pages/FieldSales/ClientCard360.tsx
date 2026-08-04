@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Building2, Car, ShoppingCart, PackageSearch, Calendar, Euro,
+  Calendar, Euro,
   Shield, TrendingUp, AlertTriangle, RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -40,27 +40,23 @@ function formatEUR(v: number | null): string {
   return new Intl.NumberFormat('ro-RO', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v)
 }
 
-function SectionEmpty({ icon: Icon, text }: { icon: React.ElementType; text: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-8">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/50 mb-2">
-        <Icon className="h-6 w-6 text-muted-foreground" />
-      </div>
-      <p className="text-sm text-muted-foreground">{text}</p>
-    </div>
-  )
+// Compact single-line empty state — replaces the old big centered icon block,
+// which wasted vertical space once the card had room to lay out real content.
+function EmptyLine({ text }: { text: string }) {
+  return <p className="py-2 text-sm text-muted-foreground">{text}</p>
 }
 
 // ── Header ──
-function HeaderSection({ clientId, profile }: {
+function HeaderSection({ clientId, clientName, profile }: {
   clientId: number
+  clientName?: string
   profile: Pick<FSClientProfile, 'client_type' | 'industry' | 'fleet_size' | 'priority' | 'renewal_score'> | null
 }) {
   return (
     <div className="rounded-2xl bg-card border p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="text-lg font-bold text-foreground truncate">Client #{clientId}</h2>
+          <h2 className="text-lg font-bold text-foreground truncate">{clientName || `Client #${clientId}`}</h2>
           {profile && (
             <p className="text-xs text-muted-foreground mt-0.5">
               {profile.client_type === 'company' ? 'Firma' : 'Persoana fizica'}
@@ -87,13 +83,21 @@ function HeaderSection({ clientId, profile }: {
 }
 
 // ── Fiscal (ANAF) ──
+// `fiscal` is the raw ANAF lookup dict as returned by the backend — flat keys
+// (denumire/cui/adresa/nrRegCom/scpTVA/telefon/stare_inregistrare), NOT the
+// normalized company_name/is_vat_payer/is_inactive/fetched_at shape.
 function FiscalSection({ fiscal, onRefresh, refreshing }: {
   fiscal: FSAnafData | null
   onRefresh: () => void
   refreshing: boolean
 }) {
+  const isVatPayer = fiscal?.scpTVA === true
+  const stareRaw = typeof fiscal?.stare_inregistrare === 'string' ? fiscal.stare_inregistrare : ''
+  const hasStare = stareRaw.trim().length > 0
+  const isActive = hasStare && stareRaw.toUpperCase().includes('INREG')
+
   return (
-    <div className="rounded-2xl bg-card border p-4">
+    <div className="rounded-2xl bg-card border p-4 h-full">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Date ANAF</h3>
         <button
@@ -107,40 +111,61 @@ function FiscalSection({ fiscal, onRefresh, refreshing }: {
       </div>
 
       {!fiscal ? (
-        <SectionEmpty icon={Building2} text="Date fiscale indisponibile" />
+        <EmptyLine text="Date fiscale indisponibile" />
       ) : (
         <div className="space-y-3">
-          <div>
-            <p className="text-xs text-muted-foreground">Denumire</p>
-            <p className="text-sm font-medium text-foreground">{fiscal.company_name}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Adresa</p>
-            <p className="text-sm text-foreground">{fiscal.address}</p>
-          </div>
+          {fiscal.denumire && (
+            <div>
+              <p className="text-xs text-muted-foreground">Denumire</p>
+              <p className="text-sm font-medium text-foreground break-words">{fiscal.denumire}</p>
+            </div>
+          )}
+          {fiscal.adresa && (
+            <div>
+              <p className="text-xs text-muted-foreground">Adresa</p>
+              <p className="text-sm text-foreground break-words">{fiscal.adresa}</p>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
-            <span className={cn('rounded-full px-2.5 py-1 text-xs font-semibold', fiscal.is_vat_payer
+            <span className={cn('rounded-full px-2.5 py-1 text-xs font-semibold', isVatPayer
               ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
               : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400')}
             >
-              {fiscal.is_vat_payer ? 'Platitor TVA' : 'Neplatitor TVA'}
+              {isVatPayer ? 'Platitor TVA' : 'Neplatitor TVA'}
             </span>
-            <span className={cn('rounded-full px-2.5 py-1 text-xs font-semibold', fiscal.is_inactive
-              ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
-              : 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300')}
-            >
-              {fiscal.is_inactive ? 'Inactiv' : 'Activ'}
-            </span>
+            {hasStare && (
+              <span className={cn('rounded-full px-2.5 py-1 text-xs font-semibold', isActive
+                ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
+                : 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300')}
+              >
+                {isActive ? 'Activ' : 'Inactiv'}
+              </span>
+            )}
           </div>
-          {fiscal.inactivation_date && (
-            <div>
-              <p className="text-xs text-muted-foreground">Data inactivarii</p>
-              <p className="text-sm text-destructive font-medium">{formatDate(fiscal.inactivation_date)}</p>
+
+          {(fiscal.cui || fiscal.nrRegCom || fiscal.telefon) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+              {fiscal.cui && (
+                <div>
+                  <p className="text-xs text-muted-foreground">CUI</p>
+                  <p className="text-sm text-foreground break-words">{fiscal.cui}</p>
+                </div>
+              )}
+              {fiscal.nrRegCom && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Nr. Reg. Com</p>
+                  <p className="text-sm text-foreground break-words">{fiscal.nrRegCom}</p>
+                </div>
+              )}
+              {fiscal.telefon && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Telefon</p>
+                  <p className="text-sm text-foreground break-words">{fiscal.telefon}</p>
+                </div>
+              )}
             </div>
           )}
-          <p className="text-[10px] text-muted-foreground/60">
-            Actualizat: {new Date(fiscal.fetched_at).toLocaleString('ro-RO')}
-          </p>
         </div>
       )}
     </div>
@@ -150,68 +175,70 @@ function FiscalSection({ fiscal, onRefresh, refreshing }: {
 // ── Fleet ──
 function FleetSection({ vehicles }: { vehicles: FSClientFleetVehicle[] }) {
   return (
-    <div className="rounded-2xl bg-card border p-4 space-y-3">
+    <div className="rounded-2xl bg-card border p-4 space-y-3 h-full">
       <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
         Flota ({vehicles.length})
       </h3>
       {vehicles.length === 0 ? (
-        <SectionEmpty icon={Car} text="Niciun vehicul in flota" />
+        <EmptyLine text="Niciun vehicul in flota" />
       ) : (
-        vehicles.map((v) => {
-          const financingExpiring = v.financing_expiry && new Date(v.financing_expiry) <= new Date(Date.now() + 90 * 86400000)
-          const warrantyExpiring = v.warranty_expiry && new Date(v.warranty_expiry) <= new Date(Date.now() + 90 * 86400000)
-          return (
-            <div
-              key={v.id}
-              className={cn('rounded-xl border p-3', v.renewal_candidate && 'border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10')}
-            >
-              <div className="flex items-start justify-between gap-2 mb-1.5">
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-sm font-semibold text-foreground truncate">{v.vehicle_make} {v.vehicle_model}</h4>
-                  <p className="text-xs text-muted-foreground">
-                    {v.vehicle_year} {v.license_plate ? `- ${v.license_plate}` : ''}
-                  </p>
-                </div>
-                {v.renewal_candidate && (
-                  <span className="shrink-0 rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                    Reinnoire
-                  </span>
-                )}
-              </div>
-
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                {v.financing_type && (
-                  <span className="flex items-center gap-1"><Euro className="h-3 w-3" />{v.financing_type}</span>
-                )}
-                {v.estimated_mileage != null && <span>{(v.estimated_mileage / 1000).toFixed(0)}k km</span>}
-                {v.vin && <span className="font-mono text-[10px]">{v.vin.slice(-6)}</span>}
-              </div>
-
-              {(financingExpiring || warrantyExpiring || v.renewal_reason) && (
-                <div className="mt-2 space-y-1">
-                  {financingExpiring && (
-                    <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                      Finantare expira: {formatDate(v.financing_expiry)}
-                    </div>
-                  )}
-                  {warrantyExpiring && (
-                    <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-                      <Shield className="h-3.5 w-3.5 shrink-0" />
-                      Garantie expira: {formatDate(v.warranty_expiry)}
-                    </div>
-                  )}
-                  {v.renewal_reason && (
-                    <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400">
-                      <TrendingUp className="h-3.5 w-3.5 shrink-0" />
-                      {v.renewal_reason}
-                    </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {vehicles.map((v) => {
+            const financingExpiring = v.financing_expiry && new Date(v.financing_expiry) <= new Date(Date.now() + 90 * 86400000)
+            const warrantyExpiring = v.warranty_expiry && new Date(v.warranty_expiry) <= new Date(Date.now() + 90 * 86400000)
+            return (
+              <div
+                key={v.id}
+                className={cn('rounded-xl border p-3', v.renewal_candidate && 'border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10')}
+              >
+                <div className="flex items-start justify-between gap-2 mb-1.5">
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-sm font-semibold text-foreground truncate">{v.vehicle_make} {v.vehicle_model}</h4>
+                    <p className="text-xs text-muted-foreground">
+                      {v.vehicle_year} {v.license_plate ? `- ${v.license_plate}` : ''}
+                    </p>
+                  </div>
+                  {v.renewal_candidate && (
+                    <span className="shrink-0 rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                      Reinnoire
+                    </span>
                   )}
                 </div>
-              )}
-            </div>
-          )
-        })
+
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  {v.financing_type && (
+                    <span className="flex items-center gap-1"><Euro className="h-3 w-3" />{v.financing_type}</span>
+                  )}
+                  {v.estimated_mileage != null && <span>{(v.estimated_mileage / 1000).toFixed(0)}k km</span>}
+                  {v.vin && <span className="font-mono text-[10px]">{v.vin.slice(-6)}</span>}
+                </div>
+
+                {(financingExpiring || warrantyExpiring || v.renewal_reason) && (
+                  <div className="mt-2 space-y-1">
+                    {financingExpiring && (
+                      <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                        Finantare expira: {formatDate(v.financing_expiry)}
+                      </div>
+                    )}
+                    {warrantyExpiring && (
+                      <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                        <Shield className="h-3.5 w-3.5 shrink-0" />
+                        Garantie expira: {formatDate(v.warranty_expiry)}
+                      </div>
+                    )}
+                    {v.renewal_reason && (
+                      <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400">
+                        <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+                        {v.renewal_reason}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
       )}
     </div>
   )
@@ -225,7 +252,7 @@ function PurchasesSection({ purchases }: { purchases: FSSaleSummary[] }) {
         Ultimele achizitii ({purchases.length})
       </h3>
       {purchases.length === 0 ? (
-        <SectionEmpty icon={ShoppingCart} text="Nicio achizitie inregistrata" />
+        <EmptyLine text="Nicio achizitie inregistrata" />
       ) : (
         purchases.map((p) => (
           <div key={p.id} className="rounded-xl border p-3">
@@ -254,7 +281,7 @@ function VisitHistorySection({ visits }: { visits: FSVisitSummary[] }) {
         Istoric vizite ({visits.length})
       </h3>
       {visits.length === 0 ? (
-        <SectionEmpty icon={Calendar} text="Niciun istoric de vizite" />
+        <EmptyLine text="Niciun istoric de vizite" />
       ) : (
         <div className="space-y-2">
           {visits.map((vh) => (
@@ -287,7 +314,7 @@ function InventoryMatchesSection({ matches }: { matches: FSInventoryMatch[] }) {
         Potriviri din stoc ({matches.length})
       </h3>
       {matches.length === 0 ? (
-        <SectionEmpty icon={PackageSearch} text="Nicio potrivire in stoc" />
+        <EmptyLine text="Nicio potrivire in stoc" />
       ) : (
         matches.map((m) => (
           <div key={m.id} className="rounded-xl border p-3">
@@ -307,7 +334,7 @@ function InventoryMatchesSection({ matches }: { matches: FSInventoryMatch[] }) {
 }
 
 // ── Main Component ──
-export default function ClientCard360({ clientId }: { clientId: number }) {
+export default function ClientCard360({ clientId, clientName }: { clientId: number; clientName?: string }) {
   const queryClient = useQueryClient()
 
   const { data, isLoading, isError, error } = useQuery({
@@ -353,14 +380,15 @@ export default function ClientCard360({ clientId }: { clientId: number }) {
   const fiscal = data?.fiscal ?? null
 
   return (
-    <div className="space-y-4">
-      <HeaderSection clientId={clientId} profile={profile} />
+    <div className="space-y-4 p-4 sm:p-6">
+      <HeaderSection clientId={clientId} clientName={clientName} profile={profile} />
 
       {/* Fiscal + Fleet read as two peer "info" panels — pair them on desktop
           so the card uses the extra horizontal space instead of one narrow
-          column of stacked cards. */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="space-y-2">
+          column of stacked cards. Fleet gets the wider slot since it lays
+          out its own sub-grid of vehicle cards. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-1 space-y-2">
           <FiscalSection
             fiscal={fiscal}
             onRefresh={() => refreshFiscalMutation.mutate()}
@@ -372,15 +400,18 @@ export default function ClientCard360({ clientId }: { clientId: number }) {
             </p>
           )}
         </div>
-        <FleetSection vehicles={fleet} />
+        <div className="lg:col-span-2">
+          <FleetSection vehicles={fleet} />
+        </div>
       </div>
 
-      {/* These remain full-width, single-column lists (purchases/visits/stock
-          matches read as chronological or scannable lists, not paired info
-          panels) — forcing them into two columns wouldn't read better. */}
-      <PurchasesSection purchases={purchases} />
-      <VisitHistorySection visits={visitHistory} />
-      <InventoryMatchesSection matches={inventoryMatches} />
+      {/* Chronological / scannable lists — lay these out side by side once
+          there's room instead of stacking them full-width. */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <PurchasesSection purchases={purchases} />
+        <VisitHistorySection visits={visitHistory} />
+        <InventoryMatchesSection matches={inventoryMatches} />
+      </div>
     </div>
   )
 }
