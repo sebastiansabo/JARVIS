@@ -1,19 +1,21 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Clock, AlertTriangle, CalendarDays, ChevronRight, MapPin, X, Search } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, usePersistedState } from '@/lib/utils'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { fieldSalesApi, type FSVisit, type FSClientSearch } from '@/api/fieldSales'
 import { VisitDetailDialog } from '@/pages/FieldSales/VisitDetailDialog'
 import NoteCaptureModal from '@/pages/FieldSales/NoteCaptureModal'
 import ClientCard360 from '@/pages/FieldSales/ClientCard360'
+import FieldSalesCalendar from '@/pages/Hub/FieldSalesCalendar'
 
-const VISIT_TYPE_LABELS: Record<string, string> = {
+export const VISIT_TYPE_LABELS: Record<string, string> = {
   fleet_review: 'Revizuire flota', renewal_discussion: 'Discutie reinnoire',
   test_drive_followup: 'Follow-up test drive', service_followup: 'Follow-up service',
   new_acquisition: 'Achizitie noua', contract_negotiation: 'Negociere contract',
   prospecting: 'Prospectare', general: 'General',
 }
-const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
+export const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
   planned: { label: 'PLANIFICATA', bg: 'bg-blue-100 dark:bg-blue-900/40', text: 'text-blue-700 dark:text-blue-300' },
   in_progress: { label: 'IN CURS', bg: 'bg-orange-100 dark:bg-orange-900/40', text: 'text-orange-700 dark:text-orange-300' },
   completed: { label: 'FINALIZATA', bg: 'bg-green-100 dark:bg-green-900/40', text: 'text-green-700 dark:text-green-300' },
@@ -23,7 +25,18 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }>
 }
 const todayStr = () => new Date().toISOString().split('T')[0]
 
-function VisitCard({ visit, onOpen, onCheckIn, onFinalize, actionPending }: {
+// Shift a "YYYY-MM-DD" date string by `days` (no time component involved, so
+// no timezone/naiveDate handling is needed — unlike DrivingCalendar's fields).
+function addDaysStr(base: string, days: number): string {
+  const d = new Date(`${base}T00:00:00`)
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function upcomingDateLabel(dateStr: string): string {
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short' })
+}
+
+export function VisitCard({ visit, onOpen, onCheckIn, onFinalize, actionPending }: {
   visit: FSVisit; onOpen: () => void; onCheckIn: () => void; onFinalize: () => void; actionPending: boolean
 }) {
   const cfg = STATUS_CONFIG[visit.status] ?? STATUS_CONFIG.planned
@@ -238,9 +251,13 @@ function AddVisitForm({ date, onDone, onCancel }: { date: string; onDone: () => 
 
 type Overlay = null | { kind: 'add' } | { kind: 'detail'; id: number }
   | { kind: 'note'; id: number } | { kind: 'client360'; clientId: number }
+type PanelTab = 'today' | 'calendar'
 
 export default function HubFieldSalesPanel() {
   const date = todayStr()
+  const upcomingFrom = addDaysStr(date, 1)
+  const upcomingTo = addDaysStr(date, 30)
+  const [tab, setTab] = usePersistedState<PanelTab>('hub-fs-tab', 'today')
   const [overlay, setOverlay] = useState<Overlay>(null)
   const queryClient = useQueryClient()
   const { data, isLoading, isError } = useQuery({
@@ -252,10 +269,21 @@ export default function HubFieldSalesPanel() {
   const inProgress = visits.filter(v => v.status === 'in_progress').length
   const completed = visits.filter(v => v.status === 'completed').length
 
+  const { data: upcomingData } = useQuery({
+    queryKey: ['field-sales-mine', upcomingFrom, upcomingTo],
+    queryFn: () => fieldSalesApi.getMyVisits(upcomingFrom, upcomingTo),
+  })
+  const upcoming = (upcomingData?.visits ?? []).filter(v => v.status === 'planned' || v.status === 'in_progress')
+
+  const invalidateVisitLists = () => {
+    queryClient.invalidateQueries({ queryKey: ['field-sales-visits', date] })
+    queryClient.invalidateQueries({ queryKey: ['field-sales-mine', upcomingFrom, upcomingTo] })
+  }
+
   const checkinMut = useMutation({
     mutationFn: ({ id, coords }: { id: number; coords: { lat?: number; lng?: number } }) => fieldSalesApi.checkin(id, coords),
     onSuccess: (_res, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['field-sales-visits', date] })
+      invalidateVisitLists()
       setOverlay({ kind: 'detail', id: vars.id })
     },
   })
@@ -279,44 +307,76 @@ export default function HubFieldSalesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div><h2 className="text-xl font-bold">Vizite</h2><p className="text-sm text-muted-foreground">Azi</p></div>
-        <button onClick={() => setOverlay({ kind: 'add' })} className="rounded-xl bg-teal-600 px-3 py-2.5 text-sm font-semibold text-white active:bg-teal-700">
-          <span className="flex items-center gap-1"><Plus className="h-4 w-4" />Adauga</span>
-        </button>
-      </div>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as PanelTab)}>
+        <TabsList>
+          <TabsTrigger value="today">Azi</TabsTrigger>
+          <TabsTrigger value="calendar">Calendar</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-      {visits.length > 0 && (
-        <div className="flex gap-2">
-          <div className="flex-1 rounded-xl bg-blue-50 dark:bg-blue-900/20 p-3 text-center"><p className="text-lg font-bold text-blue-700 dark:text-blue-300">{planned}</p><p className="text-[10px] font-medium uppercase text-blue-600/70">Planificate</p></div>
-          <div className="flex-1 rounded-xl bg-orange-50 dark:bg-orange-900/20 p-3 text-center"><p className="text-lg font-bold text-orange-700 dark:text-orange-300">{inProgress}</p><p className="text-[10px] font-medium uppercase text-orange-600/70">In curs</p></div>
-          <div className="flex-1 rounded-xl bg-green-50 dark:bg-green-900/20 p-3 text-center"><p className="text-lg font-bold text-green-700 dark:text-green-300">{completed}</p><p className="text-[10px] font-medium uppercase text-green-600/70">Finalizate</p></div>
+      {tab === 'today' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div><h2 className="text-xl font-bold">Vizite</h2><p className="text-sm text-muted-foreground">Azi</p></div>
+            <button onClick={() => setOverlay({ kind: 'add' })} className="rounded-xl bg-teal-600 px-3 py-2.5 text-sm font-semibold text-white active:bg-teal-700">
+              <span className="flex items-center gap-1"><Plus className="h-4 w-4" />Adauga</span>
+            </button>
+          </div>
+
+          {visits.length > 0 && (
+            <div className="flex gap-2">
+              <div className="flex-1 rounded-xl bg-blue-50 dark:bg-blue-900/20 p-3 text-center"><p className="text-lg font-bold text-blue-700 dark:text-blue-300">{planned}</p><p className="text-[10px] font-medium uppercase text-blue-600/70">Planificate</p></div>
+              <div className="flex-1 rounded-xl bg-orange-50 dark:bg-orange-900/20 p-3 text-center"><p className="text-lg font-bold text-orange-700 dark:text-orange-300">{inProgress}</p><p className="text-[10px] font-medium uppercase text-orange-600/70">In curs</p></div>
+              <div className="flex-1 rounded-xl bg-green-50 dark:bg-green-900/20 p-3 text-center"><p className="text-lg font-bold text-green-700 dark:text-green-300">{completed}</p><p className="text-[10px] font-medium uppercase text-green-600/70">Finalizate</p></div>
+            </div>
+          )}
+
+          {isLoading && <div className="flex justify-center py-16"><div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" /></div>}
+          {isError && <p className="py-16 text-center text-sm text-muted-foreground">Nu s-au putut incarca vizitele</p>}
+          {!isLoading && !isError && visits.length === 0 && (
+            <div className="flex flex-col items-center py-16">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted/50 mb-4"><CalendarDays className="h-8 w-8 text-muted-foreground" /></div>
+              <p className="text-base font-semibold mb-1">Nicio vizita planificata</p>
+              <p className="text-sm text-muted-foreground text-center max-w-[240px]">Adauga o vizita noua pentru a incepe planificarea zilei</p>
+            </div>
+          )}
+
+          {checkinMut.isError && (
+            <p className="text-xs text-destructive text-center">{checkinErr?.data?.error ?? 'Eroare la check-in'}</p>
+          )}
+
+          {!isLoading && !isError && visits.length > 0 && (
+            <div className="space-y-3">
+              {visits.map(v => (
+                <VisitCard key={v.id} visit={v} actionPending={checkinMut.isPending}
+                  onOpen={() => setOverlay({ kind: 'detail', id: v.id })}
+                  onCheckIn={() => handleCheckIn(v)}
+                  onFinalize={() => setOverlay({ kind: 'note', id: v.id })} />
+              ))}
+            </div>
+          )}
+
+          {upcoming.length > 0 && (
+            <div className="space-y-3 pt-2">
+              <h3 className="text-sm font-semibold text-muted-foreground">Vizite viitoare (30 zile)</h3>
+              <div className="space-y-3">
+                {upcoming.map(v => (
+                  <div key={v.id}>
+                    <p className="mb-1 px-1 text-xs font-medium capitalize text-muted-foreground">{upcomingDateLabel(v.planned_date)}</p>
+                    <VisitCard visit={v} actionPending={checkinMut.isPending}
+                      onOpen={() => setOverlay({ kind: 'detail', id: v.id })}
+                      onCheckIn={() => handleCheckIn(v)}
+                      onFinalize={() => setOverlay({ kind: 'note', id: v.id })} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {isLoading && <div className="flex justify-center py-16"><div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" /></div>}
-      {isError && <p className="py-16 text-center text-sm text-muted-foreground">Nu s-au putut incarca vizitele</p>}
-      {!isLoading && !isError && visits.length === 0 && (
-        <div className="flex flex-col items-center py-16">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted/50 mb-4"><CalendarDays className="h-8 w-8 text-muted-foreground" /></div>
-          <p className="text-base font-semibold mb-1">Nicio vizita planificata</p>
-          <p className="text-sm text-muted-foreground text-center max-w-[240px]">Adauga o vizita noua pentru a incepe planificarea zilei</p>
-        </div>
-      )}
-
-      {checkinMut.isError && (
-        <p className="text-xs text-destructive text-center">{checkinErr?.data?.error ?? 'Eroare la check-in'}</p>
-      )}
-
-      {!isLoading && !isError && visits.length > 0 && (
-        <div className="space-y-3">
-          {visits.map(v => (
-            <VisitCard key={v.id} visit={v} actionPending={checkinMut.isPending}
-              onOpen={() => setOverlay({ kind: 'detail', id: v.id })}
-              onCheckIn={() => handleCheckIn(v)}
-              onFinalize={() => setOverlay({ kind: 'note', id: v.id })} />
-          ))}
-        </div>
+      {tab === 'calendar' && (
+        <FieldSalesCalendar onOpen={(id) => setOverlay({ kind: 'detail', id })} />
       )}
 
       {/* Detail overlay (reuse existing dialog) */}
@@ -337,7 +397,7 @@ export default function HubFieldSalesPanel() {
         <OverlaySheet onClose={() => setOverlay(null)}>
           <AddVisitForm
             date={date}
-            onDone={() => { queryClient.invalidateQueries({ queryKey: ['field-sales-visits', date] }); setOverlay(null) }}
+            onDone={() => { invalidateVisitLists(); setOverlay(null) }}
             onCancel={() => setOverlay(null)}
           />
         </OverlaySheet>
@@ -347,13 +407,13 @@ export default function HubFieldSalesPanel() {
           endpoint completes the visit server-side, so saving here IS the
           finalize action triggered by the card's "Finalizeaza" button. */}
       {overlay?.kind === 'note' && (() => {
-        const v = visits.find(x => x.id === overlay.id)
+        const v = visits.find(x => x.id === overlay.id) ?? upcoming.find(x => x.id === overlay.id)
         return (
           <OverlaySheet onClose={() => setOverlay(null)}>
             <NoteCaptureModal
               visitId={overlay.id}
               clientId={v?.client_id ?? 0}
-              onDone={() => { queryClient.invalidateQueries({ queryKey: ['field-sales-visits', date] }); setOverlay(null) }}
+              onDone={() => { invalidateVisitLists(); setOverlay(null) }}
               onCancel={() => setOverlay(null)}
             />
           </OverlaySheet>
