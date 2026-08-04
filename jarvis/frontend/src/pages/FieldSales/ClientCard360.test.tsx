@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { FSClient360 } from '@/api/fieldSales'
+import { fieldSalesApi, type FSClient360 } from '@/api/fieldSales'
 
 const getClient360 = vi.fn()
 const refreshFiscal = vi.fn()
@@ -27,6 +27,13 @@ describe('ClientCard360', () => {
   beforeEach(() => {
     getClient360.mockReset()
     refreshFiscal.mockReset()
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    // The refresh-error test swaps in a fresh rejecting vi.fn() on
+    // fieldSalesApi.refreshFiscal; re-wire it back to the shared `refreshFiscal`
+    // mock so a later test can't inherit that rejecting stub (no ordering dep).
+    ;(fieldSalesApi as { refreshFiscal: (...a: unknown[]) => unknown }).refreshFiscal = (...a) => refreshFiscal(...a)
   })
 
   it('renders fleet vehicles from the 360 payload', async () => {
@@ -70,5 +77,22 @@ describe('ClientCard360', () => {
 
     expect(await screen.findByText('ACME SRL')).toBeInTheDocument()
     expect(refreshFiscal).toHaveBeenCalledWith(760)
+  })
+
+  it('shows the inline error when the refresh-fiscal mutation fails', async () => {
+    getClient360.mockResolvedValue(emptyPayload)
+    // Reassign a fresh rejecting mock directly on the mocked module (rather than
+    // the shared `refreshFiscal` wrapper, which the resolve-path test above also
+    // uses). This mirrors the reject-path convention in NoteCaptureModal.test.tsx
+    // and avoids a false-positive "unhandled rejection" Vitest flags when a
+    // rejecting mock shares a mutation-backed wrapper with a prior resolving
+    // test. afterEach re-wires the wrapper so this doesn't leak.
+    ;(fieldSalesApi.refreshFiscal as ReturnType<typeof vi.fn>) = vi.fn().mockRejectedValue({ data: { error: 'ANAF indisponibil momentan' } })
+    wrap(<ClientCard360 clientId={760} />)
+
+    const btn = await screen.findByRole('button', { name: /reimprospateaza/i })
+    fireEvent.click(btn)
+
+    await waitFor(() => expect(screen.getByText('ANAF indisponibil momentan')).toBeInTheDocument())
   })
 })

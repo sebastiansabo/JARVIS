@@ -6,8 +6,8 @@ import {
 import { cn } from '@/lib/utils'
 import {
   fieldSalesApi,
-  type FSClientFleetVehicle, type FSSaleSummary, type FSVisitSummary,
-  type FSInventoryMatch, type FSAnafData,
+  type FSClientProfile, type FSClientFleetVehicle, type FSSaleSummary,
+  type FSVisitSummary, type FSInventoryMatch, type FSAnafData,
 } from '@/api/fieldSales'
 
 type ApiErr = { data?: { error?: string } } | null
@@ -54,7 +54,7 @@ function SectionEmpty({ icon: Icon, text }: { icon: React.ElementType; text: str
 // ── Header ──
 function HeaderSection({ clientId, profile }: {
   clientId: number
-  profile: { client_type: string; industry: string | null; fleet_size: number; priority: string; renewal_score: number } | null
+  profile: Pick<FSClientProfile, 'client_type' | 'industry' | 'fleet_size' | 'priority' | 'renewal_score'> | null
 }) {
   return (
     <div className="rounded-2xl bg-card border p-4">
