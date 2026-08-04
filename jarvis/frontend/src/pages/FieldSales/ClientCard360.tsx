@@ -360,18 +360,20 @@ export default function ClientCard360({ clientId }: { clientId: number }) {
           so the card uses the extra horizontal space instead of one narrow
           column of stacked cards. */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <FiscalSection
-          fiscal={fiscal}
-          onRefresh={() => refreshFiscalMutation.mutate()}
-          refreshing={refreshFiscalMutation.isPending}
-        />
+        <div className="space-y-2">
+          <FiscalSection
+            fiscal={fiscal}
+            onRefresh={() => refreshFiscalMutation.mutate()}
+            refreshing={refreshFiscalMutation.isPending}
+          />
+          {refreshFiscalMutation.isError && (
+            <p className="text-xs text-destructive text-center">
+              {refreshErr?.data?.error ?? 'Eroare la actualizarea datelor fiscale'}
+            </p>
+          )}
+        </div>
         <FleetSection vehicles={fleet} />
       </div>
-      {refreshFiscalMutation.isError && (
-        <p className="text-xs text-destructive text-center -mt-2">
-          {refreshErr?.data?.error ?? 'Eroare la actualizarea datelor fiscale'}
-        </p>
-      )}
 
       {/* These remain full-width, single-column lists (purchases/visits/stock
           matches read as chronological or scannable lists, not paired info
