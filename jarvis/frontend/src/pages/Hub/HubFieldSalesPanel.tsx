@@ -257,6 +257,7 @@ export default function HubFieldSalesPanel() {
       setOverlay({ kind: 'detail', id: vars.id })
     },
   })
+  const checkinErr = checkinMut.error as { data?: { error?: string } } | null
 
   function getCoords(): Promise<{ lat?: number; lng?: number }> {
     return new Promise((resolve) => {
@@ -299,6 +300,10 @@ export default function HubFieldSalesPanel() {
           <p className="text-base font-semibold mb-1">Nicio vizita planificata</p>
           <p className="text-sm text-muted-foreground text-center max-w-[240px]">Adauga o vizita noua pentru a incepe planificarea zilei</p>
         </div>
+      )}
+
+      {checkinMut.isError && (
+        <p className="text-xs text-destructive text-center">{checkinErr?.data?.error ?? 'Eroare la check-in'}</p>
       )}
 
       {!isLoading && !isError && visits.length > 0 && (
