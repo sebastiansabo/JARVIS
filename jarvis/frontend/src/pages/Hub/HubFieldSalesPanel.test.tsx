@@ -69,4 +69,20 @@ describe('HubFieldSalesPanel', () => {
     await waitFor(() => expect(mod.fieldSalesApi.createVisit).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByRole('button', { name: /salveaza vizita/i })).not.toBeInTheDocument())
   })
+
+  it('check-in fires the checkin mutation even when geolocation is unavailable', async () => {
+    const { fireEvent } = await import('@testing-library/react')
+    const mod = await import('@/api/fieldSales')
+    getTodayVisits.mockResolvedValue({ success: true, visits: [VISIT], date: '2026-08-04' })
+    ;(mod.fieldSalesApi.checkin as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue({ success: true, visit: { ...VISIT, status: 'in_progress' } })
+    // no navigator.geolocation in jsdom -> best-effort path calls checkin with {}
+    wrap(<HubFieldSalesPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /check-in/i }))
+    // RTL's waitFor (not vi.waitFor) wraps polling in act(), so the mutation's
+    // onSuccess chain (invalidateQueries + setOverlay) settles under act() ->
+    // no act() warning, pristine output. Await the settled end-state (detail
+    // overlay open) before the test ends.
+    await waitFor(() => expect(mod.fieldSalesApi.checkin).toHaveBeenCalledWith(9, {}))
+    await waitFor(() => expect(screen.getByText('detail:9')).toBeInTheDocument())
+  })
 })

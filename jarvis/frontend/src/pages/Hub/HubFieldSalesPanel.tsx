@@ -250,6 +250,30 @@ export default function HubFieldSalesPanel() {
   const inProgress = visits.filter(v => v.status === 'in_progress').length
   const completed = visits.filter(v => v.status === 'completed').length
 
+  const checkinMut = useMutation({
+    mutationFn: ({ id, coords }: { id: number; coords: { lat?: number; lng?: number } }) => fieldSalesApi.checkin(id, coords),
+    onSuccess: (_res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['field-sales-visits', date] })
+      setOverlay({ kind: 'detail', id: vars.id })
+    },
+  })
+
+  function getCoords(): Promise<{ lat?: number; lng?: number }> {
+    return new Promise((resolve) => {
+      if (!('geolocation' in navigator)) return resolve({})
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve({}),
+        { timeout: 5000 },
+      )
+    })
+  }
+
+  const handleCheckIn = async (visit: FSVisit) => {
+    const coords = await getCoords()
+    checkinMut.mutate({ id: visit.id, coords })
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -280,9 +304,9 @@ export default function HubFieldSalesPanel() {
       {!isLoading && !isError && visits.length > 0 && (
         <div className="space-y-3">
           {visits.map(v => (
-            <VisitCard key={v.id} visit={v} actionPending={false}
+            <VisitCard key={v.id} visit={v} actionPending={checkinMut.isPending}
               onOpen={() => setOverlay({ kind: 'detail', id: v.id })}
-              onCheckIn={() => { /* Task 5 */ }}
+              onCheckIn={() => handleCheckIn(v)}
               onFinalize={() => setOverlay({ kind: 'note', id: v.id })} />
           ))}
         </div>
