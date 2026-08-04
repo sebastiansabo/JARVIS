@@ -15,6 +15,12 @@ function wrap(ui: React.ReactNode) {
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
+const keyOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+// Mirror the component's Monday-based week start + day arithmetic so alignment
+// tests can put two visits on distinct days that are both inside the current
+// week-view window (anchor defaults to now).
+const startOfWeek = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x }
+const addDaysDate = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
 
 describe('FieldSalesCalendar', () => {
   // usePersistedState('hub-fs-cal-view') is backed by localStorage; clear it
@@ -163,5 +169,53 @@ describe('FieldSalesCalendar', () => {
     fireEvent.click(col, { clientY: 100 + 192 })
     expect(onAdd).toHaveBeenCalledWith(todayKey, '11:00', '12:00')
     expect(onAdd).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders an untimed visit in the shared "Fără oră" band and opens it on click', async () => {
+    const now = new Date()
+    const todayKey = keyOf(now)
+    const visits = [
+      // No planned_time → belongs in the all-day band, not the hour-grid.
+      { id: 501, kam_id: 1, client_id: 1, planned_date: todayKey, visit_type: 'general', status: 'planned', client_name: 'Untimed Client', kam_name: 'X' },
+    ]
+    getMyVisits.mockResolvedValue({ success: true, visits, date_from: todayKey, date_to: todayKey })
+
+    const onOpen = vi.fn()
+    wrap(<FieldSalesCalendar onOpen={onOpen} onAdd={vi.fn()} />)
+
+    // Wait for the (default) month view's query to settle before switching, so
+    // the week-view render doesn't overlap an unflushed state update.
+    await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i })
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    const block = await screen.findByTestId('fs-block-501')
+    expect(screen.getByText(/f[aă]r[aă] or[aă]/i)).toBeInTheDocument()
+    fireEvent.click(block)
+    expect(onOpen).toHaveBeenCalledWith(501)
+  })
+
+  it('keeps a timed block aligned regardless of a sibling column\'s untimed visits', async () => {
+    // Two distinct days in the current week: day A carries an untimed visit
+    // (would have pushed a per-column strip down), day B a timed 09:00 one.
+    // The timed block's top must stay minToY(540)=96px — proving the untimed
+    // visit no longer shifts a sibling column's hour-grid.
+    const weekStart = startOfWeek(new Date())
+    const dayA = keyOf(weekStart)
+    const dayB = keyOf(addDaysDate(weekStart, 1))
+    const visits = [
+      { id: 601, kam_id: 1, client_id: 1, planned_date: dayA, visit_type: 'general', status: 'planned', client_name: 'Untimed A', kam_name: 'X' },
+      { id: 602, kam_id: 1, client_id: 2, planned_date: dayB, planned_time: '09:00', planned_end_time: '10:00', visit_type: 'general', status: 'planned', client_name: 'Timed B', kam_name: 'X' },
+    ]
+    getMyVisits.mockResolvedValue({ success: true, visits, date_from: dayA, date_to: dayB })
+
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+
+    await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i })
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    const timedBlock = await screen.findByTestId('fs-block-602')
+    expect(timedBlock).toHaveStyle({ top: '96px' })
+    // The sibling untimed visit renders too (in the shared band).
+    expect(screen.getByTestId('fs-block-601')).toBeInTheDocument()
   })
 })

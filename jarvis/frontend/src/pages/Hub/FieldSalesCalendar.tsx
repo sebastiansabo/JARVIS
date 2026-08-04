@@ -254,11 +254,15 @@ function CalendarVisitRow({ visit, onOpen }: { visit: FSVisit; onOpen: () => voi
 
 // Week/Day time-grid — a fixed 07:00–21:00 window (see the geometry helpers
 // above) with one day column per `dayCols` entry (7 for week, 1 for day) and
-// an hour gutter on the left. Each column shows a "Fără oră" strip for
-// visits with no planned_time, then an hour-lined grid with absolutely
-// positioned blocks for timed visits. Clicking a block opens it; clicking
-// empty grid space computes the clicked time (snapped to 30 min) and
-// proposes a 1h visit via onAdd. No drag yet — that's a follow-up task.
+// an hour gutter on the left. Untimed visits (no planned_time) live in a
+// SHARED all-day band spanning gutter + every column in one flex row, so the
+// hour-grid below always starts at the same Y for the gutter and every column
+// regardless of how many untimed visits any single day has (a per-column
+// strip would push that column's hour lines/blocks down, breaking cross-
+// column alignment). The band is omitted entirely when no visible day has an
+// untimed visit. Clicking a block opens it; clicking empty grid space
+// computes the clicked time (snapped to 30 min) and proposes a 1h visit via
+// onAdd. No drag yet — that's a follow-up task.
 function FSTimeGrid({ dayCols, byDay, onOpen, onAdd }: {
   dayCols: Date[]
   byDay: Map<string, FSVisit[]>
@@ -268,36 +272,41 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd }: {
   const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i)
   const gridHeight = (HOUR_END - HOUR_START) * PX_PER_HOUR
   const todayKey = keyOf(new Date())
+  const gridColsClass = dayCols.length > 1 ? 'grid-cols-7' : 'grid-cols-1'
+
+  const cols = dayCols.map((d) => {
+    const dk = keyOf(d)
+    const visits = byDay.get(dk) ?? []
+    return { d, dk, timed: visits.filter((v) => v.planned_time), untimed: visits.filter((v) => !v.planned_time) }
+  })
+  const hasAnyUntimed = cols.some((c) => c.untimed.length > 0)
 
   return (
     <div className="overflow-x-auto">
-      <div className="flex min-w-[560px] gap-1 rounded-2xl border border-border/60 bg-card p-2">
-        {/* hour gutter — invisible header spacers keep hour rows aligned with
-            each column's grid start regardless of its "Fără oră" strip. */}
-        <div className="w-10 shrink-0">
-          <p className="invisible mb-1 truncate text-center text-[10px] font-semibold uppercase">00</p>
-          <p className="invisible text-[9px] font-semibold uppercase tracking-wide">Fără oră</p>
-          {hours.map((h) => (
-            <div key={h} className="relative" style={{ height: PX_PER_HOUR }}>
-              <span className="absolute -top-2 right-1 text-[10px] font-medium text-muted-foreground">{`${pad(h)}:00`}</span>
-            </div>
-          ))}
+      <div className="flex min-w-[560px] flex-col gap-1 rounded-2xl border border-border/60 bg-card p-2">
+        {/* Day-label header row (gutter spacer + one label per column). */}
+        <div className="flex gap-1">
+          <div className="w-10 shrink-0" />
+          <div className={cn('grid flex-1 gap-1', gridColsClass)}>
+            {cols.map(({ d, dk }) => (
+              <p key={dk} className={cn('truncate text-center text-[10px] font-semibold uppercase text-muted-foreground', dk === todayKey && 'text-primary')}>
+                {d.toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit' })}
+              </p>
+            ))}
+          </div>
         </div>
 
-        {/* day columns */}
-        <div className={cn('grid flex-1 gap-1', dayCols.length > 1 ? 'grid-cols-7' : 'grid-cols-1')}>
-          {dayCols.map((d) => {
-            const dk = keyOf(d)
-            const visits = byDay.get(dk) ?? []
-            const timed = visits.filter((v) => v.planned_time)
-            const untimed = visits.filter((v) => !v.planned_time)
-            return (
-              <div key={dk} className="min-w-0">
-                <p className={cn('mb-1 truncate text-center text-[10px] font-semibold uppercase text-muted-foreground', dk === todayKey && 'text-primary')}>
-                  {d.toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit' })}
-                </p>
-                <p className={cn('text-[9px] font-semibold uppercase tracking-wide text-muted-foreground', untimed.length === 0 && 'invisible')}>Fără oră</p>
-                <div className="mb-0.5 space-y-0.5">
+        {/* Shared all-day band — one flex row (gutter label + a cell per
+            column) so every cell shares a uniform height; rendered only when
+            some visible day has an untimed visit. */}
+        {hasAnyUntimed && (
+          <div className="flex gap-1">
+            <div className="flex w-10 shrink-0 items-start justify-end pr-1 pt-0.5">
+              <span className="text-[9px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Fără oră</span>
+            </div>
+            <div className={cn('grid flex-1 gap-1', gridColsClass)}>
+              {cols.map(({ dk, untimed }) => (
+                <div key={dk} className="min-w-0 space-y-0.5">
                   {untimed.map((v) => {
                     const cfg = STATUS_CONFIG[v.status] ?? STATUS_CONFIG.planned
                     return (
@@ -313,43 +322,60 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd }: {
                     )
                   })}
                 </div>
-                <div
-                  data-testid={`fs-col-${dk}`}
-                  className="relative cursor-pointer rounded-lg bg-muted/30"
-                  style={{ height: gridHeight }}
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    const startMin = yToMin(e.clientY - rect.top)
-                    onAdd(dk, minToTime(startMin), minToTime(startMin + 60))
-                  }}
-                >
-                  {hours.slice(0, -1).map((h) => (
-                    <div key={h} className="absolute inset-x-0 border-t border-border/30" style={{ top: minToY(h * 60) }} />
-                  ))}
-                  {timed.map((v) => {
-                    const start = v.planned_time!
-                    const top = minToY(toMin(start)!)
-                    const endStr = v.planned_end_time ?? addHour(start)
-                    const height = Math.max(minToY(toMin(endStr)!) - top, 18)
-                    const cfg = STATUS_CONFIG[v.status] ?? STATUS_CONFIG.planned
-                    return (
-                      <button
-                        key={v.id}
-                        type="button"
-                        data-testid={`fs-block-${v.id}`}
-                        onClick={(e) => { e.stopPropagation(); onOpen(v.id) }}
-                        style={{ top, height }}
-                        className={cn('absolute left-0.5 right-0.5 overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', cfg.bg, cfg.text)}
-                      >
-                        <span className="block truncate">{`${start.slice(0, 5)} ${v.client_name}`}</span>
-                        <span className="block truncate text-[9px] font-normal opacity-80">{VISIT_TYPE_LABELS[v.visit_type] ?? v.visit_type}</span>
-                      </button>
-                    )
-                  })}
-                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Hour-grid — gutter labels + one relative day column each. All
+            columns share the same fixed gridHeight and start at the same Y. */}
+        <div className="flex gap-1">
+          <div className="w-10 shrink-0">
+            {hours.map((h) => (
+              <div key={h} className="relative" style={{ height: PX_PER_HOUR }}>
+                <span className="absolute -top-2 right-1 text-[10px] font-medium text-muted-foreground">{`${pad(h)}:00`}</span>
               </div>
-            )
-          })}
+            ))}
+          </div>
+          <div className={cn('grid flex-1 gap-1', gridColsClass)}>
+            {cols.map(({ dk, timed }) => (
+              <div
+                key={dk}
+                data-testid={`fs-col-${dk}`}
+                className="relative min-w-0 cursor-pointer rounded-lg bg-muted/30"
+                style={{ height: gridHeight }}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const startMin = yToMin(e.clientY - rect.top)
+                  onAdd(dk, minToTime(startMin), minToTime(startMin + 60))
+                }}
+              >
+                {hours.slice(0, -1).map((h) => (
+                  <div key={h} className="absolute inset-x-0 border-t border-border/30" style={{ top: minToY(h * 60) }} />
+                ))}
+                {timed.map((v) => {
+                  const start = v.planned_time!
+                  const top = minToY(toMin(start)!)
+                  const endStr = v.planned_end_time || addHour(start)
+                  const height = Math.max(minToY(toMin(endStr)!) - top, 18)
+                  const cfg = STATUS_CONFIG[v.status] ?? STATUS_CONFIG.planned
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      data-testid={`fs-block-${v.id}`}
+                      onClick={(e) => { e.stopPropagation(); onOpen(v.id) }}
+                      style={{ top, height }}
+                      className={cn('absolute left-0.5 right-0.5 overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', cfg.bg, cfg.text)}
+                    >
+                      <span className="block truncate">{`${start.slice(0, 5)} ${v.client_name}`}</span>
+                      <span className="block truncate text-[9px] font-normal opacity-80">{VISIT_TYPE_LABELS[v.visit_type] ?? v.visit_type}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
