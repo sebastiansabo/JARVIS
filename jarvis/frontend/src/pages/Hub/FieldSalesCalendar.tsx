@@ -23,13 +23,35 @@ function dayLabel(key: string): string {
   return new Date(`${key}T00:00:00`).toLocaleDateString('ro-RO', { weekday: 'long', day: '2-digit', month: 'long' })
 }
 
+// --- Time-grid geometry (Week/Day views) ------------------------------------
+// Visible window is a fixed 07:00–21:00 at 48px/hour; slot clicks snap to
+// 30-minute increments. `toMin` must tolerate the backend's TIME column
+// serializing as either "HH:MM" or "HH:MM:SS" — split on ':' and only read
+// the first two segments.
+const HOUR_START = 7
+const HOUR_END = 21
+const PX_PER_HOUR = 48
+const SNAP_MIN = 30
+function toMin(t?: string | null): number | null {
+  if (!t) return null
+  const [h, m] = t.split(':')
+  return Number(h) * 60 + Number(m)
+}
+function minToTime(min: number): string { return `${pad(Math.floor(min / 60))}:${pad(min % 60)}` }
+function snap(min: number): number { return Math.round(min / SNAP_MIN) * SNAP_MIN }
+function yToMin(y: number): number { return snap(HOUR_START * 60 + (y / PX_PER_HOUR) * 60) }
+function minToY(min: number): number { return ((min - HOUR_START * 60) / 60) * PX_PER_HOUR }
+function addHour(t: string): string { return minToTime(Math.min(toMin(t)! + 60, HOUR_END * 60)) }
+
 /**
  * Calendar for the Hub Field Sales panel — a web port of DrivingCalendar's
  * view switcher + month grid (the foiParcurs vehicle join is dropped; visits
  * carry everything needed for display already). Shows the signed-in KAM's
  * own visits (fieldSalesApi.getMyVisits) grouped by planned_date; tapping a
- * listed visit opens the shared detail overlay via `onOpen`. Week/Day views
- * are placeholders for now — the real time-grid lands in a follow-up task.
+ * listed visit opens the shared detail overlay via `onOpen`. Week/Day render
+ * a 07:00–21:00 time-grid (see the geometry helpers above) with slot-click-
+ * to-add and block-click-to-open; dragging to create/move/resize visits is a
+ * follow-up task.
  */
 export default function FieldSalesCalendar({ onOpen, onAdd }: {
   onOpen: (visitId: number) => void
@@ -44,9 +66,19 @@ export default function FieldSalesCalendar({ onOpen, onAdd }: {
   const gridStartKey = keyOf(gridStart)
   const monthCells = useMemo(() => Array.from({ length: 42 }, (_, i) => addDays(gridStart, i)), [gridStartKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const weekStart = startOfWeek(anchor)
+  const dayCols = view === 'day' ? [anchor] : Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+
+  // Visible-range bounds for the active view — month keeps its existing
+  // 42-cell grid window, week/day narrow the fetch to just what's rendered.
+  const rangeStart = view === 'week' ? weekStart : view === 'day' ? anchor : gridStart
+  const rangeEnd = view === 'week' ? addDays(weekStart, 6) : view === 'day' ? anchor : addDays(gridStart, 41)
+  const rangeStartKey = keyOf(rangeStart)
+  const rangeEndKey = keyOf(rangeEnd)
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['field-sales-cal', gridStartKey],
-    queryFn: () => fieldSalesApi.getMyVisits(gridStartKey, keyOf(addDays(gridStart, 41))),
+    queryKey: ['field-sales-cal', view, rangeStartKey],
+    queryFn: () => fieldSalesApi.getMyVisits(rangeStartKey, rangeEndKey),
   })
 
   const byDay = useMemo(() => {
@@ -65,8 +97,24 @@ export default function FieldSalesCalendar({ onOpen, onAdd }: {
   const activeKey = picked ?? (monthCells.some((d) => keyOf(d) === todayKey) ? todayKey : keyOf(monthStart))
   const activeVisits = byDay.get(activeKey) ?? []
 
-  const go = (dir: 1 | -1) => { setAnchor((a) => addMonths(a, dir)); setPicked(null) }
+  const go = (dir: 1 | -1) => {
+    setAnchor((a) => (view === 'day' ? addDays(a, dir) : view === 'week' ? addDays(a, 7 * dir) : addMonths(a, dir)))
+    setPicked(null)
+  }
   const goToday = () => { setAnchor(new Date()); setPicked(null) }
+
+  let periodLabel: string
+  if (view === 'day') {
+    periodLabel = anchor.toLocaleDateString('ro-RO', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
+  } else if (view === 'week') {
+    const weekEnd = addDays(weekStart, 6)
+    const endMonth = weekEnd.toLocaleDateString('ro-RO', { month: 'long' })
+    periodLabel = weekStart.getMonth() === weekEnd.getMonth()
+      ? `${weekStart.getDate()} – ${weekEnd.getDate()} ${endMonth}`
+      : `${weekStart.getDate()} ${weekStart.toLocaleDateString('ro-RO', { month: 'long' })} – ${weekEnd.getDate()} ${endMonth}`
+  } else {
+    periodLabel = anchor.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })
+  }
 
   return (
     <div className="space-y-3">
@@ -87,19 +135,17 @@ export default function FieldSalesCalendar({ onOpen, onAdd }: {
       {/* Period navigation */}
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => go(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-muted transition-colors hover:bg-muted/70"><ChevronLeft className="h-5 w-5" /></button>
-        <p className="flex-1 text-center text-sm font-semibold capitalize">{anchor.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })}</p>
+        <p className="flex-1 text-center text-sm font-semibold capitalize">{periodLabel}</p>
         <button type="button" onClick={() => go(1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-muted transition-colors hover:bg-muted/70"><ChevronRight className="h-5 w-5" /></button>
         <button type="button" onClick={goToday} className="rounded-full bg-muted px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-muted/70">Azi</button>
       </div>
 
-      {view !== 'month' ? (
-        <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-          <p className="text-sm text-muted-foreground">Vizualizarea pe săptămână/zi — în curând</p>
-        </div>
-      ) : isLoading ? (
+      {isLoading ? (
         <div className="space-y-2.5">{[...Array(3)].map((_, i) => <div key={i} className="h-16 animate-pulse rounded-2xl bg-muted" />)}</div>
       ) : isError ? (
         <p className="py-8 text-center text-sm text-destructive">Nu s-a putut încărca calendarul.</p>
+      ) : view !== 'month' ? (
+        <FSTimeGrid dayCols={dayCols} byDay={byDay} onOpen={onOpen} onAdd={onAdd} />
       ) : (
         <>
           <div className="overflow-x-auto">
@@ -203,5 +249,109 @@ function CalendarVisitRow({ visit, onOpen }: { visit: FSVisit; onOpen: () => voi
         <p className="mt-0.5 truncate text-[13px] text-muted-foreground">{VISIT_TYPE_LABELS[visit.visit_type] ?? visit.visit_type}</p>
       </div>
     </button>
+  )
+}
+
+// Week/Day time-grid — a fixed 07:00–21:00 window (see the geometry helpers
+// above) with one day column per `dayCols` entry (7 for week, 1 for day) and
+// an hour gutter on the left. Each column shows a "Fără oră" strip for
+// visits with no planned_time, then an hour-lined grid with absolutely
+// positioned blocks for timed visits. Clicking a block opens it; clicking
+// empty grid space computes the clicked time (snapped to 30 min) and
+// proposes a 1h visit via onAdd. No drag yet — that's a follow-up task.
+function FSTimeGrid({ dayCols, byDay, onOpen, onAdd }: {
+  dayCols: Date[]
+  byDay: Map<string, FSVisit[]>
+  onOpen: (visitId: number) => void
+  onAdd: (date: string, time?: string, endTime?: string) => void
+}) {
+  const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i)
+  const gridHeight = (HOUR_END - HOUR_START) * PX_PER_HOUR
+  const todayKey = keyOf(new Date())
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="flex min-w-[560px] gap-1 rounded-2xl border border-border/60 bg-card p-2">
+        {/* hour gutter — invisible header spacers keep hour rows aligned with
+            each column's grid start regardless of its "Fără oră" strip. */}
+        <div className="w-10 shrink-0">
+          <p className="invisible mb-1 truncate text-center text-[10px] font-semibold uppercase">00</p>
+          <p className="invisible text-[9px] font-semibold uppercase tracking-wide">Fără oră</p>
+          {hours.map((h) => (
+            <div key={h} className="relative" style={{ height: PX_PER_HOUR }}>
+              <span className="absolute -top-2 right-1 text-[10px] font-medium text-muted-foreground">{`${pad(h)}:00`}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* day columns */}
+        <div className={cn('grid flex-1 gap-1', dayCols.length > 1 ? 'grid-cols-7' : 'grid-cols-1')}>
+          {dayCols.map((d) => {
+            const dk = keyOf(d)
+            const visits = byDay.get(dk) ?? []
+            const timed = visits.filter((v) => v.planned_time)
+            const untimed = visits.filter((v) => !v.planned_time)
+            return (
+              <div key={dk} className="min-w-0">
+                <p className={cn('mb-1 truncate text-center text-[10px] font-semibold uppercase text-muted-foreground', dk === todayKey && 'text-primary')}>
+                  {d.toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit' })}
+                </p>
+                <p className={cn('text-[9px] font-semibold uppercase tracking-wide text-muted-foreground', untimed.length === 0 && 'invisible')}>Fără oră</p>
+                <div className="mb-0.5 space-y-0.5">
+                  {untimed.map((v) => {
+                    const cfg = STATUS_CONFIG[v.status] ?? STATUS_CONFIG.planned
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        data-testid={`fs-block-${v.id}`}
+                        onClick={() => onOpen(v.id)}
+                        className={cn('block w-full truncate rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold', cfg.bg, cfg.text)}
+                      >
+                        {v.client_name}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div
+                  data-testid={`fs-col-${dk}`}
+                  className="relative cursor-pointer rounded-lg bg-muted/30"
+                  style={{ height: gridHeight }}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    const startMin = yToMin(e.clientY - rect.top)
+                    onAdd(dk, minToTime(startMin), minToTime(startMin + 60))
+                  }}
+                >
+                  {hours.slice(0, -1).map((h) => (
+                    <div key={h} className="absolute inset-x-0 border-t border-border/30" style={{ top: minToY(h * 60) }} />
+                  ))}
+                  {timed.map((v) => {
+                    const start = v.planned_time!
+                    const top = minToY(toMin(start)!)
+                    const endStr = v.planned_end_time ?? addHour(start)
+                    const height = Math.max(minToY(toMin(endStr)!) - top, 18)
+                    const cfg = STATUS_CONFIG[v.status] ?? STATUS_CONFIG.planned
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        data-testid={`fs-block-${v.id}`}
+                        onClick={(e) => { e.stopPropagation(); onOpen(v.id) }}
+                        style={{ top, height }}
+                        className={cn('absolute left-0.5 right-0.5 overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', cfg.bg, cfg.text)}
+                      >
+                        <span className="block truncate">{`${start.slice(0, 5)} ${v.client_name}`}</span>
+                        <span className="block truncate text-[9px] font-normal opacity-80">{VISIT_TYPE_LABELS[v.visit_type] ?? v.visit_type}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
   )
 }
