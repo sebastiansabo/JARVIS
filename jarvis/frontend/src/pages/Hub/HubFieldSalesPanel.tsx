@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { fieldSalesApi, type FSVisit, type FSClientSearch } from '@/api/fieldSales'
 import { VisitDetailDialog } from '@/pages/FieldSales/VisitDetailDialog'
 import NoteCaptureModal from '@/pages/FieldSales/NoteCaptureModal'
+import ClientCard360 from '@/pages/FieldSales/ClientCard360'
 
 const VISIT_TYPE_LABELS: Record<string, string> = {
   fleet_review: 'Revizuire flota', renewal_discussion: 'Discutie reinnoire',
@@ -323,7 +324,14 @@ export default function HubFieldSalesPanel() {
         visitId={overlay?.kind === 'detail' ? overlay.id : null}
         open={overlay?.kind === 'detail'}
         onOpenChange={(o) => { if (!o) setOverlay(null) }}
+        onOpenClient360={(clientId) => setOverlay({ kind: 'client360', clientId })}
       />
+
+      {overlay?.kind === 'client360' && (
+        <OverlaySheet onClose={() => setOverlay(null)}>
+          <ClientCard360 clientId={overlay.clientId} />
+        </OverlaySheet>
+      )}
 
       {overlay?.kind === 'add' && (
         <OverlaySheet onClose={() => setOverlay(null)}>
