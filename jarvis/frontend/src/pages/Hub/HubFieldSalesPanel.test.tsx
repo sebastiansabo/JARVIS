@@ -14,10 +14,12 @@ vi.mock('@/api/fieldSales', () => ({
     getVisit: vi.fn(), getClient360: vi.fn(), refreshFiscal: vi.fn(),
   },
 }))
-// VisitDetailDialog is heavy; stub it for panel tests.
+// VisitDetailDialog is heavy; stub it for panel tests. A close button is
+// exposed so tests can drive onOpenChange(false) the way the real dialog
+// does after an in-dialog edit or an explicit close.
 vi.mock('@/pages/FieldSales/VisitDetailDialog', () => ({
-  VisitDetailDialog: ({ open, visitId }: { open: boolean; visitId: number | null }) =>
-    open ? <div>detail:{visitId}</div> : null,
+  VisitDetailDialog: ({ open, visitId, onOpenChange }: { open: boolean; visitId: number | null; onOpenChange: (o: boolean) => void }) =>
+    open ? <div>detail:{visitId}<button onClick={() => onOpenChange(false)}>mock-close-detail</button></div> : null,
 }))
 // FieldSalesCalendar does its own data fetching/rendering (covered by its own
 // test file); stub it here so the panel test stays focused on tab wiring.
@@ -98,6 +100,21 @@ describe('HubFieldSalesPanel', () => {
     await waitFor(() => expect(screen.getByText('detail:9')).toBeInTheDocument())
   })
 
+  it('guards against a double-submit when CHECK-IN is tapped twice before geolocation resolves', async () => {
+    const { fireEvent } = await import('@testing-library/react')
+    const mod = await import('@/api/fieldSales')
+    getTodayVisits.mockResolvedValue({ success: true, visits: [VISIT], date: '2026-08-04' })
+    ;(mod.fieldSalesApi.checkin as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue({ success: true, visit: { ...VISIT, status: 'in_progress' } })
+    wrap(<HubFieldSalesPanel />)
+    const btn = await screen.findByRole('button', { name: /check-in/i })
+    // Two rapid taps fired back-to-back, before the getCoords() promise (and
+    // therefore checkinMut.mutate) has a chance to settle.
+    fireEvent.click(btn)
+    fireEvent.click(btn)
+    await waitFor(() => expect(screen.getByText('detail:9')).toBeInTheDocument())
+    expect(mod.fieldSalesApi.checkin).toHaveBeenCalledTimes(1)
+  })
+
   it('surfaces an inline error when the check-in POST fails', async () => {
     const { fireEvent } = await import('@testing-library/react')
     const mod = await import('@/api/fieldSales')
@@ -110,6 +127,37 @@ describe('HubFieldSalesPanel', () => {
     await waitFor(() => expect(screen.getByText('Vizita nu mai este disponibila')).toBeInTheDocument())
     // detail overlay must NOT open on failure
     expect(screen.queryByText('detail:9')).not.toBeInTheDocument()
+  })
+
+  it('refreshes the Hub field-sales lists when the detail dialog closes (e.g. after an in-dialog edit)', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const spy = vi.spyOn(qc, 'invalidateQueries')
+    getTodayVisits.mockResolvedValue({ success: true, visits: [VISIT], date: '2026-08-04' })
+
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><HubFieldSalesPanel /></MemoryRouter>
+      </QueryClientProvider>
+    )
+
+    // Open the detail overlay (VisitDetailDialog is mocked above) by tapping
+    // the card itself, then close it the way the real dialog does after an
+    // in-dialog edit (updateMutation succeeds -> handleClose -> onOpenChange(false)).
+    fireEvent.click(await screen.findByText('DEMO Construct Grup SRL'))
+    expect(await screen.findByText('detail:9')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /mock-close-detail/i }))
+
+    expect(screen.queryByText('detail:9')).not.toBeInTheDocument()
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: expect.arrayContaining(['field-sales-visits']) }))
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: expect.arrayContaining(['field-sales-mine']) }))
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['field-sales-cal'] })
+
+    // Both today and upcoming queries are active (mounted) -> invalidateQueries
+    // triggers an automatic refetch. Wait for it under RTL's act-wrapped
+    // waitFor so the settling state updates don't leak past the test as
+    // act() warnings.
+    await waitFor(() => expect(getTodayVisits.mock.calls.length).toBeGreaterThan(1))
+    await waitFor(() => expect(getMyVisits.mock.calls.length).toBeGreaterThan(1))
   })
 
   it('shows upcoming visits below the today list on the Azi tab', async () => {

@@ -278,7 +278,14 @@ export default function HubFieldSalesPanel() {
   const invalidateVisitLists = () => {
     queryClient.invalidateQueries({ queryKey: ['field-sales-visits', date] })
     queryClient.invalidateQueries({ queryKey: ['field-sales-mine', upcomingFrom, upcomingTo] })
+    queryClient.invalidateQueries({ queryKey: ['field-sales-cal'] })
   }
+
+  // Tracks the visit currently acquiring geolocation for check-in. getCoords()
+  // awaits up to a 5s geolocation timeout (or an open permission prompt)
+  // BEFORE checkinMut.mutate() is called, so checkinMut.isPending alone can't
+  // guard against rapid repeat taps during that window — this closes the gap.
+  const [checkingInId, setCheckingInId] = useState<number | null>(null)
 
   const checkinMut = useMutation({
     mutationFn: ({ id, coords }: { id: number; coords: { lat?: number; lng?: number } }) => fieldSalesApi.checkin(id, coords),
@@ -286,6 +293,7 @@ export default function HubFieldSalesPanel() {
       invalidateVisitLists()
       setOverlay({ kind: 'detail', id: vars.id })
     },
+    onSettled: () => setCheckingInId(null),
   })
   const checkinErr = checkinMut.error as { data?: { error?: string } } | null
 
@@ -301,6 +309,8 @@ export default function HubFieldSalesPanel() {
   }
 
   const handleCheckIn = async (visit: FSVisit) => {
+    if (checkingInId !== null) return
+    setCheckingInId(visit.id)
     const coords = await getCoords()
     checkinMut.mutate({ id: visit.id, coords })
   }
@@ -348,7 +358,7 @@ export default function HubFieldSalesPanel() {
           {!isLoading && !isError && visits.length > 0 && (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {visits.map(v => (
-                <VisitCard key={v.id} visit={v} actionPending={checkinMut.isPending}
+                <VisitCard key={v.id} visit={v} actionPending={checkingInId === v.id || checkinMut.isPending}
                   onOpen={() => setOverlay({ kind: 'detail', id: v.id })}
                   onCheckIn={() => handleCheckIn(v)}
                   onFinalize={() => setOverlay({ kind: 'note', id: v.id })} />
@@ -363,7 +373,7 @@ export default function HubFieldSalesPanel() {
                 {upcoming.map(v => (
                   <div key={v.id}>
                     <p className="mb-1 px-1 text-xs font-medium capitalize text-muted-foreground">{upcomingDateLabel(v.planned_date)}</p>
-                    <VisitCard visit={v} actionPending={checkinMut.isPending}
+                    <VisitCard visit={v} actionPending={checkingInId === v.id || checkinMut.isPending}
                       onOpen={() => setOverlay({ kind: 'detail', id: v.id })}
                       onCheckIn={() => handleCheckIn(v)}
                       onFinalize={() => setOverlay({ kind: 'note', id: v.id })} />
@@ -379,11 +389,15 @@ export default function HubFieldSalesPanel() {
         <FieldSalesCalendar onOpen={(id) => setOverlay({ kind: 'detail', id })} />
       )}
 
-      {/* Detail overlay (reuse existing dialog) */}
+      {/* Detail overlay (reuse existing dialog). VisitDetailDialog's own
+          updateMutation only invalidates its own detail query + the manager
+          overview, not the Hub's lists — so refresh those here on close, or
+          an in-dialog edit (status/date/type/outcome) leaves the today list,
+          stat tiles, upcoming list and calendar showing stale data. */}
       <VisitDetailDialog
         visitId={overlay?.kind === 'detail' ? overlay.id : null}
         open={overlay?.kind === 'detail'}
-        onOpenChange={(o) => { if (!o) setOverlay(null) }}
+        onOpenChange={(o) => { if (!o) { setOverlay(null); invalidateVisitLists() } }}
         onOpenClient360={(clientId) => setOverlay({ kind: 'client360', clientId })}
       />
 
