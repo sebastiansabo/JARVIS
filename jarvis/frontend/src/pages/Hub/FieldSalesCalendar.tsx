@@ -78,41 +78,43 @@ export default function FieldSalesCalendar({ onOpen }: { onOpen: (visitId: numbe
         <p className="py-8 text-center text-sm text-destructive">Nu s-a putut încărca calendarul.</p>
       ) : (
         <>
-          <div className="rounded-2xl border border-border/60 bg-card p-2">
-            <div className="grid grid-cols-7">
-              {WEEKDAY_LABELS.map((w) => <div key={w} className="py-1 text-center text-[10px] font-semibold text-muted-foreground">{w}</div>)}
-              {monthCells.map((d) => {
-                const k = keyOf(d)
-                const inMonth = d.getMonth() === anchor.getMonth()
-                const dayVisits = byDay.get(k) ?? []
-                return (
-                  <button
-                    key={k}
-                    type="button"
-                    data-testid={`day-${k}`}
-                    onClick={() => setPicked(k)}
-                    className={cn(
-                      'relative flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg text-sm',
-                      !inMonth && 'text-muted-foreground/40',
-                      k === activeKey && 'bg-primary/15 font-bold',
-                      k === todayKey && 'ring-1 ring-primary',
-                    )}
-                  >
-                    {d.getDate()}
-                    {dayVisits.length > 0 && (
-                      dayVisits.length > 3 ? (
-                        <span data-testid="day-dot" className="text-[9px] font-bold text-primary">{dayVisits.length}</span>
-                      ) : (
-                        <span className="flex items-center gap-0.5">
-                          {dayVisits.map((v) => (
-                            <span key={v.id} data-testid="day-dot" className={cn('h-1.5 w-1.5 rounded-full', STATUS_CONFIG[v.status]?.dot ?? 'bg-muted-foreground')} />
-                          ))}
-                        </span>
-                      )
-                    )}
-                  </button>
-                )
-              })}
+          <div className="overflow-x-auto">
+            <div className="min-w-[280px] rounded-2xl border border-border/60 bg-card p-2">
+              <div className="grid grid-cols-7">
+                {WEEKDAY_LABELS.map((w) => <div key={w} className="py-1 text-center text-[10px] font-semibold text-muted-foreground">{w}</div>)}
+                {monthCells.map((d) => {
+                  const k = keyOf(d)
+                  const inMonth = d.getMonth() === anchor.getMonth()
+                  const dayVisits = byDay.get(k) ?? []
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      data-testid={`day-${k}`}
+                      onClick={() => setPicked(k)}
+                      className={cn(
+                        'relative flex aspect-square min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg text-sm',
+                        !inMonth && 'text-muted-foreground/40',
+                        k === activeKey && 'bg-primary/15 font-bold',
+                        k === todayKey && 'ring-1 ring-primary',
+                      )}
+                    >
+                      {d.getDate()}
+                      {dayVisits.length > 0 && (
+                        dayVisits.length > 3 ? (
+                          <span data-testid="day-dot" className="text-[9px] font-bold text-primary">{dayVisits.length}</span>
+                        ) : (
+                          <span className="flex items-center gap-0.5">
+                            {dayVisits.map((v) => (
+                              <span key={v.id} data-testid="day-dot" className={cn('h-1.5 w-1.5 rounded-full', STATUS_CONFIG[v.status]?.dot ?? 'bg-muted-foreground')} />
+                            ))}
+                          </span>
+                        )
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </div>
 
@@ -121,7 +123,7 @@ export default function FieldSalesCalendar({ onOpen }: { onOpen: (visitId: numbe
             {activeVisits.length === 0 ? (
               <p className="px-1 py-4 text-center text-sm text-muted-foreground">Nicio vizita in aceasta zi</p>
             ) : (
-              <div className="space-y-2">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {activeVisits.map((v) => <CalendarVisitRow key={v.id} visit={v} onOpen={() => onOpen(v.id)} />)}
               </div>
             )}
