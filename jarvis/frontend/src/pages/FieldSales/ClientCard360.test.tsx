@@ -46,6 +46,23 @@ describe('ClientCard360', () => {
     expect(await screen.findByText(/Audi A6/)).toBeInTheDocument()
   })
 
+  it('renders the fiscal data with real ANAF keys, a TVA badge, and the passed client name', async () => {
+    getClient360.mockResolvedValue({
+      ...emptyPayload,
+      fiscal: {
+        denumire: 'DEMO AGRO FERM SRL', adresa: 'DN79 KM 12, ARAD', cui: '44556677',
+        nrRegCom: 'J02/1212/2019', scpTVA: true, stare_inregistrare: 'INREGISTRAT',
+      },
+    })
+    wrap(<ClientCard360 clientId={760} clientName="DEMO Agro Ferm SRL" />)
+
+    expect(await screen.findByText('DEMO AGRO FERM SRL')).toBeInTheDocument()
+    expect(screen.getByText('DN79 KM 12, ARAD')).toBeInTheDocument()
+    expect(screen.getByText(/Plătitor TVA|Platitor TVA/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'DEMO Agro Ferm SRL' })).toBeInTheDocument()
+    expect(screen.queryByText(/Invalid Date/i)).not.toBeInTheDocument()
+  })
+
   it('shows the API error message when the 360 fetch fails', async () => {
     getClient360.mockRejectedValue({ data: { error: 'Clientul nu a fost gasit' } })
     wrap(<ClientCard360 clientId={760} />)
@@ -67,7 +84,7 @@ describe('ClientCard360', () => {
       .mockResolvedValueOnce(emptyPayload)
       .mockResolvedValueOnce({
         ...emptyPayload,
-        fiscal: { company_name: 'ACME SRL', address: 'Str. Test 1', is_vat_payer: true, is_inactive: false, inactivation_date: null, fetched_at: '2026-08-01T10:00:00Z' },
+        fiscal: { denumire: 'ACME SRL', adresa: 'Str. Test 1', cui: '12345678', nrRegCom: 'J02/100/2020', scpTVA: true, stare_inregistrare: 'INREGISTRAT' },
       })
     refreshFiscal.mockResolvedValue({ success: true })
     wrap(<ClientCard360 clientId={760} />)

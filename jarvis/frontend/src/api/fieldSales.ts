@@ -188,8 +188,15 @@ export interface FSVisitSummary {
   outcome: string | null; visit_summary: string | null; kam_name?: string; client_name?: string
 }
 export interface FSAnafData {
-  company_name: string; address: string; is_vat_payer: boolean
-  is_inactive: boolean; inactivation_date: string | null; fetched_at: string
+  denumire?: string
+  cui?: string
+  adresa?: string
+  nrRegCom?: string
+  scpTVA?: boolean
+  telefon?: string
+  cod_postal?: string
+  stare_inregistrare?: string
+  [k: string]: unknown
 }
 export interface FSInventoryMatch {
   id: number; brand: string; model_name: string; model_year: number

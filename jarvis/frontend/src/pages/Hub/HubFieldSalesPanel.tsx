@@ -77,10 +77,13 @@ export function VisitCard({ visit, onOpen, onCheckIn, onFinalize, actionPending 
 
 // iOS-style fixed-inset sheet, ported from HubDrivingPanel — full-screen on
 // phones, a centered floating card on desktop. Reused by every overlay kind.
-function OverlaySheet({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+function OverlaySheet({ onClose, children, wide }: { onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-sm">
-      <div className="mx-auto min-h-full w-full max-w-2xl bg-background shadow-2xl sm:my-8 sm:min-h-0 sm:rounded-2xl">
+      <div className={cn(
+        'mx-auto min-h-full w-full bg-background shadow-2xl sm:my-8 sm:min-h-0 sm:rounded-2xl',
+        wide ? 'max-w-[1120px] lg:min-w-[1080px]' : 'max-w-2xl',
+      )}>
         <div className="sticky top-0 z-10 flex items-center justify-end border-b bg-background/95 p-2 backdrop-blur sm:rounded-t-2xl">
           <button onClick={onClose} className="rounded-full p-2 hover:bg-muted"><X className="h-5 w-5" /></button>
         </div>
@@ -250,7 +253,7 @@ function AddVisitForm({ date, onDone, onCancel }: { date: string; onDone: () => 
 }
 
 type Overlay = null | { kind: 'add' } | { kind: 'detail'; id: number }
-  | { kind: 'note'; id: number } | { kind: 'client360'; clientId: number }
+  | { kind: 'note'; id: number } | { kind: 'client360'; clientId: number; clientName?: string }
 type PanelTab = 'today' | 'calendar'
 
 export default function HubFieldSalesPanel() {
@@ -398,12 +401,12 @@ export default function HubFieldSalesPanel() {
         visitId={overlay?.kind === 'detail' ? overlay.id : null}
         open={overlay?.kind === 'detail'}
         onOpenChange={(o) => { if (!o) { setOverlay(null); invalidateVisitLists() } }}
-        onOpenClient360={(clientId) => setOverlay({ kind: 'client360', clientId })}
+        onOpenClient360={(clientId, clientName) => setOverlay({ kind: 'client360', clientId, clientName })}
       />
 
       {overlay?.kind === 'client360' && (
-        <OverlaySheet onClose={() => setOverlay(null)}>
-          <ClientCard360 clientId={overlay.clientId} />
+        <OverlaySheet wide onClose={() => setOverlay(null)}>
+          <ClientCard360 clientId={overlay.clientId} clientName={overlay.clientName} />
         </OverlaySheet>
       )}
 

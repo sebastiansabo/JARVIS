@@ -18,10 +18,10 @@ function wrap(ui: React.ReactNode) {
 }
 
 describe('VisitDetailDialog client360 link', () => {
-  it('calls onOpenClient360 with the client id', async () => {
+  it('calls onOpenClient360 with the client id and name', async () => {
     const spy = vi.fn()
     wrap(<VisitDetailDialog visitId={9} open onOpenChange={() => {}} onOpenClient360={spy} />)
     fireEvent.click(await screen.findByRole('button', { name: /client 360/i }))
-    expect(spy).toHaveBeenCalledWith(760)
+    expect(spy).toHaveBeenCalledWith(760, 'ACME SRL')
   })
 })

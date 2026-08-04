@@ -25,7 +25,7 @@ interface Props {
   visitId: number | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  onOpenClient360?: (clientId: number) => void
+  onOpenClient360?: (clientId: number, clientName?: string) => void
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -358,7 +358,7 @@ export function VisitDetailDialog({ visitId, open, onOpenChange, onOpenClient360
                     )}
                   </div>
                   {onOpenClient360 && (
-                    <Button variant="outline" size="sm" className="mt-2" onClick={() => onOpenClient360(visit.client_id)}>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => onOpenClient360(visit.client_id, visit.client_name)}>
                       Vezi client 360
                     </Button>
                   )}
