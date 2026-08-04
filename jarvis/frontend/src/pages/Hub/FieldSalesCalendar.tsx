@@ -114,7 +114,10 @@ export default function FieldSalesCalendar({ onOpen, onAdd }: {
                     <div
                       key={k}
                       data-testid={`day-${k}`}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setPicked(k)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPicked(k) } }}
                       className={cn(
                         'group relative flex aspect-square min-w-0 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg text-sm',
                         !inMonth && 'text-muted-foreground/40',
