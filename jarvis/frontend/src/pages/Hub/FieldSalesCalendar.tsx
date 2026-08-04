@@ -561,6 +561,17 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd, queryKey }: {
                             onOpen(v.id)
                             return
                           }
+                          // A completed move-drag must NOT also open the visit:
+                          // a real browser fires a native `click` after
+                          // mousedown+mouseup on the same element regardless of
+                          // movement, and the block tracks the pointer so the
+                          // cursor is still over it → onClick would run onOpen
+                          // right after the move. Suppress that one click.
+                          // (jsdom doesn't synthesize the follow-on click, so
+                          // the move test doesn't observe this, but real input
+                          // does — mirror the resize handle's unconditional
+                          // suppress.)
+                          suppressClickRef.current = v.id
                           const duration = endMin - startMin
                           const newStart = clampMin(yToMin(top + dy))
                           const newEnd = Math.min(newStart + duration, HOUR_END * 60)
@@ -593,7 +604,10 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd, queryKey }: {
                           onOpen(v.id)
                         }}
                         style={{ top: previewTop, height }}
-                        className={cn('absolute left-0.5 right-0.5 overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', cfg.bg, cfg.text)}
+                        // touch-none while THIS block is mid-move so a touch
+                        // drag isn't hijacked as page-scroll (which would
+                        // pointercancel the gesture).
+                        className={cn('absolute left-0.5 right-0.5 overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', cfg.bg, cfg.text, movingThis && 'touch-none')}
                       >
                         <span className="block truncate">{`${start.slice(0, 5)} ${v.client_name}`}</span>
                         <span className="block truncate text-[9px] font-normal opacity-80">{VISIT_TYPE_LABELS[v.visit_type] ?? v.visit_type}</span>
@@ -632,7 +646,9 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd, queryKey }: {
                             if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
                             setDrag(null)
                           }}
-                          className="absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize"
+                          // Same touch-none reasoning as the block body, but
+                          // scoped to an active resize of THIS block.
+                          className={cn('absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize', resizingThis && 'touch-none')}
                         />
                       </button>
                     )
