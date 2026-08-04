@@ -336,22 +336,28 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd, queryKey }: {
   const colRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   const updateMut = useMutation({
-    mutationFn: ({ id, patch }: { id: number; patch: VisitUpdatePayload }) => fieldSalesApi.updateVisit(id, patch),
-    onMutate: async ({ id, patch }) => {
+    mutationFn: ({ id, patch }: { id: number; patch: VisitUpdatePayload; queryKey: readonly [string, CalView, string] }) => fieldSalesApi.updateVisit(id, patch),
+    // `queryKey` travels in the mutation VARIABLES (not the closed-over prop)
+    // because TanStack Query v5 re-reads the latest render's option closures
+    // at execute time — if the user switches view/date-range while a PUT is
+    // in flight, a closure-captured `queryKey` would target the now-active
+    // (wrong) cache entry for rollback/patch instead of the one the drag
+    // actually started against.
+    onMutate: async ({ id, patch, queryKey: qk }) => {
       // Cancel in-flight refetches of the active view so they can't clobber
       // the optimistic write below with stale (pre-drag) data.
-      await queryClient.cancelQueries({ queryKey })
-      const prev = queryClient.getQueryData<MyVisitsResp>(queryKey)
+      await queryClient.cancelQueries({ queryKey: qk })
+      const prev = queryClient.getQueryData<MyVisitsResp>(qk)
       if (prev) {
-        queryClient.setQueryData<MyVisitsResp>(queryKey, {
+        queryClient.setQueryData<MyVisitsResp>(qk, {
           ...prev,
           visits: prev.visits.map((v) => (v.id === id ? { ...v, ...patch } : v)),
         })
       }
       return { prev }
     },
-    onError: (err, _vars, context) => {
-      if (context?.prev) queryClient.setQueryData(queryKey, context.prev)
+    onError: (err, vars, context) => {
+      if (context?.prev) queryClient.setQueryData(vars.queryKey, context.prev)
       setDragErr((err as { data?: { error?: string } })?.data?.error ?? 'Eroare la actualizarea vizitei')
     },
     onSettled: () => {
@@ -590,7 +596,7 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd, queryKey }: {
                               newDayKey = cols[newIdx].dk
                             }
                           }
-                          updateMut.mutate({ id: v.id, patch: { planned_date: newDayKey, planned_time: minToTime(newStart), planned_end_time: minToTime(newEnd) } })
+                          updateMut.mutate({ id: v.id, patch: { planned_date: newDayKey, planned_time: minToTime(newStart), planned_end_time: minToTime(newEnd) }, queryKey })
                         }}
                         onPointerCancel={(e) => {
                           if (!drag || drag.mode !== 'move' || drag.visit.id !== v.id) return
@@ -638,7 +644,7 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd, queryKey }: {
                             suppressClickRef.current = v.id
                             if (Math.abs(dy) <= DRAG_THRESHOLD_PX) return
                             const newEnd = clampMin(Math.max(startMin + SNAP_MIN, yToMin(bottomOriginal + dy)))
-                            updateMut.mutate({ id: v.id, patch: { planned_end_time: minToTime(newEnd) } })
+                            updateMut.mutate({ id: v.id, patch: { planned_end_time: minToTime(newEnd) }, queryKey })
                           }}
                           onPointerCancel={(e) => {
                             if (!drag || drag.mode !== 'resize' || drag.visit.id !== v.id) return

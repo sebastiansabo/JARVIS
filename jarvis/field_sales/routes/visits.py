@@ -298,13 +298,17 @@ def api_visit_detail(visit_id):
 
 @field_sales_bp.route('/api/field-sales/visits/<int:visit_id>', methods=['PUT'])
 @jwt_or_login_required
-@field_sales_manager_required
+@field_sales_required
 def api_update_visit(visit_id):
-    """Manager/admin: update visit fields (date, time, type, goals, status, outcome)."""
+    """Update visit fields (date, time, type, goals, status, outcome). Owner KAM or manager."""
     try:
         visit = _visit_repo.get_by_id(visit_id)
         if not visit:
             return jsonify({'success': False, 'error': 'Visit not found'}), 404
+
+        # IDOR check: KAM updates own visits, managers update any
+        if visit['kam_id'] != _get_current_user().id and not _is_manager():
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
 
         data = request.get_json(silent=True) or {}
         update = {}
