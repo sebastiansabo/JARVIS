@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const getTodayVisits = vi.fn()
+const getMyVisits = vi.fn()
 vi.mock('@/api/fieldSales', () => ({
   fieldSalesApi: {
     getTodayVisits: (...a: unknown[]) => getTodayVisits(...a),
+    getMyVisits: (...a: unknown[]) => getMyVisits(...a),
     searchClients: vi.fn(), createVisit: vi.fn(),
     checkin: vi.fn(), checkout: vi.fn(), addNote: vi.fn(),
     getVisit: vi.fn(), getClient360: vi.fn(), refreshFiscal: vi.fn(),
@@ -16,6 +18,11 @@ vi.mock('@/api/fieldSales', () => ({
 vi.mock('@/pages/FieldSales/VisitDetailDialog', () => ({
   VisitDetailDialog: ({ open, visitId }: { open: boolean; visitId: number | null }) =>
     open ? <div>detail:{visitId}</div> : null,
+}))
+// FieldSalesCalendar does its own data fetching/rendering (covered by its own
+// test file); stub it here so the panel test stays focused on tab wiring.
+vi.mock('@/pages/Hub/FieldSalesCalendar', () => ({
+  default: () => <div>calendar-tab</div>,
 }))
 
 import HubFieldSalesPanel from './HubFieldSalesPanel'
@@ -32,7 +39,12 @@ const VISIT = {
 }
 
 describe('HubFieldSalesPanel', () => {
-  beforeEach(() => { getTodayVisits.mockReset() })
+  beforeEach(() => {
+    getTodayVisits.mockReset()
+    getMyVisits.mockReset()
+    getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: '', date_to: '' })
+    localStorage.clear()
+  })
 
   it('lists today visits and shows the quick-stat counts', async () => {
     getTodayVisits.mockResolvedValue({ success: true, visits: [VISIT], date: '2026-08-04' })
@@ -98,5 +110,26 @@ describe('HubFieldSalesPanel', () => {
     await waitFor(() => expect(screen.getByText('Vizita nu mai este disponibila')).toBeInTheDocument())
     // detail overlay must NOT open on failure
     expect(screen.queryByText('detail:9')).not.toBeInTheDocument()
+  })
+
+  it('shows upcoming visits below the today list on the Azi tab', async () => {
+    getTodayVisits.mockResolvedValue({ success: true, visits: [], date: '2026-08-04' })
+    getMyVisits.mockResolvedValue({
+      success: true,
+      visits: [{ ...VISIT, id: 21, planned_date: '2026-08-10', client_name: 'Viitor Client SRL' }],
+      date_from: '2026-08-05', date_to: '2026-09-03',
+    })
+    wrap(<HubFieldSalesPanel />)
+    expect(await screen.findByText(/vizite viitoare/i)).toBeInTheDocument()
+    expect(screen.getByText('Viitor Client SRL')).toBeInTheDocument()
+  })
+
+  it('switches to the Calendar tab', async () => {
+    getTodayVisits.mockResolvedValue({ success: true, visits: [], date: '2026-08-04' })
+    wrap(<HubFieldSalesPanel />)
+    // Radix Tabs' trigger selects on `mousedown`, not `click` — see the same
+    // note in HubDrivingPanel.test.tsx.
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: /calendar/i }))
+    expect(await screen.findByText('calendar-tab')).toBeInTheDocument()
   })
 })
