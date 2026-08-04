@@ -35,6 +35,14 @@ function addDaysStr(base: string, days: number): string {
 function upcomingDateLabel(dateStr: string): string {
   return new Date(`${dateStr}T00:00:00`).toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short' })
 }
+// Default a chosen start time's implied end time to start+1h (capped at
+// 23:59) — used to prefill Sfarsit in AddVisitForm when only a start time
+// has been picked.
+function addHour(t: string): string {
+  const [h, m] = t.split(':').map(Number)
+  const total = Math.min(h * 60 + m + 60, 23 * 60 + 59)
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
 
 export function VisitCard({ visit, onOpen, onCheckIn, onFinalize, actionPending }: {
   visit: FSVisit; onOpen: () => void; onCheckIn: () => void; onFinalize: () => void; actionPending: boolean
@@ -95,12 +103,15 @@ function OverlaySheet({ onClose, children, wide }: { onClose: () => void; childr
   )
 }
 
-function AddVisitForm({ date, onDone, onCancel }: { date: string; onDone: () => void; onCancel: () => void }) {
+function AddVisitForm({ initialDate, initialTime, initialEndTime, onDone, onCancel }: {
+  initialDate?: string; initialTime?: string; initialEndTime?: string; onDone: () => void; onCancel: () => void
+}) {
   const [query, setQuery] = useState('')
   const [selectedClient, setSelectedClient] = useState<FSClientSearch | null>(null)
   const [showResults, setShowResults] = useState(false)
-  const [visitDate, setVisitDate] = useState(date)
-  const [time, setTime] = useState('')
+  const [visitDate, setVisitDate] = useState(initialDate ?? todayStr())
+  const [time, setTime] = useState(initialTime ?? '')
+  const [endTime, setEndTime] = useState(initialEndTime ?? '')
   const [visitType, setVisitType] = useState('general')
   const [goals, setGoals] = useState('')
 
@@ -128,6 +139,7 @@ function AddVisitForm({ date, onDone, onCancel }: { date: string; onDone: () => 
       client_id: selectedClient.id,
       planned_date: visitDate,
       planned_time: time || undefined,
+      planned_end_time: endTime || undefined,
       visit_type: visitType,
       goals: goals || undefined,
     })
@@ -198,11 +210,31 @@ function AddVisitForm({ date, onDone, onCancel }: { date: string; onDone: () => 
       </div>
 
       <div>
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Ora (optional)</label>
+        <label htmlFor="add-visit-time" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Ora (optional)</label>
         <input
+          id="add-visit-time"
           type="time"
           value={time}
-          onChange={(e) => setTime(e.target.value)}
+          onChange={(e) => {
+            const newTime = e.target.value
+            setTime(newTime)
+            // Prefill a sensible default end time when none was chosen yet, or
+            // the current end no longer makes sense after the start moved past it.
+            if (newTime && (!endTime || endTime <= newTime)) {
+              setEndTime(addHour(newTime))
+            }
+          }}
+          className="h-11 w-full rounded-xl border border-border bg-background px-3 text-base focus:outline-none focus:ring-2 focus:ring-teal-600/40"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="add-visit-end-time" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Sfarsit (optional)</label>
+        <input
+          id="add-visit-end-time"
+          type="time"
+          value={endTime}
+          onChange={(e) => setEndTime(e.target.value)}
           className="h-11 w-full rounded-xl border border-border bg-background px-3 text-base focus:outline-none focus:ring-2 focus:ring-teal-600/40"
         />
       </div>
@@ -254,7 +286,7 @@ function AddVisitForm({ date, onDone, onCancel }: { date: string; onDone: () => 
   )
 }
 
-type Overlay = null | { kind: 'add' } | { kind: 'detail'; id: number }
+type Overlay = null | { kind: 'add'; date?: string; time?: string; endTime?: string } | { kind: 'detail'; id: number }
   | { kind: 'note'; id: number } | { kind: 'client360'; clientId: number; clientName?: string }
 type PanelTab = 'today' | 'calendar'
 
@@ -415,7 +447,9 @@ export default function HubFieldSalesPanel() {
       {overlay?.kind === 'add' && (
         <OverlaySheet onClose={() => setOverlay(null)}>
           <AddVisitForm
-            date={date}
+            initialDate={overlay.date}
+            initialTime={overlay.time}
+            initialEndTime={overlay.endTime}
             onDone={() => { invalidateVisitLists(); setOverlay(null) }}
             onCancel={() => setOverlay(null)}
           />
