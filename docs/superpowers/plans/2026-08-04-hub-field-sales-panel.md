@@ -942,3 +942,107 @@ git commit -m "chore(field-sales): verification fixups for Hub panel" || echo "n
 **Placeholder scan:** No TBD/TODO. The only "future" note (`checkout` wrapper unused by primary flow) is intentional and documented, not a gap. VisitCard `onCheckIn` is a real handler by Task 5 (Task 3 leaves an explicit inline comment, replaced in Task 5 — acceptable as the card is not user-reachable for check-in until then since the panel is not yet routed; still, Task 5 wires it).
 
 **Type consistency:** Wrapper names/signatures in Task 1 match their consumers (`getTodayVisits`, `checkin`, `checkout`, `addNote`, `getClient360`, `refreshFiscal`); `FSClient360`/`FSStructuredNote` used identically in Tasks 6–7; `VisitDetailDialog` prop `onOpenClient360` defined in Task 8 and used in the same task; query keys consistent (`['field-sales-visits', date]`, `['fs-visit-detail', visitId]`, `['field-sales-client360', clientId]`).
+
+---
+
+# ADDENDUM (2026-08-04) — user-requested enhancements
+
+Added after mid-execution requests: (a) **Calendar** to see planned visits, (b) **Upcoming visits** in the Today view, (c) **responsive** page. These run AFTER Tasks 5–8; the final verification (Task 9) runs last, after Task 12.
+
+Data note: the KAM daily-driver so far uses `getTodayVisits` (single day). Calendar + Upcoming need the current KAM's visits over a **date range**. The repo already has `VisitRepository.get_team_visits(date_from, date_to, kam_id)` (used by the manager overview). Task 10 exposes it via a new KAM-scoped route that forces `kam_id = current user` (a plain KAM sees only their own visits) — the one small backend addition in this feature.
+
+## Task 10: KAM-scoped range endpoint + `getMyVisits` wrapper
+
+**Files:**
+- Modify: `jarvis/field_sales/routes/visits.py` (add `visits/mine` route)
+- Modify: `jarvis/frontend/src/api/fieldSales.ts` (add `getMyVisits`)
+- Test: `jarvis/frontend/src/api/fieldSales.fs.test.ts` (extend)
+
+**Interfaces:**
+- Produces: `GET /api/field-sales/visits/mine?date_from=&date_to=` → `{ success, visits: FSVisit[], date_from, date_to }`; web `fieldSalesApi.getMyVisits(dateFrom: string, dateTo: string): Promise<{ success: boolean; visits: FSVisit[]; date_from: string; date_to: string }>`.
+
+- [ ] **Step 1 (backend):** In `jarvis/field_sales/routes/visits.py`, after `api_visits_today`, add (mirrors `api_visits_today` auth + the manager route's date validation, but forces the current user's id):
+
+```python
+@field_sales_bp.route('/api/field-sales/visits/mine', methods=['GET'])
+@jwt_or_login_required
+@field_sales_required
+def api_visits_mine():
+    """Get the current KAM's own visits in a date range (calendar / upcoming)."""
+    try:
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+        if not date_from or not date_to:
+            return jsonify({'success': False, 'error': 'date_from and date_to are required'}), 400
+        try:
+            datetime.strptime(date_from, '%Y-%m-%d')
+            datetime.strptime(date_to, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+        visits = _visit_repo.get_team_visits(date_from, date_to, kam_id=_get_current_user().id)
+        return jsonify({'success': True, 'visits': visits, 'date_from': date_from, 'date_to': date_to})
+    except Exception as e:
+        logger.exception('Error fetching my visits')
+        return jsonify({'success': False, 'error': _safe_error(e)}), 500
+```
+
+Verify the backend still imports/boots: `cd jarvis && python -c "import app"` (or the project's usual smoke) — no import error. There is no pytest for these routes; the get_team_visits query is already exercised by the manager route.
+
+- [ ] **Step 2 (frontend test, RED):** add to `fieldSales.fs.test.ts`:
+
+```ts
+it('getMyVisits hits the mine route with date range params', async () => {
+  await fieldSalesApi.getMyVisits('2026-08-01', '2026-08-31')
+  expect(get).toHaveBeenCalledWith('/api/field-sales/visits/mine', { date_from: '2026-08-01', date_to: '2026-08-31' })
+})
+```
+
+- [ ] **Step 3 (frontend wrapper):** add to `fieldSalesApi` (next to `getTodayVisits`):
+
+```ts
+  getMyVisits: (dateFrom: string, dateTo: string) =>
+    api.get<{ success: boolean; visits: FSVisit[]; date_from: string; date_to: string }>(
+      '/api/field-sales/visits/mine', { date_from: dateFrom, date_to: dateTo }),
+```
+
+- [ ] **Step 4:** `cd jarvis/frontend && npx vitest run src/api/fieldSales.fs.test.ts` → PASS; `npx tsc --noEmit` → clean.
+- [ ] **Step 5:** Commit `feat(field-sales): KAM-scoped visits/mine range endpoint + getMyVisits`.
+
+## Task 11: Calendar tab + Upcoming section in Today view
+
+**Files:**
+- Modify: `jarvis/frontend/src/pages/Hub/HubFieldSalesPanel.tsx`
+- Create: `jarvis/frontend/src/pages/Hub/FieldSalesCalendar.tsx`
+- Test: `jarvis/frontend/src/pages/Hub/FieldSalesCalendar.test.tsx` (create) + extend `HubFieldSalesPanel.test.tsx`
+
+**Interfaces:**
+- Consumes: `fieldSalesApi.getMyVisits` (Task 10), `FSVisit`, the panel's `VISIT_TYPE_LABELS`/`STATUS_CONFIG`.
+- Produces: `FieldSalesCalendar` (default export) `({ onOpen }: { onOpen: (visitId: number) => void })`.
+
+- [ ] **Step 1 — Tabs in the panel.** Add a Radix `Tabs` switcher at the top of `HubFieldSalesPanel` (same components as `HubDrivingPanel`): `Azi` and `Calendar`, persisted via `usePersistedState<'today'|'calendar'>('hub-fs-tab','today')` (import `usePersistedState` from `@/lib/utils`). The existing header/stats/list render under `Azi`; `<FieldSalesCalendar onOpen={(id) => setOverlay({ kind: 'detail', id })} />` renders under `Calendar`. Overlays stay shared.
+
+- [ ] **Step 2 — Upcoming section (Azi tab).** Below today's list add a "Vizite viitoare" section. Query: `useQuery(['field-sales-mine', from, to], () => fieldSalesApi.getMyVisits(from, to))` where `from = tomorrow (todayStr()+1d)` and `to = +30d`. Filter results to `status === 'planned' || status === 'in_progress'`. Render each with the existing `VisitCard` (which already shows client/type/time/renewal + a status action), wrapped so the planned date is visible — pass a small date label above each card (`new Date(v.planned_date+'T00:00:00').toLocaleDateString('ro-RO', { weekday:'short', day:'2-digit', month:'short' })`). Tapping opens the detail overlay. Empty upcoming → render nothing (no empty-state noise). Header: "Vizite viitoare (30 zile)".
+
+- [ ] **Step 3 — Calendar component.** Create `FieldSalesCalendar.tsx`, a **month** view adapted from `jarvis/frontend/src/pages/Hub/DrivingCalendar.tsx` (reuse its `pad`/`keyOf`/`addDays`/`addMonths`/`startOfWeek`/`naiveDate` helpers and the 6-week / 42-cell month grid + prev/next navigation; drop the day/week views and the foiParcurs vehicle join). Data: `useQuery(['field-sales-cal', gridStartKey], () => fieldSalesApi.getMyVisits(keyOf(gridStart), keyOf(addDays(gridStart,41))))`. Group visits by `planned_date` (`dayKeyOf`). Each month cell shows the day number and, when it has visits, a count badge / up to 3 colored dots using `STATUS_CONFIG` colors. Selecting a day lists that day's visits below the grid via `VisitCard` (or a compact row) with `onClick={() => onOpen(v.id)}`. `STATUS_CONFIG`/`VISIT_TYPE_LABELS`: export them from `HubFieldSalesPanel.tsx` (add `export`) and import here, to avoid duplication.
+
+- [ ] **Step 4 — Tests.**
+  - `FieldSalesCalendar.test.tsx`: mock `getMyVisits` to return two visits on a known day; render; assert the month grid shows an indicator on that day and that selecting it lists the visit; assert `onOpen` fires with the visit id on click.
+  - Extend `HubFieldSalesPanel.test.tsx`: with `getMyVisits` mocked to return one future planned visit, the Azi tab shows the "Vizite viitoare" header and the client; switching to the Calendar tab (fireEvent.mouseDown on the `Calendar` tab — Radix selects on mousedown) renders the calendar. Keep output pristine (await settled state).
+
+- [ ] **Step 5:** `npx vitest run src/pages/Hub/FieldSalesCalendar.test.tsx src/pages/Hub/HubFieldSalesPanel.test.tsx` → PASS; `npx tsc --noEmit` → clean. Commit `feat(field-sales): Hub calendar tab + upcoming visits in today view`.
+
+## Task 12: Responsive layout pass
+
+**Files:**
+- Modify: `jarvis/frontend/src/pages/Hub/HubFieldSalesPanel.tsx`, `FieldSalesCalendar.tsx`, `jarvis/frontend/src/pages/FieldSales/ClientCard360.tsx`
+
+**Goal:** the panel uses horizontal space on desktop and never overflows on mobile. The panel is already mobile-first (iOS control sizes, responsive overlay sheet); this pass adds desktop breakpoints.
+
+- [ ] **Step 1:** Today list and Upcoming list: replace the single-column `space-y-3` wrapper with a responsive grid: `grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3`. Stats row: keep 3-across via `grid grid-cols-3 gap-2` (so it never wraps awkwardly). Header row: `flex-wrap gap-2` so the Adauga button wraps under the title on narrow widths.
+- [ ] **Step 2:** Calendar: ensure the month grid is fluid (`grid grid-cols-7` cells with `min-w-0`, `aspect-square` or min-height cells, text truncation) and the whole calendar sits in an `overflow-x-auto` guard so it never forces body horizontal scroll; the selected-day list uses the same responsive grid as Step 1.
+- [ ] **Step 3:** ClientCard360: section layout uses `grid grid-cols-1 md:grid-cols-2` for the info/fiscal/fleet blocks where it reads better on desktop; long tables/rows wrapped in `overflow-x-auto`; images/values `max-w-full`.
+- [ ] **Step 4 — verify responsiveness.** Add/extend a test only where it adds value (e.g. assert the list wrapper has the `md:grid-cols-2` class), OR verify via build + manual breakpoints — layout classes aren't deeply unit-testable. Run `npx tsc --noEmit` and `npm run build`; then (optional, localhost) confirm at 375px and 1280px widths that the body has no horizontal scrollbar and cards reflow. Commit `feat(field-sales): responsive layout for Hub field-sales panel + 360 card`.
+
+## Revised final task order
+
+5 → 6 → 7 → 8 → 10 → 11 → 12 → 9 (Full verification runs LAST, after Task 12). The final whole-branch review covers the whole feature including the addendum.
