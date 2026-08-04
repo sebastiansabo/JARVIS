@@ -467,4 +467,42 @@ describe('FieldSalesCalendar', () => {
     // for THIS visit, not that it was never called at all.
     expect(updateVisit).not.toHaveBeenCalledWith(703, expect.anything())
   })
+
+  it('rolls back the optimistic move and shows an inline error when updateVisit rejects', async () => {
+    const now = new Date()
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    const visits = [
+      { id: 801, kam_id: 1, client_id: 1, planned_date: todayKey, planned_time: '09:00', planned_end_time: '10:00', visit_type: 'general', status: 'planned', client_name: 'Rollback Client', kam_name: 'X' },
+    ]
+    getMyVisits.mockResolvedValue({ success: true, visits, date_from: todayKey, date_to: todayKey })
+    updateVisit.mockRejectedValueOnce({ data: { error: 'Nu s-a putut muta vizita' } })
+    const callsBefore = getMyVisits.mock.calls.length
+
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+    await screen.findByText('Rollback Client')
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    const block = await screen.findByTestId('fs-block-801')
+    // 09:00 = minToY(540) = 96px is the block's original top.
+    expect(block).toHaveStyle({ top: '96px' })
+    block.setPointerCapture = vi.fn()
+    block.releasePointerCapture = vi.fn()
+
+    // Move down 1h (48px) — the optimistic onMutate writes 10:00 into the
+    // cache (block would jump to top 144px), then updateVisit rejects →
+    // onError rolls the cache back and surfaces err.data.error inline.
+    firePointer(block, 'pointerdown', 200)
+    firePointer(block, 'pointermove', 248)
+    firePointer(block, 'pointerup', 248)
+
+    // (a) inline error renders.
+    await waitFor(() => expect(screen.getByText('Nu s-a putut muta vizita')).toBeInTheDocument())
+    expect(updateVisit).toHaveBeenCalledWith(801, { planned_date: todayKey, planned_time: '10:00', planned_end_time: '11:00' })
+    // (b) block is back at its original position (cache rolled back). Re-query
+    // it — the optimistic write + rollback re-rendered the tree.
+    expect(screen.getByTestId('fs-block-801')).toHaveStyle({ top: '96px' })
+    // Let onSettled's invalidation-triggered refetch settle under waitFor so
+    // it doesn't leak past the test as an act() warning.
+    await waitFor(() => expect(getMyVisits.mock.calls.length).toBeGreaterThan(callsBefore))
+  })
 })
