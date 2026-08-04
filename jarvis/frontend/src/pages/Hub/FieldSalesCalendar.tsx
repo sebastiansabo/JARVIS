@@ -41,6 +41,11 @@ function minToTime(min: number): string { return `${pad(Math.floor(min / 60))}:$
 function snap(min: number): number { return Math.round(min / SNAP_MIN) * SNAP_MIN }
 function yToMin(y: number): number { return snap(HOUR_START * 60 + (y / PX_PER_HOUR) * 60) }
 function minToY(min: number): number { return ((min - HOUR_START * 60) / 60) * PX_PER_HOUR }
+// Clamp a minutes-of-day value into the visible grid window. Needed because a
+// captured pointer keeps reporting coordinates after it leaves the column
+// (setPointerCapture), so a drag above/below the grid otherwise yields
+// negative or past-21:00 minutes → malformed times like "-2:-30" / "28:00".
+function clampMin(min: number): number { return Math.max(HOUR_START * 60, Math.min(HOUR_END * 60, min)) }
 function addHour(t: string): string { return minToTime(Math.min(toMin(t)! + 60, HOUR_END * 60)) }
 
 /**
@@ -351,18 +356,28 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd }: {
             {cols.map(({ dk, timed }) => {
               const dragging = drag?.col === dk
               // Selection rectangle geometry: both endpoints are re-quantized
-              // through yToMin (which snaps to 30 min) then back to pixels via
-              // minToY, so the live rectangle always aligns to a snap line —
-              // matching exactly what pointerup will create.
-              const selTop = dragging ? minToY(yToMin(Math.min(drag!.y0, drag!.y1))) : 0
-              const selBottom = dragging ? minToY(yToMin(Math.max(drag!.y0, drag!.y1))) : 0
+              // through yToMin (which snaps to 30 min) → clampMin (kept inside
+              // the visible window even when the captured pointer is dragged
+              // off the column) → minToY, so the live rectangle always aligns
+              // to a snap line inside the grid and matches what pointerup will
+              // create.
+              const selTop = dragging ? minToY(clampMin(yToMin(Math.min(drag!.y0, drag!.y1)))) : 0
+              const selBottom = dragging ? minToY(clampMin(yToMin(Math.max(drag!.y0, drag!.y1)))) : 0
               return (
                 <div
                   key={dk}
                   data-testid={`fs-col-${dk}`}
-                  className="relative min-w-0 cursor-pointer touch-none rounded-lg bg-muted/30"
+                  // touch-action:none only on the actively-dragging column, so
+                  // idle columns keep normal touch-scroll (tap-to-add still
+                  // works; touch drag-to-create may compete with scroll, but
+                  // tap is the touch primary — intended trade-off).
+                  className={cn('relative min-w-0 cursor-pointer rounded-lg bg-muted/30', dragging && 'touch-none')}
                   style={{ height: gridHeight }}
                   onPointerDown={(e) => {
+                    // Ignore non-primary mouse buttons (right/middle) so they
+                    // don't start a drag/create; touch/pen primary contact has
+                    // button === 0 and passes through.
+                    if (e.button !== 0 && e.pointerType === 'mouse') return
                     const rect = e.currentTarget.getBoundingClientRect()
                     const y0 = e.clientY - rect.top
                     e.currentTarget.setPointerCapture(e.pointerId)
@@ -376,11 +391,23 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd }: {
                   onPointerUp={(e) => {
                     if (!drag || drag.col !== dk) return
                     e.currentTarget.releasePointerCapture(e.pointerId)
-                    const a = yToMin(Math.min(drag.y0, drag.y1))
-                    let b = yToMin(Math.max(drag.y0, drag.y1))
-                    if (b - a < SNAP_MIN) b = a + 60
+                    const a = clampMin(yToMin(Math.min(drag.y0, drag.y1)))
+                    let b = clampMin(yToMin(Math.max(drag.y0, drag.y1)))
+                    // Plain click (or a sub-snap drag): default to a 1h visit.
+                    if (b - a < SNAP_MIN) b = clampMin(a + 60)
+                    // If clamping collapsed the range against 21:00 (a click at
+                    // the very bottom), pull the start back so a 1h slot fits.
+                    let startMin = a
+                    if (b - startMin < SNAP_MIN) startMin = clampMin(b - 60)
                     setDrag(null)
-                    onAdd(dk, minToTime(a), minToTime(b))
+                    onAdd(dk, minToTime(startMin), minToTime(b))
+                  }}
+                  onPointerCancel={(e) => {
+                    // An interrupted gesture (app switch / system gesture)
+                    // must not leave a stuck selection rectangle.
+                    if (!drag || drag.col !== dk) return
+                    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
+                    setDrag(null)
                   }}
                 >
                   {hours.slice(0, -1).map((h) => (
