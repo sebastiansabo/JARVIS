@@ -25,6 +25,28 @@ def api_visits_today():
         return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
 
+@field_sales_bp.route('/api/field-sales/visits/mine', methods=['GET'])
+@jwt_or_login_required
+@field_sales_required
+def api_visits_mine():
+    """Get the current KAM's own visits in a date range (calendar / upcoming)."""
+    try:
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+        if not date_from or not date_to:
+            return jsonify({'success': False, 'error': 'date_from and date_to are required'}), 400
+        try:
+            datetime.strptime(date_from, '%Y-%m-%d')
+            datetime.strptime(date_to, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+        visits = _visit_repo.get_team_visits(date_from, date_to, kam_id=_get_current_user().id)
+        return jsonify({'success': True, 'visits': visits, 'date_from': date_from, 'date_to': date_to})
+    except Exception as e:
+        logger.exception('Error fetching my visits')
+        return jsonify({'success': False, 'error': _safe_error(e)}), 500
+
+
 @field_sales_bp.route('/api/field-sales/visits', methods=['POST'])
 @jwt_or_login_required
 @field_sales_required
