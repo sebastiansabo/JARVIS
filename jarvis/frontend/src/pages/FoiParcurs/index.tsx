@@ -13,7 +13,6 @@ import {
   RotateCcw,
   Archive,
   Lock,
-  Unlock,
   Car,
   Pencil,
   XIcon,
@@ -28,12 +27,10 @@ import {
   FileSpreadsheet,
   PlayCircle,
   Loader2,
-  CalendarClock,
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import LockVehicleDialog from './LockVehicleDialog'
-import ScheduleBlockDialog from './ScheduleBlockDialog'
 import ArchiveVehicleDialog from './ArchiveVehicleDialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -2439,7 +2436,6 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
 
   // Lockout — block/unblock a car from the driving park.
   const [lockingVehicle, setLockingVehicle] = useState<FpVehicle | null>(null)
-  const [schedulingVehicle, setSchedulingVehicle] = useState<FpVehicle | null>(null)
   const lockMutation = useMutation({
     mutationFn: (p: { id: number; category: string; note?: string; until?: string | null }) =>
       foiParcursApi.lockVehicle(p.id, { category: p.category, note: p.note, until: p.until }),
@@ -2447,7 +2443,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
   })
   const unlockMutation = useMutation({
     mutationFn: (id: number) => foiParcursApi.unlockVehicle(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] }); setLockingVehicle(null) },
   })
 
   const handleCreate = (e: React.FormEvent) => {
@@ -2695,18 +2691,9 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                           <Button variant="ghost" size="sm" onClick={() => startEdit(v)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          {v.locked_out ? (
-                            <Button variant="ghost" size="sm" title="Deblochează mașina" onClick={() => unlockMutation.mutate(v.id)} disabled={unlockMutation.isPending}>
-                              <Unlock className="h-4 w-4 text-red-600 dark:text-red-400" />
-                            </Button>
-                          ) : (
-                            <Button variant="ghost" size="sm" title="Blochează în parcul auto" onClick={() => setLockingVehicle(v)}>
-                              <Lock className="h-4 w-4" />
-                            </Button>
-                          )}
-                          <Button variant="ghost" size="sm" title="Programează blocare"
-                            onClick={() => setSchedulingVehicle(v)}>
-                            <CalendarClock className="h-4 w-4" />
+                          <Button variant="ghost" size="sm" title="Blocare parc auto (imediată / programată)"
+                            onClick={() => setLockingVehicle(v)}>
+                            <Lock className={`h-4 w-4 ${(v.locked_out || v.blocked_now) ? 'text-red-600 dark:text-red-400' : ''}`} />
                           </Button>
                           <Button
                             variant="ghost"
@@ -2777,13 +2764,8 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
           submitting={lockMutation.isPending}
           onClose={() => setLockingVehicle(null)}
           onSubmit={(d) => lockMutation.mutate({ id: lockingVehicle.id, ...d })}
-        />
-      )}
-
-      {schedulingVehicle && (
-        <ScheduleBlockDialog
-          vehicle={schedulingVehicle}
-          onClose={() => setSchedulingVehicle(null)}
+          onUnlock={() => unlockMutation.mutate(lockingVehicle.id)}
+          unlocking={unlockMutation.isPending}
         />
       )}
 

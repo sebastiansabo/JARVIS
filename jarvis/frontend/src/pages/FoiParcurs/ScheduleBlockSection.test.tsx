@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import ScheduleBlockDialog from './ScheduleBlockDialog'
+import ScheduleBlockSection from './ScheduleBlockSection'
 import { foiParcursApi } from '@/api/foiParcurs'
 
 vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: {
@@ -16,10 +16,10 @@ const vehicle = { id: 3, vin: 'VIN1', mark: 'Audi', model: 'A4', registration_nu
 
 function setup() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={qc}><ScheduleBlockDialog vehicle={vehicle} onClose={() => {}} /></QueryClientProvider>)
+  render(<QueryClientProvider client={qc}><ScheduleBlockSection vehicle={vehicle} /></QueryClientProvider>)
 }
 
-describe('ScheduleBlockDialog', () => {
+describe('ScheduleBlockSection', () => {
   beforeEach(() => vi.clearAllMocks())
   it('shows overlap warning and sends allow_conflicts=true', async () => {
     setup()
