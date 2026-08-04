@@ -1,0 +1,88 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const addNote = vi.fn()
+vi.mock('@/api/fieldSales', () => ({ fieldSalesApi: { addNote: (...a: unknown[]) => addNote(...a) } }))
+import NoteCaptureModal from './NoteCaptureModal'
+
+function wrap(ui: React.ReactNode) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
+}
+
+describe('NoteCaptureModal', () => {
+  beforeEach(() => addNote.mockClear())
+
+  it('submits the raw note and renders the AI summary', async () => {
+    addNote.mockResolvedValue({ success: true, note: { id: 1, raw_note: 'x', created_at: '' }, structured_note: {
+      visit_summary: 'Rezumat AI', contact_person: null, vehicles_discussed: [], commitments_made: [],
+      next_steps: [], opportunity_value_eur: null, decision_timeline: null, follow_up_date: null, objections: [], risk_flags: [],
+    } })
+    wrap(<NoteCaptureModal visitId={9} clientId={760} onDone={() => {}} onCancel={() => {}} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'discutie buna' } })
+    fireEvent.click(screen.getByRole('button', { name: /proceseaz|finalizeaz|salveaz/i }))
+    expect(await screen.findByText('Rezumat AI')).toBeInTheDocument()
+    expect(addNote).toHaveBeenCalledWith(9, { raw_note: 'discutie buna' })
+  })
+
+  it('renders structured sections (vehicles, next steps, opportunity, risk flags) and saving invalidates queries + calls onDone', async () => {
+    addNote.mockResolvedValue({
+      success: true,
+      note: { id: 1, raw_note: 'x', created_at: '' },
+      structured_note: {
+        visit_summary: 'Discutie despre reinnoire flota',
+        contact_person: 'Ion Popescu',
+        vehicles_discussed: [{ action: 'replace', current_vehicle: 'BMW X3 2019', interested_in: 'BMW X5', budget_eur: 60000 }],
+        commitments_made: ['Trimite oferta pana vineri'],
+        next_steps: [{ action: 'Programeaza test drive', owner: 'KAM', deadline: '2026-08-10' }],
+        opportunity_value_eur: 60000,
+        decision_timeline: '30 zile',
+        follow_up_date: '2026-08-10',
+        objections: ['Pret ridicat'],
+        risk_flags: ['Client compara cu concurenta'],
+      },
+    })
+    const onDone = vi.fn()
+    wrap(<NoteCaptureModal visitId={9} clientId={760} onDone={onDone} onCancel={() => {}} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'discutie buna' } })
+    fireEvent.click(screen.getByRole('button', { name: /proceseaz/i }))
+
+    expect(await screen.findByText('Discutie despre reinnoire flota')).toBeInTheDocument()
+    expect(screen.getByText(/Ion Popescu/)).toBeInTheDocument()
+    expect(screen.getByText(/BMW X5/)).toBeInTheDocument()
+    expect(screen.getByText('Trimite oferta pana vineri')).toBeInTheDocument()
+    expect(screen.getByText('Programeaza test drive')).toBeInTheDocument()
+    expect(screen.getByText('Pret ridicat')).toBeInTheDocument()
+    expect(screen.getByText('Client compara cu concurenta')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /salveaz/i }))
+    // RTL's waitFor wraps polling in act(), so the invalidateQueries + onDone
+    // chain triggered from handleSave settles under act() -> no act() warning.
+    await waitFor(() => expect(onDone).toHaveBeenCalled())
+  })
+
+  it('falls back to input step and shows an inline error when addNote fails', async () => {
+    // Reassign a fresh mock directly on the mocked module (rather than the
+    // shared `addNote` wrapper used above) -- matches the convention already
+    // used for the reject-path case in HubFieldSalesPanel.test.tsx, and
+    // avoids a false-positive "unhandled rejection" flagged by Vitest when a
+    // rejecting mock shares a mutation-backed wrapper with prior resolving
+    // tests in this suite.
+    const mod = await import('@/api/fieldSales')
+    ;(mod.fieldSalesApi.addNote as ReturnType<typeof vi.fn>) = vi.fn().mockRejectedValue({ data: { error: 'Nota nu a putut fi procesata' } })
+    wrap(<NoteCaptureModal visitId={9} clientId={760} onDone={() => {}} onCancel={() => {}} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'discutie buna' } })
+    fireEvent.click(screen.getByRole('button', { name: /proceseaz/i }))
+    await waitFor(() => expect(screen.getByText('Nota nu a putut fi procesata')).toBeInTheDocument())
+    // back on the input step -> textarea is present again
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+  })
+
+  it('calls onCancel when Anuleaza is clicked', () => {
+    const onCancel = vi.fn()
+    wrap(<NoteCaptureModal visitId={9} clientId={760} onDone={() => {}} onCancel={onCancel} />)
+    fireEvent.click(screen.getByRole('button', { name: /anuleaz/i }))
+    expect(onCancel).toHaveBeenCalled()
+  })
+})
