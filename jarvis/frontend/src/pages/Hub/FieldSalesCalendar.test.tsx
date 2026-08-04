@@ -110,15 +110,58 @@ describe('FieldSalesCalendar', () => {
     expect(onAdd).toHaveBeenCalledTimes(1)
   })
 
-  it('switching to week/day shows a placeholder note', async () => {
+  it('renders a Săptămână/Zi time-grid (hour gutter) instead of a placeholder', async () => {
     getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: '', date_to: '' })
     wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
     await screen.findByText(/nicio vizita/i)
 
     fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
-    expect(await screen.findByText(/în curând/i)).toBeInTheDocument()
+    expect(await screen.findByText('07:00')).toBeInTheDocument()
+    expect(screen.queryByText(/în curând/i)).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Zi' }))
-    expect(await screen.findByText(/în curând/i)).toBeInTheDocument()
+    expect(await screen.findByText('07:00')).toBeInTheDocument()
+  })
+
+  it('renders a timed visit block on the week grid, opens it on click, and adds a visit on an empty-slot click', async () => {
+    // "Today" is always inside the week-view's 7-day window (week is
+    // computed from the current anchor, which defaults to now), so no
+    // startOfWeek duplication is needed here.
+    const now = new Date()
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    const visits = [
+      { id: 301, kam_id: 1, client_id: 1, planned_date: todayKey, planned_time: '09:00', planned_end_time: '10:30', visit_type: 'general', status: 'planned', client_name: 'Grid Client', kam_name: 'X' },
+    ]
+    getMyVisits.mockResolvedValue({ success: true, visits, date_from: todayKey, date_to: todayKey })
+
+    const onOpen = vi.fn()
+    const onAdd = vi.fn()
+    wrap(<FieldSalesCalendar onOpen={onOpen} onAdd={onAdd} />)
+
+    // Sanity: month view (the default) already has the data loaded.
+    await screen.findByText('Grid Client')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    // top = minToY(540) = 96px, height = minToY(630) - 96 = 72px (1.5h block).
+    const block = await screen.findByTestId('fs-block-301')
+    expect(block).toHaveStyle({ top: '96px', height: '72px' })
+
+    fireEvent.click(block)
+    expect(onOpen).toHaveBeenCalledWith(301)
+    expect(onAdd).not.toHaveBeenCalled()
+
+    // Empty-slot click: jsdom never lays elements out, so the column's
+    // getBoundingClientRect is mocked to a known `top` and the click's
+    // `clientY` is set to `top + offsetY` — the component reads
+    // `e.clientY - rect.top` as the click offset within the column. An
+    // offsetY of 192px = minToY(660) = 11:00, snapped exactly.
+    const col = screen.getByTestId(`fs-col-${todayKey}`)
+    vi.spyOn(col, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300, x: 0, y: 100, toJSON: () => {},
+    } as DOMRect)
+    fireEvent.click(col, { clientY: 100 + 192 })
+    expect(onAdd).toHaveBeenCalledWith(todayKey, '11:00', '12:00')
+    expect(onAdd).toHaveBeenCalledTimes(1)
   })
 })
