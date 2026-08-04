@@ -246,6 +246,66 @@ describe('FieldSalesCalendar', () => {
     expect(onAdd).toHaveBeenCalledTimes(1)
   })
 
+  it('clamps a drag that ends ABOVE the grid top to HOUR_START (07:00)', async () => {
+    // A captured pointer keeps reporting coordinates after leaving the column,
+    // so a drag whose endpoint is above the column top yields a negative
+    // offset → a negative/pre-07:00 minute. It must clamp to 07:00, never
+    // emit a malformed time like "-2:-30".
+    const now = new Date()
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: todayKey, date_to: todayKey })
+
+    const onAdd = vi.fn()
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} />)
+
+    await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i })
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    const col = await screen.findByTestId(`fs-col-${todayKey}`)
+    vi.spyOn(col, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300, x: 0, y: 100, toJSON: () => {},
+    } as DOMRect)
+    col.setPointerCapture = vi.fn()
+    col.releasePointerCapture = vi.fn()
+
+    // pointerdown at 09:00 (offset 96px), pointermove/up 200px ABOVE the
+    // column top (clientY 100 - 100 = 0 → offset -100). start clamps to 07:00.
+    firePointer(col, 'pointerdown', 100 + 96)
+    firePointer(col, 'pointermove', 100 - 100)
+    firePointer(col, 'pointerup', 100 - 100)
+
+    expect(onAdd).toHaveBeenCalledWith(todayKey, '07:00', '09:00')
+    expect(onAdd).toHaveBeenCalledTimes(1)
+  })
+
+  it('clamps a drag that ends BELOW the grid bottom to HOUR_END (21:00)', async () => {
+    const now = new Date()
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: todayKey, date_to: todayKey })
+
+    const onAdd = vi.fn()
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} />)
+
+    await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i })
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    const col = await screen.findByTestId(`fs-col-${todayKey}`)
+    vi.spyOn(col, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300, x: 0, y: 100, toJSON: () => {},
+    } as DOMRect)
+    col.setPointerCapture = vi.fn()
+    col.releasePointerCapture = vi.fn()
+
+    // pointerdown at 09:00 (offset 96px), pointermove/up far below the grid
+    // (offset 2000px, well past 21:00). end clamps to 21:00.
+    firePointer(col, 'pointerdown', 100 + 96)
+    firePointer(col, 'pointermove', 100 + 2000)
+    firePointer(col, 'pointerup', 100 + 2000)
+
+    expect(onAdd).toHaveBeenCalledWith(todayKey, '09:00', '21:00')
+    expect(onAdd).toHaveBeenCalledTimes(1)
+  })
+
   it('renders an untimed visit in the shared "Fără oră" band and opens it on click', async () => {
     const now = new Date()
     const todayKey = keyOf(now)
