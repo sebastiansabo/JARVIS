@@ -63,6 +63,21 @@ describe('ClientCard360', () => {
     expect(screen.queryByText(/Invalid Date/i)).not.toBeInTheDocument()
   })
 
+  it('renders the fiscal data from a NESTED ANAF payload (real ANAF shape)', async () => {
+    getClient360.mockResolvedValue({
+      ...emptyPayload,
+      fiscal: {
+        date_generale: { denumire: 'DEMO SRL', adresa: 'STR X', cui: '123', nrRegCom: 'J1/1/2020' },
+        inregistrare_scop_Tva: { scpTVA: true },
+      },
+    })
+    wrap(<ClientCard360 clientId={760} />)
+
+    expect(await screen.findByText('DEMO SRL')).toBeInTheDocument()
+    expect(screen.getByText('STR X')).toBeInTheDocument()
+    expect(screen.getByText(/Plătitor TVA|Platitor TVA/)).toBeInTheDocument()
+  })
+
   it('shows the API error message when the 360 fetch fails', async () => {
     getClient360.mockRejectedValue({ data: { error: 'Clientul nu a fost gasit' } })
     wrap(<ClientCard360 clientId={760} />)

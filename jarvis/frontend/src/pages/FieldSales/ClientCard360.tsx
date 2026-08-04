@@ -83,18 +83,35 @@ function HeaderSection({ clientId, clientName, profile }: {
 }
 
 // ── Fiscal (ANAF) ──
-// `fiscal` is the raw ANAF lookup dict as returned by the backend — flat keys
-// (denumire/cui/adresa/nrRegCom/scpTVA/telefon/stare_inregistrare), NOT the
-// normalized company_name/is_vat_payer/is_inactive/fetched_at shape.
+// The backend `fiscal` payload comes in two shapes:
+//   NESTED (real ANAF fetch): fields under date_generale / inregistrare_scop_Tva /
+//     stare_inactiv.
+//   FLAT (AI-fallback / dummy): fields at the top level.
+// Mirror the CRM ClientProfile unwrap (src/pages/Crm/ClientProfile.tsx) — read from
+// the nested container with a flat fallback so BOTH payloads render correctly.
 function FiscalSection({ fiscal, onRefresh, refreshing }: {
   fiscal: FSAnafData | null
   onRefresh: () => void
   refreshing: boolean
 }) {
-  const isVatPayer = fiscal?.scpTVA === true
-  const stareRaw = typeof fiscal?.stare_inregistrare === 'string' ? fiscal.stare_inregistrare : ''
+  const dg = (fiscal?.date_generale as Record<string, unknown>) ?? fiscal ?? {}
+  const tva = (fiscal?.inregistrare_scop_Tva as Record<string, unknown>) ?? fiscal ?? {}
+  const inact = (fiscal?.stare_inactiv as Record<string, unknown>) ?? {}
+
+  const denumire = typeof dg.denumire === 'string' ? dg.denumire : ''
+  const adresa = typeof dg.adresa === 'string' ? dg.adresa : ''
+  const cui = dg.cui != null ? String(dg.cui) : ''
+  const nrRegCom = typeof dg.nrRegCom === 'string' ? dg.nrRegCom : ''
+  const telefon = dg.telefon != null ? String(dg.telefon) : ''
+
+  const isVatPayer = Boolean(tva.scpTVA)
+  const stareRaw = typeof dg.stare_inregistrare === 'string' ? dg.stare_inregistrare : ''
   const hasStare = stareRaw.trim().length > 0
-  const isActive = hasStare && stareRaw.toUpperCase().includes('INREG')
+  const inactiveFlag = inact.statusInactivi === true
+  // Activ when ANAF says the registration state includes "INREG" and it isn't
+  // flagged inactive; only show the badge when we have a signal either way.
+  const showStatus = hasStare || inactiveFlag
+  const isActive = !inactiveFlag && hasStare && stareRaw.toUpperCase().includes('INREG')
 
   return (
     <div className="rounded-2xl bg-card border p-4 h-full">
@@ -114,16 +131,16 @@ function FiscalSection({ fiscal, onRefresh, refreshing }: {
         <EmptyLine text="Date fiscale indisponibile" />
       ) : (
         <div className="space-y-3">
-          {fiscal.denumire && (
+          {denumire && (
             <div>
               <p className="text-xs text-muted-foreground">Denumire</p>
-              <p className="text-sm font-medium text-foreground break-words">{fiscal.denumire}</p>
+              <p className="text-sm font-medium text-foreground break-words">{denumire}</p>
             </div>
           )}
-          {fiscal.adresa && (
+          {adresa && (
             <div>
               <p className="text-xs text-muted-foreground">Adresa</p>
-              <p className="text-sm text-foreground break-words">{fiscal.adresa}</p>
+              <p className="text-sm text-foreground break-words">{adresa}</p>
             </div>
           )}
 
@@ -134,7 +151,7 @@ function FiscalSection({ fiscal, onRefresh, refreshing }: {
             >
               {isVatPayer ? 'Platitor TVA' : 'Neplatitor TVA'}
             </span>
-            {hasStare && (
+            {showStatus && (
               <span className={cn('rounded-full px-2.5 py-1 text-xs font-semibold', isActive
                 ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
                 : 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300')}
@@ -144,24 +161,24 @@ function FiscalSection({ fiscal, onRefresh, refreshing }: {
             )}
           </div>
 
-          {(fiscal.cui || fiscal.nrRegCom || fiscal.telefon) && (
+          {(cui || nrRegCom || telefon) && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
-              {fiscal.cui && (
+              {cui && (
                 <div>
                   <p className="text-xs text-muted-foreground">CUI</p>
-                  <p className="text-sm text-foreground break-words">{fiscal.cui}</p>
+                  <p className="text-sm text-foreground break-words">{cui}</p>
                 </div>
               )}
-              {fiscal.nrRegCom && (
+              {nrRegCom && (
                 <div>
                   <p className="text-xs text-muted-foreground">Nr. Reg. Com</p>
-                  <p className="text-sm text-foreground break-words">{fiscal.nrRegCom}</p>
+                  <p className="text-sm text-foreground break-words">{nrRegCom}</p>
                 </div>
               )}
-              {fiscal.telefon && (
+              {telefon && (
                 <div>
                   <p className="text-xs text-muted-foreground">Telefon</p>
-                  <p className="text-sm text-foreground break-words">{fiscal.telefon}</p>
+                  <p className="text-sm text-foreground break-words">{telefon}</p>
                 </div>
               )}
             </div>

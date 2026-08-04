@@ -187,7 +187,16 @@ export interface FSVisitSummary {
   id: number; planned_date: string; visit_type: string; status: string
   outcome: string | null; visit_summary: string | null; kam_name?: string; client_name?: string
 }
+// ANAF fiscal payload comes in two shapes: NESTED (real ANAF fetch — fields live
+// under date_generale / inregistrare_scop_Tva / stare_inactiv) and FLAT (AI-fallback
+// path — fields at the top level). FiscalSection unwraps with a flat fallback so both
+// render. Allow the nested containers alongside the flat keys.
 export interface FSAnafData {
+  // Nested (real ANAF) containers
+  date_generale?: Record<string, unknown>
+  inregistrare_scop_Tva?: Record<string, unknown>
+  stare_inactiv?: Record<string, unknown>
+  // Flat (AI-fallback) keys
   denumire?: string
   cui?: string
   adresa?: string

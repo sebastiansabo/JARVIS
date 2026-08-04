@@ -82,7 +82,9 @@ function OverlaySheet({ onClose, children, wide }: { onClose: () => void; childr
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-sm">
       <div className={cn(
         'mx-auto min-h-full w-full bg-background shadow-2xl sm:my-8 sm:min-h-0 sm:rounded-2xl',
-        wide ? 'max-w-[1120px] lg:min-w-[1080px]' : 'max-w-2xl',
+        // min-w only kicks in at >=1120px so it can never exceed max-w-[1120px] —
+        // viewports 1024–1119px (e.g. iPad landscape) just fill width, no overflow.
+        wide ? 'max-w-[1120px] min-[1120px]:min-w-[1080px]' : 'max-w-2xl',
       )}>
         <div className="sticky top-0 z-10 flex items-center justify-end border-b bg-background/95 p-2 backdrop-blur sm:rounded-t-2xl">
           <button onClick={onClose} className="rounded-full p-2 hover:bg-muted"><X className="h-5 w-5" /></button>
