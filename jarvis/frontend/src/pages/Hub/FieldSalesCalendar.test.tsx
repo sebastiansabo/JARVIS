@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const getMyVisits = vi.fn()
@@ -194,11 +194,15 @@ describe('FieldSalesCalendar', () => {
     expect(onOpen).toHaveBeenCalledWith(501)
   })
 
-  it('keeps a timed block aligned regardless of a sibling column\'s untimed visits', async () => {
-    // Two distinct days in the current week: day A carries an untimed visit
-    // (would have pushed a per-column strip down), day B a timed 09:00 one.
-    // The timed block's top must stay minToY(540)=96px — proving the untimed
-    // visit no longer shifts a sibling column's hour-grid.
+  it('keeps untimed visits in the shared all-day band, out of every hour-grid column', async () => {
+    // Two distinct days in the current week: day A carries an untimed visit,
+    // day B a timed 09:00 one. The structural invariant the alignment fix
+    // establishes is that untimed content lives in the shared all-day band
+    // (a separate row ABOVE the hour-grid), never inside a day column's
+    // hour-grid box — so it can never push a column's hour lines/blocks down.
+    // This is deterministic in jsdom (no layout engine needed): if untimed
+    // content were moved back inside a column, it would appear inside
+    // fs-hourgrid and this test would fail.
     const weekStart = startOfWeek(new Date())
     const dayA = keyOf(weekStart)
     const dayB = keyOf(addDaysDate(weekStart, 1))
@@ -213,9 +217,16 @@ describe('FieldSalesCalendar', () => {
     await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i })
     fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
 
-    const timedBlock = await screen.findByTestId('fs-block-602')
-    expect(timedBlock).toHaveStyle({ top: '96px' })
-    // The sibling untimed visit renders too (in the shared band).
-    expect(screen.getByTestId('fs-block-601')).toBeInTheDocument()
+    // 1) The untimed visit renders INSIDE the shared all-day band…
+    const band = await screen.findByTestId('fs-allday-band')
+    expect(within(band).getByText('Untimed A')).toBeInTheDocument()
+
+    // 2) …and NOT anywhere inside the hour-grid, while the timed visit IS.
+    const hourGrid = screen.getByTestId('fs-hourgrid')
+    expect(within(hourGrid).queryByText('Untimed A')).toBeNull()
+    expect(within(hourGrid).getByTestId('fs-block-602')).toBeInTheDocument()
+
+    // Secondary check: the timed block's top still reflects its clock time.
+    expect(screen.getByTestId('fs-block-602')).toHaveStyle({ top: '96px' })
   })
 })

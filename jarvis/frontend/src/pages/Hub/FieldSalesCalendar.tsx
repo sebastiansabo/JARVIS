@@ -300,7 +300,7 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd }: {
             column) so every cell shares a uniform height; rendered only when
             some visible day has an untimed visit. */}
         {hasAnyUntimed && (
-          <div className="flex gap-1">
+          <div data-testid="fs-allday-band" className="flex gap-1">
             <div className="flex w-10 shrink-0 items-start justify-end pr-1 pt-0.5">
               <span className="text-[9px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Fără oră</span>
             </div>
@@ -329,7 +329,7 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd }: {
 
         {/* Hour-grid — gutter labels + one relative day column each. All
             columns share the same fixed gridHeight and start at the same Y. */}
-        <div className="flex gap-1">
+        <div data-testid="fs-hourgrid" className="flex gap-1">
           <div className="w-10 shrink-0">
             {hours.map((h) => (
               <div key={h} className="relative" style={{ height: PX_PER_HOUR }}>
