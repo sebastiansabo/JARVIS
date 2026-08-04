@@ -22,6 +22,21 @@ const keyOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.
 const startOfWeek = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x }
 const addDaysDate = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
 
+// jsdom (as of v26) doesn't implement the PointerEvent constructor, so
+// `fireEvent.pointerDown(el, { clientY, pointerId })` silently drops both
+// properties — event-map.js falls back to the plain `Event` constructor,
+// which ignores unrecognized init-dict members, leaving `e.clientY`/
+// `e.pointerId` undefined inside the handler. Build the event on a
+// `MouseEvent` instead (jsdom supports `clientY` there) and attach
+// `pointerId` manually; React's synthetic pointer-event wrapper copies both
+// properties off the native event by name, not by checking its constructor,
+// so the component under test sees a normal PointerEvent-shaped object.
+function firePointer(el: Element, type: 'pointerdown' | 'pointermove' | 'pointerup', clientY: number, pointerId = 1) {
+  const event = new MouseEvent(type, { clientY, bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'pointerId', { value: pointerId, configurable: true })
+  fireEvent(el, event)
+}
+
 describe('FieldSalesCalendar', () => {
   // usePersistedState('hub-fs-cal-view') is backed by localStorage; clear it
   // between tests so the persisted view doesn't leak (the week/day switch
@@ -157,17 +172,77 @@ describe('FieldSalesCalendar', () => {
     expect(onOpen).toHaveBeenCalledWith(301)
     expect(onAdd).not.toHaveBeenCalled()
 
-    // Empty-slot click: jsdom never lays elements out, so the column's
-    // getBoundingClientRect is mocked to a known `top` and the click's
-    // `clientY` is set to `top + offsetY` — the component reads
-    // `e.clientY - rect.top` as the click offset within the column. An
-    // offsetY of 192px = minToY(660) = 11:00, snapped exactly.
+    // Empty-slot click (no drag movement): jsdom never lays elements out, so
+    // the column's getBoundingClientRect is mocked to a known `top`, and
+    // setPointerCapture/releasePointerCapture (unimplemented in jsdom) are
+    // stubbed so the pointerdown/pointerup handlers don't throw. `clientY` is
+    // set to `top + offsetY` — the component reads `e.clientY - rect.top` as
+    // the pointer offset within the column. An offsetY of 192px =
+    // minToY(660) = 11:00, snapped exactly. A pointerdown+pointerup with no
+    // intervening pointermove is treated as a plain click → 1h default.
     const col = screen.getByTestId(`fs-col-${todayKey}`)
     vi.spyOn(col, 'getBoundingClientRect').mockReturnValue({
       top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300, x: 0, y: 100, toJSON: () => {},
     } as DOMRect)
-    fireEvent.click(col, { clientY: 100 + 192 })
+    col.setPointerCapture = vi.fn()
+    col.releasePointerCapture = vi.fn()
+    firePointer(col, 'pointerdown', 100 + 192)
+    firePointer(col, 'pointerup', 100 + 192)
     expect(onAdd).toHaveBeenCalledWith(todayKey, '11:00', '12:00')
+    expect(onAdd).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates a visit via drag-to-create on the time-grid, snapped to 30 min', async () => {
+    const now = new Date()
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: todayKey, date_to: todayKey })
+
+    const onAdd = vi.fn()
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} />)
+
+    await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i })
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    // Same rect mock as the empty-slot-click test. 09:00 = minToY(540) = 96px
+    // offset; 10:30 = minToY(630) = 168px offset.
+    const col = await screen.findByTestId(`fs-col-${todayKey}`)
+    vi.spyOn(col, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300, x: 0, y: 100, toJSON: () => {},
+    } as DOMRect)
+    col.setPointerCapture = vi.fn()
+    col.releasePointerCapture = vi.fn()
+
+    firePointer(col, 'pointerdown', 100 + 96)
+    firePointer(col, 'pointermove', 100 + 168)
+    firePointer(col, 'pointerup', 100 + 168)
+
+    expect(onAdd).toHaveBeenCalledWith(todayKey, '09:00', '10:30')
+    expect(onAdd).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates a 1h visit via pointerdown+pointerup with no movement (click-equivalent) at 08:00', async () => {
+    const now = new Date()
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: todayKey, date_to: todayKey })
+
+    const onAdd = vi.fn()
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} />)
+
+    await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i })
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    // 08:00 = minToY(480) = 48px offset.
+    const col = await screen.findByTestId(`fs-col-${todayKey}`)
+    vi.spyOn(col, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300, x: 0, y: 100, toJSON: () => {},
+    } as DOMRect)
+    col.setPointerCapture = vi.fn()
+    col.releasePointerCapture = vi.fn()
+
+    firePointer(col, 'pointerdown', 100 + 48)
+    firePointer(col, 'pointerup', 100 + 48)
+
+    expect(onAdd).toHaveBeenCalledWith(todayKey, '08:00', '09:00')
     expect(onAdd).toHaveBeenCalledTimes(1)
   })
 
