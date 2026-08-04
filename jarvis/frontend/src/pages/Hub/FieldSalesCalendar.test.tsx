@@ -3,8 +3,12 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const getMyVisits = vi.fn()
+const updateVisit = vi.fn()
 vi.mock('@/api/fieldSales', () => ({
-  fieldSalesApi: { getMyVisits: (...a: unknown[]) => getMyVisits(...a) },
+  fieldSalesApi: {
+    getMyVisits: (...a: unknown[]) => getMyVisits(...a),
+    updateVisit: (...a: unknown[]) => updateVisit(...a),
+  },
 }))
 
 import FieldSalesCalendar from './FieldSalesCalendar'
@@ -363,5 +367,104 @@ describe('FieldSalesCalendar', () => {
 
     // Secondary check: the timed block's top still reflects its clock time.
     expect(screen.getByTestId('fs-block-602')).toHaveStyle({ top: '96px' })
+  })
+
+  it('drag-moves a timed block to a new start time (same day), persisting via updateVisit with optimistic cache update', async () => {
+    const now = new Date()
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    const visits = [
+      { id: 701, kam_id: 1, client_id: 1, planned_date: todayKey, planned_time: '09:00', planned_end_time: '10:00', visit_type: 'general', status: 'planned', client_name: 'Move Client', kam_name: 'X' },
+    ]
+    getMyVisits.mockResolvedValue({ success: true, visits, date_from: todayKey, date_to: todayKey })
+    updateVisit.mockResolvedValue({ success: true, visit: visits[0] })
+    const callsBefore = getMyVisits.mock.calls.length
+
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+    await screen.findByText('Move Client')
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    const block = await screen.findByTestId('fs-block-701')
+    // Mocked for parity with the create-drag tests, even though the move
+    // math itself is delta-based (see FieldSalesCalendar.tsx) and doesn't
+    // need it — it IS consulted for the (untested here, dx===0) day-switch
+    // heuristic, so a real width keeps that code path exercised too.
+    const col = screen.getByTestId(`fs-col-${todayKey}`)
+    vi.spyOn(col, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300, x: 0, y: 100, toJSON: () => {},
+    } as DOMRect)
+    block.setPointerCapture = vi.fn()
+    block.releasePointerCapture = vi.fn()
+
+    // Move down exactly 1h worth of px (48px/hour) — 09:00 -> 10:00, the 1h
+    // duration preserved -> end 10:00 -> 11:00. Only the CLIENTY DELTA
+    // matters (see the component's move math), so absolute values are
+    // arbitrary.
+    firePointer(block, 'pointerdown', 200)
+    firePointer(block, 'pointermove', 248)
+    firePointer(block, 'pointerup', 248)
+
+    await waitFor(() => expect(updateVisit).toHaveBeenCalledWith(701, { planned_date: todayKey, planned_time: '10:00', planned_end_time: '11:00' }))
+    // Wait for onSettled's invalidation-triggered refetch of the (active)
+    // field-sales-cal query so its resolution settles under RTL's act-
+    // wrapped waitFor, not after the test ends (pristine, no act() warning).
+    await waitFor(() => expect(getMyVisits.mock.calls.length).toBeGreaterThan(callsBefore))
+  })
+
+  it('drag-resizes a timed block\'s end time via its bottom handle, persisting via updateVisit', async () => {
+    const now = new Date()
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    const visits = [
+      { id: 702, kam_id: 1, client_id: 1, planned_date: todayKey, planned_time: '09:00', planned_end_time: '10:00', visit_type: 'general', status: 'planned', client_name: 'Resize Client', kam_name: 'X' },
+    ]
+    getMyVisits.mockResolvedValue({ success: true, visits, date_from: todayKey, date_to: todayKey })
+    updateVisit.mockResolvedValue({ success: true, visit: visits[0] })
+    const callsBefore = getMyVisits.mock.calls.length
+
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+    await screen.findByText('Resize Client')
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    const handle = await screen.findByTestId('fs-resize-702')
+    handle.setPointerCapture = vi.fn()
+    handle.releasePointerCapture = vi.fn()
+
+    // Move down 30 min worth of px (24px) -> end 10:00 -> 10:30. planned_date
+    // / planned_time must NOT be part of the payload — resize only changes
+    // the end time.
+    firePointer(handle, 'pointerdown', 300)
+    firePointer(handle, 'pointermove', 324)
+    firePointer(handle, 'pointerup', 324)
+
+    await waitFor(() => expect(updateVisit).toHaveBeenCalledWith(702, { planned_end_time: '10:30' }))
+    await waitFor(() => expect(getMyVisits.mock.calls.length).toBeGreaterThan(callsBefore))
+  })
+
+  it('treats a sub-threshold pointerdown/up on a block body as a click (opens it, does not call updateVisit)', async () => {
+    const now = new Date()
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    const visits = [
+      { id: 703, kam_id: 1, client_id: 1, planned_date: todayKey, planned_time: '09:00', planned_end_time: '10:00', visit_type: 'general', status: 'planned', client_name: 'Click Client', kam_name: 'X' },
+    ]
+    getMyVisits.mockResolvedValue({ success: true, visits, date_from: todayKey, date_to: todayKey })
+
+    const onOpen = vi.fn()
+    wrap(<FieldSalesCalendar onOpen={onOpen} onAdd={vi.fn()} />)
+    await screen.findByText('Click Client')
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    const block = await screen.findByTestId('fs-block-703')
+    block.setPointerCapture = vi.fn()
+    block.releasePointerCapture = vi.fn()
+
+    // 2px of jitter — under the 4px drag threshold — must still resolve as a
+    // click (onOpen), not a persisted move.
+    firePointer(block, 'pointerdown', 200)
+    firePointer(block, 'pointerup', 202)
+
+    expect(onOpen).toHaveBeenCalledWith(703)
+    // updateVisit is a module-level mock shared with the move/resize tests
+    // above (called there with OTHER visit ids) — assert it was never called
+    // for THIS visit, not that it was never called at all.
+    expect(updateVisit).not.toHaveBeenCalledWith(703, expect.anything())
   })
 })
