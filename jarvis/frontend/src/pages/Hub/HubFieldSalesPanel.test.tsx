@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -63,6 +63,10 @@ describe('HubFieldSalesPanel', () => {
     fireEvent.click(await screen.findByText('ACME SRL'))
     expect(screen.getByRole('button', { name: /salveaza vizita/i })).not.toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: /salveaza vizita/i }))
-    await vi.waitFor(() => expect(mod.fieldSalesApi.createVisit).toHaveBeenCalled())
+    // Use RTL's waitFor (not vi.waitFor): it wraps its polling in act(), so the
+    // mutation's onSuccess chain (invalidateQueries → getTodayVisits refetch +
+    // setOverlay(null)) settles under act() → no act() warning, pristine output.
+    await waitFor(() => expect(mod.fieldSalesApi.createVisit).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByRole('button', { name: /salveaza vizita/i })).not.toBeInTheDocument())
   })
 })
