@@ -4,7 +4,7 @@ import { Sparkles, Car, Target, Calendar, AlertTriangle, Euro, CheckCircle, User
 import { cn } from '@/lib/utils'
 import { fieldSalesApi, type FSStructuredNote } from '@/api/fieldSales'
 
-type Step = 'input' | 'processing' | 'review' | 'saved'
+type Step = 'input' | 'processing' | 'review'
 
 const ACTION_LABELS: Record<string, string> = {
   replace: 'Inlocuire',
@@ -59,8 +59,12 @@ export default function NoteCaptureModal({ visitId, clientId, onDone, onCancel }
     addNoteMut.mutate({ raw_note: rawNote })
   }
 
+  // Finalizes the flow: the /note POST already completed the visit server-side,
+  // so refresh the affected caches and hand control back to the parent (which
+  // closes the overlay). Called from both the structured "Salveaza nota" action
+  // and the null-summary "Finalizeaza" fallback, so the visit list always
+  // refreshes even when AI structuring returned nothing.
   const handleSave = () => {
-    setStep('saved')
     queryClient.invalidateQueries({ queryKey: ['field-sales-visits'] })
     queryClient.invalidateQueries({ queryKey: ['fs-visit-detail', visitId] })
     queryClient.invalidateQueries({ queryKey: ['field-sales-client360', clientId] })
@@ -273,18 +277,11 @@ export default function NoteCaptureModal({ visitId, clientId, onDone, onCancel }
         )}
 
         {step === 'review' && !structured && (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            Nota a fost salvata, dar nu s-a putut genera un rezumat AI.
-          </p>
-        )}
-
-        {step === 'saved' && (
-          <div className="flex flex-col items-center justify-center py-16">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40 mb-3">
-              <CheckCircle className="h-7 w-7 text-green-600 dark:text-green-400" />
-            </div>
-            <p className="text-base font-semibold">Nota salvata</p>
-            <p className="text-sm text-muted-foreground mt-1">Vizita a fost finalizata cu succes</p>
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <CheckCircle className="h-8 w-8 text-green-500 mb-3" />
+            <p className="text-sm text-muted-foreground max-w-[280px]">
+              Nota a fost salvata si vizita a fost finalizata, dar nu s-a putut genera un rezumat AI.
+            </p>
           </div>
         )}
       </div>
@@ -310,7 +307,7 @@ export default function NoteCaptureModal({ visitId, clientId, onDone, onCancel }
         </div>
       )}
 
-      {step === 'review' && structured && (
+      {step === 'review' && (
         <div className="border-t border-border/60 p-4">
           <button
             onClick={handleSave}
@@ -318,7 +315,7 @@ export default function NoteCaptureModal({ visitId, clientId, onDone, onCancel }
           >
             <span className="flex items-center justify-center gap-2">
               <CheckCircle className="h-4 w-4" />
-              Salveaza nota
+              {structured ? 'Salveaza nota' : 'Finalizeaza'}
             </span>
           </button>
         </div>
