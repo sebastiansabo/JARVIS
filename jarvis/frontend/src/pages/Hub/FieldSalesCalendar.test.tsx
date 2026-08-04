@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -17,6 +17,11 @@ function wrap(ui: React.ReactNode) {
 const pad = (n: number) => String(n).padStart(2, '0')
 
 describe('FieldSalesCalendar', () => {
+  // usePersistedState('hub-fs-cal-view') is backed by localStorage; clear it
+  // between tests so the persisted view doesn't leak (the week/day switch
+  // test would otherwise leave 'day' and start the next test off-default).
+  beforeEach(() => localStorage.clear())
+
   it('shows a day indicator, lists that day\'s visits on selection, and opens on click', async () => {
     // A day guaranteed to fall inside the current month's grid, computed
     // relative to "today" so the test stays valid regardless of when it runs.
@@ -71,6 +76,20 @@ describe('FieldSalesCalendar', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i }))
     expect(onAdd).toHaveBeenCalledWith(dateKey)
+  })
+
+  it('selects a day via keyboard (Enter) on its cell', async () => {
+    const now = new Date()
+    const dateKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-15`
+    const visits = [
+      { id: 201, kam_id: 1, client_id: 1, planned_date: dateKey, planned_time: '10:00', visit_type: 'general', status: 'planned', client_name: 'Kbd Client', kam_name: 'X' },
+    ]
+    getMyVisits.mockResolvedValue({ success: true, visits, date_from: dateKey, date_to: dateKey })
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+
+    const dayCell = await screen.findByTestId(`day-${dateKey}`)
+    fireEvent.keyDown(dayCell, { key: 'Enter' })
+    expect(await screen.findByText('Kbd Client')).toBeInTheDocument()
   })
 
   it('calls onAdd with a cell\'s date when its hover "+" affordance is clicked, without selecting the day', async () => {
