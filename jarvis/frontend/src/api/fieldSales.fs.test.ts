@@ -14,6 +14,11 @@ describe('fieldSalesApi daily-driver wrappers', () => {
     expect(get).toHaveBeenCalledWith('/api/field-sales/visits/today', { date: '2026-08-04' })
   })
 
+  it('getMyVisits hits the mine route with date range params', async () => {
+    await fieldSalesApi.getMyVisits('2026-08-01', '2026-08-31')
+    expect(get).toHaveBeenCalledWith('/api/field-sales/visits/mine', { date_from: '2026-08-01', date_to: '2026-08-31' })
+  })
+
   it('checkin posts coords to the checkin route', async () => {
     await fieldSalesApi.checkin(9, { lat: 46.7, lng: 23.6 })
     expect(post).toHaveBeenCalledWith('/api/field-sales/visits/9/checkin', { lat: 46.7, lng: 23.6 })

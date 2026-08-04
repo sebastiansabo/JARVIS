@@ -254,6 +254,10 @@ export const fieldSalesApi = {
   getTodayVisits: (date: string) =>
     api.get<{ success: boolean; visits: FSVisit[]; date: string }>('/api/field-sales/visits/today', { date }),
 
+  getMyVisits: (dateFrom: string, dateTo: string) =>
+    api.get<{ success: boolean; visits: FSVisit[]; date_from: string; date_to: string }>(
+      '/api/field-sales/visits/mine', { date_from: dateFrom, date_to: dateTo }),
+
   checkin: (visitId: number, coords: { lat?: number; lng?: number }) =>
     api.post<{ success: boolean; visit: FSVisit }>(`/api/field-sales/visits/${visitId}/checkin`, coords),
 
