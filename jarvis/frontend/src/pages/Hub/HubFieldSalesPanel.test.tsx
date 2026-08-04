@@ -76,11 +76,21 @@ describe('HubFieldSalesPanel', () => {
     fireEvent.change(screen.getByPlaceholderText(/cauta client/i), { target: { value: 'ACME' } })
     fireEvent.click(await screen.findByText('ACME SRL'))
     expect(screen.getByRole('button', { name: /salveaza vizita/i })).not.toBeDisabled()
+    // Setting a start time with no explicit end should default the end to
+    // start+1h (Sfarsit field left untouched by the user).
+    fireEvent.change(screen.getByLabelText(/Or[aă]/i), { target: { value: '09:00' } })
     fireEvent.click(screen.getByRole('button', { name: /salveaza vizita/i }))
     // Use RTL's waitFor (not vi.waitFor): it wraps its polling in act(), so the
     // mutation's onSuccess chain (invalidateQueries → getTodayVisits refetch +
     // setOverlay(null)) settles under act() → no act() warning, pristine output.
-    await waitFor(() => expect(mod.fieldSalesApi.createVisit).toHaveBeenCalled())
+    // createVisit is wired as `mutationFn: fieldSalesApi.createVisit` directly
+    // (not wrapped in a lambda), so TanStack Query v5 invokes it with a second
+    // internal mutationFnContext arg — assert that too rather than weakening
+    // the match to a single positional arg.
+    await waitFor(() => expect(mod.fieldSalesApi.createVisit).toHaveBeenCalledWith(
+      expect.objectContaining({ planned_time: '09:00', planned_end_time: '10:00' }),
+      expect.anything(),
+    ))
     await waitFor(() => expect(screen.queryByRole('button', { name: /salveaza vizita/i })).not.toBeInTheDocument())
   })
 
