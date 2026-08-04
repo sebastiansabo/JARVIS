@@ -50,8 +50,8 @@ function addHour(t: string): string { return minToTime(Math.min(toMin(t)! + 60, 
  * own visits (fieldSalesApi.getMyVisits) grouped by planned_date; tapping a
  * listed visit opens the shared detail overlay via `onOpen`. Week/Day render
  * a 07:00–21:00 time-grid (see the geometry helpers above) with slot-click-
- * to-add and block-click-to-open; dragging to create/move/resize visits is a
- * follow-up task.
+ * or drag-to-add and block-click-to-open; dragging to move/resize existing
+ * visits is a follow-up task.
  */
 export default function FieldSalesCalendar({ onOpen, onAdd }: {
   onOpen: (visitId: number) => void
@@ -260,15 +260,25 @@ function CalendarVisitRow({ visit, onOpen }: { visit: FSVisit; onOpen: () => voi
 // regardless of how many untimed visits any single day has (a per-column
 // strip would push that column's hour lines/blocks down, breaking cross-
 // column alignment). The band is omitted entirely when no visible day has an
-// untimed visit. Clicking a block opens it; clicking empty grid space
-// computes the clicked time (snapped to 30 min) and proposes a 1h visit via
-// onAdd. No drag yet — that's a follow-up task.
+// untimed visit. Clicking a block opens it. Empty grid space supports both a
+// plain click (proposes a 1h visit at the clicked time) and a pointer-drag
+// (proposes a visit spanning the dragged range, snapped to 30 min) via a
+// single pointerdown/move/up flow — see the `drag` state below. Blocks
+// stopPropagation on pointerdown/click so starting a drag or click on a block
+// never also starts a column drag. Move/resize of existing blocks is a
+// follow-up task.
 function FSTimeGrid({ dayCols, byDay, onOpen, onAdd }: {
   dayCols: Date[]
   byDay: Map<string, FSVisit[]>
   onOpen: (visitId: number) => void
   onAdd: (date: string, time?: string, endTime?: string) => void
 }) {
+  // Drag-to-create state: `col` is the day column currently being dragged in,
+  // `y0`/`y1` are pointer-relative-to-column-top pixel offsets (y1 tracks the
+  // live pointer position; y0 is fixed at drag start). A pointerdown+pointerup
+  // with no intervening move leaves y0 === y1, which the pointerup handler
+  // below treats as a plain click (1h default duration).
+  const [drag, setDrag] = useState<{ col: string; y0: number; y1: number } | null>(null)
   const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i)
   const gridHeight = (HOUR_END - HOUR_START) * PX_PER_HOUR
   const todayKey = keyOf(new Date())
@@ -338,43 +348,75 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd }: {
             ))}
           </div>
           <div className={cn('grid flex-1 gap-1', gridColsClass)}>
-            {cols.map(({ dk, timed }) => (
-              <div
-                key={dk}
-                data-testid={`fs-col-${dk}`}
-                className="relative min-w-0 cursor-pointer rounded-lg bg-muted/30"
-                style={{ height: gridHeight }}
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  const startMin = yToMin(e.clientY - rect.top)
-                  onAdd(dk, minToTime(startMin), minToTime(startMin + 60))
-                }}
-              >
-                {hours.slice(0, -1).map((h) => (
-                  <div key={h} className="absolute inset-x-0 border-t border-border/30" style={{ top: minToY(h * 60) }} />
-                ))}
-                {timed.map((v) => {
-                  const start = v.planned_time!
-                  const top = minToY(toMin(start)!)
-                  const endStr = v.planned_end_time || addHour(start)
-                  const height = Math.max(minToY(toMin(endStr)!) - top, 18)
-                  const cfg = STATUS_CONFIG[v.status] ?? STATUS_CONFIG.planned
-                  return (
-                    <button
-                      key={v.id}
-                      type="button"
-                      data-testid={`fs-block-${v.id}`}
-                      onClick={(e) => { e.stopPropagation(); onOpen(v.id) }}
-                      style={{ top, height }}
-                      className={cn('absolute left-0.5 right-0.5 overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', cfg.bg, cfg.text)}
-                    >
-                      <span className="block truncate">{`${start.slice(0, 5)} ${v.client_name}`}</span>
-                      <span className="block truncate text-[9px] font-normal opacity-80">{VISIT_TYPE_LABELS[v.visit_type] ?? v.visit_type}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            ))}
+            {cols.map(({ dk, timed }) => {
+              const dragging = drag?.col === dk
+              // Selection rectangle geometry: both endpoints are re-quantized
+              // through yToMin (which snaps to 30 min) then back to pixels via
+              // minToY, so the live rectangle always aligns to a snap line —
+              // matching exactly what pointerup will create.
+              const selTop = dragging ? minToY(yToMin(Math.min(drag!.y0, drag!.y1))) : 0
+              const selBottom = dragging ? minToY(yToMin(Math.max(drag!.y0, drag!.y1))) : 0
+              return (
+                <div
+                  key={dk}
+                  data-testid={`fs-col-${dk}`}
+                  className="relative min-w-0 cursor-pointer touch-none rounded-lg bg-muted/30"
+                  style={{ height: gridHeight }}
+                  onPointerDown={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    const y0 = e.clientY - rect.top
+                    e.currentTarget.setPointerCapture(e.pointerId)
+                    setDrag({ col: dk, y0, y1: y0 })
+                  }}
+                  onPointerMove={(e) => {
+                    if (!drag || drag.col !== dk) return
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    setDrag({ col: dk, y0: drag.y0, y1: e.clientY - rect.top })
+                  }}
+                  onPointerUp={(e) => {
+                    if (!drag || drag.col !== dk) return
+                    e.currentTarget.releasePointerCapture(e.pointerId)
+                    const a = yToMin(Math.min(drag.y0, drag.y1))
+                    let b = yToMin(Math.max(drag.y0, drag.y1))
+                    if (b - a < SNAP_MIN) b = a + 60
+                    setDrag(null)
+                    onAdd(dk, minToTime(a), minToTime(b))
+                  }}
+                >
+                  {hours.slice(0, -1).map((h) => (
+                    <div key={h} className="absolute inset-x-0 border-t border-border/30" style={{ top: minToY(h * 60) }} />
+                  ))}
+                  {dragging && (
+                    <div
+                      data-testid="fs-drag-selection"
+                      className="pointer-events-none absolute inset-x-0.5 rounded-md border border-primary/50 bg-primary/20"
+                      style={{ top: selTop, height: Math.max(selBottom - selTop, 4) }}
+                    />
+                  )}
+                  {timed.map((v) => {
+                    const start = v.planned_time!
+                    const top = minToY(toMin(start)!)
+                    const endStr = v.planned_end_time || addHour(start)
+                    const height = Math.max(minToY(toMin(endStr)!) - top, 18)
+                    const cfg = STATUS_CONFIG[v.status] ?? STATUS_CONFIG.planned
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        data-testid={`fs-block-${v.id}`}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); onOpen(v.id) }}
+                        style={{ top, height }}
+                        className={cn('absolute left-0.5 right-0.5 overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', cfg.bg, cfg.text)}
+                      >
+                        <span className="block truncate">{`${start.slice(0, 5)} ${v.client_name}`}</span>
+                        <span className="block truncate text-[9px] font-normal opacity-80">{VISIT_TYPE_LABELS[v.visit_type] ?? v.visit_type}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })}
           </div>
         </div>
       </div>
