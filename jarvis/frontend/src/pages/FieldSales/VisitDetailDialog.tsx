@@ -25,6 +25,7 @@ interface Props {
   visitId: number | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  onOpenClient360?: (clientId: number) => void
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -90,7 +91,7 @@ function formatDateTime(dt?: string | null) {
   } catch { return dt }
 }
 
-export function VisitDetailDialog({ visitId, open, onOpenChange }: Props) {
+export function VisitDetailDialog({ visitId, open, onOpenChange, onOpenClient360 }: Props) {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [activeTab, setActiveTab] = useState('info')
@@ -356,6 +357,11 @@ export function VisitDetailDialog({ visitId, open, onOpenChange }: Props) {
                       <InfoRow icon={Hash} label="Flota" value={`${visit.fleet_size} vehicule`} />
                     )}
                   </div>
+                  {onOpenClient360 && (
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => onOpenClient360(visit.client_id)}>
+                      Vezi client 360
+                    </Button>
+                  )}
                 </div>
 
                 {/* Visit timing */}
