@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { fieldSalesApi } from '@/api/fieldSales'
 
 const addNote = vi.fn()
 vi.mock('@/api/fieldSales', () => ({ fieldSalesApi: { addNote: (...a: unknown[]) => addNote(...a) } }))
@@ -13,6 +14,13 @@ function wrap(ui: React.ReactNode) {
 
 describe('NoteCaptureModal', () => {
   beforeEach(() => addNote.mockClear())
+  afterEach(() => {
+    vi.restoreAllMocks()
+    // The reject-path test swaps in a fresh rejecting vi.fn() on
+    // fieldSalesApi.addNote; re-wire it back to the shared `addNote` mock so a
+    // future appended test can't inherit that rejecting stub (no ordering dep).
+    ;(fieldSalesApi as { addNote: (...a: unknown[]) => unknown }).addNote = (...a) => addNote(...a)
+  })
 
   it('submits the raw note and renders the AI summary', async () => {
     addNote.mockResolvedValue({ success: true, note: { id: 1, raw_note: 'x', created_at: '' }, structured_note: {
@@ -62,15 +70,33 @@ describe('NoteCaptureModal', () => {
     await waitFor(() => expect(onDone).toHaveBeenCalled())
   })
 
+  it('null structured_note: shows the saved-without-summary text + a working finalize control that calls onDone', async () => {
+    // AI structuring can fail even though the note saved AND the backend
+    // already completed the visit (structured_note: null). The user must still
+    // have an exit that fires the invalidations + onDone so the Hub list
+    // refreshes and the visit shows as finalized.
+    addNote.mockResolvedValue({ success: true, note: { id: 1, raw_note: 'x', created_at: '' }, structured_note: null })
+    const onDone = vi.fn()
+    wrap(<NoteCaptureModal visitId={9} clientId={760} onDone={onDone} onCancel={() => {}} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'discutie buna' } })
+    fireEvent.click(screen.getByRole('button', { name: /proceseaz/i }))
+
+    expect(await screen.findByText(/nu s-a putut genera un rezumat AI/i)).toBeInTheDocument()
+    const finalize = screen.getByRole('button', { name: /finalizeaz/i })
+    fireEvent.click(finalize)
+    // RTL's waitFor wraps polling in act(), so the invalidateQueries + onDone
+    // chain triggered from handleSave settles under act() -> no act() warning.
+    await waitFor(() => expect(onDone).toHaveBeenCalled())
+  })
+
   it('falls back to input step and shows an inline error when addNote fails', async () => {
     // Reassign a fresh mock directly on the mocked module (rather than the
     // shared `addNote` wrapper used above) -- matches the convention already
     // used for the reject-path case in HubFieldSalesPanel.test.tsx, and
     // avoids a false-positive "unhandled rejection" flagged by Vitest when a
     // rejecting mock shares a mutation-backed wrapper with prior resolving
-    // tests in this suite.
-    const mod = await import('@/api/fieldSales')
-    ;(mod.fieldSalesApi.addNote as ReturnType<typeof vi.fn>) = vi.fn().mockRejectedValue({ data: { error: 'Nota nu a putut fi procesata' } })
+    // tests in this suite. afterEach re-wires the wrapper so this doesn't leak.
+    ;(fieldSalesApi.addNote as ReturnType<typeof vi.fn>) = vi.fn().mockRejectedValue({ data: { error: 'Nota nu a putut fi procesata' } })
     wrap(<NoteCaptureModal visitId={9} clientId={760} onDone={() => {}} onCancel={() => {}} />)
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'discutie buna' } })
     fireEvent.click(screen.getByRole('button', { name: /proceseaz/i }))
