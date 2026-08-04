@@ -30,6 +30,7 @@ import {
   Users,
   Target,
   FileSpreadsheet,
+  MapPin,
 } from 'lucide-react'
 import { SincronTimesheetView } from '@/components/shared/SincronTimesheetView'
 import { PunchCard } from '@/components/shared/PunchCard'
@@ -79,12 +80,13 @@ const FormRendererLazy = lazy(() => import('@/components/forms/FormRenderer').th
 const Digest = lazy(() => import('@/pages/Digest'))
 const VoucherRedeem = lazy(() => import('@/pages/Public/VoucherRedeem'))
 const HubDrivingPanel = lazy(() => import('@/pages/Hub/HubDrivingPanel'))
+const HubFieldSalesPanel = lazy(() => import('@/pages/Hub/HubFieldSalesPanel'))
 
 const VOUCHER_FORM_SLUG = 'voucher-issuance'
 
 // ─── Types ──────────────────────────────────────────────
 
-type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals' | 'driving'
+type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals' | 'driving' | 'field_sales'
 type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits' | 'sincron'
 
 // Labels for the HR sub-sections — used both by the tile grid and the breadcrumb.
@@ -114,6 +116,7 @@ export const appTiles: (AppTile & { shortLabel?: string })[] = [
   { key: 'forms', label: 'Forms', icon: ClipboardList, bg: 'bg-violet-600', fg: 'text-white' },
   { key: 'chat', label: 'Connecteams', shortLabel: 'Chat', icon: MessageSquare, bg: 'bg-pink-600', fg: 'text-white' },
   { key: 'driving', label: 'Driving Sessions', shortLabel: 'Driving', icon: Car, bg: 'bg-teal-600', fg: 'text-white' },
+  { key: 'field_sales', label: 'Field Sales', shortLabel: 'Teren', icon: MapPin, bg: 'bg-teal-600', fg: 'text-white' },
 ]
 
 const MONTHS_RO = ['Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie', 'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie']
@@ -226,6 +229,7 @@ export default function Hub() {
     vouchers: Array.isArray(vouchersData) ? vouchersData.length : -1,
     forms: (formsCountData?.forms ?? []).length || -1,
     driving: -1, // always show when allowed
+    field_sales: -1, // always show when allowed
   }
 
   const hasVouchersPerm = !authUser?.permissions || (authUser.permissions['vouchers.profile.view'] ?? true)
@@ -233,12 +237,13 @@ export default function Hub() {
     return appTiles.filter((t) => {
       if (t.key === 'vouchers' && !hasVouchersPerm) return false
       if (t.key === 'driving' && !authUser?.can_access_carpark) return false
+      if (t.key === 'field_sales' && !authUser?.can_access_field_sales) return false
       // Vouchers stays visible even at 0 (permission-gated above) — like approvals;
       // other tiles auto-hide when empty.
       if (t.key !== 'approvals' && t.key !== 'vouchers' && tileCounts[t.key] === 0) return false
       return true
     })
-  }, [hasVouchersPerm, tileCounts, authUser?.can_access_carpark])
+  }, [hasVouchersPerm, tileCounts, authUser?.can_access_carpark, authUser?.can_access_field_sales])
 
   return (
     <div className="space-y-6 pb-16 sm:pb-0">
@@ -371,6 +376,11 @@ export default function Hub() {
           {activeModule === 'driving' && (
             <Suspense fallback={<div className="py-8 text-center text-muted-foreground text-sm">Loading...</div>}>
               <HubDrivingPanel />
+            </Suspense>
+          )}
+          {activeModule === 'field_sales' && (
+            <Suspense fallback={<div className="py-8 text-center text-muted-foreground text-sm">Loading...</div>}>
+              <HubFieldSalesPanel />
             </Suspense>
           )}
 
