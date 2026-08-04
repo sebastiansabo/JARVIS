@@ -101,6 +101,7 @@ def api_create_visit():
             'client_id': client_id,
             'planned_date': planned_date,
             'planned_time': data.get('planned_time'),
+            'planned_end_time': data.get('planned_end_time'),
             'visit_type': visit_type,
             'goals': data.get('goals'),
         }
@@ -317,6 +318,9 @@ def api_update_visit(visit_id):
 
         if 'planned_time' in data:
             update['planned_time'] = data['planned_time'] or None
+
+        if 'planned_end_time' in data:
+            update['planned_end_time'] = data['planned_end_time'] or None
 
         if 'visit_type' in data:
             if data['visit_type'] not in ALLOWED_VISIT_TYPES:
