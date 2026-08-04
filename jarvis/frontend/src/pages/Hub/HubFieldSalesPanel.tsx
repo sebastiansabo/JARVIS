@@ -15,13 +15,13 @@ export const VISIT_TYPE_LABELS: Record<string, string> = {
   new_acquisition: 'Achizitie noua', contract_negotiation: 'Negociere contract',
   prospecting: 'Prospectare', general: 'General',
 }
-export const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
-  planned: { label: 'PLANIFICATA', bg: 'bg-blue-100 dark:bg-blue-900/40', text: 'text-blue-700 dark:text-blue-300' },
-  in_progress: { label: 'IN CURS', bg: 'bg-orange-100 dark:bg-orange-900/40', text: 'text-orange-700 dark:text-orange-300' },
-  completed: { label: 'FINALIZATA', bg: 'bg-green-100 dark:bg-green-900/40', text: 'text-green-700 dark:text-green-300' },
-  no_show: { label: 'NEPREZENTAT', bg: 'bg-red-100 dark:bg-red-900/40', text: 'text-red-700 dark:text-red-300' },
-  rescheduled: { label: 'REPROGRAMATA', bg: 'bg-purple-100 dark:bg-purple-900/40', text: 'text-purple-700 dark:text-purple-300' },
-  partial: { label: 'PARTIALA', bg: 'bg-amber-100 dark:bg-amber-900/40', text: 'text-amber-700 dark:text-amber-300' },
+export const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
+  planned: { label: 'PLANIFICATA', bg: 'bg-blue-100 dark:bg-blue-900/40', text: 'text-blue-700 dark:text-blue-300', dot: 'bg-blue-500' },
+  in_progress: { label: 'IN CURS', bg: 'bg-orange-100 dark:bg-orange-900/40', text: 'text-orange-700 dark:text-orange-300', dot: 'bg-orange-500' },
+  completed: { label: 'FINALIZATA', bg: 'bg-green-100 dark:bg-green-900/40', text: 'text-green-700 dark:text-green-300', dot: 'bg-green-500' },
+  no_show: { label: 'NEPREZENTAT', bg: 'bg-red-100 dark:bg-red-900/40', text: 'text-red-700 dark:text-red-300', dot: 'bg-red-500' },
+  rescheduled: { label: 'REPROGRAMATA', bg: 'bg-purple-100 dark:bg-purple-900/40', text: 'text-purple-700 dark:text-purple-300', dot: 'bg-purple-500' },
+  partial: { label: 'PARTIALA', bg: 'bg-amber-100 dark:bg-amber-900/40', text: 'text-amber-700 dark:text-amber-300', dot: 'bg-amber-500' },
 }
 const todayStr = () => new Date().toISOString().split('T')[0]
 
