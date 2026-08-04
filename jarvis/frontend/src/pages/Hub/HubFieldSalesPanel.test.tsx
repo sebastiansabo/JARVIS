@@ -47,4 +47,22 @@ describe('HubFieldSalesPanel', () => {
     wrap(<HubFieldSalesPanel />)
     expect(await screen.findByText(/nicio vizit/i)).toBeInTheDocument()
   })
+
+  it('add-visit: submit is disabled until a client is selected, then calls createVisit', async () => {
+    const { fireEvent } = await import('@testing-library/react')
+    const mod = await import('@/api/fieldSales')
+    getTodayVisits.mockResolvedValue({ success: true, visits: [], date: '2026-08-04' })
+    ;(mod.fieldSalesApi.searchClients as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue({ success: true, clients: [{ id: 760, display_name: 'ACME SRL', client_type: 'company' }], count: 1 })
+    ;(mod.fieldSalesApi.createVisit as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue({ success: true, visit: { id: 1 } })
+
+    wrap(<HubFieldSalesPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /adauga/i }))
+    const submit = await screen.findByRole('button', { name: /salveaza vizita/i })
+    expect(submit).toBeDisabled()
+    fireEvent.change(screen.getByPlaceholderText(/cauta client/i), { target: { value: 'ACME' } })
+    fireEvent.click(await screen.findByText('ACME SRL'))
+    expect(screen.getByRole('button', { name: /salveaza vizita/i })).not.toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /salveaza vizita/i }))
+    await vi.waitFor(() => expect(mod.fieldSalesApi.createVisit).toHaveBeenCalled())
+  })
 })

@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Plus, Clock, AlertTriangle, CalendarDays, ChevronRight, MapPin } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Plus, Clock, AlertTriangle, CalendarDays, ChevronRight, MapPin, X, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { fieldSalesApi, type FSVisit } from '@/api/fieldSales'
+import { fieldSalesApi, type FSVisit, type FSClientSearch } from '@/api/fieldSales'
 import { VisitDetailDialog } from '@/pages/FieldSales/VisitDetailDialog'
 
 const VISIT_TYPE_LABELS: Record<string, string> = {
@@ -60,12 +60,187 @@ function VisitCard({ visit, onOpen, onCheckIn, onFinalize, actionPending }: {
   )
 }
 
+// iOS-style fixed-inset sheet, ported from HubDrivingPanel — full-screen on
+// phones, a centered floating card on desktop. Reused by every overlay kind.
+function OverlaySheet({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-sm">
+      <div className="mx-auto min-h-full w-full max-w-2xl bg-background shadow-2xl sm:my-8 sm:min-h-0 sm:rounded-2xl">
+        <div className="sticky top-0 z-10 flex items-center justify-end border-b bg-background/95 p-2 backdrop-blur sm:rounded-t-2xl">
+          <button onClick={onClose} className="rounded-full p-2 hover:bg-muted"><X className="h-5 w-5" /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function AddVisitForm({ date, onDone, onCancel }: { date: string; onDone: () => void; onCancel: () => void }) {
+  const [query, setQuery] = useState('')
+  const [selectedClient, setSelectedClient] = useState<FSClientSearch | null>(null)
+  const [showResults, setShowResults] = useState(false)
+  const [visitDate, setVisitDate] = useState(date)
+  const [time, setTime] = useState('')
+  const [visitType, setVisitType] = useState('general')
+  const [goals, setGoals] = useState('')
+
+  const { data: searchData, isLoading: searching } = useQuery({
+    queryKey: ['fs-client-search', query],
+    queryFn: () => fieldSalesApi.searchClients(query),
+    enabled: query.length >= 2,
+  })
+  const results = searchData?.clients ?? []
+
+  const createVisit = useMutation({
+    mutationFn: fieldSalesApi.createVisit,
+    onSuccess: () => onDone(),
+  })
+
+  const handleSelectClient = (client: FSClientSearch) => {
+    setSelectedClient(client)
+    setQuery(client.display_name)
+    setShowResults(false)
+  }
+
+  const handleSubmit = () => {
+    if (!selectedClient) return
+    createVisit.mutate({
+      client_id: selectedClient.id,
+      planned_date: visitDate,
+      planned_time: time || undefined,
+      visit_type: visitType,
+      goals: goals || undefined,
+    })
+  }
+
+  const err = createVisit.error as { data?: { error?: string } } | null
+
+  return (
+    <div className="space-y-4 p-4 pb-8">
+      <h3 className="text-lg font-bold">Adauga vizita</h3>
+
+      <div>
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Client *</label>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setSelectedClient(null); setShowResults(true) }}
+            onFocus={() => query.length >= 2 && setShowResults(true)}
+            placeholder="Cauta client dupa nume sau CUI..."
+            className="h-11 w-full rounded-xl border border-border bg-background pl-9 pr-9 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-teal-600/40"
+          />
+          {query && (
+            <button
+              onClick={() => { setQuery(''); setSelectedClient(null); setShowResults(false) }}
+              className="absolute right-3 top-1/2 -translate-y-1/2"
+            >
+              <X className="h-4 w-4 text-muted-foreground" />
+            </button>
+          )}
+        </div>
+        {showResults && query.length >= 2 && (
+          <div className="mt-1 max-h-48 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
+            {searching && (
+              <div className="flex items-center justify-center py-4">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
+              </div>
+            )}
+            {!searching && results.length === 0 && (
+              <p className="px-3 py-3 text-xs text-muted-foreground">Niciun client gasit</p>
+            )}
+            {!searching && results.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => handleSelectClient(c)}
+                className="w-full text-left px-3 py-2.5 hover:bg-secondary active:bg-secondary transition-colors border-b border-border/50 last:border-0"
+              >
+                <p className="text-sm font-medium">{c.display_name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {c.client_type === 'company' ? 'Firma' : 'Persoana fizica'}
+                  {c.city ? ` - ${c.city}` : ''}
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Data vizitei</label>
+        <input
+          type="date"
+          value={visitDate}
+          onChange={(e) => setVisitDate(e.target.value)}
+          className="h-11 w-full rounded-xl border border-border bg-background px-3 text-base focus:outline-none focus:ring-2 focus:ring-teal-600/40"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Ora (optional)</label>
+        <input
+          type="time"
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          className="h-11 w-full rounded-xl border border-border bg-background px-3 text-base focus:outline-none focus:ring-2 focus:ring-teal-600/40"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Tip vizita</label>
+        <select
+          value={visitType}
+          onChange={(e) => setVisitType(e.target.value)}
+          className="h-11 w-full rounded-xl border border-border bg-background px-3 text-base focus:outline-none focus:ring-2 focus:ring-teal-600/40 appearance-none"
+        >
+          {Object.entries(VISIT_TYPE_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Obiective (optional)</label>
+        <textarea
+          value={goals}
+          onChange={(e) => setGoals(e.target.value)}
+          placeholder="Obiectivele vizitei..."
+          rows={3}
+          className="w-full rounded-xl border border-border bg-background py-2.5 px-3 text-base placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-teal-600/40"
+        />
+      </div>
+
+      <div className="flex gap-2">
+        <button onClick={onCancel} className="h-11 flex-1 rounded-xl border border-border text-base font-semibold active:bg-muted">
+          Anuleaza
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={!selectedClient || createVisit.isPending}
+          className={cn(
+            'h-11 flex-1 rounded-xl text-base font-semibold text-white transition-colors',
+            selectedClient && !createVisit.isPending ? 'bg-teal-600 active:bg-teal-700' : 'bg-muted-foreground/40 cursor-not-allowed',
+          )}
+        >
+          {createVisit.isPending ? 'Se salveaza...' : 'Salveaza vizita'}
+        </button>
+      </div>
+
+      {createVisit.isError && (
+        <p className="text-xs text-destructive text-center">{err?.data?.error ?? 'Eroare la salvarea vizitei'}</p>
+      )}
+    </div>
+  )
+}
+
 type Overlay = null | { kind: 'add' } | { kind: 'detail'; id: number }
   | { kind: 'note'; id: number } | { kind: 'client360'; clientId: number }
 
 export default function HubFieldSalesPanel() {
   const date = todayStr()
   const [overlay, setOverlay] = useState<Overlay>(null)
+  const queryClient = useQueryClient()
   const { data, isLoading, isError } = useQuery({
     queryKey: ['field-sales-visits', date],
     queryFn: () => fieldSalesApi.getTodayVisits(date),
@@ -119,6 +294,16 @@ export default function HubFieldSalesPanel() {
         open={overlay?.kind === 'detail'}
         onOpenChange={(o) => { if (!o) setOverlay(null) }}
       />
+
+      {overlay?.kind === 'add' && (
+        <OverlaySheet onClose={() => setOverlay(null)}>
+          <AddVisitForm
+            date={date}
+            onDone={() => { queryClient.invalidateQueries({ queryKey: ['field-sales-visits', date] }); setOverlay(null) }}
+            onCancel={() => setOverlay(null)}
+          />
+        </OverlaySheet>
+      )}
     </div>
   )
 }
