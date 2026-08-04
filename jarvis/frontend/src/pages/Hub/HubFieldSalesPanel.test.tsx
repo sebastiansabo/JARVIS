@@ -85,4 +85,18 @@ describe('HubFieldSalesPanel', () => {
     await waitFor(() => expect(mod.fieldSalesApi.checkin).toHaveBeenCalledWith(9, {}))
     await waitFor(() => expect(screen.getByText('detail:9')).toBeInTheDocument())
   })
+
+  it('surfaces an inline error when the check-in POST fails', async () => {
+    const { fireEvent } = await import('@testing-library/react')
+    const mod = await import('@/api/fieldSales')
+    getTodayVisits.mockResolvedValue({ success: true, visits: [VISIT], date: '2026-08-04' })
+    ;(mod.fieldSalesApi.checkin as ReturnType<typeof vi.fn>) = vi.fn().mockRejectedValue({ data: { error: 'Vizita nu mai este disponibila' } })
+    wrap(<HubFieldSalesPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /check-in/i }))
+    // RTL's waitFor wraps polling in act(), so the mutation's onError state
+    // update settles under act() -> no act() warning, pristine output.
+    await waitFor(() => expect(screen.getByText('Vizita nu mai este disponibila')).toBeInTheDocument())
+    // detail overlay must NOT open on failure
+    expect(screen.queryByText('detail:9')).not.toBeInTheDocument()
+  })
 })
