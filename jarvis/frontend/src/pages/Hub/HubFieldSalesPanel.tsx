@@ -423,7 +423,10 @@ export default function HubFieldSalesPanel() {
       )}
 
       {tab === 'calendar' && (
-        <FieldSalesCalendar onOpen={(id) => setOverlay({ kind: 'detail', id })} />
+        <FieldSalesCalendar
+          onOpen={(id) => setOverlay({ kind: 'detail', id })}
+          onAdd={(date, time, endTime) => setOverlay({ kind: 'add', date, time, endTime })}
+        />
       )}
 
       {/* Detail overlay (reuse existing dialog). VisitDetailDialog's own

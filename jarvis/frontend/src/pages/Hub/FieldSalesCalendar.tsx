@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { cn, usePersistedState } from '@/lib/utils'
 import { fieldSalesApi, type FSVisit } from '@/api/fieldSales'
 import { STATUS_CONFIG, VISIT_TYPE_LABELS } from '@/pages/Hub/HubFieldSalesPanel'
 
+type CalView = 'month' | 'week' | 'day'
+const VIEW_OPTIONS: readonly [CalView, string][] = [['month', 'Lună'], ['week', 'Săptămână'], ['day', 'Zi']]
 const WEEKDAY_LABELS = ['Lu', 'Ma', 'Mi', 'Jo', 'Vi', 'Sâ', 'Du']
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -22,14 +24,18 @@ function dayLabel(key: string): string {
 }
 
 /**
- * Month-only calendar for the Hub Field Sales panel — a web port of
- * DrivingCalendar's month grid (day/week views and the foiParcurs vehicle
- * join are dropped; visits carry everything needed for display already).
- * Shows the signed-in KAM's own visits (fieldSalesApi.getMyVisits) grouped
- * by planned_date; tapping a listed visit opens the shared detail overlay
- * via `onOpen`.
+ * Calendar for the Hub Field Sales panel — a web port of DrivingCalendar's
+ * view switcher + month grid (the foiParcurs vehicle join is dropped; visits
+ * carry everything needed for display already). Shows the signed-in KAM's
+ * own visits (fieldSalesApi.getMyVisits) grouped by planned_date; tapping a
+ * listed visit opens the shared detail overlay via `onOpen`. Week/Day views
+ * are placeholders for now — the real time-grid lands in a follow-up task.
  */
-export default function FieldSalesCalendar({ onOpen }: { onOpen: (visitId: number) => void }) {
+export default function FieldSalesCalendar({ onOpen, onAdd }: {
+  onOpen: (visitId: number) => void
+  onAdd: (date: string, time?: string, endTime?: string) => void
+}) {
+  const [view, setView] = usePersistedState<CalView>('hub-fs-cal-view', 'month')
   const [anchor, setAnchor] = useState<Date>(() => new Date())
   const [picked, setPicked] = useState<string | null>(null)
 
@@ -64,6 +70,20 @@ export default function FieldSalesCalendar({ onOpen }: { onOpen: (visitId: numbe
 
   return (
     <div className="space-y-3">
+      {/* View switcher */}
+      <div className="flex h-9 gap-0.5 rounded-lg bg-muted p-0.5">
+        {VIEW_OPTIONS.map(([v, label]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setView(v)}
+            className={cn('flex-1 rounded-md text-sm font-medium transition-colors', view === v ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground')}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Period navigation */}
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => go(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-muted transition-colors hover:bg-muted/70"><ChevronLeft className="h-5 w-5" /></button>
@@ -72,7 +92,11 @@ export default function FieldSalesCalendar({ onOpen }: { onOpen: (visitId: numbe
         <button type="button" onClick={goToday} className="rounded-full bg-muted px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-muted/70">Azi</button>
       </div>
 
-      {isLoading ? (
+      {view !== 'month' ? (
+        <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+          <p className="text-sm text-muted-foreground">Vizualizarea pe săptămână/zi — în curând</p>
+        </div>
+      ) : isLoading ? (
         <div className="space-y-2.5">{[...Array(3)].map((_, i) => <div key={i} className="h-16 animate-pulse rounded-2xl bg-muted" />)}</div>
       ) : isError ? (
         <p className="py-8 text-center text-sm text-destructive">Nu s-a putut încărca calendarul.</p>
@@ -87,13 +111,12 @@ export default function FieldSalesCalendar({ onOpen }: { onOpen: (visitId: numbe
                   const inMonth = d.getMonth() === anchor.getMonth()
                   const dayVisits = byDay.get(k) ?? []
                   return (
-                    <button
+                    <div
                       key={k}
-                      type="button"
                       data-testid={`day-${k}`}
                       onClick={() => setPicked(k)}
                       className={cn(
-                        'relative flex aspect-square min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg text-sm',
+                        'group relative flex aspect-square min-w-0 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg text-sm',
                         !inMonth && 'text-muted-foreground/40',
                         k === activeKey && 'bg-primary/15 font-bold',
                         k === todayKey && 'ring-1 ring-primary',
@@ -111,7 +134,18 @@ export default function FieldSalesCalendar({ onOpen }: { onOpen: (visitId: numbe
                           </span>
                         )
                       )}
-                    </button>
+                      {/* Hover add-affordance — hidden by default, shown on cell
+                          hover; stopPropagation so it doesn't also select the day. */}
+                      <button
+                        type="button"
+                        data-testid="day-add"
+                        aria-label={`Adaugă rapid ${k}`}
+                        onClick={(e) => { e.stopPropagation(); onAdd(k) }}
+                        className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground group-hover:flex"
+                      >
+                        <Plus className="h-3 w-3" />
+                      </button>
+                    </div>
                   )
                 })}
               </div>
@@ -119,7 +153,16 @@ export default function FieldSalesCalendar({ onOpen }: { onOpen: (visitId: numbe
           </div>
 
           <div className="space-y-2">
-            <p className="px-1 text-xs font-semibold uppercase capitalize tracking-wide text-muted-foreground">{dayLabel(activeKey)}</p>
+            <div className="flex items-center justify-between gap-2 px-1">
+              <p className="text-xs font-semibold uppercase capitalize tracking-wide text-muted-foreground">{dayLabel(activeKey)}</p>
+              <button
+                type="button"
+                onClick={() => onAdd(activeKey)}
+                className="flex shrink-0 items-center gap-1 rounded-full bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-teal-700"
+              >
+                <Plus className="h-3.5 w-3.5" />Adaugă vizită
+              </button>
+            </div>
             {activeVisits.length === 0 ? (
               <p className="px-1 py-4 text-center text-sm text-muted-foreground">Nicio vizita in aceasta zi</p>
             ) : (
