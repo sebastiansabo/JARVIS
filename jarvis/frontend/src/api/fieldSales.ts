@@ -43,6 +43,7 @@ export interface FSVisit {
   client_id: number
   planned_date: string
   planned_time?: string
+  planned_end_time?: string
   visit_type: string
   status: string
   outcome?: string
@@ -129,6 +130,7 @@ export interface CreateVisitPayload {
   client_id: number
   planned_date: string
   planned_time?: string
+  planned_end_time?: string
   visit_type?: string
   goals?: string
   kam_id?: number
@@ -149,7 +151,7 @@ export interface CreateRoutePayload {
 }
 
 export type VisitUpdatePayload = Partial<Pick<FSVisit,
-  'planned_date' | 'planned_time' | 'visit_type' | 'goals' | 'status' | 'outcome' |
+  'planned_date' | 'planned_time' | 'planned_end_time' | 'visit_type' | 'goals' | 'status' | 'outcome' |
   'contact_person' | 'companions' | 'pre_visit_data' | 'post_visit_data'
 >>
 

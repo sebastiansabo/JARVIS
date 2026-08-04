@@ -2,12 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const get = vi.fn()
 const post = vi.fn()
-vi.mock('./client', () => ({ api: { get: (...a: unknown[]) => get(...a), post: (...a: unknown[]) => post(...a) } }))
+const put = vi.fn()
+vi.mock('./client', () => ({ api: { get: (...a: unknown[]) => get(...a), post: (...a: unknown[]) => post(...a), put: (...a: unknown[]) => put(...a) } }))
 
 import { fieldSalesApi } from './fieldSales'
 
 describe('fieldSalesApi daily-driver wrappers', () => {
-  beforeEach(() => { get.mockReset(); post.mockReset(); get.mockResolvedValue({}); post.mockResolvedValue({}) })
+  beforeEach(() => { get.mockReset(); post.mockReset(); put.mockReset(); get.mockResolvedValue({}); post.mockResolvedValue({}); put.mockResolvedValue({}) })
 
   it('getTodayVisits hits the today route with the date param', async () => {
     await fieldSalesApi.getTodayVisits('2026-08-04')
@@ -42,5 +43,15 @@ describe('fieldSalesApi daily-driver wrappers', () => {
   it('refreshFiscal posts to the refresh-fiscal route', async () => {
     await fieldSalesApi.refreshFiscal(760)
     expect(post).toHaveBeenCalledWith('/api/field-sales/clients/760/refresh-fiscal')
+  })
+
+  it('createVisit forwards planned_end_time', async () => {
+    await fieldSalesApi.createVisit({ client_id: 1, planned_date: '2026-08-05', planned_time: '09:00', planned_end_time: '10:00' })
+    expect(post).toHaveBeenCalledWith('/api/field-sales/visits', { client_id: 1, planned_date: '2026-08-05', planned_time: '09:00', planned_end_time: '10:00' })
+  })
+
+  it('updateVisit forwards planned_end_time', async () => {
+    await fieldSalesApi.updateVisit(9, { planned_time: '09:00', planned_end_time: '11:00' })
+    expect(put).toHaveBeenCalledWith('/api/field-sales/visits/9', { planned_time: '09:00', planned_end_time: '11:00' })
   })
 })
