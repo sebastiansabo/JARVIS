@@ -21,14 +21,6 @@ function dayLabel(key: string): string {
   return new Date(`${key}T00:00:00`).toLocaleDateString('ro-RO', { weekday: 'long', day: '2-digit', month: 'long' })
 }
 
-// Solid dot colors for the month-grid indicators, keyed the same as
-// STATUS_CONFIG (which only carries light badge bg/text pairs, not a color
-// suited to a small solid dot).
-const STATUS_DOT: Record<string, string> = {
-  planned: 'bg-blue-500', in_progress: 'bg-orange-500', completed: 'bg-green-500',
-  no_show: 'bg-red-500', rescheduled: 'bg-purple-500', partial: 'bg-amber-500',
-}
-
 /**
  * Month-only calendar for the Hub Field Sales panel — a web port of
  * DrivingCalendar's month grid (day/week views and the foiParcurs vehicle
@@ -113,7 +105,7 @@ export default function FieldSalesCalendar({ onOpen }: { onOpen: (visitId: numbe
                       ) : (
                         <span className="flex items-center gap-0.5">
                           {dayVisits.map((v) => (
-                            <span key={v.id} data-testid="day-dot" className={cn('h-1.5 w-1.5 rounded-full', STATUS_DOT[v.status] ?? STATUS_DOT.planned)} />
+                            <span key={v.id} data-testid="day-dot" className={cn('h-1.5 w-1.5 rounded-full', STATUS_CONFIG[v.status]?.dot ?? 'bg-muted-foreground')} />
                           ))}
                         </span>
                       )
