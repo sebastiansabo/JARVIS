@@ -153,6 +153,59 @@ export type VisitUpdatePayload = Partial<Pick<FSVisit,
   'contact_person' | 'companions' | 'pre_visit_data' | 'post_visit_data'
 >>
 
+export interface FSStructuredNote {
+  visit_summary: string
+  contact_person: string | null
+  vehicles_discussed: { action: string; current_vehicle: string | null; interested_in: string | null; budget_eur: number | null }[]
+  commitments_made: string[]
+  next_steps: { action: string; owner: string; deadline: string | null }[]
+  opportunity_value_eur: number | null
+  decision_timeline: string | null
+  follow_up_date: string | null
+  objections: string[]
+  risk_flags: string[]
+}
+
+export interface FSClientProfile {
+  id: number; client_id: number; client_type: string; industry: string | null
+  country_code: string; legal_form: string | null; assigned_kam_id: number | null
+  fleet_size: number; renewal_score: number; cui: string | null
+  estimated_annual_value: number | null; priority: string
+}
+export interface FSClientFleetVehicle {
+  id: number; client_id: number; vehicle_make: string; vehicle_model: string
+  vehicle_year: number; vin: string | null; license_plate: string | null
+  purchase_date: string | null; purchase_price: number | null; purchase_currency: string
+  estimated_mileage: number | null; financing_type: string | null; financing_expiry: string | null
+  warranty_expiry: string | null; status: string; renewal_candidate: boolean; renewal_reason: string | null
+}
+export interface FSSaleSummary {
+  id: number; brand: string; model_name: string; contract_date: string | null
+  sale_price_net: number | null; vin: string | null; source: string
+}
+export interface FSVisitSummary {
+  id: number; planned_date: string; visit_type: string; status: string
+  outcome: string | null; visit_summary: string | null; kam_name?: string; client_name?: string
+}
+export interface FSAnafData {
+  company_name: string; address: string; is_vat_payer: boolean
+  is_inactive: boolean; inactivation_date: string | null; fetched_at: string
+}
+export interface FSInventoryMatch {
+  id: number; brand: string; model_name: string; model_year: number
+  sale_price_net: number; vin: string | null
+}
+export interface FSClient360 {
+  profile: FSClientProfile | null
+  fleet: FSClientFleetVehicle[]
+  last_purchases: FSSaleSummary[]
+  last_interactions: FSVisitSummary[]
+  visit_history: FSVisitSummary[]
+  renewal_candidates: FSClientFleetVehicle[]
+  inventory_matches: FSInventoryMatch[]
+  fiscal: FSAnafData | null
+}
+
 export const fieldSalesApi = {
   getManagerOverview: (dateFrom: string, dateTo: string, kamId?: number) => {
     const params: Record<string, string> = { date_from: dateFrom, date_to: dateTo }
@@ -196,4 +249,36 @@ export const fieldSalesApi = {
 
   getPendingTasks: () =>
     api.get<{ success: boolean; tasks: FSVisitTask[] }>('/api/field-sales/tasks/pending'),
+
+  // ── Hub daily-driver ──
+  getTodayVisits: (date: string) =>
+    api.get<{ success: boolean; visits: FSVisit[]; date: string }>('/api/field-sales/visits/today', { date }),
+
+  checkin: (visitId: number, coords: { lat?: number; lng?: number }) =>
+    api.post<{ success: boolean; visit: FSVisit }>(`/api/field-sales/visits/${visitId}/checkin`, coords),
+
+  checkout: (visitId: number, data: { outcome: string }) =>
+    api.post<{ success: boolean; visit: FSVisit }>(`/api/field-sales/visits/${visitId}/checkout`, data),
+
+  addNote: (visitId: number, data: { raw_note: string }) =>
+    api.post<{ success: boolean; note: FSVisitNote; structured_note: FSStructuredNote | null }>(
+      `/api/field-sales/visits/${visitId}/note`, data),
+
+  getClient360: (clientId: number) => {
+    // Backend returns { profile, fleet, purchases, interactions, visit_history,
+    // renewal_candidates, inventory_matches, fiscal } — normalize to FSClient360.
+    return api.get<Record<string, unknown>>(`/api/field-sales/clients/${clientId}/360`).then((res) => ({
+      profile: (res.profile as FSClient360['profile']) ?? null,
+      fleet: (res.fleet as FSClient360['fleet']) ?? [],
+      last_purchases: (res.purchases as FSClient360['last_purchases']) ?? [],
+      last_interactions: (res.interactions as FSClient360['last_interactions']) ?? [],
+      visit_history: (res.visit_history as FSClient360['visit_history']) ?? [],
+      renewal_candidates: (res.renewal_candidates as FSClient360['renewal_candidates']) ?? [],
+      inventory_matches: (res.inventory_matches as FSClient360['inventory_matches']) ?? [],
+      fiscal: (res.fiscal as FSClient360['fiscal']) ?? null,
+    }))
+  },
+
+  refreshFiscal: (clientId: number) =>
+    api.post<{ success: boolean }>(`/api/field-sales/clients/${clientId}/refresh-fiscal`),
 }
