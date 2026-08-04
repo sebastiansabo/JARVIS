@@ -123,6 +123,7 @@ def create_schema_field_sales(conn, cursor):
     cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS post_visit_data JSONB DEFAULT '{}'")
     cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS contact_person VARCHAR(255)")
     cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS companions TEXT[] DEFAULT '{}'")
+    cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS planned_end_time TIME")
 
     # Client profile enrichment: shareholders, work points, HQ address
     cursor.execute("ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS shareholders TEXT")

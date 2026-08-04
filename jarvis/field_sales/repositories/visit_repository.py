@@ -78,21 +78,22 @@ class VisitRepository(BaseRepository):
 
         Args:
             data: dict with kam_id, client_id, planned_date, planned_time,
-                  visit_type, goals
+                  planned_end_time, visit_type, goals
 
         Returns:
             dict: created visit row
         """
         return self.execute('''
             INSERT INTO kam_visit_plans
-                (kam_id, client_id, planned_date, planned_time, visit_type, goals)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                (kam_id, client_id, planned_date, planned_time, planned_end_time, visit_type, goals)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING *
         ''', (
             data['kam_id'],
             data['client_id'],
             data['planned_date'],
             data.get('planned_time'),
+            data.get('planned_end_time'),
             data.get('visit_type', 'general'),
             data.get('goals'),
         ), returning=True)
@@ -102,7 +103,7 @@ class VisitRepository(BaseRepository):
 
         Args:
             visit_id: kam_visit_plans.id
-            data: dict with optional keys: planned_date, planned_time, visit_type, goals,
+            data: dict with optional keys: planned_date, planned_time, planned_end_time, visit_type, goals,
                   status, outcome, pre_visit_data, post_visit_data, contact_person, companions
 
         Returns:
@@ -111,7 +112,7 @@ class VisitRepository(BaseRepository):
         import json as _json
         sets = []
         params = []
-        for field in ('planned_date', 'planned_time', 'visit_type', 'goals', 'status', 'outcome', 'contact_person'):
+        for field in ('planned_date', 'planned_time', 'planned_end_time', 'visit_type', 'goals', 'status', 'outcome', 'contact_person'):
             if field in data:
                 sets.append(f'{field} = %s')
                 params.append(data[field])
