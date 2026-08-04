@@ -166,8 +166,8 @@ function FleetSection({ vehicles }: { vehicles: FSClientFleetVehicle[] }) {
               className={cn('rounded-xl border p-3', v.renewal_candidate && 'border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10')}
             >
               <div className="flex items-start justify-between gap-2 mb-1.5">
-                <div>
-                  <h4 className="text-sm font-semibold text-foreground">{v.vehicle_make} {v.vehicle_model}</h4>
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-sm font-semibold text-foreground truncate">{v.vehicle_make} {v.vehicle_model}</h4>
                   <p className="text-xs text-muted-foreground">
                     {v.vehicle_year} {v.license_plate ? `- ${v.license_plate}` : ''}
                   </p>
@@ -230,15 +230,15 @@ function PurchasesSection({ purchases }: { purchases: FSSaleSummary[] }) {
         purchases.map((p) => (
           <div key={p.id} className="rounded-xl border p-3">
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <h4 className="text-sm font-semibold text-foreground">{p.brand} {p.model_name}</h4>
+              <div className="min-w-0 flex-1">
+                <h4 className="text-sm font-semibold text-foreground truncate">{p.brand} {p.model_name}</h4>
                 <p className="text-xs text-muted-foreground mt-0.5">{formatDate(p.contract_date)} - {p.source}</p>
               </div>
               {p.sale_price_net != null && (
-                <span className="text-sm font-bold text-foreground">{formatEUR(p.sale_price_net)}</span>
+                <span className="shrink-0 text-sm font-bold text-foreground">{formatEUR(p.sale_price_net)}</span>
               )}
             </div>
-            {p.vin && <p className="text-xs text-muted-foreground mt-1.5 font-mono">VIN: {p.vin}</p>}
+            {p.vin && <p className="text-xs text-muted-foreground mt-1.5 font-mono truncate">VIN: {p.vin}</p>}
           </div>
         ))
       )}
@@ -292,13 +292,13 @@ function InventoryMatchesSection({ matches }: { matches: FSInventoryMatch[] }) {
         matches.map((m) => (
           <div key={m.id} className="rounded-xl border p-3">
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <h4 className="text-sm font-semibold text-foreground">{m.brand} {m.model_name}</h4>
+              <div className="min-w-0 flex-1">
+                <h4 className="text-sm font-semibold text-foreground truncate">{m.brand} {m.model_name}</h4>
                 <p className="text-xs text-muted-foreground mt-0.5">{m.model_year}</p>
               </div>
-              <span className="text-sm font-bold text-foreground">{formatEUR(m.sale_price_net)}</span>
+              <span className="shrink-0 text-sm font-bold text-foreground">{formatEUR(m.sale_price_net)}</span>
             </div>
-            {m.vin && <p className="text-xs text-muted-foreground mt-1.5 font-mono">VIN: {m.vin}</p>}
+            {m.vin && <p className="text-xs text-muted-foreground mt-1.5 font-mono truncate">VIN: {m.vin}</p>}
           </div>
         ))
       )}
@@ -356,18 +356,26 @@ export default function ClientCard360({ clientId }: { clientId: number }) {
     <div className="space-y-4">
       <HeaderSection clientId={clientId} profile={profile} />
 
-      <FiscalSection
-        fiscal={fiscal}
-        onRefresh={() => refreshFiscalMutation.mutate()}
-        refreshing={refreshFiscalMutation.isPending}
-      />
+      {/* Fiscal + Fleet read as two peer "info" panels — pair them on desktop
+          so the card uses the extra horizontal space instead of one narrow
+          column of stacked cards. */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <FiscalSection
+          fiscal={fiscal}
+          onRefresh={() => refreshFiscalMutation.mutate()}
+          refreshing={refreshFiscalMutation.isPending}
+        />
+        <FleetSection vehicles={fleet} />
+      </div>
       {refreshFiscalMutation.isError && (
         <p className="text-xs text-destructive text-center -mt-2">
           {refreshErr?.data?.error ?? 'Eroare la actualizarea datelor fiscale'}
         </p>
       )}
 
-      <FleetSection vehicles={fleet} />
+      {/* These remain full-width, single-column lists (purchases/visits/stock
+          matches read as chronological or scannable lists, not paired info
+          panels) — forcing them into two columns wouldn't read better. */}
       <PurchasesSection purchases={purchases} />
       <VisitHistorySection visits={visitHistory} />
       <InventoryMatchesSection matches={inventoryMatches} />

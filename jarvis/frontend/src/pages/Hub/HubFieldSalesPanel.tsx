@@ -316,7 +316,7 @@ export default function HubFieldSalesPanel() {
 
       {tab === 'today' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div><h2 className="text-xl font-bold">Vizite</h2><p className="text-sm text-muted-foreground">Azi</p></div>
             <button onClick={() => setOverlay({ kind: 'add' })} className="rounded-xl bg-teal-600 px-3 py-2.5 text-sm font-semibold text-white active:bg-teal-700">
               <span className="flex items-center gap-1"><Plus className="h-4 w-4" />Adauga</span>
@@ -324,10 +324,10 @@ export default function HubFieldSalesPanel() {
           </div>
 
           {visits.length > 0 && (
-            <div className="flex gap-2">
-              <div className="flex-1 rounded-xl bg-blue-50 dark:bg-blue-900/20 p-3 text-center"><p className="text-lg font-bold text-blue-700 dark:text-blue-300">{planned}</p><p className="text-[10px] font-medium uppercase text-blue-600/70">Planificate</p></div>
-              <div className="flex-1 rounded-xl bg-orange-50 dark:bg-orange-900/20 p-3 text-center"><p className="text-lg font-bold text-orange-700 dark:text-orange-300">{inProgress}</p><p className="text-[10px] font-medium uppercase text-orange-600/70">In curs</p></div>
-              <div className="flex-1 rounded-xl bg-green-50 dark:bg-green-900/20 p-3 text-center"><p className="text-lg font-bold text-green-700 dark:text-green-300">{completed}</p><p className="text-[10px] font-medium uppercase text-green-600/70">Finalizate</p></div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 p-3 text-center"><p className="text-lg font-bold text-blue-700 dark:text-blue-300">{planned}</p><p className="text-[10px] font-medium uppercase text-blue-600/70">Planificate</p></div>
+              <div className="rounded-xl bg-orange-50 dark:bg-orange-900/20 p-3 text-center"><p className="text-lg font-bold text-orange-700 dark:text-orange-300">{inProgress}</p><p className="text-[10px] font-medium uppercase text-orange-600/70">In curs</p></div>
+              <div className="rounded-xl bg-green-50 dark:bg-green-900/20 p-3 text-center"><p className="text-lg font-bold text-green-700 dark:text-green-300">{completed}</p><p className="text-[10px] font-medium uppercase text-green-600/70">Finalizate</p></div>
             </div>
           )}
 
@@ -346,7 +346,7 @@ export default function HubFieldSalesPanel() {
           )}
 
           {!isLoading && !isError && visits.length > 0 && (
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {visits.map(v => (
                 <VisitCard key={v.id} visit={v} actionPending={checkinMut.isPending}
                   onOpen={() => setOverlay({ kind: 'detail', id: v.id })}
@@ -359,7 +359,7 @@ export default function HubFieldSalesPanel() {
           {upcoming.length > 0 && (
             <div className="space-y-3 pt-2">
               <h3 className="text-sm font-semibold text-muted-foreground">Vizite viitoare (30 zile)</h3>
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {upcoming.map(v => (
                   <div key={v.id}>
                     <p className="mb-1 px-1 text-xs font-medium capitalize text-muted-foreground">{upcomingDateLabel(v.planned_date)}</p>
