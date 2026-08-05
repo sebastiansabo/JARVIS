@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useAuthStore } from '@/stores/authStore'
 
 const getVisit = vi.fn()
 const addQuickNote = vi.fn()
@@ -18,8 +19,7 @@ const visitResp = (status: string) => ({ success: true, visit: {
   client_name: 'ACME SRL', kam_name: 'George Pop', notes: [],
 } })
 
-function wrap(ui: React.ReactNode) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function wrap(ui: React.ReactNode, qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
 }
 
@@ -29,13 +29,27 @@ describe('VisitDetailDialog quick note', () => {
     addQuickNote.mockResolvedValue({ success: true, note: { id: 1, raw_note: 'x', created_at: '' } })
   })
 
-  it('shows the composer when the visit is in_progress', async () => {
+  afterEach(() => {
+    useAuthStore.setState({ user: null })
+  })
+
+  it('shows the composer when the visit is in_progress and the current user owns it', async () => {
+    useAuthStore.setState({ user: { id: 3 } as never })
     getVisit.mockResolvedValue(visitResp('in_progress'))
     wrap(<VisitDetailDialog visitId={9} open onOpenChange={() => {}} />)
     expect(await screen.findByPlaceholderText(/noteaz/i)).toBeInTheDocument()
   })
 
+  it('hides the composer for an in_progress visit owned by another KAM (manager viewing)', async () => {
+    useAuthStore.setState({ user: { id: 99 } as never })
+    getVisit.mockResolvedValue(visitResp('in_progress'))
+    wrap(<VisitDetailDialog visitId={9} open onOpenChange={() => {}} />)
+    await screen.findByRole('button', { name: /editeaza/i })
+    expect(screen.queryByPlaceholderText(/noteaz/i)).not.toBeInTheDocument()
+  })
+
   it('hides the composer for a planned visit', async () => {
+    useAuthStore.setState({ user: { id: 3 } as never })
     getVisit.mockResolvedValue(visitResp('planned'))
     wrap(<VisitDetailDialog visitId={9} open onOpenChange={() => {}} />)
     // "Editeaza" renders once the visit has loaded, independent of status.
@@ -44,15 +58,19 @@ describe('VisitDetailDialog quick note', () => {
   })
 
   it('hides the composer for a completed visit', async () => {
+    useAuthStore.setState({ user: { id: 3 } as never })
     getVisit.mockResolvedValue(visitResp('completed'))
     wrap(<VisitDetailDialog visitId={9} open onOpenChange={() => {}} />)
     await screen.findByRole('button', { name: /editeaza/i })
     expect(screen.queryByPlaceholderText(/noteaz/i)).not.toBeInTheDocument()
   })
 
-  it('disables add until text is entered, then calls addQuickNote(9, text) and clears', async () => {
+  it('disables add until text is entered, then calls addQuickNote(9, text), clears, and invalidates related queries', async () => {
+    useAuthStore.setState({ user: { id: 3 } as never })
     getVisit.mockResolvedValue(visitResp('in_progress'))
-    wrap(<VisitDetailDialog visitId={9} open onOpenChange={() => {}} />)
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries')
+    wrap(<VisitDetailDialog visitId={9} open onOpenChange={() => {}} />, qc)
     const box = await screen.findByPlaceholderText(/noteaz/i) as HTMLTextAreaElement
     const btn = screen.getByRole('button', { name: /adaug[aă] not[aă]/i })
     expect(btn).toBeDisabled()
@@ -61,5 +79,9 @@ describe('VisitDetailDialog quick note', () => {
     fireEvent.click(btn)
     await waitFor(() => expect(addQuickNote).toHaveBeenCalledWith(9, 'client vrea X5'))
     await waitFor(() => expect(box.value).toBe(''))
+    expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['fs-visit-detail', 9] }))
+    expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['field-sales-visits'] }))
+    expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['field-sales-mine'] }))
+    expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['field-sales-cal'] }))
   })
 })
