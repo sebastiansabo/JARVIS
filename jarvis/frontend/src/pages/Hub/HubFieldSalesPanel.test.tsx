@@ -110,7 +110,9 @@ describe('HubFieldSalesPanel', () => {
     // internal mutationFnContext arg — assert that too rather than weakening
     // the match to a single positional arg.
     await waitFor(() => expect(mod.fieldSalesApi.createVisit).toHaveBeenCalledWith(
-      expect.objectContaining({ planned_time: '09:00', planned_end_time: '10:00' }),
+      // company_id is the panel's resolved company (ONE_COMPANY id 5) so a
+      // multi-company user's new visit lands in the tenant they're viewing.
+      expect.objectContaining({ planned_time: '09:00', planned_end_time: '10:00', company_id: 5 }),
       expect.anything(),
     ))
     await waitFor(() => expect(screen.queryByRole('button', { name: /salveaza vizita/i })).not.toBeInTheDocument())
