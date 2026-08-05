@@ -96,12 +96,16 @@ interface TestDriveFormProps {
   embedded?: boolean
   activateId?: number
   initialCompanyId?: number
+  /** Seed the departure datetime ("YYYY-MM-DDTHH:MM"), e.g. from a calendar
+   *  slot the user dragged/clicked. Return defaults to +1h. Ignored in
+   *  activation mode, which prefills from the loaded draft instead. */
+  initialDeparture?: string
   onDone?: (contract: FoiContract) => void
   onCancel?: () => void
 }
 
 // ── Component ──
-export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, onDone, onCancel }: TestDriveFormProps = {}) {
+export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, initialDeparture, onDone, onCancel }: TestDriveFormProps = {}) {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
 
@@ -136,8 +140,14 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const [driverLicenseExpiry, setDriverLicenseExpiry] = useState('')
 
   // Trip
-  const [departureDatetime, setDepartureDatetime] = useState(() => localDatetimeValue(new Date()))
-  const [returnDatetime, setReturnDatetime] = useState(() => localDatetimeValue(new Date(Date.now() + 60 * 60 * 1000)))
+  // Seed the departure slot from the prop (Hub overlay) or the ?departure=
+  // search param (desktop calendar route) — both are "YYYY-MM-DDTHH:MM".
+  const seedDeparture = initialDeparture ?? searchParams.get('departure') ?? undefined
+  const [departureDatetime, setDepartureDatetime] = useState(() => seedDeparture ?? localDatetimeValue(new Date()))
+  const [returnDatetime, setReturnDatetime] = useState(() => {
+    const base = seedDeparture ? new Date(seedDeparture) : new Date()
+    return localDatetimeValue(new Date(base.getTime() + 60 * 60 * 1000))
+  })
   const [odometerStart, setOdometerStart] = useState('')
   const [estimatedKm, setEstimatedKm] = useState('')
   const [fuelGaugeStart, setFuelGaugeStart] = useState<FuelGaugeLevel | ''>('')
@@ -782,7 +792,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs">Data plecării *</Label>
-              <Input type="datetime-local" value={departureDatetime} onChange={(e) => setDepartureDatetime(e.target.value)} className={invalidRing(missing.departure)} />
+              <Input type="datetime-local" data-testid="td-departure" value={departureDatetime} onChange={(e) => setDepartureDatetime(e.target.value)} className={invalidRing(missing.departure)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Data sosirii (estimată)</Label>
