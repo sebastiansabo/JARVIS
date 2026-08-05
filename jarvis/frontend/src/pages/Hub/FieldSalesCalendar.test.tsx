@@ -143,6 +143,10 @@ describe('FieldSalesCalendar', () => {
     const dateKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-15`
     const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
     getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: '', date_to: '' })
+    // This file's beforeEach only clears localStorage, so getMyVisits keeps
+    // calls from prior tests — clear its history here so the "no fetch fires"
+    // assertion below only sees (the absence of) this test's own calls.
+    getMyVisits.mockClear()
     const onAdd = vi.fn()
     wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} />)
 
@@ -165,6 +169,9 @@ describe('FieldSalesCalendar', () => {
     firePointer(col, 'pointerdown', 100 + 192)
     firePointer(col, 'pointerup', 100 + 192)
     expect(onAdd).not.toHaveBeenCalled()
+    // …and with no resolved company the calendar query stays disabled, so no
+    // (even KAM-scoped) fetch fires until a company is passed.
+    expect(getMyVisits).not.toHaveBeenCalled()
   })
 
   it('renders a Săptămână/Zi time-grid (hour gutter) instead of a placeholder', async () => {

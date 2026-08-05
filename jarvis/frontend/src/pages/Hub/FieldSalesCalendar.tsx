@@ -101,6 +101,13 @@ export default function FieldSalesCalendar({ onOpen, onAdd, companyId }: {
   const { data, isLoading, isError } = useQuery({
     queryKey: calQueryKey,
     queryFn: () => fieldSalesApi.getMyVisits(rangeStartKey, rangeEndKey, companyId),
+    // Wait for a resolved company (same gate as canAdd / the panel's queries)
+    // so we don't fire once with company_id omitted and then immediately
+    // refetch scoped once the parent passes a companyId — and so a no-company
+    // user's calendar stays empty rather than briefly listing own visits
+    // across every company. The endpoint is KAM-scoped either way (no cross-
+    // tenant read), this is purely fetch-consistency.
+    enabled: canAdd,
   })
 
   const byDay = useMemo(() => {
