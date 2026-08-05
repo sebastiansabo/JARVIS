@@ -52,11 +52,18 @@ def _as_list(v):
     return v if isinstance(v, list) else []
 
 
+def _as_str_or_none(v):
+    return v if isinstance(v, str) else None
+
+
 def _normalize_structured_note(raw):
     """Coerce a parsed AI note into the canonical FSStructuredNote shape.
 
     Whitelists known keys, forces list/scalar types, clamps `sentiment` to the
     enum, and never raises — a malformed element degrades to a safe default.
+    All scalar string-typed fields (top-level and nested) are guarded with
+    `_as_str_or_none` so an object/list emitted in place of a string can never
+    reach the frontend, where rendering a non-string as a React child throws.
     An {'error': ...} marker (or a non-dict) is returned as an error dict so the
     caller's `structured.get('error')` skip-save check still holds.
     """
@@ -73,9 +80,9 @@ def _normalize_structured_note(raw):
     for v in _as_list(raw.get('vehicles_discussed')):
         if isinstance(v, dict):
             vehicles.append({
-                'action': v.get('action'),
-                'current_vehicle': v.get('current_vehicle'),
-                'interested_in': v.get('interested_in'),
+                'action': _as_str_or_none(v.get('action')),
+                'current_vehicle': _as_str_or_none(v.get('current_vehicle')),
+                'interested_in': _as_str_or_none(v.get('interested_in')),
                 'budget_eur': _coerce_number(v.get('budget_eur')),
             })
 
@@ -83,21 +90,21 @@ def _normalize_structured_note(raw):
     for s in _as_list(raw.get('next_steps')):
         if isinstance(s, dict):
             next_steps.append({
-                'action': s.get('action'),
-                'owner': s.get('owner'),
-                'deadline': s.get('deadline'),
+                'action': _as_str_or_none(s.get('action')),
+                'owner': _as_str_or_none(s.get('owner')),
+                'deadline': _as_str_or_none(s.get('deadline')),
             })
 
     return {
-        'visit_summary': raw.get('visit_summary') or '',
+        'visit_summary': _as_str_or_none(raw.get('visit_summary')) or '',
         'sentiment': sentiment,
-        'contact_person': raw.get('contact_person'),
+        'contact_person': _as_str_or_none(raw.get('contact_person')),
         'vehicles_discussed': vehicles,
         'commitments_made': [str(c) for c in _as_list(raw.get('commitments_made'))],
         'next_steps': next_steps,
         'opportunity_value_eur': _coerce_number(raw.get('opportunity_value_eur')),
-        'decision_timeline': raw.get('decision_timeline'),
-        'follow_up_date': raw.get('follow_up_date'),
+        'decision_timeline': _as_str_or_none(raw.get('decision_timeline')),
+        'follow_up_date': _as_str_or_none(raw.get('follow_up_date')),
         'objections': [str(o) for o in _as_list(raw.get('objections'))],
         'risk_flags': [str(r) for r in _as_list(raw.get('risk_flags'))],
     }
