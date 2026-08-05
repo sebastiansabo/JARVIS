@@ -14,6 +14,12 @@ const ACTION_LABELS: Record<string, string> = {
   test_drive: 'Test drive',
 }
 
+const SENTIMENT_BADGE: Record<string, { label: string; cls: string }> = {
+  positive: { label: 'Pozitiv', cls: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
+  neutral: { label: 'Neutru', cls: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
+  negative: { label: 'Negativ', cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
+}
+
 function fmtEur(v: number) {
   return new Intl.NumberFormat('ro-RO', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v)
 }
@@ -130,7 +136,14 @@ export default function NoteCaptureModal({ visitId, clientId, onDone, onCancel }
 
             {/* Summary */}
             <div className="rounded-xl border p-3">
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Sumar vizita</h4>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sumar vizita</h4>
+                {structured.sentiment && SENTIMENT_BADGE[structured.sentiment] && (
+                  <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide', SENTIMENT_BADGE[structured.sentiment].cls)}>
+                    {SENTIMENT_BADGE[structured.sentiment].label}
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-foreground leading-relaxed">{structured.visit_summary}</p>
               {structured.contact_person && (
                 <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
