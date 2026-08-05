@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Car } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, usePersistedState } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus, SESSION_BLOCK_COLOR } from '@/pages/FoiParcurs/sessionStatus'
@@ -58,7 +58,9 @@ interface Props {
  * dot-grid + selected-day agenda list.
  */
 export default function DrivingCalendar({ companyId, brand, onActivate, onReturn, onAdd }: Props) {
-  const [view, setView] = useState<CalView>('week')
+  // Persisted so abandoning a new-session overlay (or any remount) doesn't
+  // reset the calendar to a different view; Week is the default.
+  const [view, setView] = usePersistedState<CalView>('hub-driving-cal-view', 'week')
   const [anchor, setAnchor] = useState<Date>(() => new Date())
   const [picked, setPicked] = useState<string | null>(null)
 

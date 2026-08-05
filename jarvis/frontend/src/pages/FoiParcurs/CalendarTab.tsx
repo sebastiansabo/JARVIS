@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, PlayCircle, XIcon, FileText } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, usePersistedState } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -20,7 +20,7 @@ import { naiveDate } from '@/lib/naiveDate'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 
 type CalView = 'month' | 'week' | 'day'
-const VIEW_OPTIONS: readonly [CalView, string][] = [['month', 'Lună'], ['week', 'Săptămână'], ['day', 'Zi']]
+const VIEW_OPTIONS: readonly [CalView, string][] = [['day', 'Zi'], ['week', 'Săptămână'], ['month', 'Lună']]
 const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mie', 'Joi', 'Vin', 'Sâm', 'Dum']
 
 function dayKey(d: Date): string {
@@ -56,7 +56,8 @@ function monthGrid(cursor: Date): Date[] {
 export function CalendarTab({ companyId, brand }: { companyId: number; brand: string }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [view, setView] = useState<CalView>('month')
+  // Persisted (survives navigating to the new-TD form and back) with Week default.
+  const [view, setView] = usePersistedState<CalView>('fp-cal-view', 'week')
   const [cursor, setCursor] = useState(() => new Date())
   const [selected, setSelected] = useState<FoiContract | null>(null)
 

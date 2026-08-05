@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -40,6 +40,8 @@ function wrap(ui: React.ReactNode) {
 }
 
 describe('DrivingCalendar', () => {
+  beforeEach(() => localStorage.clear()) // view is persisted now — avoid leaks
+
   it('offers Day/Week/Month views and shows today’s session as a time-grid block in the default Week view', async () => {
     wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'Zi' })).toBeInTheDocument()
