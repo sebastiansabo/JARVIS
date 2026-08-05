@@ -83,6 +83,7 @@ def api_create_visit():
             return jsonify({'success': False, 'error': 'Client not found'}), 404
 
         # Determine KAM: manager can assign to another user
+        # Also resolve the KAM's company_id (tenant isolation) from data already in hand.
         kam_id_param = data.get('kam_id')
         current_uid = _get_current_user().id
         if kam_id_param and int(kam_id_param) != current_uid:
@@ -93,13 +94,10 @@ def api_create_visit():
             if not target or not target.get('is_active', True):
                 return jsonify({'success': False, 'error': 'Target KAM not found or inactive'}), 404
             kam_id = int(kam_id_param)
+            visit_company_id = target.get('company_id')
         else:
             kam_id = current_uid
-
-        # Tag the visit with the KAM's company for tenant isolation
-        from core.auth.repositories import UserRepository
-        kam_user = UserRepository().get_by_id(kam_id)
-        visit_company_id = kam_user.get('company_id') if kam_user else None
+            visit_company_id = getattr(_get_current_user(), 'company_id', None)
 
         visit_data = {
             'kam_id': kam_id,
@@ -217,6 +215,8 @@ def api_create_route():
             'name': data.get('name'),
             'created_by': current_uid,
             'stops': stops,
+            # Tenant isolation: tag each route stop with the KAM's company (reuse target)
+            'company_id': target.get('company_id'),
         }
 
         route = _visit_repo.create_route(route_data)

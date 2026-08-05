@@ -269,7 +269,8 @@ class VisitRepository(BaseRepository):
         """Create a visit route with multiple stops.
 
         Args:
-            data: dict with kam_id, planned_date, name, created_by, stops[]
+            data: dict with kam_id, planned_date, name, created_by, stops[],
+                  company_id (tenant tag applied to every stop)
 
         Returns:
             dict: created route with visit list
@@ -286,12 +287,13 @@ class VisitRepository(BaseRepository):
         ), returning=True)
 
         route_id = route['id']
+        company_id = data.get('company_id')
         visits = []
         for i, stop in enumerate(data.get('stops', [])):
             visit = self.execute('''
                 INSERT INTO kam_visit_plans
-                    (kam_id, client_id, planned_date, planned_time, visit_type, goals, route_id, sequence)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    (kam_id, client_id, planned_date, planned_time, visit_type, goals, route_id, sequence, company_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
             ''', (
                 data['kam_id'],
@@ -302,6 +304,7 @@ class VisitRepository(BaseRepository):
                 stop.get('goals'),
                 route_id,
                 i + 1,
+                company_id,
             ), returning=True)
             visits.append(visit)
 
