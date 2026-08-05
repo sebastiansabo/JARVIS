@@ -55,3 +55,57 @@ describe('fieldSalesApi daily-driver wrappers', () => {
     expect(put).toHaveBeenCalledWith('/api/field-sales/visits/9', { planned_time: '09:00', planned_end_time: '11:00' })
   })
 })
+
+describe('fieldSalesApi company-scoping wrappers', () => {
+  beforeEach(() => { get.mockReset(); post.mockReset(); put.mockReset(); get.mockResolvedValue({}); post.mockResolvedValue({}); put.mockResolvedValue({}) })
+
+  it('getFieldSalesCompanies hits the companies route', async () => {
+    await fieldSalesApi.getFieldSalesCompanies()
+    expect(get).toHaveBeenCalledWith('/api/field-sales/companies')
+  })
+
+  it('getTodayVisits includes company_id when companyId > 0', async () => {
+    await fieldSalesApi.getTodayVisits('2026-08-04', 3)
+    expect(get).toHaveBeenCalledWith('/api/field-sales/visits/today', { date: '2026-08-04', company_id: '3' })
+  })
+
+  it('getTodayVisits omits company_id when companyId is 0', async () => {
+    await fieldSalesApi.getTodayVisits('2026-08-04', 0)
+    expect(get).toHaveBeenCalledWith('/api/field-sales/visits/today', { date: '2026-08-04' })
+  })
+
+  it('getTodayVisits omits company_id when companyId is undefined', async () => {
+    await fieldSalesApi.getTodayVisits('2026-08-04')
+    expect(get).toHaveBeenCalledWith('/api/field-sales/visits/today', { date: '2026-08-04' })
+  })
+
+  it('getMyVisits includes company_id when companyId > 0', async () => {
+    await fieldSalesApi.getMyVisits('2026-08-01', '2026-08-31', 5)
+    expect(get).toHaveBeenCalledWith('/api/field-sales/visits/mine', { date_from: '2026-08-01', date_to: '2026-08-31', company_id: '5' })
+  })
+
+  it('getMyVisits omits company_id when not provided', async () => {
+    await fieldSalesApi.getMyVisits('2026-08-01', '2026-08-31')
+    expect(get).toHaveBeenCalledWith('/api/field-sales/visits/mine', { date_from: '2026-08-01', date_to: '2026-08-31' })
+  })
+
+  it('searchClients includes company_id when companyId > 0', async () => {
+    await fieldSalesApi.searchClients('acme', 7)
+    expect(get).toHaveBeenCalledWith('/api/field-sales/clients/search', { q: 'acme', company_id: '7' })
+  })
+
+  it('searchClients omits company_id when companyId is 0', async () => {
+    await fieldSalesApi.searchClients('acme', 0)
+    expect(get).toHaveBeenCalledWith('/api/field-sales/clients/search', { q: 'acme' })
+  })
+
+  it('getManagerOverview includes company_id when companyId > 0, alongside kam_id', async () => {
+    await fieldSalesApi.getManagerOverview('2026-08-01', '2026-08-31', 12, 4)
+    expect(get).toHaveBeenCalledWith('/api/field-sales/manager/overview', { date_from: '2026-08-01', date_to: '2026-08-31', kam_id: '12', company_id: '4' })
+  })
+
+  it('getManagerOverview omits company_id when not provided', async () => {
+    await fieldSalesApi.getManagerOverview('2026-08-01', '2026-08-31')
+    expect(get).toHaveBeenCalledWith('/api/field-sales/manager/overview', { date_from: '2026-08-01', date_to: '2026-08-31' })
+  })
+})
