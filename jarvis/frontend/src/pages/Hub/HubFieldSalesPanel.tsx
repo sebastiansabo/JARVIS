@@ -152,6 +152,10 @@ function AddVisitForm({ initialDate, initialTime, initialEndTime, companyId, onD
       planned_end_time: endTime || undefined,
       visit_type: visitType,
       goals: goals || undefined,
+      // Tag the visit with the selector's active company (always resolved —
+      // the form only opens when companyReady) so a multi-company user's visit
+      // stays visible under the company they're viewing. Backend re-validates.
+      company_id: companyId,
     })
   }
 

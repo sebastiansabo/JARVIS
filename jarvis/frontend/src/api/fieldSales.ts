@@ -139,6 +139,11 @@ export interface CreateVisitPayload {
   visit_type?: string
   goals?: string
   kam_id?: number
+  // The tenant the visit belongs to (the Hub selector's active company). The
+  // backend validates it against the caller's allowed companies and falls back
+  // to the KAM's home company if absent/disallowed — so a multi-company user's
+  // visit lands in the company they're viewing, not always their home one.
+  company_id?: number
 }
 
 export interface RouteStop {

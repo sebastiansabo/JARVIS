@@ -100,6 +100,24 @@ def api_create_visit():
         else:
             kam_id = current_uid
             visit_company_id = getattr(_get_current_user(), 'company_id', None)
+            # A multi-company user (the Hub selector shows >1 company) creates
+            # the visit under the company they're currently viewing, so it lands
+            # in that tenant and stays visible under its filter — not always the
+            # creator's home company. Trust the client id only after validating
+            # it against the caller's allowed set; ignore an unknown/forbidden
+            # id and keep the home-company fallback above.
+            requested_company_id = data.get('company_id')
+            if requested_company_id is not None:
+                try:
+                    requested_company_id = int(requested_company_id)
+                except (ValueError, TypeError):
+                    requested_company_id = None
+                if requested_company_id is not None:
+                    user = _get_current_user()
+                    is_admin = getattr(user, 'role_id', None) == 1
+                    allowed_ids = {c['id'] for c in _client_repo.get_allowed_companies(user.id, is_admin)}
+                    if requested_company_id in allowed_ids:
+                        visit_company_id = requested_company_id
 
         visit_data = {
             'kam_id': kam_id,

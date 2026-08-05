@@ -50,6 +50,11 @@ describe('fieldSalesApi daily-driver wrappers', () => {
     expect(post).toHaveBeenCalledWith('/api/field-sales/visits', { client_id: 1, planned_date: '2026-08-05', planned_time: '09:00', planned_end_time: '10:00' })
   })
 
+  it('createVisit forwards company_id (the active tenant the visit belongs to)', async () => {
+    await fieldSalesApi.createVisit({ client_id: 1, planned_date: '2026-08-05', company_id: 20 })
+    expect(post).toHaveBeenCalledWith('/api/field-sales/visits', { client_id: 1, planned_date: '2026-08-05', company_id: 20 })
+  })
+
   it('updateVisit forwards planned_end_time', async () => {
     await fieldSalesApi.updateVisit(9, { planned_time: '09:00', planned_end_time: '11:00' })
     expect(put).toHaveBeenCalledWith('/api/field-sales/visits/9', { planned_time: '09:00', planned_end_time: '11:00' })
