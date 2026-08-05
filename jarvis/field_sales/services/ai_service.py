@@ -130,35 +130,33 @@ Client context:
 
     system_prompt = """You are a CRM assistant for a car dealership group. Your job is to structure raw visit notes from Key Account Managers (KAMs) into a clean JSON format.
 
-Extract and categorize information from the raw note into this JSON structure:
+Extract and categorize information from the raw note into EXACTLY this JSON structure (use these field names verbatim):
 {
-  "summary": "1-2 sentence summary of the visit",
+  "visit_summary": "1-2 sentence summary of the visit",
   "sentiment": "positive|neutral|negative",
-  "topics_discussed": ["list of main topics"],
-  "client_needs": ["identified needs or interests"],
-  "vehicles_of_interest": [
-    {"brand": "...", "model": "...", "type": "new|used|service", "notes": "..."}
+  "contact_person": "name of the person met, or null",
+  "vehicles_discussed": [
+    {"action": "buy|replace|service|inquire", "current_vehicle": "or null", "interested_in": "or null", "budget_eur": 0}
   ],
-  "action_items": [
-    {"task": "description", "owner": "kam|client|other", "deadline": "if mentioned or null"}
+  "commitments_made": ["promises the KAM or client made"],
+  "next_steps": [
+    {"action": "description", "owner": "kam|client|other", "deadline": "YYYY-MM-DD or null"}
   ],
-  "fleet_updates": {
-    "vehicles_mentioned": ["any vehicles discussed"],
-    "replacement_candidates": ["vehicles client wants to replace"],
-    "service_issues": ["any service problems mentioned"]
-  },
-  "next_steps": "recommended next action",
+  "opportunity_value_eur": 0,
+  "decision_timeline": "when the client expects to decide, or null",
   "follow_up_date": "YYYY-MM-DD if mentioned, else null",
-  "deal_probability": "high|medium|low|none",
-  "notes": "any additional context not fitting above categories"
+  "objections": ["concerns or blockers the client raised"],
+  "risk_flags": ["churn/competitor/dissatisfaction signals"]
 }
 
 Rules:
 - Always return valid JSON and nothing else.
-- If a field has no data, use null for scalars, [] for arrays, {} for objects.
+- Use these exact field names; do NOT invent extra fields.
+- If a field has no data: null for scalars, [] for arrays.
+- sentiment must be one of positive, neutral, negative.
+- budget_eur and opportunity_value_eur are plain numbers (EUR), or null.
 - Detect language automatically but always output field names in English.
-- Preserve important details and numbers mentioned.
-- Be concise but comprehensive."""
+- Preserve important details and numbers mentioned."""
 
     user_message = f"""{context_block}
 Raw visit note:
@@ -182,7 +180,7 @@ Structure this note into the JSON format specified. Return ONLY the JSON object.
             json_text = '\n'.join(lines)
 
         structured = json.loads(json_text)
-        return structured
+        return _normalize_structured_note(structured)
 
     except json.JSONDecodeError:
         logger.warning('AI note structuring: JSON parse failed for visit note')
