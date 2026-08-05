@@ -56,6 +56,31 @@ def test_normalizer_non_dict_returns_error():
     assert out.get('error') == 'parse_failed'
 
 
+def test_normalizer_guards_offshape_scalar_strings():
+    # If the LLM emits an object/list where a string is expected, the
+    # normalizer must degrade it to '' / None rather than passing the
+    # object/list through -- otherwise it reaches the frontend and rendering
+    # a non-string as a React child throws ("Objects are not valid as a React
+    # child"), blanking the review card.
+    raw = {
+        'visit_summary': {'nested': 'object'},
+        'contact_person': ['a', 'list'],
+        'decision_timeline': {'not': 'a string'},
+        'follow_up_date': 123,
+        'next_steps': [{'action': {'weird': 'object'}, 'owner': 'kam', 'deadline': '2026-08-10'}],
+        'vehicles_discussed': [{'action': 'buy', 'current_vehicle': ['x'], 'interested_in': {'y': 1}, 'budget_eur': 1000}],
+    }
+    out = _normalize_structured_note(raw)
+    assert out['visit_summary'] == ''
+    assert out['contact_person'] is None
+    assert out['decision_timeline'] is None
+    assert out['follow_up_date'] is None
+    assert out['next_steps'][0]['action'] is None
+    assert out['next_steps'][0]['owner'] == 'kam'
+    assert out['vehicles_discussed'][0]['current_vehicle'] is None
+    assert out['vehicles_discussed'][0]['interested_in'] is None
+
+
 def test_coerce_number_rejects_non_finite():
     # Non-finite values (from untrusted LLM output) must coerce to None so they
     # never reach json.dumps as the invalid-JSON tokens NaN/Infinity.
