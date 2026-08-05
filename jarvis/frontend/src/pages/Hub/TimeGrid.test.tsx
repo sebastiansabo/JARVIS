@@ -87,4 +87,66 @@ describe('TimeGrid', () => {
     fireEvent.click(within(band).getByTestId('tg-block-7'))
     expect(onEventClick).toHaveBeenCalledWith(7)
   })
+
+  it('does NOT create a slot when a pointer press starts on a block (block events must not reach the column)', () => {
+    // Regression: a block sits inside the column, so its pointerdown/up bubble
+    // to the column's create-drag handlers — in a real browser that fires
+    // onSlotAdd on top of opening the block. fireEvent.click never dispatches
+    // pointer events, so this slipped past the earlier click test.
+    const ev: TimeGridEvent = { id: 5, dayKey: todayKey, startMin: 540, endMin: 600, color: 'bg-blue-100 text-blue-700', title: 'X' }
+    const onSlotAdd = vi.fn()
+    render(<TimeGrid dayCols={[today]} events={[ev]} onEventClick={vi.fn()} onSlotAdd={onSlotAdd} />)
+    const col = screen.getByTestId(`tg-col-${todayKey}`)
+    mockCol(col) // stub the column's capture methods in case bubbling reaches it
+    const block = screen.getByTestId('tg-block-5')
+    block.setPointerCapture = vi.fn(); block.releasePointerCapture = vi.fn()
+    firePointer(block, 'pointerdown', 200)
+    firePointer(block, 'pointerup', 200)
+    expect(onSlotAdd).not.toHaveBeenCalled()
+  })
+
+  it('clusters overlapping timed events into one block that opens a list of sessions', () => {
+    const evs: TimeGridEvent[] = [
+      { id: 1, dayKey: todayKey, startMin: 705, endMin: 765, color: 'bg-indigo-100 text-indigo-700', title: 'QATAR INFLUENCE', subtitle: 'Audi A5' }, // 11:45–12:45
+      { id: 2, dayKey: todayKey, startMin: 720, endMin: 780, color: 'bg-blue-100 text-blue-700', title: 'DEMO SRL', subtitle: 'VW Golf' },       // 12:00–13:00 (overlaps)
+    ]
+    const onEventClick = vi.fn()
+    render(<TimeGrid dayCols={[today]} events={evs} onEventClick={onEventClick} onSlotAdd={vi.fn()} />)
+
+    // The two overlapping events collapse into ONE cluster block (keyed on the
+    // earliest event's id) with a count badge; no standalone blocks remain.
+    const cluster = screen.getByTestId('tg-cluster-1')
+    expect(within(cluster).getByTestId('tg-cluster-count')).toHaveTextContent('2')
+    expect(screen.queryByTestId('tg-block-1')).toBeNull()
+    expect(screen.queryByTestId('tg-block-2')).toBeNull()
+
+    // Tapping the cluster opens a list of both sessions…
+    fireEvent.click(cluster)
+    const list = screen.getByTestId('tg-cluster-list')
+    expect(within(list).getByText('QATAR INFLUENCE')).toBeInTheDocument()
+    expect(within(list).getByText('DEMO SRL')).toBeInTheDocument()
+
+    // …and a row taps through to that session, closing the list.
+    fireEvent.click(within(list).getByTestId('tg-clusteritem-2'))
+    expect(onEventClick).toHaveBeenCalledWith(2)
+    expect(screen.queryByTestId('tg-cluster-list')).toBeNull()
+  })
+
+  it('keeps non-overlapping timed events as separate blocks (no cluster)', () => {
+    const evs: TimeGridEvent[] = [
+      { id: 1, dayKey: todayKey, startMin: 540, endMin: 600, color: 'bg-blue-100 text-blue-700', title: 'A' },   // 09:00–10:00
+      { id: 2, dayKey: todayKey, startMin: 660, endMin: 720, color: 'bg-blue-100 text-blue-700', title: 'B' },   // 11:00–12:00
+    ]
+    render(<TimeGrid dayCols={[today]} events={evs} onEventClick={vi.fn()} onSlotAdd={vi.fn()} />)
+    expect(screen.getByTestId('tg-block-1')).toBeInTheDocument()
+    expect(screen.getByTestId('tg-block-2')).toBeInTheDocument()
+    expect(screen.queryByTestId('tg-cluster-1')).toBeNull()
+  })
+
+  it('draws red working-hours lines at 08:00 and 18:00', () => {
+    render(<TimeGrid dayCols={[today]} events={[]} onEventClick={vi.fn()} />)
+    // 08:00 = minToY(480) = 48px; 18:00 = minToY(1080) = 528px.
+    expect(screen.getByTestId('tg-workline-start')).toHaveStyle({ top: '48px' })
+    expect(screen.getByTestId('tg-workline-end')).toHaveStyle({ top: '528px' })
+  })
 })
