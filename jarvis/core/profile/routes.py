@@ -592,7 +592,11 @@ def api_profile_work_summary():
             history = bio_service.get_employee_daily_history(
                 employee['biostar_user_id'], start, end
             )
-            days_worked = sum(1 for d in history if d.get('duration_seconds', 0) > 0)
+            # duration_seconds can be NULL (absent-day adjustment rows) — .get's
+            # default only fires on a MISSING key, so coerce None→0 explicitly,
+            # else None > 0 raises TypeError → 500. Matches the `or 0` guard used
+            # for this field elsewhere (verification_service, hr_attendance, …).
+            days_worked = sum(1 for d in history if (d.get('duration_seconds') or 0) > 0)
 
         # 2. Working days in month (Mon-Fri, no holidays)
         _, num_days = calendar.monthrange(year, month)
