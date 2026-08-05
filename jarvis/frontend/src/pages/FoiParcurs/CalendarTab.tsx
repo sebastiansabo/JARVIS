@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, PlayCircle, XIcon, FileText } from 'lucide-react'
-import { cn, usePersistedState } from '@/lib/utils'
+import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { foiParcursApi } from '@/api/foiParcurs'
 import type { FoiContract } from '@/types/foiParcurs'
-import { sessionStatus, SESSION_BLOCK_COLOR } from './sessionStatus'
+import { sessionStatus, carColor } from './sessionStatus'
 import { naiveDate } from '@/lib/naiveDate'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 
@@ -173,20 +173,33 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
 
   // Week/Day columns + their time-grid events. Week is a rolling 7-day window
   // (weekOffset in days) so the arrows / edge-drag slide it a day at a time.
+  const weekDays = useIsMobile() ? 3 : 7
   const weekStart = addDays(startOfWeek(cursor), weekOffset)
-  const dayCols = view === 'day' ? [cursor] : view === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : []
+  const dayCols = view === 'day' ? [cursor] : view === 'week' ? Array.from({ length: weekDays }, (_, i) => addDays(weekStart, i)) : []
+  // Sessions whose [departure, return] span intersects the visible window, so a
+  // multi-day session that started earlier still shows on the days it covers.
+  const rangeStart = dayCols.length ? dayKey(dayCols[0]) : ''
+  const rangeEnd = dayCols.length ? dayKey(dayCols[dayCols.length - 1]) : ''
   const events: TimeGridEvent[] = view === 'month'
     ? []
-    : dayCols.flatMap((d) => (byDay.get(dayKey(d)) ?? []).map((c): TimeGridEvent => ({
-        id: c.id,
-        dayKey: dayKey(naiveDate(c.departure_datetime)!),
-        startMin: minsOfDay(c.departure_datetime),
-        endMin: minsOfDay(c.return_datetime),
-        color: SESSION_BLOCK_COLOR[sessionStatus(c).key],
-        title: c.client_name || carLabel(c.vin),
-        subtitle: carLabel(c.vin),
-        draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
-      })))
+    : tdContracts.flatMap((c): TimeGridEvent[] => {
+        const dep = dayKey(naiveDate(c.departure_datetime)!)
+        const retKey = naiveDate(c.return_datetime) ? dayKey(naiveDate(c.return_datetime)!) : undefined
+        const spanEnd = retKey && retKey > dep ? retKey : dep
+        if (dep > rangeEnd || spanEnd < rangeStart) return []
+        return [{
+          id: c.id,
+          dayKey: dep,
+          endDayKey: retKey, // multi-day span (return day)
+          startMin: minsOfDay(c.departure_datetime),
+          endMin: minsOfDay(c.return_datetime),
+          color: carColor(c.vin), // colour by car
+          groupKey: c.vin || undefined, // same-car overlap (interlaced) detection
+          title: c.client_name || carLabel(c.vin),
+          subtitle: carLabel(c.vin),
+          draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
+        }]
+      })
 
   const go = (dir: 1 | -1) => {
     if (view === 'week') setWeekOffset((o) => o + dir) // slide the 7-day window one day
@@ -198,7 +211,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
   if (view === 'day') {
     periodLabel = cursor.toLocaleDateString('ro-RO', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
   } else if (view === 'week') {
-    const we = addDays(weekStart, 6)
+    const we = addDays(weekStart, weekDays - 1)
     const weM = we.toLocaleDateString('ro-RO', { month: 'long' })
     periodLabel = weekStart.getMonth() === we.getMonth()
       ? `${weekStart.getDate()} – ${we.getDate()} ${weM}`
@@ -324,7 +337,6 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
             onEventClick={(id) => { const c = byId.get(id); if (c) setSelected(c) }}
             onSlotAdd={(departure, ret) => navigate(`/app/foi-parcurs/test-drive?departure=${departure}&return=${ret}`)}
             onMove={onMoveEvent}
-            onWeekShift={go}
           />
         </div>
       )}

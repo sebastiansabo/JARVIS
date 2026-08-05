@@ -41,6 +41,10 @@ function clampMin(min: number): number { return Math.max(HOUR_START * 60, Math.m
 export interface TimeGridEvent {
   id: number
   dayKey: string
+  /** Return day ("YYYY-MM-DD") for a multi-day session; defaults to dayKey.
+   *  When later than dayKey, the block spans each day between them (departure
+   *  day: startMin→grid-bottom, middle days: full, return day: top→endMin). */
+  endDayKey?: string
   /** Minutes-of-day; null → untimed (rendered in the all-day band). */
   startMin: number | null
   endMin: number | null
@@ -48,25 +52,27 @@ export interface TimeGridEvent {
   color: string
   title: string
   subtitle?: string
+  /** Grouping key (the car's VIN). Two events with the SAME groupKey whose time
+   *  ranges overlap on the same day are "interlaced" — the same car double-booked
+   *  — and get a red hachured overlap marker. */
+  groupKey?: string
   /** When true (and onMove is provided), the block can be dragged to a new
-   *  time/day. Callers set this only for records that may be rescheduled. */
+   *  time/day. Callers set this only for records that may be rescheduled.
+   *  Multi-day events are not draggable (reschedule via the form instead). */
   draggable?: boolean
 }
 
-// A cluster of timed events whose ranges overlap; `s`/`e` are the cluster's
-// effective (clamped) bounds in minutes.
-interface Cluster { items: { ev: TimeGridEvent; s: number; e: number }[]; s: number; e: number }
+// One day's slice of an event (a multi-day event yields one per day it covers).
+interface Segment { ev: TimeGridEvent; s: number; e: number; isStart: boolean }
+// A cluster of overlapping segments; `s`/`e` are the cluster's bounds in minutes.
+interface Cluster { items: Segment[]; s: number; e: number }
 
-// Sweep-line grouping: sort by effective start, extend the running cluster
-// while the next event starts before the cluster's current max-end.
-function clusterTimed(events: TimeGridEvent[]): Cluster[] {
-  const withRange = events.map((ev) => {
-    const s = clampMin(ev.startMin!)
-    const e = clampMin(Math.max(ev.endMin ?? s + 60, s + SNAP_MIN))
-    return { ev, s, e }
-  }).sort((a, b) => a.s - b.s || a.e - b.e)
+// Sweep-line grouping of a day's already-sliced segments: sort by start, extend
+// the running cluster while the next segment starts before its current max-end.
+function clusterSegments(segs: Segment[]): Cluster[] {
+  const sorted = [...segs].sort((a, b) => a.s - b.s || a.e - b.e)
   const clusters: Cluster[] = []
-  for (const t of withRange) {
+  for (const t of sorted) {
     const last = clusters[clusters.length - 1]
     if (last && t.s < last.e) { last.items.push(t); last.e = Math.max(last.e, t.e) }
     else clusters.push({ items: [t], s: t.s, e: t.e })
@@ -75,33 +81,24 @@ function clusterTimed(events: TimeGridEvent[]): Cluster[] {
 }
 
 // Only 'create' remains from FSTimeGrid's three drag modes — no move/resize.
-// Google-Calendar-style create, tracked by ABSOLUTE day keys + minutes (not
-// column indices) so the range survives a week change: dragging to the grid
-// edge auto-advances the week (onWeekShift) and the selection keeps extending —
-// e.g. a Friday→next-Monday session. `start*` is where the drag began, `end*`
-// is where the pointer is now; departure/return are their (day, time) min/max.
-const EDGE_PX = 44 // pointer within this many px of the grid edge auto-advances the week
+// Google-Calendar-style create in the Day-view hour grid, tracked by an
+// ABSOLUTE day key + minutes. `start*` is where the drag began, `end*` is where
+// the pointer is now; departure/return are their (day, time) min/max.
 type CreateDrag = { startKey: string; startMin: number; endKey: string; endMin: number }
 
-export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onMove, onWeekShift }: {
+export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onMove }: {
   dayCols: Date[]
   events: TimeGridEvent[]
   onEventClick: (id: number) => void
-  /** Create a session for a dragged range. `departure`/`ret` are full
-   *  "YYYY-MM-DDTHH:MM" strings; a drag spanning several day columns yields a
-   *  multi-day range (departure on the earlier day, return on the later). */
+  /** Create a session for a dragged range (Day-view hour grid) or a clicked day
+   *  cell (Week view). `departure`/`ret` are "YYYY-MM-DDTHH:MM" strings. */
   onSlotAdd?: (departure: string, ret: string) => void
   /** Called when a draggable block is dropped at a new day/time (duration
    *  preserved). Only fired for events with draggable:true. */
   onMove?: (id: number, dayKey: string, startTime: string, endTime: string) => void
-  /** Advance/retreat the visible week (dir +1/−1) — invoked mid-create-drag
-   *  when the pointer reaches the grid edge, so a range can span into the
-   *  next/previous week. When omitted, no auto-advance happens. */
-  onWeekShift?: (dir: 1 | -1) => void
 }) {
   const [drag, setDrag] = useState<CreateDrag | null>(null)
   const gridRef = useRef<HTMLDivElement | null>(null) // stable columns wrapper — holds the drag's pointer capture across week changes
-  const lastAdvanceRef = useRef(0)                    // throttle edge auto-advance
   // Active block move-drag (draggable events only). Carries raw client coords —
   // only the delta drives the math, and screen-space delta equals column-space
   // delta (columns don't resize mid-drag).
@@ -118,28 +115,113 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
   const gridHeight = (HOUR_END - HOUR_START) * PX_PER_HOUR
   const todayKey = keyOf(new Date())
   const isWeek = dayCols.length > 1
-  const gridColsClass = isWeek ? 'grid-cols-7' : 'grid-cols-1'
-  // Mobile shows ~3 of the 7 week columns by widening the card past the
-  // viewport (horizontal scroll reveals the rest of the week); desktop fits
-  // all 7. Day view stays a single comfortable column.
-  const cardMinW = isWeek ? 'min-w-[860px] sm:min-w-[560px]' : 'min-w-[320px]'
+  // Column count is responsive (callers pass 3 on phones, 7 on desktop), so the
+  // grid just fills the container — no forced-width horizontal scroll.
+  const gridColsClass = dayCols.length >= 7 ? 'grid-cols-7'
+    : dayCols.length === 3 ? 'grid-cols-3'
+    : dayCols.length === 2 ? 'grid-cols-2' : 'grid-cols-1'
+  const cardMinW = 'min-w-0'
   // Hour gutter stays pinned while the week scrolls horizontally so the time
   // labels never scroll out of view.
   const gutter = 'sticky left-0 z-20 w-10 shrink-0 bg-card'
 
-  const byDay = new Map<string, TimeGridEvent[]>()
-  for (const ev of events) {
-    const list = byDay.get(ev.dayKey) ?? []
-    list.push(ev)
-    byDay.set(ev.dayKey, list)
-  }
-
+  // Hourly grid holds only SINGLE-day timed sessions; multi-day sessions render
+  // as spanning bars in the top band (event-calendar style), and untimed
+  // (no start time) sessions sit in that band on their own day.
   const cols = dayCols.map((d) => {
     const dk = keyOf(d)
-    const dayEvents = byDay.get(dk) ?? []
-    return { d, dk, timed: dayEvents.filter((e) => e.startMin != null), untimed: dayEvents.filter((e) => e.startMin == null) }
+    const timed: Segment[] = []
+    const untimed: TimeGridEvent[] = []
+    for (const ev of events) {
+      if (ev.startMin == null) { if (ev.dayKey === dk) untimed.push(ev); continue }
+      if (ev.endDayKey && ev.endDayKey > ev.dayKey) continue // multi-day → top band
+      if (ev.dayKey !== dk) continue
+      const s = clampMin(ev.startMin)
+      const e = clampMin(Math.max(ev.endMin ?? ev.startMin + 60, s + SNAP_MIN))
+      timed.push({ ev, s, e, isStart: true })
+    }
+    return { d, dk, timed, untimed }
   })
   const hasAnyUntimed = cols.some((c) => c.untimed.length > 0)
+  // The left gutter only earns its 40px when it holds something: the Day-view
+  // hour labels, or the "Fără oră" tag when untimed sessions exist. In Week view
+  // (no hour grid, no untimed) it's dead space that shoves the days right — drop
+  // it so the bars use the full width.
+  const showGutter = !isWeek || hasAnyUntimed
+
+  // Multi-day sessions → horizontal bars spanning their visible day columns,
+  // greedily packed into rows so overlapping spans stack.
+  const dayKeys = cols.map((c) => c.dk)
+  const firstKey = dayKeys[0] ?? ''
+  const lastKey = dayKeys[dayKeys.length - 1] ?? ''
+  // Week view renders EVERY timed session as a bar (single-day bars span one
+  // column); Day view keeps its hourly grid and only bars the multi-day ones.
+  const bars = events
+    .filter((ev) => ev.startMin != null && (isWeek || (ev.endDayKey && ev.endDayKey > ev.dayKey)))
+    .map((ev) => {
+      const endKey = ev.endDayKey && ev.endDayKey > ev.dayKey ? ev.endDayKey : ev.dayKey
+      return {
+        ev,
+        sc: ev.dayKey < firstKey ? 0 : dayKeys.indexOf(ev.dayKey),
+        ec: endKey > lastKey ? dayKeys.length - 1 : dayKeys.indexOf(endKey),
+        // Past working hours (08:00–18:00): flag so it can be marked.
+        late: ev.startMin! < WORK_START * 60 || (ev.endMin != null && ev.endMin > WORK_END * 60),
+      }
+    })
+    .filter((b) => b.sc >= 0 && b.ec >= 0 && b.sc <= b.ec)
+    .sort((a, b) => a.sc - b.sc || a.ec - b.ec)
+  const barRows: { ev: TimeGridEvent; sc: number; ec: number; late: boolean }[][] = []
+  for (const bar of bars) {
+    const row = barRows.find((r) => r[r.length - 1].ec < bar.sc)
+    if (row) row.push(bar); else barRows.push([bar])
+  }
+
+  // Interlaced sessions: same car (groupKey) on the SAME single day whose time
+  // ranges overlap → the car is double-booked. For each such bar record its own
+  // overlap sub-interval + a shared window (the conflicting bars' extent) so a
+  // red hachure can be drawn at the same x across every bar in the group.
+  // Same car (groupKey) on the SAME day → number its sessions chronologically
+  // S1, S2, … Sx (starting session of the day first) so they can be referred to
+  // by code. Sessions whose time ranges overlap are "Suprapus cu Sx" (the car is
+  // double-booked): record each one's overlap sub-interval + the codes it
+  // collides with + a shared window (the conflicting members' extent) so a red
+  // hachure can be drawn at the same x across every one of them.
+  const barEnd = (ev: TimeGridEvent) => clampMin(Math.max(ev.endMin ?? ev.startMin! + 60, ev.startMin! + SNAP_MIN))
+  const codeNum = (c: string) => parseInt(c.slice(1), 10)
+  const seriesCode = new Map<number, string>()    // ev.id → "S2"
+  const overlapWith = new Map<number, string[]>() // ev.id → ["S1","S3"] it overlaps
+  const conflict = new Map<number, { oS: number; oE: number; gS: number; gE: number }>()
+  const carGroups = new Map<string, TimeGridEvent[]>()
+  for (const ev of events) {
+    if (ev.startMin == null || !ev.groupKey) continue
+    const k = `${ev.dayKey}|${ev.groupKey}`
+    const arr = carGroups.get(k); if (arr) arr.push(ev); else carGroups.set(k, [ev])
+  }
+  for (const list of carGroups.values()) {
+    if (list.length < 2) continue // codes only matter when a car has ≥2 sessions that day
+    list.sort((a, b) => a.startMin! - b.startMin! || a.id - b.id)
+    const code = new Map<number, string>()
+    list.forEach((ev, i) => { const c = `S${i + 1}`; code.set(ev.id, c); seriesCode.set(ev.id, c) })
+    const ov = new Map<number, { oS: number; oE: number }>()
+    for (const ev of list) {
+      const bs = ev.startMin!, be = barEnd(ev)
+      let oS = Infinity, oE = -Infinity; const codes: string[] = []
+      for (const o of list) {
+        if (o === ev) continue
+        const s = Math.max(bs, o.startMin!), e = Math.min(be, barEnd(o))
+        if (e > s) { oS = Math.min(oS, s); oE = Math.max(oE, e); codes.push(code.get(o.id)!) }
+      }
+      if (oE > oS) { ov.set(ev.id, { oS, oE }); overlapWith.set(ev.id, codes.sort((a, b) => codeNum(a) - codeNum(b))) }
+    }
+    if (!ov.size) continue
+    const conf = list.filter((ev) => ov.has(ev.id))
+    const gS = Math.min(...conf.map((ev) => ev.startMin!))
+    const gE = Math.max(...conf.map((ev) => barEnd(ev)))
+    for (const ev of conf) conflict.set(ev.id, { ...ov.get(ev.id)!, gS, gE })
+  }
+  // Bold diagonal red/white stripes marking the double-booked interval (white
+  // gaps keep the hachure legible on top of the pastel car-coloured bar).
+  const HACHURE = 'repeating-linear-gradient(45deg, rgba(220,38,38,0.95) 0, rgba(220,38,38,0.95) 3px, rgba(255,255,255,0.55) 3px, rgba(255,255,255,0.55) 6px)'
 
   // Which day column a screen-x coordinate falls in (for cross-day create-drag).
   const columnAtX = (x: number): string | null => {
@@ -187,7 +269,7 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
       <div className={cn('flex flex-col gap-1 rounded-2xl border border-border/60 bg-card p-2', cardMinW)}>
         {/* Day-label header row (gutter spacer + one label per column). */}
         <div className="flex gap-1">
-          <div className={gutter} />
+          {showGutter && <div className={gutter} />}
           <div className={cn('grid flex-1 gap-1', gridColsClass)}>
             {cols.map(({ d, dk }) => (
               <p key={dk} className={cn('truncate text-center text-[10px] font-semibold uppercase text-muted-foreground', dk === todayKey && 'text-primary')}>
@@ -197,33 +279,107 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
           </div>
         </div>
 
-        {/* Shared all-day band for untimed events. */}
-        {hasAnyUntimed && (
+        {/* Top band — multi-day sessions as spanning bars (packed into rows) +
+            untimed ("Fără oră") sessions on their own day. */}
+        {(isWeek || hasAnyUntimed || barRows.length > 0) && (
           <div data-testid="tg-allday-band" className="flex gap-1">
-            <div className={cn(gutter, 'flex items-start justify-end pr-1 pt-0.5')}>
-              <span className="text-[9px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Fără oră</span>
-            </div>
-            <div className={cn('grid flex-1 gap-1', gridColsClass)}>
-              {cols.map(({ dk, untimed }) => (
-                <div key={dk} className="min-w-0 space-y-0.5">
-                  {untimed.map((ev) => (
-                    <button
-                      key={ev.id}
-                      type="button"
-                      data-testid={`tg-block-${ev.id}`}
-                      onClick={() => onEventClick(ev.id)}
-                      className={cn('block w-full truncate rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold', ev.color)}
-                    >
-                      {ev.title}
-                    </button>
-                  ))}
+            {showGutter && (
+              <div className={cn(gutter, 'flex items-start justify-end pr-1 pt-0.5')}>
+                {hasAnyUntimed && <span className="text-[9px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Fără oră</span>}
+              </div>
+            )}
+            <div className="relative min-w-0 flex-1">
+              {/* Week: weekend-tinted day columns behind the session bars; click
+                  empty space to add a session on that day. */}
+              {isWeek && (
+                <div className={cn('absolute inset-0 grid gap-1', gridColsClass)}>
+                  {cols.map(({ d, dk }) => {
+                    const weekend = d.getDay() === 0 || d.getDay() === 6
+                    return (
+                      <button
+                        key={dk}
+                        type="button"
+                        data-testid={`tg-col-${dk}`}
+                        onClick={() => onSlotAdd?.(`${dk}T09:00`, `${dk}T10:00`)}
+                        className={cn('rounded-lg', weekend ? 'bg-zinc-200/50 dark:bg-red-950/30' : 'bg-muted/20', onSlotAdd && 'cursor-pointer')}
+                      />
+                    )
+                  })}
+                </div>
+              )}
+              <div className={cn('relative space-y-2', isWeek && 'pointer-events-none min-h-[200px] py-1')}>
+              {/* Session bars — each spans its day column(s) via grid placement;
+                  a red left edge + ⚠ marks a TD that runs outside 08:00–18:00. */}
+              {barRows.map((row, ri) => (
+                <div key={ri} className={cn('grid gap-1', gridColsClass)}>
+                  {row.map((bar) => {
+                    const isMulti = !!(bar.ev.endDayKey && bar.ev.endDayKey > bar.ev.dayKey)
+                    const start = minToTime(bar.ev.startMin!)
+                    const end = bar.ev.endMin != null ? minToTime(clampMin(bar.ev.endMin)) : ''
+                    // Multi-day: show both ends with a "–…" gap mark so it reads
+                    // "09:00 –… 16:00" — the end hour is on a LATER day, not same-day.
+                    const timeLabel = !end ? start : isMulti ? `${start} –… ${end}` : `${start}–${end}`
+                    // Car name first (truncated), then client. CSS truncate limits length to the bar width.
+                    const label = `${timeLabel} ${bar.ev.subtitle ? `${bar.ev.subtitle} · ` : ''}${bar.ev.title}`
+                    const ci = conflict.get(bar.ev.id) // interlaced (same car, overlapping) → hachure the overlap
+                    const code = seriesCode.get(bar.ev.id)   // "S1"…"Sx" (same-car day series)
+                    const ovl = overlapWith.get(bar.ev.id)   // codes this session is "Suprapus cu"
+                    const bs = bar.ev.startMin!, be = barEnd(bar.ev)
+                    const W = ci ? Math.max(ci.gE - ci.gS, 1) : 1
+                    return (
+                      <button
+                        key={bar.ev.id}
+                        type="button"
+                        data-testid={`tg-block-${bar.ev.id}`}
+                        onClick={() => onEventClick(bar.ev.id)}
+                        style={{ gridColumnStart: bar.sc + 1, gridColumnEnd: bar.ec + 2 }}
+                        className={cn('pointer-events-auto min-w-0 whitespace-normal break-words rounded-md px-2 py-1 text-left text-[11px] font-semibold leading-snug shadow-sm', bar.ev.color, bar.late && 'border-l-4 border-red-500', ci && 'ring-2 ring-red-500')}
+                        title={`${code ? `${code} · ` : ''}${label}${bar.late ? ' · în afara programului (08–18)' : ''}${ovl ? ` · Suprapus cu ${ovl.join(', ')}` : ''}`}
+                      >
+                        <span className="block">
+                          {code && <span data-testid={`tg-code-${bar.ev.id}`} className="mr-1 inline-block rounded bg-foreground/15 px-1 text-[10px] font-bold tabular-nums">{code}</span>}
+                          {bar.late && <span className="mr-0.5 text-red-600" aria-hidden>⚠</span>}{label}
+                        </span>
+                        {ovl && <span data-testid={`tg-overlap-${bar.ev.id}`} className="mt-0.5 block text-[10px] font-bold text-red-600 dark:text-red-400">Suprapus cu {ovl.join(', ')}</span>}
+                        {ci && (
+                          <span data-testid={`tg-conflict-${bar.ev.id}`} className="relative mt-1 block h-2.5 w-full overflow-hidden rounded-full bg-background/80 ring-1 ring-red-500/40" aria-hidden>
+                            {/* This session's own span (context), then the double-booked slice hachured red. */}
+                            <span className="absolute inset-y-0 rounded-full bg-foreground/40" style={{ left: `${((bs - ci.gS) / W) * 100}%`, width: `${((be - bs) / W) * 100}%` }} />
+                            <span className="absolute inset-y-0" style={{ left: `${((ci.oS - ci.gS) / W) * 100}%`, width: `${((ci.oE - ci.oS) / W) * 100}%`, backgroundImage: HACHURE }} />
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
               ))}
+              {/* Untimed single-day sessions. */}
+              {hasAnyUntimed && (
+                <div className={cn('grid gap-1', gridColsClass)}>
+                  {cols.map(({ dk, untimed }) => (
+                    <div key={dk} className="min-w-0 space-y-0.5">
+                      {untimed.map((ev) => (
+                        <button
+                          key={ev.id}
+                          type="button"
+                          data-testid={`tg-block-${ev.id}`}
+                          onClick={() => onEventClick(ev.id)}
+                          className={cn('pointer-events-auto block w-full truncate rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold', ev.color)}
+                        >
+                          {ev.title}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+              </div>
             </div>
           </div>
         )}
 
-        {/* Hour-grid — gutter labels + one relative day column each. */}
+        {/* Hour-grid (Day view only — Week uses the bars above). */}
+        {!isWeek && (
         <div data-testid="tg-hourgrid" className="flex gap-1">
           <div className={gutter}>
             {hours.map((h) => (
@@ -243,12 +399,6 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
               const endKey = columnAtX(e.clientX) ?? drag.endKey
               const endMin = clampMin(yToMin(e.clientY - colTopAt(e.clientX)))
               setDrag({ ...drag, endKey, endMin })
-              // Auto-advance the week when the pointer nears the grid's edge.
-              const rect = gridRef.current?.getBoundingClientRect()
-              if (rect && rect.width > 0 && onWeekShift && Date.now() - lastAdvanceRef.current > 450) {
-                if (e.clientX > rect.right - EDGE_PX) { lastAdvanceRef.current = Date.now(); onWeekShift(1) }
-                else if (e.clientX < rect.left + EDGE_PX) { lastAdvanceRef.current = Date.now(); onWeekShift(-1) }
-              }
             }}
             onPointerUp={(e) => {
               if (!onSlotAdd || !drag) return
@@ -281,7 +431,6 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
                     if (e.button !== 0 && e.pointerType === 'mouse') return
                     const rect = e.currentTarget.getBoundingClientRect()
                     const startMin = clampMin(yToMin(e.clientY - rect.top))
-                    lastAdvanceRef.current = 0
                     try { gridRef.current?.setPointerCapture(e.pointerId) } catch { /* jsdom / no capture */ }
                     setDrag({ startKey: dk, startMin, endKey: dk, endMin: startMin })
                   }}
@@ -296,12 +445,16 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
                       style={{ top: band.top, height: Math.max(band.bottom - band.top, 4) }}
                     />
                   )}
-                  {clusterTimed(timed).map((cl) => {
+                  {clusterSegments(timed).map((cl) => {
                     const top = minToY(cl.s)
-                    const height = Math.max(minToY(cl.e) - top, 18)
+                    // −2px so consecutive (back-to-back half/hour) blocks keep a
+                    // visible gap instead of abutting into one solid band.
+                    const height = Math.max(minToY(cl.e) - top - 2, 16)
                     if (cl.items.length === 1) {
-                      const ev = cl.items[0].ev
-                      const canMove = !!(ev.draggable && onMove)
+                      const seg = cl.items[0]
+                      const ev = seg.ev
+                      const isMultiDay = !!(ev.endDayKey && ev.endDayKey > ev.dayKey)
+                      const canMove = !!(ev.draggable && onMove && !isMultiDay) // multi-day: reschedule via form
                       const movingThis = move?.ev.id === ev.id
                       // Live preview offset while dragging this block.
                       let blockTop = top
@@ -372,7 +525,14 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
                           style={{ top: blockTop, height }}
                           className={cn('absolute left-0.5 right-0.5 z-[1] overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', ev.color, canMove && 'cursor-grab', movingThis && 'cursor-grabbing touch-none ring-2 ring-primary/50')}
                         >
-                          <span className="block truncate">{`${minToTime(ev.startMin!)} ${ev.title}`}</span>
+                          {/* Departure day shows the start–end times (with the
+                              same-car day code Sx); continuation days show just
+                              the title. */}
+                          <span className="block truncate">
+                            {seriesCode.get(ev.id) && <span data-testid={`tg-code-${ev.id}`} className="mr-1 rounded bg-foreground/15 px-1 text-[9px] font-bold tabular-nums">{seriesCode.get(ev.id)}</span>}
+                            {seg.isStart ? `${minToTime(ev.startMin!)}${ev.endMin != null ? `–${minToTime(clampMin(ev.endMin))}` : ''} ${ev.title}` : ev.title}
+                          </span>
+                          {overlapWith.get(ev.id) && <span data-testid={`tg-overlap-${ev.id}`} className="block truncate text-[9px] font-bold text-red-600 dark:text-red-400">Suprapus cu {overlapWith.get(ev.id)!.join(', ')}</span>}
                           {ev.subtitle && <span className="block truncate text-[9px] font-normal opacity-80">{ev.subtitle}</span>}
                         </button>
                       )
@@ -393,7 +553,7 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
                         {/* stacked-card hint peeking above the block */}
                         <span aria-hidden className={cn('absolute -top-1 left-1.5 right-1.5 h-1.5 rounded-t-md opacity-60', first.color)} />
                         <span data-testid="tg-cluster-count" className="absolute right-1 top-1 rounded-full bg-background/80 px-1.5 text-[9px] font-bold text-foreground shadow-sm">{cl.items.length}</span>
-                        <span className="block truncate">{`${minToTime(first.startMin!)} ${first.title}`}</span>
+                        <span className="block truncate">{seriesCode.get(first.id) ? `${seriesCode.get(first.id)} ` : ''}{`${minToTime(first.startMin!)} ${first.title}`}</span>
                         <span className="block truncate text-[9px] font-normal opacity-80">{`+${cl.items.length - 1} sesiuni`}</span>
                       </button>
                     )
@@ -406,12 +566,13 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
             <div data-testid="tg-workline-end" className="pointer-events-none absolute inset-x-0 z-10 border-t-2 border-red-400/70" style={{ top: minToY(WORK_END * 60) }} />
           </div>
         </div>
+        )}
       </div>
 
       {/* Cluster list — sessions sharing an overlapping slot. */}
       {openCluster && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3"
           onClick={() => setOpenCluster(null)}
         >
           <div
@@ -438,8 +599,12 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
                     {minToTime(ev.startMin!)}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">{ev.title}</span>
+                    <span className="flex items-center gap-1.5">
+                      {seriesCode.get(ev.id) && <span className="shrink-0 rounded bg-foreground/15 px-1 text-[10px] font-bold tabular-nums">{seriesCode.get(ev.id)}</span>}
+                      <span className="truncate text-sm font-semibold">{ev.title}</span>
+                    </span>
                     {ev.subtitle && <span className="block truncate text-xs text-muted-foreground">{ev.subtitle}</span>}
+                    {overlapWith.get(ev.id) && <span className="block text-xs font-bold text-red-600 dark:text-red-400">Suprapus cu {overlapWith.get(ev.id)!.join(', ')}</span>}
                   </span>
                 </button>
               ))}
