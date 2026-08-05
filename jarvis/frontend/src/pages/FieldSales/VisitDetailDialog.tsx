@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { fieldSalesApi, type FSVisit, type PreVisitData, type PostVisitData, type VisitUpdatePayload } from '@/api/fieldSales'
+import { useAuthStore } from '@/stores/authStore'
 import { PreVisitForm } from './PreVisitForm'
 import { PostVisitForm } from './PostVisitForm'
 import { TaskList } from './TaskList'
@@ -93,6 +94,7 @@ function formatDateTime(dt?: string | null) {
 
 export function VisitDetailDialog({ visitId, open, onOpenChange, onOpenClient360 }: Props) {
   const queryClient = useQueryClient()
+  const currentUserId = useAuthStore((s) => s.user?.id)
   const [editing, setEditing] = useState(false)
   const [activeTab, setActiveTab] = useState('info')
   const [quickNote, setQuickNote] = useState('')
@@ -429,8 +431,8 @@ export function VisitDetailDialog({ visitId, open, onOpenChange, onOpenClient360
                   </div>
                 )}
 
-                {/* Quick note composer — only while the visit is in progress. */}
-                {visit.status === 'in_progress' && (
+                {/* Quick note composer — only while the visit is in progress and viewed by its owning KAM. */}
+                {visit.status === 'in_progress' && visit.kam_id === currentUserId && (
                   <div className="rounded-lg border p-3 space-y-2">
                     <Label htmlFor="quick-note" className="text-sm font-semibold flex items-center gap-1.5">
                       <MessageSquare className="h-4 w-4" />
