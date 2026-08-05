@@ -42,7 +42,9 @@ interface Props {
   brand: string
   onActivate: (id: number) => void
   onReturn: (id: number) => void
-  onAdd: (date: string, time?: string, endTime?: string) => void
+  /** Create a session for a dragged calendar range — full "YYYY-MM-DDTHH:MM"
+   *  departure/return strings (return may be a later day for multi-day sessions). */
+  onAdd: (departure: string, ret: string) => void
 }
 
 /**
@@ -63,6 +65,10 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
   const [view, setView] = usePersistedState<CalView>('hub-driving-cal-view', 'week')
   const [anchor, setAnchor] = useState<Date>(() => new Date())
   const [picked, setPicked] = useState<string | null>(null)
+  // Month drag-to-select a date range → multi-day session (a..b unordered).
+  const [monthDrag, setMonthDrag] = useState<{ a: string; b: string } | null>(null)
+  const monthRange = monthDrag ? (monthDrag.a <= monthDrag.b ? [monthDrag.a, monthDrag.b] : [monthDrag.b, monthDrag.a]) : null
+  const inMonthRange = (k: string) => !!monthRange && k >= monthRange[0] && k <= monthRange[1]
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['foi-contracts-all', companyId],
@@ -229,9 +235,19 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
                     onClick={() => setPicked(k)}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => { e.preventDefault(); const id = Number(e.dataTransfer.getData('text/plain')); if (id) rescheduleToDay(id, k) }}
+                    // Drag across cells → a multi-day session (default 09:00–18:00);
+                    // a plain click still selects the day (via onClick).
+                    onPointerDown={(e) => { if (e.button !== 0 && e.pointerType === 'mouse') return; setMonthDrag({ a: k, b: k }) }}
+                    onPointerEnter={() => setMonthDrag((md) => (md ? { ...md, b: k } : md))}
+                    onPointerUp={() => {
+                      const r = monthRange
+                      setMonthDrag(null)
+                      if (r && r[0] !== r[1]) onAdd(`${r[0]}T09:00`, `${r[1]}T18:00`)
+                    }}
                     className={cn(
                       'relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm',
                       !inMonth && 'text-muted-foreground/40',
+                      inMonthRange(k) && 'bg-primary/25',
                       k === monthActiveKey && 'bg-primary/15 font-bold',
                       k === todayKey && 'ring-1 ring-primary',
                     )}
@@ -248,7 +264,7 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
       ) : (
         <>
           {moveErr && <p className="px-1 text-xs text-destructive">{moveErr}</p>}
-          <TimeGrid dayCols={dayCols} events={events} onEventClick={openById} onSlotAdd={onAdd} onMove={onMove} />
+          <TimeGrid dayCols={dayCols} events={events} onEventClick={openById} onSlotAdd={onAdd} onMove={onMove} onWeekShift={go} />
         </>
       )}
     </div>

@@ -75,21 +75,33 @@ function clusterTimed(events: TimeGridEvent[]): Cluster[] {
 }
 
 // Only 'create' remains from FSTimeGrid's three drag modes — no move/resize.
-// `col` is the origin column (holds the pointer capture); `targetCol` is the
-// column the pointer is currently over — the selection previews there and the
-// slot is created there, so dragging sideways into the next day works.
-type CreateDrag = { col: string; targetCol: string; y0: number; y1: number }
+// Google-Calendar-style create, tracked by ABSOLUTE day keys + minutes (not
+// column indices) so the range survives a week change: dragging to the grid
+// edge auto-advances the week (onWeekShift) and the selection keeps extending —
+// e.g. a Friday→next-Monday session. `start*` is where the drag began, `end*`
+// is where the pointer is now; departure/return are their (day, time) min/max.
+const EDGE_PX = 44 // pointer within this many px of the grid edge auto-advances the week
+type CreateDrag = { startKey: string; startMin: number; endKey: string; endMin: number }
 
-export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onMove }: {
+export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onMove, onWeekShift }: {
   dayCols: Date[]
   events: TimeGridEvent[]
   onEventClick: (id: number) => void
-  onSlotAdd?: (dayKey: string, startTime: string, endTime: string) => void
+  /** Create a session for a dragged range. `departure`/`ret` are full
+   *  "YYYY-MM-DDTHH:MM" strings; a drag spanning several day columns yields a
+   *  multi-day range (departure on the earlier day, return on the later). */
+  onSlotAdd?: (departure: string, ret: string) => void
   /** Called when a draggable block is dropped at a new day/time (duration
    *  preserved). Only fired for events with draggable:true. */
   onMove?: (id: number, dayKey: string, startTime: string, endTime: string) => void
+  /** Advance/retreat the visible week (dir +1/−1) — invoked mid-create-drag
+   *  when the pointer reaches the grid edge, so a range can span into the
+   *  next/previous week. When omitted, no auto-advance happens. */
+  onWeekShift?: (dir: 1 | -1) => void
 }) {
   const [drag, setDrag] = useState<CreateDrag | null>(null)
+  const gridRef = useRef<HTMLDivElement | null>(null) // stable columns wrapper — holds the drag's pointer capture across week changes
+  const lastAdvanceRef = useRef(0)                    // throttle edge auto-advance
   // Active block move-drag (draggable events only). Carries raw client coords —
   // only the delta drives the math, and screen-space delta equals column-space
   // delta (columns don't resize mid-drag).
@@ -129,7 +141,7 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
   })
   const hasAnyUntimed = cols.some((c) => c.untimed.length > 0)
 
-  // Which day column a screen-x coordinate falls in (for day-aware create-drag).
+  // Which day column a screen-x coordinate falls in (for cross-day create-drag).
   const columnAtX = (x: number): string | null => {
     for (const c of cols) {
       const r = colRefs.current[c.dk]?.getBoundingClientRect()
@@ -137,9 +149,41 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
     }
     return null
   }
+  // Column top (all columns share it, so time is x-independent). Falls back to
+  // the first visible column when the pointer is between/outside columns.
+  const colTopAt = (x: number): number => {
+    const k = columnAtX(x) ?? cols[0]?.dk
+    const el = k ? colRefs.current[k] : null
+    return el ? el.getBoundingClientRect().top : 0
+  }
+
+  // Departure/return of the active create-drag, ordered by (day, time) — keys
+  // are "YYYY-MM-DD" so a plain string compare orders days correctly, and the
+  // departure day may be off-screen (a previous week) after an auto-advance.
+  const dragRange = () => {
+    if (!drag) return null
+    const startEarlier = drag.startKey < drag.endKey || (drag.startKey === drag.endKey && drag.startMin <= drag.endMin)
+    return {
+      depKey: startEarlier ? drag.startKey : drag.endKey, depMin: startEarlier ? drag.startMin : drag.endMin,
+      retKey: startEarlier ? drag.endKey : drag.startKey, retMin: startEarlier ? drag.endMin : drag.startMin,
+    }
+  }
+
+  // Selection band for one visible column while dragging (null = outside span).
+  const selBand = (dk: string): { top: number; bottom: number } | null => {
+    const r = dragRange()
+    if (!r || dk < r.depKey || dk > r.retKey) return null
+    if (r.depKey === r.retKey) return { top: minToY(Math.min(r.depMin, r.retMin)), bottom: minToY(Math.max(r.depMin, r.retMin)) }
+    if (dk === r.depKey) return { top: minToY(r.depMin), bottom: gridHeight }
+    if (dk === r.retKey) return { top: 0, bottom: minToY(r.retMin) }
+    return { top: 0, bottom: gridHeight } // a fully-covered middle day
+  }
 
   return (
-    <div className="overflow-x-auto">
+    // touch-action:none on the whole grid while a create-drag is active, so a
+    // sideways pull scrubs the selection instead of horizontally scrolling the
+    // week (which would drift the drag / jump days).
+    <div className="overflow-x-auto" style={drag ? { touchAction: 'none' } : undefined}>
       <div className={cn('flex flex-col gap-1 rounded-2xl border border-border/60 bg-card p-2', cardMinW)}>
         {/* Day-label header row (gutter spacer + one label per column). */}
         <div className="flex gap-1">
@@ -188,62 +232,66 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
               </div>
             ))}
           </div>
-          <div className={cn('relative grid flex-1 gap-1', gridColsClass)}>
+          <div
+            ref={gridRef}
+            data-testid="tg-colgrid"
+            className={cn('relative grid flex-1 gap-1', gridColsClass)}
+            // Move/up/cancel live on this STABLE wrapper (not the columns) so the
+            // pointer capture survives a week change, whose columns remount.
+            onPointerMove={(e) => {
+              if (!drag) return
+              const endKey = columnAtX(e.clientX) ?? drag.endKey
+              const endMin = clampMin(yToMin(e.clientY - colTopAt(e.clientX)))
+              setDrag({ ...drag, endKey, endMin })
+              // Auto-advance the week when the pointer nears the grid's edge.
+              const rect = gridRef.current?.getBoundingClientRect()
+              if (rect && rect.width > 0 && onWeekShift && Date.now() - lastAdvanceRef.current > 450) {
+                if (e.clientX > rect.right - EDGE_PX) { lastAdvanceRef.current = Date.now(); onWeekShift(1) }
+                else if (e.clientX < rect.left + EDGE_PX) { lastAdvanceRef.current = Date.now(); onWeekShift(-1) }
+              }
+            }}
+            onPointerUp={(e) => {
+              if (!onSlotAdd || !drag) return
+              try { gridRef.current?.releasePointerCapture(e.pointerId) } catch { /* jsdom / no capture */ }
+              const r = dragRange()!
+              let depMin = r.depMin, retMin = r.retMin
+              // Same-day plain click / sub-snap drag → 1h default slot.
+              if (r.depKey === r.retKey && retMin - depMin < SNAP_MIN) {
+                retMin = clampMin(depMin + 60)
+                if (retMin - depMin < SNAP_MIN) depMin = clampMin(retMin - 60)
+              }
+              setDrag(null)
+              onSlotAdd(`${r.depKey}T${minToTime(depMin)}`, `${r.retKey}T${minToTime(retMin)}`)
+            }}
+            onPointerCancel={() => setDrag(null)}
+          >
             {cols.map(({ dk, timed }) => {
-              const isOrigin = drag?.col === dk        // this column owns the pointer capture
-              const isTarget = drag?.targetCol === dk  // selection currently previews here
-              const selTop = isTarget ? minToY(clampMin(yToMin(Math.min(drag!.y0, drag!.y1)))) : 0
-              const selBottom = isTarget ? minToY(clampMin(yToMin(Math.max(drag!.y0, drag!.y1)))) : 0
+              const band = selBand(dk)
               return (
                 <div
                   key={dk}
                   data-testid={`tg-col-${dk}`}
                   ref={(el) => { colRefs.current[dk] = el }}
-                  className={cn('relative min-w-0 snap-start rounded-lg bg-muted/30', onSlotAdd && 'cursor-pointer', isOrigin && 'touch-none')}
+                  className={cn('relative min-w-0 snap-start rounded-lg bg-muted/30', onSlotAdd && 'cursor-pointer')}
                   style={{ height: gridHeight }}
                   onPointerDown={(e) => {
                     if (!onSlotAdd) return
                     if (e.button !== 0 && e.pointerType === 'mouse') return
                     const rect = e.currentTarget.getBoundingClientRect()
-                    const y0 = e.clientY - rect.top
-                    e.currentTarget.setPointerCapture(e.pointerId)
-                    setDrag({ col: dk, targetCol: dk, y0, y1: y0 })
-                  }}
-                  onPointerMove={(e) => {
-                    // Fires on the origin column (pointer capture). Track the
-                    // column under the pointer-x so the selection can cross days,
-                    // and read Y off the origin column (all columns share the
-                    // same top, so the time is unaffected by the horizontal move).
-                    if (!drag || drag.col !== dk) return
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    setDrag({ ...drag, targetCol: columnAtX(e.clientX) ?? drag.targetCol, y1: e.clientY - rect.top })
-                  }}
-                  onPointerUp={(e) => {
-                    if (!onSlotAdd || !drag || drag.col !== dk) return
-                    e.currentTarget.releasePointerCapture(e.pointerId)
-                    const targetDk = columnAtX(e.clientX) ?? drag.targetCol
-                    const a = clampMin(yToMin(Math.min(drag.y0, drag.y1)))
-                    let b = clampMin(yToMin(Math.max(drag.y0, drag.y1)))
-                    if (b - a < SNAP_MIN) b = clampMin(a + 60) // plain click / sideways drag → 1h default
-                    let startMin = a
-                    if (b - startMin < SNAP_MIN) startMin = clampMin(b - 60) // clamped against 21:00
-                    setDrag(null)
-                    onSlotAdd(targetDk, minToTime(startMin), minToTime(b))
-                  }}
-                  onPointerCancel={(e) => {
-                    if (!drag || drag.col !== dk) return
-                    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
-                    setDrag(null)
+                    const startMin = clampMin(yToMin(e.clientY - rect.top))
+                    lastAdvanceRef.current = 0
+                    try { gridRef.current?.setPointerCapture(e.pointerId) } catch { /* jsdom / no capture */ }
+                    setDrag({ startKey: dk, startMin, endKey: dk, endMin: startMin })
                   }}
                 >
                   {hours.slice(0, -1).map((h) => (
                     <div key={h} className="absolute inset-x-0 border-t border-border/30" style={{ top: minToY(h * 60) }} />
                   ))}
-                  {isTarget && (
+                  {band && (
                     <div
                       data-testid="tg-drag-selection"
                       className="pointer-events-none absolute inset-x-0.5 rounded-md border border-primary/50 bg-primary/20"
-                      style={{ top: selTop, height: Math.max(selBottom - selTop, 4) }}
+                      style={{ top: band.top, height: Math.max(band.bottom - band.top, 4) }}
                     />
                   )}
                   {clusterTimed(timed).map((cl) => {

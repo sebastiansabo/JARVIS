@@ -69,7 +69,7 @@ describe('TimeGrid', () => {
     // offset 192px → minToY(660) = 11:00, snapped.
     firePointer(col, 'pointerdown', 100 + 192)
     firePointer(col, 'pointerup', 100 + 192)
-    expect(onSlotAdd).toHaveBeenCalledWith(todayKey, '11:00', '12:00')
+    expect(onSlotAdd).toHaveBeenCalledWith(`${todayKey}T11:00`, `${todayKey}T12:00`)
     expect(onSlotAdd).toHaveBeenCalledTimes(1)
   })
 
@@ -82,7 +82,7 @@ describe('TimeGrid', () => {
     firePointer(col, 'pointerdown', 100 + 96)
     firePointer(col, 'pointermove', 100 + 168)
     firePointer(col, 'pointerup', 100 + 168)
-    expect(onSlotAdd).toHaveBeenCalledWith(todayKey, '09:00', '10:30')
+    expect(onSlotAdd).toHaveBeenCalledWith(`${todayKey}T09:00`, `${todayKey}T10:30`)
   })
 
   it('renders an untimed event in the shared "Fără oră" band and opens it on click', () => {
@@ -154,7 +154,21 @@ describe('TimeGrid', () => {
     expect(screen.queryByTestId('tg-cluster-1')).toBeNull()
   })
 
-  it('creates on the day the pointer is released over when dragging sideways (week)', () => {
+  it('auto-advances the week when the create-drag reaches the grid edge', () => {
+    const onWeekShift = vi.fn()
+    render(<TimeGrid dayCols={[today, tomorrow]} events={[]} onEventClick={vi.fn()} onSlotAdd={vi.fn()} onWeekShift={onWeekShift} />)
+    const colA = screen.getByTestId(`tg-col-${todayKey}`)
+    const grid = screen.getByTestId('tg-colgrid')
+    vi.spyOn(colA, 'getBoundingClientRect').mockReturnValue(rect(0, 100))
+    vi.spyOn(grid, 'getBoundingClientRect').mockReturnValue(rect(0, 200))
+    colA.setPointerCapture = vi.fn(); grid.setPointerCapture = vi.fn(); grid.releasePointerCapture = vi.fn()
+    // Start in day A, then drag to x=195 — within EDGE_PX (44) of the grid's right (200).
+    firePointerAt(colA, 'pointerdown', 50, 100 + 96)
+    firePointerAt(colA, 'pointermove', 195, 100 + 96)
+    expect(onWeekShift).toHaveBeenCalledWith(1)
+  })
+
+  it('extends the selection across days into a multi-day session (week)', () => {
     const onSlotAdd = vi.fn()
     render(<TimeGrid dayCols={[today, tomorrow]} events={[]} onEventClick={vi.fn()} onSlotAdd={onSlotAdd} />)
     const colA = screen.getByTestId(`tg-col-${todayKey}`)
@@ -162,12 +176,11 @@ describe('TimeGrid', () => {
     vi.spyOn(colA, 'getBoundingClientRect').mockReturnValue(rect(0, 100))
     vi.spyOn(colB, 'getBoundingClientRect').mockReturnValue(rect(100, 200))
     colA.setPointerCapture = vi.fn(); colA.releasePointerCapture = vi.fn()
-    // Start in day A at 09:00 (y=100+96), drag right into day B at same Y.
+    // Start day A at 09:00 (y 96), drag into day B at 12:00 (y 240) → depart A 09:00, return B 12:00.
     firePointerAt(colA, 'pointerdown', 50, 100 + 96)
-    firePointerAt(colA, 'pointermove', 150, 100 + 96)
-    firePointerAt(colA, 'pointerup', 150, 100 + 96)
-    // Sideways drag with no vertical change → 1h slot on day B, not "all hours" on day A.
-    expect(onSlotAdd).toHaveBeenCalledWith(tomorrowKey, '09:00', '10:00')
+    firePointerAt(colA, 'pointermove', 150, 100 + 240)
+    firePointerAt(colA, 'pointerup', 150, 100 + 240)
+    expect(onSlotAdd).toHaveBeenCalledWith(`${todayKey}T09:00`, `${tomorrowKey}T12:00`)
   })
 
   it('drag-moves a draggable block to a new time (duration preserved) via onMove', () => {
