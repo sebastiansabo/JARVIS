@@ -3,6 +3,14 @@
 from ._shared import *  # noqa: F401, F403
 
 
+# Fields a Field Sales user may edit on the shared crm_clients master record.
+# A subset of crm.ClientRepository._EDITABLE — excludes CRM-admin/fiscal fields.
+FS_EDITABLE = {
+    'display_name', 'contact_person', 'phone', 'email', 'street',
+    'city', 'region', 'country', 'company_name', 'nr_reg',
+}
+
+
 @field_sales_bp.route('/api/field-sales/clients/<int:client_id>/360', methods=['GET'])
 @jwt_or_login_required
 @field_sales_required
@@ -117,6 +125,33 @@ def api_client_enrich(client_id):
         return jsonify({'success': True, 'profile': updated})
     except Exception as e:
         logger.exception('Error enriching client')
+        return jsonify({'success': False, 'error': _safe_error(e)}), 500
+
+
+@field_sales_bp.route('/api/field-sales/clients/<int:client_id>', methods=['PUT'])
+@jwt_or_login_required
+@field_sales_required
+def api_field_sales_client_update(client_id):
+    """Edit a client's contact/address details from the Field Sales 360 card.
+
+    Any field_sales user may edit any client — there is NO tenant/ownership
+    gate (deliberate): crm_clients is a shared master record, so a correction
+    (e.g. a phone number) is global. Only the FS_EDITABLE subset is accepted;
+    the actual write reuses crm.ClientRepository.update (whitelist + name sync).
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        filtered = {k: v for k, v in data.items() if k in FS_EDITABLE}
+        if not filtered:
+            return jsonify({'success': False, 'error': 'Niciun câmp editabil'}), 400
+
+        from crm.repositories.client_repository import ClientRepository
+        client = ClientRepository().update(client_id, filtered)
+        if not client:
+            return jsonify({'success': False, 'error': 'Client negăsit sau niciun câmp editabil'}), 404
+        return jsonify({'success': True, 'client': client})
+    except Exception as e:
+        logger.exception('Error updating client')
         return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
 
