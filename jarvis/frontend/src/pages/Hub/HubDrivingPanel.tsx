@@ -11,7 +11,7 @@ import DrivingCalendar from '@/pages/Hub/DrivingCalendar'
 import TestDriveForm from '@/pages/FoiParcurs/TestDriveForm'
 import TestDriveReturn from '@/pages/FoiParcurs/TestDriveReturn'
 
-type Overlay = null | { kind: 'new' } | { kind: 'activate'; id: number } | { kind: 'return'; id: number }
+type Overlay = null | { kind: 'new'; date?: string; time?: string } | { kind: 'activate'; id: number } | { kind: 'return'; id: number }
 type PanelTab = 'sessions' | 'calendar'
 
 export default function HubDrivingPanel() {
@@ -82,6 +82,7 @@ export default function HubDrivingPanel() {
           brand={brand}
           onActivate={(id) => setOverlay({ kind: 'activate', id })}
           onReturn={(id) => setOverlay({ kind: 'return', id })}
+          onAdd={(date, time) => setOverlay({ kind: 'new', date, time })}
         />
       )}
 
@@ -96,7 +97,13 @@ export default function HubDrivingPanel() {
               <Button variant="ghost" size="icon" onClick={closeOverlay}><X className="h-5 w-5" /></Button>
             </div>
             {overlay.kind === 'new' && (
-              <TestDriveForm embedded initialCompanyId={companyId || undefined} onDone={handleOverlayDone} onCancel={closeOverlay} />
+              <TestDriveForm
+                embedded
+                initialCompanyId={companyId || undefined}
+                initialDeparture={overlay.date ? `${overlay.date}T${overlay.time ?? '09:00'}` : undefined}
+                onDone={handleOverlayDone}
+                onCancel={closeOverlay}
+              />
             )}
             {overlay.kind === 'activate' && (
               <TestDriveForm embedded activateId={overlay.id} onDone={handleOverlayDone} onCancel={closeOverlay} />

@@ -38,4 +38,21 @@ describe('TestDriveForm embedded mode', () => {
     wrap(<TestDriveForm />)
     expect(await screen.findByText('Test Drive Nou')).toBeInTheDocument()
   })
+
+  it('seeds the departure datetime from initialDeparture (e.g. a calendar slot)', async () => {
+    wrap(<TestDriveForm embedded initialDeparture="2026-08-05T11:00" onCancel={vi.fn()} onDone={vi.fn()} />)
+    expect(await screen.findByTestId('td-departure')).toHaveValue('2026-08-05T11:00')
+  })
+
+  it('seeds the departure datetime from a ?departure= search param (desktop calendar route)', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/app/foi-parcurs/test-drive?departure=2026-08-05T14:30']}>
+          <TestDriveForm />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByTestId('td-departure')).toHaveValue('2026-08-05T14:30')
+  })
 })
