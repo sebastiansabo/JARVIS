@@ -145,6 +145,11 @@ def api_field_sales_client_update(client_id):
         if not filtered:
             return jsonify({'success': False, 'error': 'Niciun câmp editabil'}), 400
 
+        # crm_clients.display_name is TEXT NOT NULL — ClientRepository.update maps
+        # '' to NULL, which would otherwise hit the DB and 500. Reject early.
+        if 'display_name' in filtered and not (filtered['display_name'] or '').strip():
+            return jsonify({'success': False, 'error': 'Numele este obligatoriu'}), 400
+
         from crm.repositories.client_repository import ClientRepository
         client = ClientRepository().update(client_id, filtered)
         if not client:
