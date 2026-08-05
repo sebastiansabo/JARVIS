@@ -18,10 +18,34 @@ def api_visits_today():
         else:
             date_str = date.today().isoformat()
 
-        visits = _visit_repo.get_by_kam_and_date(_get_current_user().id, date_str)
+        company_id = request.args.get('company_id', type=int)
+        visits = _visit_repo.get_by_kam_and_date(_get_current_user().id, date_str, company_id=company_id)
         return jsonify({'success': True, 'visits': visits, 'date': date_str})
     except Exception as e:
         logger.exception('Error fetching visits for today')
+        return jsonify({'success': False, 'error': _safe_error(e)}), 500
+
+
+@field_sales_bp.route('/api/field-sales/visits/mine', methods=['GET'])
+@jwt_or_login_required
+@field_sales_required
+def api_visits_mine():
+    """Get the current KAM's own visits in a date range (calendar / upcoming)."""
+    try:
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+        if not date_from or not date_to:
+            return jsonify({'success': False, 'error': 'date_from and date_to are required'}), 400
+        try:
+            datetime.strptime(date_from, '%Y-%m-%d')
+            datetime.strptime(date_to, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+        company_id = request.args.get('company_id', type=int)
+        visits = _visit_repo.get_team_visits(date_from, date_to, kam_id=_get_current_user().id, company_id=company_id)
+        return jsonify({'success': True, 'visits': visits, 'date_from': date_from, 'date_to': date_to})
+    except Exception as e:
+        logger.exception('Error fetching my visits')
         return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
 
@@ -61,6 +85,7 @@ def api_create_visit():
             return jsonify({'success': False, 'error': 'Client not found'}), 404
 
         # Determine KAM: manager can assign to another user
+        # Also resolve the KAM's company_id (tenant isolation) from data already in hand.
         kam_id_param = data.get('kam_id')
         current_uid = _get_current_user().id
         if kam_id_param and int(kam_id_param) != current_uid:
@@ -71,16 +96,38 @@ def api_create_visit():
             if not target or not target.get('is_active', True):
                 return jsonify({'success': False, 'error': 'Target KAM not found or inactive'}), 404
             kam_id = int(kam_id_param)
+            visit_company_id = target.get('company_id')
         else:
             kam_id = current_uid
+            visit_company_id = getattr(_get_current_user(), 'company_id', None)
+            # A multi-company user (the Hub selector shows >1 company) creates
+            # the visit under the company they're currently viewing, so it lands
+            # in that tenant and stays visible under its filter — not always the
+            # creator's home company. Trust the client id only after validating
+            # it against the caller's allowed set; ignore an unknown/forbidden
+            # id and keep the home-company fallback above.
+            requested_company_id = data.get('company_id')
+            if requested_company_id is not None:
+                try:
+                    requested_company_id = int(requested_company_id)
+                except (ValueError, TypeError):
+                    requested_company_id = None
+                if requested_company_id is not None:
+                    user = _get_current_user()
+                    is_admin = getattr(user, 'role_id', None) == 1
+                    allowed_ids = {c['id'] for c in _client_repo.get_allowed_companies(user.id, is_admin)}
+                    if requested_company_id in allowed_ids:
+                        visit_company_id = requested_company_id
 
         visit_data = {
             'kam_id': kam_id,
             'client_id': client_id,
             'planned_date': planned_date,
             'planned_time': data.get('planned_time'),
+            'planned_end_time': data.get('planned_end_time'),
             'visit_type': visit_type,
             'goals': data.get('goals'),
+            'company_id': visit_company_id,
         }
 
         visit = _visit_repo.create(visit_data)
@@ -188,6 +235,8 @@ def api_create_route():
             'name': data.get('name'),
             'created_by': current_uid,
             'stops': stops,
+            # Tenant isolation: tag each route stop with the KAM's company (reuse target)
+            'company_id': target.get('company_id'),
         }
 
         route = _visit_repo.create_route(route_data)
@@ -275,13 +324,17 @@ def api_visit_detail(visit_id):
 
 @field_sales_bp.route('/api/field-sales/visits/<int:visit_id>', methods=['PUT'])
 @jwt_or_login_required
-@field_sales_manager_required
+@field_sales_required
 def api_update_visit(visit_id):
-    """Manager/admin: update visit fields (date, time, type, goals, status, outcome)."""
+    """Update visit fields (date, time, type, goals, status, outcome). Owner KAM or manager."""
     try:
         visit = _visit_repo.get_by_id(visit_id)
         if not visit:
             return jsonify({'success': False, 'error': 'Visit not found'}), 404
+
+        # IDOR check: KAM updates own visits, managers update any
+        if visit['kam_id'] != _get_current_user().id and not _is_manager():
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
 
         data = request.get_json(silent=True) or {}
         update = {}
@@ -295,6 +348,9 @@ def api_update_visit(visit_id):
 
         if 'planned_time' in data:
             update['planned_time'] = data['planned_time'] or None
+
+        if 'planned_end_time' in data:
+            update['planned_end_time'] = data['planned_end_time'] or None
 
         if 'visit_type' in data:
             if data['visit_type'] not in ALLOWED_VISIT_TYPES:
@@ -498,6 +554,42 @@ def api_visit_note(visit_id):
         })
     except Exception as e:
         logger.exception('Error submitting visit note')
+        return jsonify({'success': False, 'error': _safe_error(e)}), 500
+
+
+@field_sales_bp.route('/api/field-sales/visits/<int:visit_id>/quick-note', methods=['POST'])
+@jwt_or_login_required
+@field_sales_required
+def api_visit_quick_note(visit_id):
+    """Append a raw, non-finalizing note to an in-progress visit.
+
+    Unlike POST /note, this does NOT AI-structure the note or complete the
+    visit — it records what happened so far while the visit is still ongoing.
+    """
+    try:
+        visit = _visit_repo.get_by_id(visit_id)
+        if not visit:
+            return jsonify({'success': False, 'error': 'Visit not found'}), 404
+
+        # IDOR: only own visits
+        if visit['kam_id'] != _get_current_user().id:
+            return jsonify({'success': False, 'error': 'Poți adăuga note doar la vizitele tale'}), 403
+
+        # Quick notes are for the "during the visit" window only.
+        if visit['status'] != 'in_progress':
+            return jsonify({'success': False, 'error': 'Poți adăuga note doar în timpul vizitei (vizita trebuie să fie în desfășurare)'}), 409
+
+        data = request.get_json(silent=True) or {}
+        raw_note = data.get('raw_note', '').strip()
+        if not raw_note:
+            return jsonify({'success': False, 'error': 'raw_note is required'}), 400
+        if len(raw_note) > 10000:
+            return jsonify({'success': False, 'error': 'raw_note must be under 10000 characters'}), 400
+
+        note = _visit_repo.add_note(visit_id, raw_note)
+        return jsonify({'success': True, 'note': note}), 201
+    except Exception as e:
+        logger.exception('Error adding quick note')
         return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
 

@@ -7,6 +7,7 @@ Uses Anthropic API (claude-sonnet-4-6) for:
 
 import json
 import logging
+import math
 
 try:
     from ai_agent.services.llm_client import ask
@@ -18,6 +19,95 @@ except ImportError:
 logger = logging.getLogger('jarvis.field_sales.ai')
 
 _MODEL = 'claude-sonnet-4-6'
+
+_SENTIMENTS = {'positive', 'neutral', 'negative'}
+
+
+def _coerce_number(v):
+    """Return v as a finite number, or None.
+
+    Bools, non-numeric values, and non-finite floats (NaN/inf/-inf) -> None.
+    Non-finite values are rejected because they serialize via json.dumps to the
+    bare tokens NaN/Infinity, which are invalid strict JSON and would break the
+    frontend's JSON.parse on any API response carrying them.
+    """
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        n = v
+    else:
+        try:
+            n = float(v)
+        except (TypeError, ValueError):
+            return None
+    # math.isfinite raises OverflowError for an int too large to convert to a
+    # C double (e.g. 10**400 from an arbitrary-precision json.loads int).
+    try:
+        return n if math.isfinite(n) else None
+    except (OverflowError, ValueError):
+        return None
+
+
+def _as_list(v):
+    return v if isinstance(v, list) else []
+
+
+def _as_str_or_none(v):
+    return v if isinstance(v, str) else None
+
+
+def _normalize_structured_note(raw):
+    """Coerce a parsed AI note into the canonical FSStructuredNote shape.
+
+    Whitelists known keys, forces list/scalar types, clamps `sentiment` to the
+    enum, and never raises — a malformed element degrades to a safe default.
+    All scalar string-typed fields (top-level and nested) are guarded with
+    `_as_str_or_none` so an object/list emitted in place of a string can never
+    reach the frontend, where rendering a non-string as a React child throws.
+    An {'error': ...} marker (or a non-dict) is returned as an error dict so the
+    caller's `structured.get('error')` skip-save check still holds.
+    """
+    if not isinstance(raw, dict):
+        return {'error': 'parse_failed', 'raw': str(raw)}
+    if raw.get('error'):
+        return raw
+
+    sentiment = raw.get('sentiment')
+    if sentiment not in _SENTIMENTS:
+        sentiment = None
+
+    vehicles = []
+    for v in _as_list(raw.get('vehicles_discussed')):
+        if isinstance(v, dict):
+            vehicles.append({
+                'action': _as_str_or_none(v.get('action')),
+                'current_vehicle': _as_str_or_none(v.get('current_vehicle')),
+                'interested_in': _as_str_or_none(v.get('interested_in')),
+                'budget_eur': _coerce_number(v.get('budget_eur')),
+            })
+
+    next_steps = []
+    for s in _as_list(raw.get('next_steps')):
+        if isinstance(s, dict):
+            next_steps.append({
+                'action': _as_str_or_none(s.get('action')),
+                'owner': _as_str_or_none(s.get('owner')),
+                'deadline': _as_str_or_none(s.get('deadline')),
+            })
+
+    return {
+        'visit_summary': _as_str_or_none(raw.get('visit_summary')) or '',
+        'sentiment': sentiment,
+        'contact_person': _as_str_or_none(raw.get('contact_person')),
+        'vehicles_discussed': vehicles,
+        'commitments_made': [str(c) for c in _as_list(raw.get('commitments_made'))],
+        'next_steps': next_steps,
+        'opportunity_value_eur': _coerce_number(raw.get('opportunity_value_eur')),
+        'decision_timeline': _as_str_or_none(raw.get('decision_timeline')),
+        'follow_up_date': _as_str_or_none(raw.get('follow_up_date')),
+        'objections': [str(o) for o in _as_list(raw.get('objections'))],
+        'risk_flags': [str(r) for r in _as_list(raw.get('risk_flags'))],
+    }
 
 
 def structure_visit_note(raw_note, client_context=None):
@@ -47,35 +137,33 @@ Client context:
 
     system_prompt = """You are a CRM assistant for a car dealership group. Your job is to structure raw visit notes from Key Account Managers (KAMs) into a clean JSON format.
 
-Extract and categorize information from the raw note into this JSON structure:
+Extract and categorize information from the raw note into EXACTLY this JSON structure (use these field names verbatim):
 {
-  "summary": "1-2 sentence summary of the visit",
+  "visit_summary": "1-2 sentence summary of the visit",
   "sentiment": "positive|neutral|negative",
-  "topics_discussed": ["list of main topics"],
-  "client_needs": ["identified needs or interests"],
-  "vehicles_of_interest": [
-    {"brand": "...", "model": "...", "type": "new|used|service", "notes": "..."}
+  "contact_person": "name of the person met, or null",
+  "vehicles_discussed": [
+    {"action": "buy|replace|service|inquire", "current_vehicle": "or null", "interested_in": "or null", "budget_eur": 0}
   ],
-  "action_items": [
-    {"task": "description", "owner": "kam|client|other", "deadline": "if mentioned or null"}
+  "commitments_made": ["promises the KAM or client made"],
+  "next_steps": [
+    {"action": "description", "owner": "kam|client|other", "deadline": "YYYY-MM-DD or null"}
   ],
-  "fleet_updates": {
-    "vehicles_mentioned": ["any vehicles discussed"],
-    "replacement_candidates": ["vehicles client wants to replace"],
-    "service_issues": ["any service problems mentioned"]
-  },
-  "next_steps": "recommended next action",
+  "opportunity_value_eur": 0,
+  "decision_timeline": "when the client expects to decide, or null",
   "follow_up_date": "YYYY-MM-DD if mentioned, else null",
-  "deal_probability": "high|medium|low|none",
-  "notes": "any additional context not fitting above categories"
+  "objections": ["concerns or blockers the client raised"],
+  "risk_flags": ["churn/competitor/dissatisfaction signals"]
 }
 
 Rules:
 - Always return valid JSON and nothing else.
-- If a field has no data, use null for scalars, [] for arrays, {} for objects.
+- Use these exact field names; do NOT invent extra fields.
+- If a field has no data: null for scalars, [] for arrays.
+- sentiment must be one of positive, neutral, negative.
+- budget_eur and opportunity_value_eur are plain numbers (EUR), or null.
 - Detect language automatically but always output field names in English.
-- Preserve important details and numbers mentioned.
-- Be concise but comprehensive."""
+- Preserve important details and numbers mentioned."""
 
     user_message = f"""{context_block}
 Raw visit note:
@@ -99,7 +187,7 @@ Structure this note into the JSON format specified. Return ONLY the JSON object.
             json_text = '\n'.join(lines)
 
         structured = json.loads(json_text)
-        return structured
+        return _normalize_structured_note(structured)
 
     except json.JSONDecodeError:
         logger.warning('AI note structuring: JSON parse failed for visit note')

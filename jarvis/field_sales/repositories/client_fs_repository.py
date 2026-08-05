@@ -245,7 +245,7 @@ class ClientFSRepository(BaseRepository):
             WHERE client_id = %s
         ''', (score, client_id))
 
-    def search_clients(self, query, limit=20):
+    def search_clients(self, query, limit=20, company_id=None):
         """Search clients by name, company, or nr_reg.
 
         Uses ILIKE for name_normalized and company_name, exact for nr_reg.
@@ -253,6 +253,7 @@ class ClientFSRepository(BaseRepository):
         Args:
             query: search string
             limit: max results
+            company_id: optional tenant filter on client_profiles.company_id
 
         Returns:
             list of client dicts with profile info
@@ -262,7 +263,14 @@ class ClientFSRepository(BaseRepository):
 
         search_term = f'%{query.strip().lower()}%'
 
-        return self.query_all('''
+        params = [search_term, search_term, query.strip(), query.strip()]
+        company_filter = ''
+        if company_id is not None:
+            company_filter = 'AND cp.company_id = %s'
+            params.append(company_id)
+        params.append(limit)
+
+        return self.query_all(f'''
             SELECT c.id, c.display_name, c.company_name, c.phone, c.email,
                    c.city, c.nr_reg, c.client_type,
                    cp.priority, cp.renewal_score, cp.fleet_size,
@@ -279,9 +287,10 @@ class ClientFSRepository(BaseRepository):
                   OR c.nr_reg = %s
                   OR cp.cui = %s
               )
+              {company_filter}
             ORDER BY c.display_name ASC
             LIMIT %s
-        ''', (search_term, search_term, query.strip(), query.strip(), limit))
+        ''', tuple(params))
 
     def get_360(self, client_id):
         """Build a comprehensive 360-degree client view.
@@ -362,6 +371,41 @@ class ClientFSRepository(BaseRepository):
             logger.error('360 fiscal failed for %s: %s', client_id, str(e))
 
         return result
+
+    def get_allowed_companies(self, user_id, is_admin):
+        """Get companies the given user is allowed to pick for tenant scoping.
+
+        Args:
+            user_id: users.id
+            is_admin: whether the user has Admin role (sees all companies)
+
+        Returns:
+            list of {id, company} dicts, ordered by company name.
+            Admins see all companies. Everyone else sees companies they are
+            a responsable for, plus their own company. If that set is empty,
+            falls back to the user's own company (may be empty list if the
+            user has no company).
+        """
+        if is_admin:
+            return self.query_all(
+                'SELECT id, company FROM companies ORDER BY company'
+            )
+
+        companies = self.query_all('''
+            SELECT c.id, c.company
+            FROM companies c
+            WHERE c.id IN (SELECT company_id FROM company_responsables WHERE user_id = %s)
+               OR c.id = (SELECT company_id FROM users WHERE id = %s)
+            ORDER BY c.company
+        ''', (user_id, user_id))
+
+        if companies:
+            return companies
+
+        return self.query_all('''
+            SELECT id, company FROM companies
+            WHERE id = (SELECT company_id FROM users WHERE id = %s)
+        ''', (user_id,))
 
     def get_managed_clients(self, priority=None, country_code=None,
                             min_renewal_score=None, assigned_kam_id=None,

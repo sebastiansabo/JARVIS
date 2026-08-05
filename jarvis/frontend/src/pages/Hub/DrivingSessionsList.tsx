@@ -23,6 +23,10 @@ function fmtDateTime(iso?: string | null): string {
 interface Props {
   companyId: number
   brand: string
+  /** Selected car VINs (from the panel's Filtre modal); [] = all cars. */
+  carFilter?: string[]
+  /** Selected consultant (advisor) names; [] = all consultants. */
+  consultantFilter?: string[]
   onActivate: (id: number) => void
   onReturn: (id: number) => void
 }
@@ -35,7 +39,7 @@ interface Props {
  * action, with tap-to-expand details. Reuses the same data + status derivation;
  * actions call back into the panel's overlay openers.
  */
-export default function DrivingSessionsList({ companyId, brand, onActivate, onReturn }: Props) {
+export default function DrivingSessionsList({ companyId, brand, carFilter = [], consultantFilter = [], onActivate, onReturn }: Props) {
   const queryClient = useQueryClient()
   const [showArchived, setShowArchived] = useState(false)
   const [search, setSearch] = useState('')
@@ -43,7 +47,7 @@ export default function DrivingSessionsList({ companyId, brand, onActivate, onRe
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['foi-contracts-all', companyId],
-    queryFn: () => foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC' }),
+    queryFn: () => foiParcursApi.getContracts({ company_id: companyId > 0 ? companyId : undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC' }),
     staleTime: 30_000,
   })
   const { data: vehiclesData } = useQuery({ queryKey: ['fp-vehicles'], queryFn: () => foiParcursApi.getVehicles(), staleTime: 30_000 })
@@ -69,6 +73,8 @@ export default function DrivingSessionsList({ companyId, brand, onActivate, onRe
         const vh = vinVehicle.get(c.vin)
         if ((vh?.brand ?? '').trim() !== brand && (vh?.mark ?? '').trim() !== brand) return false
       }
+      if (carFilter.length && (!c.vin || !carFilter.includes(c.vin))) return false
+      if (consultantFilter.length && !consultantFilter.includes((c.advisor_name ?? '').trim())) return false
       const isComplete = sessionStatus(c).key === 'finalizat'
       if (showArchived ? !isComplete : isComplete) return false
       if (q) {
@@ -77,7 +83,7 @@ export default function DrivingSessionsList({ companyId, brand, onActivate, onRe
       }
       return true
     })
-  }, [data, brand, vinVehicle, showArchived, search])
+  }, [data, brand, vinVehicle, showArchived, search, carFilter, consultantFilter])
 
   return (
     <div className="space-y-3">

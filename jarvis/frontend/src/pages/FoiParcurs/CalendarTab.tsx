@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, PlayCircle, XIcon, FileText } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -15,12 +16,12 @@ import {
 } from '@/components/ui/dialog'
 import { foiParcursApi } from '@/api/foiParcurs'
 import type { FoiContract } from '@/types/foiParcurs'
-import { sessionStatus, SESSION_BLOCK_COLOR } from './sessionStatus'
+import { sessionStatus, carColor } from './sessionStatus'
 import { naiveDate } from '@/lib/naiveDate'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 
 type CalView = 'month' | 'week' | 'day'
-const VIEW_OPTIONS: readonly [CalView, string][] = [['month', 'Lună'], ['week', 'Săptămână'], ['day', 'Zi']]
+const VIEW_OPTIONS: readonly [CalView, string][] = [['day', 'Zi'], ['week', 'Săptămână'], ['month', 'Lună']]
 const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mie', 'Joi', 'Vin', 'Sâm', 'Dum']
 
 function dayKey(d: Date): string {
@@ -56,9 +57,16 @@ function monthGrid(cursor: Date): Date[] {
 export function CalendarTab({ companyId, brand }: { companyId: number; brand: string }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [view, setView] = useState<CalView>('month')
+  // Persisted (survives navigating to the new-TD form and back) with Week default.
+  const [view, setView] = usePersistedState<CalView>('fp-cal-view', 'week')
   const [cursor, setCursor] = useState(() => new Date())
   const [selected, setSelected] = useState<FoiContract | null>(null)
+  const [carFilter, setCarFilter] = useState<string>('') // '' = all cars, else a vin
+  const [weekOffset, setWeekOffset] = useState(0) // rolling 7-day window: slide by ±1 day
+  // Month drag-to-select a date range → multi-day session.
+  const [monthDrag, setMonthDrag] = useState<{ a: string; b: string } | null>(null)
+  const monthRange = monthDrag ? (monthDrag.a <= monthDrag.b ? [monthDrag.a, monthDrag.b] : [monthDrag.b, monthDrag.a]) : null
+  const inMonthRange = (k: string) => !!monthRange && k >= monthRange[0] && k <= monthRange[1]
 
   // Fetch the visible month's range (± a week to cover the grid's leading/
   // trailing days, and any Week/Day view anchored in this month) so navigating
@@ -96,9 +104,55 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
     },
   })
 
-  const tdContracts = (data?.contracts ?? []).filter(
+  // Drag-to-reschedule (PLANNED only) — optimistic on the visible month's cache,
+  // rolled back on error; backend re-guards status + past-date.
+  const [moveErr, setMoveErr] = useState<string | null>(null)
+  const contractsKey = ['foi-contracts-all', companyId, monthKey] as const
+  const rescheduleMut = useMutation({
+    mutationFn: ({ id, departure, ret }: { id: number; departure: string; ret: string }) =>
+      foiParcursApi.rescheduleTestDrive(id, { departure_datetime: departure, return_datetime: ret }),
+    onMutate: async ({ id, departure, ret }) => {
+      await queryClient.cancelQueries({ queryKey: contractsKey })
+      const prev = queryClient.getQueryData<{ contracts: FoiContract[] }>(contractsKey)
+      if (prev) {
+        queryClient.setQueryData(contractsKey, {
+          ...prev,
+          contracts: prev.contracts.map((c) => (c.id === id ? { ...c, departure_datetime: departure, return_datetime: ret } : c)),
+        })
+      }
+      return { prev }
+    },
+    onError: (err, _v, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(contractsKey, ctx.prev)
+      setMoveErr((err as { data?: { error?: string } })?.data?.error ?? 'Nu s-a putut reprograma sesiunea')
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }),
+  })
+  const onMoveEvent = (id: number, dk: string, startTime: string, endTime: string) => {
+    setMoveErr(null)
+    rescheduleMut.mutate({ id, departure: `${dk}T${startTime}`, ret: `${dk}T${endTime}` })
+  }
+  // Month drag-to-day: keep the session's time, change only the date.
+  const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const rescheduleToDay = (id: number, targetKey: string) => {
+    const c = byId.get(id)
+    const dep = c && naiveDate(c.departure_datetime)
+    if (!c || !dep) return
+    if (dayKey(dep) === targetKey) return // dropped on same day — no-op
+    const ret = naiveDate(c.return_datetime)
+    onMoveEvent(id, targetKey, hhmm(dep), ret ? hhmm(ret) : hhmm(new Date(dep.getTime() + 3600000)))
+  }
+
+  const brandContracts = (data?.contracts ?? []).filter(
     (c) => c.route_type === 'TD' && c.departure_datetime && (!brand || vinBrand.get(c.vin) === brand),
   )
+  const tdContracts = carFilter ? brandContracts.filter((c) => c.vin === carFilter) : brandContracts
+  // Distinct cars (from the brand-filtered set, so the filter lists all cars).
+  const carOptions = (() => {
+    const seen = new Map<string, string>()
+    for (const c of brandContracts) if (c.vin && !seen.has(c.vin)) seen.set(c.vin, carLabel(c.vin))
+    return Array.from(seen, ([vin, label]) => ({ vin, label })).sort((a, b) => a.label.localeCompare(b.label))
+  })()
 
   const byDay = useMemo(() => {
     const map = new Map<string, FoiContract[]>()
@@ -117,24 +171,39 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
   const currentMonth = cursor.getMonth()
   const todayKey = dayKey(new Date())
 
-  // Week/Day columns + their time-grid events.
-  const weekStart = startOfWeek(cursor)
-  const dayCols = view === 'day' ? [cursor] : view === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : []
+  // Week/Day columns + their time-grid events. Week is a rolling 7-day window
+  // (weekOffset in days) so the arrows / edge-drag slide it a day at a time.
+  const weekDays = useIsMobile() ? 3 : 7
+  const weekStart = addDays(startOfWeek(cursor), weekOffset)
+  const dayCols = view === 'day' ? [cursor] : view === 'week' ? Array.from({ length: weekDays }, (_, i) => addDays(weekStart, i)) : []
+  // Sessions whose [departure, return] span intersects the visible window, so a
+  // multi-day session that started earlier still shows on the days it covers.
+  const rangeStart = dayCols.length ? dayKey(dayCols[0]) : ''
+  const rangeEnd = dayCols.length ? dayKey(dayCols[dayCols.length - 1]) : ''
   const events: TimeGridEvent[] = view === 'month'
     ? []
-    : dayCols.flatMap((d) => (byDay.get(dayKey(d)) ?? []).map((c): TimeGridEvent => ({
-        id: c.id,
-        dayKey: dayKey(naiveDate(c.departure_datetime)!),
-        startMin: minsOfDay(c.departure_datetime),
-        endMin: minsOfDay(c.return_datetime),
-        color: SESSION_BLOCK_COLOR[sessionStatus(c).key],
-        title: c.client_name || carLabel(c.vin),
-        subtitle: carLabel(c.vin),
-      })))
+    : tdContracts.flatMap((c): TimeGridEvent[] => {
+        const dep = dayKey(naiveDate(c.departure_datetime)!)
+        const retKey = naiveDate(c.return_datetime) ? dayKey(naiveDate(c.return_datetime)!) : undefined
+        const spanEnd = retKey && retKey > dep ? retKey : dep
+        if (dep > rangeEnd || spanEnd < rangeStart) return []
+        return [{
+          id: c.id,
+          dayKey: dep,
+          endDayKey: retKey, // multi-day span (return day)
+          startMin: minsOfDay(c.departure_datetime),
+          endMin: minsOfDay(c.return_datetime),
+          color: carColor(c.vin), // colour by car
+          groupKey: c.vin || undefined, // same-car overlap (interlaced) detection
+          title: c.client_name || carLabel(c.vin),
+          subtitle: carLabel(c.vin),
+          draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
+        }]
+      })
 
   const go = (dir: 1 | -1) => {
-    if (view === 'day') setCursor(addDays(cursor, dir))
-    else if (view === 'week') setCursor(addDays(cursor, 7 * dir))
+    if (view === 'week') setWeekOffset((o) => o + dir) // slide the 7-day window one day
+    else if (view === 'day') setCursor(addDays(cursor, dir))
     else setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1))
   }
 
@@ -142,7 +211,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
   if (view === 'day') {
     periodLabel = cursor.toLocaleDateString('ro-RO', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
   } else if (view === 'week') {
-    const we = addDays(weekStart, 6)
+    const we = addDays(weekStart, weekDays - 1)
     const weM = we.toLocaleDateString('ro-RO', { month: 'long' })
     periodLabel = weekStart.getMonth() === we.getMonth()
       ? `${weekStart.getDate()} – ${we.getDate()} ${weM}`
@@ -158,13 +227,23 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
           <Button variant="outline" size="icon" onClick={() => go(-1)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setCursor(new Date())}>Azi</Button>
+          <Button variant="outline" size="sm" onClick={() => { setCursor(new Date()); setWeekOffset(0) }}>Azi</Button>
           <Button variant="outline" size="icon" onClick={() => go(1)}>
             <ChevronRight className="h-4 w-4" />
           </Button>
           <h3 className="text-base font-semibold capitalize ml-2">{periodLabel}</h3>
           {isLoading && <span className="text-xs text-muted-foreground">Se încarcă...</span>}
         </div>
+        {/* Car filter (only when >1 car has sessions) */}
+        {carOptions.length > 1 && (
+          <Select value={carFilter || 'all'} onValueChange={(v) => setCarFilter(v === 'all' ? '' : v)}>
+            <SelectTrigger className="h-9 w-44 text-sm" aria-label="Filtrează după mașină"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toate mașinile</SelectItem>
+              {carOptions.map((o) => <SelectItem key={o.vin} value={o.vin}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
         {/* View switcher — same segmented control as the Hub / Field Sales calendars. */}
         <div className="flex h-9 gap-0.5 rounded-lg bg-muted p-0.5">
           {VIEW_OPTIONS.map(([v, label]) => (
@@ -193,11 +272,28 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
               const inMonth = d.getMonth() === currentMonth
               const isToday = key === todayKey
               const isPast = key < todayKey
+              const weekend = d.getDay() === 0 || d.getDay() === 6
               const events = byDay.get(key) ?? []
               return (
                 <div
                   key={key}
-                  className={cn('min-h-[104px] border-b border-r p-1.5 space-y-1', !inMonth && 'bg-muted/20 text-muted-foreground')}
+                  data-testid={`fp-day-${key}`}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); const id = Number(e.dataTransfer.getData('text/plain')); if (id) rescheduleToDay(id, key) }}
+                  // Drag across empty cell space → a multi-day session (09:00–18:00).
+                  // Skip when the press starts on a draggable chip (that's a reschedule drag).
+                  onPointerDown={(e) => {
+                    if (e.button !== 0 && e.pointerType === 'mouse') return
+                    if ((e.target as HTMLElement).closest('[draggable="true"]')) return
+                    setMonthDrag({ a: key, b: key })
+                  }}
+                  onPointerEnter={() => setMonthDrag((md) => (md ? { ...md, b: key } : md))}
+                  onPointerUp={() => {
+                    const r = monthRange
+                    setMonthDrag(null)
+                    if (r && r[0] !== r[1]) navigate(`/app/foi-parcurs/test-drive?departure=${r[0]}T09:00&return=${r[1]}T18:00`)
+                  }}
+                  className={cn('min-h-[104px] border-b border-r p-1.5 space-y-1', !inMonth && 'bg-muted/20 text-muted-foreground', inMonth && weekend && 'bg-zinc-100 dark:bg-red-950/20', inMonthRange(key) && 'bg-primary/15')}
                 >
                   <div className={cn('text-xs font-medium', isToday && 'inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground')}>
                     {d.getDate()}
@@ -208,13 +304,16 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
                       const time = c.departure_datetime
                         ? naiveDate(c.departure_datetime)!.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
                         : ''
+                      const planned = ss.key === 'planificat'
                       return (
                         <button
                           key={c.id}
                           type="button"
+                          draggable={planned}
+                          onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(c.id)); e.dataTransfer.effectAllowed = 'move' }}
                           onClick={() => setSelected(c)}
-                          className={cn('w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium text-white hover:opacity-90', ss.badgeClass, isPast && 'opacity-60')}
-                          title={`${time} ${carLabel(c.vin)} — ${c.client_name || '—'}`}
+                          className={cn('w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium text-white hover:opacity-90', ss.badgeClass, isPast && 'opacity-60', planned && 'cursor-grab')}
+                          title={`${time} ${carLabel(c.vin)} — ${c.client_name || '—'}${planned ? ' (trage pentru a reprograma)' : ''}`}
                         >
                           {time} {carLabel(c.vin)}
                         </button>
@@ -230,12 +329,16 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
           </div>
         </Card>
       ) : (
-        <TimeGrid
-          dayCols={dayCols}
-          events={events}
-          onEventClick={(id) => { const c = byId.get(id); if (c) setSelected(c) }}
-          onSlotAdd={(dk, time) => navigate(`/app/foi-parcurs/test-drive?departure=${dk}T${time}`)}
-        />
+        <div className="space-y-1">
+          {moveErr && <p className="px-1 text-xs text-destructive">{moveErr}</p>}
+          <TimeGrid
+            dayCols={dayCols}
+            events={events}
+            onEventClick={(id) => { const c = byId.get(id); if (c) setSelected(c) }}
+            onSlotAdd={(departure, ret) => navigate(`/app/foi-parcurs/test-drive?departure=${departure}&return=${ret}`)}
+            onMove={onMoveEvent}
+          />
+        </div>
       )}
 
       {selected && (
