@@ -150,6 +150,21 @@ describe('ClientCard360', () => {
     await waitFor(() => expect(updateClient).toHaveBeenCalledWith(760, expect.objectContaining({ phone: '0722999888' })))
   })
 
+  it('disables Salvează when the Nume field is cleared', async () => {
+    const client360Data = {
+      client: { id: 760, display_name: 'ACME SRL', contact_person: 'Ion', phone: '0722000000', email: 'a@b.ro', street: null, city: 'Cluj', region: null, country: null, company_name: 'ACME Distribution SRL', nr_reg: 'J12/34/2020' },
+      profile: { id: 1, client_id: 760, client_type: 'company', industry: null, country_code: 'RO', legal_form: null, assigned_kam_id: null, fleet_size: 0, priority: 'medium', renewal_score: 0, cui: null, estimated_annual_value: null },
+      fleet: [], last_purchases: [], last_interactions: [], visit_history: [], renewal_candidates: [], inventory_matches: [], fiscal: null,
+    }
+    getClient360.mockResolvedValue(client360Data)
+    wrap(<ClientCard360 clientId={760} clientName="ACME SRL" />)
+    fireEvent.click(await screen.findByRole('button', { name: /editeaz/i }))
+    const nume = await screen.findByDisplayValue('ACME SRL')
+    fireEvent.change(nume, { target: { value: '' } })
+    expect(screen.getByRole('button', { name: /salveaz/i })).toBeDisabled()
+    expect(updateClient).not.toHaveBeenCalled()
+  })
+
   it('cancel exits edit mode without calling updateClient', async () => {
     const client360Data = {
       client: { id: 760, display_name: 'ACME SRL', contact_person: 'Ion', phone: '0722000000', email: 'a@b.ro', street: null, city: 'Cluj', region: null, country: null, company_name: 'ACME SRL', nr_reg: 'J12/34/2020' },

@@ -370,11 +370,6 @@ function ClientContactSection({ clientId, client }: { clientId: number; client: 
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<Partial<FSClientRaw>>({})
 
-  const startEdit = () => {
-    setForm(Object.fromEntries(CONTACT_FIELDS.map(({ key }) => [key, (client?.[key] as string) ?? ''])))
-    setEditing(true)
-  }
-
   const mutation = useMutation({
     mutationFn: () => fieldSalesApi.updateClient(clientId, form),
     onSuccess: () => {
@@ -383,6 +378,12 @@ function ClientContactSection({ clientId, client }: { clientId: number; client: 
     },
   })
   const err = mutation.error as ApiErr
+
+  const startEdit = () => {
+    setForm(Object.fromEntries(CONTACT_FIELDS.map(({ key }) => [key, (client?.[key] as string) ?? ''])))
+    mutation.reset()
+    setEditing(true)
+  }
 
   return (
     <div className="rounded-2xl bg-card border p-4">
@@ -421,7 +422,7 @@ function ClientContactSection({ clientId, client }: { clientId: number; client: 
           {mutation.isError && <p className="text-xs text-destructive">{err?.data?.error ?? 'Eroare la salvare'}</p>}
           <div className="flex justify-end gap-2">
             <button onClick={() => setEditing(false)} className="h-11 rounded-xl border border-border px-4 text-sm font-semibold active:bg-muted">Anulează</button>
-            <button onClick={() => mutation.mutate()} disabled={mutation.isPending} className="h-11 rounded-xl bg-teal-600 px-4 text-sm font-semibold text-white active:bg-teal-700 disabled:opacity-60">
+            <button onClick={() => mutation.mutate()} disabled={mutation.isPending || !(form.display_name ?? '').trim()} className="h-11 rounded-xl bg-teal-600 px-4 text-sm font-semibold text-white active:bg-teal-700 disabled:opacity-60">
               {mutation.isPending ? 'Se salvează...' : 'Salvează'}
             </button>
           </div>
