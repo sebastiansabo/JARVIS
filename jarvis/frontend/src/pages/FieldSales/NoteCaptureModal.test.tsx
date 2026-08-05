@@ -131,4 +131,30 @@ describe('NoteCaptureModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /anuleaz/i }))
     expect(onCancel).toHaveBeenCalled()
   })
+
+  it('renders a sentiment badge when sentiment is present', async () => {
+    addNote.mockResolvedValue({
+      success: true,
+      note: { id: 1, raw_note: 'x', created_at: '' },
+      structured_note: { visit_summary: 'Rezumat', sentiment: 'positive' } as unknown,
+    })
+    wrap(<NoteCaptureModal visitId={9} clientId={760} onDone={vi.fn()} onCancel={() => {}} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'discutie buna' } })
+    fireEvent.click(screen.getByRole('button', { name: /proceseaz/i }))
+    expect(await screen.findByText('Rezumat')).toBeInTheDocument()
+    expect(screen.getByText(/Pozitiv/i)).toBeInTheDocument()
+  })
+
+  it('renders no sentiment badge when sentiment is null', async () => {
+    addNote.mockResolvedValue({
+      success: true,
+      note: { id: 1, raw_note: 'x', created_at: '' },
+      structured_note: { visit_summary: 'Rezumat', sentiment: null } as unknown,
+    })
+    wrap(<NoteCaptureModal visitId={9} clientId={760} onDone={vi.fn()} onCancel={() => {}} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'ceva' } })
+    fireEvent.click(screen.getByRole('button', { name: /proceseaz/i }))
+    expect(await screen.findByText('Rezumat')).toBeInTheDocument()
+    expect(screen.queryByText(/Pozitiv|Neutru|Negativ/i)).not.toBeInTheDocument()
+  })
 })
