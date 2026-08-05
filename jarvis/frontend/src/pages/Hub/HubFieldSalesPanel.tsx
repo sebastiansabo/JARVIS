@@ -25,6 +25,11 @@ export const STATUS_CONFIG: Record<string, { label: string; bg: string; text: st
   partial: { label: 'PARTIALA', bg: 'bg-amber-100 dark:bg-amber-900/40', text: 'text-amber-700 dark:text-amber-300', dot: 'bg-amber-500' },
 }
 const todayStr = () => new Date().toISOString().split('T')[0]
+// Shown (in the locked chip AND in place of the today-tab empty state) when the
+// user can reach Field Sales but has no company assigned — see the no-company
+// gate in HubFieldSalesPanel. Blocks the add flow so no unscoped, cross-tenant
+// client search can start.
+export const NO_COMPANY_MSG = 'Nu aveți nicio companie alocată. Contactați un administrator.'
 
 // Shift a "YYYY-MM-DD" date string by `days` (no time component involved, so
 // no timezone/naiveDate handling is needed — unlike DrivingCalendar's fields).
@@ -119,7 +124,11 @@ function AddVisitForm({ initialDate, initialTime, initialEndTime, companyId, onD
   const { data: searchData, isLoading: searching } = useQuery({
     queryKey: ['fs-client-search', query, companyId],
     queryFn: () => fieldSalesApi.searchClients(query, companyId),
-    enabled: query.length >= 2,
+    // Defense-in-depth: the client-search endpoint has no ownership clause, so
+    // an unscoped call (no company_id) would return clients from EVERY tenant.
+    // Never let it run without a resolved company — the add flow's entry point
+    // is already gated on companyId > 0, this closes the direct-call path too.
+    enabled: query.length >= 2 && (companyId ?? 0) > 0,
   })
   const results = searchData?.clients ?? []
 
@@ -307,6 +316,12 @@ export default function HubFieldSalesPanel() {
   const { data: companiesData } = useQuery({ queryKey: ['fs-companies'], queryFn: () => fieldSalesApi.getFieldSalesCompanies() })
   const companies = companiesData?.companies ?? []
   const defaultCompanyId = companiesData?.default_company_id ?? 0
+  // True only once the companies query has RESOLVED to an empty list (not while
+  // it's still loading, when `companies` is also [] but `companiesData` is
+  // undefined) — a user who can reach Field Sales but has no company assigned.
+  // Gates the add flow + swaps the empty state for a clear message so no
+  // unscoped client search (which would span every tenant) can ever start.
+  const noCompany = companiesData !== undefined && companies.length === 0
   const [companyId, setCompanyId] = usePersistedState<number>('hub-fs-company', 0)
   useEffect(() => {
     if (!companies.length) return
@@ -387,8 +402,8 @@ export default function HubFieldSalesPanel() {
           <SelectContent>{companies.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>)}</SelectContent>
         </Select>
       ) : (
-        <div className="flex h-11 items-center rounded-xl border border-border bg-muted/40 px-3 text-sm font-medium text-muted-foreground">
-          {companies[0]?.company ?? '—'}
+        <div className="flex min-h-11 items-center rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm font-medium text-muted-foreground">
+          {noCompany ? NO_COMPANY_MSG : (companies[0]?.company ?? '—')}
         </div>
       )}
 
@@ -403,9 +418,15 @@ export default function HubFieldSalesPanel() {
         <div className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div><h2 className="text-xl font-bold">Vizite</h2><p className="text-sm text-muted-foreground">Azi</p></div>
-            <button onClick={() => setOverlay({ kind: 'add' })} className="rounded-xl bg-teal-600 px-3 py-2.5 text-sm font-semibold text-white active:bg-teal-700">
-              <span className="flex items-center gap-1"><Plus className="h-4 w-4" />Adauga</span>
-            </button>
+            {/* No company resolved (companyId 0 — either mid-load or genuinely
+                unassigned) → the add flow can't be scoped, so its entry point
+                is hidden. AddVisitForm's client search is gated on companyId>0
+                too, as defense-in-depth. */}
+            {companyId > 0 && (
+              <button onClick={() => setOverlay({ kind: 'add' })} className="rounded-xl bg-teal-600 px-3 py-2.5 text-sm font-semibold text-white active:bg-teal-700">
+                <span className="flex items-center gap-1"><Plus className="h-4 w-4" />Adauga</span>
+              </button>
+            )}
           </div>
 
           {visits.length > 0 && (
@@ -416,9 +437,19 @@ export default function HubFieldSalesPanel() {
             </div>
           )}
 
-          {isLoading && <div className="flex justify-center py-16"><div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" /></div>}
-          {isError && <p className="py-16 text-center text-sm text-muted-foreground">Nu s-au putut incarca vizitele</p>}
-          {!isLoading && !isError && visits.length === 0 && (
+          {/* No-company state takes priority over the generic empty state: a
+              user with no assigned company can't own visits, so "add one to
+              start planning" would be misleading — point them at an admin. */}
+          {noCompany && (
+            <div className="flex flex-col items-center py-16">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted/50 mb-4"><CalendarDays className="h-8 w-8 text-muted-foreground" /></div>
+              <p className="text-base font-semibold mb-1">Nu aveți nicio companie alocată</p>
+              <p className="text-sm text-muted-foreground text-center max-w-[240px]">Contactați un administrator pentru a vi se aloca o companie.</p>
+            </div>
+          )}
+          {!noCompany && isLoading && <div className="flex justify-center py-16"><div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" /></div>}
+          {!noCompany && isError && <p className="py-16 text-center text-sm text-muted-foreground">Nu s-au putut incarca vizitele</p>}
+          {!noCompany && !isLoading && !isError && visits.length === 0 && (
             <div className="flex flex-col items-center py-16">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted/50 mb-4"><CalendarDays className="h-8 w-8 text-muted-foreground" /></div>
               <p className="text-base font-semibold mb-1">Nicio vizita planificata</p>
