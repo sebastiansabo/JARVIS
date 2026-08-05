@@ -183,6 +183,21 @@ export interface FSStructuredNote {
   risk_flags: string[]
 }
 
+export interface FSClientRaw {
+  id: number
+  display_name: string | null
+  contact_person: string | null
+  phone: string | null
+  email: string | null
+  street: string | null
+  city: string | null
+  region: string | null
+  country: string | null
+  company_name: string | null
+  nr_reg: string | null
+  cui?: string | null
+}
+
 export interface FSClientProfile {
   id: number; client_id: number; client_type: string; industry: string | null
   country_code: string; legal_form: string | null; assigned_kam_id: number | null
@@ -229,6 +244,7 @@ export interface FSInventoryMatch {
   sale_price_net: number; vin: string | null
 }
 export interface FSClient360 {
+  client: FSClientRaw | null
   profile: FSClientProfile | null
   fleet: FSClientFleetVehicle[]
   last_purchases: FSSaleSummary[]
@@ -320,9 +336,10 @@ export const fieldSalesApi = {
       `/api/field-sales/visits/${visitId}/note`, data),
 
   getClient360: (clientId: number) => {
-    // Backend returns { profile, fleet, purchases, interactions, visit_history,
+    // Backend returns { client, profile, fleet, purchases, interactions, visit_history,
     // renewal_candidates, inventory_matches, fiscal } — normalize to FSClient360.
     return api.get<Record<string, unknown>>(`/api/field-sales/clients/${clientId}/360`).then((res) => ({
+      client: (res.client as FSClient360['client']) ?? null,
       profile: (res.profile as FSClient360['profile']) ?? null,
       fleet: (res.fleet as FSClient360['fleet']) ?? [],
       last_purchases: (res.purchases as FSClient360['last_purchases']) ?? [],
@@ -333,6 +350,9 @@ export const fieldSalesApi = {
       fiscal: (res.fiscal as FSClient360['fiscal']) ?? null,
     }))
   },
+
+  updateClient: (clientId: number, data: Partial<FSClientRaw>) =>
+    api.put<{ success: boolean; client: FSClientRaw }>(`/api/field-sales/clients/${clientId}`, data),
 
   refreshFiscal: (clientId: number) =>
     api.post<{ success: boolean }>(`/api/field-sales/clients/${clientId}/refresh-fiscal`),
