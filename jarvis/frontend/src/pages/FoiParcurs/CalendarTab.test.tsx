@@ -77,7 +77,19 @@ describe('CalendarTab (desktop foi-parcurs)', () => {
     firePointer(col, 'pointerdown', 100 + 96)
     firePointer(col, 'pointermove', 100 + 168)
     firePointer(col, 'pointerup', 100 + 168)
-    expect(navigate).toHaveBeenCalledWith(`/app/foi-parcurs/test-drive?departure=${todayKey}T09:00`)
+    expect(navigate).toHaveBeenCalledWith(`/app/foi-parcurs/test-drive?departure=${todayKey}T09:00&return=${todayKey}T10:30`)
+  })
+
+  it('creates a multi-day session by dragging across days in Month view', async () => {
+    wrap(<CalendarTab companyId={11} brand="" />)
+    await screen.findByTestId('tg-block-11')
+    fireEvent.click(screen.getByRole('button', { name: 'Lună' }))
+    const y = now.getFullYear(), m = pad(now.getMonth() + 1)
+    const aKey = `${y}-${m}-10`, cKey = `${y}-${m}-12`
+    fireEvent.pointerDown(await screen.findByTestId(`fp-day-${aKey}`))
+    fireEvent.pointerEnter(screen.getByTestId(`fp-day-${cKey}`))
+    fireEvent.pointerUp(screen.getByTestId(`fp-day-${cKey}`))
+    expect(navigate).toHaveBeenCalledWith(`/app/foi-parcurs/test-drive?departure=${aKey}T09:00&return=${cKey}T18:00`)
   })
 
   it('switches to Month view showing the session chip', async () => {

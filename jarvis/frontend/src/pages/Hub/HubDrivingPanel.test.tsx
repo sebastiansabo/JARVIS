@@ -13,8 +13,8 @@ vi.mock('@/pages/Hub/DrivingSessionsList', () => ({
   ),
 }))
 vi.mock('@/pages/Hub/DrivingCalendar', () => ({
-  default: ({ companyId, onAdd }: { companyId: number; onAdd?: (d: string, t?: string) => void }) => (
-    <div>calendar:{companyId}<button onClick={() => onAdd?.('2026-08-05', '11:00')}>mock-add</button></div>
+  default: ({ companyId, onAdd }: { companyId: number; onAdd?: (departure: string, ret: string) => void }) => (
+    <div>calendar:{companyId}<button onClick={() => onAdd?.('2026-08-05T11:00', '2026-08-05T12:00')}>mock-add</button></div>
   ),
 }))
 vi.mock('@/pages/FoiParcurs/TestDriveForm', () => ({

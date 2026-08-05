@@ -60,6 +60,10 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
   const [view, setView] = usePersistedState<CalView>('fp-cal-view', 'week')
   const [cursor, setCursor] = useState(() => new Date())
   const [selected, setSelected] = useState<FoiContract | null>(null)
+  // Month drag-to-select a date range → multi-day session.
+  const [monthDrag, setMonthDrag] = useState<{ a: string; b: string } | null>(null)
+  const monthRange = monthDrag ? (monthDrag.a <= monthDrag.b ? [monthDrag.a, monthDrag.b] : [monthDrag.b, monthDrag.a]) : null
+  const inMonthRange = (k: string) => !!monthRange && k >= monthRange[0] && k <= monthRange[1]
 
   // Fetch the visible month's range (± a week to cover the grid's leading/
   // trailing days, and any Week/Day view anchored in this month) so navigating
@@ -241,7 +245,20 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
                   data-testid={`fp-day-${key}`}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => { e.preventDefault(); const id = Number(e.dataTransfer.getData('text/plain')); if (id) rescheduleToDay(id, key) }}
-                  className={cn('min-h-[104px] border-b border-r p-1.5 space-y-1', !inMonth && 'bg-muted/20 text-muted-foreground')}
+                  // Drag across empty cell space → a multi-day session (09:00–18:00).
+                  // Skip when the press starts on a draggable chip (that's a reschedule drag).
+                  onPointerDown={(e) => {
+                    if (e.button !== 0 && e.pointerType === 'mouse') return
+                    if ((e.target as HTMLElement).closest('[draggable="true"]')) return
+                    setMonthDrag({ a: key, b: key })
+                  }}
+                  onPointerEnter={() => setMonthDrag((md) => (md ? { ...md, b: key } : md))}
+                  onPointerUp={() => {
+                    const r = monthRange
+                    setMonthDrag(null)
+                    if (r && r[0] !== r[1]) navigate(`/app/foi-parcurs/test-drive?departure=${r[0]}T09:00&return=${r[1]}T18:00`)
+                  }}
+                  className={cn('min-h-[104px] border-b border-r p-1.5 space-y-1', !inMonth && 'bg-muted/20 text-muted-foreground', inMonthRange(key) && 'bg-primary/15')}
                 >
                   <div className={cn('text-xs font-medium', isToday && 'inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground')}>
                     {d.getDate()}
@@ -283,8 +300,9 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
             dayCols={dayCols}
             events={events}
             onEventClick={(id) => { const c = byId.get(id); if (c) setSelected(c) }}
-            onSlotAdd={(dk, time) => navigate(`/app/foi-parcurs/test-drive?departure=${dk}T${time}`)}
+            onSlotAdd={(departure, ret) => navigate(`/app/foi-parcurs/test-drive?departure=${departure}&return=${ret}`)}
             onMove={onMoveEvent}
+            onWeekShift={go}
           />
         </div>
       )}

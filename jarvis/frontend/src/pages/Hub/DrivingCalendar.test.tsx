@@ -94,6 +94,19 @@ describe('DrivingCalendar', () => {
     await waitFor(() => expect(rescheduleTestDrive).toHaveBeenCalledWith(12, { departure_datetime: `${targetKey}T09:00`, return_datetime: `${targetKey}T10:00` }))
   })
 
+  it('creates a multi-day session by dragging across days in Month view', async () => {
+    const onAdd = vi.fn()
+    wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={onAdd} />)
+    await screen.findByTestId('tg-block-12')
+    fireEvent.click(screen.getByRole('button', { name: 'Lună' }))
+    const y = now.getFullYear(), m = pad(now.getMonth() + 1)
+    const aKey = `${y}-${m}-10`, cKey = `${y}-${m}-12`
+    fireEvent.pointerDown(await screen.findByTestId(`dc-day-${aKey}`))
+    fireEvent.pointerEnter(screen.getByTestId(`dc-day-${cKey}`))
+    fireEvent.pointerUp(screen.getByTestId(`dc-day-${cKey}`))
+    expect(onAdd).toHaveBeenCalledWith(`${aKey}T09:00`, `${cKey}T18:00`)
+  })
+
   it('does not allow dragging a non-planned (driving) session', async () => {
     rescheduleTestDrive.mockClear()
     wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
@@ -115,6 +128,6 @@ describe('DrivingCalendar', () => {
     firePointer(col, 'pointerdown', 100 + 96)
     firePointer(col, 'pointermove', 100 + 168)
     firePointer(col, 'pointerup', 100 + 168)
-    expect(onAdd).toHaveBeenCalledWith(todayKey, '09:00', '10:30')
+    expect(onAdd).toHaveBeenCalledWith(`${todayKey}T09:00`, `${todayKey}T10:30`)
   })
 })

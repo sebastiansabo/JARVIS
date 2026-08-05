@@ -11,7 +11,7 @@ import DrivingCalendar from '@/pages/Hub/DrivingCalendar'
 import TestDriveForm from '@/pages/FoiParcurs/TestDriveForm'
 import TestDriveReturn from '@/pages/FoiParcurs/TestDriveReturn'
 
-type Overlay = null | { kind: 'new'; date?: string; time?: string } | { kind: 'activate'; id: number } | { kind: 'return'; id: number }
+type Overlay = null | { kind: 'new'; departure?: string; ret?: string } | { kind: 'activate'; id: number } | { kind: 'return'; id: number }
 type PanelTab = 'sessions' | 'calendar'
 
 export default function HubDrivingPanel() {
@@ -82,7 +82,7 @@ export default function HubDrivingPanel() {
           brand={brand}
           onActivate={(id) => setOverlay({ kind: 'activate', id })}
           onReturn={(id) => setOverlay({ kind: 'return', id })}
-          onAdd={(date, time) => setOverlay({ kind: 'new', date, time })}
+          onAdd={(departure, ret) => setOverlay({ kind: 'new', departure, ret })}
         />
       )}
 
@@ -100,7 +100,8 @@ export default function HubDrivingPanel() {
               <TestDriveForm
                 embedded
                 initialCompanyId={companyId || undefined}
-                initialDeparture={overlay.date ? `${overlay.date}T${overlay.time ?? '09:00'}` : undefined}
+                initialDeparture={overlay.departure}
+                initialReturn={overlay.ret}
                 onDone={handleOverlayDone}
                 onCancel={closeOverlay}
               />

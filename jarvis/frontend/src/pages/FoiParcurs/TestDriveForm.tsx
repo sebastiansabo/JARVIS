@@ -100,12 +100,15 @@ interface TestDriveFormProps {
    *  slot the user dragged/clicked. Return defaults to +1h. Ignored in
    *  activation mode, which prefills from the loaded draft instead. */
   initialDeparture?: string
+  /** Seed the return datetime ("YYYY-MM-DDTHH:MM") — set for multi-day drags so
+   *  a 2–3 day session prefills the arrival on a later day. */
+  initialReturn?: string
   onDone?: (contract: FoiContract) => void
   onCancel?: () => void
 }
 
 // ── Component ──
-export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, initialDeparture, onDone, onCancel }: TestDriveFormProps = {}) {
+export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, initialDeparture, initialReturn, onDone, onCancel }: TestDriveFormProps = {}) {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
 
@@ -143,8 +146,10 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // Seed the departure slot from the prop (Hub overlay) or the ?departure=
   // search param (desktop calendar route) — both are "YYYY-MM-DDTHH:MM".
   const seedDeparture = initialDeparture ?? searchParams.get('departure') ?? undefined
+  const seedReturn = initialReturn ?? searchParams.get('return') ?? undefined
   const [departureDatetime, setDepartureDatetime] = useState(() => seedDeparture ?? localDatetimeValue(new Date()))
   const [returnDatetime, setReturnDatetime] = useState(() => {
+    if (seedReturn) return seedReturn
     const base = seedDeparture ? new Date(seedDeparture) : new Date()
     return localDatetimeValue(new Date(base.getTime() + 60 * 60 * 1000))
   })
