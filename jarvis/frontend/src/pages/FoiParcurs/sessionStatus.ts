@@ -29,6 +29,30 @@ export function sessionStatus(c: FoiContract): {
   return { key: 'driving', label: 'În desfășurare', badgeClass: 'bg-blue-600 text-white', rowClass: 'bg-blue-500/5 border-l-4 border-l-blue-500/40' }
 }
 
+// Stable pastel colour per car (VIN), so a car's sessions read the same across
+// the week and different cars are easy to tell apart. Deterministic hash → a
+// fixed palette (light + dark variants).
+const CAR_PALETTE = [
+  'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200',
+  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200',
+  'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+  'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200',
+  'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200',
+  'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-200',
+  'bg-lime-100 text-lime-800 dark:bg-lime-900/40 dark:text-lime-200',
+  'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-200',
+  'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-200',
+  'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200',
+  'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200',
+  'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200',
+]
+export function carColor(vin?: string | null): string {
+  if (!vin) return CAR_PALETTE[0]
+  let h = 0
+  for (let i = 0; i < vin.length; i++) h = (h * 31 + vin.charCodeAt(i)) >>> 0
+  return CAR_PALETTE[h % CAR_PALETTE.length]
+}
+
 // Pastel block colours for the Week/Day time-grid (shared by the Hub
 // DrivingCalendar and the desktop CalendarTab) — matched to the Field Sales
 // calendar's soft-tint blocks rather than the saturated pill `badgeClass`, so a

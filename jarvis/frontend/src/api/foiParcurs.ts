@@ -281,6 +281,11 @@ export const foiParcursApi = {
   activateTestDrive: (id: number, data: ActivateTestDrivePayload) =>
     api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/activate`, data),
 
+  // ── Reschedule a PLANNED/MISSED session to a new time (drag-to-move in the
+  //    calendar); backend guards to those statuses + rejects past dates ──
+  rescheduleTestDrive: (id: number, data: { departure_datetime: string; return_datetime?: string }) =>
+    api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/reschedule`, data),
+
   // ── Discard a PLANNED draft (PLANNED-only; 409 otherwise) ──
   discardTestDrive: (id: number) =>
     api.delete<{ success: boolean }>(`${BASE}/test-drive/${id}`),

@@ -100,12 +100,15 @@ interface TestDriveFormProps {
    *  slot the user dragged/clicked. Return defaults to +1h. Ignored in
    *  activation mode, which prefills from the loaded draft instead. */
   initialDeparture?: string
+  /** Seed the return datetime ("YYYY-MM-DDTHH:MM") — set for multi-day drags so
+   *  a 2–3 day session prefills the arrival on a later day. */
+  initialReturn?: string
   onDone?: (contract: FoiContract) => void
   onCancel?: () => void
 }
 
 // ── Component ──
-export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, initialDeparture, onDone, onCancel }: TestDriveFormProps = {}) {
+export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, initialDeparture, initialReturn, onDone, onCancel }: TestDriveFormProps = {}) {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
 
@@ -143,8 +146,10 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // Seed the departure slot from the prop (Hub overlay) or the ?departure=
   // search param (desktop calendar route) — both are "YYYY-MM-DDTHH:MM".
   const seedDeparture = initialDeparture ?? searchParams.get('departure') ?? undefined
+  const seedReturn = initialReturn ?? searchParams.get('return') ?? undefined
   const [departureDatetime, setDepartureDatetime] = useState(() => seedDeparture ?? localDatetimeValue(new Date()))
   const [returnDatetime, setReturnDatetime] = useState(() => {
+    if (seedReturn) return seedReturn
     const base = seedDeparture ? new Date(seedDeparture) : new Date()
     return localDatetimeValue(new Date(base.getTime() + 60 * 60 * 1000))
   })
@@ -169,7 +174,14 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const [showConditions, setShowConditions] = useState(false)
 
   const [submittedContract, setSubmittedContract] = useState<FoiContract | null>(null)
-  const [attempted, setAttempted] = useState(false)
+  // Which action was attempted, so red-flagging is scoped to what that action
+  // actually requires: 'plan' flags only the minimal draft fields
+  // (car/client/dates), while 'submit'/'activate' flag the full activation set.
+  // Mirrors the mobile app — planning a draft never demands KM/fuel/signature/
+  // license/GDPR.
+  const [attemptedAction, setAttemptedAction] = useState<null | 'plan' | 'submit' | 'activate'>(null)
+  const attempted = attemptedAction !== null
+  const submitAttempt = attemptedAction === 'submit' || attemptedAction === 'activate'
 
   useEffect(() => {
     if (user?.name && !advisorName) setAdvisorName(user.name)
@@ -383,7 +395,8 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     missing.odometer || missing.estimated || missing.fuel || missing.advisor || missing.returnInvalid ||
     missing.clientSig || missing.conditions
   )
-  const err = (bad: boolean) => attempted && bad
+  const err = (bad: boolean) => attempted && bad          // plan-relevant fields (any attempt)
+  const errFull = (bad: boolean) => submitAttempt && bad  // activation-only fields (submit/activate only)
 
   const damagedZoneCount = toDamagePayload(departureDamage).length
 
@@ -448,7 +461,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   function handleSubmit() {
     if (submitMutation.isPending || planMutation.isPending || checking) return
     if (!formValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
-      setAttempted(true)
+      setAttemptedAction('submit')
       return
     }
     const payload: TestDriveFormPayload = {
@@ -464,7 +477,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     if (planMutation.isPending || submitMutation.isPending || checking) return
     // Planning only needs the car + client (name) + departure date.
     if (!draftValid || !selectedVehicle?.vin || !selectedClient) {
-      setAttempted(true)
+      setAttemptedAction('plan')
       return
     }
     const payload: PlanTestDrivePayload = {
@@ -484,7 +497,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   function handleActivate() {
     if (activateMutation.isPending || checking || activateId == null) return
     if (!activateValid || !selectedVehicle?.vin || !selectedClient || !fuelGaugeStart) {
-      setAttempted(true)
+      setAttemptedAction('activate')
       return
     }
     const damagePayload = toDamagePayload(departureDamage)
@@ -524,7 +537,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     setShowDamage(false); setDepartureDamage(makeEmptyDamageState())
     setGdprConsent(false); setInspectionAcceptance(false)
     setConditionsAccepted(false); setShowConditions(false)
-    setSubmittedContract(null); setAttempted(false)
+    setSubmittedContract(null); setAttemptedAction(null)
     setConflictList([]); setShowConflicts(false); setPendingRun(null)
     if (isActivating) { if (embedded) onCancel?.(); else navigate('/app/foi-parcurs/test-drive', { replace: true }) }
   }
@@ -568,6 +581,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   }
 
   const invalidRing = (bad: boolean) => cn(err(bad) && 'ring-2 ring-destructive')
+  const invalidRingFull = (bad: boolean) => cn(errFull(bad) && 'ring-2 ring-destructive')
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-12">
@@ -788,7 +802,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           <DriverLicenseSection
             photo={driverLicensePhoto}
             onPhotoChange={setDriverLicensePhoto}
-            invalid={err(missing.license)}
+            invalid={errFull(missing.license)}
             hasClient={!!selectedClient}
             onSelectClient={setSelectedClient}
             onLicenseNumber={setDriverLicenseNumber}
@@ -817,7 +831,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs">KM plecare *</Label>
-              <Input type="number" min={0} placeholder="Km la plecare" value={odometerStart} onChange={(e) => setOdometerStart(e.target.value)} className={invalidRing(missing.odometer)} />
+              <Input type="number" min={0} placeholder="Km la plecare" value={odometerStart} onChange={(e) => setOdometerStart(e.target.value)} className={invalidRingFull(missing.odometer)} />
               {odometerBelowFloor && (
                 <p className="text-[11px] leading-tight text-amber-600 dark:text-amber-500">
                   ⚠ Sub kilometrajul actual al mașinii ({mileageFloor!.toLocaleString('ro-RO')} km)
@@ -826,12 +840,12 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">KM estimat *</Label>
-              <Input type="number" min={0} placeholder="Km estimați" value={estimatedKm} onChange={(e) => setEstimatedKm(e.target.value)} className={invalidRing(missing.estimated)} />
+              <Input type="number" min={0} placeholder="Km estimați" value={estimatedKm} onChange={(e) => setEstimatedKm(e.target.value)} className={invalidRingFull(missing.estimated)} />
             </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Nivel combustibil plecare *</Label>
-            <div className={cn('grid grid-cols-4 gap-1 h-11 rounded-lg bg-secondary p-1', err(missing.fuel) && 'ring-2 ring-destructive')}>
+            <div className={cn('grid grid-cols-4 gap-1 h-11 rounded-lg bg-secondary p-1', errFull(missing.fuel) && 'ring-2 ring-destructive')}>
               {FUEL_START_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
@@ -858,7 +872,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
         <CardContent className="space-y-6">
           <div className="space-y-1.5">
             <Label className="text-xs">Nume consilier *</Label>
-            <Input value={advisorName} onChange={(e) => setAdvisorName(e.target.value)} placeholder="Numele consilierului" className={invalidRing(missing.advisor)} />
+            <Input value={advisorName} onChange={(e) => setAdvisorName(e.target.value)} placeholder="Numele consilierului" className={invalidRingFull(missing.advisor)} />
           </div>
 
           <div className="space-y-1.5">
@@ -873,7 +887,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                 <SignatureCanvas onSave={setClientSignature} onClear={() => setClientSignature('')} width={500} height={200} />
               </Suspense>
             )}
-            {err(missing.clientSig) && <p className="text-xs text-destructive">Semnătura clientului este obligatorie.</p>}
+            {errFull(missing.clientSig) && <p className="text-xs text-destructive">Semnătura clientului este obligatorie.</p>}
           </div>
 
           <AdvisorSignatureField value={advisorSignature} onChange={setAdvisorSignature} />
@@ -909,13 +923,13 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
             <Checkbox id="inspection" checked={inspectionAcceptance} onCheckedChange={(v) => setInspectionAcceptance(v === true)} />
             <Label htmlFor="inspection" className="text-xs leading-normal cursor-pointer">Clientul a acceptat inspecția vehiculului (opțional).</Label>
           </div>
-          <div className={cn('flex items-start gap-2 rounded-md p-2 -m-2', err(missing.gdpr) && 'ring-2 ring-destructive')}>
+          <div className={cn('flex items-start gap-2 rounded-md p-2 -m-2', errFull(missing.gdpr) && 'ring-2 ring-destructive')}>
             <Checkbox id="gdpr" checked={gdprConsent} onCheckedChange={(v) => setGdprConsent(v === true)} />
             <Label htmlFor="gdpr" className="text-xs leading-normal cursor-pointer">Clientul este de acord cu prelucrarea datelor (GDPR). *</Label>
           </div>
           {conditionsRequired && (
             <div className="space-y-2">
-              <div className={cn('flex items-start gap-2 rounded-md p-2 -m-2', err(missing.conditions) && 'ring-2 ring-destructive')}>
+              <div className={cn('flex items-start gap-2 rounded-md p-2 -m-2', errFull(missing.conditions) && 'ring-2 ring-destructive')}>
                 <Checkbox id="conditions" checked={conditionsAccepted} onCheckedChange={(v) => setConditionsAccepted(v === true)} />
                 <Label htmlFor="conditions" className="text-xs leading-normal cursor-pointer">Clientul a citit și acceptă condițiile generale. *</Label>
               </div>
@@ -939,7 +953,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
         </div>
       )}
       {isActivating ? (
-        <Button className={cn('w-full', attempted && !activateValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleActivate} disabled={activateMutation.isPending || checking || loadingDraft}>
+        <Button className={cn('w-full', attemptedAction === 'activate' && !activateValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleActivate} disabled={activateMutation.isPending || checking || loadingDraft}>
           {activateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se activează...</> : <><PlayCircle className="h-4 w-4 mr-2" />Începe sesiunea</>}
         </Button>
       ) : (
@@ -954,12 +968,15 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           >
             {planMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se salvează...</> : <><CalendarPlus className="h-4 w-4 mr-2" />Planifică (draft)</>}
           </Button>
-          <Button className={cn('flex-1', attempted && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleSubmit} disabled={submitMutation.isPending || planMutation.isPending || checking}>
+          <Button className={cn('flex-1', attemptedAction === 'submit' && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleSubmit} disabled={submitMutation.isPending || planMutation.isPending || checking}>
             {submitMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se trimite...</> : 'Trimite'}
           </Button>
         </div>
       )}
-      {attempted && !(isActivating ? activateValid : formValid) && !submitMutation.isPending && !activateMutation.isPending && (
+      {attemptedAction === 'plan' && !draftValid && !planMutation.isPending && (
+        <p className="text-xs text-destructive text-center">Pentru a planifica, alege mașina, clientul și data.</p>
+      )}
+      {submitAttempt && !(isActivating ? activateValid : formValid) && !submitMutation.isPending && !activateMutation.isPending && (
         <p className="text-xs text-destructive text-center">Completează câmpurile marcate cu roșu pentru a trimite.</p>
       )}
       <ConflictDialog

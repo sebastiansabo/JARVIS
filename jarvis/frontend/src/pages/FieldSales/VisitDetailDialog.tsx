@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { fieldSalesApi, type FSVisit, type PreVisitData, type PostVisitData, type VisitUpdatePayload } from '@/api/fieldSales'
+import { useAuthStore } from '@/stores/authStore'
 import { PreVisitForm } from './PreVisitForm'
 import { PostVisitForm } from './PostVisitForm'
 import { TaskList } from './TaskList'
@@ -25,6 +26,7 @@ interface Props {
   visitId: number | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  onOpenClient360?: (clientId: number, clientName?: string) => void
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -90,10 +92,12 @@ function formatDateTime(dt?: string | null) {
   } catch { return dt }
 }
 
-export function VisitDetailDialog({ visitId, open, onOpenChange }: Props) {
+export function VisitDetailDialog({ visitId, open, onOpenChange, onOpenClient360 }: Props) {
   const queryClient = useQueryClient()
+  const currentUserId = useAuthStore((s) => s.user?.id)
   const [editing, setEditing] = useState(false)
   const [activeTab, setActiveTab] = useState('info')
+  const [quickNote, setQuickNote] = useState('')
 
   // Edit form state
   const [editDate, setEditDate] = useState('')
@@ -138,6 +142,19 @@ export function VisitDetailDialog({ visitId, open, onOpenChange }: Props) {
       setEditing(false)
     },
     onError: () => toast.error('Eroare la actualizare'),
+  })
+
+  const quickNoteMutation = useMutation({
+    mutationFn: (text: string) => fieldSalesApi.addQuickNote(visitId!, text),
+    onSuccess: () => {
+      setQuickNote('')
+      queryClient.invalidateQueries({ queryKey: ['fs-visit-detail', visitId] })
+      queryClient.invalidateQueries({ queryKey: ['field-sales-visits'] })
+      queryClient.invalidateQueries({ queryKey: ['field-sales-mine'] })
+      queryClient.invalidateQueries({ queryKey: ['field-sales-cal'] })
+      toast.success('Notă adăugată')
+    },
+    onError: () => toast.error('Eroare la adăugarea notei'),
   })
 
   const handleSave = () => {
@@ -356,6 +373,11 @@ export function VisitDetailDialog({ visitId, open, onOpenChange }: Props) {
                       <InfoRow icon={Hash} label="Flota" value={`${visit.fleet_size} vehicule`} />
                     )}
                   </div>
+                  {onOpenClient360 && (
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => onOpenClient360(visit.client_id, visit.client_name)}>
+                      Vezi client 360
+                    </Button>
+                  )}
                 </div>
 
                 {/* Visit timing */}
@@ -406,6 +428,32 @@ export function VisitDetailDialog({ visitId, open, onOpenChange }: Props) {
                         Generat: {formatDateTime(visit.ai_brief_generated_at)}
                       </p>
                     )}
+                  </div>
+                )}
+
+                {/* Quick note composer — only while the visit is in progress and viewed by its owning KAM. */}
+                {visit.status === 'in_progress' && visit.kam_id === currentUserId && (
+                  <div className="rounded-lg border p-3 space-y-2">
+                    <Label htmlFor="quick-note" className="text-sm font-semibold flex items-center gap-1.5">
+                      <MessageSquare className="h-4 w-4" />
+                      Adaugă notă
+                    </Label>
+                    <Textarea
+                      id="quick-note"
+                      value={quickNote}
+                      onChange={(e) => setQuickNote(e.target.value)}
+                      placeholder="Notează ce s-a discutat până acum..."
+                      rows={3}
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() => quickNoteMutation.mutate(quickNote.trim())}
+                        disabled={!quickNote.trim() || quickNoteMutation.isPending}
+                      >
+                        {quickNoteMutation.isPending ? 'Se salvează...' : 'Adaugă notă'}
+                      </Button>
+                    </div>
                   </div>
                 )}
 

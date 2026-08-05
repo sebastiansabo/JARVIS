@@ -253,7 +253,11 @@ class DealRepository(BaseRepository):
         return self.get_by_id(deal_id)
 
     def search_by_buyer_name(self, buyer_name, limit=200):
-        """Find deals by buyer_name similarity (fallback when client_id yields 0).
+        """Find deals whose buyer_name matches EXACTLY (case/whitespace-insensitive).
+
+        Fallback for the client 360 when a client_id yields 0 deals. Uses an
+        anchored, normalized equality match — never a substring — so a client
+        named "AUTO SRL" cannot pull in every "BEST AUTO SRL" deal.
 
         Returns list of deal rows.
         """
@@ -263,22 +267,29 @@ class DealRepository(BaseRepository):
             '''SELECT d.*, c.display_name as client_display_name
                FROM crm_deals d
                LEFT JOIN crm_clients c ON c.id = d.client_id
-               WHERE d.buyer_name ILIKE %s
+               WHERE LOWER(TRIM(d.buyer_name)) = LOWER(TRIM(%s))
                ORDER BY d.contract_date DESC NULLS LAST, d.id DESC
                LIMIT %s''',
-            (f'%{buyer_name}%', limit)
+            (buyer_name, limit)
         )
 
-    def relink_to_client(self, buyer_name_pattern, new_client_id):
-        """Re-link orphan deals (NULL or wrong client_id) to the correct client."""
-        if not buyer_name_pattern or not new_client_id:
+    def relink_to_client(self, buyer_name, new_client_id):
+        """Attribute genuinely-orphaned deals to a client by EXACT normalized name.
+
+        Only claims deals that currently belong to NO client (client_id IS NULL).
+        It will NEVER reassign a deal already linked to another client, and it
+        matches buyer_name exactly (case/whitespace-insensitive) rather than by
+        substring — both were data-corruption bugs that let opening one client's
+        360 steal another client's deals.
+        """
+        if not buyer_name or not new_client_id:
             return 0
         return self.execute(
             '''UPDATE crm_deals
                SET client_id = %s, updated_at = NOW()
-               WHERE buyer_name ILIKE %s
-                 AND (client_id IS NULL OR client_id != %s)''',
-            (new_client_id, f'%{buyer_name_pattern}%', new_client_id)
+               WHERE client_id IS NULL
+                 AND LOWER(TRIM(buyer_name)) = LOWER(TRIM(%s))''',
+            (new_client_id, buyer_name)
         )
 
     def delete(self, deal_id):

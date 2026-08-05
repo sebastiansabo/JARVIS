@@ -26,6 +26,20 @@ export function usePersistedState<T>(key: string, defaultValue: T): [T, (v: T | 
   return [value, setValue]
 }
 
+/** True when the viewport is phone-width (≤ 640px). SSR/no-matchMedia → false. */
+export function useIsMobile(query = '(max-width: 640px)'): boolean {
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mql = window.matchMedia(query)
+    const onChange = () => setMobile(mql.matches)
+    onChange()
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [query])
+  return mobile
+}
+
 /** Debounce a value by `delay` ms. */
 export function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value)
