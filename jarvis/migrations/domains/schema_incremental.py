@@ -2398,6 +2398,44 @@ def _create_schema_incremental_continued(conn, cursor):
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS alimentari JSONB DEFAULT '[]'")
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS evenimente JSONB DEFAULT '[]'")
 
+    # facturare per-document number registry (additive; never mutates facturare_invoices)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS facturare_document_numbers (
+            id SERIAL PRIMARY KEY,
+            invoice_id INTEGER NOT NULL REFERENCES facturare_invoices(id) ON DELETE CASCADE,
+            supplier_id INTEGER NOT NULL,
+            series VARCHAR(16) NOT NULL,
+            line_id INTEGER NOT NULL,
+            position INTEGER NOT NULL,
+            document_number INTEGER,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    """)
+    cursor.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
+    # The number may repeat across the cars of ONE single_doc invoice, but must
+    # not be reused by a DIFFERENT invoice. Enforced with an exclusion constraint
+    # (a plain UNIQUE index would reject single_doc multi-car rows).
+    cursor.execute("DROP INDEX IF EXISTS uq_facturare_docnum_series")
+    cursor.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'excl_facturare_docnum_cross_invoice'
+            ) THEN
+                ALTER TABLE facturare_document_numbers
+                    ADD CONSTRAINT excl_facturare_docnum_cross_invoice
+                    EXCLUDE USING gist (
+                        supplier_id     WITH =,
+                        series          WITH =,
+                        document_number WITH =,
+                        invoice_id      WITH <>
+                    ) WHERE (document_number IS NOT NULL);
+            END IF;
+        END $$;
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_facturare_docnum_invoice
+        ON facturare_document_numbers (invoice_id)
+    """)
     # ── HR Department Pulse — backend-aggregated 360 qualitative votes ──
     # Rolling per-voter × department-node × perspective × competency vote scoped
     # to a Sincron org node. Re-voting UPDATEs the same row (the UNIQUE upsert

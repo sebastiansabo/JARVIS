@@ -121,6 +121,18 @@ def _line_to_dict(row):
     }
 
 
+def _resolve_doc_no(docnum_map: dict, line_id, fallback):
+    """Per-car document number: the stored value from facturare_document_numbers
+    (keyed by car line_id) when present, else the pre-backfill positional
+    derivation (base_no [+ idx]) passed in as `fallback`.
+
+    Shared by the anexa-detail display, the document-items list, and the PDF
+    generator so all UI/PDF consumers agree with the numbers actually
+    allocated/persisted at issue time (see get_document_number_map).
+    """
+    return docnum_map.get(line_id, fallback)
+
+
 # ── Contracts ────────────────────────────────────────────────────
 
 @facturare_bp.route("/facturare/api/contracts")
@@ -633,6 +645,8 @@ def api_get_anexa_detail(anexa_id):
         covered = inv.get("line_ids") or list(all_line_ids)  # null = all
         doc_mode = inv.get("doc_mode", "per_car")
         base_no = inv.get("invoice_number")
+        # Stored per-car document numbers for this invoice (facturare_document_numbers).
+        docnum = _repo.get_document_number_map(inv["id"])
         # Per-car share: car_price × rounded_pct (detect nearest whole % from total)
         covered_total = sum(line_prices.get(lid, 0) for lid in covered)
         raw_pct = (inv["total_amount_eur"] / covered_total) if covered_total else 0
@@ -644,8 +658,10 @@ def api_get_anexa_detail(anexa_id):
                 line_coverage[lid] = []
             share = _round_half_up(line_prices.get(lid, 0) * pct)
             share_ron = 0
-            # Per-vehicle document number: matches PDF renderer logic (start_no + idx)
-            display_no = base_no + idx if base_no is not None and doc_mode != 'single_doc' and len(covered) > 1 else base_no
+            # Per-vehicle document number: prefer the stored number; fall back
+            # to the pre-backfill derivation (matches PDF renderer logic: start_no + idx).
+            fallback_no = base_no + idx if base_no is not None and doc_mode != 'single_doc' and len(covered) > 1 else base_no
+            display_no = _resolve_doc_no(docnum, lid, fallback_no)
             line_coverage[lid].append({
                 "invoice_id": inv["id"],
                 "invoice_type": inv["invoice_type"],
@@ -1288,6 +1304,9 @@ def api_document_items():
         total_amount = float(inv["total_amount_eur"])
         split_mode = inv.get("split_mode", "equal")
         start_no = inv.get("invoice_number") or inv["invoice_id"]
+        # Stored per-car document numbers for this invoice, fetched once (not
+        # per car) — facturare_document_numbers.
+        docnum = _repo.get_document_number_map(inv["invoice_id"])
         raw_pct = (total_amount / total_selling) if total_selling else 0
         rounded_pct = round(raw_pct * 100) / 100
         pct = rounded_pct if abs(raw_pct - rounded_pct) < 0.005 else raw_pct
@@ -1295,12 +1314,16 @@ def api_document_items():
         for idx, l in enumerate(inv_lines):
             selling = float(l["selling_price_eur"])
             car_amount = _round_half_up(selling * pct)
+            # Prefer the stored number for this car; fall back to the
+            # pre-backfill positional derivation (start_no + idx).
+            fallback_no = start_no + idx if start_no else None
+            doc_number = _resolve_doc_no(docnum, l["id"], fallback_no)
 
             items.append({
                 "invoice_id": inv["invoice_id"],
                 "invoice_type": inv["invoice_type"],
                 "sequence_number": inv["sequence_number"],
-                "doc_number": start_no + idx if start_no else None,
+                "doc_number": doc_number,
                 "car_index": idx,
                 "issued_date": str(inv["issued_date"]) if inv.get("issued_date") else None,
                 "kurs_applied": float(inv["kurs_applied"]) if inv.get("kurs_applied") else None,
@@ -1357,6 +1380,10 @@ def api_generate_pdf(invoice_id):
     else:
         lines = all_lines
 
+    # Stored document numbers per car line_id (populated by the numbering
+    # module). Consumers below prefer these over the positional derivation.
+    docnum = _repo.get_document_number_map(invoice_id)
+
     # Build supplier/customer dicts
     sup_row = _repo.query_one(
         "SELECT company, vat, reg_no, iban, bank, swift, street, city, county FROM companies WHERE id = %s",
@@ -1398,9 +1425,13 @@ def api_generate_pdf(invoice_id):
             all_invoices = [inv for inv in all_invoices if inv["id"] in reversed_inv_ids]
         storno_line_set = set(inv_line_ids) if inv_line_ids else {l["id"] for l in all_lines}
         line_map = {l["id"]: l for l in all_lines}
+        # Stored document numbers per reversed invoice, fetched once each (not
+        # once per car) — used for the "Ref: Factura Nr." text below.
+        reversed_docnum = {inv["id"]: _repo.get_document_number_map(inv["id"]) for inv in all_invoices}
 
         # Per car: collect reversed invoices and their per-car share
         storno_groups = []  # list of list[OrderLine] — one group per car
+        storno_group_line_ids = []  # parallel list: car line_id for each group
         for l in lines:
             lid = l["id"]
             car_items = []
@@ -1419,11 +1450,14 @@ def api_generate_pdf(invoice_id):
                 car_share = _round_half_up(selling * _snap_pct(inv_total, inv_selling_sum))
                 base_no = inv.get("invoice_number") or inv["id"]
                 inv_doc_mode = inv.get("doc_mode", "per_car")
-                # Per-vehicle document number: matches PDF renderer logic (start_no + idx)
+                # Per-vehicle document number for the REVERSED invoice: prefer
+                # its stored number for this car; fall back to the
+                # pre-backfill derivation (matches PDF renderer logic: start_no + idx).
                 if inv_doc_mode != 'single_doc' and raw_list and len(raw_list) > 1 and lid in raw_list:
-                    inv_no = base_no + raw_list.index(lid)
+                    fallback_no = base_no + raw_list.index(lid)
                 else:
-                    inv_no = base_no
+                    fallback_no = base_no
+                inv_no = _resolve_doc_no(reversed_docnum.get(inv["id"], {}), lid, fallback_no)
                 inv_date = inv.get("issued_date")
                 date_fmt = ""
                 if inv_date:
@@ -1447,6 +1481,7 @@ def api_generate_pdf(invoice_id):
                 ))
             if car_items:
                 storno_groups.append(car_items)
+                storno_group_line_ids.append(lid)
 
         # Flat order_lines for fallback (single-doc mode etc.)
         order_lines = [item for group in storno_groups for item in group]
@@ -1535,12 +1570,28 @@ def api_generate_pdf(invoice_id):
             idx = int(car_idx)
             if 0 <= idx < len(storno_groups):
                 storno_groups = [storno_groups[idx]]
-        pdf_bytes = renderer.render_storno_multipage(storno_groups, start_no)
+                storno_group_line_ids = [storno_group_line_ids[idx]]
+        # Per-car stored document number for THIS storno invoice; fall back to
+        # today's start_no + page_idx derivation (render_storno_multipage's
+        # own logic) when the map has no entry for that car.
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas as rc
+        buf = io.BytesIO()
+        c = rc.Canvas(buf, pagesize=A4)
+        for page_idx, car_items in enumerate(storno_groups):
+            page_no = _resolve_doc_no(docnum, storno_group_line_ids[page_idx], start_no + page_idx)
+            renderer._render_storno_page(c, page_no, car_items)
+            c.showPage()
+        c.save()
+        pdf_bytes = buf.getvalue()
         return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
 
     # Single-document mode: all cars as line items in one PDF
     if doc_mode == "single_doc":
-        pdf_bytes = renderer.render_single_doc_to_bytes(order_lines, start_no)
+        # All covered cars share ONE stored number under single_doc mode; any
+        # car's map entry is representative. Fall back to today's start_no.
+        single_doc_no = _resolve_doc_no(docnum, lines[0]["id"], start_no) if lines else start_no
+        pdf_bytes = renderer.render_single_doc_to_bytes(order_lines, single_doc_no)
         return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
 
     # Single car PDF via ?car=N
@@ -1549,7 +1600,8 @@ def api_generate_pdf(invoice_id):
         idx = int(car_idx)
         if 0 <= idx < len(order_lines):
             line = order_lines[idx]
-            inv_no = start_no if doc_mode == 'single_doc' else start_no + idx
+            fallback_no = start_no if doc_mode == 'single_doc' else start_no + idx
+            inv_no = _resolve_doc_no(docnum, lines[idx]["id"], fallback_no)
             renderer.note = _note_for_car(idx)
             single_buf = io.BytesIO()
             from reportlab.lib.pagesizes import A4
@@ -1566,7 +1618,8 @@ def api_generate_pdf(invoice_id):
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for i, line in enumerate(order_lines):
-                inv_no = start_no if doc_mode == 'single_doc' else start_no + i
+                fallback_no = start_no if doc_mode == 'single_doc' else start_no + i
+                inv_no = _resolve_doc_no(docnum, lines[i]["id"], fallback_no)
                 renderer.note = _note_for_car(i)
                 single_buf = io.BytesIO()
                 from reportlab.lib.pagesizes import A4
@@ -1587,14 +1640,28 @@ def api_generate_pdf(invoice_id):
             buf = io.BytesIO()
             c = rc.Canvas(buf, pagesize=A4)
             for i, line in enumerate(order_lines):
-                inv_no = start_no + (0 if doc_mode == 'single_doc' else i)
+                fallback_no = start_no + (0 if doc_mode == 'single_doc' else i)
+                inv_no = _resolve_doc_no(docnum, lines[i]["id"], fallback_no)
                 renderer.note = _note_for_car(i)
                 renderer.render_one(c, inv_no, line)
                 c.showPage()
             c.save()
             pdf_bytes = buf.getvalue()
         else:
-            pdf_bytes = renderer.render_all_to_bytes(order_lines, start_no, same_number=(doc_mode == 'single_doc'))
+            # Manual per-car loop (mirrors render_all_to_bytes) so each page
+            # can use the stored document number for its car; falls back to
+            # render_all_to_bytes' own start_no [+ i] derivation when unmapped.
+            from reportlab.lib.pagesizes import A4
+            from reportlab.pdfgen import canvas as rc
+            buf = io.BytesIO()
+            c = rc.Canvas(buf, pagesize=A4)
+            for i, line in enumerate(order_lines):
+                fallback_no = start_no + (0 if doc_mode == 'single_doc' else i)
+                inv_no = _resolve_doc_no(docnum, lines[i]["id"], fallback_no)
+                renderer.render_one(c, inv_no, line)
+                c.showPage()
+            c.save()
+            pdf_bytes = buf.getvalue()
         return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{filename}.pdf")
 
 
@@ -1642,6 +1709,9 @@ def api_generate_eurofib(invoice_id):
         (contract["supplier_id"], inv_row["invoice_type"]))
     if not konto_row or not konto_row.get("konto_credit"):
         return error_response("Konto config not set for this supplier/type. Go to Settings tab.", 400)
+
+    # Stored document numbers per car line_id (populated by the numbering module).
+    docnum = _repo.get_document_number_map(invoice_id)
 
     # Build per-car order lines
     inv_type_str = inv_row["invoice_type"]
@@ -1703,24 +1773,23 @@ def api_generate_eurofib(invoice_id):
                     list_price=float(car["list_price_eur"]), selling_price=selling,
                     advance=-car_amount, rest=None,
                     kurs=ri_kurs,
+                    # Stored document number for THIS car. A storno is ONE invoice, so
+                    # every reversed-advance row of the same car shares that car's
+                    # stored number. Pre-backfill fallback: the storno's own start_no
+                    # (else the 2nd row would increment into the FINAL's number).
+                    start_no=docnum.get(car["id"], start_no),
                 ))
     else:
-        # For FINAL: use kurs from the last advance invoice in this anexa
+        # For FINAL: derive each car's kurs from the advances it reverses so the
+        # final's RON equals the storno's RON (see _final_blended_kurs).
+        from datetime import timedelta as _td
         _final_kurs_date_set = False
+        final_kurs_acc = {}
         if inv_type_str == "FINAL":
-            from datetime import timedelta as _td
-            last_advance = _repo.query_one(
-                "SELECT kurs_applied, issued_date FROM facturare_invoices "
-                "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number DESC LIMIT 1",
-                (anexa["id"],))
-            if last_advance and last_advance.get("kurs_applied"):
-                kurs = float(last_advance["kurs_applied"])
-                adv_date = last_advance.get("issued_date")
-                if adv_date and isinstance(adv_date, str):
-                    adv_date = date_type.fromisoformat(adv_date)
-                if adv_date:
-                    kurs_date = adv_date - _td(days=1)
-                    _final_kurs_date_set = True
+            final_kurs_acc, last_adv_date = _final_blended_kurs(_repo, inv_row, all_lines)
+            if last_adv_date:
+                kurs_date = last_adv_date - _td(days=1)
+                _final_kurs_date_set = True
 
         order_lines = []
         for l in lines:
@@ -1730,23 +1799,31 @@ def api_generate_eurofib(invoice_id):
             else:
                 car_advance = _round_half_up(total_amount / max(len(lines), 1))
 
-            # For FINAL: look up venituri rule per line
+            # For FINAL: look up venituri rule per line + blended kurs
             line_kostenstelle = None
             line_konto_credit = None
+            line_kurs = None
             if inv_type_str == "FINAL":
                 nr_cmd = l.get("nr_comanda") or ""
                 rule = _repo.match_venituri_rule(contract["supplier_id"], nr_cmd)
                 if rule:
                     line_konto_credit = rule["konto_venituri"]
                     line_kostenstelle = rule["kostenstelle"]
+                ron_sum, _eur_sum = final_kurs_acc.get(l["id"], (0.0, 0.0))
+                if ron_sum and car_advance:
+                    line_kurs = ron_sum / car_advance   # RON ÷ EUR ⇒ betrag = storno RON
 
             order_lines.append(OrderLine(
                 comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
                 model=l["model"], culoare=l.get("culoare") or "",
                 list_price=float(l["list_price_eur"]), selling_price=selling,
                 advance=car_advance, rest=selling,
+                kurs=line_kurs,
                 kostenstelle=line_kostenstelle,
                 konto_credit_override=line_konto_credit,
+                # Stored document number for THIS car; None falls through to the
+                # renderer's default (cfg.invoice.start_no + idx) pre-backfill.
+                start_no=docnum.get(l["id"]),
             ))
 
     # Compute kurs_date (day before issued_date)
@@ -1816,6 +1893,99 @@ def api_generate_eurofib(invoice_id):
                      as_attachment=True, download_name=dl_name)
 
 
+def _final_blended_kurs(repo, inv_row, all_lines):
+    """Per-car RON/EUR from the advances reversed by THIS final's matching storno.
+
+    A final must net to zero against the storno it closes. That storno is the
+    STORNO on the same anexa whose line_ids equal the final's and whose |EUR|
+    equals the final's EUR (a 1:1 pairing in production). We sum ONLY the
+    advances that storno reverses — each at its own rate — so the final's RON
+    equals the storno's RON. Summing every advance that merely *covers* the car
+    would double-count when the car also received a separate advance (e.g. an
+    earlier 10% advance closed by a different storno), inflating the rate.
+
+    Falls back to all of the anexa's advances when no matching storno is found.
+    Returns ({line_id: [ron_sum, eur_sum]}, last_advance_date).
+    """
+    import json as _json
+    anexa_id = inv_row["anexa_id"]
+    final_eur = abs(float(inv_row["total_amount_eur"]))
+    fraw = inv_row.get("line_ids")
+    if isinstance(fraw, str):
+        fraw = _json.loads(fraw)
+    prices = {l["id"]: float(l["selling_price_eur"]) for l in all_lines}
+    all_ids = set(prices)
+    final_lids = set(fraw) if fraw else all_ids
+
+    # The storno this final closes: same cars, same |EUR|, most recent.
+    matching_storno_id = None
+    stornos = repo.query_all(
+        "SELECT id, total_amount_eur, line_ids FROM facturare_invoices "
+        "WHERE anexa_id = %s AND invoice_type = 'STORNO' ORDER BY id DESC",
+        (anexa_id,))
+    for s in stornos or []:
+        sraw = s.get("line_ids")
+        if isinstance(sraw, str):
+            sraw = _json.loads(sraw)
+        s_lids = set(sraw) if sraw else all_ids
+        if s_lids == final_lids and abs(abs(float(s["total_amount_eur"])) - final_eur) < 0.01:
+            matching_storno_id = s["id"]
+            break
+
+    # Advances to reverse: those the matching storno reverses (else all — fallback).
+    advances = None
+    if matching_storno_id is not None:
+        links = repo.query_all(
+            "SELECT source_invoice_id FROM facturare_invoice_links "
+            "WHERE target_invoice_id = %s AND link_type = 'REVERSES'",
+            (matching_storno_id,))
+        adv_ids = [l["source_invoice_id"] for l in (links or [])]
+        if adv_ids:
+            ph = ",".join(["%s"] * len(adv_ids))
+            advances = repo.query_all(
+                "SELECT total_amount_eur, kurs_applied, issued_date, line_ids "
+                "FROM facturare_invoices WHERE id IN ({})".format(ph),
+                tuple(adv_ids))
+    if advances is None:
+        # No matching storno (or it reverses nothing) → fall back to ALL anexa
+        # advances, i.e. the old blended-rate behaviour. This can over-count when
+        # a car has advances the matching storno doesn't reverse, so log it —
+        # this bug was previously only caught by a prod audit.
+        logger.warning(
+            "final_blended_kurs: no matching storno for final invoice %s "
+            "(anexa %s, eur %s) — falling back to all anexa advances",
+            inv_row.get("id"), anexa_id, final_eur)
+        advances = repo.query_all(
+            "SELECT total_amount_eur, kurs_applied, issued_date, line_ids "
+            "FROM facturare_invoices "
+            "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number",
+            (anexa_id,))
+    acc = {}          # line_id -> [ron_sum, eur_sum]
+    last_date = None
+    for adv in advances or []:
+        adv_kurs = float(adv["kurs_applied"]) if adv.get("kurs_applied") else None
+        if not adv_kurs:
+            continue
+        adv_eur = float(adv["total_amount_eur"])
+        raw = adv.get("line_ids")
+        if isinstance(raw, str):
+            raw = _json.loads(raw)
+        adv_lids = set(raw) if raw else all_ids
+        covered = sum(prices.get(x, 0) for x in adv_lids) or 1
+        for lid in adv_lids:
+            share = round(prices.get(lid, 0) / covered * adv_eur, 2)
+            slot = acc.setdefault(lid, [0.0, 0.0])
+            slot[0] += share * adv_kurs
+            slot[1] += share
+        adv_date = adv.get("issued_date")
+        if isinstance(adv_date, str):
+            from datetime import date as _date
+            adv_date = _date.fromisoformat(adv_date)
+        if adv_date and (last_date is None or adv_date > last_date):
+            last_date = adv_date
+    return acc, last_date
+
+
 def _build_eurofib_batch(inv_row):
     """Build (JobConfig, order_lines) for a single invoice. Returns (cfg, lines) or raises ValueError."""
     from .config import JobConfig, InvoiceConfig, FxConfig, EurofibConfig, ContractConfig, InputConfig, PartyConfig
@@ -1823,6 +1993,8 @@ def _build_eurofib_batch(inv_row):
     from datetime import date as date_type, timedelta
 
     invoice_id = inv_row["id"]
+    # Stored document numbers per car line_id (populated by the numbering module).
+    docnum = _repo.get_document_number_map(invoice_id)
     anexa = _repo.get_anexa_by_id(inv_row["anexa_id"])
     contract = _repo.get_contract_by_id(anexa["contract_id"])
     all_lines = _repo.get_lines_by_anexa(anexa["id"])
@@ -1895,22 +2067,20 @@ def _build_eurofib_batch(inv_row):
                     list_price=float(car["list_price_eur"]), selling_price=selling,
                     advance=-car_amount, rest=None,
                     kurs=ri_kurs,
+                    # Stored document number for THIS car. A storno is ONE invoice, so
+                    # every reversed-advance row of the same car shares that car's
+                    # stored number. Pre-backfill fallback: the storno's own start_no
+                    # (else the 2nd row would increment into the FINAL's number).
+                    start_no=docnum.get(car["id"], start_no),
                 ))
     else:
         _final_kurs_date_set = False
+        final_kurs_acc = {}
         if inv_type_str == "FINAL":
-            last_advance = _repo.query_one(
-                "SELECT kurs_applied, issued_date FROM facturare_invoices "
-                "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number DESC LIMIT 1",
-                (anexa["id"],))
-            if last_advance and last_advance.get("kurs_applied"):
-                kurs = float(last_advance["kurs_applied"])
-                adv_date = last_advance.get("issued_date")
-                if adv_date and isinstance(adv_date, str):
-                    adv_date = date_type.fromisoformat(adv_date)
-                if adv_date:
-                    kurs_date = adv_date - timedelta(days=1)
-                    _final_kurs_date_set = True
+            final_kurs_acc, last_adv_date = _final_blended_kurs(_repo, inv_row, all_lines)
+            if last_adv_date:
+                kurs_date = last_adv_date - timedelta(days=1)
+                _final_kurs_date_set = True
 
         order_lines = []
         for l in lines:
@@ -1921,18 +2091,26 @@ def _build_eurofib_batch(inv_row):
                 car_advance = _round_half_up(total_amount / max(len(lines), 1))
             line_kostenstelle = None
             line_konto_credit = None
+            line_kurs = None
             if inv_type_str == "FINAL":
                 nr_cmd = l.get("nr_comanda") or ""
                 rule = _repo.match_venituri_rule(contract["supplier_id"], nr_cmd)
                 if rule:
                     line_konto_credit = rule["konto_venituri"]
                     line_kostenstelle = rule["kostenstelle"]
+                ron_sum, _eur_sum = final_kurs_acc.get(l["id"], (0.0, 0.0))
+                if ron_sum and car_advance:
+                    line_kurs = ron_sum / car_advance   # RON ÷ EUR ⇒ betrag = storno RON
             order_lines.append(OrderLine(
                 comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
                 model=l["model"], culoare=l.get("culoare") or "",
                 list_price=float(l["list_price_eur"]), selling_price=selling,
                 advance=car_advance, rest=selling,
+                kurs=line_kurs,
                 kostenstelle=line_kostenstelle, konto_credit_override=line_konto_credit,
+                # Stored document number for THIS car; None falls through to the
+                # renderer's default (cfg.invoice.start_no + idx) pre-backfill.
+                start_no=docnum.get(l["id"]),
             ))
 
     # Compute kurs_date

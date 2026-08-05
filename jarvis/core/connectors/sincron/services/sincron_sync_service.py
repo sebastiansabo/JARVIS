@@ -13,6 +13,7 @@ from ..client.sincron_client import SincronClient
 from ..client.exceptions import SincronError
 from ..repositories.sincron_repository import SincronRepository
 from ..repositories.sync_repo import SincronSyncRepository
+from .termination import detect_termination
 from core.connectors.repositories.connector_repository import ConnectorRepository
 from core.auth.repositories.user_repository import UserRepository
 
@@ -154,6 +155,7 @@ class SincronSyncService:
         total_employees = 0
         total_records = 0
         total_deactivated = 0
+        total_terminated = 0
         company_results = {}
 
         for comp, token in tokens.items():
@@ -179,6 +181,16 @@ class SincronSyncService:
                         comp, result.pop('_synced_ids', set()))
                     result['deactivated'] = deactivated
                     total_deactivated += deactivated
+
+                # Deactivate employees still present in the feed but whose
+                # timesheet ends in trailing-X (Sincron's mid-month termination
+                # marker — see termination.detect_termination). Always pop the
+                # set so it never leaks into the jsonify'd result.
+                terminated_ids = result.pop('_terminated_ids', set())
+                if is_current_month and result.get('success'):
+                    terminated = self._deactivate_terminated_employees(comp, terminated_ids)
+                    result['terminated'] = terminated
+                    total_terminated += terminated
 
                 if run_id:
                     self.sync_repo.complete_run(
@@ -240,6 +252,7 @@ class SincronSyncService:
             'total_employees': total_employees,
             'total_records': total_records,
             'total_deactivated': total_deactivated,
+            'total_terminated': total_terminated,
             'total_reactivated': total_reactivated,
             'base_contracts_marked': base_marked,
             'biostar_schedules_updated': biostar_updated,
@@ -344,6 +357,36 @@ class SincronSyncService:
 
         return len(missing_ids)
 
+    def _deactivate_terminated_employees(self, company_name, terminated_ids):
+        """Deactivate employees whose current-month feed ends in trailing-X.
+
+        Sincron keeps a mid-month leaver in the current month's feed with
+        post-termination days coded 'X' (it only drops them the next month).
+        upsert_employee re-activates every synced record, so we flip the
+        terminated ones back to inactive here and close the JARVIS user when
+        they have no active contract left in ANY company.
+        """
+        if not terminated_ids:
+            return 0
+
+        logger.info(f'{company_name}: {len(terminated_ids)} employees show '
+                     f'trailing-X termination — deactivating: {terminated_ids}')
+
+        # Close sincron_employees records, get affected JARVIS user IDs
+        jarvis_user_ids = self.repo.deactivate_employees(company_name, terminated_ids)
+
+        # Only close JARVIS user if they have NO active sincron records left
+        for user_id in jarvis_user_ids:
+            if not self.repo.has_active_contracts(user_id):
+                self.repo.execute('''
+                    UPDATE users SET contract_status = 'closed', updated_at = NOW()
+                    WHERE id = %s AND COALESCE(contract_status, 'active') != 'closed'
+                ''', (user_id,))
+                logger.info(f'Closed JARVIS user {user_id} — terminated in Sincron '
+                             f'(trailing-X), no active contracts remain')
+
+        return len(terminated_ids)
+
     def _reactivate_returned_employees(self):
         """Re-activate JARVIS users whose Sincron records came back.
 
@@ -385,6 +428,7 @@ class SincronSyncService:
         records_created = 0
         discovered_codes = set()
         synced_ids = set()
+        terminated_ids = set()
 
         for emp in all_employees:
             sincron_id = str(emp.get('id_angajat', ''))
@@ -465,6 +509,16 @@ class SincronSyncService:
 
             # Process days
             days = emp.get('days', {})
+
+            # Detect mid-month termination: a trailing run of 'X' after the
+            # employee's last worked day means Sincron marked the contract as
+            # ended (they'll drop from the feed next month). Flag for immediate
+            # deactivation instead of waiting a month.
+            if detect_termination(days).get('terminated'):
+                terminated_ids.add(sincron_id)
+                logger.info(f'{company_name}: {raw_nume} {raw_prenume} '
+                            f'(sincron id {sincron_id}) shows trailing-X termination')
+
             for day_str, activities in days.items():
                 if not activities:
                     continue
@@ -515,7 +569,8 @@ class SincronSyncService:
             'employees': employees_synced,
             'records': records_created,
             'activity_codes': len(discovered_codes),
-            '_synced_ids': synced_ids,  # internal use only, stripped before jsonify
+            '_synced_ids': synced_ids,        # internal use only, stripped before jsonify
+            '_terminated_ids': terminated_ids,  # internal use only, stripped before jsonify
         }
 
     # ── Auto-mapping ──
