@@ -2,7 +2,7 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'jarvis'))
 
 from field_sales.services import ai_service
-from field_sales.services.ai_service import _normalize_structured_note
+from field_sales.services.ai_service import _normalize_structured_note, _coerce_number
 
 CANONICAL_KEYS = {
     'visit_summary', 'sentiment', 'contact_person', 'vehicles_discussed',
@@ -52,3 +52,30 @@ def test_normalizer_preserves_valid_canonical():
 def test_normalizer_non_dict_returns_error():
     out = _normalize_structured_note('garbage')
     assert out.get('error') == 'parse_failed'
+
+
+def test_coerce_number_rejects_non_finite():
+    # Non-finite values (from untrusted LLM output) must coerce to None so they
+    # never reach json.dumps as the invalid-JSON tokens NaN/Infinity.
+    assert _coerce_number('nan') is None
+    assert _coerce_number('inf') is None
+    assert _coerce_number('-inf') is None
+    assert _coerce_number('Infinity') is None
+    assert _coerce_number(float('inf')) is None
+    assert _coerce_number(float('-inf')) is None
+    assert _coerce_number(float('nan')) is None
+    # Genuine finite numbers still pass through unchanged.
+    assert _coerce_number(20000) == 20000
+    assert _coerce_number('20000') == 20000
+    # Bools still map to None.
+    assert _coerce_number(True) is None
+
+
+def test_normalizer_maps_non_finite_to_none():
+    raw = {
+        'opportunity_value_eur': 'inf',
+        'vehicles_discussed': [{'action': 'buy', 'budget_eur': 'nan'}],
+    }
+    out = _normalize_structured_note(raw)
+    assert out['opportunity_value_eur'] is None
+    assert out['vehicles_discussed'][0]['budget_eur'] is None
