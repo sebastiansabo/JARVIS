@@ -29,8 +29,11 @@ export default function HubDrivingPanel() {
   const brands = brandsData?.brands ?? []
   useEffect(() => {
     const list = brandsData?.brands ?? []
+    // Keep '' = "All brands" as the default so sessions on cars of any brand
+    // (incl. cars whose fp_vehicles.brand is empty) show up; only reset a
+    // now-invalid *specific* brand back to "all".
     if (!list.length) { if (brand !== '') setBrand('') }
-    else if (!list.includes(brand)) setBrand(list[0])
+    else if (brand !== '' && !list.includes(brand)) setBrand('')
   }, [brandsData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const closeOverlay = () => setOverlay(null)
@@ -50,9 +53,12 @@ export default function HubDrivingPanel() {
             <SelectContent>{companies.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>)}</SelectContent>
           </Select>
           {brands.length > 0 && (
-            <Select value={brand} onValueChange={setBrand}>
+            <Select value={brand || 'all'} onValueChange={(v) => setBrand(v === 'all' ? '' : v)}>
               <SelectTrigger className="h-11 w-32 shrink-0 rounded-xl text-base"><SelectValue placeholder="Brand" /></SelectTrigger>
-              <SelectContent>{brands.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+              <SelectContent>
+                <SelectItem value="all">Toate mărcile</SelectItem>
+                {brands.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+              </SelectContent>
             </Select>
           )}
         </div>
