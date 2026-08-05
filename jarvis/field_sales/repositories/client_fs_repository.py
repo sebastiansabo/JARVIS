@@ -245,7 +245,7 @@ class ClientFSRepository(BaseRepository):
             WHERE client_id = %s
         ''', (score, client_id))
 
-    def search_clients(self, query, limit=20):
+    def search_clients(self, query, limit=20, company_id=None):
         """Search clients by name, company, or nr_reg.
 
         Uses ILIKE for name_normalized and company_name, exact for nr_reg.
@@ -253,6 +253,7 @@ class ClientFSRepository(BaseRepository):
         Args:
             query: search string
             limit: max results
+            company_id: optional tenant filter on client_profiles.company_id
 
         Returns:
             list of client dicts with profile info
@@ -262,7 +263,14 @@ class ClientFSRepository(BaseRepository):
 
         search_term = f'%{query.strip().lower()}%'
 
-        return self.query_all('''
+        params = [search_term, search_term, query.strip(), query.strip()]
+        company_filter = ''
+        if company_id is not None:
+            company_filter = 'AND cp.company_id = %s'
+            params.append(company_id)
+        params.append(limit)
+
+        return self.query_all(f'''
             SELECT c.id, c.display_name, c.company_name, c.phone, c.email,
                    c.city, c.nr_reg, c.client_type,
                    cp.priority, cp.renewal_score, cp.fleet_size,
@@ -279,9 +287,10 @@ class ClientFSRepository(BaseRepository):
                   OR c.nr_reg = %s
                   OR cp.cui = %s
               )
+              {company_filter}
             ORDER BY c.display_name ASC
             LIMIT %s
-        ''', (search_term, search_term, query.strip(), query.strip(), limit))
+        ''', tuple(params))
 
     def get_360(self, client_id):
         """Build a comprehensive 360-degree client view.

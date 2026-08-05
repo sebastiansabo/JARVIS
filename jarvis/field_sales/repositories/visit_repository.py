@@ -5,17 +5,24 @@ from core.base_repository import BaseRepository
 
 class VisitRepository(BaseRepository):
 
-    def get_by_kam_and_date(self, kam_id, date):
+    def get_by_kam_and_date(self, kam_id, date, company_id=None):
         """Get all visits for a KAM on a specific date.
 
         Args:
             kam_id: users.id
             date: date string YYYY-MM-DD
+            company_id: optional tenant filter on kam_visit_plans.company_id
 
         Returns:
             list of visit dicts with client_name and renewal_score
         """
-        return self.query_all('''
+        params = [kam_id, date]
+        company_filter = ''
+        if company_id is not None:
+            company_filter = 'AND v.company_id = %s'
+            params.append(company_id)
+
+        return self.query_all(f'''
             SELECT v.*,
                    c.display_name AS client_name,
                    c.phone AS client_phone,
@@ -28,8 +35,9 @@ class VisitRepository(BaseRepository):
             JOIN crm_clients c ON c.id = v.client_id
             LEFT JOIN client_profiles cp ON cp.client_id = v.client_id
             WHERE v.kam_id = %s AND v.planned_date = %s
+            {company_filter}
             ORDER BY v.planned_time ASC NULLS LAST, v.created_at ASC
-        ''', (kam_id, date))
+        ''', tuple(params))
 
     def get_by_id(self, visit_id):
         """Get a single visit with full details including notes.
@@ -339,13 +347,14 @@ class VisitRepository(BaseRepository):
             ORDER BY r.planned_date DESC, r.created_at DESC
         ''', tuple(params))
 
-    def get_team_visits(self, date_from, date_to, kam_id=None):
+    def get_team_visits(self, date_from, date_to, kam_id=None, company_id=None):
         """Get all visits in a date range, optionally filtered by KAM.
 
         Args:
             date_from: start date string YYYY-MM-DD
             date_to: end date string YYYY-MM-DD
             kam_id: optional users.id to filter by specific KAM
+            company_id: optional tenant filter on kam_visit_plans.company_id
 
         Returns:
             list of visit dicts with client and KAM names
@@ -355,6 +364,11 @@ class VisitRepository(BaseRepository):
         if kam_id:
             kam_filter = 'AND v.kam_id = %s'
             params.append(kam_id)
+
+        company_filter = ''
+        if company_id is not None:
+            company_filter = 'AND v.company_id = %s'
+            params.append(company_id)
 
         return self.query_all(f'''
             SELECT v.*,
@@ -372,6 +386,7 @@ class VisitRepository(BaseRepository):
             LEFT JOIN kam_visit_routes r ON r.id = v.route_id
             WHERE v.planned_date >= %s AND v.planned_date <= %s
             {kam_filter}
+            {company_filter}
             ORDER BY v.planned_date ASC,
                      v.route_id ASC NULLS LAST,
                      v.sequence ASC,
