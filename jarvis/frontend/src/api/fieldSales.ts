@@ -156,6 +156,10 @@ export type VisitUpdatePayload = Partial<Pick<FSVisit,
 >>
 
 export interface FSStructuredNote {
+  // NOTE: the AI/backend may omit any field at runtime (the stored structured
+  // note is whatever the LLM returned), so consumers MUST guard array access
+  // (e.g. `x?.length ?? 0`) — a missing array is undefined, not []. Types below
+  // describe the full/happy shape; treat arrays as possibly-absent.
   visit_summary: string
   contact_person: string | null
   vehicles_discussed: { action: string; current_vehicle: string | null; interested_in: string | null; budget_eur: number | null }[]

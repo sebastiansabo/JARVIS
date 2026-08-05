@@ -70,6 +70,26 @@ describe('NoteCaptureModal', () => {
     await waitFor(() => expect(onDone).toHaveBeenCalled())
   })
 
+  it('partial structured_note (array fields missing) renders the review without crashing', async () => {
+    // Regression: the AI can return a partial/differently-shaped object where
+    // the array fields (vehicles_discussed/commitments_made/next_steps/objections/
+    // risk_flags) are undefined. The review step must guard `.length` and not throw
+    // "Cannot read properties of undefined (reading 'length')".
+    addNote.mockResolvedValue({
+      success: true,
+      note: { id: 1, raw_note: 'x', created_at: '' },
+      // deliberately only a summary + a couple scalars; arrays omitted (undefined)
+      structured_note: { visit_summary: 'Rezumat partial', sentiment: 'positive' } as unknown,
+    })
+    wrap(<NoteCaptureModal visitId={9} clientId={760} onDone={() => {}} onCancel={() => {}} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'ceva' } })
+    fireEvent.click(screen.getByRole('button', { name: /proceseaz/i }))
+    // If the crash regressed, this findByText would never resolve (render throws).
+    expect(await screen.findByText('Rezumat partial')).toBeInTheDocument()
+    // A working finalize control is still present.
+    expect(screen.getByRole('button', { name: /salveaz|finaliz/i })).toBeInTheDocument()
+  })
+
   it('null structured_note: shows the saved-without-summary text + a working finalize control that calls onDone', async () => {
     // AI structuring can fail even though the note saved AND the backend
     // already completed the visit (structured_note: null). The user must still

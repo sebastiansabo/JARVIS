@@ -141,7 +141,7 @@ export default function NoteCaptureModal({ visitId, clientId, onDone, onCancel }
             </div>
 
             {/* Vehicles discussed */}
-            {structured.vehicles_discussed.length > 0 && (
+            {(structured.vehicles_discussed?.length ?? 0) > 0 && (
               <div className="rounded-xl border p-3">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
                   Vehicule discutate ({structured.vehicles_discussed.length})
@@ -167,7 +167,7 @@ export default function NoteCaptureModal({ visitId, clientId, onDone, onCancel }
             )}
 
             {/* Commitments */}
-            {structured.commitments_made.length > 0 && (
+            {(structured.commitments_made?.length ?? 0) > 0 && (
               <div className="rounded-xl border p-3">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
                   Angajamente ({structured.commitments_made.length})
@@ -184,7 +184,7 @@ export default function NoteCaptureModal({ visitId, clientId, onDone, onCancel }
             )}
 
             {/* Next steps */}
-            {structured.next_steps.length > 0 && (
+            {(structured.next_steps?.length ?? 0) > 0 && (
               <div className="rounded-xl border p-3">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
                   Pasi urmatori ({structured.next_steps.length})
@@ -243,7 +243,7 @@ export default function NoteCaptureModal({ visitId, clientId, onDone, onCancel }
             )}
 
             {/* Objections */}
-            {structured.objections.length > 0 && (
+            {(structured.objections?.length ?? 0) > 0 && (
               <div className="rounded-xl border p-3">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
                   Obiectii ({structured.objections.length})
@@ -260,7 +260,7 @@ export default function NoteCaptureModal({ visitId, clientId, onDone, onCancel }
             )}
 
             {/* Risk flags */}
-            {structured.risk_flags.length > 0 && (
+            {(structured.risk_flags?.length ?? 0) > 0 && (
               <div className="rounded-xl bg-red-50 dark:bg-red-900/20 p-3">
                 <h4 className="text-xs font-semibold text-red-700 dark:text-red-300 uppercase tracking-wide mb-2 flex items-center gap-1">
                   <AlertTriangle className="h-3.5 w-3.5" />
