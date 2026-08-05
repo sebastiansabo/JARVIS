@@ -267,6 +267,9 @@ export const fieldSalesApi = {
   getVisit: (visitId: number) =>
     api.get<{ success: boolean; visit: FSVisit }>(`/api/field-sales/visits/${visitId}`),
 
+  addQuickNote: (visitId: number, rawNote: string) =>
+    api.post<{ success: boolean; note: FSVisitNote }>(`/api/field-sales/visits/${visitId}/quick-note`, { raw_note: rawNote }),
+
   updateVisit: (visitId: number, data: VisitUpdatePayload) =>
     api.put<{ success: boolean; visit: FSVisit }>(`/api/field-sales/visits/${visitId}`, data),
 
