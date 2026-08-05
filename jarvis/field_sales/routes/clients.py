@@ -120,6 +120,25 @@ def api_client_enrich(client_id):
         return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
 
+@field_sales_bp.route('/api/field-sales/companies', methods=['GET'])
+@jwt_or_login_required
+@field_sales_required
+def api_field_sales_companies():
+    """List companies the current user may pick for tenant scoping, plus their default."""
+    try:
+        user = _get_current_user()
+        is_admin = getattr(user, 'role_id', None) == 1
+        companies = _client_repo.get_allowed_companies(user.id, is_admin)
+        return jsonify({
+            'success': True,
+            'companies': companies,
+            'default_company_id': user.company_id,
+        })
+    except Exception as e:
+        logger.exception('Error fetching allowed companies')
+        return jsonify({'success': False, 'error': _safe_error(e)}), 500
+
+
 @field_sales_bp.route('/api/field-sales/clients/search', methods=['GET'])
 @jwt_or_login_required
 @field_sales_required
