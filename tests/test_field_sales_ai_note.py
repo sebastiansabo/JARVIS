@@ -79,3 +79,12 @@ def test_normalizer_maps_non_finite_to_none():
     out = _normalize_structured_note(raw)
     assert out['opportunity_value_eur'] is None
     assert out['vehicles_discussed'][0]['budget_eur'] is None
+
+
+def test_coerce_number_handles_huge_int_without_raising():
+    # json.loads yields arbitrary-precision ints; one too large for a C double
+    # must map to None (never raise) — _normalize_structured_note is
+    # documented to NEVER raise.
+    assert _coerce_number(10 ** 400) is None
+    out = _normalize_structured_note({'opportunity_value_eur': 10 ** 400})
+    assert out['opportunity_value_eur'] is None

@@ -40,7 +40,12 @@ def _coerce_number(v):
             n = float(v)
         except (TypeError, ValueError):
             return None
-    return n if math.isfinite(n) else None
+    # math.isfinite raises OverflowError for an int too large to convert to a
+    # C double (e.g. 10**400 from an arbitrary-precision json.loads int).
+    try:
+        return n if math.isfinite(n) else None
+    except (OverflowError, ValueError):
+        return None
 
 
 def _as_list(v):
