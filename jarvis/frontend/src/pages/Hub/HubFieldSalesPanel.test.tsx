@@ -251,5 +251,33 @@ describe('HubFieldSalesPanel', () => {
       await waitFor(() => expect(getTodayVisits).toHaveBeenLastCalledWith(expect.any(String), 5))
       await waitFor(() => expect(getMyVisits).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), 5))
     })
+
+    it('shows a no-company state and blocks the add flow when the user has no company assigned', async () => {
+      // A user who can reach Field Sales (can_access_field_sales) but has no
+      // company (users.company_id NULL + no company_responsables) -> companyId
+      // stays 0. The add entry point + the (unscoped, cross-tenant) client
+      // search must be unreachable, and the panel must say so explicitly
+      // rather than showing the generic "add a visit to start" empty state.
+      getFieldSalesCompanies.mockResolvedValue({ success: true, companies: [], default_company_id: null })
+      getTodayVisits.mockResolvedValue({ success: true, visits: [], date: '2026-08-04' })
+      wrap(<HubFieldSalesPanel />)
+
+      // (a) the no-company message renders (locked chip + in place of the
+      //     generic empty state — hence >= 1, not exactly 1).
+      await waitFor(() => expect(screen.getAllByText(/nu aveți nicio companie alocată/i).length).toBeGreaterThanOrEqual(1))
+      // …and NOT the generic "add a visit to start planning" empty state.
+      expect(screen.queryByText(/nicio vizita planificata/i)).not.toBeInTheDocument()
+
+      // (b) the "Adaugă" entry point is gone -> the add flow can't start.
+      expect(screen.queryByRole('button', { name: /adauga/i })).not.toBeInTheDocument()
+
+      // (c) no add form is mounted, so its (unscoped) client search input never
+      //     exists and no search can fire.
+      expect(screen.queryByPlaceholderText(/cauta client/i)).not.toBeInTheDocument()
+
+      // The company-scoped visit queries stay disabled (companyId 0) so nothing
+      // is fetched unscoped either.
+      expect(getTodayVisits).not.toHaveBeenCalled()
+    })
   })
 })
