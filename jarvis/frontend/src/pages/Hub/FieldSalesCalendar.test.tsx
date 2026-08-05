@@ -59,7 +59,7 @@ describe('FieldSalesCalendar', () => {
     getMyVisits.mockResolvedValue({ success: true, visits, date_from: dateKey, date_to: dateKey })
 
     const onOpen = vi.fn()
-    wrap(<FieldSalesCalendar onOpen={onOpen} onAdd={vi.fn()} />)
+    wrap(<FieldSalesCalendar onOpen={onOpen} onAdd={vi.fn()} companyId={5} />)
 
     const dayCell = await screen.findByTestId(`day-${dateKey}`)
     await waitFor(() => expect(dayCell.querySelectorAll('[data-testid="day-dot"]').length).toBe(2))
@@ -75,14 +75,14 @@ describe('FieldSalesCalendar', () => {
 
   it('shows the empty state and no indicator when there are no visits', async () => {
     getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: '', date_to: '' })
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} companyId={5} />)
     expect(await screen.findByText(/nicio vizita/i)).toBeInTheDocument()
     expect(screen.queryByTestId('day-dot')).not.toBeInTheDocument()
   })
 
   it('renders the Lună/Săptămână/Zi view switcher', async () => {
     getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: '', date_to: '' })
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} companyId={5} />)
     await screen.findByText(/nicio vizita/i)
     expect(screen.getByRole('button', { name: 'Lună' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Săptămână' })).toBeInTheDocument()
@@ -94,7 +94,7 @@ describe('FieldSalesCalendar', () => {
     const dateKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-15`
     getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: '', date_to: '' })
     const onAdd = vi.fn()
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} companyId={5} />)
 
     const dayCell = await screen.findByTestId(`day-${dateKey}`)
     fireEvent.click(dayCell)
@@ -110,7 +110,7 @@ describe('FieldSalesCalendar', () => {
       { id: 201, kam_id: 1, client_id: 1, planned_date: dateKey, planned_time: '10:00', visit_type: 'general', status: 'planned', client_name: 'Kbd Client', kam_name: 'X' },
     ]
     getMyVisits.mockResolvedValue({ success: true, visits, date_from: dateKey, date_to: dateKey })
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} companyId={5} />)
 
     const dayCell = await screen.findByTestId(`day-${dateKey}`)
     fireEvent.keyDown(dayCell, { key: 'Enter' })
@@ -122,7 +122,7 @@ describe('FieldSalesCalendar', () => {
     const dateKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-15`
     getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: '', date_to: '' })
     const onAdd = vi.fn()
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} companyId={5} />)
 
     const dayCell = await screen.findByTestId(`day-${dateKey}`)
     const addAffordance = dayCell.querySelector('[data-testid="day-add"]') as HTMLElement
@@ -135,9 +135,41 @@ describe('FieldSalesCalendar', () => {
     expect(onAdd).toHaveBeenCalledTimes(1)
   })
 
+  it('offers no add affordance and ignores grid drags when no company is resolved (companyId undefined)', async () => {
+    // The Hub passes companyId only once a company is confirmed-allowed; a
+    // no-company user gets `undefined`, so the calendar must offer NO way to
+    // start a (dead, unscoped) add flow from any view.
+    const now = new Date()
+    const dateKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-15`
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: '', date_to: '' })
+    const onAdd = vi.fn()
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} />)
+
+    // Month view: select a day, then assert neither the day-list "Adaugă
+    // vizită" button nor any cell hover "+" affordance is present.
+    const dayCell = await screen.findByTestId(`day-${dateKey}`)
+    fireEvent.click(dayCell)
+    expect(screen.queryByRole('button', { name: /adaug[aă] vizit[aă]/i })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('day-add')).not.toBeInTheDocument()
+
+    // Week view: a pointerdown/up on an empty grid column must NOT propose a
+    // visit (create drag is gated off).
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+    const col = await screen.findByTestId(`fs-col-${todayKey}`)
+    vi.spyOn(col, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300, x: 0, y: 100, toJSON: () => {},
+    } as DOMRect)
+    col.setPointerCapture = vi.fn()
+    col.releasePointerCapture = vi.fn()
+    firePointer(col, 'pointerdown', 100 + 192)
+    firePointer(col, 'pointerup', 100 + 192)
+    expect(onAdd).not.toHaveBeenCalled()
+  })
+
   it('renders a Săptămână/Zi time-grid (hour gutter) instead of a placeholder', async () => {
     getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: '', date_to: '' })
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} companyId={5} />)
     await screen.findByText(/nicio vizita/i)
 
     fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
@@ -161,7 +193,7 @@ describe('FieldSalesCalendar', () => {
 
     const onOpen = vi.fn()
     const onAdd = vi.fn()
-    wrap(<FieldSalesCalendar onOpen={onOpen} onAdd={onAdd} />)
+    wrap(<FieldSalesCalendar onOpen={onOpen} onAdd={onAdd} companyId={5} />)
 
     // Sanity: month view (the default) already has the data loaded.
     await screen.findByText('Grid Client')
@@ -202,7 +234,7 @@ describe('FieldSalesCalendar', () => {
     getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: todayKey, date_to: todayKey })
 
     const onAdd = vi.fn()
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} companyId={5} />)
 
     await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i })
     fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
@@ -230,7 +262,7 @@ describe('FieldSalesCalendar', () => {
     getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: todayKey, date_to: todayKey })
 
     const onAdd = vi.fn()
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} companyId={5} />)
 
     await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i })
     fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
@@ -260,7 +292,7 @@ describe('FieldSalesCalendar', () => {
     getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: todayKey, date_to: todayKey })
 
     const onAdd = vi.fn()
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} companyId={5} />)
 
     await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i })
     fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
@@ -288,7 +320,7 @@ describe('FieldSalesCalendar', () => {
     getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: todayKey, date_to: todayKey })
 
     const onAdd = vi.fn()
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={onAdd} companyId={5} />)
 
     await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i })
     fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
@@ -320,7 +352,7 @@ describe('FieldSalesCalendar', () => {
     getMyVisits.mockResolvedValue({ success: true, visits, date_from: todayKey, date_to: todayKey })
 
     const onOpen = vi.fn()
-    wrap(<FieldSalesCalendar onOpen={onOpen} onAdd={vi.fn()} />)
+    wrap(<FieldSalesCalendar onOpen={onOpen} onAdd={vi.fn()} companyId={5} />)
 
     // Wait for the (default) month view's query to settle before switching, so
     // the week-view render doesn't overlap an unflushed state update.
@@ -351,7 +383,7 @@ describe('FieldSalesCalendar', () => {
     ]
     getMyVisits.mockResolvedValue({ success: true, visits, date_from: dayA, date_to: dayB })
 
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} companyId={5} />)
 
     await screen.findByRole('button', { name: /adaug[aă] vizit[aă]/i })
     fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
@@ -379,7 +411,7 @@ describe('FieldSalesCalendar', () => {
     updateVisit.mockResolvedValue({ success: true, visit: visits[0] })
     const callsBefore = getMyVisits.mock.calls.length
 
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} companyId={5} />)
     await screen.findByText('Move Client')
     fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
 
@@ -420,7 +452,7 @@ describe('FieldSalesCalendar', () => {
     updateVisit.mockResolvedValue({ success: true, visit: visits[0] })
     const callsBefore = getMyVisits.mock.calls.length
 
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} companyId={5} />)
     await screen.findByText('Resize Client')
     fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
 
@@ -448,7 +480,7 @@ describe('FieldSalesCalendar', () => {
     getMyVisits.mockResolvedValue({ success: true, visits, date_from: todayKey, date_to: todayKey })
 
     const onOpen = vi.fn()
-    wrap(<FieldSalesCalendar onOpen={onOpen} onAdd={vi.fn()} />)
+    wrap(<FieldSalesCalendar onOpen={onOpen} onAdd={vi.fn()} companyId={5} />)
     await screen.findByText('Click Client')
     fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
 
@@ -478,7 +510,7 @@ describe('FieldSalesCalendar', () => {
     updateVisit.mockRejectedValueOnce({ data: { error: 'Nu s-a putut muta vizita' } })
     const callsBefore = getMyVisits.mock.calls.length
 
-    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} />)
+    wrap(<FieldSalesCalendar onOpen={vi.fn()} onAdd={vi.fn()} companyId={5} />)
     await screen.findByText('Rollback Client')
     fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
 

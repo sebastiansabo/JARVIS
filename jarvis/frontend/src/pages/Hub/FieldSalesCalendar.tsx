@@ -73,6 +73,12 @@ export default function FieldSalesCalendar({ onOpen, onAdd, companyId }: {
   const [view, setView] = usePersistedState<CalView>('hub-fs-cal-view', 'month')
   const [anchor, setAnchor] = useState<Date>(() => new Date())
   const [picked, setPicked] = useState<string | null>(null)
+  // Add is only offered once a company is resolved — mirrors the Azi tab's
+  // `companyId > 0` gate so a no-company user can't open a dead AddVisitForm
+  // from any calendar view (the form's client search is disabled without a
+  // company anyway, but the entry point shouldn't dangle). Own visits still
+  // render — getMyVisits is KAM-scoped, not a cross-tenant read.
+  const canAdd = (companyId ?? 0) > 0
 
   const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
   const gridStart = startOfWeek(monthStart)
@@ -161,7 +167,7 @@ export default function FieldSalesCalendar({ onOpen, onAdd, companyId }: {
       ) : isError ? (
         <p className="py-8 text-center text-sm text-destructive">Nu s-a putut încărca calendarul.</p>
       ) : view !== 'month' ? (
-        <FSTimeGrid dayCols={dayCols} byDay={byDay} onOpen={onOpen} onAdd={onAdd} queryKey={calQueryKey} />
+        <FSTimeGrid dayCols={dayCols} byDay={byDay} onOpen={onOpen} onAdd={onAdd} canAdd={canAdd} queryKey={calQueryKey} />
       ) : (
         <>
           <div className="overflow-x-auto">
@@ -200,16 +206,19 @@ export default function FieldSalesCalendar({ onOpen, onAdd, companyId }: {
                         )
                       )}
                       {/* Hover add-affordance — hidden by default, shown on cell
-                          hover; stopPropagation so it doesn't also select the day. */}
-                      <button
-                        type="button"
-                        data-testid="day-add"
-                        aria-label={`Adaugă rapid ${k}`}
-                        onClick={(e) => { e.stopPropagation(); onAdd(k) }}
-                        className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground group-hover:flex"
-                      >
-                        <Plus className="h-3 w-3" />
-                      </button>
+                          hover; stopPropagation so it doesn't also select the day.
+                          Suppressed entirely without a resolved company (canAdd). */}
+                      {canAdd && (
+                        <button
+                          type="button"
+                          data-testid="day-add"
+                          aria-label={`Adaugă rapid ${k}`}
+                          onClick={(e) => { e.stopPropagation(); onAdd(k) }}
+                          className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground group-hover:flex"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
+                      )}
                     </div>
                   )
                 })}
@@ -220,13 +229,15 @@ export default function FieldSalesCalendar({ onOpen, onAdd, companyId }: {
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2 px-1">
               <p className="text-xs font-semibold uppercase capitalize tracking-wide text-muted-foreground">{dayLabel(activeKey)}</p>
-              <button
-                type="button"
-                onClick={() => onAdd(activeKey)}
-                className="flex shrink-0 items-center gap-1 rounded-full bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-teal-700"
-              >
-                <Plus className="h-3.5 w-3.5" />Adaugă vizită
-              </button>
+              {canAdd && (
+                <button
+                  type="button"
+                  onClick={() => onAdd(activeKey)}
+                  className="flex shrink-0 items-center gap-1 rounded-full bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-teal-700"
+                >
+                  <Plus className="h-3.5 w-3.5" />Adaugă vizită
+                </button>
+              )}
             </div>
             {activeVisits.length === 0 ? (
               <p className="px-1 py-4 text-center text-sm text-muted-foreground">Nicio vizita in aceasta zi</p>
@@ -313,11 +324,12 @@ type DragState = CreateDrag | MoveDrag | ResizeDrag
 // redirection) still bubbles a captured element's events through the DOM as
 // usual, unlike a real browser which would route them straight to the
 // capturing element.
-function FSTimeGrid({ dayCols, byDay, onOpen, onAdd, queryKey }: {
+function FSTimeGrid({ dayCols, byDay, onOpen, onAdd, canAdd, queryKey }: {
   dayCols: Date[]
   byDay: Map<string, FSVisit[]>
   onOpen: (visitId: number) => void
   onAdd: (date: string, time?: string, endTime?: string) => void
+  canAdd: boolean
   queryKey: readonly [string, CalView, string, number | undefined]
 }) {
   const queryClient = useQueryClient()
@@ -459,6 +471,10 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd, queryKey }: {
                   className={cn('relative min-w-0 cursor-pointer rounded-lg bg-muted/30', dragging && 'touch-none')}
                   style={{ height: gridHeight }}
                   onPointerDown={(e) => {
+                    // No resolved company → the create/add path is closed (the
+                    // add entry points are hidden too); don't start a create
+                    // drag that could only open a dead, unscoped AddVisitForm.
+                    if (!canAdd) return
                     // Ignore non-primary mouse buttons (right/middle) so they
                     // don't start a drag/create; touch/pen primary contact has
                     // button === 0 and passes through.
