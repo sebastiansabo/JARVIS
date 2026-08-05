@@ -7,6 +7,7 @@ Uses Anthropic API (claude-sonnet-4-6) for:
 
 import json
 import logging
+import math
 
 try:
     from ai_agent.services.llm_client import ask
@@ -23,15 +24,23 @@ _SENTIMENTS = {'positive', 'neutral', 'negative'}
 
 
 def _coerce_number(v):
-    """Return v as a number, or None. Bools and non-numeric values -> None."""
+    """Return v as a finite number, or None.
+
+    Bools, non-numeric values, and non-finite floats (NaN/inf/-inf) -> None.
+    Non-finite values are rejected because they serialize via json.dumps to the
+    bare tokens NaN/Infinity, which are invalid strict JSON and would break the
+    frontend's JSON.parse on any API response carrying them.
+    """
     if isinstance(v, bool):
         return None
     if isinstance(v, (int, float)):
-        return v
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
+        n = v
+    else:
+        try:
+            n = float(v)
+        except (TypeError, ValueError):
+            return None
+    return n if math.isfinite(n) else None
 
 
 def _as_list(v):
