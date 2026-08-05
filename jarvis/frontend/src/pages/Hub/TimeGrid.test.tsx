@@ -25,8 +25,19 @@ function mockCol(col: HTMLElement, top = 100) {
   col.releasePointerCapture = vi.fn()
 }
 
+function firePointerAt(el: Element, type: 'pointerdown' | 'pointermove' | 'pointerup', clientX: number, clientY: number, pointerId = 1) {
+  const event = new MouseEvent(type, { clientX, clientY, bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'pointerId', { value: pointerId, configurable: true })
+  fireEvent(el, event)
+}
+function rect(left: number, right: number, top = 100): DOMRect {
+  return { top, bottom: top + 400, height: 400, left, right, width: right - left, x: left, y: top, toJSON: () => {} } as DOMRect
+}
+
 const today = new Date()
 const todayKey = keyOf(today)
+const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1)
+const tomorrowKey = keyOf(tomorrow)
 
 describe('TimeGrid', () => {
   it('renders an hour gutter (07:00) and one column per day', () => {
@@ -141,6 +152,60 @@ describe('TimeGrid', () => {
     expect(screen.getByTestId('tg-block-1')).toBeInTheDocument()
     expect(screen.getByTestId('tg-block-2')).toBeInTheDocument()
     expect(screen.queryByTestId('tg-cluster-1')).toBeNull()
+  })
+
+  it('creates on the day the pointer is released over when dragging sideways (week)', () => {
+    const onSlotAdd = vi.fn()
+    render(<TimeGrid dayCols={[today, tomorrow]} events={[]} onEventClick={vi.fn()} onSlotAdd={onSlotAdd} />)
+    const colA = screen.getByTestId(`tg-col-${todayKey}`)
+    const colB = screen.getByTestId(`tg-col-${tomorrowKey}`)
+    vi.spyOn(colA, 'getBoundingClientRect').mockReturnValue(rect(0, 100))
+    vi.spyOn(colB, 'getBoundingClientRect').mockReturnValue(rect(100, 200))
+    colA.setPointerCapture = vi.fn(); colA.releasePointerCapture = vi.fn()
+    // Start in day A at 09:00 (y=100+96), drag right into day B at same Y.
+    firePointerAt(colA, 'pointerdown', 50, 100 + 96)
+    firePointerAt(colA, 'pointermove', 150, 100 + 96)
+    firePointerAt(colA, 'pointerup', 150, 100 + 96)
+    // Sideways drag with no vertical change → 1h slot on day B, not "all hours" on day A.
+    expect(onSlotAdd).toHaveBeenCalledWith(tomorrowKey, '09:00', '10:00')
+  })
+
+  it('drag-moves a draggable block to a new time (duration preserved) via onMove', () => {
+    const ev: TimeGridEvent = { id: 9, dayKey: todayKey, startMin: 540, endMin: 600, color: 'bg-indigo-100 text-indigo-700', title: 'P', draggable: true } // 09:00–10:00
+    const onMove = vi.fn(); const onEventClick = vi.fn()
+    render(<TimeGrid dayCols={[today]} events={[ev]} onEventClick={onEventClick} onSlotAdd={vi.fn()} onMove={onMove} />)
+    const block = screen.getByTestId('tg-block-9')
+    block.setPointerCapture = vi.fn(); block.releasePointerCapture = vi.fn()
+    // Drag down 48px (1h): 09:00→10:00, 1h duration → end 11:00. Only the delta matters.
+    firePointer(block, 'pointerdown', 200)
+    firePointer(block, 'pointermove', 248)
+    firePointer(block, 'pointerup', 248)
+    expect(onMove).toHaveBeenCalledWith(9, todayKey, '10:00', '11:00')
+    expect(onEventClick).not.toHaveBeenCalled()
+  })
+
+  it('treats a sub-threshold press on a draggable block as a click (opens, no move)', () => {
+    const ev: TimeGridEvent = { id: 9, dayKey: todayKey, startMin: 540, endMin: 600, color: 'x', title: 'P', draggable: true }
+    const onMove = vi.fn(); const onEventClick = vi.fn()
+    render(<TimeGrid dayCols={[today]} events={[ev]} onEventClick={onEventClick} onSlotAdd={vi.fn()} onMove={onMove} />)
+    const block = screen.getByTestId('tg-block-9')
+    block.setPointerCapture = vi.fn(); block.releasePointerCapture = vi.fn()
+    firePointer(block, 'pointerdown', 200)
+    firePointer(block, 'pointerup', 202) // 2px < 4px threshold
+    expect(onMove).not.toHaveBeenCalled()
+    expect(onEventClick).toHaveBeenCalledWith(9)
+  })
+
+  it('does not drag a non-draggable block', () => {
+    const ev: TimeGridEvent = { id: 9, dayKey: todayKey, startMin: 540, endMin: 600, color: 'x', title: 'P' } // draggable falsy
+    const onMove = vi.fn()
+    render(<TimeGrid dayCols={[today]} events={[ev]} onEventClick={vi.fn()} onSlotAdd={vi.fn()} onMove={onMove} />)
+    const block = screen.getByTestId('tg-block-9')
+    block.setPointerCapture = vi.fn(); block.releasePointerCapture = vi.fn()
+    firePointer(block, 'pointerdown', 200)
+    firePointer(block, 'pointermove', 260)
+    firePointer(block, 'pointerup', 260)
+    expect(onMove).not.toHaveBeenCalled()
   })
 
   it('draws red working-hours lines at 08:00 and 18:00', () => {

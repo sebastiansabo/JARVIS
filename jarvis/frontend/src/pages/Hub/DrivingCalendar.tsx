@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Car } from 'lucide-react'
 import { cn, usePersistedState } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
@@ -103,6 +103,45 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
     else onReturn(c.id)
   }
   const openById = (id: number) => { const c = byId.get(id); if (c) openContract(c) }
+
+  // Drag-to-reschedule (PLANNED only) — optimistic update of the shared
+  // contracts cache, rolled back on error. Backend re-guards status + past-date.
+  const queryClient = useQueryClient()
+  const [moveErr, setMoveErr] = useState<string | null>(null)
+  const contractsKey = ['foi-contracts-all', companyId] as const
+  const rescheduleMut = useMutation({
+    mutationFn: ({ id, departure, ret }: { id: number; departure: string; ret: string }) =>
+      foiParcursApi.rescheduleTestDrive(id, { departure_datetime: departure, return_datetime: ret }),
+    onMutate: async ({ id, departure, ret }) => {
+      await queryClient.cancelQueries({ queryKey: contractsKey })
+      const prev = queryClient.getQueryData<{ contracts: FoiContract[] }>(contractsKey)
+      if (prev) {
+        queryClient.setQueryData(contractsKey, {
+          ...prev,
+          contracts: prev.contracts.map((c) => (c.id === id ? { ...c, departure_datetime: departure, return_datetime: ret } : c)),
+        })
+      }
+      return { prev }
+    },
+    onError: (err, _v, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(contractsKey, ctx.prev)
+      setMoveErr((err as { data?: { error?: string } })?.data?.error ?? 'Nu s-a putut reprograma sesiunea')
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }),
+  })
+  const onMove = (id: number, dayKey: string, startTime: string, endTime: string) => {
+    setMoveErr(null)
+    rescheduleMut.mutate({ id, departure: `${dayKey}T${startTime}`, ret: `${dayKey}T${endTime}` })
+  }
+  // Month drag-to-day: keep the session's time, change only the date.
+  const hhmm = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  const rescheduleToDay = (id: number, targetKey: string) => {
+    const c = byId.get(id)
+    const dep = c && naiveDate(c.departure_datetime)
+    if (!c || !dep || keyOf(dep) === targetKey) return
+    const ret = naiveDate(c.return_datetime)
+    onMove(id, targetKey, hhmm(dep), ret ? hhmm(ret) : hhmm(new Date(dep.getTime() + 3600000)))
+  }
   const go = (dir: 1 | -1) => {
     setAnchor((a) => (view === 'day' ? addDays(a, dir) : view === 'week' ? addDays(a, 7 * dir) : addMonths(a, dir)))
     setPicked(null)
@@ -122,6 +161,7 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
         color: SESSION_BLOCK_COLOR[sessionStatus(c).key],
         title: c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—'),
         subtitle: vehicleName(c.vin ? vinVehicle.get(c.vin) : undefined, c.vin),
+        draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
       })))
 
   // Period label (day/week/month).
@@ -185,7 +225,10 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
                   <button
                     key={k}
                     type="button"
+                    data-testid={`dc-day-${k}`}
                     onClick={() => setPicked(k)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => { e.preventDefault(); const id = Number(e.dataTransfer.getData('text/plain')); if (id) rescheduleToDay(id, k) }}
                     className={cn(
                       'relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm',
                       !inMonth && 'text-muted-foreground/40',
@@ -203,7 +246,10 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
           <DayGroup label={dayLabel(monthActiveKey)} items={byDay.get(monthActiveKey) ?? []} vinVehicle={vinVehicle} onOpen={openContract} emptyText="Nicio sesiune în această zi" />
         </>
       ) : (
-        <TimeGrid dayCols={dayCols} events={events} onEventClick={openById} onSlotAdd={onAdd} />
+        <>
+          {moveErr && <p className="px-1 text-xs text-destructive">{moveErr}</p>}
+          <TimeGrid dayCols={dayCols} events={events} onEventClick={openById} onSlotAdd={onAdd} onMove={onMove} />
+        </>
       )}
     </div>
   )
@@ -226,12 +272,16 @@ function DayGroup({ label, items, vinVehicle, onOpen, emptyText }: {
 
 function CalendarRow({ contract: c, vehicle, onOpen }: { contract: FoiContract; vehicle?: FpVehicle; onOpen: () => void }) {
   const ss = sessionStatus(c)
+  const planned = ss.key === 'planificat'
   const tester = c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—')
   return (
     <button
       type="button"
+      draggable={planned}
+      onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(c.id)); e.dataTransfer.effectAllowed = 'move' }}
       onClick={onOpen}
-      className="flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-card p-3.5 text-left shadow-sm transition-transform active:scale-[0.99]"
+      title={planned ? 'Trage pe o zi din calendar pentru a reprograma' : undefined}
+      className={cn('flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-card p-3.5 text-left shadow-sm transition-transform active:scale-[0.99]', planned && 'cursor-grab')}
     >
       <div className="flex h-9 w-11 shrink-0 items-center justify-center rounded-xl bg-muted">
         <span className="text-[11px] font-bold leading-none tabular-nums">{formatTime(c.departure_datetime)}</span>

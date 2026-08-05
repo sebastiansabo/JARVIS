@@ -97,6 +97,45 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
     },
   })
 
+  // Drag-to-reschedule (PLANNED only) — optimistic on the visible month's cache,
+  // rolled back on error; backend re-guards status + past-date.
+  const [moveErr, setMoveErr] = useState<string | null>(null)
+  const contractsKey = ['foi-contracts-all', companyId, monthKey] as const
+  const rescheduleMut = useMutation({
+    mutationFn: ({ id, departure, ret }: { id: number; departure: string; ret: string }) =>
+      foiParcursApi.rescheduleTestDrive(id, { departure_datetime: departure, return_datetime: ret }),
+    onMutate: async ({ id, departure, ret }) => {
+      await queryClient.cancelQueries({ queryKey: contractsKey })
+      const prev = queryClient.getQueryData<{ contracts: FoiContract[] }>(contractsKey)
+      if (prev) {
+        queryClient.setQueryData(contractsKey, {
+          ...prev,
+          contracts: prev.contracts.map((c) => (c.id === id ? { ...c, departure_datetime: departure, return_datetime: ret } : c)),
+        })
+      }
+      return { prev }
+    },
+    onError: (err, _v, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(contractsKey, ctx.prev)
+      setMoveErr((err as { data?: { error?: string } })?.data?.error ?? 'Nu s-a putut reprograma sesiunea')
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }),
+  })
+  const onMoveEvent = (id: number, dk: string, startTime: string, endTime: string) => {
+    setMoveErr(null)
+    rescheduleMut.mutate({ id, departure: `${dk}T${startTime}`, ret: `${dk}T${endTime}` })
+  }
+  // Month drag-to-day: keep the session's time, change only the date.
+  const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const rescheduleToDay = (id: number, targetKey: string) => {
+    const c = byId.get(id)
+    const dep = c && naiveDate(c.departure_datetime)
+    if (!c || !dep) return
+    if (dayKey(dep) === targetKey) return // dropped on same day — no-op
+    const ret = naiveDate(c.return_datetime)
+    onMoveEvent(id, targetKey, hhmm(dep), ret ? hhmm(ret) : hhmm(new Date(dep.getTime() + 3600000)))
+  }
+
   const tdContracts = (data?.contracts ?? []).filter(
     (c) => c.route_type === 'TD' && c.departure_datetime && (!brand || vinBrand.get(c.vin) === brand),
   )
@@ -131,6 +170,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
         color: SESSION_BLOCK_COLOR[sessionStatus(c).key],
         title: c.client_name || carLabel(c.vin),
         subtitle: carLabel(c.vin),
+        draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
       })))
 
   const go = (dir: 1 | -1) => {
@@ -198,6 +238,9 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
               return (
                 <div
                   key={key}
+                  data-testid={`fp-day-${key}`}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); const id = Number(e.dataTransfer.getData('text/plain')); if (id) rescheduleToDay(id, key) }}
                   className={cn('min-h-[104px] border-b border-r p-1.5 space-y-1', !inMonth && 'bg-muted/20 text-muted-foreground')}
                 >
                   <div className={cn('text-xs font-medium', isToday && 'inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground')}>
@@ -209,13 +252,16 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
                       const time = c.departure_datetime
                         ? naiveDate(c.departure_datetime)!.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
                         : ''
+                      const planned = ss.key === 'planificat'
                       return (
                         <button
                           key={c.id}
                           type="button"
+                          draggable={planned}
+                          onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(c.id)); e.dataTransfer.effectAllowed = 'move' }}
                           onClick={() => setSelected(c)}
-                          className={cn('w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium text-white hover:opacity-90', ss.badgeClass, isPast && 'opacity-60')}
-                          title={`${time} ${carLabel(c.vin)} — ${c.client_name || '—'}`}
+                          className={cn('w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium text-white hover:opacity-90', ss.badgeClass, isPast && 'opacity-60', planned && 'cursor-grab')}
+                          title={`${time} ${carLabel(c.vin)} — ${c.client_name || '—'}${planned ? ' (trage pentru a reprograma)' : ''}`}
                         >
                           {time} {carLabel(c.vin)}
                         </button>
@@ -231,12 +277,16 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
           </div>
         </Card>
       ) : (
-        <TimeGrid
-          dayCols={dayCols}
-          events={events}
-          onEventClick={(id) => { const c = byId.get(id); if (c) setSelected(c) }}
-          onSlotAdd={(dk, time) => navigate(`/app/foi-parcurs/test-drive?departure=${dk}T${time}`)}
-        />
+        <div className="space-y-1">
+          {moveErr && <p className="px-1 text-xs text-destructive">{moveErr}</p>}
+          <TimeGrid
+            dayCols={dayCols}
+            events={events}
+            onEventClick={(id) => { const c = byId.get(id); if (c) setSelected(c) }}
+            onSlotAdd={(dk, time) => navigate(`/app/foi-parcurs/test-drive?departure=${dk}T${time}`)}
+            onMove={onMoveEvent}
+          />
+        </div>
       )}
 
       {selected && (

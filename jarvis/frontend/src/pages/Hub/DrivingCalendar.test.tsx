@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -7,8 +7,8 @@ const now = new Date()
 const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 const todayIso = `${todayKey}T10:00`
 
-const { getContracts, getVehicles } = vi.hoisted(() => ({ getContracts: vi.fn(), getVehicles: vi.fn() }))
-vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { getContracts, getVehicles } }))
+const { getContracts, getVehicles, rescheduleTestDrive } = vi.hoisted(() => ({ getContracts: vi.fn(), getVehicles: vi.fn(), rescheduleTestDrive: vi.fn() }))
+vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { getContracts, getVehicles, rescheduleTestDrive } }))
 
 // jsdom (v26) doesn't implement the PointerEvent constructor — build the event
 // on MouseEvent and attach pointerId manually (mirrors FieldSalesCalendar.test).
@@ -30,7 +30,8 @@ import DrivingCalendar from './DrivingCalendar'
 getContracts.mockResolvedValue({
   contracts: [
     { id: 11, status: 'FILLED', td_status: 'driving', vin: 'VF1', client_name: 'Ion Pop', departure_datetime: todayIso, km_start: 100 },
-  ], total: 1, page: 1, per_page: 1000,
+    { id: 12, status: 'PLANNED', vin: 'VF1', client_name: 'Plan Client', departure_datetime: `${todayKey}T09:00`, return_datetime: `${todayKey}T10:00` },
+  ], total: 2, page: 1, per_page: 1000,
 })
 getVehicles.mockResolvedValue({ vehicles: [{ vin: 'VF1', mark: 'Volvo', model: 'XC40' }] })
 
@@ -65,6 +66,43 @@ describe('DrivingCalendar', () => {
     wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={onReturn} onAdd={vi.fn()} />)
     fireEvent.click(await screen.findByTestId('tg-block-11'))
     expect(onReturn).toHaveBeenCalledWith(11)
+  })
+
+  it('drag-moves a PLANNED session block and reschedules it via the API', async () => {
+    rescheduleTestDrive.mockResolvedValue({ success: true, contract: {} })
+    wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
+    const block = await screen.findByTestId('tg-block-12') // PLANNED, 09:00–10:00, draggable
+    block.setPointerCapture = vi.fn(); block.releasePointerCapture = vi.fn()
+    // Drag down 48px (1h): 09:00→10:00, end 10:00→11:00.
+    firePointer(block, 'pointerdown', 200)
+    firePointer(block, 'pointermove', 248)
+    firePointer(block, 'pointerup', 248)
+    await waitFor(() => expect(rescheduleTestDrive).toHaveBeenCalledWith(12, { departure_datetime: `${todayKey}T10:00`, return_datetime: `${todayKey}T11:00` }))
+  })
+
+  it('reschedules a PLANNED session dropped onto another day in Month view', async () => {
+    rescheduleTestDrive.mockClear(); rescheduleTestDrive.mockResolvedValue({ success: true, contract: {} })
+    wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
+    await screen.findByTestId('tg-block-12')
+    fireEvent.click(screen.getByRole('button', { name: 'Lună' }))
+    // A different in-month day than the session's (today) — same month so its cell exists.
+    const t = new Date(); const tgt = new Date(t); tgt.setDate(t.getDate() + (t.getDate() > 15 ? -1 : 1))
+    const targetKey = `${tgt.getFullYear()}-${pad(tgt.getMonth() + 1)}-${pad(tgt.getDate())}`
+    const cell = await screen.findByTestId(`dc-day-${targetKey}`)
+    fireEvent.drop(cell, { dataTransfer: { getData: () => '12', setData: () => {}, effectAllowed: '', dropEffect: '' } })
+    // Session 12 was 09:00–10:00; day changes, time preserved.
+    await waitFor(() => expect(rescheduleTestDrive).toHaveBeenCalledWith(12, { departure_datetime: `${targetKey}T09:00`, return_datetime: `${targetKey}T10:00` }))
+  })
+
+  it('does not allow dragging a non-planned (driving) session', async () => {
+    rescheduleTestDrive.mockClear()
+    wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
+    const block = await screen.findByTestId('tg-block-11') // driving, not draggable
+    block.setPointerCapture = vi.fn(); block.releasePointerCapture = vi.fn()
+    firePointer(block, 'pointerdown', 200)
+    firePointer(block, 'pointermove', 260)
+    firePointer(block, 'pointerup', 260)
+    expect(rescheduleTestDrive).not.toHaveBeenCalled()
   })
 
   it('proposes a new session via a drag on empty grid space (onAdd with the slot’s date/time)', async () => {
