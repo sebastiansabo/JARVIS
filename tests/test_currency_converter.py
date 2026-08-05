@@ -11,7 +11,7 @@ os.environ.setdefault('DATABASE_URL', 'postgresql://test:test@localhost:5432/tes
 
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -174,6 +174,36 @@ class TestParseBnrXml:
         """Should return empty dict for invalid XML"""
         result = _parse_bnr_xml(b'not valid xml')
         assert result == {}
+
+    def test_parses_https_namespace(self):
+        """Regression: BNR migrated the namespace to https:// for 2026 files.
+
+        The parser must read them too — hard-coding the old http:// namespace
+        parsed zero rates from 2026 data, which saved invoices with NULL kurs.
+        """
+        xml_content = b'''<?xml version="1.0" encoding="utf-8"?>
+        <DataSet xmlns="https://www.bnr.ro/xsd">
+            <Body>
+                <Cube date="2026-07-30">
+                    <Rate currency="EUR">5.2439</Rate>
+                </Cube>
+            </Body>
+        </DataSet>'''
+
+        result = _parse_bnr_xml(xml_content)
+
+        assert result['2026-07-30']['EUR'] == 5.2439
+
+    def test_parses_regardless_of_namespace_uri(self):
+        """Both the legacy http:// and the new https:// namespaces must parse."""
+        for ns in (b"http://www.bnr.ro/xsd", b"https://www.bnr.ro/xsd"):
+            xml_content = (
+                b'<?xml version="1.0"?><DataSet xmlns="' + ns + b'"><Body>'
+                b'<Cube date="2026-07-30"><Rate currency="EUR">5.2439</Rate></Cube>'
+                b'</Body></DataSet>'
+            )
+            result = _parse_bnr_xml(xml_content)
+            assert result['2026-07-30']['EUR'] == 5.2439, f"failed for ns={ns!r}"
 
     def test_skips_invalid_rate_values(self):
         """Should skip rates with invalid values"""
@@ -359,6 +389,70 @@ class TestClearCache:
         clear_cache()
         get_exchange_rate('EUR', '2025-12-15')
         assert mock_fetch.call_count == 2
+
+
+# ============== CURRENT-YEAR CACHE FRESHNESS ==============
+
+class TestCurrentYearCacheRefresh:
+    """Regression: the current-year rate cache must not go permanently stale.
+
+    Root cause of the missing-Kurs advance-invoice bug (AW International,
+    invoices issued 2026-07-31..08-03): a long-running worker cached the current
+    year once and never refreshed it. get_exchange_rate only falls back 10 days,
+    so any invoice issued more than ~10 days after the cache was frozen resolved
+    to None, and the advance invoice was created with kurs_applied = NULL.
+    """
+
+    @staticmethod
+    def _xml(date_str, eur):
+        return (
+            b'<?xml version="1.0"?><DataSet xmlns="http://www.bnr.ro/xsd"><Body>'
+            + f'<Cube date="{date_str}"><Rate currency="EUR">{eur}</Rate></Cube>'.encode()
+            + b'</Body></DataSet>'
+        )
+
+    @patch('core.services.currency_converter.requests.get')
+    def test_refetches_current_year_when_cache_stale(self, mock_get):
+        """A current-year cache older than its TTL must be refetched so newly
+        published dates become available."""
+        from core.services import currency_converter as cc
+        cy = datetime.now().year
+        # Seed a stale cache: fetched days ago, horizon frozen early in the year
+        cc._rate_cache[cy] = {f"{cy}-01-06": {"EUR": 5.05}}
+        cc._cache_fetched_at[cy] = datetime.now() - timedelta(days=2)
+
+        resp = MagicMock()
+        resp.content = self._xml(f"{cy}-07-30", "5.0991")
+        mock_get.return_value = resp
+
+        rates = cc._fetch_rates_for_year(cy)
+
+        assert mock_get.called, "stale current-year cache must trigger a refetch"
+        assert f"{cy}-07-30" in rates
+
+    @patch('core.services.currency_converter.requests.get')
+    def test_uses_cache_within_ttl(self, mock_get):
+        """A freshly-fetched current-year cache must not refetch on every call."""
+        from core.services import currency_converter as cc
+        cy = datetime.now().year
+        cc._rate_cache[cy] = {f"{cy}-08-04": {"EUR": 5.05}}
+        cc._cache_fetched_at[cy] = datetime.now()  # fresh
+
+        cc._fetch_rates_for_year(cy)
+
+        assert not mock_get.called, "fresh cache within TTL must not refetch"
+
+    @patch('core.services.currency_converter.requests.get')
+    def test_past_year_never_refetches(self, mock_get):
+        """Past years are immutable — cache them forever, never refetch."""
+        from core.services import currency_converter as cc
+        py = datetime.now().year - 1
+        cc._rate_cache[py] = {f"{py}-06-01": {"EUR": 4.9}}
+        cc._cache_fetched_at[py] = datetime.now() - timedelta(days=400)
+
+        cc._fetch_rates_for_year(py)
+
+        assert not mock_get.called, "immutable past-year cache must never refetch"
 
 
 # ============== EDGE CASES ==============
