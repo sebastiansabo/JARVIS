@@ -125,10 +125,18 @@ def create_schema_field_sales(conn, cursor):
     cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS companions TEXT[] DEFAULT '{}'")
     cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS planned_end_time TIME")
 
+    # Tenant isolation: company_id on visit plans
+    cursor.execute("ALTER TABLE kam_visit_plans ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_kam_visits_company ON kam_visit_plans(company_id)")
+
     # Client profile enrichment: shareholders, work points, HQ address
     cursor.execute("ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS shareholders TEXT")
     cursor.execute("ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS work_points JSONB DEFAULT '[]'")
     cursor.execute("ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS headquarters_address TEXT")
+
+    # Tenant isolation: company_id on client profiles
+    cursor.execute("ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_client_profiles_company ON client_profiles(company_id)")
 
     # 5. Visit notes
     cursor.execute('''
@@ -234,4 +242,24 @@ def create_schema_field_sales(conn, cursor):
         ON CONFLICT (role_id, permission_id) DO NOTHING
     ''')
 
+    conn.commit()
+
+    # ── Tenant isolation backfill (idempotent; only fills NULLs) ──
+    cursor.execute("""
+        UPDATE kam_visit_plans v SET company_id = u.company_id
+        FROM users u WHERE u.id = v.kam_id AND v.company_id IS NULL AND u.company_id IS NOT NULL
+    """)
+    cursor.execute("""
+        UPDATE client_profiles p SET company_id = u.company_id
+        FROM users u WHERE u.id = p.assigned_kam_id AND p.company_id IS NULL AND u.company_id IS NOT NULL
+    """)
+    cursor.execute("""
+        UPDATE client_profiles p SET company_id = sub.company_id
+        FROM (
+            SELECT DISTINCT ON (client_id) client_id, company_id
+            FROM kam_visit_plans WHERE company_id IS NOT NULL
+            ORDER BY client_id, planned_date DESC
+        ) sub
+        WHERE sub.client_id = p.client_id AND p.company_id IS NULL
+    """)
     conn.commit()
