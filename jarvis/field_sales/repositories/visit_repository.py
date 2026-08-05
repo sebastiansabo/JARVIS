@@ -78,15 +78,15 @@ class VisitRepository(BaseRepository):
 
         Args:
             data: dict with kam_id, client_id, planned_date, planned_time,
-                  planned_end_time, visit_type, goals
+                  planned_end_time, visit_type, goals, company_id
 
         Returns:
             dict: created visit row
         """
         return self.execute('''
             INSERT INTO kam_visit_plans
-                (kam_id, client_id, planned_date, planned_time, planned_end_time, visit_type, goals)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (kam_id, client_id, planned_date, planned_time, planned_end_time, visit_type, goals, company_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
         ''', (
             data['kam_id'],
@@ -96,6 +96,7 @@ class VisitRepository(BaseRepository):
             data.get('planned_end_time'),
             data.get('visit_type', 'general'),
             data.get('goals'),
+            data.get('company_id'),
         ), returning=True)
 
     def update_visit(self, visit_id, data):

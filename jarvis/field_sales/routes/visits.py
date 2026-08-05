@@ -96,6 +96,11 @@ def api_create_visit():
         else:
             kam_id = current_uid
 
+        # Tag the visit with the KAM's company for tenant isolation
+        from core.auth.repositories import UserRepository
+        kam_user = UserRepository().get_by_id(kam_id)
+        visit_company_id = kam_user.get('company_id') if kam_user else None
+
         visit_data = {
             'kam_id': kam_id,
             'client_id': client_id,
@@ -104,6 +109,7 @@ def api_create_visit():
             'planned_end_time': data.get('planned_end_time'),
             'visit_type': visit_type,
             'goals': data.get('goals'),
+            'company_id': visit_company_id,
         }
 
         visit = _visit_repo.create(visit_data)

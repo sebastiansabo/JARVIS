@@ -363,6 +363,41 @@ class ClientFSRepository(BaseRepository):
 
         return result
 
+    def get_allowed_companies(self, user_id, is_admin):
+        """Get companies the given user is allowed to pick for tenant scoping.
+
+        Args:
+            user_id: users.id
+            is_admin: whether the user has Admin role (sees all companies)
+
+        Returns:
+            list of {id, company} dicts, ordered by company name.
+            Admins see all companies. Everyone else sees companies they are
+            a responsable for, plus their own company. If that set is empty,
+            falls back to the user's own company (may be empty list if the
+            user has no company).
+        """
+        if is_admin:
+            return self.query_all(
+                'SELECT id, company FROM companies ORDER BY company'
+            )
+
+        companies = self.query_all('''
+            SELECT c.id, c.company
+            FROM companies c
+            WHERE c.id IN (SELECT company_id FROM company_responsables WHERE user_id = %s)
+               OR c.id = (SELECT company_id FROM users WHERE id = %s)
+            ORDER BY c.company
+        ''', (user_id, user_id))
+
+        if companies:
+            return companies
+
+        return self.query_all('''
+            SELECT id, company FROM companies
+            WHERE id = (SELECT company_id FROM users WHERE id = %s)
+        ''', (user_id,))
+
     def get_managed_clients(self, priority=None, country_code=None,
                             min_renewal_score=None, assigned_kam_id=None,
                             limit=50, offset=0):
