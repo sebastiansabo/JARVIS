@@ -1,6 +1,8 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'jarvis'))
 
+import json
+
 from field_sales.services import ai_service
 from field_sales.services.ai_service import _normalize_structured_note, _coerce_number
 
@@ -88,3 +90,36 @@ def test_coerce_number_handles_huge_int_without_raising():
     assert _coerce_number(10 ** 400) is None
     out = _normalize_structured_note({'opportunity_value_eur': 10 ** 400})
     assert out['opportunity_value_eur'] is None
+
+
+def _patch_ask(monkeypatch, response):
+    captured = {}
+
+    def fake_ask(user_message, system=None, model=None, max_tokens=None):
+        captured['system'] = system
+        captured['user'] = user_message
+        return response
+
+    monkeypatch.setattr(ai_service, '_AI_AVAILABLE', True)
+    monkeypatch.setattr(ai_service, 'ask', fake_ask)
+    return captured
+
+
+def test_prompt_declares_every_canonical_key(monkeypatch):
+    captured = _patch_ask(monkeypatch, json.dumps({'visit_summary': 'ok'}))
+    ai_service.structure_visit_note('some note')
+    for key in CANONICAL_KEYS:
+        assert key in captured['system'], f'prompt missing {key}'
+    # dropped legacy fields must not reappear in the schema block
+    assert 'deal_probability' not in captured['system']
+    assert 'vehicles_of_interest' not in captured['system']
+
+
+def test_structure_visit_note_normalizes_fenced_ai_output(monkeypatch):
+    payload = {'visit_summary': 'S', 'sentiment': 'positive', 'next_steps': 'bad', 'stray': 1}
+    _patch_ask(monkeypatch, '```json\n' + json.dumps(payload) + '\n```')
+    out = ai_service.structure_visit_note('note')
+    assert set(out) == CANONICAL_KEYS       # stray dropped, keys filled
+    assert out['visit_summary'] == 'S'
+    assert out['sentiment'] == 'positive'
+    assert out['next_steps'] == []          # string coerced away
