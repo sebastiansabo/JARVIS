@@ -208,11 +208,15 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     const base = showAllVehicles
       ? vehiclesForCompany
       : vehiclesForCompany.filter((v) => v.is_active !== false && !v.locked_out && !v.blocked_now)
-    // Keep the currently-selected car in the list even if the toggle would hide
-    // it (e.g. a blocked car selected earlier), so the trigger still renders it.
+    // Keep the currently-selected car in the list even if it's hidden by the
+    // toggle (a blocked car selected earlier) OR belongs to another company
+    // (an activation prefill can resolve a vehicle whose company differs from
+    // the contract's) — otherwise the Select has no matching item and renders
+    // an empty trigger. Fall back to `selectedVehicle` itself when it isn't in
+    // vehiclesForCompany.
     if (selectedVehicle && !base.some((v) => v.id === selectedVehicle.id)) {
-      const sel = vehiclesForCompany.find((v) => v.id === selectedVehicle.id)
-      if (sel) return [sel, ...base]
+      const sel = vehiclesForCompany.find((v) => v.id === selectedVehicle.id) ?? selectedVehicle
+      return [sel, ...base]
     }
     return base
   }, [vehiclesForCompany, showAllVehicles, selectedVehicle])
@@ -263,7 +267,17 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     const c = draftData?.contract
     if (!c || c.status !== 'PLANNED' || !allVehicles.length) return
     const v = allVehicles.find((x) => x.vin === c.vin)
-    if (v) { setVehicleId(v.id); setSelectedVehicle(v) }
+    // Resolve the vehicle by VIN across ALL companies, then align companyId to
+    // the vehicle's own company. The scalar effect above seeds companyId from
+    // the contract, but a PLANNED session can carry a vehicle registered under
+    // a different company; keeping companyId = contract's would filter that car
+    // out of the picker and leave the Vehicul Select empty. This runs after
+    // allVehicles loads, so its setCompanyId wins.
+    if (v) {
+      setVehicleId(v.id)
+      setSelectedVehicle(v)
+      if (v.company_id) setCompanyId(v.company_id)
+    }
   }, [draftData, allVehicles])
 
   const { data: inspectionData } = useQuery({
