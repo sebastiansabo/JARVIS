@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Calendar, Euro,
@@ -7,7 +8,7 @@ import { cn } from '@/lib/utils'
 import {
   fieldSalesApi,
   type FSClientProfile, type FSClientFleetVehicle, type FSSaleSummary,
-  type FSVisitSummary, type FSInventoryMatch, type FSAnafData,
+  type FSVisitSummary, type FSInventoryMatch, type FSAnafData, type FSClientRaw,
 } from '@/api/fieldSales'
 
 type ApiErr = { data?: { error?: string } } | null
@@ -350,6 +351,86 @@ function InventoryMatchesSection({ matches }: { matches: FSInventoryMatch[] }) {
   )
 }
 
+// ── Contact Section (Edit) ──
+const CONTACT_FIELDS: { key: keyof FSClientRaw; label: string; type?: string }[] = [
+  { key: 'display_name', label: 'Nume' },
+  { key: 'contact_person', label: 'Persoană contact' },
+  { key: 'phone', label: 'Telefon' },
+  { key: 'email', label: 'Email', type: 'email' },
+  { key: 'company_name', label: 'Companie' },
+  { key: 'nr_reg', label: 'Nr. reg.' },
+  { key: 'street', label: 'Stradă' },
+  { key: 'city', label: 'Oraș' },
+  { key: 'region', label: 'Județ' },
+  { key: 'country', label: 'Țară' },
+]
+
+function ClientContactSection({ clientId, client }: { clientId: number; client: FSClientRaw | null }) {
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState<Partial<FSClientRaw>>({})
+
+  const startEdit = () => {
+    setForm(Object.fromEntries(CONTACT_FIELDS.map(({ key }) => [key, (client?.[key] as string) ?? ''])))
+    setEditing(true)
+  }
+
+  const mutation = useMutation({
+    mutationFn: () => fieldSalesApi.updateClient(clientId, form),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['field-sales-client360', clientId] })
+      setEditing(false)
+    },
+  })
+  const err = mutation.error as ApiErr
+
+  return (
+    <div className="rounded-2xl bg-card border p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Date contact</h3>
+        {!editing && (
+          <button onClick={startEdit} className="rounded-full bg-secondary px-2.5 py-1.5 text-xs font-semibold text-foreground active:bg-secondary/80 transition-colors">
+            Editează
+          </button>
+        )}
+      </div>
+      {!editing ? (
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {CONTACT_FIELDS.map(({ key, label }) => (
+            <div key={key} className="text-sm">
+              <span className="text-muted-foreground">{label}: </span>
+              <span className="text-foreground break-words">{(client?.[key] as string) || '-'}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {CONTACT_FIELDS.map(({ key, label, type }) => (
+              <label key={key} className="block text-xs">
+                <span className="text-muted-foreground">{label}</span>
+                <input
+                  type={type ?? 'text'}
+                  value={(form[key] as string) ?? ''}
+                  onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                  className="mt-1 h-11 w-full rounded-xl border border-border bg-background px-3 text-base focus:outline-none focus:ring-2 focus:ring-teal-600/40"
+                />
+              </label>
+            ))}
+          </div>
+          {mutation.isError && <p className="text-xs text-destructive">{err?.data?.error ?? 'Eroare la salvare'}</p>}
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setEditing(false)} className="h-11 rounded-xl border border-border px-4 text-sm font-semibold active:bg-muted">Anulează</button>
+            <button onClick={() => mutation.mutate()} disabled={mutation.isPending} className="h-11 rounded-xl bg-teal-600 px-4 text-sm font-semibold text-white active:bg-teal-700 disabled:opacity-60">
+              {mutation.isPending ? 'Se salvează...' : 'Salvează'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Component ──
 export default function ClientCard360({ clientId, clientName }: { clientId: number; clientName?: string }) {
   const queryClient = useQueryClient()
@@ -389,6 +470,7 @@ export default function ClientCard360({ clientId, clientName }: { clientId: numb
     )
   }
 
+  const client = data?.client ?? null
   const profile = data?.profile ?? null
   const fleet = data?.fleet ?? []
   const purchases = data?.last_purchases ?? []
@@ -399,6 +481,7 @@ export default function ClientCard360({ clientId, clientName }: { clientId: numb
   return (
     <div className="space-y-4 p-4 sm:p-6">
       <HeaderSection clientId={clientId} clientName={clientName} profile={profile} />
+      <ClientContactSection clientId={clientId} client={client} />
 
       {/* Fiscal + Fleet read as two peer "info" panels — pair them on desktop
           so the card uses the extra horizontal space instead of one narrow

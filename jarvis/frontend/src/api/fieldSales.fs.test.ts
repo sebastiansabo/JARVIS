@@ -113,4 +113,15 @@ describe('fieldSalesApi company-scoping wrappers', () => {
     await fieldSalesApi.getManagerOverview('2026-08-01', '2026-08-31')
     expect(get).toHaveBeenCalledWith('/api/field-sales/manager/overview', { date_from: '2026-08-01', date_to: '2026-08-31' })
   })
+
+  it('updateClient PUTs the field-sales client route with the given fields', async () => {
+    await fieldSalesApi.updateClient(760, { phone: '0722111222', city: 'Cluj' })
+    expect(put).toHaveBeenCalledWith('/api/field-sales/clients/760', { phone: '0722111222', city: 'Cluj' })
+  })
+
+  it('getClient360 surfaces the raw client row', async () => {
+    get.mockResolvedValueOnce({ client: { id: 760, display_name: 'ACME', phone: '0722000000' }, profile: null })
+    const res = await fieldSalesApi.getClient360(760)
+    expect(res.client).toEqual({ id: 760, display_name: 'ACME', phone: '0722000000' })
+  })
 })
