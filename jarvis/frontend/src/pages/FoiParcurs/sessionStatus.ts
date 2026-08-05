@@ -28,3 +28,15 @@ export function sessionStatus(c: FoiContract): {
   }
   return { key: 'driving', label: 'În desfășurare', badgeClass: 'bg-blue-600 text-white', rowClass: 'bg-blue-500/5 border-l-4 border-l-blue-500/40' }
 }
+
+// Pastel block colours for the Week/Day time-grid (shared by the Hub
+// DrivingCalendar and the desktop CalendarTab) — matched to the Field Sales
+// calendar's soft-tint blocks rather than the saturated pill `badgeClass`, so a
+// full-height block reads as a calm event card, not a loud chip.
+export const SESSION_BLOCK_COLOR: Record<SessionStatusKey, string> = {
+  planificat: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+  driving: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+  intarziat: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+  finalizat: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+  nealocat: 'bg-muted text-muted-foreground',
+}

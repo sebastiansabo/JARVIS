@@ -13,11 +13,13 @@ vi.mock('@/pages/Hub/DrivingSessionsList', () => ({
   ),
 }))
 vi.mock('@/pages/Hub/DrivingCalendar', () => ({
-  default: ({ companyId }: { companyId: number }) => <div>calendar:{companyId}</div>,
+  default: ({ companyId, onAdd }: { companyId: number; onAdd?: (d: string, t?: string) => void }) => (
+    <div>calendar:{companyId}<button onClick={() => onAdd?.('2026-08-05', '11:00')}>mock-add</button></div>
+  ),
 }))
 vi.mock('@/pages/FoiParcurs/TestDriveForm', () => ({
-  default: ({ onDone, onCancel }: { onDone?: (c: unknown) => void; onCancel: () => void }) => (
-    <div>form<button onClick={onCancel}>x</button><button onClick={() => onDone?.({ id: 1 })}>done</button></div>
+  default: ({ onDone, onCancel, initialDeparture }: { onDone?: (c: unknown) => void; onCancel: () => void; initialDeparture?: string }) => (
+    <div>form:{initialDeparture ?? ''}<button onClick={onCancel}>x</button><button onClick={() => onDone?.({ id: 1 })}>done</button></div>
   ),
 }))
 vi.mock('@/pages/FoiParcurs/TestDriveReturn', () => ({ default: ({ id }: { id: number }) => <div>return-overlay:{id}</div> }))
@@ -39,7 +41,14 @@ describe('HubDrivingPanel', () => {
     wrap(<HubDrivingPanel />)
     expect(await screen.findByText(/sessions:11/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /driving session nou/i }))
-    expect(screen.getByText('form')).toBeInTheDocument()
+    expect(screen.getByText(/^form:/)).toBeInTheDocument()
+  })
+
+  it('opens the New form prefilled with the slot datetime when the calendar requests an add', async () => {
+    wrap(<HubDrivingPanel />)
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: /calendar/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /mock-add/i }))
+    expect(await screen.findByText('form:2026-08-05T11:00')).toBeInTheDocument()
   })
 
   it('switches to the Calendar tab', async () => {
@@ -70,12 +79,12 @@ describe('HubDrivingPanel', () => {
     )
 
     fireEvent.click(await screen.findByRole('button', { name: /driving session nou/i }))
-    expect(screen.getByText('form')).toBeInTheDocument()
+    expect(screen.getByText(/^form:/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /done/i }))
 
     expect(spy).toHaveBeenCalledWith({ queryKey: ['foi-contracts-all'] })
     expect(spy).toHaveBeenCalledWith({ queryKey: ['odometer-history'] })
-    expect(screen.queryByText('form')).not.toBeInTheDocument()
+    expect(screen.queryByText(/^form:/)).not.toBeInTheDocument()
   })
 })

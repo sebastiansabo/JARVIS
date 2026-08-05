@@ -15,14 +15,23 @@ import {
 } from '@/components/ui/dialog'
 import { foiParcursApi } from '@/api/foiParcurs'
 import type { FoiContract } from '@/types/foiParcurs'
-import { sessionStatus } from './sessionStatus'
+import { sessionStatus, SESSION_BLOCK_COLOR } from './sessionStatus'
 import { naiveDate } from '@/lib/naiveDate'
+import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 
+type CalView = 'month' | 'week' | 'day'
+const VIEW_OPTIONS: readonly [CalView, string][] = [['month', 'Lună'], ['week', 'Săptămână'], ['day', 'Zi']]
 const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mie', 'Joi', 'Vin', 'Sâm', 'Dum']
 
 function dayKey(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+function addDays(d: Date, n: number): Date { const x = new Date(d); x.setDate(x.getDate() + n); return x }
+function startOfWeek(d: Date): Date { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x }
+function minsOfDay(iso?: string | null): number | null {
+  const d = naiveDate(iso)
+  return d ? d.getHours() * 60 + d.getMinutes() : null
 }
 
 /** 6-week (42-day) Monday-first grid covering `cursor`'s month, padded with
@@ -37,20 +46,24 @@ function monthGrid(cursor: Date): Date[] {
   return Array.from({ length: 42 }, (_, i) => new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i))
 }
 
-/** Month-grid calendar of planned/live/finished TD sessions, keyed on
- *  departure_datetime. Data reuses the same ['foi-contracts-all', companyId]
- *  query as SessionsTab (per_page:1000, filtered client-side — the backend's
- *  GET /contracts has no date_from/date_to/route_type filter), so switching
- *  between Sesiuni Driving and Calendar doesn't refetch. */
+/** Calendar of planned/live/finished TD sessions, keyed on departure_datetime.
+ *  Month renders the classic 42-cell grid; Week/Day render the shared
+ *  <TimeGrid> (07:00–21:00) so the desktop matches the Hub / Field Sales look —
+ *  clicking a block opens the same details dialog, and dragging/clicking empty
+ *  grid space starts a new session prefilled at that slot. Data reuses the same
+ *  ['foi-contracts-all', companyId, monthKey] query as SessionsTab (filtered
+ *  client-side), so switching Sesiuni Driving ↔ Calendar doesn't refetch. */
 export function CalendarTab({ companyId, brand }: { companyId: number; brand: string }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [view, setView] = useState<CalView>('month')
   const [cursor, setCursor] = useState(() => new Date())
   const [selected, setSelected] = useState<FoiContract | null>(null)
 
   // Fetch the visible month's range (± a week to cover the grid's leading/
-  // trailing days) so navigating to PAST months loads their (archived) sessions
-  // too — not just the most-recently-created ones.
+  // trailing days, and any Week/Day view anchored in this month) so navigating
+  // to PAST periods loads their (archived) sessions too — not just the
+  // most-recently-created ones.
   const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   const rangeFrom = ymd(new Date(new Date(cursor.getFullYear(), cursor.getMonth(), 1).getTime() - 7 * 864e5))
   const rangeTo = ymd(new Date(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getTime() + 7 * 864e5))
@@ -70,6 +83,10 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
   const vehiclesList = vehiclesData?.vehicles ?? []
   const vinBrand = new Map(vehiclesList.map((v) => [v.vin, v.brand]))
   const vinVehicle = new Map(vehiclesList.map((v) => [v.vin, v]))
+  const carLabel = (vin: string) => {
+    const v = vinVehicle.get(vin)
+    return v ? [v.brand || v.mark, v.model].filter(Boolean).join(' ') : vin.slice(0, 8)
+  }
 
   const discardMutation = useMutation({
     mutationFn: (id: number) => foiParcursApi.discardTestDrive(id),
@@ -91,80 +108,135 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
       list.push(c)
       map.set(key, list)
     }
+    for (const list of map.values()) list.sort((a, b) => (a.departure_datetime || '').localeCompare(b.departure_datetime || ''))
     return map
   }, [tdContracts])
+  const byId = useMemo(() => new Map(tdContracts.map((c) => [c.id, c] as const)), [tdContracts])
 
   const grid = useMemo(() => monthGrid(cursor), [cursor])
   const currentMonth = cursor.getMonth()
   const todayKey = dayKey(new Date())
-  const monthLabel = cursor.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })
+
+  // Week/Day columns + their time-grid events.
+  const weekStart = startOfWeek(cursor)
+  const dayCols = view === 'day' ? [cursor] : view === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : []
+  const events: TimeGridEvent[] = view === 'month'
+    ? []
+    : dayCols.flatMap((d) => (byDay.get(dayKey(d)) ?? []).map((c): TimeGridEvent => ({
+        id: c.id,
+        dayKey: dayKey(naiveDate(c.departure_datetime)!),
+        startMin: minsOfDay(c.departure_datetime),
+        endMin: minsOfDay(c.return_datetime),
+        color: SESSION_BLOCK_COLOR[sessionStatus(c).key],
+        title: c.client_name || carLabel(c.vin),
+        subtitle: carLabel(c.vin),
+      })))
+
+  const go = (dir: 1 | -1) => {
+    if (view === 'day') setCursor(addDays(cursor, dir))
+    else if (view === 'week') setCursor(addDays(cursor, 7 * dir))
+    else setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1))
+  }
+
+  let periodLabel: string
+  if (view === 'day') {
+    periodLabel = cursor.toLocaleDateString('ro-RO', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
+  } else if (view === 'week') {
+    const we = addDays(weekStart, 6)
+    const weM = we.toLocaleDateString('ro-RO', { month: 'long' })
+    periodLabel = weekStart.getMonth() === we.getMonth()
+      ? `${weekStart.getDate()} – ${we.getDate()} ${weM}`
+      : `${weekStart.getDate()} ${weekStart.toLocaleDateString('ro-RO', { month: 'long' })} – ${we.getDate()} ${weM}`
+  } else {
+    periodLabel = cursor.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })
+  }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}>
+          <Button variant="outline" size="icon" onClick={() => go(-1)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button variant="outline" size="sm" onClick={() => setCursor(new Date())}>Azi</Button>
-          <Button variant="outline" size="icon" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}>
+          <Button variant="outline" size="icon" onClick={() => go(1)}>
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <h3 className="text-base font-semibold capitalize ml-2">{monthLabel}</h3>
+          <h3 className="text-base font-semibold capitalize ml-2">{periodLabel}</h3>
+          {isLoading && <span className="text-xs text-muted-foreground">Se încarcă...</span>}
         </div>
-        {isLoading && <span className="text-xs text-muted-foreground">Se încarcă...</span>}
-      </div>
-
-      <Card className="overflow-hidden">
-        <div className="grid grid-cols-7 border-b bg-muted/40">
-          {WEEKDAY_LABELS.map((d) => (
-            <div key={d} className="px-2 py-1.5 text-center text-xs font-medium text-muted-foreground">{d}</div>
+        {/* View switcher — same segmented control as the Hub / Field Sales calendars. */}
+        <div className="flex h-9 gap-0.5 rounded-lg bg-muted p-0.5">
+          {VIEW_OPTIONS.map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              className={cn('rounded-md px-3 text-sm font-medium transition-colors', view === v ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground')}
+            >
+              {label}
+            </button>
           ))}
         </div>
-        <div className="grid grid-cols-7">
-          {grid.map((d) => {
-            const key = dayKey(d)
-            const inMonth = d.getMonth() === currentMonth
-            const isToday = key === todayKey
-            const isPast = key < todayKey
-            const events = byDay.get(key) ?? []
-            return (
-              <div
-                key={key}
-                className={cn('min-h-[104px] border-b border-r p-1.5 space-y-1', !inMonth && 'bg-muted/20 text-muted-foreground')}
-              >
-                <div className={cn('text-xs font-medium', isToday && 'inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground')}>
-                  {d.getDate()}
+      </div>
+
+      {view === 'month' ? (
+        <Card className="overflow-hidden">
+          <div className="grid grid-cols-7 border-b bg-muted/40">
+            {WEEKDAY_LABELS.map((d) => (
+              <div key={d} className="px-2 py-1.5 text-center text-xs font-medium text-muted-foreground">{d}</div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7">
+            {grid.map((d) => {
+              const key = dayKey(d)
+              const inMonth = d.getMonth() === currentMonth
+              const isToday = key === todayKey
+              const isPast = key < todayKey
+              const events = byDay.get(key) ?? []
+              return (
+                <div
+                  key={key}
+                  className={cn('min-h-[104px] border-b border-r p-1.5 space-y-1', !inMonth && 'bg-muted/20 text-muted-foreground')}
+                >
+                  <div className={cn('text-xs font-medium', isToday && 'inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground')}>
+                    {d.getDate()}
+                  </div>
+                  <div className="space-y-1">
+                    {events.slice(0, 3).map((c) => {
+                      const ss = sessionStatus(c)
+                      const time = c.departure_datetime
+                        ? naiveDate(c.departure_datetime)!.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
+                        : ''
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setSelected(c)}
+                          className={cn('w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium text-white hover:opacity-90', ss.badgeClass, isPast && 'opacity-60')}
+                          title={`${time} ${carLabel(c.vin)} — ${c.client_name || '—'}`}
+                        >
+                          {time} {carLabel(c.vin)}
+                        </button>
+                      )
+                    })}
+                    {events.length > 3 && (
+                      <div className="text-[10px] text-muted-foreground px-1.5">+{events.length - 3} altele</div>
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  {events.slice(0, 3).map((c) => {
-                    const ss = sessionStatus(c)
-                    const v = vinVehicle.get(c.vin)
-                    const carLabel = v ? [v.brand || v.mark, v.model].filter(Boolean).join(' ') : c.vin.slice(0, 8)
-                    const time = c.departure_datetime
-                      ? naiveDate(c.departure_datetime)!.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
-                      : ''
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => setSelected(c)}
-                        className={cn('w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium text-white hover:opacity-90', ss.badgeClass, isPast && 'opacity-60')}
-                        title={`${time} ${carLabel} — ${c.client_name || '—'}`}
-                      >
-                        {time} {carLabel}
-                      </button>
-                    )
-                  })}
-                  {events.length > 3 && (
-                    <div className="text-[10px] text-muted-foreground px-1.5">+{events.length - 3} altele</div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </Card>
+              )
+            })}
+          </div>
+        </Card>
+      ) : (
+        <TimeGrid
+          dayCols={dayCols}
+          events={events}
+          onEventClick={(id) => { const c = byId.get(id); if (c) setSelected(c) }}
+          onSlotAdd={(dk, time) => navigate(`/app/foi-parcurs/test-drive?departure=${dk}T${time}`)}
+        />
+      )}
 
       {selected && (
         <Dialog open onOpenChange={(o) => { if (!o) setSelected(null) }}>

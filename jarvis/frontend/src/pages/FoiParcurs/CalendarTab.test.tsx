@@ -1,0 +1,86 @@
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const navigate = vi.fn()
+vi.mock('react-router-dom', async (orig) => ({ ...(await orig() as object), useNavigate: () => navigate }))
+
+const { getContracts, getVehicles } = vi.hoisted(() => ({ getContracts: vi.fn(), getVehicles: vi.fn() }))
+vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: {
+  getContracts, getVehicles,
+  discardTestDrive: vi.fn(),
+  getContractPdfUrl: (id: number) => `/pdf/${id}`,
+} }))
+
+// jsdom (v26) doesn't implement the PointerEvent constructor — build on MouseEvent.
+function firePointer(el: Element, type: 'pointerdown' | 'pointermove' | 'pointerup', clientY: number, pointerId = 1) {
+  const event = new MouseEvent(type, { clientY, bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'pointerId', { value: pointerId, configurable: true })
+  fireEvent(el, event)
+}
+function mockCol(col: HTMLElement, top = 100) {
+  vi.spyOn(col, 'getBoundingClientRect').mockReturnValue({
+    top, bottom: top + 400, height: 400, left: 0, right: 300, width: 300, x: 0, y: top, toJSON: () => {},
+  } as DOMRect)
+  col.setPointerCapture = vi.fn()
+  col.releasePointerCapture = vi.fn()
+}
+
+import { CalendarTab } from './CalendarTab'
+
+const pad = (n: number) => String(n).padStart(2, '0')
+const now = new Date()
+const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+
+getContracts.mockResolvedValue({
+  contracts: [
+    { id: 11, route_type: 'TD', status: 'FILLED', td_status: 'driving', vin: 'VF1XXXXXXXX', client_name: 'Ion Pop', departure_datetime: `${todayKey}T10:00`, return_datetime: `${todayKey}T11:30` },
+  ], total: 1, page: 1, per_page: 2000,
+})
+getVehicles.mockResolvedValue({ vehicles: [{ vin: 'VF1XXXXXXXX', brand: 'Volvo', mark: 'Volvo', model: 'XC40', registration_number: 'B 01 ABC' }] })
+
+function wrap(ui: React.ReactNode) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={qc}><MemoryRouter>{ui}</MemoryRouter></QueryClientProvider>)
+}
+
+describe('CalendarTab (desktop foi-parcurs)', () => {
+  it('offers Lună/Săptămână/Zi views (month is the default)', async () => {
+    wrap(<CalendarTab companyId={11} brand="" />)
+    expect(await screen.findByRole('button', { name: 'Lună' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Săptămână' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Zi' })).toBeInTheDocument()
+    // Month view chip shows the session (time + car).
+    expect(await screen.findByTitle(/Ion Pop/)).toBeInTheDocument()
+  })
+
+  it('renders a time-grid block in Week view and opens the details dialog on click', async () => {
+    wrap(<CalendarTab companyId={11} brand="" />)
+    await screen.findByTitle(/Ion Pop/)
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    expect(await screen.findByText('07:00')).toBeInTheDocument()
+    const block = await screen.findByTestId('tg-block-11')
+    // 10:00 → minToY(600) = 144px.
+    expect(block).toHaveStyle({ top: '144px' })
+
+    fireEvent.click(block)
+    expect(await screen.findByText('Detalii sesiune')).toBeInTheDocument()
+  })
+
+  it('navigates to a prefilled new-session form when dragging an empty slot in Week view', async () => {
+    wrap(<CalendarTab companyId={11} brand="" />)
+    await screen.findByTitle(/Ion Pop/)
+    fireEvent.click(screen.getByRole('button', { name: 'Săptămână' }))
+
+    const col = await screen.findByTestId(`tg-col-${todayKey}`)
+    mockCol(col)
+    // 09:00 offset 96px → 10:30 offset 168px.
+    firePointer(col, 'pointerdown', 100 + 96)
+    firePointer(col, 'pointermove', 100 + 168)
+    firePointer(col, 'pointerup', 100 + 168)
+
+    expect(navigate).toHaveBeenCalledWith(`/app/foi-parcurs/test-drive?departure=${todayKey}T09:00`)
+  })
+})
