@@ -21,12 +21,22 @@ import requests
 BNR_CURRENT_URL = "https://www.bnr.ro/nbrfxrates.xml"
 BNR_YEARLY_URL = "https://www.bnr.ro/files/xml/years/nbrfxrates{year}.xml"
 
-# XML namespace used by BNR
-BNR_NS = {"bnr": "http://www.bnr.ro/xsd"}
+# BNR migrated its XML namespace from http://www.bnr.ro/xsd (<= 2025 files) to
+# https://www.bnr.ro/xsd (2026 files). We therefore match elements by local tag
+# name and stay agnostic to the namespace URI — hard-coding either one silently
+# parses zero rates from files served under the other.
 
 # Simple in-memory cache for exchange rates
 # Structure: {year: {date_str: {currency: rate}}}
 _rate_cache = {}
+
+# When each year was last fetched: {year: datetime}. Past years are immutable so
+# they are cached forever; the current year is refreshed once its TTL expires so
+# a long-running worker keeps seeing newly published rates. Without this, the
+# current-year cache froze at process start and invoices issued more than the
+# 10-day fallback window later resolved to no rate (NULL kurs on the invoice).
+_cache_fetched_at = {}
+CURRENT_YEAR_CACHE_TTL = timedelta(hours=6)
 
 
 def get_exchange_rate(currency: str, date: str) -> Optional[float]:
@@ -97,11 +107,18 @@ def _fetch_rates_for_year(year: int) -> dict:
     """
     global _rate_cache
 
-    # Already fetched this year
-    if year in _rate_cache:
-        return _rate_cache[year]
-
     current_year = datetime.now().year
+
+    # Serve from cache unless it is a stale current-year cache. Past years are
+    # immutable (BNR never revises them), so once fetched they are kept forever.
+    # The current year is re-fetched after its TTL so a long-lived worker picks
+    # up rates published after the process first warmed the cache.
+    if year in _rate_cache:
+        if year != current_year:
+            return _rate_cache[year]
+        fetched_at = _cache_fetched_at.get(year)
+        if fetched_at and (datetime.now() - fetched_at) < CURRENT_YEAR_CACHE_TTL:
+            return _rate_cache[year]
 
     # Always try yearly archive first (has full history), fall back to current
     urls = [BNR_YEARLY_URL.format(year=year)]
@@ -118,13 +135,29 @@ def _fetch_rates_for_year(year: int) -> dict:
         except Exception as e:
             print(f"Error fetching BNR rates from {url}: {e}")
 
-    _rate_cache[year] = rates_by_date
-    return rates_by_date
+    if rates_by_date:
+        _rate_cache[year] = rates_by_date
+        _cache_fetched_at[year] = datetime.now()
+    elif year not in _rate_cache:
+        # First fetch returned nothing (e.g. BNR unreachable). Cache the empty
+        # result but leave the timestamp unset so the next call retries instead
+        # of serving an empty cache for a whole TTL. A prior good cache is kept.
+        _rate_cache[year] = rates_by_date
+
+    return _rate_cache[year]
+
+
+def _localname(tag: str) -> str:
+    """Strip the XML namespace from a tag: '{https://www.bnr.ro/xsd}Cube' -> 'Cube'."""
+    return tag.rsplit('}', 1)[-1]
 
 
 def _parse_bnr_xml(xml_content: bytes) -> dict:
     """
     Parse BNR XML response and extract rates.
+
+    Elements are matched by local name (Cube/Rate) so the parser works
+    regardless of the namespace URI BNR serves (http:// or https://).
 
     Returns dict: {date_str: {currency: rate}}
     """
@@ -132,38 +165,39 @@ def _parse_bnr_xml(xml_content: bytes) -> dict:
 
     try:
         root = ET.fromstring(xml_content)
-
-        # Find all Cube elements (each contains rates for one date)
-        for cube in root.findall('.//bnr:Cube', BNR_NS):
-            date_str = cube.get('date')
-            if not date_str:
-                continue
-
-            rates = {}
-
-            # Extract all rates for this date
-            for rate_elem in cube.findall('bnr:Rate', BNR_NS):
-                currency = rate_elem.get('currency')
-                if not currency:
-                    continue
-
-                try:
-                    rate_value = float(rate_elem.text)
-
-                    # Handle multiplier (e.g., HUF is quoted per 100 units)
-                    multiplier = rate_elem.get('multiplier')
-                    if multiplier:
-                        rate_value = rate_value / float(multiplier)
-
-                    rates[currency] = rate_value
-                except (ValueError, TypeError):
-                    continue
-
-            if rates:
-                rates_by_date[date_str] = rates
-
     except ET.ParseError as e:
         print(f"Error parsing BNR XML: {e}")
+        return rates_by_date
+
+    # Each <Cube date="..."> holds one day's rates; Rate elements are its children.
+    for cube in root.iter():
+        if _localname(cube.tag) != 'Cube':
+            continue
+        date_str = cube.get('date')
+        if not date_str:
+            continue
+
+        rates = {}
+        for rate_elem in cube:
+            if _localname(rate_elem.tag) != 'Rate':
+                continue
+            currency = rate_elem.get('currency')
+            if not currency:
+                continue
+            try:
+                rate_value = float(rate_elem.text)
+
+                # Handle multiplier (e.g., HUF is quoted per 100 units)
+                multiplier = rate_elem.get('multiplier')
+                if multiplier:
+                    rate_value = rate_value / float(multiplier)
+
+                rates[currency] = rate_value
+            except (ValueError, TypeError):
+                continue
+
+        if rates:
+            rates_by_date[date_str] = rates
 
     return rates_by_date
 
@@ -270,8 +304,9 @@ def get_eur_ron_conversion(
 
 def clear_cache():
     """Clear the rate cache (useful for testing or refreshing data)."""
-    global _rate_cache
+    global _rate_cache, _cache_fetched_at
     _rate_cache = {}
+    _cache_fetched_at = {}
 
 
 # Test function

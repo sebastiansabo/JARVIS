@@ -52,6 +52,21 @@ class InvoiceStateMachine:
             logger.warning("Failed to fetch BNR rate: %s", e)
         return None
 
+    def _require_kurs(self, kurs, issued_date, doc_label: str):
+        """Refuse to issue a foreign-currency document without a BNR exchange rate.
+
+        Romanian invoicing requires the BNR rate on EUR documents, and downstream
+        consumers (storno per-line Kurs, FINAL weighted average, EuroFib export)
+        all depend on it. Silently storing NULL is exactly what hid the missing-Kurs
+        bug, so fail loudly and actionably instead of producing a defective invoice."""
+        if kurs:
+            return
+        raise InvoiceStateMachineError(
+            f"Could not determine the BNR exchange rate for {doc_label} "
+            f"(issued {issued_date or 'without a date'}). The rate service may be "
+            f"temporarily unavailable — set the issue date and retry in a moment."
+        )
+
     def _check_invoice_number_unique(self, anexa_id: int, invoice_number: int | None, invoice_type: str | None = None):
         """Ensure invoice_number is not already used on this anexa for the same document type."""
         if invoice_number is None:
@@ -224,6 +239,7 @@ class InvoiceStateMachine:
         proforma_kurs = Decimal(str(proforma_row["kurs_applied"])) if proforma_row.get("kurs_applied") else None
         if not proforma_kurs:
             proforma_kurs = self._fetch_kurs(issued_date)
+        self._require_kurs(proforma_kurs, issued_date, f"Invoice #{sequence_number}")
         total_ron = (proforma_amount * proforma_kurs) if proforma_kurs else Decimal("0")
         intocmit = self._resolve_intocmit(intocmit_de, created_by_user_id)
 
@@ -335,6 +351,7 @@ class InvoiceStateMachine:
         storno_kurs = (weighted_sum / amount_sum).quantize(Decimal("0.0001")) if amount_sum else None
         if not storno_kurs:
             storno_kurs = self._fetch_kurs(issued_date)
+        self._require_kurs(storno_kurs, issued_date, "Storno")
         storno_ron = (storno_total * storno_kurs) if storno_kurs else Decimal("0")
 
         self._check_invoice_number_unique(anexa_id, invoice_number, "STORNO")
@@ -453,6 +470,7 @@ class InvoiceStateMachine:
         final_kurs = (sum_eur_x_kurs / sum_eur).quantize(Decimal("0.0001")) if sum_eur else None
         if not final_kurs:
             final_kurs = self._fetch_kurs(issued_date)
+        self._require_kurs(final_kurs, issued_date, "Final invoice")
         final_ron = (final_total * final_kurs) if final_kurs else Decimal("0")
         self._check_invoice_number_unique(anexa_id, invoice_number, "FINAL")
         intocmit = self._resolve_intocmit(intocmit_de, created_by_user_id)
