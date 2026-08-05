@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -23,6 +23,9 @@ const WORK_START = 8
 const WORK_END = 18
 const PX_PER_HOUR = 48
 const SNAP_MIN = 30
+// Pointer movement (px) below which a press+release on a draggable block is a
+// click (open), not a move.
+const DRAG_THRESHOLD_PX = 4
 const pad = (n: number) => String(n).padStart(2, '0')
 
 function keyOf(d: Date): string { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
@@ -45,6 +48,9 @@ export interface TimeGridEvent {
   color: string
   title: string
   subtitle?: string
+  /** When true (and onMove is provided), the block can be dragged to a new
+   *  time/day. Callers set this only for records that may be rescheduled. */
+  draggable?: boolean
 }
 
 // A cluster of timed events whose ranges overlap; `s`/`e` are the cluster's
@@ -69,17 +75,32 @@ function clusterTimed(events: TimeGridEvent[]): Cluster[] {
 }
 
 // Only 'create' remains from FSTimeGrid's three drag modes — no move/resize.
-type CreateDrag = { col: string; y0: number; y1: number }
+// `col` is the origin column (holds the pointer capture); `targetCol` is the
+// column the pointer is currently over — the selection previews there and the
+// slot is created there, so dragging sideways into the next day works.
+type CreateDrag = { col: string; targetCol: string; y0: number; y1: number }
 
-export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
+export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onMove }: {
   dayCols: Date[]
   events: TimeGridEvent[]
   onEventClick: (id: number) => void
   onSlotAdd?: (dayKey: string, startTime: string, endTime: string) => void
+  /** Called when a draggable block is dropped at a new day/time (duration
+   *  preserved). Only fired for events with draggable:true. */
+  onMove?: (id: number, dayKey: string, startTime: string, endTime: string) => void
 }) {
   const [drag, setDrag] = useState<CreateDrag | null>(null)
+  // Active block move-drag (draggable events only). Carries raw client coords —
+  // only the delta drives the math, and screen-space delta equals column-space
+  // delta (columns don't resize mid-drag).
+  const [move, setMove] = useState<{ ev: TimeGridEvent; col: string; x0: number; y0: number; x1: number; y1: number } | null>(null)
   // The list of sessions shown in the cluster popover (null = closed).
   const [openCluster, setOpenCluster] = useState<TimeGridEvent[] | null>(null)
+  // Column DOM refs (keyed by day key) for the move day-switch heuristic.
+  const colRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  // Suppresses the one native click a browser fires after a pointer-resolved
+  // open/move on a draggable block.
+  const suppressClickRef = useRef<number | null>(null)
 
   const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i)
   const gridHeight = (HOUR_END - HOUR_START) * PX_PER_HOUR
@@ -107,6 +128,15 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
     return { d, dk, timed: dayEvents.filter((e) => e.startMin != null), untimed: dayEvents.filter((e) => e.startMin == null) }
   })
   const hasAnyUntimed = cols.some((c) => c.untimed.length > 0)
+
+  // Which day column a screen-x coordinate falls in (for day-aware create-drag).
+  const columnAtX = (x: number): string | null => {
+    for (const c of cols) {
+      const r = colRefs.current[c.dk]?.getBoundingClientRect()
+      if (r && r.width > 0 && x >= r.left && x <= r.right) return c.dk
+    }
+    return null
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -160,14 +190,16 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
           </div>
           <div className={cn('relative grid flex-1 gap-1', gridColsClass)}>
             {cols.map(({ dk, timed }) => {
-              const dragging = drag?.col === dk
-              const selTop = dragging ? minToY(clampMin(yToMin(Math.min(drag!.y0, drag!.y1)))) : 0
-              const selBottom = dragging ? minToY(clampMin(yToMin(Math.max(drag!.y0, drag!.y1)))) : 0
+              const isOrigin = drag?.col === dk        // this column owns the pointer capture
+              const isTarget = drag?.targetCol === dk  // selection currently previews here
+              const selTop = isTarget ? minToY(clampMin(yToMin(Math.min(drag!.y0, drag!.y1)))) : 0
+              const selBottom = isTarget ? minToY(clampMin(yToMin(Math.max(drag!.y0, drag!.y1)))) : 0
               return (
                 <div
                   key={dk}
                   data-testid={`tg-col-${dk}`}
-                  className={cn('relative min-w-0 snap-start rounded-lg bg-muted/30', onSlotAdd && 'cursor-pointer', dragging && 'touch-none')}
+                  ref={(el) => { colRefs.current[dk] = el }}
+                  className={cn('relative min-w-0 snap-start rounded-lg bg-muted/30', onSlotAdd && 'cursor-pointer', isOrigin && 'touch-none')}
                   style={{ height: gridHeight }}
                   onPointerDown={(e) => {
                     if (!onSlotAdd) return
@@ -175,23 +207,28 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
                     const rect = e.currentTarget.getBoundingClientRect()
                     const y0 = e.clientY - rect.top
                     e.currentTarget.setPointerCapture(e.pointerId)
-                    setDrag({ col: dk, y0, y1: y0 })
+                    setDrag({ col: dk, targetCol: dk, y0, y1: y0 })
                   }}
                   onPointerMove={(e) => {
+                    // Fires on the origin column (pointer capture). Track the
+                    // column under the pointer-x so the selection can cross days,
+                    // and read Y off the origin column (all columns share the
+                    // same top, so the time is unaffected by the horizontal move).
                     if (!drag || drag.col !== dk) return
                     const rect = e.currentTarget.getBoundingClientRect()
-                    setDrag({ col: dk, y0: drag.y0, y1: e.clientY - rect.top })
+                    setDrag({ ...drag, targetCol: columnAtX(e.clientX) ?? drag.targetCol, y1: e.clientY - rect.top })
                   }}
                   onPointerUp={(e) => {
                     if (!onSlotAdd || !drag || drag.col !== dk) return
                     e.currentTarget.releasePointerCapture(e.pointerId)
+                    const targetDk = columnAtX(e.clientX) ?? drag.targetCol
                     const a = clampMin(yToMin(Math.min(drag.y0, drag.y1)))
                     let b = clampMin(yToMin(Math.max(drag.y0, drag.y1)))
-                    if (b - a < SNAP_MIN) b = clampMin(a + 60) // plain click → 1h default
+                    if (b - a < SNAP_MIN) b = clampMin(a + 60) // plain click / sideways drag → 1h default
                     let startMin = a
                     if (b - startMin < SNAP_MIN) startMin = clampMin(b - 60) // clamped against 21:00
                     setDrag(null)
-                    onSlotAdd(dk, minToTime(startMin), minToTime(b))
+                    onSlotAdd(targetDk, minToTime(startMin), minToTime(b))
                   }}
                   onPointerCancel={(e) => {
                     if (!drag || drag.col !== dk) return
@@ -202,7 +239,7 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
                   {hours.slice(0, -1).map((h) => (
                     <div key={h} className="absolute inset-x-0 border-t border-border/30" style={{ top: minToY(h * 60) }} />
                   ))}
-                  {dragging && (
+                  {isTarget && (
                     <div
                       data-testid="tg-drag-selection"
                       className="pointer-events-none absolute inset-x-0.5 rounded-md border border-primary/50 bg-primary/20"
@@ -214,6 +251,15 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
                     const height = Math.max(minToY(cl.e) - top, 18)
                     if (cl.items.length === 1) {
                       const ev = cl.items[0].ev
+                      const canMove = !!(ev.draggable && onMove)
+                      const movingThis = move?.ev.id === ev.id
+                      // Live preview offset while dragging this block.
+                      let blockTop = top
+                      if (movingThis) {
+                        const dy = move!.y1 - move!.y0
+                        const newStart = clampMin(yToMin(top + dy))
+                        blockTop = minToY(newStart)
+                      }
                       return (
                         <button
                           key={ev.id}
@@ -222,11 +268,59 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
                           // stopPropagation on the block's own pointer events so a
                           // press on a block never reaches the column's create-drag
                           // handlers (which would fire onSlotAdd on top of opening).
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onPointerUp={(e) => e.stopPropagation()}
-                          onClick={() => onEventClick(ev.id)}
-                          style={{ top, height }}
-                          className={cn('absolute left-0.5 right-0.5 z-[1] overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', ev.color)}
+                          onPointerDown={(e) => {
+                            e.stopPropagation()
+                            if (!canMove) return
+                            if (e.button !== 0 && e.pointerType === 'mouse') return
+                            e.currentTarget.setPointerCapture(e.pointerId)
+                            setMove({ ev, col: dk, x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY })
+                          }}
+                          onPointerMove={(e) => {
+                            if (!move || move.ev.id !== ev.id) return
+                            e.stopPropagation()
+                            setMove({ ...move, x1: e.clientX, y1: e.clientY })
+                          }}
+                          onPointerUp={(e) => {
+                            e.stopPropagation()
+                            if (!move || move.ev.id !== ev.id) return
+                            e.currentTarget.releasePointerCapture(e.pointerId)
+                            const dx = e.clientX - move.x0
+                            const dy = e.clientY - move.y0
+                            setMove(null)
+                            suppressClickRef.current = ev.id
+                            if (Math.abs(dx) <= DRAG_THRESHOLD_PX && Math.abs(dy) <= DRAG_THRESHOLD_PX) {
+                              onEventClick(ev.id) // sub-threshold → treat as a click
+                              return
+                            }
+                            const sMin = clampMin(ev.startMin!)
+                            const eMin = clampMin(Math.max(ev.endMin ?? sMin + 60, sMin + SNAP_MIN))
+                            const duration = eMin - sMin
+                            const newStart = clampMin(yToMin(minToY(sMin) + dy))
+                            const newEnd = Math.min(newStart + duration, HOUR_END * 60)
+                            // Best-effort day switch in week view (dx / column width).
+                            let newDayKey = dk
+                            if (dayCols.length > 1) {
+                              const width = colRefs.current[dk]?.getBoundingClientRect().width || 0
+                              const originIdx = cols.findIndex((c) => c.dk === dk)
+                              if (width > 0 && originIdx >= 0) {
+                                const newIdx = Math.min(cols.length - 1, Math.max(0, originIdx + Math.round(dx / width)))
+                                newDayKey = cols[newIdx].dk
+                              }
+                            }
+                            onMove!(ev.id, newDayKey, minToTime(newStart), minToTime(newEnd))
+                          }}
+                          onPointerCancel={(e) => {
+                            if (!move || move.ev.id !== ev.id) return
+                            e.stopPropagation()
+                            if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
+                            setMove(null)
+                          }}
+                          onClick={() => {
+                            if (suppressClickRef.current === ev.id) { suppressClickRef.current = null; return }
+                            onEventClick(ev.id)
+                          }}
+                          style={{ top: blockTop, height }}
+                          className={cn('absolute left-0.5 right-0.5 z-[1] overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', ev.color, canMove && 'cursor-grab', movingThis && 'cursor-grabbing touch-none ring-2 ring-primary/50')}
                         >
                           <span className="block truncate">{`${minToTime(ev.startMin!)} ${ev.title}`}</span>
                           {ev.subtitle && <span className="block truncate text-[9px] font-normal opacity-80">{ev.subtitle}</span>}
