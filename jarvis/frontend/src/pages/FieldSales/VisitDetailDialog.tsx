@@ -95,6 +95,7 @@ export function VisitDetailDialog({ visitId, open, onOpenChange, onOpenClient360
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [activeTab, setActiveTab] = useState('info')
+  const [quickNote, setQuickNote] = useState('')
 
   // Edit form state
   const [editDate, setEditDate] = useState('')
@@ -139,6 +140,19 @@ export function VisitDetailDialog({ visitId, open, onOpenChange, onOpenClient360
       setEditing(false)
     },
     onError: () => toast.error('Eroare la actualizare'),
+  })
+
+  const quickNoteMutation = useMutation({
+    mutationFn: (text: string) => fieldSalesApi.addQuickNote(visitId!, text),
+    onSuccess: () => {
+      setQuickNote('')
+      queryClient.invalidateQueries({ queryKey: ['fs-visit-detail', visitId] })
+      queryClient.invalidateQueries({ queryKey: ['field-sales-visits'] })
+      queryClient.invalidateQueries({ queryKey: ['field-sales-mine'] })
+      queryClient.invalidateQueries({ queryKey: ['field-sales-cal'] })
+      toast.success('Notă adăugată')
+    },
+    onError: () => toast.error('Eroare la adăugarea notei'),
   })
 
   const handleSave = () => {
@@ -412,6 +426,32 @@ export function VisitDetailDialog({ visitId, open, onOpenChange, onOpenClient360
                         Generat: {formatDateTime(visit.ai_brief_generated_at)}
                       </p>
                     )}
+                  </div>
+                )}
+
+                {/* Quick note composer — only while the visit is in progress. */}
+                {visit.status === 'in_progress' && (
+                  <div className="rounded-lg border p-3 space-y-2">
+                    <Label htmlFor="quick-note" className="text-sm font-semibold flex items-center gap-1.5">
+                      <MessageSquare className="h-4 w-4" />
+                      Adaugă notă
+                    </Label>
+                    <Textarea
+                      id="quick-note"
+                      value={quickNote}
+                      onChange={(e) => setQuickNote(e.target.value)}
+                      placeholder="Notează ce s-a discutat până acum..."
+                      rows={3}
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() => quickNoteMutation.mutate(quickNote.trim())}
+                        disabled={!quickNote.trim() || quickNoteMutation.isPending}
+                      >
+                        {quickNoteMutation.isPending ? 'Se salvează...' : 'Adaugă notă'}
+                      </Button>
+                    </div>
                   </div>
                 )}
 
