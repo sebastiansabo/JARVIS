@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -42,6 +42,18 @@ describe('TestDriveForm embedded mode', () => {
   it('seeds the departure datetime from initialDeparture (e.g. a calendar slot)', async () => {
     wrap(<TestDriveForm embedded initialDeparture="2026-08-05T11:00" onCancel={vi.fn()} onDone={vi.fn()} />)
     expect(await screen.findByTestId('td-departure')).toHaveValue('2026-08-05T11:00')
+  })
+
+  it('planning (Planifică) flags only the minimal fields, not the activation-only ones', async () => {
+    wrap(<TestDriveForm embedded onCancel={vi.fn()} onDone={vi.fn()} />)
+    // Attempt to plan with nothing filled → only car/client/dates should red-flag.
+    fireEvent.click(await screen.findByRole('button', { name: /planific/i }))
+    // Client (plan-relevant, missing) gets the destructive ring we add…
+    // (`ring-2 ring-destructive`, distinct from the Input's base
+    // `aria-invalid:ring-destructive/20` variant).
+    expect(screen.getByPlaceholderText(/caut[aă] client/i).className).toContain('ring-2 ring-destructive')
+    // …but KM estimat (activation-only) does NOT when only planning.
+    expect(screen.getByPlaceholderText(/km estima/i).className).not.toContain('ring-2 ring-destructive')
   })
 
   it('seeds the departure datetime from a ?departure= search param (desktop calendar route)', async () => {
