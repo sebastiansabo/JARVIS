@@ -279,5 +279,24 @@ describe('HubFieldSalesPanel', () => {
       // is fetched unscoped either.
       expect(getTodayVisits).not.toHaveBeenCalled()
     })
+
+    it('ignores a stale persisted company id when the user no longer has any allowed company', async () => {
+      // A user who previously had company 5 (persisted in localStorage) loses
+      // all company access -> the companies query resolves empty, so 5 is no
+      // longer a confirmed-allowed company (companyReady is false). Crucially
+      // the today query must NOT fire even transiently for company 5 on first
+      // mount (the persisted 5 reads > 0), and the no-company state + hidden
+      // Adaugă button must agree — no off-tenant fetch, no dead add flow.
+      localStorage.setItem('hub-fs-company', '5')
+      getFieldSalesCompanies.mockResolvedValue({ success: true, companies: [], default_company_id: null })
+      getTodayVisits.mockResolvedValue({ success: true, visits: [], date: '2026-08-04' })
+      wrap(<HubFieldSalesPanel />)
+
+      await waitFor(() => expect(screen.getAllByText(/nu aveți nicio companie alocată/i).length).toBeGreaterThanOrEqual(1))
+      expect(screen.queryByRole('button', { name: /adauga/i })).not.toBeInTheDocument()
+      // companyReady is false for the stale/disallowed id -> the today query
+      // never fires for company 5, not even on the first render.
+      expect(getTodayVisits).not.toHaveBeenCalled()
+    })
   })
 })

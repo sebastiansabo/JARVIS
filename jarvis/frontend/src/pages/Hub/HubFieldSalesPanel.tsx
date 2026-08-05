@@ -330,14 +330,20 @@ export default function HubFieldSalesPanel() {
     }
   }, [companies, defaultCompanyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Gated on companyId > 0 so the panel never fires an unscoped fetch (with
-  // companyId still 0, pre-default) that would render real visits only to
-  // have them immediately unmount/refetch once the companies effect above
-  // resolves the actual company a moment later.
+  // The single gate for every company-scoped fetch/action: true only once the
+  // active companyId is CONFIRMED to be a company this user may see. A stale
+  // localStorage id (access revoked), the pre-default 0, or a not-yet-loaded
+  // companies list all read false — so the panel never fetches or lets the
+  // user add against a company that isn't (yet known to be) theirs. This keeps
+  // the add button, today/upcoming queries and the AddVisitForm client search
+  // agreeing with the no-company state, with no transient window where a
+  // persisted-but-disallowed id could fire an off-tenant request.
+  const companyReady = companyId > 0 && companies.some((c) => c.id === companyId)
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ['field-sales-visits', date, companyId],
     queryFn: () => fieldSalesApi.getTodayVisits(date, companyId || undefined),
-    enabled: companyId > 0,
+    enabled: companyReady,
   })
   const visits = data?.visits ?? []
   const planned = visits.filter(v => v.status === 'planned').length
@@ -347,7 +353,7 @@ export default function HubFieldSalesPanel() {
   const { data: upcomingData } = useQuery({
     queryKey: ['field-sales-mine', upcomingFrom, upcomingTo, companyId],
     queryFn: () => fieldSalesApi.getMyVisits(upcomingFrom, upcomingTo, companyId || undefined),
-    enabled: companyId > 0,
+    enabled: companyReady,
   })
   const upcoming = (upcomingData?.visits ?? []).filter(v => v.status === 'planned' || v.status === 'in_progress')
 
@@ -418,11 +424,11 @@ export default function HubFieldSalesPanel() {
         <div className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div><h2 className="text-xl font-bold">Vizite</h2><p className="text-sm text-muted-foreground">Azi</p></div>
-            {/* No company resolved (companyId 0 — either mid-load or genuinely
-                unassigned) → the add flow can't be scoped, so its entry point
-                is hidden. AddVisitForm's client search is gated on companyId>0
-                too, as defense-in-depth. */}
-            {companyId > 0 && (
+            {/* No confirmed company (mid-load, pre-default 0, or a stale/
+                disallowed persisted id) → the add flow can't be scoped, so its
+                entry point is hidden. AddVisitForm's client search is gated on
+                a resolved companyId too, as defense-in-depth. */}
+            {companyReady && (
               <button onClick={() => setOverlay({ kind: 'add' })} className="rounded-xl bg-teal-600 px-3 py-2.5 text-sm font-semibold text-white active:bg-teal-700">
                 <span className="flex items-center gap-1"><Plus className="h-4 w-4" />Adauga</span>
               </button>
@@ -493,7 +499,7 @@ export default function HubFieldSalesPanel() {
 
       {tab === 'calendar' && (
         <FieldSalesCalendar
-          companyId={companyId || undefined}
+          companyId={companyReady ? companyId : undefined}
           onOpen={(id) => setOverlay({ kind: 'detail', id })}
           onAdd={(date, time, endTime) => setOverlay({ kind: 'add', date, time, endTime })}
         />
@@ -523,7 +529,7 @@ export default function HubFieldSalesPanel() {
             initialDate={overlay.date}
             initialTime={overlay.time}
             initialEndTime={overlay.endTime}
-            companyId={companyId || undefined}
+            companyId={companyReady ? companyId : undefined}
             onDone={() => { invalidateVisitLists(); setOverlay(null) }}
             onCancel={() => setOverlay(null)}
           />
