@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
+import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // Reusable Week/Day time-grid extracted from FieldSalesCalendar's FSTimeGrid.
@@ -11,11 +12,15 @@ import { cn } from '@/lib/utils'
 // Geometry: a fixed 07:00–21:00 window at 48px/hour; empty-slot interactions
 // snap to 30 min. `startMin`/`endMin` are minutes-of-day; a null `startMin`
 // makes the event "untimed" → it lives in the shared "Fără oră" all-day band
-// above the hour-grid (never inside a day column, so it can't push that
-// column's hour lines down and break cross-column alignment).
+// above the hour-grid. Events whose time ranges overlap in a day column are
+// COLLAPSED into one "cluster" block (a stack showing a count); tapping it
+// opens a list of the individual sessions. Red lines mark the 08:00–18:00
+// working-hours interval.
 
 const HOUR_START = 7
 const HOUR_END = 21
+const WORK_START = 8
+const WORK_END = 18
 const PX_PER_HOUR = 48
 const SNAP_MIN = 30
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -42,6 +47,27 @@ export interface TimeGridEvent {
   subtitle?: string
 }
 
+// A cluster of timed events whose ranges overlap; `s`/`e` are the cluster's
+// effective (clamped) bounds in minutes.
+interface Cluster { items: { ev: TimeGridEvent; s: number; e: number }[]; s: number; e: number }
+
+// Sweep-line grouping: sort by effective start, extend the running cluster
+// while the next event starts before the cluster's current max-end.
+function clusterTimed(events: TimeGridEvent[]): Cluster[] {
+  const withRange = events.map((ev) => {
+    const s = clampMin(ev.startMin!)
+    const e = clampMin(Math.max(ev.endMin ?? s + 60, s + SNAP_MIN))
+    return { ev, s, e }
+  }).sort((a, b) => a.s - b.s || a.e - b.e)
+  const clusters: Cluster[] = []
+  for (const t of withRange) {
+    const last = clusters[clusters.length - 1]
+    if (last && t.s < last.e) { last.items.push(t); last.e = Math.max(last.e, t.e) }
+    else clusters.push({ items: [t], s: t.s, e: t.e })
+  }
+  return clusters
+}
+
 // Only 'create' remains from FSTimeGrid's three drag modes — no move/resize.
 type CreateDrag = { col: string; y0: number; y1: number }
 
@@ -52,16 +78,21 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
   onSlotAdd?: (dayKey: string, startTime: string, endTime: string) => void
 }) {
   const [drag, setDrag] = useState<CreateDrag | null>(null)
-  // Suppress the one native click a real browser synthesizes right after a
-  // pointerup on a block, so a create-drag ending over a block can't also open
-  // it. jsdom never synthesizes that follow-on click, so it's untested but
-  // matters for real input.
-  const suppressClickRef = useRef<number | null>(null)
+  // The list of sessions shown in the cluster popover (null = closed).
+  const [openCluster, setOpenCluster] = useState<TimeGridEvent[] | null>(null)
 
   const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i)
   const gridHeight = (HOUR_END - HOUR_START) * PX_PER_HOUR
   const todayKey = keyOf(new Date())
-  const gridColsClass = dayCols.length > 1 ? 'grid-cols-7' : 'grid-cols-1'
+  const isWeek = dayCols.length > 1
+  const gridColsClass = isWeek ? 'grid-cols-7' : 'grid-cols-1'
+  // Mobile shows ~3 of the 7 week columns by widening the card past the
+  // viewport (horizontal scroll reveals the rest of the week); desktop fits
+  // all 7. Day view stays a single comfortable column.
+  const cardMinW = isWeek ? 'min-w-[860px] sm:min-w-[560px]' : 'min-w-[320px]'
+  // Hour gutter stays pinned while the week scrolls horizontally so the time
+  // labels never scroll out of view.
+  const gutter = 'sticky left-0 z-20 w-10 shrink-0 bg-card'
 
   const byDay = new Map<string, TimeGridEvent[]>()
   for (const ev of events) {
@@ -79,10 +110,10 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
 
   return (
     <div className="overflow-x-auto">
-      <div className="flex min-w-[560px] flex-col gap-1 rounded-2xl border border-border/60 bg-card p-2">
+      <div className={cn('flex flex-col gap-1 rounded-2xl border border-border/60 bg-card p-2', cardMinW)}>
         {/* Day-label header row (gutter spacer + one label per column). */}
         <div className="flex gap-1">
-          <div className="w-10 shrink-0" />
+          <div className={gutter} />
           <div className={cn('grid flex-1 gap-1', gridColsClass)}>
             {cols.map(({ d, dk }) => (
               <p key={dk} className={cn('truncate text-center text-[10px] font-semibold uppercase text-muted-foreground', dk === todayKey && 'text-primary')}>
@@ -92,11 +123,10 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
           </div>
         </div>
 
-        {/* Shared all-day band for untimed events — one flex row so every cell
-            shares a uniform height; rendered only when some day has one. */}
+        {/* Shared all-day band for untimed events. */}
         {hasAnyUntimed && (
           <div data-testid="tg-allday-band" className="flex gap-1">
-            <div className="flex w-10 shrink-0 items-start justify-end pr-1 pt-0.5">
+            <div className={cn(gutter, 'flex items-start justify-end pr-1 pt-0.5')}>
               <span className="text-[9px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground">Fără oră</span>
             </div>
             <div className={cn('grid flex-1 gap-1', gridColsClass)}>
@@ -121,14 +151,14 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
 
         {/* Hour-grid — gutter labels + one relative day column each. */}
         <div data-testid="tg-hourgrid" className="flex gap-1">
-          <div className="w-10 shrink-0">
+          <div className={gutter}>
             {hours.map((h) => (
               <div key={h} className="relative" style={{ height: PX_PER_HOUR }}>
                 <span className="absolute -top-2 right-1 text-[10px] font-medium text-muted-foreground">{`${pad(h)}:00`}</span>
               </div>
             ))}
           </div>
-          <div className={cn('grid flex-1 gap-1', gridColsClass)}>
+          <div className={cn('relative grid flex-1 gap-1', gridColsClass)}>
             {cols.map(({ dk, timed }) => {
               const dragging = drag?.col === dk
               const selTop = dragging ? minToY(clampMin(yToMin(Math.min(drag!.y0, drag!.y1)))) : 0
@@ -137,7 +167,7 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
                 <div
                   key={dk}
                   data-testid={`tg-col-${dk}`}
-                  className={cn('relative min-w-0 rounded-lg bg-muted/30', onSlotAdd && 'cursor-pointer', dragging && 'touch-none')}
+                  className={cn('relative min-w-0 snap-start rounded-lg bg-muted/30', onSlotAdd && 'cursor-pointer', dragging && 'touch-none')}
                   style={{ height: gridHeight }}
                   onPointerDown={(e) => {
                     if (!onSlotAdd) return
@@ -179,34 +209,100 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd }: {
                       style={{ top: selTop, height: Math.max(selBottom - selTop, 4) }}
                     />
                   )}
-                  {timed.map((ev) => {
-                    const startMin = clampMin(ev.startMin!)
-                    const endMin = clampMin(Math.max(ev.endMin ?? startMin + 60, startMin + SNAP_MIN))
-                    const top = minToY(startMin)
-                    const height = Math.max(minToY(endMin) - top, 18)
+                  {clusterTimed(timed).map((cl) => {
+                    const top = minToY(cl.s)
+                    const height = Math.max(minToY(cl.e) - top, 18)
+                    if (cl.items.length === 1) {
+                      const ev = cl.items[0].ev
+                      return (
+                        <button
+                          key={ev.id}
+                          type="button"
+                          data-testid={`tg-block-${ev.id}`}
+                          // stopPropagation on the block's own pointer events so a
+                          // press on a block never reaches the column's create-drag
+                          // handlers (which would fire onSlotAdd on top of opening).
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onPointerUp={(e) => e.stopPropagation()}
+                          onClick={() => onEventClick(ev.id)}
+                          style={{ top, height }}
+                          className={cn('absolute left-0.5 right-0.5 z-[1] overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', ev.color)}
+                        >
+                          <span className="block truncate">{`${minToTime(ev.startMin!)} ${ev.title}`}</span>
+                          {ev.subtitle && <span className="block truncate text-[9px] font-normal opacity-80">{ev.subtitle}</span>}
+                        </button>
+                      )
+                    }
+                    // Cluster of ≥2 overlapping sessions → one stacked block.
+                    const first = cl.items[0].ev
                     return (
                       <button
-                        key={ev.id}
+                        key={`cl-${first.id}`}
                         type="button"
-                        data-testid={`tg-block-${ev.id}`}
-                        onClick={() => {
-                          if (suppressClickRef.current === ev.id) { suppressClickRef.current = null; return }
-                          onEventClick(ev.id)
-                        }}
+                        data-testid={`tg-cluster-${first.id}`}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onPointerUp={(e) => e.stopPropagation()}
+                        onClick={() => setOpenCluster(cl.items.map((i) => i.ev))}
                         style={{ top, height }}
-                        className={cn('absolute left-0.5 right-0.5 overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', ev.color)}
+                        className={cn('absolute left-0.5 right-0.5 z-[1] overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', first.color)}
                       >
-                        <span className="block truncate">{`${minToTime(ev.startMin!)} ${ev.title}`}</span>
-                        {ev.subtitle && <span className="block truncate text-[9px] font-normal opacity-80">{ev.subtitle}</span>}
+                        {/* stacked-card hint peeking above the block */}
+                        <span aria-hidden className={cn('absolute -top-1 left-1.5 right-1.5 h-1.5 rounded-t-md opacity-60', first.color)} />
+                        <span data-testid="tg-cluster-count" className="absolute right-1 top-1 rounded-full bg-background/80 px-1.5 text-[9px] font-bold text-foreground shadow-sm">{cl.items.length}</span>
+                        <span className="block truncate">{`${minToTime(first.startMin!)} ${first.title}`}</span>
+                        <span className="block truncate text-[9px] font-normal opacity-80">{`+${cl.items.length - 1} sesiuni`}</span>
                       </button>
                     )
                   })}
                 </div>
               )
             })}
+            {/* Working-hours interval markers (rendered above the columns). */}
+            <div data-testid="tg-workline-start" className="pointer-events-none absolute inset-x-0 z-10 border-t-2 border-red-400/70" style={{ top: minToY(WORK_START * 60) }} />
+            <div data-testid="tg-workline-end" className="pointer-events-none absolute inset-x-0 z-10 border-t-2 border-red-400/70" style={{ top: minToY(WORK_END * 60) }} />
           </div>
         </div>
       </div>
+
+      {/* Cluster list — sessions sharing an overlapping slot. */}
+      {openCluster && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center"
+          onClick={() => setOpenCluster(null)}
+        >
+          <div
+            data-testid="tg-cluster-list"
+            className="w-full max-w-sm rounded-2xl bg-background p-3 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-sm font-semibold">{`${openCluster.length} sesiuni în acest interval`}</p>
+              <button type="button" onClick={() => setOpenCluster(null)} className="flex h-7 w-7 items-center justify-center rounded-full bg-muted transition-colors hover:bg-muted/70">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              {openCluster.map((ev) => (
+                <button
+                  key={ev.id}
+                  type="button"
+                  data-testid={`tg-clusteritem-${ev.id}`}
+                  onClick={() => { onEventClick(ev.id); setOpenCluster(null) }}
+                  className="flex w-full items-center gap-3 rounded-xl border border-border/60 bg-card p-2.5 text-left transition-transform active:scale-[0.99]"
+                >
+                  <span className={cn('flex h-8 w-12 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold tabular-nums', ev.color)}>
+                    {minToTime(ev.startMin!)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">{ev.title}</span>
+                    {ev.subtitle && <span className="block truncate text-xs text-muted-foreground">{ev.subtitle}</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
