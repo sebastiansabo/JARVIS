@@ -557,6 +557,42 @@ def api_visit_note(visit_id):
         return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
 
+@field_sales_bp.route('/api/field-sales/visits/<int:visit_id>/quick-note', methods=['POST'])
+@jwt_or_login_required
+@field_sales_required
+def api_visit_quick_note(visit_id):
+    """Append a raw, non-finalizing note to an in-progress visit.
+
+    Unlike POST /note, this does NOT AI-structure the note or complete the
+    visit — it records what happened so far while the visit is still ongoing.
+    """
+    try:
+        visit = _visit_repo.get_by_id(visit_id)
+        if not visit:
+            return jsonify({'success': False, 'error': 'Visit not found'}), 404
+
+        # IDOR: only own visits
+        if visit['kam_id'] != _get_current_user().id:
+            return jsonify({'success': False, 'error': 'Poți adăuga note doar la vizitele tale'}), 403
+
+        # Quick notes are for the "during the visit" window only.
+        if visit['status'] != 'in_progress':
+            return jsonify({'success': False, 'error': 'Poți adăuga note doar în timpul vizitei (vizita trebuie să fie în desfășurare)'}), 409
+
+        data = request.get_json(silent=True) or {}
+        raw_note = data.get('raw_note', '').strip()
+        if not raw_note:
+            return jsonify({'success': False, 'error': 'raw_note is required'}), 400
+        if len(raw_note) > 10000:
+            return jsonify({'success': False, 'error': 'raw_note must be under 10000 characters'}), 400
+
+        note = _visit_repo.add_note(visit_id, raw_note)
+        return jsonify({'success': True, 'note': note}), 201
+    except Exception as e:
+        logger.exception('Error adding quick note')
+        return jsonify({'success': False, 'error': _safe_error(e)}), 500
+
+
 @field_sales_bp.route('/api/field-sales/visits/<int:visit_id>/brief', methods=['GET'])
 @jwt_or_login_required
 @field_sales_required
