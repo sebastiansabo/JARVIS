@@ -6,6 +6,7 @@ import { cn, usePersistedState } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -60,6 +61,8 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
   const [view, setView] = usePersistedState<CalView>('fp-cal-view', 'week')
   const [cursor, setCursor] = useState(() => new Date())
   const [selected, setSelected] = useState<FoiContract | null>(null)
+  const [carFilter, setCarFilter] = useState<string>('') // '' = all cars, else a vin
+  const [weekOffset, setWeekOffset] = useState(0) // rolling 7-day window: slide by ±1 day
   // Month drag-to-select a date range → multi-day session.
   const [monthDrag, setMonthDrag] = useState<{ a: string; b: string } | null>(null)
   const monthRange = monthDrag ? (monthDrag.a <= monthDrag.b ? [monthDrag.a, monthDrag.b] : [monthDrag.b, monthDrag.a]) : null
@@ -140,9 +143,16 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
     onMoveEvent(id, targetKey, hhmm(dep), ret ? hhmm(ret) : hhmm(new Date(dep.getTime() + 3600000)))
   }
 
-  const tdContracts = (data?.contracts ?? []).filter(
+  const brandContracts = (data?.contracts ?? []).filter(
     (c) => c.route_type === 'TD' && c.departure_datetime && (!brand || vinBrand.get(c.vin) === brand),
   )
+  const tdContracts = carFilter ? brandContracts.filter((c) => c.vin === carFilter) : brandContracts
+  // Distinct cars (from the brand-filtered set, so the filter lists all cars).
+  const carOptions = (() => {
+    const seen = new Map<string, string>()
+    for (const c of brandContracts) if (c.vin && !seen.has(c.vin)) seen.set(c.vin, carLabel(c.vin))
+    return Array.from(seen, ([vin, label]) => ({ vin, label })).sort((a, b) => a.label.localeCompare(b.label))
+  })()
 
   const byDay = useMemo(() => {
     const map = new Map<string, FoiContract[]>()
@@ -161,8 +171,9 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
   const currentMonth = cursor.getMonth()
   const todayKey = dayKey(new Date())
 
-  // Week/Day columns + their time-grid events.
-  const weekStart = startOfWeek(cursor)
+  // Week/Day columns + their time-grid events. Week is a rolling 7-day window
+  // (weekOffset in days) so the arrows / edge-drag slide it a day at a time.
+  const weekStart = addDays(startOfWeek(cursor), weekOffset)
   const dayCols = view === 'day' ? [cursor] : view === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : []
   const events: TimeGridEvent[] = view === 'month'
     ? []
@@ -178,8 +189,8 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
       })))
 
   const go = (dir: 1 | -1) => {
-    if (view === 'day') setCursor(addDays(cursor, dir))
-    else if (view === 'week') setCursor(addDays(cursor, 7 * dir))
+    if (view === 'week') setWeekOffset((o) => o + dir) // slide the 7-day window one day
+    else if (view === 'day') setCursor(addDays(cursor, dir))
     else setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1))
   }
 
@@ -203,13 +214,23 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
           <Button variant="outline" size="icon" onClick={() => go(-1)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setCursor(new Date())}>Azi</Button>
+          <Button variant="outline" size="sm" onClick={() => { setCursor(new Date()); setWeekOffset(0) }}>Azi</Button>
           <Button variant="outline" size="icon" onClick={() => go(1)}>
             <ChevronRight className="h-4 w-4" />
           </Button>
           <h3 className="text-base font-semibold capitalize ml-2">{periodLabel}</h3>
           {isLoading && <span className="text-xs text-muted-foreground">Se încarcă...</span>}
         </div>
+        {/* Car filter (only when >1 car has sessions) */}
+        {carOptions.length > 1 && (
+          <Select value={carFilter || 'all'} onValueChange={(v) => setCarFilter(v === 'all' ? '' : v)}>
+            <SelectTrigger className="h-9 w-44 text-sm" aria-label="Filtrează după mașină"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toate mașinile</SelectItem>
+              {carOptions.map((o) => <SelectItem key={o.vin} value={o.vin}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
         {/* View switcher — same segmented control as the Hub / Field Sales calendars. */}
         <div className="flex h-9 gap-0.5 rounded-lg bg-muted p-0.5">
           {VIEW_OPTIONS.map(([v, label]) => (
@@ -238,6 +259,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
               const inMonth = d.getMonth() === currentMonth
               const isToday = key === todayKey
               const isPast = key < todayKey
+              const weekend = d.getDay() === 0 || d.getDay() === 6
               const events = byDay.get(key) ?? []
               return (
                 <div
@@ -258,7 +280,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
                     setMonthDrag(null)
                     if (r && r[0] !== r[1]) navigate(`/app/foi-parcurs/test-drive?departure=${r[0]}T09:00&return=${r[1]}T18:00`)
                   }}
-                  className={cn('min-h-[104px] border-b border-r p-1.5 space-y-1', !inMonth && 'bg-muted/20 text-muted-foreground', inMonthRange(key) && 'bg-primary/15')}
+                  className={cn('min-h-[104px] border-b border-r p-1.5 space-y-1', !inMonth && 'bg-muted/20 text-muted-foreground', inMonth && weekend && 'bg-zinc-100 dark:bg-red-950/20', inMonthRange(key) && 'bg-primary/15')}
                 >
                   <div className={cn('text-xs font-medium', isToday && 'inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground')}>
                     {d.getDate()}

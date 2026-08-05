@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Car } from 'lucide-react'
 import { cn, usePersistedState } from '@/lib/utils'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus, SESSION_BLOCK_COLOR } from '@/pages/FoiParcurs/sessionStatus'
@@ -65,6 +66,10 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
   const [view, setView] = usePersistedState<CalView>('hub-driving-cal-view', 'week')
   const [anchor, setAnchor] = useState<Date>(() => new Date())
   const [picked, setPicked] = useState<string | null>(null)
+  const [carFilter, setCarFilter] = useState<string>('') // '' = all cars, else a vin
+  // Rolling day-offset for the week window: an edge-drag advances it by ±1 day
+  // (not a whole week); arrows/Azi reset it so the week stays Mon–Sun aligned.
+  const [weekOffset, setWeekOffset] = useState(0)
   // Month drag-to-select a date range → multi-day session (a..b unordered).
   const [monthDrag, setMonthDrag] = useState<{ a: string; b: string } | null>(null)
   const monthRange = monthDrag ? (monthDrag.a <= monthDrag.b ? [monthDrag.a, monthDrag.b] : [monthDrag.b, monthDrag.a]) : null
@@ -93,6 +98,7 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
       }
       const k = sessionStatus(c).key
       if (k !== 'planificat' && k !== 'driving' && k !== 'intarziat') continue
+      if (carFilter && c.vin !== carFilter) continue
       const key = dayKeyOf(c.departure_datetime)
       const list = map.get(key) ?? []
       list.push(c)
@@ -100,6 +106,19 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
     }
     for (const list of map.values()) list.sort((a, b) => (a.departure_datetime || '').localeCompare(b.departure_datetime || ''))
     return map
+  }, [data, brand, vinVehicle, carFilter])
+
+  // Distinct cars that have sessions (for the calendar's Car filter).
+  const carOptions = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const c of data?.contracts ?? []) {
+      if (!c.vin) continue
+      if (brand) { const vh = vinVehicle.get(c.vin); if ((vh?.brand ?? '').trim() !== brand && (vh?.mark ?? '').trim() !== brand) continue }
+      const k = sessionStatus(c).key
+      if (k !== 'planificat' && k !== 'driving' && k !== 'intarziat') continue
+      if (!seen.has(c.vin)) seen.set(c.vin, vehicleName(vinVehicle.get(c.vin), c.vin))
+    }
+    return Array.from(seen, ([vin, label]) => ({ vin, label })).sort((a, b) => a.label.localeCompare(b.label))
   }, [data, brand, vinVehicle])
 
   const byId = useMemo(() => new Map((data?.contracts ?? []).map((c) => [c.id, c] as const)), [data])
@@ -149,13 +168,17 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
     onMove(id, targetKey, hhmm(dep), ret ? hhmm(ret) : hhmm(new Date(dep.getTime() + 3600000)))
   }
   const go = (dir: 1 | -1) => {
-    setAnchor((a) => (view === 'day' ? addDays(a, dir) : view === 'week' ? addDays(a, 7 * dir) : addMonths(a, dir)))
+    // Week view is a rolling 7-day span → arrows slide it by ONE day (same as
+    // an edge-drag); day/month step by a day/month.
+    if (view === 'week') setWeekOffset((o) => o + dir)
+    else if (view === 'day') setAnchor((a) => addDays(a, dir))
+    else setAnchor((a) => addMonths(a, dir))
     setPicked(null)
   }
-  const goToday = () => { setAnchor(new Date()); setPicked(null) }
+  const goToday = () => { setAnchor(new Date()); setWeekOffset(0); setPicked(null) }
 
   // Visible day columns (Week/Day) + their time-grid events.
-  const weekStart = startOfWeek(anchor)
+  const weekStart = addDays(startOfWeek(anchor), weekOffset) // rolling 7-day window (offset in days)
   const dayCols = view === 'day' ? [anchor] : view === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : []
   const events: TimeGridEvent[] = view === 'month'
     ? []
@@ -192,6 +215,17 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
 
   return (
     <div className="space-y-3">
+      {/* Car filter — only when more than one car has sessions */}
+      {carOptions.length > 1 && (
+        <Select value={carFilter || 'all'} onValueChange={(v) => setCarFilter(v === 'all' ? '' : v)}>
+          <SelectTrigger className="h-9 rounded-lg text-sm" aria-label="Filtrează după mașină"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Toate mașinile</SelectItem>
+            {carOptions.map((o) => <SelectItem key={o.vin} value={o.vin}>{o.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
+
       {/* iOS view switcher */}
       <div className="flex h-9 gap-0.5 rounded-lg bg-muted p-0.5">
         {([['day', 'Zi'], ['week', 'Săptămână'], ['month', 'Lună']] as const).map(([v, label]) => (
@@ -227,6 +261,7 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
                 const k = keyOf(d)
                 const inMonth = d.getMonth() === anchor.getMonth()
                 const count = byDay.get(k)?.length ?? 0
+                const weekend = d.getDay() === 0 || d.getDay() === 6
                 return (
                   <button
                     key={k}
@@ -246,6 +281,7 @@ export default function DrivingCalendar({ companyId, brand, onActivate, onReturn
                     }}
                     className={cn(
                       'relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm',
+                      weekend && 'bg-zinc-200/40 dark:bg-red-950/25',
                       !inMonth && 'text-muted-foreground/40',
                       inMonthRange(k) && 'bg-primary/25',
                       k === monthActiveKey && 'bg-primary/15 font-bold',

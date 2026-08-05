@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 // working-hours interval.
 
 const HOUR_START = 7
-const HOUR_END = 21
+const HOUR_END = 19
 const WORK_START = 8
 const WORK_END = 18
 const PX_PER_HOUR = 48
@@ -265,14 +265,16 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
             }}
             onPointerCancel={() => setDrag(null)}
           >
-            {cols.map(({ dk, timed }) => {
+            {cols.map(({ d, dk, timed }) => {
               const band = selBand(dk)
+              const weekend = d.getDay() === 0 || d.getDay() === 6 // Sat/Sun
               return (
                 <div
                   key={dk}
                   data-testid={`tg-col-${dk}`}
                   ref={(el) => { colRefs.current[dk] = el }}
-                  className={cn('relative min-w-0 snap-start rounded-lg bg-muted/30', onSlotAdd && 'cursor-pointer')}
+                  // Weekends tinted: pale grey (light) / pale red (dark).
+                  className={cn('relative min-w-0 snap-start rounded-lg', weekend ? 'bg-zinc-200/50 dark:bg-red-950/30' : 'bg-muted/30', onSlotAdd && 'cursor-pointer')}
                   style={{ height: gridHeight }}
                   onPointerDown={(e) => {
                     if (!onSlotAdd) return
