@@ -18,7 +18,8 @@ def api_visits_today():
         else:
             date_str = date.today().isoformat()
 
-        visits = _visit_repo.get_by_kam_and_date(_get_current_user().id, date_str)
+        company_id = request.args.get('company_id', type=int)
+        visits = _visit_repo.get_by_kam_and_date(_get_current_user().id, date_str, company_id=company_id)
         return jsonify({'success': True, 'visits': visits, 'date': date_str})
     except Exception as e:
         logger.exception('Error fetching visits for today')
@@ -40,7 +41,8 @@ def api_visits_mine():
             datetime.strptime(date_to, '%Y-%m-%d')
         except ValueError:
             return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
-        visits = _visit_repo.get_team_visits(date_from, date_to, kam_id=_get_current_user().id)
+        company_id = request.args.get('company_id', type=int)
+        visits = _visit_repo.get_team_visits(date_from, date_to, kam_id=_get_current_user().id, company_id=company_id)
         return jsonify({'success': True, 'visits': visits, 'date_from': date_from, 'date_to': date_to})
     except Exception as e:
         logger.exception('Error fetching my visits')

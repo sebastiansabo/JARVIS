@@ -22,8 +22,9 @@ def api_manager_overview():
             return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
 
         kam_id = request.args.get('kam_id', type=int)
+        company_id = request.args.get('company_id', type=int)
 
-        visits = _visit_repo.get_team_visits(date_from, date_to, kam_id=kam_id)
+        visits = _visit_repo.get_team_visits(date_from, date_to, kam_id=kam_id, company_id=company_id)
 
         # Compute summary stats
         total = len(visits)
