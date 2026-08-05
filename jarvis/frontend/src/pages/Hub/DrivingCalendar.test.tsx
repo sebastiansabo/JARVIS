@@ -48,10 +48,10 @@ describe('DrivingCalendar', () => {
     expect(screen.getByRole('button', { name: 'Zi' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Săptămână' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Lună' })).toBeInTheDocument()
-    // 10:00 session → a positioned block at minToY(600)=144px in today's column.
+    // 10:00 session → a spanning bar in today's column, labelled with its time.
     const block = await screen.findByTestId('tg-block-11')
     expect(block).toHaveTextContent('Ion Pop')
-    expect(block).toHaveStyle({ top: '144px' })
+    expect(block).toHaveTextContent('10:00')
   })
 
   it('switches to Month view (weekday grid)', async () => {
@@ -71,6 +71,9 @@ describe('DrivingCalendar', () => {
   it('drag-moves a PLANNED session block and reschedules it via the API', async () => {
     rescheduleTestDrive.mockResolvedValue({ success: true, contract: {} })
     wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
+    await screen.findByTestId('tg-block-12')
+    // Drag-to-move lives in the Day-view hour grid (Week renders bars).
+    fireEvent.click(screen.getByRole('button', { name: 'Zi' }))
     const block = await screen.findByTestId('tg-block-12') // PLANNED, 09:00–10:00, draggable
     block.setPointerCapture = vi.fn(); block.releasePointerCapture = vi.fn()
     // Drag down 48px (1h): 09:00→10:00, end 10:00→11:00.
@@ -118,10 +121,12 @@ describe('DrivingCalendar', () => {
     expect(rescheduleTestDrive).not.toHaveBeenCalled()
   })
 
-  it('proposes a new session via a drag on empty grid space (onAdd with the slot’s date/time)', async () => {
+  it('proposes a new session via a drag on empty grid space in Day view (onAdd with the slot’s date/time)', async () => {
     const onAdd = vi.fn()
     wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={onAdd} />)
     await screen.findByTestId('tg-block-11')
+    // Drag-to-create lives in the Day-view hour grid (Week adds via a day-cell click).
+    fireEvent.click(screen.getByRole('button', { name: 'Zi' }))
     const col = screen.getByTestId(`tg-col-${todayKey}`)
     mockCol(col)
     // 09:00 offset 96px → 10:30 offset 168px.
@@ -129,5 +134,13 @@ describe('DrivingCalendar', () => {
     firePointer(col, 'pointermove', 100 + 168)
     firePointer(col, 'pointerup', 100 + 168)
     expect(onAdd).toHaveBeenCalledWith(`${todayKey}T09:00`, `${todayKey}T10:30`)
+  })
+
+  it('proposes a new session by clicking a Week day cell (onAdd with that day at 09:00–10:00)', async () => {
+    const onAdd = vi.fn()
+    wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={onAdd} />)
+    await screen.findByTestId('tg-block-11') // default Week view
+    fireEvent.click(screen.getByTestId(`tg-col-${todayKey}`)) // weekend-tinted day-background cell
+    expect(onAdd).toHaveBeenCalledWith(`${todayKey}T09:00`, `${todayKey}T10:00`)
   })
 })

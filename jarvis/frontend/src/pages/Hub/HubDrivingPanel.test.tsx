@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: {
   getCompanies: vi.fn().mockResolvedValue({ companies: [{ id: 11, company: 'PREMIUM' }] }),
   getBrands: vi.fn().mockResolvedValue({ brands: [] }),
+  getContracts: vi.fn().mockResolvedValue({ contracts: [], total: 0, page: 1, per_page: 1000 }),
+  getVehicles: vi.fn().mockResolvedValue({ vehicles: [] }),
 } }))
 vi.mock('@/pages/Hub/DrivingSessionsList', () => ({
   default: ({ companyId, onReturn }: { companyId: number; onReturn?: (id: number) => void }) => (
@@ -40,7 +42,7 @@ describe('HubDrivingPanel', () => {
   it('renders the Sessions tab by default and can open the New overlay', async () => {
     wrap(<HubDrivingPanel />)
     expect(await screen.findByText(/sessions:11/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /driving session nou/i }))
+    fireEvent.click(screen.getByRole('button', { name: /nou/i }))
     expect(screen.getByText(/^form:/)).toBeInTheDocument()
   })
 
@@ -78,7 +80,7 @@ describe('HubDrivingPanel', () => {
       </QueryClientProvider>
     )
 
-    fireEvent.click(await screen.findByRole('button', { name: /driving session nou/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /nou/i }))
     expect(screen.getByText(/^form:/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /done/i }))

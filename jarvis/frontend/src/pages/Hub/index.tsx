@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, lazy, Suspense } from 'react'
+import { HubHeaderSlotContext } from '@/pages/Hub/hubHeaderSlot'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -131,6 +132,9 @@ export default function Hub() {
 
   const [ticketOpen, setTicketOpen] = useState(false)
   const [editProfileOpen, setEditProfileOpen] = useState(false)
+  // DOM node in the breadcrumb into which the active module can portal its inline
+  // toolbar (see HubHeaderSlotContext / HubCrumb actionRef).
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null)
   const activeModule = (searchParams.get('module') as ActiveModule) || null
   const setActiveModule = useCallback((mod: ActiveModule) => {
     setSearchParams((prev) => {
@@ -324,6 +328,7 @@ export default function Hub() {
 
       {/* ── Active Module (inline content) ── */}
       {activeModule !== null ? (
+        <HubHeaderSlotContext.Provider value={headerSlot}>
         <div className="space-y-4 pb-20">
           {/* Breadcrumb nav — shown for every module (Digest/Connecteams runs
               readOnly here, so it has no header of its own). For HR we append the
@@ -355,6 +360,7 @@ export default function Hub() {
                 onBack={hrtab ? clearHrtab : () => setActiveModule(null)}
                 count={hrtab ? undefined : tileCounts[activeModule]}
                 action={action}
+                actionRef={setHeaderSlot}
               />
             )
           })()}
@@ -375,7 +381,7 @@ export default function Hub() {
           )}
           {activeModule === 'driving' && (
             <Suspense fallback={<div className="py-8 text-center text-muted-foreground text-sm">Loading...</div>}>
-              <HubDrivingPanel />
+              <HubDrivingPanel onBack={() => setActiveModule(null)} />
             </Suspense>
           )}
           {activeModule === 'field_sales' && (
@@ -385,6 +391,7 @@ export default function Hub() {
           )}
 
         </div>
+        </HubHeaderSlotContext.Provider>
       ) : (
         /* ── Grid: 2/3 apps + 1/3 notifications ── */
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
@@ -463,7 +470,10 @@ export default function Hub() {
         </div>
       )}
 
-      {/* ── Bottom Tab Bar (mobile only, Instagram floating pill) ── */}
+      {/* ── Bottom Tab Bar (mobile only, Instagram floating pill) ──
+          Suppressed while the Driving module is open: that panel renders its own
+          bottom pill, and its Back returns to the Hub grid (restoring this bar). */}
+      {activeModule !== 'driving' && (
       <div className="fixed bottom-0 inset-x-0 z-40 sm:hidden pb-[env(safe-area-inset-bottom)]">
         <div className="mx-4 mb-2 bg-zinc-900 dark:bg-zinc-800 rounded-[22px] shadow-lg">
           <div className="flex items-center justify-around h-[52px] px-1">
@@ -501,6 +511,7 @@ export default function Hub() {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }
@@ -1185,11 +1196,14 @@ function HubPagination({
 // Shared Hub breadcrumb: inline back chevron + a clickable trail. The last
 // crumb is the current location (bold, non-clickable). Used by every module
 // panel so navigation is consistent across the Hub.
-function HubCrumb({ trail, onBack, count, action }: {
+function HubCrumb({ trail, onBack, count, action, actionRef }: {
   trail: { label: string; onClick?: () => void }[]
   onBack: () => void
   count?: number
   action?: React.ReactNode
+  /** Ref callback for the inline toolbar slot — an active module portals its own
+   *  controls here so they sit on the title row (see HubHeaderSlotContext). */
+  actionRef?: (el: HTMLDivElement | null) => void
 }) {
   // iOS nav-bar style: a single large "‹ <previous>" back button (the crumb
   // onBack returns to) + the current page as a bold title. Bigger tap target
@@ -1197,7 +1211,7 @@ function HubCrumb({ trail, onBack, count, action }: {
   const title = trail[trail.length - 1]?.label ?? ''
   const backLabel = trail.length >= 2 ? trail[trail.length - 2].label : 'Hub'
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <button
         onClick={onBack}
         aria-label="Înapoi"
@@ -1211,6 +1225,10 @@ function HubCrumb({ trail, onBack, count, action }: {
         {count != null && count > 0 && <span className="shrink-0 text-sm font-normal text-muted-foreground">({count})</span>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
+      {/* Toolbar slot — a module portals its controls here so they sit INLINE on
+          the title row (wraps below only when the row can't fit on a narrow
+          screen). Hidden until something is portaled in. */}
+      <div ref={actionRef} className="ml-auto flex flex-wrap items-center justify-end gap-2 empty:hidden" />
     </div>
   )
 }

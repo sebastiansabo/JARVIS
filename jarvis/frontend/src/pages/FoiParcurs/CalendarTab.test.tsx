@@ -55,22 +55,22 @@ describe('CalendarTab (desktop foi-parcurs)', () => {
     expect(await screen.findByRole('button', { name: 'Zi' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Săptămână' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Lună' })).toBeInTheDocument()
-    // Week is default → the hour grid + timed block render without any click.
-    expect(await screen.findByText('07:00')).toBeInTheDocument()
+    // Week is default → the session renders as a spanning bar (no hour grid).
     expect(await screen.findByTestId('tg-block-11')).toBeInTheDocument()
   })
 
   it('opens the details dialog when a Week-view block is clicked', async () => {
     wrap(<CalendarTab companyId={11} brand="" />)
-    const block = await screen.findByTestId('tg-block-11')
-    expect(block).toHaveStyle({ top: '144px' }) // 10:00 → minToY(600)
+    const block = await screen.findByTestId('tg-block-11') // Week spanning bar
+    expect(block).toHaveTextContent('10:00')
     fireEvent.click(block)
     expect(await screen.findByText('Detalii sesiune')).toBeInTheDocument()
   })
 
-  it('navigates to a prefilled new-session form when dragging an empty slot', async () => {
+  it('navigates to a prefilled new-session form when dragging an empty slot in Day view', async () => {
     wrap(<CalendarTab companyId={11} brand="" />)
-    await screen.findByTestId('tg-block-11') // week grid loaded
+    await screen.findByTestId('tg-block-11') // week loaded
+    fireEvent.click(screen.getByRole('button', { name: 'Zi' })) // drag-create lives in Day view
     const col = await screen.findByTestId(`tg-col-${todayKey}`)
     mockCol(col)
     // 09:00 offset 96px → 10:30 offset 168px.
@@ -78,6 +78,13 @@ describe('CalendarTab (desktop foi-parcurs)', () => {
     firePointer(col, 'pointermove', 100 + 168)
     firePointer(col, 'pointerup', 100 + 168)
     expect(navigate).toHaveBeenCalledWith(`/app/foi-parcurs/test-drive?departure=${todayKey}T09:00&return=${todayKey}T10:30`)
+  })
+
+  it('navigates to a prefilled new-session form when clicking a Week day cell', async () => {
+    wrap(<CalendarTab companyId={11} brand="" />)
+    await screen.findByTestId('tg-block-11') // default Week view
+    fireEvent.click(screen.getByTestId(`tg-col-${todayKey}`)) // day-background cell
+    expect(navigate).toHaveBeenCalledWith(`/app/foi-parcurs/test-drive?departure=${todayKey}T09:00&return=${todayKey}T10:00`)
   })
 
   it('creates a multi-day session by dragging across days in Month view', async () => {

@@ -25,19 +25,9 @@ function mockCol(col: HTMLElement, top = 100) {
   col.releasePointerCapture = vi.fn()
 }
 
-function firePointerAt(el: Element, type: 'pointerdown' | 'pointermove' | 'pointerup', clientX: number, clientY: number, pointerId = 1) {
-  const event = new MouseEvent(type, { clientX, clientY, bubbles: true, cancelable: true })
-  Object.defineProperty(event, 'pointerId', { value: pointerId, configurable: true })
-  fireEvent(el, event)
-}
-function rect(left: number, right: number, top = 100): DOMRect {
-  return { top, bottom: top + 400, height: 400, left, right, width: right - left, x: left, y: top, toJSON: () => {} } as DOMRect
-}
-
 const today = new Date()
 const todayKey = keyOf(today)
 const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1)
-const tomorrowKey = keyOf(tomorrow)
 
 describe('TimeGrid', () => {
   it('renders an hour gutter (07:00) and one column per day', () => {
@@ -52,9 +42,10 @@ describe('TimeGrid', () => {
     const onSlotAdd = vi.fn()
     render(<TimeGrid dayCols={[today]} events={[ev]} onEventClick={onEventClick} onSlotAdd={onSlotAdd} />)
 
-    // 09:00 → top minToY(540)=96px; 10:30 → height minToY(630)-96 = 72px.
+    // 09:00 → top minToY(540)=96px; 10:30 → height minToY(630)-96 = 72px, less
+    // the 2px inter-block gap = 70px.
     const block = screen.getByTestId('tg-block-42')
-    expect(block).toHaveStyle({ top: '96px', height: '72px' })
+    expect(block).toHaveStyle({ top: '96px', height: '70px' })
 
     fireEvent.click(block)
     expect(onEventClick).toHaveBeenCalledWith(42)
@@ -154,34 +145,10 @@ describe('TimeGrid', () => {
     expect(screen.queryByTestId('tg-cluster-1')).toBeNull()
   })
 
-  it('auto-advances the week when the create-drag reaches the grid edge', () => {
-    const onWeekShift = vi.fn()
-    render(<TimeGrid dayCols={[today, tomorrow]} events={[]} onEventClick={vi.fn()} onSlotAdd={vi.fn()} onWeekShift={onWeekShift} />)
-    const colA = screen.getByTestId(`tg-col-${todayKey}`)
-    const grid = screen.getByTestId('tg-colgrid')
-    vi.spyOn(colA, 'getBoundingClientRect').mockReturnValue(rect(0, 100))
-    vi.spyOn(grid, 'getBoundingClientRect').mockReturnValue(rect(0, 200))
-    colA.setPointerCapture = vi.fn(); grid.setPointerCapture = vi.fn(); grid.releasePointerCapture = vi.fn()
-    // Start in day A, then drag to x=195 — within EDGE_PX (44) of the grid's right (200).
-    firePointerAt(colA, 'pointerdown', 50, 100 + 96)
-    firePointerAt(colA, 'pointermove', 195, 100 + 96)
-    expect(onWeekShift).toHaveBeenCalledWith(1)
-  })
-
-  it('extends the selection across days into a multi-day session (week)', () => {
-    const onSlotAdd = vi.fn()
-    render(<TimeGrid dayCols={[today, tomorrow]} events={[]} onEventClick={vi.fn()} onSlotAdd={onSlotAdd} />)
-    const colA = screen.getByTestId(`tg-col-${todayKey}`)
-    const colB = screen.getByTestId(`tg-col-${tomorrowKey}`)
-    vi.spyOn(colA, 'getBoundingClientRect').mockReturnValue(rect(0, 100))
-    vi.spyOn(colB, 'getBoundingClientRect').mockReturnValue(rect(100, 200))
-    colA.setPointerCapture = vi.fn(); colA.releasePointerCapture = vi.fn()
-    // Start day A at 09:00 (y 96), drag into day B at 12:00 (y 240) → depart A 09:00, return B 12:00.
-    firePointerAt(colA, 'pointerdown', 50, 100 + 96)
-    firePointerAt(colA, 'pointermove', 150, 100 + 240)
-    firePointerAt(colA, 'pointerup', 150, 100 + 240)
-    expect(onSlotAdd).toHaveBeenCalledWith(`${todayKey}T09:00`, `${tomorrowKey}T12:00`)
-  })
+  // NOTE: Week view no longer has an hour grid to drag in — sessions render as
+  // spanning bars and new sessions are created by clicking a day cell (see the
+  // DrivingCalendar/CalendarTab "click a Week day cell" tests). The old
+  // Week-grid drag-create + edge-auto-advance behaviour was removed with it.
 
   it('drag-moves a draggable block to a new time (duration preserved) via onMove', () => {
     const ev: TimeGridEvent = { id: 9, dayKey: todayKey, startMin: 540, endMin: 600, color: 'bg-indigo-100 text-indigo-700', title: 'P', draggable: true } // 09:00–10:00
@@ -219,6 +186,51 @@ describe('TimeGrid', () => {
     firePointer(block, 'pointermove', 260)
     firePointer(block, 'pointerup', 260)
     expect(onMove).not.toHaveBeenCalled()
+  })
+
+  it('renders a multi-day session as one spanning bar in the top band (event-calendar style)', () => {
+    const dayAfter = new Date(today); dayAfter.setDate(today.getDate() + 2)
+    const dayAfterKey = keyOf(dayAfter)
+    const ev: TimeGridEvent = { id: 50, dayKey: todayKey, endDayKey: dayAfterKey, startMin: 540, endMin: 660, color: 'bg-blue-100 text-blue-700', title: 'Multi' }
+    render(<TimeGrid dayCols={[today, tomorrow, dayAfter]} events={[ev]} onEventClick={vi.fn()} onSlotAdd={vi.fn()} />)
+    // One bar, spanning grid columns 1→3 (lines 1..4), in the top band. Week
+    // view has no hour grid, so the session only ever exists as this bar.
+    const bar = screen.getByTestId('tg-block-50')
+    expect(bar).toHaveStyle({ gridColumnStart: '1', gridColumnEnd: '4' })
+    expect(within(screen.getByTestId('tg-allday-band')).getByTestId('tg-block-50')).toBeInTheDocument()
+    expect(screen.queryByTestId('tg-hourgrid')).toBeNull()
+  })
+
+  it('marks interlaced (same-car, time-overlapping) sessions with a hachured overlap track', () => {
+    const evs: TimeGridEvent[] = [
+      { id: 1, dayKey: todayKey, startMin: 600, endMin: 690, color: 'x', title: 'A', groupKey: 'VIN1' }, // 10:00–11:30
+      { id: 2, dayKey: todayKey, startMin: 630, endMin: 720, color: 'x', title: 'B', groupKey: 'VIN1' }, // 10:30–12:00 (overlaps 1)
+      { id: 3, dayKey: todayKey, startMin: 800, endMin: 860, color: 'x', title: 'C', groupKey: 'VIN1' }, // same car, no time overlap
+      { id: 4, dayKey: todayKey, startMin: 600, endMin: 690, color: 'x', title: 'D', groupKey: 'VIN2' }, // different car, same time
+    ]
+    render(<TimeGrid dayCols={[today, tomorrow]} events={evs} onEventClick={vi.fn()} />) // Week view → bars
+    expect(screen.getByTestId('tg-conflict-1')).toBeInTheDocument()
+    expect(screen.getByTestId('tg-conflict-2')).toBeInTheDocument()
+    expect(screen.queryByTestId('tg-conflict-3')).toBeNull() // same car but disjoint in time
+    expect(screen.queryByTestId('tg-conflict-4')).toBeNull() // overlaps in time but a different car
+  })
+
+  it('codes same-car daily sessions S1..Sx (by start) and labels overlaps "Suprapus cu Sx"', () => {
+    const evs: TimeGridEvent[] = [
+      { id: 1, dayKey: todayKey, startMin: 600, endMin: 690, color: 'x', title: 'A', groupKey: 'VIN1' }, // 10:00–11:30 → S1
+      { id: 2, dayKey: todayKey, startMin: 630, endMin: 720, color: 'x', title: 'B', groupKey: 'VIN1' }, // 10:30–12:00 → S2 (overlaps S1)
+      { id: 3, dayKey: todayKey, startMin: 800, endMin: 860, color: 'x', title: 'C', groupKey: 'VIN1' }, // later → S3 (no overlap)
+      { id: 9, dayKey: todayKey, startMin: 600, endMin: 660, color: 'x', title: 'Solo', groupKey: 'VIN9' }, // lone car → no code
+    ]
+    render(<TimeGrid dayCols={[today, tomorrow]} events={evs} onEventClick={vi.fn()} />)
+    expect(screen.getByTestId('tg-code-1')).toHaveTextContent('S1')
+    expect(screen.getByTestId('tg-code-2')).toHaveTextContent('S2')
+    expect(screen.getByTestId('tg-code-3')).toHaveTextContent('S3')
+    expect(screen.queryByTestId('tg-code-9')).toBeNull() // only one session for that car → no code
+    // Overlap cross-references by code.
+    expect(screen.getByTestId('tg-overlap-1')).toHaveTextContent('Suprapus cu S2')
+    expect(screen.getByTestId('tg-overlap-2')).toHaveTextContent('Suprapus cu S1')
+    expect(screen.queryByTestId('tg-overlap-3')).toBeNull() // S3 doesn't overlap anything
   })
 
   it('draws red working-hours lines at 08:00 and 18:00', () => {
