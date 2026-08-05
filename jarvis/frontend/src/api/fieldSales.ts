@@ -117,6 +117,11 @@ export interface FSManagerOverview {
   }
 }
 
+export interface FSCompany {
+  id: number
+  company: string
+}
+
 export interface FSClientSearch {
   id: number
   display_name: string
@@ -229,17 +234,26 @@ export interface FSClient360 {
 }
 
 export const fieldSalesApi = {
-  getManagerOverview: (dateFrom: string, dateTo: string, kamId?: number) => {
+  getFieldSalesCompanies: () =>
+    api.get<{ success: boolean; companies: FSCompany[]; default_company_id: number | null }>(
+      '/api/field-sales/companies',
+    ),
+
+  getManagerOverview: (dateFrom: string, dateTo: string, kamId?: number, companyId?: number) => {
     const params: Record<string, string> = { date_from: dateFrom, date_to: dateTo }
     if (kamId) params.kam_id = String(kamId)
+    if (companyId && companyId > 0) params.company_id = String(companyId)
     return api.get<FSManagerOverview>('/api/field-sales/manager/overview', params)
   },
 
-  searchClients: (q: string) =>
-    api.get<{ success: boolean; clients: FSClientSearch[]; count: number }>(
+  searchClients: (q: string, companyId?: number) => {
+    const params: Record<string, string> = { q }
+    if (companyId && companyId > 0) params.company_id = String(companyId)
+    return api.get<{ success: boolean; clients: FSClientSearch[]; count: number }>(
       '/api/field-sales/clients/search',
-      { q },
-    ),
+      params,
+    )
+  },
 
   createVisit: (data: CreateVisitPayload) =>
     api.post<{ success: boolean; visit: FSVisit }>('/api/field-sales/visits', data),
@@ -273,12 +287,18 @@ export const fieldSalesApi = {
     api.get<{ success: boolean; tasks: FSVisitTask[] }>('/api/field-sales/tasks/pending'),
 
   // ── Hub daily-driver ──
-  getTodayVisits: (date: string) =>
-    api.get<{ success: boolean; visits: FSVisit[]; date: string }>('/api/field-sales/visits/today', { date }),
+  getTodayVisits: (date: string, companyId?: number) => {
+    const params: Record<string, string> = { date }
+    if (companyId && companyId > 0) params.company_id = String(companyId)
+    return api.get<{ success: boolean; visits: FSVisit[]; date: string }>('/api/field-sales/visits/today', params)
+  },
 
-  getMyVisits: (dateFrom: string, dateTo: string) =>
-    api.get<{ success: boolean; visits: FSVisit[]; date_from: string; date_to: string }>(
-      '/api/field-sales/visits/mine', { date_from: dateFrom, date_to: dateTo }),
+  getMyVisits: (dateFrom: string, dateTo: string, companyId?: number) => {
+    const params: Record<string, string> = { date_from: dateFrom, date_to: dateTo }
+    if (companyId && companyId > 0) params.company_id = String(companyId)
+    return api.get<{ success: boolean; visits: FSVisit[]; date_from: string; date_to: string }>(
+      '/api/field-sales/visits/mine', params)
+  },
 
   checkin: (visitId: number, coords: { lat?: number; lng?: number }) =>
     api.post<{ success: boolean; visit: FSVisit }>(`/api/field-sales/visits/${visitId}/checkin`, coords),
