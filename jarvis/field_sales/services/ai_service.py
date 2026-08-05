@@ -19,6 +19,75 @@ logger = logging.getLogger('jarvis.field_sales.ai')
 
 _MODEL = 'claude-sonnet-4-6'
 
+_SENTIMENTS = {'positive', 'neutral', 'negative'}
+
+
+def _coerce_number(v):
+    """Return v as a number, or None. Bools and non-numeric values -> None."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return v
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_list(v):
+    return v if isinstance(v, list) else []
+
+
+def _normalize_structured_note(raw):
+    """Coerce a parsed AI note into the canonical FSStructuredNote shape.
+
+    Whitelists known keys, forces list/scalar types, clamps `sentiment` to the
+    enum, and never raises — a malformed element degrades to a safe default.
+    An {'error': ...} marker (or a non-dict) is returned as an error dict so the
+    caller's `structured.get('error')` skip-save check still holds.
+    """
+    if not isinstance(raw, dict):
+        return {'error': 'parse_failed', 'raw': str(raw)}
+    if raw.get('error'):
+        return raw
+
+    sentiment = raw.get('sentiment')
+    if sentiment not in _SENTIMENTS:
+        sentiment = None
+
+    vehicles = []
+    for v in _as_list(raw.get('vehicles_discussed')):
+        if isinstance(v, dict):
+            vehicles.append({
+                'action': v.get('action'),
+                'current_vehicle': v.get('current_vehicle'),
+                'interested_in': v.get('interested_in'),
+                'budget_eur': _coerce_number(v.get('budget_eur')),
+            })
+
+    next_steps = []
+    for s in _as_list(raw.get('next_steps')):
+        if isinstance(s, dict):
+            next_steps.append({
+                'action': s.get('action'),
+                'owner': s.get('owner'),
+                'deadline': s.get('deadline'),
+            })
+
+    return {
+        'visit_summary': raw.get('visit_summary') or '',
+        'sentiment': sentiment,
+        'contact_person': raw.get('contact_person'),
+        'vehicles_discussed': vehicles,
+        'commitments_made': [str(c) for c in _as_list(raw.get('commitments_made'))],
+        'next_steps': next_steps,
+        'opportunity_value_eur': _coerce_number(raw.get('opportunity_value_eur')),
+        'decision_timeline': raw.get('decision_timeline'),
+        'follow_up_date': raw.get('follow_up_date'),
+        'objections': [str(o) for o in _as_list(raw.get('objections'))],
+        'risk_flags': [str(r) for r in _as_list(raw.get('risk_flags'))],
+    }
+
 
 def structure_visit_note(raw_note, client_context=None):
     """Structure a raw visit note into a JSON object using AI.
