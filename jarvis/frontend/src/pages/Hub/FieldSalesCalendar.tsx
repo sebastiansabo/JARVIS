@@ -65,9 +65,10 @@ function addHour(t: string): string { return minToTime(Math.min(toMin(t)! + 60, 
  * or drag-to-add, block-click-to-open, and drag-to-move/resize of existing
  * visits (persisted via `fieldSalesApi.updateVisit`, optimistic-cached).
  */
-export default function FieldSalesCalendar({ onOpen, onAdd }: {
+export default function FieldSalesCalendar({ onOpen, onAdd, companyId }: {
   onOpen: (visitId: number) => void
   onAdd: (date: string, time?: string, endTime?: string) => void
+  companyId?: number
 }) {
   const [view, setView] = usePersistedState<CalView>('hub-fs-cal-view', 'month')
   const [anchor, setAnchor] = useState<Date>(() => new Date())
@@ -90,10 +91,10 @@ export default function FieldSalesCalendar({ onOpen, onAdd }: {
 
   // Named so FSTimeGrid's move/resize mutation can target the exact same
   // (active) cache entry for its optimistic update/rollback.
-  const calQueryKey = ['field-sales-cal', view, rangeStartKey] as const
+  const calQueryKey = ['field-sales-cal', view, rangeStartKey, companyId] as const
   const { data, isLoading, isError } = useQuery({
     queryKey: calQueryKey,
-    queryFn: () => fieldSalesApi.getMyVisits(rangeStartKey, rangeEndKey),
+    queryFn: () => fieldSalesApi.getMyVisits(rangeStartKey, rangeEndKey, companyId),
   })
 
   const byDay = useMemo(() => {
@@ -317,7 +318,7 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd, queryKey }: {
   byDay: Map<string, FSVisit[]>
   onOpen: (visitId: number) => void
   onAdd: (date: string, time?: string, endTime?: string) => void
-  queryKey: readonly [string, CalView, string]
+  queryKey: readonly [string, CalView, string, number | undefined]
 }) {
   const queryClient = useQueryClient()
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -336,7 +337,7 @@ function FSTimeGrid({ dayCols, byDay, onOpen, onAdd, queryKey }: {
   const colRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   const updateMut = useMutation({
-    mutationFn: ({ id, patch }: { id: number; patch: VisitUpdatePayload; queryKey: readonly [string, CalView, string] }) => fieldSalesApi.updateVisit(id, patch),
+    mutationFn: ({ id, patch }: { id: number; patch: VisitUpdatePayload; queryKey: readonly [string, CalView, string, number | undefined] }) => fieldSalesApi.updateVisit(id, patch),
     // `queryKey` travels in the mutation VARIABLES (not the closed-over prop)
     // because TanStack Query v5 re-reads the latest render's option closures
     // at execute time — if the user switches view/date-range while a PUT is
