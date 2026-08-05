@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Clock, AlertTriangle, CalendarDays, ChevronRight, MapPin, X, Search } from 'lucide-react'
 import { cn, usePersistedState } from '@/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { fieldSalesApi, type FSVisit, type FSClientSearch } from '@/api/fieldSales'
 import { VisitDetailDialog } from '@/pages/FieldSales/VisitDetailDialog'
 import NoteCaptureModal from '@/pages/FieldSales/NoteCaptureModal'
@@ -103,8 +104,8 @@ function OverlaySheet({ onClose, children, wide }: { onClose: () => void; childr
   )
 }
 
-function AddVisitForm({ initialDate, initialTime, initialEndTime, onDone, onCancel }: {
-  initialDate?: string; initialTime?: string; initialEndTime?: string; onDone: () => void; onCancel: () => void
+function AddVisitForm({ initialDate, initialTime, initialEndTime, companyId, onDone, onCancel }: {
+  initialDate?: string; initialTime?: string; initialEndTime?: string; companyId?: number; onDone: () => void; onCancel: () => void
 }) {
   const [query, setQuery] = useState('')
   const [selectedClient, setSelectedClient] = useState<FSClientSearch | null>(null)
@@ -116,8 +117,8 @@ function AddVisitForm({ initialDate, initialTime, initialEndTime, onDone, onCanc
   const [goals, setGoals] = useState('')
 
   const { data: searchData, isLoading: searching } = useQuery({
-    queryKey: ['fs-client-search', query],
-    queryFn: () => fieldSalesApi.searchClients(query),
+    queryKey: ['fs-client-search', query, companyId],
+    queryFn: () => fieldSalesApi.searchClients(query, companyId),
     enabled: query.length >= 2,
   })
   const results = searchData?.clients ?? []
@@ -297,9 +298,31 @@ export default function HubFieldSalesPanel() {
   const [tab, setTab] = usePersistedState<PanelTab>('hub-fs-tab', 'today')
   const [overlay, setOverlay] = useState<Overlay>(null)
   const queryClient = useQueryClient()
+
+  // Company selector — mirrors HubDrivingPanel's company Select, but defaults
+  // to the signed-in KAM's OWN company (default_company_id) rather than just
+  // "the first one". Persisted like the tab, but re-defaulted whenever the
+  // persisted id is 0 (first run) or no longer among the allowed companies
+  // (e.g. it changed server-side, or localStorage carried a stale id).
+  const { data: companiesData } = useQuery({ queryKey: ['fs-companies'], queryFn: () => fieldSalesApi.getFieldSalesCompanies() })
+  const companies = companiesData?.companies ?? []
+  const defaultCompanyId = companiesData?.default_company_id ?? 0
+  const [companyId, setCompanyId] = usePersistedState<number>('hub-fs-company', 0)
+  useEffect(() => {
+    if (!companies.length) return
+    if (companyId === 0 || !companies.some((c) => c.id === companyId)) {
+      setCompanyId(defaultCompanyId || companies[0].id)
+    }
+  }, [companies, defaultCompanyId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Gated on companyId > 0 so the panel never fires an unscoped fetch (with
+  // companyId still 0, pre-default) that would render real visits only to
+  // have them immediately unmount/refetch once the companies effect above
+  // resolves the actual company a moment later.
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['field-sales-visits', date],
-    queryFn: () => fieldSalesApi.getTodayVisits(date),
+    queryKey: ['field-sales-visits', date, companyId],
+    queryFn: () => fieldSalesApi.getTodayVisits(date, companyId || undefined),
+    enabled: companyId > 0,
   })
   const visits = data?.visits ?? []
   const planned = visits.filter(v => v.status === 'planned').length
@@ -307,8 +330,9 @@ export default function HubFieldSalesPanel() {
   const completed = visits.filter(v => v.status === 'completed').length
 
   const { data: upcomingData } = useQuery({
-    queryKey: ['field-sales-mine', upcomingFrom, upcomingTo],
-    queryFn: () => fieldSalesApi.getMyVisits(upcomingFrom, upcomingTo),
+    queryKey: ['field-sales-mine', upcomingFrom, upcomingTo, companyId],
+    queryFn: () => fieldSalesApi.getMyVisits(upcomingFrom, upcomingTo, companyId || undefined),
+    enabled: companyId > 0,
   })
   const upcoming = (upcomingData?.visits ?? []).filter(v => v.status === 'planned' || v.status === 'in_progress')
 
@@ -354,6 +378,20 @@ export default function HubFieldSalesPanel() {
 
   return (
     <div className="space-y-4">
+      {/* Company selector — single allowed company (the common case) is shown
+          as a locked, read-only chip rather than a dropdown with one choice;
+          managers/admins who see more than one company get a real Select. */}
+      {companies.length > 1 ? (
+        <Select value={String(companyId)} onValueChange={(v) => setCompanyId(Number(v))}>
+          <SelectTrigger className="h-11 w-full rounded-xl text-base"><SelectValue placeholder="Selectează compania" /></SelectTrigger>
+          <SelectContent>{companies.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>)}</SelectContent>
+        </Select>
+      ) : (
+        <div className="flex h-11 items-center rounded-xl border border-border bg-muted/40 px-3 text-sm font-medium text-muted-foreground">
+          {companies[0]?.company ?? '—'}
+        </div>
+      )}
+
       <Tabs value={tab} onValueChange={(v) => setTab(v as PanelTab)}>
         <TabsList>
           <TabsTrigger value="today">Azi</TabsTrigger>
@@ -424,6 +462,7 @@ export default function HubFieldSalesPanel() {
 
       {tab === 'calendar' && (
         <FieldSalesCalendar
+          companyId={companyId || undefined}
           onOpen={(id) => setOverlay({ kind: 'detail', id })}
           onAdd={(date, time, endTime) => setOverlay({ kind: 'add', date, time, endTime })}
         />
@@ -453,6 +492,7 @@ export default function HubFieldSalesPanel() {
             initialDate={overlay.date}
             initialTime={overlay.time}
             initialEndTime={overlay.endTime}
+            companyId={companyId || undefined}
             onDone={() => { invalidateVisitLists(); setOverlay(null) }}
             onCancel={() => setOverlay(null)}
           />

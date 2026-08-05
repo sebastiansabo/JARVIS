@@ -1,14 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const getTodayVisits = vi.fn()
 const getMyVisits = vi.fn()
+const getFieldSalesCompanies = vi.fn()
 vi.mock('@/api/fieldSales', () => ({
   fieldSalesApi: {
     getTodayVisits: (...a: unknown[]) => getTodayVisits(...a),
     getMyVisits: (...a: unknown[]) => getMyVisits(...a),
+    getFieldSalesCompanies: (...a: unknown[]) => getFieldSalesCompanies(...a),
     searchClients: vi.fn(), createVisit: vi.fn(),
     checkin: vi.fn(), checkout: vi.fn(), addNote: vi.fn(),
     getVisit: vi.fn(), getClient360: vi.fn(), refreshFiscal: vi.fn(),
@@ -40,11 +42,31 @@ const VISIT = {
   kam_name: 'George Pop', renewal_score: 70, goals: 'Reinnoire',
 }
 
+const ONE_COMPANY = { success: true, companies: [{ id: 5, company: 'AUTOWORLD S.R.L.' }], default_company_id: 5 }
+const TWO_COMPANIES = {
+  success: true,
+  companies: [{ id: 5, company: 'AUTOWORLD S.R.L.' }, { id: 7, company: 'PREMIUM S.R.L.' }],
+  default_company_id: 7,
+}
+
 describe('HubFieldSalesPanel', () => {
+  // Radix Select (used by the multi-company selector) needs a couple of DOM
+  // APIs jsdom doesn't implement — opening the listbox / selecting an item
+  // would otherwise throw. Stubbed once for this file only.
+  beforeAll(() => {
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+    window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false)
+    window.HTMLElement.prototype.releasePointerCapture = vi.fn()
+  })
+
   beforeEach(() => {
     getTodayVisits.mockReset()
     getMyVisits.mockReset()
+    getFieldSalesCompanies.mockReset()
     getMyVisits.mockResolvedValue({ success: true, visits: [], date_from: '', date_to: '' })
+    // Default: single allowed company -> every pre-existing test below (none
+    // of which cares about the selector) exercises the locked-label path.
+    getFieldSalesCompanies.mockResolvedValue(ONE_COMPANY)
     localStorage.clear()
   })
 
@@ -189,5 +211,45 @@ describe('HubFieldSalesPanel', () => {
     // note in HubDrivingPanel.test.tsx.
     fireEvent.mouseDown(await screen.findByRole('tab', { name: /calendar/i }))
     expect(await screen.findByText('calendar-tab')).toBeInTheDocument()
+  })
+
+  describe('company selector', () => {
+    it('renders a locked label (no dropdown) when only one company is allowed', async () => {
+      getTodayVisits.mockResolvedValue({ success: true, visits: [], date: '2026-08-04' })
+      wrap(<HubFieldSalesPanel />)
+      expect(await screen.findByText('AUTOWORLD S.R.L.')).toBeInTheDocument()
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    })
+
+    it('shows both companies and defaults the value to default_company_id when more than one is allowed', async () => {
+      getFieldSalesCompanies.mockResolvedValue(TWO_COMPANIES)
+      getTodayVisits.mockResolvedValue({ success: true, visits: [], date: '2026-08-04' })
+      wrap(<HubFieldSalesPanel />)
+
+      const trigger = await screen.findByRole('combobox')
+      // default_company_id is 7 -> "PREMIUM S.R.L." must be the selected value.
+      expect(await within(trigger).findByText('PREMIUM S.R.L.')).toBeInTheDocument()
+
+      // getTodayVisits is refetched once the effect resolves companyId=0 ->
+      // 7 (the default), so its LAST call must carry the default company.
+      // The date arg is whatever todayStr() returns at test-run time, so only
+      // the company_id (2nd positional arg) is pinned down here.
+      await waitFor(() => expect(getTodayVisits).toHaveBeenLastCalledWith(expect.any(String), 7))
+    })
+
+    it('refetches visits with the newly selected company_id when the user switches company', async () => {
+      getFieldSalesCompanies.mockResolvedValue(TWO_COMPANIES)
+      getTodayVisits.mockResolvedValue({ success: true, visits: [], date: '2026-08-04' })
+      wrap(<HubFieldSalesPanel />)
+
+      const trigger = await screen.findByRole('combobox')
+      await waitFor(() => expect(getTodayVisits).toHaveBeenLastCalledWith(expect.any(String), 7))
+
+      fireEvent.click(trigger)
+      fireEvent.click(await screen.findByRole('option', { name: 'AUTOWORLD S.R.L.' }))
+
+      await waitFor(() => expect(getTodayVisits).toHaveBeenLastCalledWith(expect.any(String), 5))
+      await waitFor(() => expect(getMyVisits).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), 5))
+    })
   })
 })
