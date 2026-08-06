@@ -169,7 +169,10 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
       }
     })
     .filter((b) => b.sc >= 0 && b.ec >= 0 && b.sc <= b.ec)
-    .sort((a, b) => a.sc - b.sc || a.ec - b.ec)
+    // Chronological within a day: start column, then departure time, then span
+    // end / id. Without the startMin tiebreak, same-day bars kept their incoming
+    // (created_at) order and rendered out of time order.
+    .sort((a, b) => a.sc - b.sc || a.ev.startMin! - b.ev.startMin! || a.ec - b.ec || a.ev.id - b.ev.id)
   const barRows: { ev: TimeGridEvent; sc: number; ec: number; late: boolean }[][] = []
   for (const bar of bars) {
     const row = barRows.find((r) => r[r.length - 1].ec < bar.sc)
