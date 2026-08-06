@@ -308,6 +308,8 @@ export interface EventParticipant {
   id: number
   user_id: number
   user_name: string
+  year: number
+  month: number
   participation_start: string | null
   participation_end: string | null
   bonus_days: number | null
