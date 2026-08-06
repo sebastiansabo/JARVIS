@@ -56,6 +56,9 @@ export interface TimeGridEvent {
   color: string
   title: string
   subtitle?: string
+  /** Optional third info line (e.g. "VIN: ...123456") — small, non-bold, under
+   *  the title/subtitle in both day blocks and week bars. */
+  meta?: string
   /** Grouping key (the car's VIN). Two events with the SAME groupKey whose time
    *  ranges overlap on the same day are "interlaced" — the same car double-booked
    *  — and get a red hachured overlap marker. */
@@ -353,11 +356,15 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
                         className={cn('pointer-events-auto min-w-0 whitespace-normal break-words rounded-md px-2 py-1 text-left text-[11px] font-semibold leading-snug shadow-sm', bar.ev.color, bar.late && 'border-l-4 border-red-500', ci && 'ring-2 ring-red-500')}
                         title={`${code ? `${code} · ` : ''}${label}${bar.late ? ' · în afara programului (08–18)' : ''}${ovl ? ` · Suprapus cu ${ovl.join(', ')}` : ''}`}
                       >
-                        <span className="block">
+                        {/* time (small) → client (bold, own line) → car → VIN. */}
+                        <span className="block text-[10px] font-normal opacity-80">
                           {code && <span data-testid={`tg-code-${bar.ev.id}`} className="mr-1 inline-block rounded bg-foreground/15 px-1 text-[10px] font-bold tabular-nums">{code}</span>}
                           {isMulti && <span data-testid={`tg-multiday-${bar.ev.id}`} className="mr-1 inline-block rounded bg-foreground/15 px-1 text-[9px] font-bold uppercase tracking-wide">multi-zi</span>}
-                          {bar.late && <span className="mr-0.5 text-red-600" aria-hidden>⚠</span>}{label}
+                          {bar.late && <span className="mr-0.5 text-red-600" aria-hidden>⚠</span>}{timeLabel}
                         </span>
+                        <span data-testid={`tg-title-${bar.ev.id}`} className="block">{bar.ev.title}</span>
+                        {bar.ev.subtitle && <span className="block text-[10px] font-normal opacity-80">{bar.ev.subtitle}</span>}
+                        {bar.ev.meta && <span data-testid={`tg-meta-${bar.ev.id}`} className="block text-[9px] font-normal opacity-70">{bar.ev.meta}</span>}
                         {ovl && <span data-testid={`tg-overlap-${bar.ev.id}`} className="mt-0.5 block text-[10px] font-bold text-red-600 dark:text-red-400">Suprapus cu {ovl.join(', ')}</span>}
                         {ci && (
                           <span data-testid={`tg-conflict-${bar.ev.id}`} className="relative mt-1 block h-2.5 w-full overflow-hidden rounded-full bg-background/80 ring-1 ring-red-500/40" aria-hidden>
@@ -543,15 +550,16 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
                           style={{ top: blockTop, height }}
                           className={cn('absolute left-0.5 right-0.5 z-[1] overflow-hidden rounded-md px-1.5 py-0.5 text-left text-[11px] font-semibold leading-tight shadow-sm', ev.color, canMove && 'cursor-grab', movingThis && 'cursor-grabbing touch-none ring-2 ring-primary/50')}
                         >
-                          {/* Departure day shows the start–end times (with the
-                              same-car day code Sx); continuation days show just
-                              the title. */}
-                          <span className="block truncate">
+                          {/* time (small) → client (bold, own line) → car → VIN,
+                              each on its own line so the name reads clearly. */}
+                          <span className="block truncate text-[10px] font-normal opacity-80">
                             {seriesCode.get(ev.id) && <span data-testid={`tg-code-${ev.id}`} className="mr-1 rounded bg-foreground/15 px-1 text-[9px] font-bold tabular-nums">{seriesCode.get(ev.id)}</span>}
-                            {seg.isStart ? `${minToTime(ev.startMin!)}${ev.endMin != null ? `–${minToTime(clampMin(ev.endMin))}` : ''} ${ev.title}` : ev.title}
+                            {minToTime(ev.startMin!)}{ev.endMin != null ? `–${minToTime(clampMin(ev.endMin))}` : ''}
                           </span>
+                          <span data-testid={`tg-title-${ev.id}`} className="block truncate">{ev.title}</span>
                           {overlapWith.get(ev.id) && <span data-testid={`tg-overlap-${ev.id}`} className="block truncate text-[9px] font-bold text-red-600 dark:text-red-400">Suprapus cu {overlapWith.get(ev.id)!.join(', ')}</span>}
                           {ev.subtitle && <span className="block truncate text-[9px] font-normal opacity-80">{ev.subtitle}</span>}
+                          {ev.meta && <span data-testid={`tg-meta-${ev.id}`} className="block truncate text-[9px] font-normal opacity-70">{ev.meta}</span>}
                         </button>
                       )
                     }

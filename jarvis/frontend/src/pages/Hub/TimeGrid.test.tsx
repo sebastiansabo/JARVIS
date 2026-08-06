@@ -264,4 +264,30 @@ describe('TimeGrid', () => {
     expect(screen.getByTestId('tg-workline-start')).toHaveStyle({ top: '48px' })
     expect(screen.getByTestId('tg-workline-end')).toHaveStyle({ top: '528px' })
   })
+
+  it('scales the hour grid by pxPerHour so slots can grow taller', () => {
+    render(<TimeGrid dayCols={[today]} events={[]} onEventClick={vi.fn()} pxPerHour={96} />)
+    // 08:00 = minToY(480) = (480-420)/60 * 96 = 96px.
+    expect(screen.getByTestId('tg-workline-start')).toHaveStyle({ top: '96px' })
+  })
+
+  it('renders an optional meta line (e.g. VIN) on a week bar', () => {
+    const ev: TimeGridEvent = { id: 77, dayKey: todayKey, startMin: 600, endMin: 660, color: 'x', title: 'Client', subtitle: 'Audi A5', meta: 'VIN: ...123456' }
+    render(<TimeGrid dayCols={[today, tomorrow]} events={[ev]} onEventClick={vi.fn()} />) // Week → bar
+    expect(screen.getByTestId('tg-meta-77')).toHaveTextContent('VIN: ...123456')
+  })
+
+  it('renders an optional meta line on a day-view block', () => {
+    const ev: TimeGridEvent = { id: 78, dayKey: todayKey, startMin: 600, endMin: 660, color: 'x', title: 'Client', subtitle: 'Audi A5', meta: 'VIN: ...654321' }
+    render(<TimeGrid dayCols={[today]} events={[ev]} onEventClick={vi.fn()} />) // Day → hour-grid block
+    expect(screen.getByTestId('tg-meta-78')).toHaveTextContent('VIN: ...654321')
+  })
+
+  it('puts the client name on its own line (separate from the time)', () => {
+    const ev: TimeGridEvent = { id: 79, dayKey: todayKey, startMin: 600, endMin: 660, color: 'x', title: 'Octavian Blidar', subtitle: 'MG HS HEV' }
+    render(<TimeGrid dayCols={[today]} events={[ev]} onEventClick={vi.fn()} />)
+    const titleLine = screen.getByTestId('tg-title-79')
+    expect(titleLine).toHaveTextContent('Octavian Blidar')
+    expect(titleLine.textContent).not.toMatch(/\d{1,2}:\d{2}/) // time is NOT on the client line
+  })
 })
