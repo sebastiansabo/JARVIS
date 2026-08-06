@@ -56,6 +56,7 @@ class ProjectEventRepository(BaseRepository):
         """Get all participants (bonus records) for an HR event."""
         return self.query_all('''
             SELECT eb.id, eb.user_id, u.name as user_name,
+                   eb.year, eb.month,
                    eb.participation_start, eb.participation_end,
                    eb.bonus_days, eb.hours_free, eb.bonus_net,
                    eb.details, eb.allocation_month,

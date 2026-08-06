@@ -41,6 +41,7 @@ import { tagsApi } from '@/api/tags'
 import { cn } from '@/lib/utils'
 import type { HrEvent } from '@/types/hr'
 import AddEventPage from './AddEventPage'
+import ManageParticipantsDialog from './ManageParticipantsDialog'
 import { useAuthStore } from '@/stores/authStore'
 
 function formatDate(d: string) {
@@ -55,7 +56,17 @@ function fmtCurrency(v: number | string | null) {
 
 /* ──── Expanded row: participants ──── */
 
-function EventParticipants({ eventId }: { eventId: number }) {
+function EventParticipants({
+  event, canEditBonus, canAddBonus, canDeleteBonus, canViewAmounts,
+}: {
+  event: HrEvent
+  canEditBonus: boolean
+  canAddBonus: boolean
+  canDeleteBonus: boolean
+  canViewAmounts: boolean
+}) {
+  const eventId = event.id
+  const [manageOpen, setManageOpen] = useState(false)
   const { data, isLoading } = useQuery({
     queryKey: ['event-participants', eventId],
     queryFn: () => marketingApi.getEventParticipants(eventId),
@@ -66,9 +77,27 @@ function EventParticipants({ eventId }: { eventId: number }) {
 
   return (
     <div className="px-6 py-4 space-y-3 bg-muted/30">
-      <p className="text-sm font-medium flex items-center gap-1.5">
-        <Users className="h-4 w-4" /> Participants ({participants.length})
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium flex items-center gap-1.5">
+          <Users className="h-4 w-4" /> Participants ({participants.length})
+        </p>
+        {canEditBonus && (
+          <Button size="sm" variant="outline" className="h-7" onClick={() => setManageOpen(true)}>
+            <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit participants
+          </Button>
+        )}
+      </div>
+      {canEditBonus && (
+        <ManageParticipantsDialog
+          open={manageOpen}
+          eventId={eventId}
+          event={event}
+          canAddBonus={canAddBonus}
+          canDeleteBonus={canDeleteBonus}
+          canViewAmounts={canViewAmounts}
+          onClose={() => setManageOpen(false)}
+        />
+      )}
       {participants.length === 0 ? (
         <div className="text-sm text-muted-foreground">No participants recorded for this event.</div>
       ) : (
@@ -133,6 +162,12 @@ function EventsList() {
   const isSmall = isMobile || isTablet
   const user = useAuthStore((s) => s.user)
   const canAdd = user?.permissions?.['hr.events.add'] ?? true
+  const canEditEvent = user?.permissions?.['hr.events.edit'] ?? false
+  const canDeleteEvent = user?.permissions?.['hr.events.delete'] ?? false
+  const canEditBonus = user?.permissions?.['hr.bonuses.edit'] ?? false
+  const canAddBonus = user?.permissions?.['hr.bonuses.add'] ?? false
+  const canDeleteBonus = user?.permissions?.['hr.bonuses.delete'] ?? false
+  const canViewAmounts = user?.permissions?.['hr.bonuses.view_amounts'] ?? false
   const [search, setSearch] = useState('')
   const [filterCompany, setFilterCompany] = useState<string>('all')
   const [filterFrom, setFilterFrom] = useState('')
@@ -352,12 +387,16 @@ function EventsList() {
           onToggleSelect={toggleSelect}
           actions={(ev) => (
             <>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditEvent(ev); setDialogOpen(true) }}>
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteIds([ev.id])}>
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              {canEditEvent && (
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditEvent(ev); setDialogOpen(true) }}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              {canDeleteEvent && (
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteIds([ev.id])}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </>
           )}
         />
@@ -415,19 +454,29 @@ function EventsList() {
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditEvent(ev); setDialogOpen(true) }}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteIds([ev.id])}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          {canEditEvent && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditEvent(ev); setDialogOpen(true) }}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canDeleteEvent && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteIds([ev.id])}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
                     {expandedRow === ev.id && (
                       <TableRow>
                         <TableCell colSpan={11} className="p-0">
-                          <EventParticipants eventId={ev.id} />
+                          <EventParticipants
+                            event={ev}
+                            canEditBonus={canEditBonus}
+                            canAddBonus={canAddBonus}
+                            canDeleteBonus={canDeleteBonus}
+                            canViewAmounts={canViewAmounts}
+                          />
                         </TableCell>
                       </TableRow>
                     )}
