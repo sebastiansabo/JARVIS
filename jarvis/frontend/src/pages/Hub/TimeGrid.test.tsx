@@ -233,6 +233,20 @@ describe('TimeGrid', () => {
     expect(screen.queryByTestId('tg-overlap-3')).toBeNull() // S3 doesn't overlap anything
   })
 
+  it('orders bars chronologically by start time within a day (not by input/creation order)', () => {
+    // Week view renders every session as a bar; given out-of-order input (by
+    // creation), same-day bars must stack top→bottom by departure time.
+    const evs: TimeGridEvent[] = [
+      { id: 1, dayKey: todayKey, startMin: 660, endMin: 720, color: 'x', title: 'eleven' }, // 11:00
+      { id: 2, dayKey: todayKey, startMin: 540, endMin: 600, color: 'x', title: 'nine' },   // 09:00
+      { id: 3, dayKey: todayKey, startMin: 600, endMin: 660, color: 'x', title: 'ten' },     // 10:00
+    ]
+    render(<TimeGrid dayCols={[today, tomorrow]} events={evs} onEventClick={vi.fn()} />) // Week view → bars
+    const band = screen.getByTestId('tg-allday-band')
+    const order = within(band).getAllByTestId(/tg-block-\d+/).map((el) => el.getAttribute('data-testid'))
+    expect(order).toEqual(['tg-block-2', 'tg-block-3', 'tg-block-1']) // 09:00, 10:00, 11:00
+  })
+
   it('draws red working-hours lines at 08:00 and 18:00', () => {
     render(<TimeGrid dayCols={[today]} events={[]} onEventClick={vi.fn()} />)
     // 08:00 = minToY(480) = 48px; 18:00 = minToY(1080) = 528px.
