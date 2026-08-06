@@ -257,29 +257,32 @@ class ClientFSRepository(BaseRepository):
             WHERE client_id = %s
         ''', (score, client_id))
 
-    def search_clients(self, query, limit=20, company_id=None):
-        """Search clients by name, company, or nr_reg.
-
-        Uses ILIKE for name_normalized and company_name, exact for nr_reg.
+    def search_clients(self, query, limit=20, company_ids=None):
+        """Search clients by name, company, nr_reg, or CUI.
 
         Args:
             query: search string
             limit: max results
-            company_id: optional tenant filter on client_profiles.company_id
-
+            company_ids: tenant scope on client_profiles.company_id —
+                None = no filter (all tenants); [] = no allowed companies
+                (returns []); [id, ...] = restrict to cp.company_id IN (...).
         Returns:
             list of client dicts with profile info
         """
         if not query or not query.strip():
             return []
+        # Explicit empty allowed-set → this user may see no companies; short-
+        # circuit rather than emitting an invalid `IN ()`.
+        if company_ids is not None and len(company_ids) == 0:
+            return []
 
         search_term = f'%{query.strip().lower()}%'
-
         params = [search_term, search_term, query.strip(), query.strip()]
         company_filter = ''
-        if company_id is not None:
-            company_filter = 'AND cp.company_id = %s'
-            params.append(company_id)
+        if company_ids is not None:
+            placeholders = ', '.join(['%s'] * len(company_ids))
+            company_filter = f'AND cp.company_id IN ({placeholders})'
+            params.extend(company_ids)
         params.append(limit)
 
         return self.query_all(f'''

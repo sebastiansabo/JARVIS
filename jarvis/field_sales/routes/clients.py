@@ -193,7 +193,9 @@ def api_client_search():
         limit = min(max(limit, 1), 100)
         company_id = request.args.get('company_id', type=int)
 
-        results = _client_repo.search_clients(query, limit=limit, company_id=company_id)
+        # Wrap single company_id into a list for the refactored search_clients
+        company_ids = [company_id] if company_id is not None else None
+        results = _client_repo.search_clients(query, limit=limit, company_ids=company_ids)
         return jsonify({'success': True, 'clients': results, 'count': len(results)})
     except Exception as e:
         logger.exception('Error searching clients')
