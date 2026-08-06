@@ -201,6 +201,17 @@ describe('TimeGrid', () => {
     expect(screen.queryByTestId('tg-hourgrid')).toBeNull()
   })
 
+  it('labels a multi-day bar with its date range + a multi-zi tag (not a same-day slot)', () => {
+    const dayAfter = new Date(today); dayAfter.setDate(today.getDate() + 2)
+    const ev: TimeGridEvent = { id: 51, dayKey: todayKey, endDayKey: keyOf(dayAfter), startMin: 690, endMin: 870, color: 'x', title: 'QATAR' }
+    render(<TimeGrid dayCols={[today, tomorrow, dayAfter]} events={[ev]} onEventClick={vi.fn()} />)
+    const bar = screen.getByTestId('tg-block-51')
+    expect(screen.getByTestId('tg-multiday-51')).toBeInTheDocument() // "multi-zi" tag
+    expect(bar).toHaveTextContent('→')     // date-range arrow, not the same-day "–"
+    expect(bar).toHaveTextContent('11:30') // departure time
+    expect(bar).toHaveTextContent('14:30') // return time (on a later day)
+  })
+
   it('marks interlaced (same-car, time-overlapping) sessions with a hachured overlap track', () => {
     const evs: TimeGridEvent[] = [
       { id: 1, dayKey: todayKey, startMin: 600, endMin: 690, color: 'x', title: 'A', groupKey: 'VIN1' }, // 10:00–11:30

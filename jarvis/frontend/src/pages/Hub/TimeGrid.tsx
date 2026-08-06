@@ -31,8 +31,12 @@ const pad = (n: number) => String(n).padStart(2, '0')
 function keyOf(d: Date): string { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
 function minToTime(min: number): string { return `${pad(Math.floor(min / 60))}:${pad(min % 60)}` }
 function snap(min: number): number { return Math.round(min / SNAP_MIN) * SNAP_MIN }
-function yToMin(y: number): number { return snap(HOUR_START * 60 + (y / PX_PER_HOUR) * 60) }
-function minToY(min: number): number { return ((min - HOUR_START * 60) / 60) * PX_PER_HOUR }
+// yToMin / minToY scale by the pxPerHour prop, so they live inside the component.
+/** "6 aug." — short ro-RO date for multi-day span labels. */
+function fmtDayShort(key: string): string {
+  const d = new Date(`${key}T00:00:00`)
+  return isNaN(d.getTime()) ? key : d.toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })
+}
 // Keep a value inside the visible window — a captured pointer keeps reporting
 // coordinates after leaving the column, so an off-grid drag would otherwise
 // yield negative/past-21:00 minutes → malformed times.
@@ -86,7 +90,7 @@ function clusterSegments(segs: Segment[]): Cluster[] {
 // the pointer is now; departure/return are their (day, time) min/max.
 type CreateDrag = { startKey: string; startMin: number; endKey: string; endMin: number }
 
-export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onMove }: {
+export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onMove, pxPerHour = PX_PER_HOUR }: {
   dayCols: Date[]
   events: TimeGridEvent[]
   onEventClick: (id: number) => void
@@ -96,6 +100,9 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
   /** Called when a draggable block is dropped at a new day/time (duration
    *  preserved). Only fired for events with draggable:true. */
   onMove?: (id: number, dayKey: string, startTime: string, endTime: string) => void
+  /** Vertical scale (px per hour). Desktop foi-parcurs passes a taller value so
+   *  the two-line blocks (time+name / vehicle) don't clip; defaults to a compact 48. */
+  pxPerHour?: number
 }) {
   const [drag, setDrag] = useState<CreateDrag | null>(null)
   const gridRef = useRef<HTMLDivElement | null>(null) // stable columns wrapper — holds the drag's pointer capture across week changes
@@ -111,8 +118,12 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
   // open/move on a draggable block.
   const suppressClickRef = useRef<number | null>(null)
 
+  // Vertical scale helpers, bound to the pxPerHour prop.
+  const minToY = (min: number) => ((min - HOUR_START * 60) / 60) * pxPerHour
+  const yToMin = (y: number) => snap(HOUR_START * 60 + (y / pxPerHour) * 60)
+
   const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i)
-  const gridHeight = (HOUR_END - HOUR_START) * PX_PER_HOUR
+  const gridHeight = (HOUR_END - HOUR_START) * pxPerHour
   const todayKey = keyOf(new Date())
   const isWeek = dayCols.length > 1
   // Column count is responsive (callers pass 3 on phones, 7 on desktop), so the
@@ -319,9 +330,12 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
                     const isMulti = !!(bar.ev.endDayKey && bar.ev.endDayKey > bar.ev.dayKey)
                     const start = minToTime(bar.ev.startMin!)
                     const end = bar.ev.endMin != null ? minToTime(clampMin(bar.ev.endMin)) : ''
-                    // Multi-day: show both ends with a "–…" gap mark so it reads
-                    // "09:00 –… 16:00" — the end hour is on a LATER day, not same-day.
-                    const timeLabel = !end ? start : isMulti ? `${start} –… ${end}` : `${start}–${end}`
+                    // Multi-day: show the full date range ("6 aug 11:30 → 9 aug 14:30")
+                    // so the bar reads as spanning several days — not a same-day slot
+                    // that got exiled to the band. Same-day bars keep the plain "–".
+                    const timeLabel = !end ? start
+                      : isMulti ? `${fmtDayShort(bar.ev.dayKey)} ${start} → ${fmtDayShort(bar.ev.endDayKey!)} ${end}`
+                      : `${start}–${end}`
                     // Car name first (truncated), then client. CSS truncate limits length to the bar width.
                     const label = `${timeLabel} ${bar.ev.subtitle ? `${bar.ev.subtitle} · ` : ''}${bar.ev.title}`
                     const ci = conflict.get(bar.ev.id) // interlaced (same car, overlapping) → hachure the overlap
@@ -341,6 +355,7 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
                       >
                         <span className="block">
                           {code && <span data-testid={`tg-code-${bar.ev.id}`} className="mr-1 inline-block rounded bg-foreground/15 px-1 text-[10px] font-bold tabular-nums">{code}</span>}
+                          {isMulti && <span data-testid={`tg-multiday-${bar.ev.id}`} className="mr-1 inline-block rounded bg-foreground/15 px-1 text-[9px] font-bold uppercase tracking-wide">multi-zi</span>}
                           {bar.late && <span className="mr-0.5 text-red-600" aria-hidden>⚠</span>}{label}
                         </span>
                         {ovl && <span data-testid={`tg-overlap-${bar.ev.id}`} className="mt-0.5 block text-[10px] font-bold text-red-600 dark:text-red-400">Suprapus cu {ovl.join(', ')}</span>}
@@ -386,7 +401,7 @@ export default function TimeGrid({ dayCols, events, onEventClick, onSlotAdd, onM
         <div data-testid="tg-hourgrid" className="flex gap-1">
           <div className={gutter}>
             {hours.map((h) => (
-              <div key={h} className="relative" style={{ height: PX_PER_HOUR }}>
+              <div key={h} className="relative" style={{ height: pxPerHour }}>
                 <span className="absolute -top-2 right-1 text-[10px] font-medium text-muted-foreground">{`${pad(h)}:00`}</span>
               </div>
             ))}
