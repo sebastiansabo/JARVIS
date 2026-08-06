@@ -278,7 +278,7 @@ class VisitRepository(BaseRepository):
 
         Args:
             data: dict with kam_id, planned_date, name, created_by, stops[],
-                  company_id (tenant tag applied to every stop)
+                  company_id (route-level fallback; each stop may override via stop['company_id'])
 
         Returns:
             dict: created route with visit list
@@ -295,7 +295,6 @@ class VisitRepository(BaseRepository):
         ), returning=True)
 
         route_id = route['id']
-        company_id = data.get('company_id')
         visits = []
         for i, stop in enumerate(data.get('stops', [])):
             visit = self.execute('''
@@ -312,7 +311,7 @@ class VisitRepository(BaseRepository):
                 stop.get('goals'),
                 route_id,
                 i + 1,
-                company_id,
+                stop.get('company_id', data.get('company_id')),
             ), returning=True)
             visits.append(visit)
 
