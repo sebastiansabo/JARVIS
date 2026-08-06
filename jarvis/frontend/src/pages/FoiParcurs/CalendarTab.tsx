@@ -337,6 +337,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
             onEventClick={(id) => { const c = byId.get(id); if (c) setSelected(c) }}
             onSlotAdd={(departure, ret) => navigate(`/app/foi-parcurs/test-drive?departure=${departure}&return=${ret}`)}
             onMove={onMoveEvent}
+            pxPerHour={72}
           />
         </div>
       )}

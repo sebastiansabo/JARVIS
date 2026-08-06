@@ -73,10 +73,10 @@ describe('CalendarTab (desktop foi-parcurs)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Zi' })) // drag-create lives in Day view
     const col = await screen.findByTestId(`tg-col-${todayKey}`)
     mockCol(col)
-    // 09:00 offset 96px → 10:30 offset 168px.
-    firePointer(col, 'pointerdown', 100 + 96)
-    firePointer(col, 'pointermove', 100 + 168)
-    firePointer(col, 'pointerup', 100 + 168)
+    // pxPerHour=72 here → 09:00 offset 144px, 10:30 offset 252px.
+    firePointer(col, 'pointerdown', 100 + 144)
+    firePointer(col, 'pointermove', 100 + 252)
+    firePointer(col, 'pointerup', 100 + 252)
     expect(navigate).toHaveBeenCalledWith(`/app/foi-parcurs/test-drive?departure=${todayKey}T09:00&return=${todayKey}T10:30`)
   })
 
