@@ -242,14 +242,29 @@ def api_create_route():
             if vt not in ALLOWED_VISIT_TYPES:
                 return jsonify({'success': False, 'error': f'Stop {i+1}: invalid visit_type'}), 400
 
-        current_uid = _get_current_user().id
+        user = _get_current_user()
+        current_uid = user.id
+
+        # JAR-1130 — per-stop tenant coherence: each stop belongs to its
+        # client's company; a non-admin creator may only route to clients within
+        # their allowed companies. A companyless client falls back to the KAM's
+        # company (route-level below). Mirrors the single-visit gate (JAR-1118).
+        is_admin = getattr(user, 'role_id', None) == 1
+        allowed_ids = None if is_admin else {c['id'] for c in _client_repo.get_allowed_companies(user.id, False)}
+        for i, stop in enumerate(stops):
+            client_company_id = _client_repo.get_client_company_id(stop['client_id'])
+            if client_company_id is not None:
+                if allowed_ids is not None and client_company_id not in allowed_ids:
+                    return jsonify({'success': False, 'error': f'Stop {i+1}: client dintr-o companie neautorizată'}), 403
+                stop['company_id'] = client_company_id
+
         route_data = {
             'kam_id': kam_id,
             'planned_date': planned_date,
             'name': data.get('name'),
             'created_by': current_uid,
             'stops': stops,
-            # Tenant isolation: tag each route stop with the KAM's company (reuse target)
+            # Route-level fallback: applied to stops whose client has no company.
             'company_id': target.get('company_id'),
         }
 
