@@ -309,3 +309,94 @@ def test_final_mirrors_matching_storno_not_all_advances(monkeypatch):
     assert ws.cell(row=3, column=COL_FWBETRAG).value == 16113
     assert round(ws.cell(row=3, column=COL_KURS).value, 4) == 5.2460
     assert _betrag(ws, 3) == 84528.80
+
+
+# ── Decimal-advance scenario (prod: Audi A3, comanda 152392, anexa 1) ──────
+# The 5% and 95% advances were stored with sub-EUR decimals (1403.89 / 26674.10)
+# — themselves fractional slices of the car total. The advance export already
+# rounds each car to whole EUR (1404 / 26674) via _snap_pct + round-half-up, and
+# the STORNO must reverse those SAME whole amounts (matching the invoice PDF).
+# The old storno path echoed the stored decimals into fwbetrag, so the EuroFib
+# EUR column showed 1403.89 / 26674.10 instead of the invoiced 1404 / 26674 and
+# left a fractional-EUR residue that never cleared on the client account.
+CAR_152392 = {
+    "id": 500, "anexa_id": 4, "line_number": 1, "nr_comanda": "152392",
+    "model": "A3 Limuzina S line 40 TFSI quattro", "culoare": "Negru Mythos",
+    "list_price_eur": 0, "selling_price_eur": 28078, "qty": 1,
+}
+ADV_5PCT = {  # 5% advance stored as 1403.89 (a fractional slice), @ 5.0954
+    "id": 940, "invoice_number": 9200881, "total_amount_eur": 1403.89,
+    "split_mode": "proportional", "kurs_applied": 5.0954,
+    "issued_date": "2026-02-25", "line_ids": [500],
+}
+ADV_95PCT = {  # 95% advance stored as 26674.10, @ 5.2414
+    "id": 941, "invoice_number": 9201802, "total_amount_eur": 26674.10,
+    "split_mode": "proportional", "kurs_applied": 5.2414,
+    "issued_date": "2026-07-17", "line_ids": [500],
+}
+STORNO_152392 = {
+    "id": 400, "invoice_type": "STORNO", "invoice_number": 9201914, "anexa_id": 4,
+    "total_amount_eur": -28078, "split_mode": "equal", "kurs_applied": 5.2340982,
+    "issued_date": "2026-08-04", "line_ids": [500],
+}
+FINAL_152392 = {
+    "id": 401, "invoice_type": "FINAL", "invoice_number": 9201915, "anexa_id": 4,
+    "total_amount_eur": 28078, "split_mode": "proportional", "kurs_applied": 5.2340982,
+    "issued_date": "2026-08-04", "line_ids": [500],
+}
+
+
+class DecimalAdvanceFakeRepo(FakeRepo):
+    """Audi A3 152392: two advances stored with sub-EUR decimals (1403.89 / 26674.10)."""
+
+    def get_anexa_by_id(self, anexa_id):
+        return {"id": 4, "contract_id": 1, "anexa_number": 1}
+
+    def get_lines_by_anexa(self, anexa_id):
+        return [dict(CAR_152392)]
+
+    def get_document_number_map(self, invoice_id):
+        return {500: 9201914} if invoice_id == 400 else {500: 9201915}
+
+    def query_all(self, sql, params=None):
+        if "facturare_invoice_links" in sql:
+            return [{"source_invoice_id": 940}, {"source_invoice_id": 941}]
+        if "invoice_type = 'STORNO'" in sql:               # matching-storno lookup (final)
+            return [{"id": 400, "total_amount_eur": -28078, "line_ids": [500]}]
+        if "id IN" in sql:                                 # reversed advances for storno / final
+            return [dict(ADV_5PCT), dict(ADV_95PCT)]
+        if "invoice_type = 'INVOICE'" in sql:              # fallback: all advances for anexa
+            return [dict(ADV_5PCT), dict(ADV_95PCT)]
+        return []
+
+
+def _full_betrag(ws, row):
+    """Full-precision betrag (Excel evaluates =M*AG with no 2-decimal rounding)."""
+    return (ws.cell(row=row, column=COL_FWBETRAG).value
+            * ws.cell(row=row, column=COL_KURS).value)
+
+
+def test_storno_uses_whole_euro_matching_invoice(monkeypatch):
+    """Storno EUR (fwbetrag) must be the whole-EUR amount printed on the invoice
+    (1404 / 26674), NOT the stored fractional slice (1403.89 / 26674.10)."""
+    monkeypatch.setattr(routes_orders, "_repo", DecimalAdvanceFakeRepo())
+    ws = _render(STORNO_152392)
+    # rows 3/4 = 5% advance, rows 5/6 = 95% advance (debit/credit pairs)
+    assert ws.cell(row=3, column=COL_FWBETRAG).value == -1404
+    assert ws.cell(row=5, column=COL_FWBETRAG).value == -26674
+
+
+def test_decimal_storno_fully_reverses_advance_and_final_nets(monkeypatch):
+    """The storno RON must reverse the whole-EUR advances (1404@5.0954,
+    26674@5.2414) and the final must net the storno to ~0 RON at full precision."""
+    monkeypatch.setattr(routes_orders, "_repo", DecimalAdvanceFakeRepo())
+    storno_batch = routes_orders._build_eurofib_batch(STORNO_152392)
+    final_batch = routes_orders._build_eurofib_batch(FINAL_152392)
+    xlsx = EurofibXlsxRenderer.render_multi_to_bytes([storno_batch, final_batch])
+    ws = load_workbook(io.BytesIO(xlsx)).active
+    # Debit rows: storno 5% (3), storno 95% (5), final (7).
+    assert round(_full_betrag(ws, 3), 2) == round(-1404 * 5.0954, 2)    # -7153.94
+    assert round(_full_betrag(ws, 5), 2) == round(-26674 * 5.2414, 2)   # -139809.10
+    assert ws.cell(row=7, column=COL_FWBETRAG).value == 28078
+    net = _full_betrag(ws, 3) + _full_betrag(ws, 5) + _full_betrag(ws, 7)
+    assert abs(net) < 0.01, f"storno + final should net to zero, got {net}"

@@ -64,6 +64,22 @@ def _snap_pct(total_amount, total_selling) -> float:
     snapped = round(raw * 100) / 100
     return snapped if abs(raw - snapped) < 0.005 else raw
 
+
+def _per_car_advance_eur(inv_total, selling, covered_selling, split_mode, n_lines) -> int:
+    """Whole-EUR per-car slice of an advance/invoice total.
+
+    Single source of truth for the advance, storno and final exports so all three
+    book the SAME rounded EUR per car and reconcile to zero. Proportional splits
+    snap the ratio to a clean percent then round half up (matching the invoice
+    PDF); equal splits divide and round. Slicing the stored total with 2-decimal
+    precision instead (the old storno path) echoed fractional-EUR residues that
+    never cleared and mismatched the whole-EUR invoice — e.g. a 5% advance stored
+    as 1403.89 must reverse as 1404, not 1403.89.
+    """
+    if split_mode == "proportional" and covered_selling:
+        return _round_half_up(selling * _snap_pct(inv_total, covered_selling))
+    return _round_half_up(inv_total / max(n_lines, 1))
+
 # ── Document items cache (in-memory, per doc_type key) ──────────
 _doc_items_cache: dict[str, tuple[float, list]] = {}  # key -> (timestamp, items)
 _DOC_ITEMS_TTL = 60  # seconds
@@ -1763,10 +1779,8 @@ def api_generate_eurofib(invoice_id):
 
             for car in lines:
                 selling = float(car["selling_price_eur"])
-                if ri_split == "proportional" and covered_selling > 0:
-                    car_amount = round(ri_total * (selling / covered_selling), 2)
-                else:
-                    car_amount = round(ri_total / max(len(ri_line_ids), 1), 2)
+                car_amount = _per_car_advance_eur(
+                    ri_total, selling, covered_selling, ri_split, len(ri_line_ids))
                 order_lines.append(OrderLine(
                     comanda=int(car["nr_comanda"]) if car.get("nr_comanda") and str(car["nr_comanda"]).isdigit() else 0,
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
@@ -1943,7 +1957,7 @@ def _final_blended_kurs(repo, inv_row, all_lines):
         if adv_ids:
             ph = ",".join(["%s"] * len(adv_ids))
             advances = repo.query_all(
-                "SELECT total_amount_eur, kurs_applied, issued_date, line_ids "
+                "SELECT total_amount_eur, split_mode, kurs_applied, issued_date, line_ids "
                 "FROM facturare_invoices WHERE id IN ({})".format(ph),
                 tuple(adv_ids))
     if advances is None:
@@ -1956,7 +1970,7 @@ def _final_blended_kurs(repo, inv_row, all_lines):
             "(anexa %s, eur %s) — falling back to all anexa advances",
             inv_row.get("id"), anexa_id, final_eur)
         advances = repo.query_all(
-            "SELECT total_amount_eur, kurs_applied, issued_date, line_ids "
+            "SELECT total_amount_eur, split_mode, kurs_applied, issued_date, line_ids "
             "FROM facturare_invoices "
             "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number",
             (anexa_id,))
@@ -1967,13 +1981,16 @@ def _final_blended_kurs(repo, inv_row, all_lines):
         if not adv_kurs:
             continue
         adv_eur = float(adv["total_amount_eur"])
+        adv_split = adv.get("split_mode") or "equal"
         raw = adv.get("line_ids")
         if isinstance(raw, str):
             raw = _json.loads(raw)
         adv_lids = set(raw) if raw else all_ids
         covered = sum(prices.get(x, 0) for x in adv_lids) or 1
         for lid in adv_lids:
-            share = round(prices.get(lid, 0) / covered * adv_eur, 2)
+            # Whole-EUR share, identical to the storno's per-car amount for this
+            # advance, so the final's RON equals the storno's RON to the cent.
+            share = _per_car_advance_eur(adv_eur, prices.get(lid, 0), covered, adv_split, len(adv_lids))
             slot = acc.setdefault(lid, [0.0, 0.0])
             slot[0] += share * adv_kurs
             slot[1] += share
@@ -2057,10 +2074,8 @@ def _build_eurofib_batch(inv_row):
 
             for car in lines:
                 selling = float(car["selling_price_eur"])
-                if ri_split == "proportional" and covered_selling > 0:
-                    car_amount = round(ri_total * (selling / covered_selling), 2)
-                else:
-                    car_amount = round(ri_total / max(len(ri_line_ids), 1), 2)
+                car_amount = _per_car_advance_eur(
+                    ri_total, selling, covered_selling, ri_split, len(ri_line_ids))
                 order_lines.append(OrderLine(
                     comanda=int(car["nr_comanda"]) if car.get("nr_comanda") and str(car["nr_comanda"]).isdigit() else 0,
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
