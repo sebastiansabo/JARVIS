@@ -119,6 +119,20 @@ def api_create_visit():
                     if requested_company_id in allowed_ids:
                         visit_company_id = requested_company_id
 
+        # JAR-1118 — the visit belongs to the CLIENT's tenant. When the client
+        # has a company it is authoritative for the tag; a non-admin may only
+        # create visits for clients within their allowed companies (blocks a
+        # visit tagged to one tenant for a client of another, and out-of-scope
+        # client_ids). A companyless client keeps the tag resolved above.
+        client_company_id = _client_repo.get_client_company_id(client_id)
+        if client_company_id is not None:
+            coher_user = _get_current_user()
+            if getattr(coher_user, 'role_id', None) != 1:
+                allowed_ids = {c['id'] for c in _client_repo.get_allowed_companies(coher_user.id, False)}
+                if client_company_id not in allowed_ids:
+                    return jsonify({'success': False, 'error': 'Nu puteți crea o vizită pentru un client din afara companiilor dvs.'}), 403
+            visit_company_id = client_company_id
+
         visit_data = {
             'kam_id': kam_id,
             'client_id': client_id,
