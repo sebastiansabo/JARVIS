@@ -17,6 +17,18 @@ class ClientFSRepository(BaseRepository):
             (client_id,)
         )
 
+    def get_client_company_id(self, client_id):
+        """Return the client's tenant (client_profiles.company_id), or None.
+
+        None when the client has no profile row OR a NULL company_id. Used to
+        make the client's tenant authoritative for a new visit's company tag.
+        """
+        row = self.query_one(
+            'SELECT company_id FROM client_profiles WHERE client_id = %s',
+            (client_id,),
+        )
+        return row['company_id'] if row else None
+
     def get_or_create_profile(self, client_id):
         """Get client profile, creating a default one if it doesn't exist.
 
