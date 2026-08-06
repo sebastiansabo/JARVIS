@@ -59,6 +59,27 @@ function renderDialog(props: Partial<React.ComponentProps<typeof ManageParticipa
   )
 }
 
+/** Render with a controllable `open` prop, backed by one stable QueryClient. */
+function renderControllable(props: Partial<React.ComponentProps<typeof ManageParticipantsDialog>> = {}) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const ui = (open: boolean) => (
+    <QueryClientProvider client={qc}>
+      <ManageParticipantsDialog
+        open={open} eventId={42} event={EVENT}
+        canAddBonus canDeleteBonus canViewAmounts onClose={vi.fn()} {...props}
+      />
+    </QueryClientProvider>
+  )
+  const utils = render(ui(true))
+  return { ...utils, setOpen: (open: boolean) => utils.rerender(ui(open)) }
+}
+
+const EMPLOYEE = {
+  id: 9, name: 'New Person', email: null, phone: null, departments: null,
+  subdepartment: null, company: 'X', brand: null, is_active: true,
+  contract_status: 'active', notify_on_allocation: false, notify_missing_punch: null,
+}
+
 describe('ManageParticipantsDialog', () => {
   beforeAll(() => {
     window.HTMLElement.prototype.scrollIntoView = vi.fn()
@@ -132,5 +153,42 @@ describe('ManageParticipantsDialog', () => {
     expect(updateBonus).not.toHaveBeenCalled()
     expect(createBonus).not.toHaveBeenCalled()
     expect(deleteBonus).not.toHaveBeenCalled()
+  })
+
+  // Regression: canceling must discard edits. Reopening the dialog re-seeds rows
+  // from the server, so a stale removal is not silently persisted on the next Save.
+  it('reopening after cancel discards a removal — Save does not delete', async () => {
+    const onClose = vi.fn()
+    const { setOpen } = renderControllable({ onClose })
+    fireEvent.click(await screen.findByRole('button', { name: /remove/i }))
+    setOpen(false)
+    setOpen(true)
+    expect(await screen.findByText('Doja Paul-Sebastian')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(deleteBonus).not.toHaveBeenCalled()
+  })
+
+  // Regression: a mid-batch failure must not duplicate the already-created rows
+  // when the user retries — created ids are written back so a retry updates, not re-creates.
+  it('does not re-create a participant when a later step fails and the user retries', async () => {
+    searchEmployees.mockResolvedValue([EMPLOYEE])
+    updateBonus.mockRejectedValueOnce(new Error('boom')) // first Save: existing-row update fails
+    createBonus.mockResolvedValue({ success: true, id: 555 })
+    renderDialog()
+
+    fireEvent.change(await screen.findByDisplayValue('1'), { target: { value: '2' } }) // edit existing → update
+    fireEvent.change(screen.getByLabelText(/search employees/i), { target: { value: 'New' } })
+    fireEvent.click(await screen.findByRole('button', { name: /New Person/i })) // add new → create
+
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await waitFor(() => expect(createBonus).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(updateBonus).toHaveBeenCalledTimes(1))
+    // New rows default their allocation period from the event start date (2026-07-31).
+    expect(createBonus).toHaveBeenCalledWith(expect.objectContaining({ employee_id: 9, year: 2026, month: 7 }))
+
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i })) // retry
+    await waitFor(() => expect(updateBonus).toHaveBeenCalledTimes(2))
+    expect(createBonus).toHaveBeenCalledTimes(1) // not re-created
   })
 })

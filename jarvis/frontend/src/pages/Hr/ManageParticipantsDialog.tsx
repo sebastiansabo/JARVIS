@@ -11,7 +11,7 @@ import { hrApi } from '@/api/hr'
 import { marketingApi } from '@/api/marketing'
 import { toast } from 'sonner'
 import type { HrEvent, HrEmployee } from '@/types/hr'
-import { participantToRow, diffParticipantRows, type ParticipantRow } from './manageParticipants'
+import { participantToRow, rowToPayload, diffParticipantRows, type ParticipantRow } from './manageParticipants'
 
 interface Props {
   open: boolean
@@ -50,14 +50,19 @@ export default function ManageParticipantsDialog({
   })
 
   const [rows, setRows] = useState<ParticipantRow[]>([])
+  // Re-seed rows from the server each time the dialog opens, so canceling
+  // discards uncommitted edits (removals, day changes) instead of leaking them
+  // into the next Save.
   useEffect(() => {
-    if (data?.participants) setRows(data.participants.map(participantToRow))
-  }, [data])
+    if (open && data?.participants) setRows(data.participants.map(participantToRow))
+  }, [open, data])
 
   // Defaults for newly added rows, derived from the event's start date.
+  // Parse the YYYY-MM-DD string directly — `new Date('YYYY-MM-DD')` is UTC and
+  // would drift the month across a boundary in negative-offset timezones.
   const [defYear, defMonth] = useMemo(() => {
-    const d = event.start_date ? new Date(event.start_date) : null
-    if (d && !isNaN(d.getTime())) return [d.getFullYear(), d.getMonth() + 1]
+    const m = /^(\d{4})-(\d{2})/.exec(event.start_date ?? '')
+    if (m) return [Number(m[1]), Number(m[2])]
     const now = new Date()
     return [now.getFullYear(), now.getMonth() + 1]
   }, [event.start_date])
@@ -127,7 +132,15 @@ export default function ManageParticipantsDialog({
   const saveMutation = useMutation({
     mutationFn: async () => {
       const ops = diffParticipantRows(original, rows, eventId)
-      for (const c of ops.creates) await hrApi.createBonus(c)
+      // Create new rows first, writing each returned id back into state — so if a
+      // later step throws and the user retries, the created rows are recognised as
+      // existing (not created again → no duplicate bonuses).
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i].id != null) continue
+        const res = await hrApi.createBonus(rowToPayload(rows[i], eventId))
+        const newId = res?.id
+        if (newId != null) setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, id: newId } : r)))
+      }
       for (const u of ops.updates) await hrApi.updateBonus(u.id, u.data)
       for (const id of ops.deletes) await hrApi.deleteBonus(id)
     },
