@@ -11,6 +11,21 @@ FS_EDITABLE = {
 }
 
 
+def _resolve_search_company_ids(is_admin, requested_company_id, allowed_ids):
+    """Tenant scope for client search.
+
+    Returns None (no filter — admin, all tenants) or a list of company_ids to
+    restrict to. Non-admins are ALWAYS restricted to their allowed set: a valid
+    in-set requested id narrows to it; a forbidden or omitted id falls back to
+    the whole allowed set ([] when the user has no allowed companies).
+    """
+    if is_admin:
+        return [requested_company_id] if requested_company_id is not None else None
+    if requested_company_id is not None and requested_company_id in allowed_ids:
+        return [requested_company_id]
+    return sorted(allowed_ids)
+
+
 @field_sales_bp.route('/api/field-sales/clients/<int:client_id>/360', methods=['GET'])
 @jwt_or_login_required
 @field_sales_required
@@ -191,10 +206,13 @@ def api_client_search():
 
         limit = request.args.get('limit', 20, type=int)
         limit = min(max(limit, 1), 100)
-        company_id = request.args.get('company_id', type=int)
+        requested = request.args.get('company_id', type=int)
 
-        # Wrap single company_id into a list for the refactored search_clients
-        company_ids = [company_id] if company_id is not None else None
+        user = _get_current_user()
+        is_admin = getattr(user, 'role_id', None) == 1
+        allowed_ids = set() if is_admin else {c['id'] for c in _client_repo.get_allowed_companies(user.id, False)}
+        company_ids = _resolve_search_company_ids(is_admin, requested, allowed_ids)
+
         results = _client_repo.search_clients(query, limit=limit, company_ids=company_ids)
         return jsonify({'success': True, 'clients': results, 'count': len(results)})
     except Exception as e:
