@@ -257,6 +257,11 @@ def api_create_route():
                 if allowed_ids is not None and client_company_id not in allowed_ids:
                     return jsonify({'success': False, 'error': f'Stop {i+1}: client dintr-o companie neautorizată'}), 403
                 stop['company_id'] = client_company_id
+            else:
+                # Companyless client: never trust a request-supplied company_id
+                # (tenant bypass) — drop it so create_route falls back to the
+                # route-level KAM company (target.get('company_id')).
+                stop.pop('company_id', None)
 
         route_data = {
             'kam_id': kam_id,
