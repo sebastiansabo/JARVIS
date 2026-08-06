@@ -185,6 +185,48 @@ def test_real_schedule_beats_excluded_marker():
     r = pes.build_rows(pr, sched, {}, excluded_keys={(10, 5)})[0]
     assert r[pes.HEADERS.index('Schedule')] == '09:00–17:00'
 
+# ── Sincron leave code overrides punch-driven "Present" (official Status) ──
+
+def test_leave_code_overrides_present_status_and_blanks_duration():
+    # Employee on CO (annual leave) all day but with a stray badge punch: the
+    # official Status must reflect the leave, not "Present", and worked Duration
+    # must be blank — while the raw punch still shows in the Actual columns.
+    pr = [row(first_punch=_dt(1,'06:57'), last_punch=_dt(1,'08:05'), total_punches=2,
+              duration_seconds=3600)]
+    codes = {(10, dt.date(2026,7,1)): 'CO'}
+    r = pes.build_rows(pr, {}, codes, leave_codes={'CO'})[0]
+    assert r[pes.HEADERS.index('Status')] == 'CO'            # official = on leave
+    assert r[pes.HEADERS.index('Duration')] == ''            # no worked hours on leave
+    assert r[pes.HEADERS.index('Actual Status')] == 'Present'  # raw badge preserved
+    assert r[pes.HEADERS.index('Actual In')] == '06:57'      # raw punch preserved
+    assert r[pes.HEADERS.index('Sincron')] == 'CO'
+
+def test_leave_code_shows_as_status_without_punch():
+    # No punch + leave code -> Status shows the code (not the generic 'Absent').
+    pr = [row()]  # 2026-07-01 (Wed), no punches
+    codes = {(10, dt.date(2026,7,1)): 'CM'}
+    r = pes.build_rows(pr, {}, codes, leave_codes={'CM'})[0]
+    assert r[pes.HEADERS.index('Status')] == 'CM'
+    assert r[pes.HEADERS.index('Actual Status')] == 'Absent'  # physically absent
+
+def test_work_code_not_in_leave_set_stays_present():
+    # DLG (delegation) is working off-site, not leave -> Present + Duration kept.
+    pr = [row(first_punch=_dt(1,'08:00'), last_punch=_dt(1,'16:00'), total_punches=2,
+              duration_seconds=8*3600)]
+    codes = {(10, dt.date(2026,7,1)): 'DLG'}
+    sched = {(10,5,dt.date(2026,7,1)): {'schedule_start':'08:00','schedule_end':'16:00','lunch_break_minutes':0}}
+    r = pes.build_rows(pr, sched, codes, leave_codes={'CO','CM','CMS'})[0]
+    assert r[pes.HEADERS.index('Status')] == 'Present'
+    assert r[pes.HEADERS.index('Duration')] == '8:00'
+
+def test_no_leave_codes_arg_preserves_present_behaviour():
+    # Backward-compat: without leave_codes, a CO code does NOT override Present.
+    pr = [row(first_punch=_dt(1,'08:00'), last_punch=_dt(1,'16:00'), total_punches=2,
+              duration_seconds=8*3600)]
+    codes = {(10, dt.date(2026,7,1)): 'CO'}
+    r = pes.build_rows(pr, {}, codes)[0]
+    assert r[pes.HEADERS.index('Status')] == 'Present'
+
 def test_months_between_spans_year_boundary():
     from core.connectors.biostar.services import pontaje_export_service as pes
     assert pes._months_between('2025-12-20', '2026-02-03') == [(2025,12),(2026,1),(2026,2)]

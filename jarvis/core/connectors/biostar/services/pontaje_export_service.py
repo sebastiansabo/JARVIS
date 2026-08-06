@@ -13,6 +13,16 @@ HEADERS = ['Date', 'Weekday', 'Name', 'Group', 'Company',
 
 _WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+# Sincron day-codes that mean the employee is on a motivated full-day leave/absence.
+# These override a punch-driven "Present" in the official Status column and blank the
+# worked Duration — the raw punch still surfaces in the "Actual *" columns so a
+# badge-vs-leave discrepancy stays visible. Work codes (OZ/OS/OSW), delegation (DLG)
+# and contract-gap (X) are intentionally excluded. Used as the fallback set because
+# sincron_activity_codes.is_leave is currently unpopulated in prod.
+LEAVE_STATUS_CODES = frozenset({
+    'CO', 'CM', 'CMS', 'CES', 'CFS', 'CFP', 'CIC', 'INV', 'ZLC', 'ZLS',
+})
+
 
 def _fmt_time(value):
     """Return 'HH:MM' from a datetime/str, by slice (no tz conversion)."""
@@ -74,8 +84,16 @@ def _actual_status(raw_first, total, is_weekend, is_holiday, has_permit):
     return 'Present'
 
 
-def _adjusted_status(has_punch, has_adj, single_punch_no_adj, is_weekend, is_holiday, has_permit):
-    """Official status after manual adjustments are applied."""
+def _adjusted_status(has_punch, has_adj, single_punch_no_adj, is_weekend, is_holiday,
+                     has_permit, leave_code=''):
+    """Official status after manual adjustments are applied.
+
+    A Sincron motivated-leave code (CO/CM/CMS/…) is authoritative for the day and
+    overrides a punch-driven 'Present': the physical punch still shows in the
+    'Actual *' columns, but the official pontaj reflects the leave.
+    """
+    if leave_code:
+        return leave_code
     if single_punch_no_adj:
         return 'Not exited'
     if has_punch or has_adj:
@@ -94,10 +112,11 @@ def _permit_cell(entry):
 
 
 def build_rows(punch_rows, sched_map, code_map, holidays=None, permit_map=None,
-               excluded_keys=None):
+               excluded_keys=None, leave_codes=None):
     holidays = holidays or set()
     permit_map = permit_map or {}
     excluded_keys = excluded_keys or set()
+    leave_codes = leave_codes or set()
     out = []
     for r in punch_rows:
         raw_day = r['day']
@@ -137,17 +156,21 @@ def build_rows(punch_rows, sched_map, code_map, holidays=None, permit_map=None,
         checked_in_disp = _fmt_time(adj_first) if adj_first else ''
         checked_out_disp = _fmt_time(adj_last) if (adj_last and adj_last != adj_first) else ''
 
+        code = code_map.get((juid, raw_day), '')
+        # A motivated full-day leave code is authoritative: it overrides a
+        # punch-driven "Present" status and zeroes the worked duration.
+        leave_code = code if code in leave_codes else ''
+        permit = permit_map.get((juid, d.isoformat()))
+        has_permit = bool(permit)
+        wd = _WEEKDAYS[d.weekday()]
+
         # gross seconds: adjusted span if both adjusted, else duration_seconds
         if adj_first and adj_last:
             gross = _span_seconds(adj_first, adj_last)
         else:
             gross = r.get('duration_seconds')
-        duration = '' if (single_no_adj or not eff_in or not checked_out) else _fmt_hm(_net_seconds(gross, lunch))
-
-        code = code_map.get((juid, raw_day), '')
-        permit = permit_map.get((juid, d.isoformat()))
-        has_permit = bool(permit)
-        wd = _WEEKDAYS[d.weekday()]
+        duration = '' if (single_no_adj or not eff_in or not checked_out or leave_code) \
+            else _fmt_hm(_net_seconds(gross, lunch))
 
         out.append([
             d.isoformat(),
@@ -157,7 +180,7 @@ def build_rows(punch_rows, sched_map, code_map, holidays=None, permit_map=None,
             r.get('company') or '',
             checked_in_disp,
             checked_out_disp,
-            _adjusted_status(bool(raw_first), has_adj, single_no_adj, is_weekend, is_holiday, has_permit),
+            _adjusted_status(bool(raw_first), has_adj, single_no_adj, is_weekend, is_holiday, has_permit, leave_code),
             _fmt_time(raw_first) if raw_first else '',
             _fmt_time(raw_last) if (raw_last and raw_last != raw_first) else '',
             _actual_status(raw_first, total, is_weekend, is_holiday, has_permit),
@@ -344,9 +367,17 @@ def generate(start, end, jarvis_user_ids):
         }
     code_map = _build_code_map(code_rows)
 
+    # Prefer the DB-configured leave flag; fall back to the built-in set because
+    # sincron_activity_codes.is_leave is currently unpopulated in prod.
+    try:
+        leave_codes = set(s_repo.get_leave_codes()) or set(LEAVE_STATUS_CODES)
+    except Exception:
+        leave_codes = set(LEAVE_STATUS_CODES)
+
     holidays = _fetch_holidays(start, end)
     permit_map = _fetch_permits(start, end)
-    rows = build_rows(punch_rows, sched_map, code_map, holidays, permit_map, excluded_keys)
+    rows = build_rows(punch_rows, sched_map, code_map, holidays, permit_map,
+                      excluded_keys, leave_codes)
     xlsx = build_workbook(rows)
     filename = f'pontaje_{start}_{end}.xlsx'
     return xlsx, filename
