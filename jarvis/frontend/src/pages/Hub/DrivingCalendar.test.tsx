@@ -76,10 +76,10 @@ describe('DrivingCalendar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Zi' }))
     const block = await screen.findByTestId('tg-block-12') // PLANNED, 09:00–10:00, draggable
     block.setPointerCapture = vi.fn(); block.releasePointerCapture = vi.fn()
-    // Drag down 48px (1h): 09:00→10:00, end 10:00→11:00.
+    // Day view runs at 112px/hour, so 1h = 112px: drag down 112px → 09:00→10:00, end 10:00→11:00.
     firePointer(block, 'pointerdown', 200)
-    firePointer(block, 'pointermove', 248)
-    firePointer(block, 'pointerup', 248)
+    firePointer(block, 'pointermove', 312)
+    firePointer(block, 'pointerup', 312)
     await waitFor(() => expect(rescheduleTestDrive).toHaveBeenCalledWith(12, { departure_datetime: `${todayKey}T10:00`, return_datetime: `${todayKey}T11:00` }))
   })
 
@@ -129,10 +129,10 @@ describe('DrivingCalendar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Zi' }))
     const col = screen.getByTestId(`tg-col-${todayKey}`)
     mockCol(col)
-    // 09:00 offset 96px → 10:30 offset 168px.
-    firePointer(col, 'pointerdown', 100 + 96)
-    firePointer(col, 'pointermove', 100 + 168)
-    firePointer(col, 'pointerup', 100 + 168)
+    // Day view runs at 112px/hour: 09:00 = offset 224px, 10:30 = offset 392px.
+    firePointer(col, 'pointerdown', 100 + 224)
+    firePointer(col, 'pointermove', 100 + 392)
+    firePointer(col, 'pointerup', 100 + 392)
     expect(onAdd).toHaveBeenCalledWith(`${todayKey}T09:00`, `${todayKey}T10:30`)
   })
 

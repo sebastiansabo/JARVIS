@@ -193,6 +193,7 @@ export default function DrivingCalendar({ companyId, brand, carFilter = [], cons
           groupKey: c.vin || undefined, // same-car overlap (interlaced) detection
           title: c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—'),
           subtitle: vehicleName(c.vin ? vinVehicle.get(c.vin) : undefined, c.vin),
+          meta: c.vin ? `VIN: ...${c.vin.slice(-6)}` : undefined, // last 6 of the VIN
           draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
         }]
       })
@@ -293,7 +294,9 @@ export default function DrivingCalendar({ companyId, brand, carFilter = [], cons
       ) : (
         <>
           {moveErr && <p className="px-1 text-xs text-destructive">{moveErr}</p>}
-          <TimeGrid dayCols={dayCols} events={events} onEventClick={openById} onSlotAdd={onAdd} onMove={onMove} />
+          {/* Day view stacks 4 lines (time / client / car / VIN) per card, so it
+              needs taller hourly slots than the compact week bars. */}
+          <TimeGrid dayCols={dayCols} events={events} onEventClick={openById} onSlotAdd={onAdd} onMove={onMove} pxPerHour={view === 'day' ? 112 : undefined} />
         </>
       )}
     </div>
