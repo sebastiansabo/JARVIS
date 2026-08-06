@@ -19,6 +19,7 @@ vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: {
 } }))
 vi.mock('@/pages/Hub/DrivingSessionsList', () => ({ default: ({ companyId }: { companyId: number }) => <div>sessions:{companyId}</div> }))
 vi.mock('@/pages/Hub/DrivingCalendar', () => ({ default: ({ companyId }: { companyId: number }) => <div>calendar:{companyId}</div> }))
+vi.mock('@/pages/Hub/DrivingParkList', () => ({ default: ({ companyId }: { companyId: number }) => <div>park:{companyId}</div> }))
 vi.mock('@/pages/FoiParcurs/TestDriveForm', () => ({ default: ({ onCancel }: { onCancel: () => void }) => <div>form<button onClick={onCancel}>x</button></div> }))
 vi.mock('@/pages/FoiParcurs/TestDriveReturn', () => ({ default: ({ id }: { id: number }) => <div>return-overlay:{id}</div> }))
 
@@ -52,5 +53,12 @@ describe('HubDrivingPanel — mobile bottom bar', () => {
     await screen.findByText(/sessions:11/)
     fireEvent.click(screen.getByRole('button', { name: 'Calendar' }))
     expect(await screen.findByText(/calendar:11/)).toBeInTheDocument()
+  })
+
+  it('switches to the read-only Parc (Driving Park) view from the bottom bar', async () => {
+    wrap(<HubDrivingPanel onBack={vi.fn()} />)
+    await screen.findByText(/sessions:11/)
+    fireEvent.click(screen.getByRole('button', { name: 'Parc' }))
+    expect(await screen.findByText(/park:11/)).toBeInTheDocument()
   })
 })

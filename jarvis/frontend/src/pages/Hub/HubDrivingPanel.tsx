@@ -14,11 +14,12 @@ import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
 import type { FpVehicle } from '@/types/foiParcurs'
 import DrivingSessionsList from '@/pages/Hub/DrivingSessionsList'
 import DrivingCalendar from '@/pages/Hub/DrivingCalendar'
+import DrivingParkList from '@/pages/Hub/DrivingParkList'
 import TestDriveForm from '@/pages/FoiParcurs/TestDriveForm'
 import TestDriveReturn from '@/pages/FoiParcurs/TestDriveReturn'
 
 type Overlay = null | { kind: 'new'; departure?: string; ret?: string } | { kind: 'activate'; id: number } | { kind: 'return'; id: number }
-type PanelTab = 'sessions' | 'calendar'
+type PanelTab = 'sessions' | 'calendar' | 'park'
 
 // Sentinel company id meaning "all companies" — the list/calendar queries map it
 // to an omitted company_id, so the backend returns every company the user can
@@ -47,9 +48,9 @@ function SteeringWheel({ className }: { className?: string }) {
 }
 
 // Phone-only control surface: a fixed bottom pill mirroring the Hub's global nav
-// pill (Hub/index.tsx). The active view (Sesiuni/Calendar) expands to icon + label
-// like that pill; Back/Filtre are icon-only; New is a filled primary circle (the
-// main action, kept last/rightmost). Every control is ≥44px (h-11 / w-11).
+// pill (Hub/index.tsx). The active view (Sesiuni/Calendar/Parc) expands to icon +
+// label like that pill; Back/Filtre are icon-only; New is a filled primary circle
+// (the main action, kept last/rightmost). Every control is ≥44px (h-11 / w-11).
 function DrivingBottomBar({ tab, onTab, activeFilters, onFilters, onNew, onBack }: {
   tab: PanelTab
   onTab: (t: PanelTab) => void
@@ -59,11 +60,11 @@ function DrivingBottomBar({ tab, onTab, activeFilters, onFilters, onNew, onBack 
   onBack?: () => void
 }) {
   const base = 'flex h-11 items-center justify-center rounded-full transition-all'
-  const tabCls = (on: boolean) => cn(base, on ? 'gap-1.5 bg-zinc-700 px-4 text-white dark:bg-zinc-600' : 'w-11 text-zinc-400')
+  const tabCls = (on: boolean) => cn(base, on ? 'gap-1.5 bg-zinc-700 px-3 text-white dark:bg-zinc-600' : 'w-11 text-zinc-400')
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)] sm:hidden">
       <div className="mx-4 mb-2 rounded-[22px] bg-zinc-900 shadow-lg dark:bg-zinc-800">
-        <div className="flex items-center justify-around gap-1 px-1.5 py-1.5">
+        <div className="flex items-center justify-around gap-0.5 px-1.5 py-1.5">
           {onBack && (
             <button type="button" onClick={onBack} aria-label="Înapoi la Hub" className={cn(base, 'w-11 text-zinc-400')}>
               <ChevronLeft className="h-5 w-5 shrink-0" />
@@ -76,6 +77,10 @@ function DrivingBottomBar({ tab, onTab, activeFilters, onFilters, onNew, onBack 
           <button type="button" onClick={() => onTab('calendar')} aria-label="Calendar" className={tabCls(tab === 'calendar')}>
             <CalendarDays className="h-5 w-5 shrink-0" />
             {tab === 'calendar' && <span className="text-[11px] font-semibold">Calendar</span>}
+          </button>
+          <button type="button" onClick={() => onTab('park')} aria-label="Parc" className={tabCls(tab === 'park')}>
+            <Car className="h-5 w-5 shrink-0" />
+            {tab === 'park' && <span className="text-[11px] font-semibold">Parc</span>}
           </button>
           <button type="button" onClick={onFilters} aria-label="Filtre" className={cn(base, 'relative w-11 text-zinc-400')}>
             <SlidersHorizontal className="h-5 w-5 shrink-0" />
@@ -180,9 +185,10 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
     <div className="flex items-center gap-2">
       <Tabs value={tab} onValueChange={(v) => setTab(v as PanelTab)}>
         {/* Icon-only view switch, sized to an 80×44 iOS control. */}
-        <TabsList className="w-20 rounded-xl group-data-[orientation=horizontal]/tabs:h-11">
+        <TabsList className="w-28 rounded-xl group-data-[orientation=horizontal]/tabs:h-11">
           <TabsTrigger value="sessions" aria-label="Sesiuni" className="rounded-lg"><SteeringWheel className="size-5" /></TabsTrigger>
           <TabsTrigger value="calendar" aria-label="Calendar" className="rounded-lg"><CalendarDays className="size-5" /></TabsTrigger>
+          <TabsTrigger value="park" aria-label="Parc" className="rounded-lg"><Car className="size-5" /></TabsTrigger>
         </TabsList>
       </Tabs>
       <Button variant="outline" aria-label="Filtre" className={`${CTRL_H} shrink-0 gap-1.5 rounded-xl px-3`} onClick={() => setFiltersOpen(true)}>
@@ -222,8 +228,11 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
           onAdd={(departure, ret) => setOverlay({ kind: 'new', departure, ret })}
         />
       )}
+      {hasCompany && tab === 'park' && (
+        <DrivingParkList companyId={companyId} brand={brand} carFilter={carFilter} />
+      )}
 
-      {/* Filtre modal — company / brand / cars / consultant, shared by both views. */}
+      {/* Filtre modal — company / brand / cars / consultant, shared by all views. */}
       <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Filtre</DialogTitle></DialogHeader>
