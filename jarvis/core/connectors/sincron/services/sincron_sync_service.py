@@ -14,6 +14,7 @@ from ..client.exceptions import SincronError
 from ..repositories.sincron_repository import SincronRepository
 from ..repositories.sync_repo import SincronSyncRepository
 from .termination import detect_termination
+from .schedule_extract import extract_employee_schedule
 from core.connectors.repositories.connector_repository import ConnectorRepository
 from core.auth.repositories.user_repository import UserRepository
 
@@ -441,21 +442,13 @@ class SincronSyncService:
             if contract_date in ('0000-00-00', '', None):
                 contract_date = None
 
-            # Extract employee-level schedule from first OZ activity
+            # Employee-level schedule: prefer an OZ activity's program, but fall
+            # back to any activity carrying a program so a full month of leave
+            # (medical/annual, no OZ) still captures the contracted schedule.
             norma_lucru = emp.get('norma_lucru')
             norma_lucru_time = emp.get('norma_lucru_time')
-            emp_schedule_in = None
-            emp_schedule_out = None
-            emp_break = None
-            for _day_acts in emp.get('days', {}).values():
-                for _a in _day_acts:
-                    if _a.get('short_code') == 'OZ' and _a.get('program', {}).get('in'):
-                        emp_schedule_in = _a['program']['in']
-                        emp_schedule_out = _a['program'].get('out')
-                        emp_break = _a['program'].get('pauza_masa')
-                        break
-                if emp_schedule_in:
-                    break
+            emp_schedule_in, emp_schedule_out, emp_break = \
+                extract_employee_schedule(emp.get('days', {}))
 
             # Parse norma_lucru to numeric
             try:
