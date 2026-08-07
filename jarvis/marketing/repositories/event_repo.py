@@ -60,7 +60,12 @@ class ProjectEventRepository(BaseRepository):
                    eb.participation_start, eb.participation_end,
                    eb.bonus_days, eb.hours_free, eb.bonus_net,
                    eb.details, eb.allocation_month,
-                   bt.name as bonus_type_name
+                   bt.name as bonus_type_name,
+                   COALESCE(
+                       (SELECT array_agg(to_char(d.day, 'YYYY-MM-DD') ORDER BY d.day)
+                        FROM hr.event_bonus_days d WHERE d.bonus_id = eb.id),
+                       ARRAY[]::text[]
+                   ) AS presence_days
             FROM hr.event_bonuses eb
             JOIN users u ON u.id = eb.user_id
             LEFT JOIN hr.bonus_types bt ON bt.id = eb.bonus_type_id

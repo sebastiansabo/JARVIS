@@ -19,6 +19,13 @@ export interface EventBonus {
   brand: string | null
   department: string | null
   created_at: string
+  /** Granular presence days ('YYYY-MM-DD'); source of truth for the day set. */
+  presence_days?: string[]
+  /** Bonus type id — sent on write so the server recomputes net from the day count. */
+  bonus_type_id?: number | null
+  /** Read-only: portion of bonus_net/days falling in the queried month (server). */
+  period_bonus_net?: number | null
+  period_bonus_days?: number | null
 }
 
 export interface HrEvent {

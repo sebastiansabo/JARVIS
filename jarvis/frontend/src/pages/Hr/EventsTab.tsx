@@ -1,5 +1,5 @@
 import { useState, useMemo, Fragment } from 'react'
-import { Routes, Route, useNavigate } from 'react-router-dom'
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useIsMobile, useIsTablet } from '@/hooks/useMediaQuery'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
@@ -27,6 +27,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { PresenceDayPicker } from '@/components/shared/PresenceDayPicker'
 import { QueryError } from '@/components/QueryError'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchInput } from '@/components/shared/SearchInput'
@@ -41,7 +42,6 @@ import { tagsApi } from '@/api/tags'
 import { cn } from '@/lib/utils'
 import type { HrEvent } from '@/types/hr'
 import AddEventPage from './AddEventPage'
-import ManageParticipantsDialog from './ManageParticipantsDialog'
 import { useAuthStore } from '@/stores/authStore'
 
 function formatDate(d: string) {
@@ -57,16 +57,15 @@ function fmtCurrency(v: number | string | null) {
 /* ──── Expanded row: participants ──── */
 
 function EventParticipants({
-  event, canEditBonus, canAddBonus, canDeleteBonus, canViewAmounts,
+  event, canEditBonus,
 }: {
   event: HrEvent
   canEditBonus: boolean
-  canAddBonus: boolean
-  canDeleteBonus: boolean
-  canViewAmounts: boolean
 }) {
   const eventId = event.id
-  const [manageOpen, setManageOpen] = useState(false)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const eventsBase = location.pathname.startsWith('/app/marketing') ? '/app/marketing/events' : '/app/hr/events'
   const { data, isLoading } = useQuery({
     queryKey: ['event-participants', eventId],
     queryFn: () => marketingApi.getEventParticipants(eventId),
@@ -82,22 +81,11 @@ function EventParticipants({
           <Users className="h-4 w-4" /> Participants ({participants.length})
         </p>
         {canEditBonus && (
-          <Button size="sm" variant="outline" className="h-7" onClick={() => setManageOpen(true)}>
-            <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit participants
+          <Button size="sm" variant="outline" className="h-7" onClick={() => navigate(`${eventsBase}/${eventId}/edit`)}>
+            <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit event & participants
           </Button>
         )}
       </div>
-      {canEditBonus && (
-        <ManageParticipantsDialog
-          open={manageOpen}
-          eventId={eventId}
-          event={event}
-          canAddBonus={canAddBonus}
-          canDeleteBonus={canDeleteBonus}
-          canViewAmounts={canViewAmounts}
-          onClose={() => setManageOpen(false)}
-        />
-      )}
       {participants.length === 0 ? (
         <div className="text-sm text-muted-foreground">No participants recorded for this event.</div>
       ) : (
@@ -107,7 +95,7 @@ function EventParticipants({
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
-                <TableHead>Period</TableHead>
+                <TableHead>Zile prezență</TableHead>
                 <TableHead className="text-right">Days</TableHead>
                 <TableHead className="text-right">Free Hours</TableHead>
                 <TableHead className="text-right">Bonus (RON)</TableHead>
@@ -124,7 +112,15 @@ function EventParticipants({
                     ) : '—'}
                   </TableCell>
                   <TableCell className="text-sm">
-                    {p.participation_start && p.participation_end ? (
+                    {p.presence_days && p.presence_days.length > 0 ? (
+                      <PresenceDayPicker
+                        startDate={event.start_date}
+                        endDate={event.end_date}
+                        value={p.presence_days}
+                        onChange={() => {}}
+                        readOnly
+                      />
+                    ) : p.participation_start && p.participation_end ? (
                       <span className="flex items-center gap-1">
                         <Calendar className="h-3 w-3 text-muted-foreground" />
                         {formatDate(p.participation_start)} — {formatDate(p.participation_end)}
@@ -165,9 +161,6 @@ function EventsList() {
   const canEditEvent = user?.permissions?.['hr.events.edit'] ?? false
   const canDeleteEvent = user?.permissions?.['hr.events.delete'] ?? false
   const canEditBonus = user?.permissions?.['hr.bonuses.edit'] ?? false
-  const canAddBonus = user?.permissions?.['hr.bonuses.add'] ?? false
-  const canDeleteBonus = user?.permissions?.['hr.bonuses.delete'] ?? false
-  const canViewAmounts = user?.permissions?.['hr.bonuses.view_amounts'] ?? false
   const [search, setSearch] = useState('')
   const [filterCompany, setFilterCompany] = useState<string>('all')
   const [filterFrom, setFilterFrom] = useState('')
@@ -473,9 +466,6 @@ function EventsList() {
                           <EventParticipants
                             event={ev}
                             canEditBonus={canEditBonus}
-                            canAddBonus={canAddBonus}
-                            canDeleteBonus={canDeleteBonus}
-                            canViewAmounts={canViewAmounts}
                           />
                         </TableCell>
                       </TableRow>
@@ -660,6 +650,7 @@ export default function EventsTab() {
     <Routes>
       <Route index element={<EventsList />} />
       <Route path="new" element={<AddEventPage />} />
+      <Route path=":eventId/edit" element={<AddEventPage />} />
     </Routes>
   )
 }

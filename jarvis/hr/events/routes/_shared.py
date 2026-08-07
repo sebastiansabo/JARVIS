@@ -39,7 +39,7 @@ __all__ = [
     # decorators & helpers
     'hr_required', 'hr_manager_required', 'hr_permission_required',
     'MONTH_NAMES',
-    '_compute_bonus_net',
+    '_compute_bonus_net', 'resolve_presence_days', 'check_presence_months_editable',
 ]
 
 from datetime import date
@@ -195,3 +195,31 @@ def _compute_bonus_net(data):
             rate = bt['amount'] / (bt.get('days_per_amount') or 1)
             return round(rate * float(bonus_days), 2)
     return bonus_net
+
+
+def resolve_presence_days(data):
+    """Normalise ``data['presence_days']`` (ISO date strings) against the event's
+    date range. Returns a sorted ``list[date]``, or ``None`` when not supplied.
+    Raises ``ValueError`` (message safe to surface) when a day is out of range.
+    """
+    raw = data.get('presence_days')
+    if not raw:
+        return None
+    from ..presence import normalize_presence_days
+    event = get_hr_event(data.get('event_id'))
+    if not event:
+        raise ValueError('Event not found')
+    return normalize_presence_days(raw, event['start_date'], event['end_date'])
+
+
+def check_presence_months_editable(presence_days, user_role):
+    """Return ``(True, '')`` only if every month the presence days touch is
+    editable; otherwise ``(False, reason)`` for the first locked month. Admin
+    bypass is handled inside ``can_edit_bonus``.
+    """
+    from ..presence import months_touched
+    for (yr, mo) in months_touched(presence_days):
+        ok, reason = can_edit_bonus(yr, mo, user_role)
+        if not ok:
+            return False, reason
+    return True, ''

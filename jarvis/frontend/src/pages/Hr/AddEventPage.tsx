@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useState, useMemo, useEffect } from 'react'
+import { useNavigate, useLocation, useParams } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
   Trash2,
@@ -17,19 +17,23 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { PresenceDayPicker, enumerateDays } from '@/components/shared/PresenceDayPicker'
 import { hrApi } from '@/api/hr'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useFormValidation } from '@/hooks/useFormValidation'
 import { FieldError } from '@/components/shared/FieldError'
+import { marketingApi } from '@/api/marketing'
 import type { HrEmployee } from '@/types/hr'
+import type { EventParticipant } from '@/types/marketing'
 
 interface EmployeeRow {
-  employee: HrEmployee
-  partStart: string
-  partEnd: string
-  bonusDays: string
+  bonusId: number | null // existing event_bonus id (edit); null for a newly added row
+  userId: number
+  userName: string
+  company: string | null
+  presenceDays: string[] // specific attended days ('YYYY-MM-DD'), source of truth
   hoursFree: string
   bonusTypeId: string
   bonusNet: number | null
@@ -85,7 +89,7 @@ export default function AddEventPage() {
     enabled: !!company,
   })
 
-  const { data: bonusTypes = [] } = useQuery({
+  const { data: bonusTypes = [], isSuccess: bonusTypesLoaded } = useQuery({
     queryKey: ['hr-bonus-types-active'],
     queryFn: () => hrApi.getBonusTypes(true),
     staleTime: 5 * 60_000,
@@ -98,6 +102,60 @@ export default function AddEventPage() {
   })
   const maxHoursPerDay = hrSettings?.hr_bonus_max_hours_per_day ?? 8
 
+  // ── Edit mode: /events/:eventId/edit loads the event + its participants ──
+  const { eventId: eventIdParam } = useParams()
+  const editEventId = eventIdParam ? Number(eventIdParam) : null
+  const isEdit = editEventId != null
+  const queryClient = useQueryClient()
+  const [originalParticipants, setOriginalParticipants] = useState<EventParticipant[]>([])
+  const [prefilled, setPrefilled] = useState(false)
+
+  const { data: editEvent } = useQuery({
+    queryKey: ['hr-event', editEventId],
+    queryFn: () => hrApi.getEvent(editEventId as number),
+    enabled: isEdit,
+  })
+  const { data: editParticipantsData } = useQuery({
+    queryKey: ['event-participants', editEventId],
+    queryFn: () => marketingApi.getEventParticipants(editEventId as number),
+    enabled: isEdit,
+  })
+
+  // Prefill the form + employee rows once the event, participants and bonus
+  // types have all loaded (bonusTypesLoaded gates the type-name → id mapping).
+  useEffect(() => {
+    if (!isEdit || prefilled || !editEvent || !editParticipantsData || !bonusTypesLoaded) return
+    setName(editEvent.name ?? '')
+    setStartDate(editEvent.start_date ?? '')
+    setEndDate(editEvent.end_date ?? '')
+    setCompany(editEvent.company ?? '')
+    setBrand(editEvent.brand ?? '')
+    setDescription(editEvent.description ?? '')
+    const m = /^(\d{4})-(\d{2})/.exec(editEvent.start_date ?? '')
+    if (m) { setYear(m[1]); setMonth(String(Number(m[2]))) }
+    const participants = editParticipantsData.participants ?? []
+    setOriginalParticipants(participants)
+    setRows(participants.map((p) => {
+      const type = bonusTypes.find((t) => t.name === p.bonus_type_name)
+      const days = p.presence_days?.length
+        ? p.presence_days
+        : (p.participation_start && p.participation_end
+            ? enumerateDays(p.participation_start, p.participation_end)
+            : [])
+      return {
+        bonusId: p.id,
+        userId: p.user_id,
+        userName: p.user_name,
+        company: null,
+        presenceDays: days,
+        hoursFree: p.hours_free != null ? String(p.hours_free) : '',
+        bonusTypeId: type ? String(type.id) : '',
+        bonusNet: p.bonus_net != null ? Number(p.bonus_net) : null,
+      }
+    }))
+    setPrefilled(true)
+  }, [isEdit, prefilled, editEvent, editParticipantsData, bonusTypes, bonusTypesLoaded])
+
   // Employee search
   const handleSearch = async (q: string) => {
     setSearchQuery(q)
@@ -108,7 +166,7 @@ export default function AddEventPage() {
     setSearching(true)
     try {
       const results = await hrApi.searchEmployees(q)
-      const selectedIds = new Set(rows.map((r) => r.employee.id))
+      const selectedIds = new Set(rows.map((r) => r.userId))
       setSearchResults(results.filter((e) => !selectedIds.has(e.id)))
     } catch {
       setSearchResults([])
@@ -119,16 +177,20 @@ export default function AddEventPage() {
 
   const addEmployee = (emp: HrEmployee) => {
     const defaultType = bonusTypes[0]
+    // Default to attending the whole event; the user deselects days as needed.
+    const days = enumerateDays(startDate, endDate)
+    const rate = defaultType ? defaultType.amount / (defaultType.days_per_amount ?? 1) : 0
     setRows((prev) => [
       ...prev,
       {
-        employee: emp,
-        partStart: startDate,
-        partEnd: endDate,
-        bonusDays: '1',
+        bonusId: null,
+        userId: emp.id,
+        userName: emp.name,
+        company: emp.company ?? null,
+        presenceDays: days,
         hoursFree: '6',
         bonusTypeId: defaultType ? String(defaultType.id) : '',
-        bonusNet: defaultType ? defaultType.amount / (defaultType.days_per_amount ?? 1) : null,
+        bonusNet: defaultType ? rate * days.length : null,
       },
     ])
     setSearchQuery('')
@@ -144,10 +206,10 @@ export default function AddEventPage() {
       prev.map((r, i) => {
         if (i !== idx) return r
         const updated = { ...r, ...updates }
-        // Recalculate bonus if type or days changed
-        if ('bonusTypeId' in updates || 'bonusDays' in updates) {
+        // Recalculate bonus when type or the selected day count changed
+        if ('bonusTypeId' in updates || 'presenceDays' in updates) {
           const type = bonusTypes.find((t) => String(t.id) === updated.bonusTypeId)
-          const days = parseFloat(updated.bonusDays) || 0
+          const days = updated.presenceDays.length
           if (type && days > 0) {
             updated.bonusNet = (type.amount / (type.days_per_amount ?? 1)) * days
           } else {
@@ -164,61 +226,75 @@ export default function AddEventPage() {
     : 31
 
   // Summary
-  const totalDays = useMemo(() => rows.reduce((s, r) => s + (parseFloat(r.bonusDays) || 0), 0), [rows])
+  const totalDays = useMemo(() => rows.reduce((s, r) => s + r.presenceDays.length, 0), [rows])
   const totalBonus = useMemo(() => rows.reduce((s, r) => s + (r.bonusNet ?? 0), 0), [rows])
 
-  // Submit
-  const createEventMutation = useMutation({
+  // presence_days is the source of truth; the server derives
+  // year/month/participation window/bonus_days from it.
+  const bonusPayload = (r: EmployeeRow, evId: number) => ({
+    employee_id: r.userId,
+    event_id: evId,
+    year: Number(year),
+    month: Number(month),
+    presence_days: r.presenceDays,
+    hours_free: parseFloat(r.hoursFree) || null,
+    bonus_net: r.bonusNet,
+    bonus_type_id: r.bonusTypeId ? Number(r.bonusTypeId) : null,
+  })
+
+  const eventFields = () => ({
+    name: name.trim(),
+    start_date: startDate,
+    end_date: endDate,
+    company: company || null,
+    brand: brand || null,
+    description: description || null,
+  })
+
+  // Submit — creates a new event or, in edit mode, updates it and reconciles
+  // its participants (create added / update changed / delete removed).
+  const saveMutation = useMutation({
     mutationFn: async () => {
-      // Create event
-      const eventRes = await hrApi.createEvent({
-        name: name.trim(),
-        start_date: startDate,
-        end_date: endDate,
-        company: company || null,
-        brand: brand || null,
-        description: description || null,
-      })
-
-      if (!eventRes.id) throw new Error('Event creation failed')
-
-      // Create bonuses
-      const bonuses = rows
-        .filter((r) => parseFloat(r.bonusDays) > 0)
-        .map((r) => ({
-          employee_id: r.employee.id,
-          event_id: eventRes.id,
-          year: Number(year),
-          month: Number(month),
-          participation_start: r.partStart || null,
-          participation_end: r.partEnd || null,
-          bonus_days: parseFloat(r.bonusDays) || null,
-          hours_free: parseFloat(r.hoursFree) || null,
-          bonus_net: r.bonusNet,
-        }))
-
-      if (bonuses.length > 0) {
-        await hrApi.bulkCreateBonuses(bonuses)
+      if (isEdit && editEventId != null) {
+        await hrApi.updateEvent(editEventId, eventFields())
+        const keptIds = new Set(rows.filter((r) => r.bonusId != null).map((r) => r.bonusId as number))
+        for (const r of rows.filter((x) => x.presenceDays.length > 0)) {
+          if (r.bonusId == null) await hrApi.createBonus(bonusPayload(r, editEventId))
+          else await hrApi.updateBonus(r.bonusId, bonusPayload(r, editEventId))
+        }
+        for (const p of originalParticipants) {
+          if (!keptIds.has(p.id)) await hrApi.deleteBonus(p.id)
+        }
+        return { id: editEventId }
       }
 
+      const eventRes = await hrApi.createEvent(eventFields())
+      if (!eventRes.id) throw new Error('Event creation failed')
+      const bonuses = rows.filter((r) => r.presenceDays.length > 0).map((r) => bonusPayload(r, eventRes.id))
+      if (bonuses.length > 0) await hrApi.bulkCreateBonuses(bonuses)
       return eventRes
     },
     onSuccess: () => {
-      toast.success('Event and bonuses created')
+      queryClient.invalidateQueries({ queryKey: ['hr-events'] })
+      queryClient.invalidateQueries({ queryKey: ['hr-summary'] })
+      if (isEdit && editEventId != null) {
+        queryClient.invalidateQueries({ queryKey: ['event-participants', editEventId] })
+      }
+      toast.success(isEdit ? 'Event updated' : 'Event and bonuses created')
       navigate(eventsPath)
     },
-    onError: () => toast.error('Failed to create event'),
+    onError: () => toast.error(isEdit ? 'Failed to update event' : 'Failed to create event'),
   })
 
   const handleSubmit = () => {
     v.touchAll()
     if (!v.isValid) return toast.error('Please fix the highlighted fields')
     if (rows.length === 0) return toast.error('Add at least one employee')
-    if (rows.some((r) => (parseFloat(r.bonusDays) || 0) > maxBonusDays))
-      return toast.error(`Bonus days cannot exceed ${maxBonusDays} (event duration)`)
+    if (rows.some((r) => r.presenceDays.length === 0))
+      return toast.error('Each employee needs at least one presence day selected')
     if (rows.some((r) => (parseFloat(r.hoursFree) || 0) > maxBonusDays * maxHoursPerDay))
       return toast.error(`Hours free cannot exceed ${maxBonusDays * maxHoursPerDay} (${maxBonusDays} days x ${maxHoursPerDay}h)`)
-    createEventMutation.mutate()
+    saveMutation.mutate()
   }
 
   const onFormSubmit = (e: React.FormEvent) => { e.preventDefault(); handleSubmit() }
@@ -226,7 +302,7 @@ export default function AddEventPage() {
   return (
     <form onSubmit={onFormSubmit} className="space-y-4">
       <PageHeader
-        title="Add Event + Employees"
+        title={isEdit ? 'Edit Event + Participants' : 'Add Event + Employees'}
         description=""
         breadcrumbs={[
           isMarketing
@@ -354,75 +430,54 @@ export default function AddEventPage() {
               {rows.length === 0 ? (
                 <EmptyState icon={<Users className="h-8 w-8" />} title="No employees added" description="Search and add employees above." />
               ) : (
-                <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                  {/* Header */}
-                  <div className="grid grid-cols-12 gap-1.5 text-xs font-medium text-muted-foreground px-1 sticky top-0 bg-background pb-1">
-                    <div className="col-span-3">Employee</div>
-                    <div className="col-span-2">Part. Start</div>
-                    <div className="col-span-2">Part. End</div>
-                    <div className="col-span-1">Days</div>
-                    <div className="col-span-1">Hours</div>
-                    <div className="col-span-2">Bonus Type</div>
-                    <div className="col-span-1"></div>
-                  </div>
-
+                <div className="space-y-2 max-h-[460px] overflow-y-auto">
                   {rows.map((row, idx) => (
-                    <div key={row.employee.id} className="grid grid-cols-12 gap-1.5 items-center rounded-lg border p-1.5">
-                      <div className="col-span-3">
-                        <div className="text-sm font-medium truncate">{row.employee.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">{row.employee.company ?? ''}</div>
+                    <div key={row.bonusId ?? `new-${row.userId}`} className="rounded-lg border p-2 space-y-2">
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate">{row.userName}</div>
+                          <div className="text-xs text-muted-foreground truncate">{row.company ?? ''}</div>
+                        </div>
+                        <div className="w-32">
+                          <Label className="text-[10px] text-muted-foreground">Bonus Type</Label>
+                          <Select value={row.bonusTypeId || '__none__'} onValueChange={(v) => updateRow(idx, { bonusTypeId: v === '__none__' ? '' : v })}>
+                            <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Type" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {bonusTypes.map((bt) => (
+                                <SelectItem key={bt.id} value={String(bt.id)}>{bt.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="w-16">
+                          <Label className="text-[10px] text-muted-foreground">Hours</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={maxBonusDays * maxHoursPerDay}
+                            className={cn('h-7 text-xs text-right', (parseFloat(row.hoursFree) || 0) > maxBonusDays * maxHoursPerDay && 'border-destructive ring-destructive')}
+                            value={row.hoursFree}
+                            onChange={(e) => updateRow(idx, { hoursFree: e.target.value })}
+                          />
+                        </div>
+                        <div className="flex items-center gap-1 pt-4">
+                          {canViewAmounts && row.bonusNet != null && (
+                            <span className="text-xs font-medium text-green-600 whitespace-nowrap">{row.bonusNet.toFixed(0)}</span>
+                          )}
+                          <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0" onClick={() => removeEmployee(idx)}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="col-span-2">
-                        <DateField value={row.partStart} onChange={(v) => updateRow(idx, { partStart: v })} className="h-7 text-xs" />
-                      </div>
-                      <div className="col-span-2">
-                        <DateField value={row.partEnd} onChange={(v) => updateRow(idx, { partEnd: v })} className="h-7 text-xs" />
-                      </div>
-                      <div className="col-span-1">
-                        <Input
-                          type="number"
-                          step="0.5"
-                          min={0}
-                          max={maxBonusDays}
-                          className={cn('h-7 text-xs text-right', (parseFloat(row.bonusDays) || 0) > maxBonusDays && 'border-destructive ring-destructive')}
-                          value={row.bonusDays}
-                          onChange={(e) => updateRow(idx, { bonusDays: e.target.value })}
+                      <div>
+                        <Label className="text-[10px] text-muted-foreground">Zile prezență</Label>
+                        <PresenceDayPicker
+                          startDate={startDate}
+                          endDate={endDate}
+                          value={row.presenceDays}
+                          onChange={(days) => updateRow(idx, { presenceDays: days })}
                         />
-                      </div>
-                      <div className="col-span-1">
-                        <Input
-                          type="number"
-                          min={0}
-                          max={maxBonusDays * maxHoursPerDay}
-                          className={cn('h-7 text-xs text-right', (parseFloat(row.hoursFree) || 0) > maxBonusDays * maxHoursPerDay && 'border-destructive ring-destructive')}
-                          value={row.hoursFree}
-                          onChange={(e) => updateRow(idx, { hoursFree: e.target.value })}
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <Select value={row.bonusTypeId || '__none__'} onValueChange={(v) => updateRow(idx, { bonusTypeId: v === '__none__' ? '' : v })}>
-                          <SelectTrigger className="h-7 text-xs">
-                            <SelectValue placeholder="Type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {bonusTypes.map((bt) => (
-                              <SelectItem key={bt.id} value={String(bt.id)}>
-                                {bt.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="col-span-1 flex items-center justify-end gap-1">
-                        {canViewAmounts && row.bonusNet != null && (
-                          <span className="text-xs font-medium text-green-600 whitespace-nowrap">
-                            {row.bonusNet.toFixed(0)}
-                          </span>
-                        )}
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0" onClick={() => removeEmployee(idx)}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
                       </div>
                     </div>
                   ))}
@@ -450,9 +505,9 @@ export default function AddEventPage() {
           <Button variant="outline" onClick={() => navigate(eventsPath)}>
             Cancel
           </Button>
-          <Button type="submit" disabled={createEventMutation.isPending} className="min-w-[160px]">
-            {createEventMutation.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
-            {createEventMutation.isPending ? 'Saving...' : 'Save Event & Bonuses'}
+          <Button type="submit" disabled={saveMutation.isPending} className="min-w-[160px]">
+            {saveMutation.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+            {saveMutation.isPending ? 'Saving...' : isEdit ? 'Save Changes' : 'Save Event & Bonuses'}
           </Button>
         </div>
       </div>
