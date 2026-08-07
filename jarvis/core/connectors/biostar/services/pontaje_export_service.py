@@ -156,7 +156,7 @@ def build_rows(punch_rows, sched_map, code_map, holidays=None, permit_map=None,
         checked_in_disp = _fmt_time(adj_first) if adj_first else ''
         checked_out_disp = _fmt_time(adj_last) if (adj_last and adj_last != adj_first) else ''
 
-        code = code_map.get((juid, raw_day), '')
+        code = code_map.get((juid, company_id, raw_day), '')
         # A motivated full-day leave code is authoritative: it overrides a
         # punch-driven "Present" status and zeroes the worked duration.
         leave_code = code if code in leave_codes else ''
@@ -222,11 +222,14 @@ def build_workbook(rows):
 
 
 def _build_code_map(code_rows):
-    """First row per (user, day) wins — get_day_codes_for_users returns them
-    pre-ordered by priority (base contract; leave codes before OZ/OS)."""
+    """First row per (user, company, day) wins — get_day_codes_for_users returns
+    them pre-ordered by priority (leave codes before OZ/OS). Keyed per company so
+    a code never bleeds across a multi-contract employee's other-company rows."""
     code_map = {}
     for row in code_rows:
-        code_map.setdefault((row['mapped_jarvis_user_id'], row['day']), row['short_code'])
+        code_map.setdefault(
+            (row['mapped_jarvis_user_id'], row['company_id'], row['day']),
+            row['short_code'])
     return code_map
 
 
