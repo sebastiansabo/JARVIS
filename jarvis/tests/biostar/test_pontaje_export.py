@@ -68,7 +68,7 @@ def test_single_punch_is_not_exited():
 
 def test_absent_on_holiday_shows_code_and_absent():
     pr = [row()]  # no punches
-    codes = {(10, dt.date(2026,7,1)): 'CO'}
+    codes = {(10, 5, dt.date(2026,7,1)): 'CO'}
     r = pes.build_rows(pr, {}, codes)[0]
     assert r[pes.HEADERS.index('Sincron')] == 'CO'
     assert r[pes.HEADERS.index('Actual Status')] == 'Absent'
@@ -149,7 +149,7 @@ def test_null_lunch_stays_blank_and_duration_deducts_zero():
 def test_work_code_os_is_present_not_leave():
     pr = [row(first_punch=_dt(1,'07:58'), last_punch=_dt(1,'18:20'), total_punches=5,
               duration_seconds=10*3600)]
-    codes = {(10, dt.date(2026,7,1)): 'OS'}
+    codes = {(10, 5, dt.date(2026,7,1)): 'OS'}
     r = pes.build_rows(pr, {}, codes)[0]
     assert r[pes.HEADERS.index('Sincron')] == 'OS'
     assert r[pes.HEADERS.index('Actual Status')] == 'Present'
@@ -193,7 +193,7 @@ def test_leave_code_overrides_present_status_and_blanks_duration():
     # must be blank — while the raw punch still shows in the Actual columns.
     pr = [row(first_punch=_dt(1,'06:57'), last_punch=_dt(1,'08:05'), total_punches=2,
               duration_seconds=3600)]
-    codes = {(10, dt.date(2026,7,1)): 'CO'}
+    codes = {(10, 5, dt.date(2026,7,1)): 'CO'}
     r = pes.build_rows(pr, {}, codes, leave_codes={'CO'})[0]
     assert r[pes.HEADERS.index('Status')] == 'CO'            # official = on leave
     assert r[pes.HEADERS.index('Duration')] == ''            # no worked hours on leave
@@ -204,7 +204,7 @@ def test_leave_code_overrides_present_status_and_blanks_duration():
 def test_leave_code_shows_as_status_without_punch():
     # No punch + leave code -> Status shows the code (not the generic 'Absent').
     pr = [row()]  # 2026-07-01 (Wed), no punches
-    codes = {(10, dt.date(2026,7,1)): 'CM'}
+    codes = {(10, 5, dt.date(2026,7,1)): 'CM'}
     r = pes.build_rows(pr, {}, codes, leave_codes={'CM'})[0]
     assert r[pes.HEADERS.index('Status')] == 'CM'
     assert r[pes.HEADERS.index('Actual Status')] == 'Absent'  # physically absent
@@ -213,7 +213,7 @@ def test_work_code_not_in_leave_set_stays_present():
     # DLG (delegation) is working off-site, not leave -> Present + Duration kept.
     pr = [row(first_punch=_dt(1,'08:00'), last_punch=_dt(1,'16:00'), total_punches=2,
               duration_seconds=8*3600)]
-    codes = {(10, dt.date(2026,7,1)): 'DLG'}
+    codes = {(10, 5, dt.date(2026,7,1)): 'DLG'}
     sched = {(10,5,dt.date(2026,7,1)): {'schedule_start':'08:00','schedule_end':'16:00','lunch_break_minutes':0}}
     r = pes.build_rows(pr, sched, codes, leave_codes={'CO','CM','CMS'})[0]
     assert r[pes.HEADERS.index('Status')] == 'Present'
@@ -223,7 +223,7 @@ def test_no_leave_codes_arg_preserves_present_behaviour():
     # Backward-compat: without leave_codes, a CO code does NOT override Present.
     pr = [row(first_punch=_dt(1,'08:00'), last_punch=_dt(1,'16:00'), total_punches=2,
               duration_seconds=8*3600)]
-    codes = {(10, dt.date(2026,7,1)): 'CO'}
+    codes = {(10, 5, dt.date(2026,7,1)): 'CO'}
     r = pes.build_rows(pr, {}, codes)[0]
     assert r[pes.HEADERS.index('Status')] == 'Present'
 
@@ -251,17 +251,47 @@ def test_build_rows_accepts_iso_string_inputs_present():
     assert row_out[pes.HEADERS.index('Actual In')] == '08:03'   # raw punch
     assert row_out[pes.HEADERS.index('Duration')] == '8:39'
 
-def test_build_code_map_first_wins():
-    from core.connectors.biostar.services import pontaje_export_service as pes
-    import datetime as dt
+def test_build_code_map_first_wins_per_company():
+    # First row per (user, company, day) wins (leave prioritized upstream).
     rows = [
-        {'mapped_jarvis_user_id': 10, 'day': '2026-07-01', 'short_code': 'CO'},   # base/priority first
-        {'mapped_jarvis_user_id': 10, 'day': '2026-07-01', 'short_code': 'OZ'},   # secondary, must NOT override
-        {'mapped_jarvis_user_id': 11, 'day': '2026-07-01', 'short_code': 'OZ'},
+        {'mapped_jarvis_user_id': 10, 'company_id': 5, 'day': '2026-07-01', 'short_code': 'CO'},
+        {'mapped_jarvis_user_id': 10, 'company_id': 5, 'day': '2026-07-01', 'short_code': 'OZ'},  # must NOT override
+        {'mapped_jarvis_user_id': 11, 'company_id': 5, 'day': '2026-07-01', 'short_code': 'OZ'},
     ]
     m = pes._build_code_map(rows)
-    assert m[(10, '2026-07-01')] == 'CO'
-    assert m[(11, '2026-07-01')] == 'OZ'
+    assert m[(10, 5, '2026-07-01')] == 'CO'
+    assert m[(11, 5, '2026-07-01')] == 'OZ'
+
+
+def test_build_code_map_keys_by_company():
+    # Same user+day, two companies with different codes — kept separate, not collapsed.
+    rows = [
+        {'mapped_jarvis_user_id': 10, 'company_id': 5, 'day': '2026-07-01', 'short_code': 'CO'},
+        {'mapped_jarvis_user_id': 10, 'company_id': 7, 'day': '2026-07-01', 'short_code': 'OZ'},
+    ]
+    m = pes._build_code_map(rows)
+    assert m[(10, 5, '2026-07-01')] == 'CO'
+    assert m[(10, 7, '2026-07-01')] == 'OZ'
+
+
+def test_sincron_code_is_per_company_not_bled():
+    # A base-contract CO must NOT bleed onto a secondary contract where OZ was worked.
+    pr = [
+        row(company_id=5, company='AW ONE'),                 # base: on CO
+        row(company_id=7, company='AW TWO',
+            first_punch=_dt(1, '08:00'), last_punch=_dt(1, '16:00'),
+            total_punches=2, duration_seconds=8*3600),       # secondary: worked
+    ]
+    codes = {(10, 5, dt.date(2026,7,1)): 'CO',
+             (10, 7, dt.date(2026,7,1)): 'OZ'}
+    out = pes.build_rows(pr, {}, codes, leave_codes={'CO'})
+    base_row = next(r for r in out if r[pes.HEADERS.index('Company')] == 'AW ONE')
+    sec_row  = next(r for r in out if r[pes.HEADERS.index('Company')] == 'AW TWO')
+    assert base_row[pes.HEADERS.index('Sincron')] == 'CO'
+    assert sec_row[pes.HEADERS.index('Sincron')] == 'OZ'      # its own code, not CO
+    # and the leave-override only fires on the row whose own code is CO
+    assert base_row[pes.HEADERS.index('Status')] == 'CO'
+    assert sec_row[pes.HEADERS.index('Status')] == 'Present'
 
 def test_fmt_hm_carries_rounding():
     from core.connectors.biostar.services import pontaje_export_service as pes

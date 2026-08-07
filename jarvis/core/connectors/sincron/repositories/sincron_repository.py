@@ -394,16 +394,16 @@ class SincronRepository(BaseRepository):
     def get_day_codes_for_users(self, jarvis_user_ids, year, month):
         """Get leave day codes for multiple JARVIS users at once.
 
-        Returns rows of (mapped_jarvis_user_id, day, short_code) for all active leave codes.
-        For multi-company employees, prioritizes the base contract and
-        leave codes (CO, CM, etc.) over working codes (OZ, OS).
+        Returns rows of (mapped_jarvis_user_id, company_id, day, short_code) for all
+        active leave codes. Keyed per company so each contract shows its own code;
+        within a (user, company, day) leave codes (CO, CM, etc.) win over OZ/OS.
         """
         if not jarvis_user_ids:
             return []
         leave_codes = ('CO', 'CM', 'CIC', 'CES', 'CMS', 'DLG', 'ZLS', 'CFP', 'CFS', 'INV', 'OZ', 'OS', 'X')
         return self.query_all(
             f"""
-            SELECT se.mapped_jarvis_user_id, st.day, st.short_code
+            SELECT se.mapped_jarvis_user_id, se.company_id, st.day, st.short_code
             FROM sincron_timesheets st
             JOIN sincron_employees se
               ON se.sincron_employee_id = st.sincron_employee_id
