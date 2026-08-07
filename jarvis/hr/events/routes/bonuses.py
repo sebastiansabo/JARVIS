@@ -50,6 +50,21 @@ def api_create_event_bonus():
     """API: Create a new event bonus."""
     data = request.get_json()
 
+    # Granular presence days (optional): validate against the event range and
+    # block if any month they touch is locked; day count drives bonus_days/net.
+    try:
+        presence_days = resolve_presence_days(data)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    if presence_days:
+        user_role = getattr(current_user, 'role_name', 'User')
+        ok, reason = check_presence_months_editable(presence_days, user_role)
+        if not ok:
+            return jsonify({'success': False, 'error': f'Cannot add: {reason}', 'locked': True}), 403
+        data['bonus_days'] = len(presence_days)
+        if data.get('bonus_type_id'):
+            data.pop('bonus_net', None)  # recompute net from the selected day count
+
     bonus_id = save_event_bonus(
         employee_id=data['employee_id'],
         event_id=data['event_id'],
@@ -62,7 +77,8 @@ def api_create_event_bonus():
         bonus_net=_compute_bonus_net(data),
         details=data.get('details'),
         allocation_month=data.get('allocation_month'),
-        created_by=current_user.id
+        created_by=current_user.id,
+        presence_days=presence_days,
     )
 
     # Time Bank auto-credit for hours_free
@@ -82,8 +98,20 @@ def api_create_event_bonuses_bulk():
     if not bonuses:
         return jsonify({'success': False, 'error': 'No bonuses provided'}), 400
 
-    # Compute bonus_net server-side for each bonus if not provided
+    user_role = getattr(current_user, 'role_name', 'User')
+    # Per bonus: resolve/validate presence days, block locked months, then
+    # compute bonus_net server-side (day count drives bonus_days).
     for bonus in bonuses:
+        try:
+            days = resolve_presence_days(bonus)
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+        if days:
+            ok, reason = check_presence_months_editable(days, user_role)
+            if not ok:
+                return jsonify({'success': False, 'error': f'Cannot add: {reason}', 'locked': True}), 403
+            bonus['presence_days'] = days
+            bonus['bonus_days'] = len(days)
         bonus['bonus_net'] = _compute_bonus_net(bonus)
 
     created_ids = save_event_bonuses_bulk(bonuses, created_by=current_user.id)
@@ -135,6 +163,22 @@ def api_update_event_bonus(bonus_id):
 
     data = request.get_json()
 
+    # Granular presence days (optional): validate range + block if any month the
+    # NEW days touch is locked (the existing month was already checked above).
+    try:
+        presence_days = resolve_presence_days(data)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    bonus_net = data.get('bonus_net')
+    if presence_days:
+        ok, reason = check_presence_months_editable(presence_days, user_role)
+        if not ok:
+            return jsonify({'success': False, 'error': f'Cannot edit: {reason}', 'locked': True}), 403
+        data['bonus_days'] = len(presence_days)
+        if data.get('bonus_type_id'):
+            data.pop('bonus_net', None)  # recompute net from the selected day count
+        bonus_net = _compute_bonus_net(data)
+
     update_event_bonus(
         bonus_id=bonus_id,
         employee_id=data['employee_id'],
@@ -145,9 +189,10 @@ def api_update_event_bonus(bonus_id):
         participation_end=data.get('participation_end'),
         bonus_days=data.get('bonus_days'),
         hours_free=data.get('hours_free'),
-        bonus_net=data.get('bonus_net'),
+        bonus_net=bonus_net,
         details=data.get('details'),
-        allocation_month=data.get('allocation_month')
+        allocation_month=data.get('allocation_month'),
+        presence_days=presence_days,
     )
 
     return jsonify({'success': True})

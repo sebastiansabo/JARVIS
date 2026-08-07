@@ -3,6 +3,81 @@ import psycopg2
 import psycopg2.errors
 
 
+def create_event_bonus_days(conn, cursor):
+    """Granular presence-day storage for event bonuses + the per-day money view.
+
+    ``hr.event_bonus_days`` holds one row per attended *full* day and is the
+    source of truth, replacing the continuous participation_start..participation_end
+    window (which is kept, derived as MIN/MAX of the days, for back-compat). The
+    view ``hr.v_event_bonus_days`` expands each day with its pro-rata share of the
+    bonus money (uniform per-day rate = bonus_net / bonus_days) so month-scoped
+    reads can report a boundary-spanning bonus under every month it touches.
+    Idempotent.
+    """
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS hr.event_bonus_days (
+            id SERIAL PRIMARY KEY,
+            bonus_id INTEGER NOT NULL REFERENCES hr.event_bonuses(id) ON DELETE CASCADE,
+            day DATE NOT NULL,
+            UNIQUE (bonus_id, day)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonus_days_bonus ON hr.event_bonus_days(bonus_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonus_days_day ON hr.event_bonus_days(day)')
+    cursor.execute('''
+        CREATE OR REPLACE VIEW hr.v_event_bonus_days AS
+        SELECT
+            d.bonus_id,
+            d.day,
+            EXTRACT(YEAR  FROM d.day)::int AS year,
+            EXTRACT(MONTH FROM d.day)::int AS month,
+            eb.user_id,
+            eb.event_id,
+            eb.bonus_type_id,
+            (eb.bonus_net / NULLIF(eb.bonus_days, 0)) AS day_net,
+            eb.hours_free,
+            -- hours_free is NOT split by month (credited once); attribute it to
+            -- the bonus's earliest day so month rollups count it exactly once.
+            (d.day = MIN(d.day) OVER (PARTITION BY d.bonus_id)) AS is_primary_day
+        FROM hr.event_bonus_days d
+        JOIN hr.event_bonuses eb ON eb.id = d.bonus_id
+    ''')
+    conn.commit()
+
+
+def backfill_event_bonus_days(conn, cursor):
+    """Materialise day rows for legacy bonuses that have a participation window
+    but no day rows yet: round(bonus_days) consecutive days from
+    participation_start, never past participation_end. Idempotent (skips bonuses
+    that already have days; ON CONFLICT DO NOTHING).
+    """
+    cursor.execute('''
+        INSERT INTO hr.event_bonus_days (bonus_id, day)
+        SELECT eb.id, gs::date
+        FROM hr.event_bonuses eb
+        CROSS JOIN LATERAL (
+            SELECT GREATEST(1, LEAST(
+                COALESCE(ROUND(eb.bonus_days)::int,
+                         (eb.participation_end - eb.participation_start + 1)),
+                (eb.participation_end - eb.participation_start + 1)
+            )) AS d_count
+        ) c
+        CROSS JOIN LATERAL generate_series(
+            eb.participation_start::timestamp,
+            eb.participation_start::timestamp + ((c.d_count - 1) || ' days')::interval,
+            interval '1 day'
+        ) AS gs
+        WHERE eb.participation_start IS NOT NULL
+          AND eb.participation_end IS NOT NULL
+          AND eb.participation_end >= eb.participation_start
+          AND NOT EXISTS (
+              SELECT 1 FROM hr.event_bonus_days d WHERE d.bonus_id = eb.id
+          )
+        ON CONFLICT (bonus_id, day) DO NOTHING
+    ''')
+    conn.commit()
+
+
 def create_schema_hr(conn, cursor):
     """Create HR module tables."""
     # ============== HR Module Schema ==============
@@ -108,6 +183,11 @@ def create_schema_hr(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonuses_event ON hr.event_bonuses(event_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonuses_year_month ON hr.event_bonuses(year, month)')
     conn.commit()
+
+    # Granular presence days: per-day storage + money view, then one-time backfill
+    # of legacy bonuses from their participation window.
+    create_event_bonus_days(conn, cursor)
+    backfill_event_bonus_days(conn, cursor)
 
     # Migrate existing single reinvoice data to new table (if not already migrated)
     cursor.execute('''

@@ -332,28 +332,70 @@ class ProfileRepository(BaseRepository):
         limit: int = 20,
         offset: int = 0,
     ) -> list[dict]:
-        """Get HR event bonuses for a user."""
+        """Get HR event bonuses for a user.
+
+        Granular presence days: when filtered by month, a bonus whose days
+        straddle a month boundary appears under BOTH months, and ``bonus_net`` /
+        ``bonus_days`` are that month's pro-rata portion. Rows that predate day
+        rows fall back to the stored total and their stored month.
+        """
         def _work(cursor):
-            query = '''
+            # period.* = the days & money falling in the requested year[/month]
+            # (pro-rata via the per-day view); mirrors the whole bonus when
+            # unfiltered. dc.total_days lets legacy (no-day-row) bonuses fall back.
+            period_cond = 'TRUE'
+            period_params = []
+            if year:
+                period_cond = 'vd.year = %s'
+                period_params.append(year)
+                if month:
+                    period_cond += ' AND vd.month = %s'
+                    period_params.append(month)
+
+            query = f'''
                 SELECT
-                    eb.id, eb.year, eb.month, eb.bonus_days, eb.hours_free,
-                    eb.bonus_net, eb.details, eb.allocation_month,
+                    eb.id, eb.year, eb.month,
+                    CASE WHEN dc.total_days > 0 THEN period.period_bonus_days
+                         ELSE eb.bonus_days END AS bonus_days,
+                    eb.hours_free,
+                    CASE WHEN dc.total_days > 0 THEN period.period_bonus_net
+                         ELSE eb.bonus_net END AS bonus_net,
+                    eb.details, eb.allocation_month,
                     eb.participation_start, eb.participation_end,
                     eb.created_at, eb.updated_at,
                     e.name as event_name, e.start_date, e.end_date,
                     e.company, e.brand
                 FROM hr.event_bonuses eb
                 INNER JOIN hr.events e ON eb.event_id = e.id
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*) AS total_days
+                    FROM hr.event_bonus_days d WHERE d.bonus_id = eb.id
+                ) dc ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*) AS period_bonus_days,
+                           COALESCE(SUM(vd.day_net), 0) AS period_bonus_net
+                    FROM hr.v_event_bonus_days vd
+                    WHERE vd.bonus_id = eb.id AND {period_cond}
+                ) period ON TRUE
                 WHERE eb.user_id = %s
             '''
-            params = [user_id]
+            params = list(period_params)
+            params.append(user_id)
 
             if year:
-                query += ' AND eb.year = %s'
+                # Day-based membership (appears in every month its days touch),
+                # with a legacy fallback for bonuses that have no day rows yet.
+                query += ' AND ( EXISTS (SELECT 1 FROM hr.v_event_bonus_days vd2 WHERE vd2.bonus_id = eb.id AND vd2.year = %s'
                 params.append(year)
-            if month:
-                query += ' AND eb.month = %s'
-                params.append(month)
+                if month:
+                    query += ' AND vd2.month = %s'
+                    params.append(month)
+                query += ') OR (dc.total_days = 0 AND eb.year = %s'
+                params.append(year)
+                if month:
+                    query += ' AND eb.month = %s'
+                    params.append(month)
+                query += ') )'
             if search:
                 query += ' AND (e.name ILIKE %s OR e.company ILIKE %s)'
                 search_pattern = f'%{search}%'

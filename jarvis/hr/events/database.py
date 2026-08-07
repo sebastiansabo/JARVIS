@@ -1,6 +1,17 @@
 """HR Module Database Operations."""
 from database import get_db, get_cursor, release_db, dict_from_row
 from core.utils.scope_filter import apply_scope_filter
+from .presence import derive_bonus_fields
+
+
+def _replace_bonus_days(cursor, bonus_id, presence_days):
+    """Replace the presence-day rows for a bonus with the given dates (same txn)."""
+    cursor.execute('DELETE FROM hr.event_bonus_days WHERE bonus_id = %s', (bonus_id,))
+    for d in presence_days:
+        cursor.execute(
+            'INSERT INTO hr.event_bonus_days (bonus_id, day) VALUES (%s, %s) '
+            'ON CONFLICT (bonus_id, day) DO NOTHING',
+            (bonus_id, d))
 
 
 # ============== HR Employees (now using users table) ==============
@@ -263,28 +274,50 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
     try:
         cursor = get_cursor(conn)
 
-        # user_id references users.id directly
-        query = '''
+        # user_id references users.id directly.
+        # period.* = the days & money that fall in the requested year[/month]
+        # (pro-rata via the per-day view); mirrors the whole bonus when unfiltered.
+        period_cond = 'TRUE'
+        period_params = []
+        if year:
+            period_cond = 'vd.year = %s'
+            period_params.append(year)
+            if month:
+                period_cond += ' AND vd.month = %s'
+                period_params.append(month)
+
+        query = f'''
             SELECT b.*, u.name as employee_name, u.department, u.brand,
                    COALESCE(co.company, u.company) AS company,
                    ev.name as event_name, ev.start_date as event_start, ev.end_date as event_end,
                    creator.name as created_by_name,
-                   b.user_id as effective_employee_id
+                   b.user_id as effective_employee_id,
+                   period.period_bonus_days,
+                   period.period_bonus_net
             FROM hr.event_bonuses b
             LEFT JOIN public.users u ON u.id = b.user_id
             LEFT JOIN public.companies co ON co.id = u.company_id
             JOIN hr.events ev ON b.event_id = ev.id
             LEFT JOIN public.users creator ON b.created_by = creator.id
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS period_bonus_days,
+                       COALESCE(SUM(vd.day_net), 0) AS period_bonus_net
+                FROM hr.v_event_bonus_days vd
+                WHERE vd.bonus_id = b.id AND {period_cond}
+            ) period ON TRUE
             WHERE 1=1
         '''
-        params = []
+        params = list(period_params)
 
         if year:
-            query += ' AND b.year = %s'
+            # Day-based membership: a bonus appears for a period if ANY of its
+            # days fall in it (so a boundary-spanning bonus shows in both months).
+            query += ' AND EXISTS (SELECT 1 FROM hr.v_event_bonus_days vd2 WHERE vd2.bonus_id = b.id AND vd2.year = %s'
             params.append(year)
-        if month:
-            query += ' AND b.month = %s'
-            params.append(month)
+            if month:
+                query += ' AND vd2.month = %s'
+                params.append(month)
+            query += ')'
         if employee_id:
             query += ' AND b.user_id = %s'
             params.append(employee_id)
@@ -392,8 +425,19 @@ def can_access_employee(employee_id, scope, user_context):
 
 def save_event_bonus(employee_id, event_id, year, month, participation_start=None,
                      participation_end=None, bonus_days=None, hours_free=None,
-                     bonus_net=None, details=None, allocation_month=None, created_by=None):
-    """Create a new event bonus record using user_id (references users.id)."""
+                     bonus_net=None, details=None, allocation_month=None, created_by=None,
+                     presence_days=None):
+    """Create a new event bonus record using user_id (references users.id).
+
+    When ``presence_days`` (a list of dates) is given it is the source of truth:
+    year/month/participation_start/participation_end/bonus_days are derived from
+    it and the per-day rows are written in the same transaction.
+    """
+    if presence_days:
+        f = derive_bonus_fields(presence_days)
+        year, month = f['year'], f['month']
+        participation_start, participation_end = f['participation_start'], f['participation_end']
+        bonus_days = f['bonus_days']
     conn = get_db()
     try:
         cursor = get_cursor(conn)
@@ -406,6 +450,8 @@ def save_event_bonus(employee_id, event_id, year, month, participation_start=Non
         ''', (employee_id, event_id, year, month, participation_start, participation_end,
               bonus_days, hours_free, bonus_net, details, allocation_month, created_by))
         bonus_id = cursor.fetchone()['id']
+        if presence_days:
+            _replace_bonus_days(cursor, bonus_id, presence_days)
         conn.commit()
         return bonus_id
 
@@ -420,17 +466,30 @@ def save_event_bonuses_bulk(bonuses, created_by=None):
 
         created_ids = []
         for b in bonuses:
+            presence_days = b.get('presence_days')
+            year, month = b['year'], b['month']
+            participation_start = b.get('participation_start')
+            participation_end = b.get('participation_end')
+            bonus_days = b.get('bonus_days')
+            if presence_days:
+                f = derive_bonus_fields(presence_days)
+                year, month = f['year'], f['month']
+                participation_start, participation_end = f['participation_start'], f['participation_end']
+                bonus_days = f['bonus_days']
             cursor.execute('''
                 INSERT INTO hr.event_bonuses
                 (user_id, event_id, year, month, participation_start, participation_end,
                  bonus_days, hours_free, bonus_net, details, allocation_month, created_by)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            ''', (b['employee_id'], b['event_id'], b['year'], b['month'],
-                  b.get('participation_start'), b.get('participation_end'),
-                  b.get('bonus_days'), b.get('hours_free'), b.get('bonus_net'),
+            ''', (b['employee_id'], b['event_id'], year, month,
+                  participation_start, participation_end,
+                  bonus_days, b.get('hours_free'), b.get('bonus_net'),
                   b.get('details'), b.get('allocation_month'), created_by))
-            created_ids.append(cursor.fetchone()['id'])
+            new_id = cursor.fetchone()['id']
+            if presence_days:
+                _replace_bonus_days(cursor, new_id, presence_days)
+            created_ids.append(new_id)
 
         conn.commit()
         return created_ids
@@ -440,8 +499,18 @@ def save_event_bonuses_bulk(bonuses, created_by=None):
         release_db(conn)
 def update_event_bonus(bonus_id, employee_id, event_id, year, month, participation_start=None,
                        participation_end=None, bonus_days=None, hours_free=None,
-                       bonus_net=None, details=None, allocation_month=None):
-    """Update an event bonus record using user_id (references users.id)."""
+                       bonus_net=None, details=None, allocation_month=None,
+                       presence_days=None):
+    """Update an event bonus record using user_id (references users.id).
+
+    When ``presence_days`` is given it is the source of truth: the derived
+    columns are recomputed and the day rows replaced in the same transaction.
+    """
+    if presence_days:
+        f = derive_bonus_fields(presence_days)
+        year, month = f['year'], f['month']
+        participation_start, participation_end = f['participation_start'], f['participation_end']
+        bonus_days = f['bonus_days']
     conn = get_db()
     try:
         cursor = get_cursor(conn)
@@ -454,6 +523,8 @@ def update_event_bonus(bonus_id, employee_id, event_id, year, month, participati
             WHERE id = %s
         ''', (employee_id, event_id, year, month, participation_start, participation_end,
               bonus_days, hours_free, bonus_net, details, allocation_month, bonus_id))
+        if presence_days is not None:
+            _replace_bonus_days(cursor, bonus_id, presence_days)
         conn.commit()
 
 
@@ -580,16 +651,22 @@ def get_event_bonuses_summary(year=None):
     finally:
         release_db(conn)
 def get_bonuses_by_month(year):
-    """Get bonus totals grouped by month for a year."""
+    """Get bonus totals grouped by the month each presence DAY falls in.
+
+    Money is split pro-rata (day_net) so a bonus whose days straddle a month
+    boundary contributes its share to each month it touches.
+    """
     conn = get_db()
     try:
         cursor = get_cursor(conn)
         cursor.execute('''
-            SELECT month, COUNT(*) as count, SUM(bonus_net) as total
-            FROM hr.event_bonuses
-            WHERE year = %s
-            GROUP BY month
-            ORDER BY month
+            SELECT vd.month AS month,
+                   COUNT(DISTINCT vd.bonus_id) as count,
+                   SUM(vd.day_net) as total
+            FROM hr.v_event_bonus_days vd
+            WHERE vd.year = %s
+            GROUP BY vd.month
+            ORDER BY vd.month
         ''', (year,))
         rows = cursor.fetchall()
         return [dict_from_row(row) for row in rows]
@@ -603,23 +680,25 @@ def get_bonuses_by_employee(year=None, month=None):
     try:
         cursor = get_cursor(conn)
 
+        # Day-based: money (day_net) and days split by the month they fall in;
+        # hours_free is attributed to the bonus's primary day so it counts once.
         query = '''
             SELECT u.id, u.name, u.department, COALESCE(co.company, u.company) AS company, u.brand,
-                   COUNT(*) as bonus_count,
-                   COALESCE(SUM(b.bonus_days), 0) as total_days,
-                   COALESCE(SUM(b.hours_free), 0) as total_hours,
-                   COALESCE(SUM(b.bonus_net), 0) as total_bonus
-            FROM hr.event_bonuses b
-            LEFT JOIN public.users u ON u.id = b.user_id
+                   COUNT(DISTINCT vd.bonus_id) as bonus_count,
+                   COUNT(*) as total_days,
+                   COALESCE(SUM(CASE WHEN vd.is_primary_day THEN vd.hours_free ELSE 0 END), 0) as total_hours,
+                   COALESCE(SUM(vd.day_net), 0) as total_bonus
+            FROM hr.v_event_bonus_days vd
+            LEFT JOIN public.users u ON u.id = vd.user_id
             LEFT JOIN public.companies co ON co.id = u.company_id
             WHERE 1=1
         '''
         params = []
         if year:
-            query += ' AND b.year = %s'
+            query += ' AND vd.year = %s'
             params.append(year)
         if month:
-            query += ' AND b.month = %s'
+            query += ' AND vd.month = %s'
             params.append(month)
 
         query += ' GROUP BY u.id, u.name, u.department, co.company, u.company, u.brand ORDER BY total_bonus DESC'
@@ -637,27 +716,28 @@ def get_bonuses_by_event(year=None, month=None):
     try:
         cursor = get_cursor(conn)
 
+        # Day-based: an event's bonuses split across the months their days fall in.
         query = '''
             SELECT e.id, e.name, e.start_date, e.end_date, e.company, e.brand,
-                   b.year, b.month,
-                   COUNT(*) as bonus_count,
-                   COUNT(DISTINCT b.user_id) as employee_count,
-                   COALESCE(SUM(b.bonus_days), 0) as total_days,
-                   COALESCE(SUM(b.hours_free), 0) as total_hours,
-                   COALESCE(SUM(b.bonus_net), 0) as total_bonus
-            FROM hr.event_bonuses b
-            JOIN hr.events e ON e.id = b.event_id
+                   vd.year, vd.month,
+                   COUNT(DISTINCT vd.bonus_id) as bonus_count,
+                   COUNT(DISTINCT vd.user_id) as employee_count,
+                   COUNT(*) as total_days,
+                   COALESCE(SUM(CASE WHEN vd.is_primary_day THEN vd.hours_free ELSE 0 END), 0) as total_hours,
+                   COALESCE(SUM(vd.day_net), 0) as total_bonus
+            FROM hr.v_event_bonus_days vd
+            JOIN hr.events e ON e.id = vd.event_id
             WHERE 1=1
         '''
         params = []
         if year:
-            query += ' AND b.year = %s'
+            query += ' AND vd.year = %s'
             params.append(year)
         if month:
-            query += ' AND b.month = %s'
+            query += ' AND vd.month = %s'
             params.append(month)
 
-        query += ' GROUP BY e.id, e.name, e.start_date, e.end_date, e.company, e.brand, b.year, b.month ORDER BY b.year DESC, b.month DESC, total_bonus DESC'
+        query += ' GROUP BY e.id, e.name, e.start_date, e.end_date, e.company, e.brand, vd.year, vd.month ORDER BY vd.year DESC, vd.month DESC, total_bonus DESC'
 
         cursor.execute(query, params)
         rows = cursor.fetchall()

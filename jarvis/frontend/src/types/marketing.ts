@@ -318,6 +318,8 @@ export interface EventParticipant {
   details: string | null
   allocation_month: string | null
   bonus_type_name: string | null
+  /** Specific attended days ('YYYY-MM-DD'); empty for legacy rows w/o day data. */
+  presence_days: string[]
 }
 
 export interface MktKpiBudgetLine {
