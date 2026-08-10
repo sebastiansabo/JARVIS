@@ -5,6 +5,7 @@ All SQL lives here (never in routes/services), per repo convention. Every
 user-supplied filter value is passed as a parameterized query argument —
 never string-interpolated into SQL.
 """
+from datetime import date, datetime, time
 from typing import Optional, Dict, Any, List
 
 from core.base_repository import BaseRepository
@@ -102,6 +103,32 @@ def _margin_pct(gross_margin, sale_price) -> Optional[float]:
     if gross_margin is None or not sale_price:
         return None
     return float(gross_margin) / float(sale_price) * 100
+
+
+# Key lifecycle dates recorded directly on carpark_vehicles, surfaced as
+# timeline() events when non-null — (column, Romanian label). Kept in one
+# place so a new lifecycle date field is a one-line addition here.
+_TIMELINE_VEHICLE_DATE_FIELDS: List[tuple] = [
+    ('acquisition_date', 'Achiziție'),
+    ('supplier_payment_date', 'Plată furnizor'),
+    ('intake_pv_date', 'PV intrare'),
+    ('listing_date', 'Publicare anunț'),
+    ('sale_date', 'Vânzare'),
+    ('delivery_date', 'Livrare'),
+    ('stock_removed_date', 'Scos din stoc'),
+]
+
+
+def _timeline_sort_key(value) -> datetime:
+    """Normalize a timeline event's `date` (a date, datetime, or None) into
+    a datetime for sorting — carpark_status_history/carpark_vehicle_documents
+    carry TIMESTAMPs while the vehicle lifecycle columns are plain DATEs, and
+    Python refuses to compare date and datetime directly."""
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, time.min)
+    return datetime.min
 
 
 class DispoRepository(BaseRepository):
@@ -356,3 +383,80 @@ class DispoRepository(BaseRepository):
             'delivered_this_month': 0, 'avg_days_in_stock': 0,
             'aged_over_60': 0, 'gross_margin_mtd': 0,
         }
+
+    # ── TIMELINE ──
+
+    def timeline(self, vehicle_id: int) -> List[Dict[str, Any]]:
+        """Merged, chronologically-sorted event history for a vehicle,
+        combining three sources (three separate queries — each is a plain
+        one-table SELECT, not worth forcing into a single join):
+          - carpark_status_history: every status transition
+          - carpark_vehicles: key lifecycle date columns (see
+            _TIMELINE_VEHICLE_DATE_FIELDS), one event per non-null column
+          - carpark_vehicle_documents: every document upload
+
+        Every event has the shape {type, label, date, meta}. The route
+        layer does no assembly of its own — this is the merge point, per
+        the module's no-SQL-in-routes convention.
+        """
+        vehicle_row = self.query_one(
+            f"""SELECT {', '.join(field for field, _ in _TIMELINE_VEHICLE_DATE_FIELDS)}
+                FROM carpark_vehicles WHERE id = %s""",
+            (vehicle_id,)
+        ) or {}
+
+        status_rows = self.query_all("""
+            SELECT old_status, new_status, notes, changed_by, created_at
+            FROM carpark_status_history
+            WHERE vehicle_id = %s
+            ORDER BY created_at
+        """, (vehicle_id,))
+
+        doc_rows = self.query_all("""
+            SELECT id, document_type, title, upload_date
+            FROM carpark_vehicle_documents
+            WHERE vehicle_id = %s
+            ORDER BY upload_date
+        """, (vehicle_id,))
+
+        events: List[Dict[str, Any]] = []
+
+        for row in status_rows:
+            old_status = row.get('old_status')
+            new_status = row.get('new_status')
+            events.append({
+                'type': 'status_change',
+                'label': f"{old_status} → {new_status}" if old_status else f"→ {new_status}",
+                'date': row.get('created_at'),
+                'meta': {
+                    'old_status': old_status,
+                    'new_status': new_status,
+                    'notes': row.get('notes'),
+                    'changed_by': row.get('changed_by'),
+                },
+            })
+
+        for field, label in _TIMELINE_VEHICLE_DATE_FIELDS:
+            value = vehicle_row.get(field)
+            if value is not None:
+                events.append({
+                    'type': 'vehicle_date',
+                    'label': label,
+                    'date': value,
+                    'meta': {'field': field},
+                })
+
+        for row in doc_rows:
+            events.append({
+                'type': 'document',
+                'label': row.get('document_type'),
+                'date': row.get('upload_date'),
+                'meta': {
+                    'id': row.get('id'),
+                    'document_type': row.get('document_type'),
+                    'title': row.get('title'),
+                },
+            })
+
+        events.sort(key=lambda e: _timeline_sort_key(e['date']))
+        return events
