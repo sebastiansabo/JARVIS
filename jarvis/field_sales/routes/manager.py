@@ -24,6 +24,18 @@ def api_manager_overview():
         kam_id = request.args.get('kam_id', type=int)
         company_id = request.args.get('company_id', type=int)
 
+        # Enforce the manager's team.view scope: 'own' → only self; 'department'
+        # → only the manager's own company (overrides any requested company_id);
+        # 'all' → unrestricted. Fail closed if a scoped manager has no company.
+        scope = getattr(g, 'permission_scope', 'all')
+        if scope == 'own':
+            kam_id = _get_current_user().id
+        elif scope == 'department':
+            company_id = getattr(_get_current_user(), 'company_id', None)
+            if company_id is None:
+                return jsonify({'success': True, 'visits': [],
+                                'summary': {'total': 0, 'by_status': {}, 'by_kam': {}}})
+
         visits = _visit_repo.get_team_visits(date_from, date_to, kam_id=kam_id, company_id=company_id)
 
         # Compute summary stats

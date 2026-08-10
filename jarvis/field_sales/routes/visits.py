@@ -346,9 +346,18 @@ def api_visit_detail(visit_id):
         if not visit:
             return jsonify({'success': False, 'error': 'Visit not found'}), 404
 
-        # IDOR check: KAM sees own visits, managers see all
-        if visit['kam_id'] != _get_current_user().id and not _is_manager():
-            return jsonify({'success': False, 'error': 'Access denied'}), 403
+        # Access: own visit always; otherwise requires manager rights AND the
+        # caller's scope must permit it (own → never others; department → same
+        # company; all → any). Mirrors the CRM per-client tenant scoping.
+        _user = _get_current_user()
+        if visit['kam_id'] != _user.id:
+            scope = getattr(g, 'permission_scope', 'all')
+            if not _is_manager() or scope == 'own':
+                return jsonify({'success': False, 'error': 'Access denied'}), 403
+            if scope == 'department':
+                uc = getattr(_user, 'company_id', None)
+                if uc is None or visit.get('company_id') != uc:
+                    return jsonify({'success': False, 'error': 'Access denied'}), 403
 
         return jsonify({'success': True, 'visit': visit})
     except Exception as e:
