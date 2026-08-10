@@ -25,6 +25,7 @@ from tasks.verification import run_end_of_month_verification
 from tasks.hr_attendance import check_missing_punches, send_pontaje_digest, send_monthly_pontaje_summary, send_hr_weekly_digest
 from tasks.hr_courses import check_course_cert_expiry
 from tasks.foi_parcurs_expiry import check_vehicle_document_expiry
+from tasks.bnr_monitor import check_bnr_feed
 from tasks.foi_parcurs_blocks import check_scheduled_blocks
 from tasks.carpark import cleanup_vin_cache
 from tasks.holidays import populate_holidays
@@ -312,6 +313,18 @@ def start_scheduler():
         hour=8,
         minute=45,
         id='fp_vehicle_document_expiry',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # Facturare — BNR FX-feed health check (14:15 daily, after BNR ~13:00 publish)
+    scheduler.add_job(
+        check_bnr_feed,
+        'cron',
+        hour=14,
+        minute=15,
+        id='bnr_feed_monitor',
         replace_existing=True,
         misfire_grace_time=3600,
         coalesce=True,
