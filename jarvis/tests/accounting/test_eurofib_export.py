@@ -115,6 +115,17 @@ class FakeRepo:
     def get_lines_by_anexa(self, anexa_id):
         return [dict(LINE_840)]
 
+    def get_invoices_by_anexa(self, anexa_id):
+        # Cumulative-rounding context: the two advances (INVOICE), the storno and
+        # the final on anexa 1. Advances carry invoice_type so _prior_car_fractions
+        # can identify same-track siblings.
+        return [
+            dict(ADV_A, invoice_type="INVOICE"),
+            dict(ADV_B, invoice_type="INVOICE"),
+            dict(STORNO_ROW),
+            dict(FINAL_ROW),
+        ]
+
     def get_document_number_map(self, invoice_id):
         return dict(DOCNUM_MAP_BY_INVOICE.get(invoice_id, {}))
 
@@ -162,6 +173,9 @@ class MultiCarFakeRepo(FakeRepo):
 
     def get_lines_by_anexa(self, anexa_id):
         return [dict(LINE_838), dict(LINE_839), dict(LINE_840_MULTI)]
+
+    def get_invoices_by_anexa(self, anexa_id):
+        return [dict(ADVANCE_3CAR), dict(ADVANCE_2CAR)]
 
     def get_document_number_map(self, invoice_id):
         return dict(self._docnum_map)
