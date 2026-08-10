@@ -324,6 +324,34 @@ class DispoRepository(BaseRepository):
             'per_page': per_page,
         }
 
+    # ── AGING ALERTS ──
+
+    def aged_unsold(self, min_days: int) -> List[Dict[str, Any]]:
+        """Unsold vehicles (company-agnostic — the scheduler job scans every
+        tenant) whose days_in_stock exceeds min_days.
+
+        "Unsold" = status NOT IN the terminal-exit set (SOLD, DELIVERED,
+        SCRAPPED, TRANSFERRED, RETURNED) — deliberately broader than
+        _ACTIVE_STATUSES (which also excludes RESERVED): a reserved-but-not-
+        yet-sold car has still been sitting in stock and is exactly the kind
+        of aging inventory this alert exists to surface. Soft-deleted rows
+        are excluded. days_in_stock is CURRENT_DATE - acquisition_date; a
+        NULL acquisition_date makes the comparison NULL (excluded by WHERE),
+        so no explicit NULL guard is needed, but one is added anyway for
+        readability.
+        """
+        return self.query_all("""
+            SELECT id, vin, brand, model,
+                   (CURRENT_DATE - acquisition_date) AS days_in_stock,
+                   salesperson_user_id, acquisition_manager_id, company_id
+            FROM carpark_vehicles
+            WHERE status NOT IN ('SOLD', 'DELIVERED', 'SCRAPPED', 'TRANSFERRED', 'RETURNED')
+              AND deleted_at IS NULL
+              AND acquisition_date IS NOT NULL
+              AND (CURRENT_DATE - acquisition_date) > %s
+            ORDER BY days_in_stock DESC
+        """, (min_days,))
+
     # ── KPIs ──
 
     def kpis(self, company_id: int) -> Dict[str, Any]:
