@@ -1671,6 +1671,23 @@ def _create_carpark_incremental(conn, cursor):
         AND NOT EXISTS (SELECT 1 FROM approval_steps s WHERE s.flow_id = f.id)
     ''')
 
+    # ── CarPark Dispo: sales-lifecycle columns on carpark_vehicles ──
+    for _col, _type in [
+        ('intake_pv_date', 'DATE'), ('supplier_payment_date', 'DATE'),
+        ('sale_type', 'VARCHAR(30)'), ('buyer_name', 'VARCHAR(200)'),
+        ('gw_file_number', 'VARCHAR(50)'), ('is_impus', 'BOOLEAN DEFAULT FALSE'),
+        ('missing_civ', 'BOOLEAN DEFAULT FALSE'), ('stock_removed', 'BOOLEAN DEFAULT FALSE'),
+        ('stock_removed_date', 'DATE'),
+    ]:
+        cursor.execute(f"""
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_name='carpark_vehicles' AND column_name='{_col}') THEN
+                ALTER TABLE carpark_vehicles ADD COLUMN {_col} {_type};
+              END IF;
+            END $$;
+        """)
+
 
 def _create_schema_incremental_continued(conn, cursor):
     """Continuation of create_schema_incremental — non-carpark migrations."""

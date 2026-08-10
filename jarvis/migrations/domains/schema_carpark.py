@@ -831,7 +831,7 @@ def create_schema_carpark(conn, cursor):
     # ── Permission column on roles table ──
     from psycopg2 import sql as _sql
     for col_name in ['can_access_carpark', 'can_edit_carpark', 'can_delete_carpark',
-                      'can_access_carpark_mobile']:
+                      'can_access_carpark_mobile', 'can_view_carpark_finance']:
         cursor.execute(
             _sql.SQL('ALTER TABLE roles ADD COLUMN IF NOT EXISTS {} BOOLEAN DEFAULT FALSE').format(
                 _sql.Identifier(col_name)
@@ -858,6 +858,35 @@ def create_schema_carpark(conn, cursor):
         ) AS v(name, name_ro, sort_order)
         WHERE NOT EXISTS (SELECT 1 FROM carpark_equipment_categories LIMIT 1)
     ''')
+
+    # Seed carpark dropdown_options if not present
+    cursor.execute("SELECT COUNT(*) as cnt FROM dropdown_options WHERE dropdown_type = 'carpark_source'")
+    if cursor.fetchone()['cnt'] == 0:
+        cursor.execute('''
+            INSERT INTO dropdown_options (dropdown_type, value, label, sort_order, is_active) VALUES
+            ('carpark_source', 'EXTERN COMANDA', 'EXTERN COMANDA', 1, TRUE),
+            ('carpark_source', 'BUY BACK PJ', 'BUY BACK PJ', 2, TRUE),
+            ('carpark_source', 'IRC', 'IRC', 3, TRUE),
+            ('carpark_source', 'DEALER', 'DEALER', 4, TRUE),
+            ('carpark_source', 'BUY BACK PF', 'BUY BACK PF', 5, TRUE),
+            ('carpark_source', 'EXTERN STOC', 'EXTERN STOC', 6, TRUE),
+            ('carpark_source', 'PORSCHE ROMANIA', 'PORSCHE ROMANIA', 7, TRUE),
+            ('carpark_source', 'PORSCHE MOBILITY', 'PORSCHE MOBILITY', 8, TRUE),
+            ('carpark_source', 'AW NEXT', 'AW NEXT', 9, TRUE),
+            ('carpark_source', 'CUSTODIE', 'CUSTODIE', 10, TRUE),
+            ('carpark_source', 'MOTION', 'MOTION', 11, TRUE),
+            ('carpark_sale_type', 'PLR', 'PLR', 1, TRUE),
+            ('carpark_sale_type', 'CASH', 'CASH', 2, TRUE),
+            ('carpark_sale_type', 'CREDIT PLR', 'CREDIT PLR', 3, TRUE),
+            ('carpark_sale_type', 'BT LEASING', 'BT LEASING', 4, TRUE),
+            ('carpark_sale_type', 'BRD', 'BRD', 5, TRUE),
+            ('carpark_sale_type', 'BCR', 'BCR', 6, TRUE),
+            ('carpark_sale_type', 'AW NEXT', 'AW NEXT', 7, TRUE),
+            ('carpark_cost_type', 'cheltuieli_vanzare', 'Cheltuieli cu vânzarea', 1, TRUE),
+            ('carpark_cost_type', 'istoric_import', 'Istoric import', 2, TRUE),
+            ('carpark_revenue_type', 'bonus_leasing', 'Bonus leasing', 1, TRUE)
+        ''')
+        conn.commit()
 
     # ── VIN Decoder Cache ──
     cursor.execute('''
