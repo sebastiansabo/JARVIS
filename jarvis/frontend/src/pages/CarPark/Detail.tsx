@@ -57,6 +57,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/stores/authStore'
 import { carparkApi } from '@/api/carpark'
 import { toast } from 'sonner'
+import { DocumenteTab } from './Detail/DocumenteTab'
 import {
   STATUS_LABELS,
   CATEGORY_LABELS,
@@ -365,6 +366,7 @@ export default function CarParkDetail() {
           <TabsTrigger value="revenues">Revenues ({revenues.length})</TabsTrigger>
           <TabsTrigger value="listings">Listings ({listings.length})</TabsTrigger>
           <TabsTrigger value="links">Links ({vehicleLinks.length})</TabsTrigger>
+          <TabsTrigger value="documente">Documente</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="modifications">Changes</TabsTrigger>
         </TabsList>
@@ -396,6 +398,10 @@ export default function CarParkDetail() {
 
         <TabsContent value="links" className="mt-4">
           <LinksTab vehicleId={id} links={vehicleLinks} canEdit={canEdit} />
+        </TabsContent>
+
+        <TabsContent value="documente" className="mt-4">
+          <DocumenteTab vehicleId={id} status={vehicle.status} />
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
