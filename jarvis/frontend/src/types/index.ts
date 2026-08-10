@@ -40,6 +40,7 @@ export interface User {
   can_edit_carpark: boolean
   can_delete_carpark: boolean
   can_access_carpark_mobile: boolean
+  can_view_carpark_finance: boolean
   can_access_service: boolean
   can_access_ticketing: boolean
   can_access_controlling: boolean
