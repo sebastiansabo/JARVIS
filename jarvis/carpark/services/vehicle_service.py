@@ -20,6 +20,34 @@ PRICE_FIELDS = {'current_price', 'list_price', 'promotional_price', 'minimum_pri
 # Fields excluded from modification audit (too noisy or internal)
 AUDIT_EXCLUDE = {'updated_at', 'updated_by', 'equipment', 'optional_packages'}
 
+# Allowed vehicle-status transitions: {from_status: {allowed to_statuses}}.
+# Same-status no-ops are always allowed regardless of this map (see
+# is_valid_transition below).
+TRANSITIONS = {
+    'ACQUIRED':          {'IN_TRANSIT', 'INSPECTION', 'READY_FOR_SALE', 'RETURNED', 'TRANSFERRED'},
+    'IN_TRANSIT':        {'INSPECTION', 'ACQUIRED'},
+    'INSPECTION':        {'RECONDITIONING', 'READY_FOR_SALE', 'AT_BODYSHOP', 'INSURANCE_CLAIM'},
+    'RECONDITIONING':    {'READY_FOR_SALE', 'AT_BODYSHOP', 'INSPECTION'},
+    'AT_BODYSHOP':       {'RECONDITIONING', 'READY_FOR_SALE', 'INSURANCE_CLAIM'},
+    'INSURANCE_CLAIM':   {'RECONDITIONING', 'READY_FOR_SALE', 'SCRAPPED'},
+    'READY_FOR_SALE':    {'LISTED', 'RESERVED', 'SOLD', 'TRANSFERRED', 'RECONDITIONING'},
+    'LISTED':            {'PRICE_REDUCED', 'AUCTION_CANDIDATE', 'RESERVED', 'SOLD', 'READY_FOR_SALE'},
+    'PRICE_REDUCED':     {'AUCTION_CANDIDATE', 'RESERVED', 'SOLD', 'LISTED'},
+    'AUCTION_CANDIDATE': {'RESERVED', 'SOLD', 'LISTED', 'TRANSFERRED'},
+    'RESERVED':          {'SOLD', 'LISTED', 'READY_FOR_SALE'},
+    'SOLD':              {'DELIVERED', 'RESERVED', 'LISTED'},
+    'DELIVERED':         {'RETURNED'},
+    'RETURNED':          {'INSPECTION', 'READY_FOR_SALE'},
+    'SCRAPPED':          set(),
+    'TRANSFERRED':       set(),
+}
+
+
+def is_valid_transition(old: str, new: str) -> bool:
+    """True if `new` is a same-status no-op or a status reachable from `old`
+    per TRANSITIONS."""
+    return new == old or new in TRANSITIONS.get(old, set())
+
 
 class VehicleService:
     """Core business logic for vehicle operations."""
@@ -158,7 +186,19 @@ class VehicleService:
     def change_status(self, vehicle_id: int, new_status: str,
                       changed_by: int = None,
                       notes: str = None) -> Optional[Dict[str, Any]]:
-        """Change vehicle status with validation and history."""
+        """Change vehicle status with validation and history.
+
+        Raises ValueError if the transition from the vehicle's current
+        status to new_status is not permitted by TRANSITIONS (same-status
+        no-ops are always allowed). Unknown vehicle_id falls through to the
+        repo call unchanged, preserving existing not-found behavior.
+        """
+        vehicle = self._repo.get_by_id(vehicle_id)
+        if vehicle:
+            old_status = vehicle.get('status')
+            if not is_valid_transition(old_status, new_status):
+                raise ValueError(f'Tranziție interzisă: {old_status} → {new_status}')
+
         return self._repo.change_status(vehicle_id, new_status,
                                         changed_by=changed_by, notes=notes)
 
