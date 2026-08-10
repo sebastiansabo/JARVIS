@@ -75,7 +75,41 @@ def _cors_preflight():
 
 
 # JWT config
-_JWT_SECRET = os.environ.get('JWT_SECRET_KEY', os.environ.get('FLASK_SECRET_KEY', 'dev-jwt-secret'))
+def _resolve_jwt_secret() -> str:
+    """Resolve the JWT signing secret.
+
+    Uses JWT_SECRET_KEY (or FLASK_SECRET_KEY) when set. If neither is
+    configured, fail HARD in production rather than signing tokens with a
+    public, hardcoded default — that default let anyone forge a valid token.
+    Outside production an insecure dev fallback is allowed so local/test runs
+    still work.
+    """
+    secret = os.environ.get('JWT_SECRET_KEY') or os.environ.get('FLASK_SECRET_KEY')
+    if secret:
+        return secret
+
+    flask_env = os.environ.get('FLASK_ENV', 'development').lower()
+    database_url = os.environ.get('DATABASE_URL', '')
+    is_production = flask_env == 'production' or (
+        bool(database_url)
+        and 'localhost' not in database_url
+        and '127.0.0.1' not in database_url
+    )
+    if is_production:
+        raise RuntimeError(
+            'JWT secret is not configured: set JWT_SECRET_KEY (or FLASK_SECRET_KEY). '
+            'Refusing to start with an insecure default JWT secret in production.'
+        )
+
+    import logging
+    logging.getLogger('jarvis.mobile').warning(
+        'No JWT_SECRET_KEY/FLASK_SECRET_KEY set — using an INSECURE dev JWT secret. '
+        'Set JWT_SECRET_KEY before deploying.'
+    )
+    return 'dev-jwt-secret'
+
+
+_JWT_SECRET = _resolve_jwt_secret()
 _JWT_ACCESS_TTL = 3600       # 1 hour
 _JWT_REFRESH_TTL = 2592000   # 30 days
 
