@@ -41,6 +41,15 @@ class ReservationRepository(BaseRepository):
             tuple(vals), returning=True
         )
 
+    def list_for_vehicle(self, vehicle_id: int) -> List[Dict[str, Any]]:
+        """All reservations (any status) for a vehicle, most recent first —
+        used by the reservations history route."""
+        return self.query_all('''
+            SELECT * FROM carpark_reservations
+            WHERE vehicle_id = %s
+            ORDER BY created_at DESC, id DESC
+        ''', (vehicle_id,))
+
     def active_for_vehicle(self, vehicle_id: int) -> Optional[Dict[str, Any]]:
         """Most recent active (status='active') reservation for a vehicle, or None."""
         return self.query_one('''
