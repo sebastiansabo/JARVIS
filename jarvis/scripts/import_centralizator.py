@@ -35,6 +35,7 @@ def _print_report(report, max_problems: int) -> None:
     print(f'  ok:                  {report.ok}  (of which with warnings: {report.warnings})')
     print(f'  skipped (no VIN):    {report.skipped_no_vin}')
     print(f'  rejected:            {report.rejects}')
+    print(f'  cross-company:       {report.cross_company}  (VIN owned by another company — never written)')
 
     if not report.dry_run:
         print(f'  vehicles created:    {report.committed_vehicles_created}')

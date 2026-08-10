@@ -199,6 +199,7 @@ class ImportReport:
     warnings: int = 0  # count of `ok` rows carrying >=1 warning
     skipped_no_vin: int = 0
     rejects: int = 0
+    cross_company: int = 0  # rows whose VIN already belongs to a DIFFERENT company (never written)
     committed_vehicles_created: int = 0
     committed_vehicles_updated: int = 0
     committed_cost_rows: int = 0
@@ -216,6 +217,7 @@ class ImportReport:
             'warnings': self.warnings,
             'skipped_no_vin': self.skipped_no_vin,
             'rejects': self.rejects,
+            'cross_company': self.cross_company,
             'committed_vehicles_created': self.committed_vehicles_created,
             'committed_vehicles_updated': self.committed_vehicles_updated,
             'committed_cost_rows': self.committed_cost_rows,
@@ -275,7 +277,11 @@ class CentralizatorImporter:
         try:
             wb = openpyxl.load_workbook(file_path_or_stream, data_only=True, read_only=True)
         except Exception as e:
-            raise ValueError(f'Could not read xlsx file: {e}')
+            # Log the underlying driver error server-side, but surface only
+            # a safe, generic validation message to the caller (the route
+            # maps this ValueError straight to a 400 body).
+            logger.error(f'Centralizator import: could not read xlsx file: {e}', exc_info=True)
+            raise ValueError('Could not read the uploaded file — is it a valid .xlsx workbook?')
 
         rows: List[ParsedRow] = []
         for sheet_name in wb.sheetnames:
@@ -473,29 +479,45 @@ class CentralizatorImporter:
         parsed_rows = self.parse(file_path_or_stream)
         report = ImportReport(dry_run=dry_run, company_id=company_id, total=len(parsed_rows))
 
-        ok_rows = [r for r in parsed_rows if r.status == 'ok']
+        parsed_ok = [r for r in parsed_rows if r.status == 'ok']
 
-        # Annotate create/update per VIN with a single batch query instead
-        # of one lookup per row.
-        existing_vins: set = set()
-        vins = [r.vin for r in ok_rows]
+        # Batch-fetch every existing VIN's owning company in one query — used
+        # both to decide create-vs-update AND to enforce the cross-tenant
+        # guard: a VIN that already belongs to a DIFFERENT company than the
+        # target is NEVER written (in dry-run it's reported, in commit it's
+        # skipped), so an import can't silently hijack another tenant's
+        # vehicle by re-using its VIN.
+        existing_company_by_vin: Dict[str, Any] = {}
+        vins = [r.vin for r in parsed_ok]
         if vins:
             found = self._vehicle_repo.query_all(
-                'SELECT vin FROM carpark_vehicles WHERE vin = ANY(%s)', (vins,))
-            existing_vins = {f['vin'] for f in found}
+                'SELECT vin, company_id FROM carpark_vehicles WHERE vin = ANY(%s)', (vins,))
+            existing_company_by_vin = {f['vin']: f['company_id'] for f in found}
 
         seen_vins: set = set()
-        for r in ok_rows:
+        for r in parsed_ok:
+            existing_company = existing_company_by_vin.get(r.vin)
+            if existing_company is not None and existing_company != company_id:
+                r.status = 'cross_company_conflict'
+                r.reject_reason = (
+                    f'VIN {r.vin} already belongs to company {existing_company}, '
+                    f'not the target company {company_id} — skipped (no cross-tenant write)')
+                continue
             if r.vin in seen_vins:
                 r.warnings.append(f'Duplicate VIN within import file: {r.vin} (last occurrence wins)')
             seen_vins.add(r.vin)
-            r.action = 'update' if r.vin in existing_vins else 'create'
+            r.action = 'update' if r.vin in existing_company_by_vin else 'create'
+
+        # Only rows that survived the cross-company guard are committable.
+        committable_rows = [r for r in parsed_ok if r.status == 'ok']
 
         for row in parsed_rows:
             if row.status == 'skipped_no_vin':
                 report.skipped_no_vin += 1
             elif row.status == 'reject':
                 report.rejects += 1
+            elif row.status == 'cross_company_conflict':
+                report.cross_company += 1
             else:
                 report.ok += 1
                 if row.warnings:
@@ -508,9 +530,9 @@ class CentralizatorImporter:
         if dry_run:
             return report
 
-        if ok_rows:
+        if committable_rows:
             try:
-                created, updated, cost_ct, rev_ct = self._commit(ok_rows, company_id)
+                created, updated, cost_ct, rev_ct = self._commit(committable_rows, company_id)
                 report.committed_vehicles_created = created
                 report.committed_vehicles_updated = updated
                 report.committed_cost_rows = cost_ct
@@ -533,10 +555,19 @@ class CentralizatorImporter:
 
             for row in ok_rows:
                 vin = row.vin
-                cursor.execute('SELECT id, status FROM carpark_vehicles WHERE vin = %s', (vin,))
+                cursor.execute(
+                    'SELECT id, status, company_id FROM carpark_vehicles WHERE vin = %s', (vin,))
                 existing = cursor.fetchone()
 
                 fields = {k: v for k, v in row.vehicle_fields.items() if k != 'vin'}
+
+                # Defense-in-depth cross-tenant guard: run() already filters
+                # out VINs owned by another company, but a concurrent insert
+                # between that batch pre-check and this transaction could
+                # sneak one in — never update a vehicle that isn't the
+                # target company's.
+                if existing and existing['company_id'] != company_id:
+                    continue
 
                 if existing:
                     vehicle_id = existing['id']
