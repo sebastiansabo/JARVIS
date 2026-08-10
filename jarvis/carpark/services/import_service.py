@@ -46,6 +46,7 @@ duplicated.
 """
 import difflib
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -110,9 +111,25 @@ def _clean_str(value: Any) -> Optional[str]:
 
 
 def _parse_money(value: Any) -> Optional[Decimal]:
-    """Robust money parser: passes through numeric Excel cells as-is,
-    strips spaces/commas from string cells (e.g. "1 234,56" / "1,234.56")
-    before converting. Returns None for blank/unparseable values."""
+    """Robust money parser.
+
+    Numeric Excel cells (int/float/Decimal — the real AUDI sheet's case)
+    pass through untouched. TEXT cells are parsed for BOTH the Romanian
+    (decimal-comma: "1.234,56") and US (decimal-dot: "1,234.56")
+    conventions, so a hand-edited/text-formatted cell isn't corrupted:
+
+      - both '.' and ',' present → the LAST-occurring separator is the
+        decimal point; the other is a thousands separator and is dropped.
+        "1.234,56" → 1234.56 (RO), "1,234.56" → 1234.56 (US).
+      - only ',' → a single comma is a decimal comma ("1234,56" → 1234.56);
+        multiple commas are US thousands separators ("1,234,567" → 1234567).
+        (Romanian dataset → decimal-comma is the common single-comma case.)
+      - only '.' → a single dot is a decimal point ("1234.56" → 1234.56);
+        multiple dots are RO thousands separators ("1.234.567" → 1234567).
+      - no separator → parsed as-is ("1234" → 1234).
+
+    Never raises; returns None for blank/unparseable values.
+    """
     if value is None or value == '':
         return None
     if isinstance(value, Decimal):
@@ -122,10 +139,28 @@ def _parse_money(value: Any) -> Optional[Decimal]:
             return Decimal(str(value))
         except InvalidOperation:
             return None
+
     s = str(value).strip()
     if not s:
         return None
-    s = s.replace(' ', '').replace('\xa0', '').replace(',', '')
+    # Strip whitespace + anything that isn't a digit, separator, or sign
+    # (currency symbols/letters: "1.234,56 RON", "€1.234,56", ...).
+    s = re.sub(r'[^\d.,+-]', '', s.replace('\xa0', ''))
+    if not s or s in ('+', '-'):
+        return None
+
+    has_dot = '.' in s
+    has_comma = ',' in s
+    if has_dot and has_comma:
+        if s.rfind('.') > s.rfind(','):   # dot is the decimal point (US)
+            s = s.replace(',', '')
+        else:                             # comma is the decimal point (RO)
+            s = s.replace('.', '').replace(',', '.')
+    elif has_comma:
+        s = s.replace(',', '.') if s.count(',') == 1 else s.replace(',', '')
+    elif has_dot and s.count('.') > 1:    # multiple dots → RO thousands
+        s = s.replace('.', '')
+
     try:
         return Decimal(s)
     except InvalidOperation:
