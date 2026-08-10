@@ -18,7 +18,10 @@ class ClientRepository(BaseRepository):
     def search(self, name=None, phone=None, email=None, client_type=None,
                responsible=None, city=None, date_from=None, date_to=None,
                sort_by=None, sort_order=None, show_blacklisted=None,
-               limit=50, offset=0, q=None):
+               limit=50, offset=0, q=None, company_ids=None):
+        """company_ids: permission-scope filter on the client's tenant
+        (client_profiles.company_id). None = no filter (scope 'all'); a list =
+        restrict to those companies; [] = a scoped user with no company → no rows."""
         conditions, params = ['c.merged_into_id IS NULL'], []
         if show_blacklisted == 'only':
             conditions.append('c.is_blacklisted = TRUE')
@@ -52,6 +55,16 @@ class ClientRepository(BaseRepository):
         if date_to:
             conditions.append("c.created_at < (%s::date + INTERVAL '1 day')")
             params.append(date_to)
+        if company_ids is not None:
+            if not company_ids:
+                conditions.append('FALSE')  # scoped user with no company → no clients
+            else:
+                ph = ','.join(['%s'] * len(company_ids))
+                conditions.append(
+                    f'EXISTS (SELECT 1 FROM client_profiles cp '
+                    f'WHERE cp.client_id = c.id AND cp.company_id IN ({ph}))'
+                )
+                params.extend(company_ids)
         where = ' AND '.join(conditions)
         col = sort_by if sort_by in self._ALLOWED_SORT else 'updated_at'
         direction = 'ASC' if sort_order and sort_order.upper() == 'ASC' else 'DESC'
