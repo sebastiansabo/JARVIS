@@ -60,6 +60,7 @@ import { toast } from 'sonner'
 import { DocumenteTab } from './Detail/DocumenteTab'
 import { CronologieTab } from './Detail/CronologieTab'
 import { VanzareTab } from './Detail/VanzareTab'
+import { StatusStepper } from './Detail/StatusStepper'
 import {
   STATUS_LABELS,
   CATEGORY_LABELS,
@@ -356,6 +357,9 @@ export default function CarParkDetail() {
         )}
         <span className="text-sm text-muted-foreground">VIN: {vehicle.vin}</span>
       </div>
+
+      {/* Pipeline stepper */}
+      <StatusStepper status={vehicle.status} />
 
       {/* Profitability summary */}
       {profitData && <ProfitabilitySummary data={profitData} currency={vehicle.price_currency || 'RON'} />}
