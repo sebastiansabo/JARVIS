@@ -857,3 +857,231 @@ export const CATALOG_TABS = [
   { key: 'SOLD', label: 'Vândute' },
   { key: 'DELIVERED', label: 'Livrate' },
 ] as const
+
+// ═══════════════════════════════════════════════
+// DISPO — pipeline dashboard (see carpark/routes/dispo.py,
+// carpark/repositories/dispo_repository.py, carpark/services/dispo_service.py)
+// ═══════════════════════════════════════════════
+
+// Pipeline stage tabs, mirroring DispoRepository.STAGE_STATUS_MAP exactly
+// (every VehicleStatus appears in exactly one stage's `statuses`, plus the
+// '' (TOATE) pseudo-stage which means "no stage filter").
+export const DISPO_STAGES = [
+  { key: '', label: 'Toate', statuses: [] },
+  { key: 'in_pregatire', label: 'În pregătire', statuses: ['ACQUIRED', 'IN_TRANSIT', 'INSPECTION', 'RECONDITIONING', 'AT_BODYSHOP'] },
+  { key: 'in_stoc', label: 'În stoc', statuses: ['READY_FOR_SALE'] },
+  { key: 'promovat', label: 'Promovat', statuses: ['LISTED', 'PRICE_REDUCED', 'AUCTION_CANDIDATE'] },
+  { key: 'rezervat', label: 'Rezervat', statuses: ['RESERVED'] },
+  { key: 'vandut', label: 'Vândut', statuses: ['SOLD'] },
+  { key: 'livrat', label: 'Livrat', statuses: ['DELIVERED'] },
+  { key: 'iesit', label: 'Ieșit', statuses: ['RETURNED', 'SCRAPPED', 'TRANSFERRED', 'INSURANCE_CLAIM'] },
+] as const satisfies { key: string; label: string; statuses: VehicleStatus[] }[]
+
+export type DispoStageKey = (typeof DISPO_STAGES)[number]['key']
+
+// Sale financing/payment type recorded on a sold vehicle (carpark_vehicles.
+// sale_type is a free VARCHAR(30) — the literals below are the values in
+// use today; `string & {}` keeps free-text values assignable without
+// widening the type to a bare `string` (which would drop autocomplete).
+export type SaleType =
+  | 'PLR' | 'CASH' | 'CREDIT PLR' | 'BT LEASING' | 'BRD' | 'BCR' | 'AW NEXT'
+  | (string & {})
+
+// Document types a vehicle document may be tagged with (matches
+// documents.py's VALID_DOCUMENT_TYPES exactly).
+export type DocumentType =
+  | 'pv_intrare' | 'contract_achizitie' | 'civ' | 'talon' | 'factura_achizitie'
+  | 'contract_vanzare' | 'factura_vanzare' | 'pv_livrare' | 'dosar_gw'
+  | 'asigurare' | 'itp' | 'mandat' | 'altele'
+
+export const DOCUMENT_TYPES: DocumentType[] = [
+  'pv_intrare', 'contract_achizitie', 'civ', 'talon', 'factura_achizitie',
+  'contract_vanzare', 'factura_vanzare', 'pv_livrare', 'dosar_gw',
+  'asigurare', 'itp', 'mandat', 'altele',
+]
+
+export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
+  pv_intrare: 'PV intrare',
+  contract_achizitie: 'Contract achiziție',
+  civ: 'CIV',
+  talon: 'Talon',
+  factura_achizitie: 'Factură achiziție',
+  contract_vanzare: 'Contract vânzare',
+  factura_vanzare: 'Factură vânzare',
+  pv_livrare: 'PV livrare',
+  dosar_gw: 'Dosar GW',
+  asigurare: 'Asigurare',
+  itp: 'ITP',
+  mandat: 'Mandat',
+  altele: 'Altele',
+}
+
+// One row of GET /dispo/summary's `rows` (DispoRepository.summary — v.*
+// plus computed cost/reservation/doc-type columns). The five money fields
+// are optional: dispo.py's _strip_finance() pops them from every row for
+// callers without can_view_carpark_finance, so they're simply absent from
+// the JSON rather than null.
+export interface DispoRow {
+  id: number
+  vin: string
+  nr_stoc: string | null
+  brand: string
+  model: string
+  variant: string | null
+  status: VehicleStatus
+  source: string | null
+  location_text: string | null
+  sale_type: SaleType | null
+  salesperson_user_id: number | null
+  acquisition_date: string | null
+  listing_date: string | null
+  sale_date: string | null
+  delivery_date: string | null
+  supplier_payment_date: string | null
+  stock_removed_date: string | null
+  days_in_stock: number
+  current_price: number | null
+  sale_price: number | null
+  gw_file_number: string | null
+  is_impus: boolean
+  missing_civ: boolean
+  stock_removed: boolean
+  buyer_name: string | null
+  reservation_id: number | null
+  reservation_end: string | null
+  reservation_client_name: string | null
+  reservation_deposit_amount: number | null
+  reservation_deposit_paid: boolean | null
+  doc_types: DocumentType[]
+  // ── Finance-gated (carpark.view_finance) — absent entirely otherwise ──
+  acquisition_price?: number | null
+  total_costs?: number
+  gross_margin?: number | null
+  margin_pct?: number | null
+  bonus_leasing?: number
+}
+
+// SUM(...) block across the full filtered set — null entirely for callers
+// without can_view_carpark_finance (dispo.py sets result['totals'] = None).
+export interface DispoTotals {
+  acquisition_price: number
+  total_costs: number
+  sale_price: number
+  gross_margin: number
+}
+
+export interface DispoSummaryResponse {
+  rows: DispoRow[]
+  stage_counts: Record<string, number>
+  totals: DispoTotals | null
+  total: number
+  page: number
+  per_page: number
+}
+
+// GET /dispo/kpis. gross_margin_mtd is finance-gated (popped for callers
+// without can_view_carpark_finance — see dispo.py's _FINANCE_KPI_FIELDS).
+export interface DispoKpis {
+  cars_in_stock: number
+  reserved: number
+  sold_this_month: number
+  delivered_this_month: number
+  avg_days_in_stock: number
+  aged_over_60: number
+  gross_margin_mtd?: number
+}
+
+// Query filters accepted by GET /dispo/summary (dispo.py's
+// _SUMMARY_FILTER_KEYS) — every value ends up as a query-string param.
+export interface DispoFilters {
+  stage?: string
+  brand?: string
+  location_id?: string
+  salesperson_user_id?: string
+  source?: string
+  sale_type?: string
+  date_from?: string
+  date_to?: string
+  sale_date_from?: string
+  sale_date_to?: string
+  search?: string
+  stock_removed?: boolean
+}
+
+// GET /vehicles/:id/timeline — merged status-history + lifecycle-date +
+// document events (DispoRepository.timeline). `meta` fields are a union of
+// what each of the three source queries attaches; only the ones matching
+// `type` will actually be populated on a given event.
+export type TimelineEventType = 'status_change' | 'vehicle_date' | 'document'
+
+export interface TimelineEvent {
+  type: TimelineEventType
+  label: string
+  date: string
+  meta: {
+    old_status?: string | null
+    new_status?: string
+    notes?: string | null
+    changed_by?: number | null
+    field?: string
+    id?: number
+    document_type?: string
+    title?: string | null
+  }
+}
+
+// GET /vehicles/:id/documents/checklist (DispoService.checklist).
+export interface DocumentChecklist {
+  required: DocumentType[]
+  present: DocumentType[]
+  missing: DocumentType[]
+  blocks_delivery: boolean
+}
+
+// A row from carpark_vehicle_documents (DocumentRepository).
+export interface DispoDocument {
+  id: number
+  vehicle_id: number
+  document_type: DocumentType
+  title: string | null
+  file_url: string | null
+  dms_document_id: number | null
+  file_size: number | null
+  mime_type: string | null
+  notes: string | null
+  uploaded_by: number | null
+  upload_date: string
+  created_at: string
+}
+
+// Body for POST /vehicles/:id/documents in LINK MODE (JSON, no file part).
+export interface DispoDocumentLinkBody {
+  document_type: DocumentType
+  file_url?: string
+  dms_document_id?: number | string
+  title?: string
+  mime_type?: string
+  file_size?: number
+  notes?: string
+}
+
+// A row from carpark_reservations (ReservationRepository).
+export interface DispoReservation {
+  id: number
+  vehicle_id: number
+  client_id: number | null
+  client_name: string | null
+  client_company: string | null
+  client_phone: string | null
+  client_email: string | null
+  user_id: number | null
+  reservation_start: string
+  reservation_end: string | null
+  deposit_amount: number
+  deposit_paid: boolean
+  status: 'active' | 'cancelled' | 'converted' | (string & {})
+  notes: string | null
+  created_by: number | null
+  created_at: string
+  updated_at: string
+}
