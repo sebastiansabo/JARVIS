@@ -360,8 +360,9 @@ def ai_research_company(client_data, profile_data=None, fiscal_data=None, enrich
 
     context = '\n'.join(context_parts)
 
-    prompt = f"""Esti un analist financiar senior la KPMG Romania, specializat in due diligence si analiza de companii.
-Analizezi compania de mai jos pentru un client din industria auto (Autoworld Holding — dealer auto multibrand).
+    prompt = f"""Esti un analist de business care pregateste o fisa comerciala orientativa pentru un dealer auto multibrand (Autoworld Holding).
+Analizezi compania de mai jos DOAR pe baza informatiilor furnizate mai jos si a cunostintelor generale.
+IMPORTANT: toate evaluarile financiare, de credit si de risc sunt ESTIMARI NEVERIFICATE, nu o analiza certificata. Nu prezenta cifre inventate ca si cum ar fi confirmate si marcheaza clar incertitudinea.
 Raspunde EXCLUSIV in limba romana.
 
 {context}
@@ -406,7 +407,7 @@ Furnizeaza analiza ta in urmatoarea structura JSON (raspunde DOAR cu JSON valid,
     "executive_mobility": "Nevoi de mobilitate pentru management/directori",
     "service_vehicles": "Nevoi de vehicule de serviciu/interventie"
   }},
-  "credit_assessment": "Evaluare de risc de credit — recomandat/cu precautie/nerecomandat pentru vanzari in rate sau leasing",
+  "credit_assessment": "ESTIMARE ORIENTATIVA NEVERIFICATA a riscului de credit (recomandat/cu precautie/nerecomandat) — mentioneaza explicit ca NU inlocuieste o verificare financiara reala",
   "competitive_position": "Pozitia competitiva pe piata — lider/challenger/niche/urmaritor",
   "news_summary": "Ultimele dezvoltari sau stiri cunoscute (sau 'Nu sunt disponibile stiri recente')"
 }}"""
@@ -419,9 +420,10 @@ Furnizeaza analiza ta in urmatoarea structura JSON (raspunde DOAR cu JSON valid,
         result = json.loads(content)
         result['_generated_at'] = datetime.now().isoformat()
         result['_model'] = 'claude-sonnet-4-6'
+        result['_unverified'] = True  # AI-generated estimates, not certified data
         return result
     except json.JSONDecodeError:
-        return {'summary': content, '_generated_at': datetime.now().isoformat(), '_raw': True}
+        return {'summary': content, '_generated_at': datetime.now().isoformat(), '_raw': True, '_unverified': True}
     except Exception as e:
         logger.exception('AI research failed for %s', name)
         return {'error': str(e)}

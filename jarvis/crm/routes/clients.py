@@ -259,32 +259,49 @@ def api_client_enrich(client_id):
         if cui:
             anaf_data = get_or_refresh_anaf(client_id, cui, _fs_repo)
 
-        # Step 3: AI fallback if still nothing
+        # Step 3: AI fallback if still nothing. This is an UNVERIFIED GUESS and
+        # must never be written to anaf_data or applied to the profile as fiscal
+        # truth — that let a hallucinated company overwrite real fiscal fields.
+        ai_guess = None
         if not anaf_data:
             logger.info('ANAF empty for %s (CUI %s), trying AI fallback', search_name, cui)
-            anaf_data = _ai_company_lookup(search_name, cui)
+            ai_guess = _ai_company_lookup(search_name, cui)
             source = 'ai'
-            # If AI found a CUI and we didn't have one, set it
-            if anaf_data and isinstance(anaf_data, dict):
-                ai_cui = str(anaf_data.get('cui') or anaf_data.get('cod_fiscal') or '').strip()
-                if ai_cui and not cui:
-                    cui = ai_cui
-                    _fs_repo.update_profile(client_id, {'cui': cui})
 
-        # Auto-fill client/profile fields from response
+        # Persist VERIFIED ANAF data to the fiscal fields; quarantine AI guesses.
         if anaf_data and isinstance(anaf_data, dict):
             _apply_connector_to_profile(client_id, 'anaf', anaf_data)
             _fs_repo.update_profile(client_id, {
-                'anaf_data': json.dumps(anaf_data) if isinstance(anaf_data, dict) else anaf_data,
+                'anaf_data': json.dumps(anaf_data),
                 'anaf_fetched_at': _dt.now().isoformat(),
             })
+        elif ai_guess and isinstance(ai_guess, dict):
+            # Store under enrichment_data.ai_guess with a review flag — NEVER in
+            # anaf_data. Do not auto-set the profile CUI from a guess either: a
+            # wrong CUI would poison every future ANAF fetch.
+            try:
+                _ensure_enrichment_column()
+                profile_obj = _fs_repo.get_or_create_profile(client_id)
+                existing = profile_obj.get('enrichment_data') or {}
+                if isinstance(existing, str):
+                    existing = json.loads(existing) if existing else {}
+                existing['ai_guess'] = {
+                    'data': ai_guess,
+                    'unverified': True,
+                    'needs_review': True,
+                    'fetched_at': _dt.now().isoformat(),
+                }
+                _fs_repo.update_profile(client_id, {'enrichment_data': json.dumps(existing)})
+            except Exception:
+                logger.exception('Failed to store AI guess for client %s', client_id)
 
         profile = _fs_repo.get_or_create_profile(client_id)
         resp = {
             'success': True,
             'profile': profile,
-            'fiscal': anaf_data,
+            'fiscal': anaf_data or ai_guess,
             'source': source,
+            'unverified': bool(ai_guess and not anaf_data),
         }
         if cui_correction:
             resp['cui_correction'] = cui_correction
@@ -497,6 +514,7 @@ def api_client_ai_research(client_id):
                     existing = {}
             existing['ai_research'] = {
                 'data': research,
+                'unverified': True,
                 'fetched_at': __import__('datetime').datetime.now().isoformat(),
             }
             _fs_repo.update_profile(client_id, {'enrichment_data': _json.dumps(existing)})
