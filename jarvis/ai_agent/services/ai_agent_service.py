@@ -178,6 +178,75 @@ class AIAgentService:
             logger.warning(f"Failed to check RAG source permissions for user {user_id}: {e}")
             return None  # Fail open — allow all on error
 
+    def _tool_permissions(self, user_id: int) -> set:
+        """Resolve the set of tool-permission keys this user is entitled to.
+
+        The tool registry only enforces a tool's ``permission`` when a non-None
+        permission set is supplied; the chat paths historically passed nothing,
+        so every permission-gated tool (CRM, HR, accounting, DMS, …) was
+        exposed to any user with chat access. This threads the caller's real
+        module access into the registry so chat matches the REST routes.
+
+        Fails CLOSED: on any lookup error this returns an empty set (no gated
+        tools this turn) so a transient failure can never widen tool access.
+        Admin roles get every tool permission.
+        """
+        # tool.permission string -> permissions_v2 module whose module.access gates it
+        module_gated = {
+            'crm.access': 'sales',
+            'accounting.view': 'accounting',
+            'hr.view': 'hr',
+            'approvals.view': 'approvals',
+            'marketing.view': 'marketing',
+        }
+        # tool.permission string -> exact permissions_v2 'module.entity.action' key
+        entity_gated = {
+            'dms.document.view': 'dms.document.view',
+        }
+        try:
+            from database import get_db, release_db
+            from core.roles.repositories.permission_repository import PermissionRepository
+
+            conn = get_db()
+            try:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT u.role_id, r.name AS role_name
+                    FROM users u
+                    LEFT JOIN roles r ON r.id = u.role_id
+                    WHERE u.id = %s
+                ''', (user_id,))
+                row = cursor.fetchone()
+            finally:
+                release_db(conn)
+
+            if not row:
+                return set()
+            if (row.get('role_name') or '').lower() in ('admin', 'administrator', 'superadmin'):
+                return set(module_gated) | set(entity_gated)
+            role_id = row.get('role_id')
+            if not role_id:
+                return set()
+
+            repo = PermissionRepository()
+            module_access = repo.get_module_access_map(role_id)     # {module_key: bool}
+            entity_perms = repo.get_all_role_permissions(role_id)   # {module.entity.action: bool}
+
+            granted = set()
+            for tool_perm, module_key in module_gated.items():
+                if module_access.get(module_key):
+                    granted.add(tool_perm)
+            for tool_perm, v2_key in entity_gated.items():
+                if entity_perms.get(v2_key):
+                    granted.add(tool_perm)
+            return granted
+        except Exception as e:
+            logger.warning(
+                f"Failed to resolve tool permissions for user {user_id}: {e}; "
+                f"denying gated tools this turn"
+            )
+            return set()
+
     def get_provider(self, provider_name: str) -> BaseProvider:
         """
         Get LLM provider by name.
@@ -488,12 +557,16 @@ class AIAgentService:
             # 5. Get provider and load tools
             provider = self.get_provider(model_config.provider.value)
 
-            # Load tools for all providers (skip only for simple queries)
+            # Load tools for all providers (skip only for simple queries).
+            # Empty set = deny gated tools; resolved only when tools are in play
+            # and threaded into both listing and execution for enforcement.
+            user_permissions = set()
             tool_schemas = None
             if complexity != 'simple':
+                user_permissions = self._tool_permissions(user_id)
                 try:
                     from ai_agent.tools import tool_registry
-                    raw_schemas = tool_registry.get_schemas()
+                    raw_schemas = tool_registry.get_schemas(user_permissions)
                     if raw_schemas:
                         tool_schemas = provider.format_tool_schemas(raw_schemas)
                 except Exception as e:
@@ -546,6 +619,7 @@ class AIAgentService:
                         name=tc['name'],
                         params=tc['input'],
                         user_id=user_id,
+                        user_permissions=user_permissions,
                     )
                     tool_results_log.append({
                         'tool': tc['name'],
@@ -779,12 +853,16 @@ class AIAgentService:
 
             provider = self.get_provider(model_config.provider.value)
 
-            # 4. Load tools for all providers (skip only for simple queries)
+            # 4. Load tools for all providers (skip only for simple queries).
+            # Empty set = deny gated tools; resolved only when tools are in play
+            # and threaded into both listing and execution for enforcement.
+            user_permissions = set()
             tool_schemas = None
             if complexity != 'simple':
+                user_permissions = self._tool_permissions(user_id)
                 try:
                     from ai_agent.tools import tool_registry
-                    raw_schemas = tool_registry.get_schemas()
+                    raw_schemas = tool_registry.get_schemas(user_permissions)
                     if raw_schemas:
                         tool_schemas = provider.format_tool_schemas(raw_schemas)
                         logger.info(f"Tools loaded: {len(raw_schemas)} tools for {model_config.provider.value}/{model_config.model_name}")
@@ -858,7 +936,8 @@ class AIAgentService:
                         for tc in tool_calls:
                             tools_used_names.append(tc['name'])
                             futures[tc['id']] = self._executor.submit(
-                                _tr.execute, name=tc['name'], params=tc['input'], user_id=user_id
+                                _tr.execute, name=tc['name'], params=tc['input'], user_id=user_id,
+                                user_permissions=user_permissions,
                             )
                         for tc in tool_calls:
                             result = futures[tc['id']].result(timeout=10)
@@ -870,7 +949,7 @@ class AIAgentService:
                     else:
                         for tc in tool_calls:
                             tools_used_names.append(tc['name'])
-                            result = _tr.execute(name=tc['name'], params=tc['input'], user_id=user_id)
+                            result = _tr.execute(name=tc['name'], params=tc['input'], user_id=user_id, user_permissions=user_permissions)
                             tool_results.append({
                                 'tool_call_id': tc['id'],
                                 'name': tc['name'],
