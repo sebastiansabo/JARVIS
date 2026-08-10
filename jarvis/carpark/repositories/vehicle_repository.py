@@ -40,6 +40,12 @@ VEHICLE_UPDATABLE_FIELDS = {
     'nr_stoc', 'ready_for_sale_date', 'listing_date',
     'reservation_date', 'delivery_date', 'stock_removed', 'stock_removed_date',
     'notes', 'internal_notes', 'brand_id',
+    # Dispo Phase 5 (centralizator importer) — columns added by
+    # _create_carpark_incremental() (schema_incremental.py) but never added
+    # to this whitelist until now, so PUT /vehicles/<id> and the importer
+    # can actually persist them.
+    'intake_pv_date', 'supplier_payment_date', 'gw_file_number',
+    'is_impus', 'missing_civ',
 }
 
 # Lightweight fields for catalog list (mobile-friendly)

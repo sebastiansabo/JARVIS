@@ -19,6 +19,7 @@ from flask_login import login_required, current_user
 from carpark import carpark_bp
 from carpark.repositories.dispo_repository import DispoRepository
 from carpark.services.dispo_service import DispoService
+from carpark.services.import_service import CentralizatorImporter
 from carpark.routes.vehicles import (
     carpark_required, carpark_edit_required, carpark_delete_required,
     _serialize, _verify_vehicle_ownership, _user_company_id,
@@ -28,6 +29,9 @@ logger = logging.getLogger('jarvis.carpark')
 
 _dispo_service = DispoService()
 _dispo_repo = DispoRepository()
+_importer = CentralizatorImporter()
+
+_MAX_IMPORT_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
 
 # Money fields hidden from the Dispo summary/export/KPIs for users without
 # carpark.view_finance — kept in one place so the JSON and xlsx paths (and
@@ -300,3 +304,54 @@ def reopen_vehicle(vehicle_id):
     except Exception as e:
         logger.error(f'Reopen failed for vehicle {vehicle_id}: {e}', exc_info=True)
         return jsonify({'error': 'Internal error'}), 500
+
+
+# ═══════════════════════════════════════════════
+# DISPO — CENTRALIZATOR IMPORTER (Phase 5)
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/dispo/import', methods=['POST'])
+@login_required
+@carpark_edit_required
+def dispo_import():
+    """Import the backoffice centralizator xlsx tracker into
+    carpark_vehicles (+ cost/revenue rows). All parsing/validation/DB work
+    delegates to CentralizatorImporter — this route only handles the
+    multipart upload and the dry-run/commit permission split.
+
+    Multipart form: `file` (.xlsx, required), `company_id` (optional,
+    defaults to the caller's own company).
+    Query param `?commit=true` actually writes to the DB (default: dry-run
+    validation report only). Committing requires `can_delete_carpark`
+    (manager) on top of the `can_edit_carpark` the route already requires,
+    since it's a bulk write across the whole pipeline, not a single
+    vehicle's fields.
+    """
+    uploaded = request.files.get('file') if request.files else None
+    if not uploaded or not uploaded.filename:
+        return jsonify({'error': 'file is required (multipart form field "file", .xlsx)'}), 400
+    if not uploaded.filename.lower().endswith('.xlsx'):
+        return jsonify({'error': 'Only .xlsx files are supported'}), 400
+
+    file_bytes = uploaded.read()
+    if not file_bytes:
+        return jsonify({'error': 'Uploaded file is empty'}), 400
+    if len(file_bytes) > _MAX_IMPORT_UPLOAD_BYTES:
+        return jsonify({'error': 'File exceeds the 10MB upload limit'}), 400
+
+    company_id = request.form.get('company_id', type=int) or _user_company_id()
+    if not company_id:
+        return jsonify({'error': 'company_id is required (current user has no company)'}), 400
+
+    commit = request.args.get('commit', 'false').strip().lower() == 'true'
+    if commit and not getattr(current_user, 'can_delete_carpark', False):
+        return jsonify({'error': 'Committing an import requires manager (can_delete_carpark) permission'}), 403
+
+    try:
+        report = _importer.run(io.BytesIO(file_bytes), company_id, dry_run=not commit)
+        return jsonify(_serialize(report.to_dict()))
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f'Centralizator import failed (company_id={company_id}): {e}', exc_info=True)
+        return jsonify({'error': 'Import failed', 'detail': str(e)}), 500
