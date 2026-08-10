@@ -43,7 +43,11 @@ def _svc(vehicle=None):
 
     vehicle_repo.get_by_id.return_value = dict(vehicle if vehicle is not None else BASE_VEHICLE)
     vehicle_service.get_status_history.return_value = []
-    vehicle_service.get_profitability.return_value = {'acquisition_price': 8000, 'total_costs': 0}
+    # get_cost_totals mirrors CostRepository.get_totals_by_vehicle: total_amount is
+    # the VAT-EXCLUSIVE SUM(amount) the low-margin gate must key off (see
+    # DispoService._low_margin_reasons); total_with_vat is VAT-inclusive.
+    vehicle_service.get_cost_totals.return_value = {
+        'total_amount': 0, 'total_vat': 0, 'total_with_vat': 0}
     vehicle_service.change_status.return_value = {'id': 1, 'status': 'CHANGED'}
     vehicle_service.update_vehicle.return_value = {'id': 1, 'status': 'UPDATED'}
     reservation_repo.create.return_value = {'id': 5, 'status': 'active'}
@@ -204,14 +208,32 @@ def test_sell_below_minimum_price_raises_low_margin_without_confirm():
 
 
 def test_sell_negative_margin_without_minimum_price_raises():
-    vehicle = dict(BASE_VEHICLE, minimum_price=None)
+    vehicle = dict(BASE_VEHICLE, minimum_price=None)  # acquisition_price=8000
     svc, mocks = _svc(vehicle)
-    mocks['vehicle_service'].get_profitability.return_value = {
-        'acquisition_price': 8000, 'total_costs': 5000,
+    mocks['vehicle_service'].get_cost_totals.return_value = {
+        'total_amount': 5000, 'total_vat': 0, 'total_with_vat': 5000,
     }
     with pytest.raises(ValueError) as exc_info:
         svc.sell(1, COMPANY_ID, USER, _sell_data(sale_price=10000))  # 10000-8000-5000 = -3000
     assert str(exc_info.value).startswith('LOW_MARGIN')
+
+
+def test_sell_low_margin_gate_uses_vat_exclusive_cost_basis():
+    """The low-margin gate must key off SUM(amount) (VAT-exclusive), matching
+    DispoRepository's canonical gross_margin — NOT total_with_vat. Here the
+    VAT-exclusive margin is positive (+500) so the sale proceeds; had the gate
+    wrongly used the VAT-inclusive total (total_with_vat=2300) the margin would
+    read -300 and LOW_MARGIN would fire. The non-zero vat_amount must not flip
+    the decision."""
+    vehicle = dict(BASE_VEHICLE, minimum_price=None)  # acquisition_price=8000
+    svc, mocks = _svc(vehicle)
+    mocks['vehicle_service'].get_cost_totals.return_value = {
+        'total_amount': 1500, 'total_vat': 800, 'total_with_vat': 2300,
+    }
+    # 10000 - 8000 - 1500 = +500 (VAT-exclusive) → OK; VAT-inclusive would be -300.
+    svc.sell(1, COMPANY_ID, USER, _sell_data(sale_price=10000))
+    mocks['vehicle_service'].change_status.assert_called_once_with(
+        1, 'SOLD', changed_by=42, notes=ANY)
 
 
 def test_sell_with_confirm_low_margin_proceeds_and_closes_reservation_and_deactivates():

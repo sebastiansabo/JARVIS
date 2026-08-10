@@ -265,8 +265,20 @@ class DispoService:
                              sale_price) -> List[str]:
         """Reasons (if any) this sale would be low-margin: proposed sale_price
         under the vehicle's minimum_price, and/or a negative prospective gross
-        margin (sale_price - acquisition_price - total_costs, mirroring
-        DispoRepository's gross_margin SQL expression)."""
+        margin.
+
+        gross_margin = sale_price - acquisition_price - SUM(cost.amount),
+        using the VAT-EXCLUSIVE cost basis so this number reconciles with the
+        canonical gross_margin the salesperson sees in the Dispo summary
+        table: DispoRepository (dispo_repository.py) computes
+        `sale_price - acquisition_price - COALESCE(SUM(amount), 0)` where the
+        cost total is `SUM(carpark_vehicle_costs.amount)` — base amounts only,
+        excluding the separate vat_amount column. We therefore take
+        `get_cost_totals()['total_amount']` (= SUM(amount)) rather than
+        `get_profitability()['total_costs']`, which is VAT-INCLUSIVE
+        (`total_with_vat` = SUM(amount) + SUM(vat_amount)) and would fire this
+        warning against a more pessimistic margin than the dashboard figure,
+        leaving the salesperson unable to reconcile the two."""
         reasons: List[str] = []
         sale_price = float(sale_price)
 
@@ -274,9 +286,9 @@ class DispoService:
         if minimum_price is not None and sale_price < float(minimum_price):
             reasons.append(f'sale_price {sale_price} is below minimum_price {float(minimum_price)}')
 
-        profitability = self._vehicle_service.get_profitability(vehicle_id) or {}
-        acquisition_price = float(profitability.get('acquisition_price') or 0)
-        total_costs = float(profitability.get('total_costs') or 0)
+        acquisition_price = float(vehicle.get('acquisition_price') or 0)
+        cost_totals = self._vehicle_service.get_cost_totals(vehicle_id) or {}
+        total_costs = float(cost_totals.get('total_amount') or 0)  # VAT-exclusive: SUM(amount)
         gross_margin = sale_price - acquisition_price - total_costs
         if gross_margin < 0:
             reasons.append(f'gross margin would be negative ({gross_margin:.2f})')
