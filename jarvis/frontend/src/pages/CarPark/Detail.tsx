@@ -58,6 +58,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { carparkApi } from '@/api/carpark'
 import { toast } from 'sonner'
 import { DocumenteTab } from './Detail/DocumenteTab'
+import { CronologieTab } from './Detail/CronologieTab'
 import {
   STATUS_LABELS,
   CATEGORY_LABELS,
@@ -367,6 +368,7 @@ export default function CarParkDetail() {
           <TabsTrigger value="listings">Listings ({listings.length})</TabsTrigger>
           <TabsTrigger value="links">Links ({vehicleLinks.length})</TabsTrigger>
           <TabsTrigger value="documente">Documente</TabsTrigger>
+          <TabsTrigger value="cronologie">Cronologie</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="modifications">Changes</TabsTrigger>
         </TabsList>
@@ -402,6 +404,10 @@ export default function CarParkDetail() {
 
         <TabsContent value="documente" className="mt-4">
           <DocumenteTab vehicleId={id} status={vehicle.status} />
+        </TabsContent>
+
+        <TabsContent value="cronologie" className="mt-4">
+          <CronologieTab vehicleId={id} />
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
