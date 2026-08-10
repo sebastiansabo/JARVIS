@@ -52,6 +52,22 @@ class InvoiceStateMachine:
             logger.warning("Failed to fetch BNR rate: %s", e)
         return None
 
+    def _coerce_kurs(self, value) -> Decimal | None:
+        """Normalise a user-supplied manual kurs override to 4 decimals.
+
+        BNR now bot-blocks programmatic access to its rate XML (it 302-redirects
+        the file to its homepage), so the auto-fetch can silently fail. Letting
+        the user type the official rate keeps invoicing unblocked. Blank, zero,
+        and non-numeric input all resolve to None so the normal auto-fetch path
+        still runs."""
+        if value in (None, ""):
+            return None
+        try:
+            k = Decimal(str(value)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        except (ArithmeticError, ValueError, TypeError):
+            return None
+        return k if k > 0 else None
+
     def _require_kurs(self, kurs, issued_date, doc_label: str):
         """Refuse to issue a foreign-currency document without a BNR exchange rate.
 
@@ -222,8 +238,12 @@ class InvoiceStateMachine:
                       intocmit_de: str | None = None,
                       notes: str | None = None,
                       created_by_user_id: int = 0,
-                      doc_mode: str | None = None) -> StoredInvoice:
-        """Issue an Invoice confirming payment of a specific Proforma."""
+                      doc_mode: str | None = None,
+                      manual_kurs=None) -> StoredInvoice:
+        """Issue an Invoice confirming payment of a specific Proforma.
+
+        A manual_kurs override (when the BNR rate service is unreachable) takes
+        precedence over the auto-fetched rate so issuing never depends on BNR."""
         proforma_row = self.repo.get_invoice_by_anexa_type_and_seq(
             anexa_id, InvoiceTypeEnum.PROFORMA, sequence_number)
         if not proforma_row:
@@ -236,8 +256,11 @@ class InvoiceStateMachine:
 
         self._check_invoice_number_unique(anexa_id, invoice_number, "INVOICE")
         proforma_amount = Decimal(str(proforma_row["total_amount_eur"]))
+        manual = self._coerce_kurs(manual_kurs)
         proforma_kurs = Decimal(str(proforma_row["kurs_applied"])) if proforma_row.get("kurs_applied") else None
-        if not proforma_kurs:
+        if manual:
+            proforma_kurs = manual
+        elif not proforma_kurs:
             proforma_kurs = self._fetch_kurs(issued_date)
         self._require_kurs(proforma_kurs, issued_date, f"Invoice #{sequence_number}")
         total_ron = (proforma_amount * proforma_kurs) if proforma_kurs else Decimal("0")
@@ -286,7 +309,8 @@ class InvoiceStateMachine:
                      notes: str | None = None,
                      line_ids: list[int] | None = None,
                      target_invoice_ids: list[int] | None = None,
-                     created_by_user_id: int = 0) -> StoredInvoice:
+                     created_by_user_id: int = 0,
+                     manual_kurs=None) -> StoredInvoice:
         """Issue a Storno reversing INVOICES for selected cars (or all if no line_ids)."""
         import json as _json
 
@@ -350,7 +374,7 @@ class InvoiceStateMachine:
                 amount_sum += amt
         storno_kurs = (weighted_sum / amount_sum).quantize(Decimal("0.0001")) if amount_sum else None
         if not storno_kurs:
-            storno_kurs = self._fetch_kurs(issued_date)
+            storno_kurs = self._coerce_kurs(manual_kurs) or self._fetch_kurs(issued_date)
         self._require_kurs(storno_kurs, issued_date, "Storno")
         storno_ron = (storno_total * storno_kurs) if storno_kurs else Decimal("0")
 
@@ -393,7 +417,8 @@ class InvoiceStateMachine:
                     intocmit_de: str | None = None,
                     notes: str | None = None,
                     line_ids: list[int] | None = None,
-                    created_by_user_id: int = 0) -> StoredInvoice:
+                    created_by_user_id: int = 0,
+                    manual_kurs=None) -> StoredInvoice:
         """Issue the Final invoice after Storno (for selected cars or all)."""
         import json as _json
 
@@ -469,7 +494,7 @@ class InvoiceStateMachine:
                 sum_eur += share
         final_kurs = (sum_eur_x_kurs / sum_eur).quantize(Decimal("0.0001")) if sum_eur else None
         if not final_kurs:
-            final_kurs = self._fetch_kurs(issued_date)
+            final_kurs = self._coerce_kurs(manual_kurs) or self._fetch_kurs(issued_date)
         self._require_kurs(final_kurs, issued_date, "Final invoice")
         final_ron = (final_total * final_kurs) if final_kurs else Decimal("0")
         self._check_invoice_number_unique(anexa_id, invoice_number, "FINAL")

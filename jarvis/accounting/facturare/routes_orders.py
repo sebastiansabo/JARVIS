@@ -788,6 +788,7 @@ def api_issue_invoice():
             intocmit_de=req.intocmit_de, notes=req.notes,
             created_by_user_id=current_user.id,
             doc_mode=req.doc_mode,
+            manual_kurs=req.kurs,
         )
     except InvoiceStateMachineError as e:
         return error_response(str(e), 409)
@@ -813,6 +814,7 @@ def api_issue_storno():
             notes=req.notes, line_ids=req.line_ids,
             target_invoice_ids=req.target_invoice_ids,
             created_by_user_id=current_user.id,
+            manual_kurs=req.kurs,
         )
     except InvoiceStateMachineError as e:
         return error_response(str(e), 409)
@@ -837,6 +839,7 @@ def api_issue_final():
             issued_date=req.issued_date, intocmit_de=req.intocmit_de,
             notes=req.notes, line_ids=req.line_ids,
             created_by_user_id=current_user.id,
+            manual_kurs=req.kurs,
         )
     except InvoiceStateMachineError as e:
         return error_response(str(e), 409)

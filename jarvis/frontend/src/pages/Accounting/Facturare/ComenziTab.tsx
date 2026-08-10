@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import {
   Plus, FileText, Loader2, ChevronRight, ChevronDown, Copy,
@@ -1432,6 +1432,34 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
   const [notes, setNotes] = useState('')
   const [docMode, setDocMode] = useState<'per_car' | 'single_doc'>('per_car')
   const [submitting, setSubmitting] = useState(false)
+  const [kurs, setKurs] = useState('')
+  const [kursHint, setKursHint] = useState<string | null>(null)
+  const kursEdited = useRef(false)
+
+  // Prefill the BNR rate for the day before the invoice date. When BNR is
+  // unreachable (it now bot-blocks the rate XML) the field stays empty and the
+  // user types the official rate manually — invoicing no longer depends on BNR.
+  useEffect(() => {
+    if (!open || !issuedDate) return
+    let cancelled = false
+    setKursHint(null)
+    fetch(`/facturare/api/bnr-rate?date=${issuedDate}`)
+      .then(r => r.json().then(d => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (cancelled) return
+        if (ok && d.kurs) {
+          if (!kursEdited.current) setKurs(String(d.kurs))
+          setKursHint(`BNR ${d.kurs_date}: ${d.kurs}`)
+        } else {
+          setKursHint('Curs BNR indisponibil — introdu-l manual')
+        }
+      })
+      .catch(() => { if (!cancelled) setKursHint('Curs BNR indisponibil — introdu-l manual') })
+    return () => { cancelled = true }
+  }, [open, issuedDate])
+
+  // Reset the manual-edit latch each time the dialog opens.
+  useEffect(() => { if (open) kursEdited.current = false }, [open])
 
   // Inherit doc_mode from selected proforma
   useEffect(() => {
@@ -1465,6 +1493,7 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
           invoice_number: invoiceNumber ? parseInt(invoiceNumber) : undefined,
           issued_date: issuedDate || undefined, intocmit_de: intocmitDe || undefined,
           notes: notes || undefined, doc_mode: docMode,
+          kurs: kurs && parseFloat(kurs) > 0 ? parseFloat(kurs) : undefined,
         }),
       })
       const data = await res.json()
@@ -1495,8 +1524,16 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
           <div className="grid grid-cols-3 gap-3">
             <div><Label>Invoice No.</Label><Input type="number" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} /></div>
             <div><Label>Date</Label><Input type="date" value={issuedDate} onChange={e => setIssuedDate(e.target.value)} /></div>
-            <div><Label>Intocmit de</Label><UserSearchInput value={intocmitDe} onChange={setIntocmitDe} /></div>
+            <div>
+              <Label>Curs BNR</Label>
+              <Input type="number" step="0.0001" placeholder="ex. 5.0812" value={kurs}
+                onChange={e => { kursEdited.current = true; setKurs(e.target.value) }} />
+            </div>
           </div>
+          {kursHint && (
+            <div className={`text-xs -mt-2 ${kursHint.includes('indisponibil') ? 'text-amber-600' : 'text-muted-foreground'}`}>{kursHint}</div>
+          )}
+          <div><Label>Intocmit de</Label><UserSearchInput value={intocmitDe} onChange={setIntocmitDe} /></div>
           <div className="flex items-center gap-3 text-xs bg-muted/30 rounded-md px-3 py-2">
             <span className="text-muted-foreground">Doc:</span>
             <button className={`px-2 py-0.5 rounded ${docMode === 'per_car' ? 'bg-foreground text-background' : 'bg-muted'}`}
@@ -1527,6 +1564,7 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [selectedInvIds, setSelectedInvIds] = useState<Set<number>>(new Set())
+  const [kurs, setKurs] = useState('')
 
   const selectedLines = (lines || []).filter(l => lineIds?.includes(l.id))
   const selectedTotal = selectedLines.reduce((s, l) => s + l.selling_price_eur, 0)
@@ -1606,6 +1644,7 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
           issued_date: issuedDate || undefined, intocmit_de: intocmitDe || undefined,
           notes: notes || undefined,
           line_ids: lineIds && lineIds.length > 0 ? lineIds : undefined,
+          kurs: kurs && parseFloat(kurs) > 0 ? parseFloat(kurs) : undefined,
           ...(action === 'storno' ? { target_invoice_ids: [...selectedInvIds] } : {}),
         }),
       })
@@ -1659,8 +1698,12 @@ function ActionDialog({ open, onOpenChange, anexaId, action, defaultIntocmit, on
           <div className="grid grid-cols-3 gap-3">
             <div><Label>Invoice No.</Label><Input type="number" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} /></div>
             <div><Label>Date</Label><Input type="date" value={issuedDate} onChange={e => setIssuedDate(e.target.value)} /></div>
-            <div><Label>Intocmit de</Label><UserSearchInput value={intocmitDe} onChange={setIntocmitDe} /></div>
+            <div>
+              <Label>Curs BNR</Label>
+              <Input type="number" step="0.0001" placeholder="auto" value={kurs} onChange={e => setKurs(e.target.value)} />
+            </div>
           </div>
+          <div><Label>Intocmit de</Label><UserSearchInput value={intocmitDe} onChange={setIntocmitDe} /></div>
           <div><Label>Notes</Label><Input placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} /></div>
         </div>
         <DialogFooter>
