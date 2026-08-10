@@ -21,11 +21,38 @@ _fs_repo = _LazyFSRepo()
 # Clients
 # ════════════════════════════════════════════════════════════════
 
+def _scope_company_ids():
+    """Company IDs the current user may see per g.permission_scope, or None for 'all'.
+
+    None  -> no filtering (scope 'all').
+    [id]  -> department/own: restrict to the user's own company. 'own' collapses
+             to department for now because per-KAM client ownership
+             (client_profiles.assigned_kam_id) is not yet populated.
+    []    -> a scoped user with no company_id: sees nothing (fail closed).
+    """
+    scope = getattr(g, 'permission_scope', 'all')
+    if scope == 'all':
+        return None
+    uc = getattr(current_user, 'company_id', None)
+    return [uc] if uc is not None else []
+
+
+def _require_client_scope(client_id):
+    """Return a 403 response tuple if permission_scope forbids this client, else None."""
+    ids = _scope_company_ids()
+    if ids is None:
+        return None
+    if _fs_repo.get_client_company_id(client_id) in ids:
+        return None
+    return jsonify({'success': False, 'error': 'Access denied for this client'}), 403
+
+
 @crm_bp.route('/api/crm/clients', methods=['GET'])
 @login_required
 @crm_required
 def api_clients():
     rows, total = _client_repo.search(
+        company_ids=_scope_company_ids(),
         q=request.args.get('q'),
         name=request.args.get('name'),
         phone=request.args.get('phone'),
@@ -51,6 +78,7 @@ def api_clients_export():
     if not getattr(current_user, 'can_export_crm', False):
         return jsonify({'success': False, 'error': 'Export permission denied'}), 403
     rows, _ = _client_repo.search(
+        company_ids=_scope_company_ids(),
         name=request.args.get('name'), phone=request.args.get('phone'),
         email=request.args.get('email'), client_type=request.args.get('client_type'),
         responsible=request.args.get('responsible'), city=request.args.get('city'),
@@ -74,6 +102,10 @@ def api_client_detail(client_id):
     client = _client_repo.get_by_id(client_id)
     if not client:
         return jsonify({'success': False, 'error': 'Not found'}), 404
+
+    denied = _require_client_scope(client_id)
+    if denied:
+        return denied
 
     # Auto-fix: parse nr_reg from name, detect company type
     client = _auto_fix_client_on_load(client_id, client)
