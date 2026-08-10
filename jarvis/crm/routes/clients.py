@@ -37,16 +37,6 @@ def _scope_company_ids():
     return [uc] if uc is not None else []
 
 
-def _require_client_scope(client_id):
-    """Return a 403 response tuple if permission_scope forbids this client, else None."""
-    ids = _scope_company_ids()
-    if ids is None:
-        return None
-    if _fs_repo.get_client_company_id(client_id) in ids:
-        return None
-    return jsonify({'success': False, 'error': 'Access denied for this client'}), 403
-
-
 @crm_bp.route('/api/crm/clients', methods=['GET'])
 @login_required
 @crm_required
@@ -103,9 +93,7 @@ def api_client_detail(client_id):
     if not client:
         return jsonify({'success': False, 'error': 'Not found'}), 404
 
-    denied = _require_client_scope(client_id)
-    if denied:
-        return denied
+    # Per-client tenant scope is enforced centrally by @crm_required.
 
     # Auto-fix: parse nr_reg from name, detect company type
     client = _auto_fix_client_on_load(client_id, client)
