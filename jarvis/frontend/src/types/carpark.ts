@@ -118,9 +118,16 @@ export interface Vehicle extends VehicleCatalogItem {
   service_exchange_vehicle: boolean
   sale_price: number | null
   sale_date: string | null
+  sale_type: SaleType | null
+  buyer_name: string | null
   buyer_client_id: number | null
   salesperson_user_id: number | null
   ready_for_sale_date: string | null
+  gw_file_number: string | null
+  is_impus: boolean
+  missing_civ: boolean
+  stock_removed: boolean
+  stock_removed_date: string | null
   listing_date: string | null
   reservation_date: string | null
   delivery_date: string | null

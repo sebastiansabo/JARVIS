@@ -16,7 +16,19 @@ import { carparkDispoApi } from '@/api/carparkDispo'
 import type { DispoRow } from '@/types/carpark'
 import { apiErrorMessage } from './dispoApiError'
 
-export function ReserveDialog({ row, onClose }: { row: DispoRow; onClose: () => void }) {
+export function ReserveDialog({
+  row,
+  onClose,
+  onSuccess,
+}: {
+  row: DispoRow
+  onClose: () => void
+  // Optional extra hook fired after a successful mutation, in addition to
+  // the ['carpark', 'dispo'] invalidation below — lets callers outside the
+  // Dispo workspace (e.g. the vehicle Detail page's Vânzare tab) refresh
+  // their own queries without this dialog knowing about them.
+  onSuccess?: () => void
+}) {
   const queryClient = useQueryClient()
   const [clientName, setClientName] = useState(row.reservation_client_name ?? '')
   const [reservationEnd, setReservationEnd] = useState('')
@@ -32,6 +44,7 @@ export function ReserveDialog({ row, onClose }: { row: DispoRow; onClose: () => 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['carpark', 'dispo'] })
       toast.success('Vehicul rezervat')
+      onSuccess?.()
       onClose()
     },
     onError: (err) => toast.error(apiErrorMessage(err, 'Eroare la rezervare')),

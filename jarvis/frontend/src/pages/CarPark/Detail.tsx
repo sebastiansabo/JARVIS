@@ -59,6 +59,7 @@ import { carparkApi } from '@/api/carpark'
 import { toast } from 'sonner'
 import { DocumenteTab } from './Detail/DocumenteTab'
 import { CronologieTab } from './Detail/CronologieTab'
+import { VanzareTab } from './Detail/VanzareTab'
 import {
   STATUS_LABELS,
   CATEGORY_LABELS,
@@ -362,6 +363,7 @@ export default function CarParkDetail() {
       <Tabs defaultValue="details">
         <TabsList>
           <TabsTrigger value="details">Detalii</TabsTrigger>
+          <TabsTrigger value="vanzare">Vânzare</TabsTrigger>
           <TabsTrigger value="pricing">Pricing</TabsTrigger>
           <TabsTrigger value="costs">Costs ({costLines.length})</TabsTrigger>
           <TabsTrigger value="revenues">Revenues ({revenues.length})</TabsTrigger>
@@ -375,6 +377,13 @@ export default function CarParkDetail() {
 
         <TabsContent value="details" className="mt-4">
           <DetailsTab vehicle={vehicle} photos={photos} onPhotoClick={setLightboxIndex} />
+        </TabsContent>
+
+        <TabsContent value="vanzare" className="mt-4">
+          <VanzareTab
+            vehicle={vehicle}
+            onChanged={() => queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', id] })}
+          />
         </TabsContent>
 
         <TabsContent value="pricing" className="mt-4">

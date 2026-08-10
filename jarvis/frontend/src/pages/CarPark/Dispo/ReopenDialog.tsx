@@ -27,7 +27,16 @@ const REOPEN_TARGETS: Partial<Record<VehicleStatus, VehicleStatus[]>> = {
   DELIVERED: ['RETURNED'],
 }
 
-export function ReopenDialog({ row, onClose }: { row: DispoRow; onClose: () => void }) {
+export function ReopenDialog({
+  row,
+  onClose,
+  onSuccess,
+}: {
+  row: DispoRow
+  onClose: () => void
+  // See ReserveDialog.tsx's onSuccess for why this is optional.
+  onSuccess?: () => void
+}) {
   const queryClient = useQueryClient()
   const targets = REOPEN_TARGETS[row.status] ?? []
   const [targetStatus, setTargetStatus] = useState<VehicleStatus | ''>(targets[0] ?? '')
@@ -39,6 +48,7 @@ export function ReopenDialog({ row, onClose }: { row: DispoRow; onClose: () => v
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['carpark', 'dispo'] })
       toast.success('Vehicul redeschis')
+      onSuccess?.()
       onClose()
     },
     onError: (err) => toast.error(apiErrorMessage(err, 'Eroare la redeschidere')),

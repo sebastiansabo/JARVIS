@@ -21,7 +21,16 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-export function DeliverDialog({ row, onClose }: { row: DispoRow; onClose: () => void }) {
+export function DeliverDialog({
+  row,
+  onClose,
+  onSuccess,
+}: {
+  row: DispoRow
+  onClose: () => void
+  // See ReserveDialog.tsx's onSuccess for why this is optional.
+  onSuccess?: () => void
+}) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [deliveryDate, setDeliveryDate] = useState(todayStr())
@@ -32,6 +41,7 @@ export function DeliverDialog({ row, onClose }: { row: DispoRow; onClose: () => 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['carpark', 'dispo'] })
       toast.success('Vehicul livrat')
+      onSuccess?.()
       onClose()
     },
     onError: (err) => {
