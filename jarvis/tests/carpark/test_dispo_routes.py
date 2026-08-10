@@ -327,3 +327,89 @@ def test_summary_xlsx_export_returns_spreadsheet_mimetype(client, monkeypatch):
     assert resp.status_code == 200
     assert resp.mimetype == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     assert len(resp.data) > 0
+
+
+# ── IMPORT ROUTE — IDOR self-scoping + generic 500 ───────────────────────
+
+import io as _io  # noqa: E402
+
+
+class _FakeReport:
+    """Stand-in for ImportService's ImportReport — only needs to_dict()."""
+    def __init__(self, company_id):
+        self._company_id = company_id
+
+    def to_dict(self):
+        return {'dry_run': True, 'company_id': self._company_id, 'total': 0,
+                'ok': 0, 'rejects': 0, 'cross_company': 0, 'rows': []}
+
+
+def _xlsx_upload(company_id_field=None):
+    """Build a multipart form dict for the import route. The bytes don't
+    have to be a real workbook — _importer.run is monkeypatched in these
+    tests — they only need to be non-empty with a .xlsx filename."""
+    data = {'file': (_io.BytesIO(b'PK\x03\x04 not-a-real-xlsx-body'), 'centralizator.xlsx')}
+    if company_id_field is not None:
+        data['company_id'] = str(company_id_field)
+    return data
+
+
+def test_import_route_ignores_client_company_id_and_uses_callers_company(client, monkeypatch):
+    """IDOR guard: a client-supplied company_id form field must be ignored —
+    the write target is always the authenticated caller's own company."""
+    _set_user(monkeypatch, FakeUser(company_id=COMPANY_ID))
+
+    captured = {}
+
+    def _fake_run(stream, company_id, dry_run=True):
+        captured['company_id'] = company_id
+        captured['dry_run'] = dry_run
+        return _FakeReport(company_id)
+
+    monkeypatch.setattr(dispo_mod._importer, 'run', _fake_run)
+
+    # Caller is company 10 but tries to aim the import at company 99999.
+    resp = client.post(
+        '/api/carpark/dispo/import',
+        data=_xlsx_upload(company_id_field=99999),
+        content_type='multipart/form-data',
+    )
+    assert resp.status_code == 200
+    # The importer must have been called with the CALLER's company, not the
+    # attacker-supplied 99999.
+    assert captured['company_id'] == COMPANY_ID
+    assert captured['dry_run'] is True
+    assert resp.get_json()['company_id'] == COMPANY_ID
+
+
+def test_import_route_commit_requires_delete_permission(client, monkeypatch):
+    _set_user(monkeypatch, FakeUser(can_delete_carpark=False))
+    monkeypatch.setattr(dispo_mod._importer, 'run',
+                         lambda *a, **k: _FakeReport(COMPANY_ID))
+    resp = client.post(
+        '/api/carpark/dispo/import?commit=true',
+        data=_xlsx_upload(),
+        content_type='multipart/form-data',
+    )
+    assert resp.status_code == 403
+
+
+def test_import_route_generic_500_does_not_leak_internals(client, monkeypatch):
+    """A forced unexpected error must return a generic body — no exception
+    text / traceback / internal detail in the response."""
+    _set_user(monkeypatch, FakeUser())
+
+    def _boom(*a, **k):
+        raise RuntimeError('secret internal detail: table carpark_vehicles column xyz')
+
+    monkeypatch.setattr(dispo_mod._importer, 'run', _boom)
+
+    resp = client.post(
+        '/api/carpark/dispo/import',
+        data=_xlsx_upload(),
+        content_type='multipart/form-data',
+    )
+    assert resp.status_code == 500
+    body = resp.get_json()
+    assert body == {'error': 'Internal error'}
+    assert 'secret internal detail' not in resp.get_data(as_text=True)

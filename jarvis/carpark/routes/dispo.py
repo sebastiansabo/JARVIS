@@ -319,8 +319,13 @@ def dispo_import():
     delegates to CentralizatorImporter — this route only handles the
     multipart upload and the dry-run/commit permission split.
 
-    Multipart form: `file` (.xlsx, required), `company_id` (optional,
-    defaults to the caller's own company).
+    Multipart form: `file` (.xlsx, required). The write target is ALWAYS
+    the authenticated caller's own company (`_user_company_id()`) — a
+    client-supplied `company_id` is deliberately NOT honored here, so this
+    endpoint can't be used to bulk-write vehicles into another tenant
+    (IDOR). The server-side CLI (`scripts/import_centralizator.py`) keeps
+    its `--company-id` arg for admin use; the HTTP surface does not.
+
     Query param `?commit=true` actually writes to the DB (default: dry-run
     validation report only). Committing requires `can_delete_carpark`
     (manager) on top of the `can_edit_carpark` the route already requires,
@@ -339,9 +344,14 @@ def dispo_import():
     if len(file_bytes) > _MAX_IMPORT_UPLOAD_BYTES:
         return jsonify({'error': 'File exceeds the 10MB upload limit'}), 400
 
-    company_id = request.form.get('company_id', type=int) or _user_company_id()
+    # Write target is the authenticated caller's own company — never a
+    # value from the request body/params. This is the IDOR guard: the
+    # importer's own cross-company VIN check (import_service) is the second
+    # layer, but the write target itself is fixed here so a caller can't
+    # even aim the import at another tenant.
+    company_id = _user_company_id()
     if not company_id:
-        return jsonify({'error': 'company_id is required (current user has no company)'}), 400
+        return jsonify({'error': 'Your account has no company assigned; cannot import'}), 400
 
     commit = request.args.get('commit', 'false').strip().lower() == 'true'
     if commit and not getattr(current_user, 'can_delete_carpark', False):
@@ -351,7 +361,9 @@ def dispo_import():
         report = _importer.run(io.BytesIO(file_bytes), company_id, dry_run=not commit)
         return jsonify(_serialize(report.to_dict()))
     except ValueError as e:
+        # ValueError from the importer is a safe, user-facing validation
+        # message (e.g. "Could not read xlsx file") — never raw internals.
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f'Centralizator import failed (company_id={company_id}): {e}', exc_info=True)
-        return jsonify({'error': 'Import failed', 'detail': str(e)}), 500
+        return jsonify({'error': 'Internal error'}), 500

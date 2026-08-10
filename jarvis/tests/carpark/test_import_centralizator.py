@@ -28,6 +28,10 @@ from carpark.repositories.revenue_repository import RevenueRepository
 from .conftest import REAL_DB_AVAILABLE
 
 IMPORT_COMPANY_ID = 990003
+# Second sentinel for the cross-company guard test — a VIN pre-existing
+# under this company must NOT be updated when the import targets
+# IMPORT_COMPANY_ID.
+OTHER_COMPANY_ID = 990004
 
 _HEADERS = [
     'Marca', 'Model', 'IMPUS', 'SCOS DIN EVIDENTA', 'Serie_sasiu', 'Furnizor',
@@ -141,6 +145,45 @@ def cleanup_import_company():
         assert remaining == 0, (
             f'teardown left {remaining} orphan carpark_vehicles row(s) for '
             f'company_id={IMPORT_COMPANY_ID}'
+        )
+
+
+@pytest.fixture
+def cleanup_both_companies():
+    """Cross-company test: cleans BOTH sentinels (IMPORT_COMPANY_ID and
+    OTHER_COMPANY_ID) before and after, asserting zero remain for each."""
+    if not REAL_DB_AVAILABLE:
+        pytest.skip(
+            'Real Postgres not available (DATABASE_URL unreachable or psycopg2 '
+            'mocked) — skipping centralizator importer DB-backed test'
+        )
+
+    def _delete():
+        conn = get_db()
+        try:
+            cur = get_cursor(conn)
+            cur.execute('DELETE FROM carpark_vehicles WHERE company_id = ANY(%s)',
+                        ([IMPORT_COMPANY_ID, OTHER_COMPANY_ID],))
+            conn.commit()
+        finally:
+            release_db(conn)
+
+    _delete()
+    try:
+        yield
+    finally:
+        _delete()
+        conn = get_db()
+        try:
+            cur = get_cursor(conn)
+            cur.execute('SELECT COUNT(*) AS cnt FROM carpark_vehicles WHERE company_id = ANY(%s)',
+                        ([IMPORT_COMPANY_ID, OTHER_COMPANY_ID],))
+            remaining = cur.fetchone()['cnt']
+        finally:
+            release_db(conn)
+        assert remaining == 0, (
+            f'teardown left {remaining} orphan carpark_vehicles row(s) for '
+            f'company_id in ({IMPORT_COMPANY_ID}, {OTHER_COMPANY_ID})'
         )
 
 
@@ -277,3 +320,96 @@ def test_commit_upserts_writes_costs_revenues_and_is_idempotent(
         assert cur.fetchone()['cnt'] == 1  # still 1, not 2
     finally:
         release_db(conn)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# CROSS-COMPANY VIN GUARD (protects both the HTTP route and the CLI)
+# ─────────────────────────────────────────────────────────────────────────
+
+VIN_CROSS = 'TESTIMPORTX000003'
+assert len(VIN_CROSS) == 17
+
+
+def test_cross_company_vin_is_rejected_and_other_company_vehicle_unchanged(
+        require_real_db, cleanup_both_companies):
+    """A VIN that already belongs to company A must NOT be updated (nor
+    have its company_id reassigned) when the import targets company B — it's
+    reported as a cross_company conflict and company A's vehicle is left
+    exactly as it was."""
+    importer = CentralizatorImporter()
+    vehicle_repo = VehicleRepository()
+
+    # ── seed VIN_CROSS under company A (OTHER_COMPANY_ID) ──
+    conn = get_db()
+    conn.autocommit = False
+    cur = get_cursor(conn)
+    try:
+        cur.execute('''
+            INSERT INTO carpark_vehicles (vin, brand, model, status, company_id, category)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        ''', (VIN_CROSS, 'CompanyA-Brand', 'CompanyA-Model', 'LISTED',
+              OTHER_COMPANY_ID, 'SH'))
+        company_a_vehicle_id = cur.fetchone()['id']
+        conn.commit()
+    finally:
+        release_db(conn)
+
+    # ── import file carries the SAME VIN with DIFFERENT data, targeting company B ──
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'AUDI'
+    ws.append(_HEADERS)
+    ws.append(_row(VIN_CROSS, brand='Import-Brand', model='Import-Model',
+                   **{'Data promovare': date(2026, 3, 1)}))
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    # ── DRY RUN: reported as a cross-company conflict, not ok ──
+    dry = importer.run(buf, IMPORT_COMPANY_ID, dry_run=True)
+    assert dry.total == 1
+    assert dry.ok == 0
+    assert dry.cross_company == 1
+    assert dry.rejects == 0
+    conflict_row = dry.rows[0]
+    assert conflict_row['status'] == 'cross_company_conflict'
+    assert str(OTHER_COMPANY_ID) in conflict_row['reject_reason']
+
+    # ── COMMIT: nothing written; company A's vehicle is untouched ──
+    committed = importer.run(_rebuild_cross_workbook(), IMPORT_COMPANY_ID, dry_run=False)
+    assert committed.cross_company == 1
+    assert committed.committed_vehicles_created == 0
+    assert committed.committed_vehicles_updated == 0
+
+    company_a_vehicle = vehicle_repo.get_by_id(company_a_vehicle_id)
+    assert company_a_vehicle is not None
+    assert company_a_vehicle['company_id'] == OTHER_COMPANY_ID   # NOT reassigned
+    assert company_a_vehicle['brand'] == 'CompanyA-Brand'        # NOT overwritten
+    assert company_a_vehicle['model'] == 'CompanyA-Model'
+    assert company_a_vehicle['status'] == 'LISTED'               # NOT changed
+
+    # ── and nothing was created under company B ──
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        cur.execute('SELECT COUNT(*) AS cnt FROM carpark_vehicles WHERE company_id = %s',
+                    (IMPORT_COMPANY_ID,))
+        assert cur.fetchone()['cnt'] == 0
+    finally:
+        release_db(conn)
+
+
+def _rebuild_cross_workbook() -> io.BytesIO:
+    """Fresh stream for the second (commit) importer.run in the
+    cross-company test — read_only workbooks consume their stream."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'AUDI'
+    ws.append(_HEADERS)
+    ws.append(_row(VIN_CROSS, brand='Import-Brand', model='Import-Model',
+                   **{'Data promovare': date(2026, 3, 1)}))
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
