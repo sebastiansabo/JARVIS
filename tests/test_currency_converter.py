@@ -422,6 +422,8 @@ class TestCurrentYearCacheRefresh:
         cc._cache_fetched_at[cy] = datetime.now() - timedelta(days=2)
 
         resp = MagicMock()
+        resp.is_redirect = False
+        resp.status_code = 200
         resp.content = self._xml(f"{cy}-07-30", "5.0991")
         mock_get.return_value = resp
 
