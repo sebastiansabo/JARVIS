@@ -35,9 +35,10 @@ VEHICLE_UPDATABLE_FIELDS = {
     'eligible_for_financing', 'available_for_leasing', 'can_issue_invoice',
     'is_consignment', 'promotion_id',
     'is_test_drive', 'service_exchange_vehicle',
-    'sale_price', 'sale_date', 'buyer_client_id', 'salesperson_user_id',
+    'sale_price', 'sale_date', 'sale_type', 'buyer_client_id', 'buyer_name',
+    'salesperson_user_id',
     'nr_stoc', 'ready_for_sale_date', 'listing_date',
-    'reservation_date', 'delivery_date',
+    'reservation_date', 'delivery_date', 'stock_removed', 'stock_removed_date',
     'notes', 'internal_notes', 'brand_id',
 }
 
