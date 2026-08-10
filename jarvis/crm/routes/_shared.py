@@ -739,6 +739,17 @@ def crm_required(f):
             if not getattr(current_user, 'can_access_crm', False):
                 return jsonify({'success': False, 'error': 'CRM access denied'}), 403
             g.permission_scope = 'all'
+
+        # Per-client tenant scope: for any /clients/<client_id> route, a non-'all'
+        # scope may only touch clients in the user's own company (department;
+        # 'own' collapses to department until per-KAM ownership/assigned_kam_id
+        # exists). Covers the 360 detail AND every per-client mutation uniformly.
+        cid = kwargs.get('client_id')
+        if cid is not None and getattr(g, 'permission_scope', 'all') != 'all':
+            uc = getattr(current_user, 'company_id', None)
+            from field_sales.repositories.client_fs_repository import ClientFSRepository
+            if uc is None or ClientFSRepository().get_client_company_id(cid) != uc:
+                return jsonify({'success': False, 'error': 'Access denied for this client'}), 403
         return f(*args, **kwargs)
     return decorated
 
