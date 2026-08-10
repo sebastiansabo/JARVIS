@@ -24,7 +24,16 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-export function SellDialog({ row, onClose }: { row: DispoRow; onClose: () => void }) {
+export function SellDialog({
+  row,
+  onClose,
+  onSuccess,
+}: {
+  row: DispoRow
+  onClose: () => void
+  // See ReserveDialog.tsx's onSuccess for why this is optional.
+  onSuccess?: () => void
+}) {
   const queryClient = useQueryClient()
   const [salePrice, setSalePrice] = useState(row.current_price != null ? String(row.current_price) : '')
   const [saleType, setSaleType] = useState<SaleType | ''>('')
@@ -53,6 +62,7 @@ export function SellDialog({ row, onClose }: { row: DispoRow; onClose: () => voi
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['carpark', 'dispo'] })
       toast.success('Vehicul vândut')
+      onSuccess?.()
       onClose()
     },
     onError: (err) => {
