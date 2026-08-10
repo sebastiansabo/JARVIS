@@ -27,7 +27,7 @@ from tasks.hr_courses import check_course_cert_expiry
 from tasks.foi_parcurs_expiry import check_vehicle_document_expiry
 from tasks.bnr_monitor import check_bnr_feed
 from tasks.foi_parcurs_blocks import check_scheduled_blocks
-from tasks.carpark import cleanup_vin_cache
+from tasks.carpark import cleanup_vin_cache, expire_reservations, carpark_aging_alerts
 from tasks.holidays import populate_holidays
 from tasks.telemetry import close_stale_sessions, cleanup_old_telemetry
 from tasks.foi_parcurs_sessions import run_session_lifecycle
@@ -413,6 +413,29 @@ def start_scheduler():
         id='carpark_vin_cache_cleanup',
         replace_existing=True,
         misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    # CarPark Dispo — expire reservations past their reservation_end (hourly)
+    scheduler.add_job(
+        expire_reservations,
+        'interval',
+        hours=1,
+        id='carpark_expire_reservations',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    # CarPark Dispo — aging-stock alerts, unsold > 60 days (08:00 daily)
+    scheduler.add_job(
+        carpark_aging_alerts,
+        'cron',
+        hour=8,
+        minute=0,
+        id='carpark_aging_alerts',
+        replace_existing=True,
+        misfire_grace_time=3600,
         coalesce=True,
     )
 
