@@ -19,8 +19,10 @@ from datetime import date
 import openpyxl
 import pytest
 
+from decimal import Decimal
+
 from database import get_db, get_cursor, release_db
-from carpark.services.import_service import CentralizatorImporter
+from carpark.services.import_service import CentralizatorImporter, _parse_money
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.cost_repository import CostRepository
 from carpark.repositories.revenue_repository import RevenueRepository
@@ -98,6 +100,44 @@ def _build_fixture_workbook() -> io.BytesIO:
     wb.save(buf)
     buf.seek(0)
     return buf
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# _parse_money — pure-function unit tests (no DB), RO + US conventions.
+# The real AUDI sheet's money cells are NUMERIC (int/float), so they hit the
+# passthrough path; these cover the TEXT-cell path that a hand-edit produces.
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize('value, expected', [
+    # numeric passthrough (must stay EXACTLY as-is — real-sheet path)
+    (1234, Decimal('1234')),
+    (1234.56, Decimal('1234.56')),
+    (0, Decimal('0')),
+    (Decimal('9.99'), Decimal('9.99')),
+    (-45273.52, Decimal('-45273.52')),
+    # RO decimal-comma text
+    ('1234,56', Decimal('1234.56')),
+    ('1.234,56', Decimal('1234.56')),
+    # US decimal-dot text
+    ('1,234.56', Decimal('1234.56')),
+    ('1234.56', Decimal('1234.56')),
+    # thousands-only / no-separator
+    ('1234', Decimal('1234')),
+    ('1.234.567', Decimal('1234567')),   # RO thousands (dots)
+    ('1,234,567', Decimal('1234567')),   # US thousands (commas)
+    # currency symbols / whitespace stripped
+    ('1.234,56 RON', Decimal('1234.56')),
+    ('€1.234,56', Decimal('1234.56')),
+    ('-1234,56', Decimal('-1234.56')),
+    # blank / unparseable → None (never raises)
+    ('', None),
+    (None, None),
+    ('   ', None),
+    ('garbage', None),
+    ('-', None),
+])
+def test_parse_money_handles_both_conventions(value, expected):
+    assert _parse_money(value) == expected
 
 
 @pytest.fixture
