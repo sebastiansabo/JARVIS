@@ -76,6 +76,7 @@ class InvoiceCreateRequest(BaseModel):
     intocmit_de: Optional[str] = None
     notes: Optional[str] = None
     doc_mode: str = "per_car"  # "per_car" or "single_doc"
+    kurs: Optional[Decimal] = Field(None, gt=0)  # manual BNR rate when auto-fetch fails
 
 
 class StornoCreateRequest(BaseModel):
@@ -86,6 +87,7 @@ class StornoCreateRequest(BaseModel):
     notes: Optional[str] = None
     line_ids: Optional[list[int]] = None
     target_invoice_ids: Optional[list[int]] = None  # specific invoices to reverse
+    kurs: Optional[Decimal] = Field(None, gt=0)  # override only when no prior-invoice rate exists
 
 
 class FinalCreateRequest(BaseModel):
@@ -95,3 +97,4 @@ class FinalCreateRequest(BaseModel):
     intocmit_de: Optional[str] = None
     notes: Optional[str] = None
     line_ids: Optional[list[int]] = None
+    kurs: Optional[Decimal] = Field(None, gt=0)  # override only when no prior-invoice rate exists

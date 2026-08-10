@@ -128,7 +128,19 @@ def _fetch_rates_for_year(year: int) -> dict:
     rates_by_date = {}
     for url in urls:
         try:
-            response = requests.get(url, timeout=10)
+            # BNR bot-protection 302-redirects the XML to its HTML homepage for
+            # datacenter/unrecognised clients. allow_redirects=False turns that
+            # into a clean, explicit failure instead of us downloading ~120 KB of
+            # HTML and choking on it in the XML parser. A browser-like User-Agent
+            # also reduces the chance of being challenged in the first place.
+            response = requests.get(
+                url, timeout=10, allow_redirects=False,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; JarvisFacturare/1.0)"},
+            )
+            if response.is_redirect or response.status_code in (301, 302, 303, 307, 308):
+                print(f"BNR rate service redirected {url} -> {response.headers.get('Location')} "
+                      f"(likely bot-protection); no rates parsed")
+                continue
             response.raise_for_status()
             parsed = _parse_bnr_xml(response.content)
             rates_by_date.update(parsed)
