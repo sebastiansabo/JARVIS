@@ -4,9 +4,11 @@ BNR Currency Converter Module
 Fetches exchange rates from the National Bank of Romania (BNR) API
 and provides currency conversion functionality.
 
-BNR XML API endpoints:
-- Current rates: https://www.bnr.ro/nbrfxrates.xml
-- Historical rates by year: https://www.bnr.ro/files/xml/years/nbrfxrates{YEAR}.xml
+BNR XML API endpoints (served from the curs.bnr.ro subdomain since the
+2026-08-06 migration — the old www.bnr.ro/*.xml URLs now 302-redirect to
+the BNR homepage; see the 2026-08-04 BNR notice #25710):
+- Current rates: https://curs.bnr.ro/nbrfxrates.xml
+- Historical rates by year: https://curs.bnr.ro/files/xml/years/nbrfxrates{YEAR}.xml
 
 All rates are RON-based (how many RON per 1 unit of foreign currency).
 """
@@ -17,9 +19,12 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple
 import requests
 
-# BNR XML API URLs
-BNR_CURRENT_URL = "https://www.bnr.ro/nbrfxrates.xml"
-BNR_YEARLY_URL = "https://www.bnr.ro/files/xml/years/nbrfxrates{year}.xml"
+# BNR XML API URLs. As of 2026-08-06 BNR serves the FX-rate feeds ONLY from
+# the curs.bnr.ro subdomain; the previous www.bnr.ro/*.xml addresses 302-redirect
+# to the homepage (returning HTML that fails XML parsing → NULL kurs). File names
+# are unchanged — only the host moved (BNR notice #25710, 2026-08-04).
+BNR_CURRENT_URL = "https://curs.bnr.ro/nbrfxrates.xml"
+BNR_YEARLY_URL = "https://curs.bnr.ro/files/xml/years/nbrfxrates{year}.xml"
 
 # BNR migrated its XML namespace from http://www.bnr.ro/xsd (<= 2025 files) to
 # https://www.bnr.ro/xsd (2026 files). We therefore match elements by local tag
@@ -128,18 +133,18 @@ def _fetch_rates_for_year(year: int) -> dict:
     rates_by_date = {}
     for url in urls:
         try:
-            # BNR bot-protection 302-redirects the XML to its HTML homepage for
-            # datacenter/unrecognised clients. allow_redirects=False turns that
-            # into a clean, explicit failure instead of us downloading ~120 KB of
-            # HTML and choking on it in the XML parser. A browser-like User-Agent
-            # also reduces the chance of being challenged in the first place.
+            # Defensive: the retired www.bnr.ro/*.xml addresses 302-redirect to the
+            # HTML homepage (see BNR_CURRENT_URL note). We now hit curs.bnr.ro, but
+            # allow_redirects=False keeps any future redirect an explicit failure
+            # instead of silently downloading ~120 KB of HTML and choking the XML
+            # parser. The browser-like User-Agent is harmless and kept for parity.
             response = requests.get(
                 url, timeout=10, allow_redirects=False,
                 headers={"User-Agent": "Mozilla/5.0 (compatible; JarvisFacturare/1.0)"},
             )
             if response.is_redirect or response.status_code in (301, 302, 303, 307, 308):
                 print(f"BNR rate service redirected {url} -> {response.headers.get('Location')} "
-                      f"(likely bot-protection); no rates parsed")
+                      f"(stale www.bnr.ro host? expected curs.bnr.ro); no rates parsed")
                 continue
             response.raise_for_status()
             parsed = _parse_bnr_xml(response.content)
