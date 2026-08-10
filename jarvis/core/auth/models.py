@@ -64,6 +64,7 @@ class User(UserMixin):
         self.can_edit_carpark = user_data.get('can_edit_carpark', False)
         self.can_delete_carpark = user_data.get('can_delete_carpark', False)
         self.can_access_carpark_mobile = user_data.get('can_access_carpark_mobile', False)
+        self.can_view_carpark_finance = user_data.get('can_view_carpark_finance', False)
 
         # Permission mapping for has_permission method
         self._permission_map = {
@@ -87,6 +88,7 @@ class User(UserMixin):
             'carpark.access': self.can_access_carpark,
             'carpark.edit': self.can_edit_carpark,
             'carpark.delete': self.can_delete_carpark,
+            'carpark.finance': self.can_view_carpark_finance,
         }
 
     @property

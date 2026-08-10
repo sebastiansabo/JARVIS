@@ -388,6 +388,7 @@ def api_current_user():
                 'can_access_facturare':  _access('facturare',   None),
                 'can_edit_carpark':      current_user.can_edit_carpark,
                 'can_delete_carpark':    current_user.can_delete_carpark,
+                'can_view_carpark_finance': current_user.can_view_carpark_finance,
                 # Legacy / granular flags still read from role
                 'can_access_connectors': current_user.can_access_connectors,
                 'can_access_templates': current_user.can_access_templates,
