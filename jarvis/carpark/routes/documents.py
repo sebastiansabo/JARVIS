@@ -143,12 +143,19 @@ def _create_via_link(vehicle_id, data):
     if type_err:
         return type_err
 
-    if not data.get('file_url') and not data.get('dms_document_id'):
+    file_url = data.get('file_url')
+    if not file_url and not data.get('dms_document_id'):
         return jsonify({'error': 'file_url or dms_document_id is required'}), 400
+
+    # Defense in depth against stored XSS: file_url is echoed back to the
+    # UI and rendered as an <a href>, so only accept http(s) absolute URLs
+    # and reject anything else (javascript:, data:, ...) at ingest.
+    if file_url and not str(file_url).strip().lower().startswith(('http://', 'https://')):
+        return jsonify({'error': 'file_url invalid: only http(s) URLs allowed'}), 400
 
     payload = {
         'document_type': document_type,
-        'file_url': data.get('file_url'),
+        'file_url': file_url,
         'dms_document_id': data.get('dms_document_id'),
         'title': data.get('title'),
         'mime_type': data.get('mime_type'),

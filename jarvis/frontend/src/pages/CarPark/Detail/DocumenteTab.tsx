@@ -47,6 +47,17 @@ function formatDate(d: string | null): string {
   return new Date(d).toLocaleDateString('ro-RO')
 }
 
+// XSS guard: file_url is user-supplied (link-mode upload accepts an
+// arbitrary URL), so it must never go into an <a href> unchecked — a
+// `javascript:` / `data:text/html,...` value would execute on click.
+// Only http(s) absolute URLs are allowed to become clickable links;
+// anything else is rendered as inert text instead.
+export function safeHref(url?: string | null): string | null {
+  if (!url) return null
+  const u = url.trim()
+  return /^https?:\/\//i.test(u) ? u : null
+}
+
 type UploadMode = 'file' | 'link'
 
 export function DocumenteTab({ vehicleId, status }: { vehicleId: number; status?: string }) {
@@ -289,15 +300,19 @@ export function DocumenteTab({ vehicleId, status }: { vehicleId: number; status?
                   </TableCell>
                   <TableCell>{doc.title ?? '-'}</TableCell>
                   <TableCell>
-                    {doc.file_url ? (
+                    {safeHref(doc.file_url) ? (
                       <a
-                        href={doc.file_url}
+                        href={safeHref(doc.file_url)!}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
                       >
                         Deschide <ExternalLink className="h-3 w-3" />
                       </a>
+                    ) : doc.file_url ? (
+                      <span className="text-xs text-muted-foreground" title={doc.file_url}>
+                        Link invalid
+                      </span>
                     ) : doc.dms_document_id ? (
                       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                         <FileText className="h-3 w-3" /> DMS #{doc.dms_document_id}

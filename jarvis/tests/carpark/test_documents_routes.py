@@ -182,6 +182,29 @@ def test_create_document_invalid_type_returns_400(client, monkeypatch):
     assert resp.status_code == 400
 
 
+@pytest.mark.parametrize('bad_url', [
+    'javascript:alert(document.cookie)',
+    'data:text/html,<script>alert(1)</script>',
+    'ftp://example.com/doc.pdf',
+    '/relative/path.pdf',
+    'example.com/doc.pdf',
+])
+def test_create_document_link_mode_rejects_non_http_file_url(client, monkeypatch, bad_url):
+    """Defense in depth against stored XSS: a link-mode file_url that isn't
+    an http(s) absolute URL (javascript:, data:, ...) is rejected at ingest
+    with a 400 and never reaches DocumentRepository.create."""
+    monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle', lambda vid: _own_vehicle(vid))
+
+    def _create(vehicle_id, data):
+        raise AssertionError('create should not be called for a rejected file_url')
+    monkeypatch.setattr(documents_mod._document_repo, 'create', _create)
+
+    resp = client.post('/api/carpark/vehicles/1/documents', json={
+        'document_type': 'pv_intrare', 'file_url': bad_url})
+    assert resp.status_code == 400
+    assert 'file_url' in resp.get_json()['error']
+
+
 def test_create_document_requires_edit_permission(client, monkeypatch):
     _set_user(monkeypatch, FakeUser(can_edit_carpark=False))
     resp = client.post('/api/carpark/vehicles/1/documents', json={
