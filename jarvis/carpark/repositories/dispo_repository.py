@@ -131,6 +131,22 @@ def _timeline_sort_key(value) -> datetime:
     return datetime.min
 
 
+def _parse_bool_filter(value) -> bool:
+    """Parse a boolean-ish filter value into a real bool.
+
+    `filters['stock_removed']` arrives as an actual bool only when called
+    in-process; every HTTP caller (dispo.py's request.args.get) hands it in
+    as a string ('true'/'false'/'1'/'0'), and Python's bare `bool('false')`
+    is True (any non-empty string is truthy) — so without this, filtering
+    for "not removed" silently filtered for "removed" instead. Recognizes
+    the falsy spellings explicitly and treats anything else (including a
+    real True) as True.
+    """
+    if isinstance(value, str):
+        return value.strip().lower() not in ('false', '0', '')
+    return bool(value)
+
+
 class DispoRepository(BaseRepository):
     """Aggregated pipeline view over carpark_vehicles for the Dispo dashboard."""
 
@@ -200,9 +216,9 @@ class DispoRepository(BaseRepository):
             )
             params.extend([term, term, term, term])
 
-        if filters.get('stock_removed') is not None:
+        if filters.get('stock_removed') is not None and filters.get('stock_removed') != '':
             clauses.append('v.stock_removed = %s')
-            params.append(bool(filters['stock_removed']))
+            params.append(_parse_bool_filter(filters['stock_removed']))
 
         return ' AND '.join(clauses), params
 

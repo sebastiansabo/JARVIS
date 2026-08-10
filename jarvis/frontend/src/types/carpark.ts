@@ -933,6 +933,7 @@ export interface DispoRow {
   location_text: string | null
   sale_type: SaleType | null
   salesperson_user_id: number | null
+  acquisition_manager_id: number | null
   acquisition_date: string | null
   listing_date: string | null
   sale_date: string | null

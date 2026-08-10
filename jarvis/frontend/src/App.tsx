@@ -50,6 +50,7 @@ const MobileCheckin = lazy(() => import('./pages/MobileCheckin'))
 const DownloadApp = lazy(() => import('./pages/DownloadApp'))
 const Digest = lazy(() => import('./pages/Digest'))
 const CarPark = lazy(() => import('./pages/CarPark'))
+const CarParkDispo = lazy(() => import('./pages/CarPark/Dispo'))
 const CarParkDetail = lazy(() => import('./pages/CarPark/Detail'))
 const CarParkVehicleForm = lazy(() => import('./pages/CarPark/VehicleForm'))
 const CarParkPricingRules = lazy(() => import('./pages/CarPark/PricingRules'))
@@ -232,6 +233,7 @@ export default function App() {
         {/* CarPark — requires can_access_carpark */}
         <Route path="carpark" element={<Guard flag="can_access_carpark"><SuspensePage><CarPark /></SuspensePage></Guard>} />
         <Route path="carpark/new" element={<Guard flag="can_edit_carpark"><SuspensePage><CarParkVehicleForm /></SuspensePage></Guard>} />
+        <Route path="carpark/dispo" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkDispo /></SuspensePage></Guard>} />
         <Route path="carpark/:vehicleId" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkDetail /></SuspensePage></Guard>} />
         <Route path="carpark/:vehicleId/edit" element={<Guard flag="can_edit_carpark"><SuspensePage><CarParkVehicleForm /></SuspensePage></Guard>} />
         <Route path="carpark/pricing-rules" element={<Guard flag="can_access_carpark"><SuspensePage><CarParkPricingRules /></SuspensePage></Guard>} />
