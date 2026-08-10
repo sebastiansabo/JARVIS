@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   DollarSign,
   Paperclip,
+  FileSpreadsheet,
 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchInput } from '@/components/shared/SearchInput'
@@ -23,8 +24,10 @@ import { ColumnToggle, useColumnState, type ColumnDef } from '@/components/share
 import { ResponsiveDataView } from '@/components/shared/ResponsiveDataView'
 import type { MobileCardField } from '@/components/shared/MobileCardList'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { DateField } from '@/components/ui/date-field'
+import { DispoRowActions } from './DispoRowActions'
 import {
   Table,
   TableBody,
@@ -541,6 +544,14 @@ export default function CarParkDispo() {
             collapsible={isMobile}
           />
         }
+        actions={
+          <Button variant="outline" size="sm" asChild>
+            <a href={carparkDispoApi.exportUrl(activeFilters)} download>
+              <FileSpreadsheet className="mr-1.5 h-4 w-4" />
+              {isMobile ? 'Export' : 'Export Excel'}
+            </a>
+          </Button>
+        }
       />
 
       {/* Zone 1 — KPI strip */}
@@ -636,6 +647,7 @@ export default function CarParkDispo() {
           mobileFields={mobileFields}
           getRowId={(r) => r.id}
           onRowClick={handleRowClick}
+          actions={(row) => <DispoRowActions row={row} />}
           desktopTable={
             <Card>
               <CardContent className="p-0">
@@ -666,6 +678,8 @@ export default function CarParkDispo() {
                             </TableHead>
                           )
                         })}
+                        {/* Row actions — always visible, not a ColumnToggle column */}
+                        <TableHead className="w-9" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -680,6 +694,9 @@ export default function CarParkDispo() {
                               </TableCell>
                             )
                           })}
+                          <TableCell className="text-right">
+                            <DispoRowActions row={row} />
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -724,6 +741,7 @@ export default function CarParkDispo() {
                             }
                             return <TableCell key={key} />
                           })}
+                          <TableCell />
                         </TableRow>
                       </TableFooter>
                     )}
