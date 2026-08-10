@@ -133,6 +133,13 @@ def api_task_follow_ups(task_id):
         if not task:
             return jsonify({'success': False, 'error': 'Task not found'}), 404
 
+        # Ownership: only the visit's KAM (or a manager) may read its follow-ups
+        visit = _visit_repo.get_by_id(task['visit_id'])
+        if not visit:
+            return jsonify({'success': False, 'error': 'Visit not found'}), 404
+        if visit['kam_id'] != _get_current_user().id and not _is_manager():
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
+
         follow_ups = _visit_repo.get_follow_ups(task_id)
         return jsonify({'success': True, 'follow_ups': follow_ups})
     except Exception as e:
@@ -149,6 +156,13 @@ def api_create_follow_up(task_id):
         task = _visit_repo.get_task_by_id(task_id)
         if not task:
             return jsonify({'success': False, 'error': 'Task not found'}), 404
+
+        # Ownership: only the visit's KAM (or a manager) may append follow-ups
+        visit = _visit_repo.get_by_id(task['visit_id'])
+        if not visit:
+            return jsonify({'success': False, 'error': 'Visit not found'}), 404
+        if visit['kam_id'] != _get_current_user().id and not _is_manager():
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
 
         data = request.get_json(silent=True) or {}
         note = (data.get('note') or '').strip()
