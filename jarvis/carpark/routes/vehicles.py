@@ -7,10 +7,15 @@ from flask_login import login_required, current_user
 
 from carpark import carpark_bp
 from carpark.services.vehicle_service import VehicleService
+from field_sales.repositories.client_fs_repository import ClientFSRepository
 
 logger = logging.getLogger('jarvis.carpark')
 
 _vehicle_service = VehicleService()
+# Reused (not duplicated) for the carpark-scoped client search route below —
+# same repo/SQL as /api/field-sales/clients/search, just gated + scoped
+# differently for CarPark callers.
+_client_repo = ClientFSRepository()
 
 
 # ── Permission decorators ──
@@ -391,3 +396,40 @@ def update_location(location_id):
     if not location:
         return jsonify({'error': 'Location not found'}), 404
     return jsonify({'location': _serialize(location)})
+
+
+# ═══════════════════════════════════════════════
+# CLIENTS — CARPARK-SCOPED CRM SEARCH
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/clients/search', methods=['GET'])
+@login_required
+@carpark_required
+def search_clients():
+    """Carpark-scoped CRM client search (buyer picker for Reserve/Sell).
+
+    Reuses ClientFSRepository.search_clients — same query as
+    /api/field-sales/clients/search — but gated on carpark access instead of
+    field_sales_required (a CarPark editor without field-sales access must
+    not be 403'd here), and scoped to the caller's OWN company only, not
+    field_sales' allowed-companies logic: carpark users search within their
+    own tenant, full stop. Response shape matches the field_sales route so
+    the frontend client is a drop-in swap.
+    """
+    query = request.args.get('q', '').strip()
+    if len(query) < 2:
+        return jsonify({'success': False, 'error': 'Search query must be at least 2 characters'}), 400
+
+    limit = request.args.get('limit', 20, type=int)
+    limit = min(max(limit, 1), 100)
+
+    cid = _user_company_id()
+    if not cid:
+        return jsonify({'success': True, 'clients': [], 'count': 0})
+
+    try:
+        results = _client_repo.search_clients(query, limit=limit, company_ids=[cid])
+        return jsonify({'success': True, 'clients': results, 'count': len(results)})
+    except Exception as e:
+        logger.error(f'Carpark client search failed: {e}', exc_info=True)
+        return jsonify({'success': False, 'error': 'Internal error'}), 500

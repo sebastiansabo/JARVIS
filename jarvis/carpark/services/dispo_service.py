@@ -197,7 +197,8 @@ class DispoService:
 
         prior_status = self._prior_status_before_reserved(vehicle_id)
         updated_vehicle = self._vehicle_service.change_status(
-            vehicle_id, prior_status, changed_by=_uid(user), notes=reason)
+            vehicle_id, prior_status, changed_by=_uid(user), notes=reason,
+            allow_reserved_exit=True)
 
         self._notify_vehicle_contacts(vehicle, 'Rezervare anulată', message=reason)
 
@@ -253,7 +254,8 @@ class DispoService:
             vehicle_id, sale_fields, updated_by=_uid(user), updated_by_name=_uname(user))
 
         updated_vehicle = self._vehicle_service.change_status(
-            vehicle_id, 'SOLD', changed_by=_uid(user), notes='Vehicle sold')
+            vehicle_id, 'SOLD', changed_by=_uid(user), notes='Vehicle sold',
+            allow_reserved_exit=True)
 
         active_reservation = self._reservation_repo.active_for_vehicle(vehicle_id)
         if active_reservation:

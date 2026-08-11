@@ -185,19 +185,31 @@ class VehicleService:
 
     def change_status(self, vehicle_id: int, new_status: str,
                       changed_by: int = None,
-                      notes: str = None) -> Optional[Dict[str, Any]]:
+                      notes: str = None,
+                      allow_reserved_exit: bool = False) -> Optional[Dict[str, Any]]:
         """Change vehicle status with validation and history.
 
         Raises ValueError if the transition from the vehicle's current
         status to new_status is not permitted by TRANSITIONS (same-status
         no-ops are always allowed). Unknown vehicle_id falls through to the
         repo call unchanged, preserving existing not-found behavior.
+
+        A RESERVED vehicle carries an active carpark_reservations row. Moving
+        it to any other status via a plain status flip would leave that row
+        orphaned (stale client/deposit, vehicle re-reservable) since only
+        DispoService.cancel_reservation() and DispoService.sell() know to
+        close it. Exiting RESERVED therefore requires the caller to opt in
+        via allow_reserved_exit=True — reserved for those two guarded paths.
+        Checked after the TRANSITIONS validation so an illegal transition
+        still raises its own (more specific) error first.
         """
         vehicle = self._repo.get_by_id(vehicle_id)
         if vehicle:
             old_status = vehicle.get('status')
             if not is_valid_transition(old_status, new_status):
                 raise ValueError(f'Tranziție interzisă: {old_status} → {new_status}')
+            if old_status == 'RESERVED' and new_status != 'RESERVED' and not allow_reserved_exit:
+                raise ValueError('Ieșirea din REZERVAT se face prin Anulare rezervare sau Vânzare')
 
         return self._repo.change_status(vehicle_id, new_status,
                                         changed_by=changed_by, notes=notes)

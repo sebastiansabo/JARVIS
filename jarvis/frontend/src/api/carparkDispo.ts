@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { FSClientSearch } from './fieldSales'
 import type {
   DispoFilters,
   DispoSummaryResponse,
@@ -43,6 +44,20 @@ export const carparkDispoApi = {
   },
 
   getKpis: () => api.get<DispoKpis>('/api/carpark/dispo/kpis'),
+
+  // ── CRM client search (carpark-scoped) ──────────────────
+  // Same response shape as fieldSalesApi.searchClients, gated on carpark
+  // access instead of field_sales_required so a CarPark editor without
+  // field-sales access isn't 403'd. Scoped server-side to the caller's own
+  // company — companyId here is forwarded but the backend ignores it.
+  searchClients: (q: string, companyId?: number) => {
+    const params: Record<string, string> = { q }
+    if (companyId && companyId > 0) params.company_id = String(companyId)
+    return api.get<{ success: boolean; clients: FSClientSearch[]; count: number }>(
+      '/api/carpark/clients/search',
+      params,
+    )
+  },
 
   // ── Guarded lifecycle transitions ───────────────────────
   reserve: (

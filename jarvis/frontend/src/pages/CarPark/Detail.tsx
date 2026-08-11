@@ -128,6 +128,15 @@ const STATUS_TRANSITIONS: Record<string, VehicleStatus[]> = {
   TRANSFERRED: [],
 }
 
+// RESERVED carries an active carpark_reservations row that only the backend
+// guarded paths (DispoService.cancel_reservation() / sell()) know how to
+// close — a plain PUT /vehicles/:id/status out of RESERVED is now rejected
+// server-side (VehicleService.change_status's allow_reserved_exit guard).
+// This dropdown has no Reserve/Sell/Cancel-reservation dialogs of its own
+// (those live in the Dispo workspace), so a RESERVED vehicle offers no
+// direct status change here — mirrors StatusEditCell's REOPEN_ONLY_STATUSES.
+const NO_DIRECT_EXIT_STATUSES = new Set<VehicleStatus>(['RESERVED'])
+
 // ── Helpers ────────────────────────────────────────────────
 function formatDate(d: string | null): string {
   if (!d) return '-'
@@ -281,6 +290,7 @@ export default function CarParkDetail() {
   // Available next statuses
   const nextStatuses = useMemo(() => {
     if (!vehicle) return []
+    if (NO_DIRECT_EXIT_STATUSES.has(vehicle.status)) return []
     return STATUS_TRANSITIONS[vehicle.status] ?? []
   }, [vehicle])
 

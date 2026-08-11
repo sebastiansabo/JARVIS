@@ -5,7 +5,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn, useDebounce } from '@/lib/utils'
-import { fieldSalesApi, type FSClientSearch } from '@/api/fieldSales'
+import type { FSClientSearch } from '@/api/fieldSales'
+import { carparkDispoApi } from '@/api/carparkDispo'
 
 export interface ClientSearchValue {
   id?: number | null
@@ -36,11 +37,14 @@ interface ClientSearchSelectProps {
 }
 
 /**
- * Async typeahead over crm_clients (GET /api/field-sales/clients/search) —
- * the reusable client picker behind buyer fields in CarPark (Dispo table
- * cell, Sell dialog, Vânzare tab). Picking a result commits `{ id, name }`;
- * when allowCustom is on, the typed text can also be committed as-is with a
- * null id so a walk-in buyer not in the CRM can still be recorded.
+ * Async typeahead over crm_clients (GET /api/carpark/clients/search) — the
+ * reusable client picker behind buyer fields in CarPark (Dispo table cell,
+ * Sell dialog, Vânzare tab). Uses the carpark-scoped search route (not
+ * /api/field-sales/clients/search) so a CarPark editor without field-sales
+ * access isn't 403'd by field_sales_required; same response shape, so this
+ * is otherwise unchanged. Picking a result commits `{ id, name }`; when
+ * allowCustom is on, the typed text can also be committed as-is with a null
+ * id so a walk-in buyer not in the CRM can still be recorded.
  *
  * Mirrors SearchSelect.tsx's controlled/uncontrolled `open` pattern so it
  * slots into EditableCell's "opens immediately in edit mode, commits on
@@ -74,7 +78,7 @@ export function ClientSearchSelect({
   // enforces (a shorter query 400s) — never fire a doomed request.
   const { data, isFetching, isError } = useQuery({
     queryKey: ['client-search', trimmedQuery, companyId ?? null],
-    queryFn: () => fieldSalesApi.searchClients(trimmedQuery, companyId),
+    queryFn: () => carparkDispoApi.searchClients(trimmedQuery, companyId),
     enabled: open && trimmedQuery.length >= 2,
     staleTime: 30_000,
     retry: false,

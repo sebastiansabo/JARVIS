@@ -394,6 +394,70 @@ def test_import_route_commit_requires_delete_permission(client, monkeypatch):
     assert resp.status_code == 403
 
 
+# ── CLIENTS — CARPARK-SCOPED CRM SEARCH ──────────────────────────────────
+#
+# /api/carpark/clients/search (vehicles.py) exists so a CarPark editor
+# without field-sales access isn't 403'd by /api/field-sales/clients/search's
+# field_sales_required gate. It delegates to the same ClientFSRepository the
+# field_sales route uses (no duplicated SQL), scoped to the caller's own
+# company only.
+
+def test_client_search_requires_min_query_length(client):
+    resp = client.get('/api/carpark/clients/search?q=a')
+    assert resp.status_code == 400
+    assert 'error' in resp.get_json()
+
+
+def test_client_search_requires_carpark_access(client, monkeypatch):
+    _set_user(monkeypatch, FakeUser(can_access_carpark=False))
+    resp = client.get('/api/carpark/clients/search?q=popescu')
+    assert resp.status_code == 403
+
+
+def test_client_search_returns_success_shape(client, monkeypatch):
+    monkeypatch.setattr(vehicles_mod._client_repo, 'search_clients',
+                         lambda *a, **k: [{'id': 1, 'display_name': 'Popescu Vasile'}])
+
+    resp = client.get('/api/carpark/clients/search?q=popescu')
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body['success'] is True
+    assert body['count'] == 1
+    assert body['clients'][0]['display_name'] == 'Popescu Vasile'
+
+
+def test_client_search_scopes_to_callers_company(client, monkeypatch):
+    """The caller's OWN company only — NOT field_sales' allowed-companies
+    logic — is what gates the search, regardless of any company_id the
+    client might pass."""
+    captured = {}
+
+    def _search(query, limit=20, company_ids=None):
+        captured['query'] = query
+        captured['limit'] = limit
+        captured['company_ids'] = company_ids
+        return []
+    monkeypatch.setattr(vehicles_mod._client_repo, 'search_clients', _search)
+
+    resp = client.get('/api/carpark/clients/search?q=popescu&company_id=99999')
+    assert resp.status_code == 200
+    assert captured['query'] == 'popescu'
+    assert captured['company_ids'] == [COMPANY_ID]
+
+
+def test_client_search_no_company_returns_empty_without_hitting_repo(client, monkeypatch):
+    _set_user(monkeypatch, FakeUser(company_id=None))
+    called = []
+    monkeypatch.setattr(vehicles_mod._client_repo, 'search_clients',
+                         lambda *a, **k: called.append(1))
+
+    resp = client.get('/api/carpark/clients/search?q=popescu')
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body == {'success': True, 'clients': [], 'count': 0}
+    assert called == []
+
+
 def test_import_route_generic_500_does_not_leak_internals(client, monkeypatch):
     """A forced unexpected error must return a generic body — no exception
     text / traceback / internal detail in the response."""
