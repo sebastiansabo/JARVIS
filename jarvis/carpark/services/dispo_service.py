@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional
 
 from carpark.repositories.document_repository import DocumentRepository
 from carpark.repositories.reservation_repository import ReservationRepository
+from carpark.repositories.transfer_repository import TransferRepository
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.services.vehicle_service import VehicleService
 from carpark.services.publishing_service import PublishingService
@@ -103,12 +104,14 @@ class DispoService:
                  vehicle_repo: VehicleRepository = None,
                  vehicle_service: VehicleService = None,
                  publishing_service: PublishingService = None,
+                 transfer_repo: TransferRepository = None,
                  notify_fn=None):
         self._document_repo = document_repo or DocumentRepository()
         self._reservation_repo = reservation_repo or ReservationRepository()
         self._vehicle_repo = vehicle_repo or VehicleRepository()
         self._vehicle_service = vehicle_service or VehicleService()
         self._publishing_service = publishing_service or PublishingService()
+        self._transfer_repo = transfer_repo or TransferRepository()
         self._notify = notify_fn or notify_user
 
     # ── shared guards ──
@@ -385,6 +388,136 @@ class DispoService:
         self._notify_vehicle_contacts(vehicle, 'Vehicul redeschis', message=reason)
 
         return {'vehicle': updated_vehicle}
+
+    # ── TRANSFER (inter-company) ──
+
+    def transfer(self, vehicle_id: int, company_id: int, user, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Move a vehicle to an AutoWorld sibling company and log the move.
+
+        Unlike every other action in this file, transfer() reassigns the
+        vehicle's OWNER (company_id) — a car has exactly one owner, so once
+        this returns the vehicle belongs to `to_company_id` and no longer
+        appears in the source company's Dispo pipeline at all. It lands at
+        the destination as a fresh intake (status='ACQUIRED', source=
+        'TRANSFER', transferred_from_company_id=<source company_id>) — the
+        status is set directly via VehicleService.update_vehicle(), NOT
+        change_status()/TRANSITIONS, deliberately: TRANSITIONS validates a
+        move FROM the vehicle's current status, but a transfer can originate
+        from almost any status (LISTED, RESERVED, READY_FOR_SALE, ...) and
+        always lands the same way on the other side, exactly like a newly
+        acquired car starting the pipeline. A read-only source-side
+        'Transferat' record (so company A can still see the car left) is a
+        separate, later task — this method only performs the move + the
+        carpark_transfers log entry.
+
+        Body: {to_company_id, transfer_price, document_id, transfer_date?,
+        transfer_currency?, notes?}. `document_id` must already reference an
+        existing carpark_vehicle_documents row — the route
+        (carpark/routes/transfers.py) creates that document FIRST and passes
+        its id in; this method never creates documents itself.
+
+        Guards (ValueError -> 400 at the route):
+          - to_company_id required, and must be a sibling in company_id's
+            AutoWorld group (group_company_ids) and not company_id itself.
+          - transfer_price required and > 0.
+          - document_id required (the transfer's backing invoice).
+        """
+        vehicle = self._load_vehicle_or_raise(vehicle_id, company_id)
+        data = data or {}
+
+        to_company_id = data.get('to_company_id')
+        if not to_company_id:
+            raise ValueError('to_company_id is required')
+        try:
+            to_company_id = int(to_company_id)
+        except (TypeError, ValueError):
+            raise ValueError('to_company_id must be a valid company id')
+
+        group_ids = self._transfer_repo.group_company_ids(company_id)
+        if to_company_id == company_id or to_company_id not in group_ids:
+            raise ValueError('Transfer permis doar între companiile AutoWorld')
+
+        transfer_price = data.get('transfer_price')
+        if not transfer_price or float(transfer_price) <= 0:
+            raise ValueError('transfer_price is required and must be greater than 0')
+
+        document_id = data.get('document_id')
+        if not document_id:
+            raise ValueError('Documentul de transfer este obligatoriu')
+
+        transfer_date = data.get('transfer_date') or date.today()
+        transfer_currency = data.get('transfer_currency') or 'EUR'
+
+        transfer_record = self._transfer_repo.create({
+            'vehicle_id': vehicle_id,
+            'from_company_id': company_id,
+            'to_company_id': to_company_id,
+            'transfer_price': transfer_price,
+            'transfer_currency': transfer_currency,
+            'transfer_date': transfer_date,
+            'document_id': document_id,
+            'notes': data.get('notes'),
+            'created_by': _uid(user),
+        })
+
+        # MOVE + reset: via update_vehicle (not change_status — see
+        # docstring) so the move goes through the same audit-trail
+        # (modification_history) machinery every other field edit does.
+        updated_vehicle = self._vehicle_service.update_vehicle(
+            vehicle_id,
+            {
+                'company_id': to_company_id,
+                'status': 'ACQUIRED',
+                'transferred_from_company_id': company_id,
+                'source': 'TRANSFER',
+                'acquisition_price': transfer_price,
+                'acquisition_date': transfer_date,
+                'sale_price': None,
+                'sale_date': None,
+                'sale_type': None,
+                'buyer_client_id': None,
+                'buyer_name': None,
+            },
+            updated_by=_uid(user), updated_by_name=_uname(user))
+
+        # Fresh intake: no reservation or live listing should survive the
+        # move to the new owner.
+        active_reservation = self._reservation_repo.active_for_vehicle(vehicle_id)
+        if active_reservation:
+            self._reservation_repo.set_status(active_reservation['id'], 'cancelled')
+
+        self._publishing_service.deactivate_all(vehicle_id)
+
+        self._notify_transfer(vehicle, to_company_id)
+
+        return {'vehicle': updated_vehicle, 'transfer': transfer_record}
+
+    def _notify_transfer(self, source_vehicle: Dict[str, Any], to_company_id: int) -> None:
+        """Best-effort notify on both sides of a transfer: the source
+        vehicle's salesperson (same single-target convention as
+        _notify_vehicle_contacts) sees it left, and a handful of the
+        destination company's carpark editors see a car just landed in
+        their 'În pregătire' queue. Never raises — notification failures
+        must not fail a transfer that has already been committed."""
+        label = f"{source_vehicle.get('brand', '')} {source_vehicle.get('model', '')}".strip()
+
+        dest_name = None
+        try:
+            dest_name = self._transfer_repo.company_name(to_company_id)
+        except Exception as e:
+            logger.error(f'Transfer notify: dest company name lookup failed: {e}')
+
+        self._notify_vehicle_contacts(
+            source_vehicle, 'Vehicul transferat',
+            message=f"{label} a fost transferat către {dest_name or 'altă companie AutoWorld'}".strip())
+
+        try:
+            for uid in self._transfer_repo.company_editor_user_ids(to_company_id):
+                self._notify(uid, 'Vehicul transferat',
+                              message=f"{label} a fost transferat în compania dvs.".strip(),
+                              entity_type='carpark_vehicle', entity_id=source_vehicle.get('id'))
+        except Exception as e:
+            logger.error(f'Transfer notify: dest company users failed: {e}')
 
     # ── DOCUMENT CHECKLIST ──
 

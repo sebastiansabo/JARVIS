@@ -928,12 +928,12 @@ export type SaleType =
 export type DocumentType =
   | 'pv_intrare' | 'contract_achizitie' | 'civ' | 'talon' | 'factura_achizitie'
   | 'contract_vanzare' | 'factura_vanzare' | 'pv_livrare' | 'dosar_gw'
-  | 'asigurare' | 'itp' | 'mandat' | 'altele'
+  | 'asigurare' | 'itp' | 'mandat' | 'altele' | 'factura_transfer'
 
 export const DOCUMENT_TYPES: DocumentType[] = [
   'pv_intrare', 'contract_achizitie', 'civ', 'talon', 'factura_achizitie',
   'contract_vanzare', 'factura_vanzare', 'pv_livrare', 'dosar_gw',
-  'asigurare', 'itp', 'mandat', 'altele',
+  'asigurare', 'itp', 'mandat', 'altele', 'factura_transfer',
 ]
 
 export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
@@ -950,6 +950,7 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   itp: 'ITP',
   mandat: 'Mandat',
   altele: 'Altele',
+  factura_transfer: 'Factură transfer',
 }
 
 // One row of GET /dispo/summary's `rows` (DispoRepository.summary — v.*

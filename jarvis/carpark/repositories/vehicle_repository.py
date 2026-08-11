@@ -46,6 +46,14 @@ VEHICLE_UPDATABLE_FIELDS = {
     # can actually persist them.
     'intake_pv_date', 'supplier_payment_date', 'gw_file_number',
     'is_impus', 'missing_civ',
+    # Inter-company transfer (DispoService.transfer / carpark_transfers) —
+    # 'company_id' is server-controlled everywhere else (forced from
+    # _user_company_id() at create time, never client-writable via
+    # PUT /vehicles/<id>), but a transfer is the one legitimate path that
+    # reassigns a vehicle's owning company, so it must be writable through
+    # this same whitelist for VehicleService.update_vehicle()'s audit-trail
+    # (log_modification/pricing_history) machinery to persist the move.
+    'company_id', 'transferred_from_company_id',
 }
 
 # Lightweight fields for catalog list (mobile-friendly)
