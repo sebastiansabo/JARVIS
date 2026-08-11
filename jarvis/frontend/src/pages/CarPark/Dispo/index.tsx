@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowUpDown,
@@ -263,6 +263,7 @@ function ClientCell({ row, editable }: { row: DispoRow; editable: boolean }) {
 // ── Dispo workspace page ──────────────────────────────────────
 export default function CarParkDispo() {
   const navigate = useNavigate()
+  const location = useLocation()
   const isMobile = useIsMobile()
   const user = useAuthStore((s) => s.user)
   const canViewFinance = !!user?.can_view_carpark_finance
@@ -329,7 +330,11 @@ export default function CarParkDispo() {
     [sortBy],
   )
 
-  const handleRowClick = useCallback((row: DispoRow) => navigate(`/app/carpark/${row.id}`), [navigate])
+  const handleRowClick = useCallback(
+    (row: DispoRow) =>
+      navigate(`/app/carpark/${row.id}`, { state: { from: `${location.pathname}${location.search}` } }),
+    [navigate, location.pathname, location.search],
+  )
 
   // ── Filters passed to the API ───────────────────────────
   const activeFilters: DispoFilters = useMemo(() => {
