@@ -125,7 +125,7 @@ def test_reserve_inserts_reservation_and_moves_to_reserved():
     assert inserted['deposit_amount'] == 500
 
     mocks['vehicle_service'].change_status.assert_called_once_with(
-        1, 'RESERVED', changed_by=42, notes=ANY)
+        1, 'RESERVED', changed_by=42, notes=ANY, via_dispo_action=True)
 
     mocks['notify_fn'].assert_called_once()
     assert mocks['notify_fn'].call_args[0][0] == 55  # salesperson_user_id
@@ -169,7 +169,7 @@ def test_cancel_reservation_restores_prior_status_from_history():
 
     mocks['reservation_repo'].set_status.assert_called_once_with(7, 'cancelled')
     mocks['vehicle_service'].change_status.assert_called_once_with(
-        1, 'LISTED', changed_by=42, notes='Client backed out', allow_reserved_exit=True)
+        1, 'LISTED', changed_by=42, notes='Client backed out', via_dispo_action=True)
 
 
 def test_cancel_reservation_falls_back_to_ready_for_sale_when_no_history():
@@ -180,7 +180,7 @@ def test_cancel_reservation_falls_back_to_ready_for_sale_when_no_history():
     svc.cancel_reservation(1, COMPANY_ID, USER, reason='Client backed out')
 
     mocks['vehicle_service'].change_status.assert_called_once_with(
-        1, 'READY_FOR_SALE', changed_by=42, notes='Client backed out', allow_reserved_exit=True)
+        1, 'READY_FOR_SALE', changed_by=42, notes='Client backed out', via_dispo_action=True)
 
 
 # ── SELL ──────────────────────────────────────────────────────────────────
@@ -233,7 +233,7 @@ def test_sell_low_margin_gate_uses_vat_exclusive_cost_basis():
     # 10000 - 8000 - 1500 = +500 (VAT-exclusive) → OK; VAT-inclusive would be -300.
     svc.sell(1, COMPANY_ID, USER, _sell_data(sale_price=10000))
     mocks['vehicle_service'].change_status.assert_called_once_with(
-        1, 'SOLD', changed_by=42, notes=ANY, allow_reserved_exit=True)
+        1, 'SOLD', changed_by=42, notes=ANY, via_dispo_action=True)
 
 
 def test_sell_with_confirm_low_margin_proceeds_and_closes_reservation_and_deactivates():
@@ -251,7 +251,7 @@ def test_sell_with_confirm_low_margin_proceeds_and_closes_reservation_and_deacti
     assert update_args[1]['buyer_name'] == 'Popescu Vasile'
 
     mocks['vehicle_service'].change_status.assert_called_once_with(
-        1, 'SOLD', changed_by=42, notes=ANY, allow_reserved_exit=True)
+        1, 'SOLD', changed_by=42, notes=ANY, via_dispo_action=True)
     mocks['reservation_repo'].set_status.assert_called_once_with(9, 'converted')
     mocks['publishing_service'].deactivate_all.assert_called_once_with(1)
     mocks['notify_fn'].assert_called_once()
@@ -262,7 +262,7 @@ def test_sell_at_or_above_minimum_with_positive_margin_does_not_require_confirm(
     svc, mocks = _svc()
     svc.sell(1, COMPANY_ID, USER, _sell_data(sale_price=12000))
     mocks['vehicle_service'].change_status.assert_called_once_with(
-        1, 'SOLD', changed_by=42, notes=ANY, allow_reserved_exit=True)
+        1, 'SOLD', changed_by=42, notes=ANY, via_dispo_action=True)
 
 
 def test_sell_persists_crm_buyer_client_id():
@@ -319,7 +319,7 @@ def test_deliver_with_pv_livrare_succeeds():
     mocks['vehicle_service'].update_vehicle.assert_called_once_with(
         1, {'delivery_date': date(2026, 8, 10)}, updated_by=42, updated_by_name='Ana Pop')
     mocks['vehicle_service'].change_status.assert_called_once_with(
-        1, 'DELIVERED', changed_by=42, notes=ANY)
+        1, 'DELIVERED', changed_by=42, notes=ANY, via_dispo_action=True)
     mocks['notify_fn'].assert_called_once()
     assert result['vehicle']['status'] == 'DELIVERED'
 

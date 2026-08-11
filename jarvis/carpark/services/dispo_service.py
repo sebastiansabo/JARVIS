@@ -171,7 +171,8 @@ class DispoService:
 
         updated_vehicle = self._vehicle_service.change_status(
             vehicle_id, 'RESERVED', changed_by=_uid(user),
-            notes=f"Reserved for {data.get('client_name') or data.get('client_id')}")
+            notes=f"Reserved for {data.get('client_name') or data.get('client_id')}",
+            via_dispo_action=True)
 
         self._notify_vehicle_contacts(
             vehicle, 'Vehicul rezervat',
@@ -198,7 +199,7 @@ class DispoService:
         prior_status = self._prior_status_before_reserved(vehicle_id)
         updated_vehicle = self._vehicle_service.change_status(
             vehicle_id, prior_status, changed_by=_uid(user), notes=reason,
-            allow_reserved_exit=True)
+            via_dispo_action=True)
 
         self._notify_vehicle_contacts(vehicle, 'Rezervare anulată', message=reason)
 
@@ -255,7 +256,7 @@ class DispoService:
 
         updated_vehicle = self._vehicle_service.change_status(
             vehicle_id, 'SOLD', changed_by=_uid(user), notes='Vehicle sold',
-            allow_reserved_exit=True)
+            via_dispo_action=True)
 
         active_reservation = self._reservation_repo.active_for_vehicle(vehicle_id)
         if active_reservation:
@@ -322,7 +323,8 @@ class DispoService:
             updated_by=_uid(user), updated_by_name=_uname(user))
 
         updated_vehicle = self._vehicle_service.change_status(
-            vehicle_id, 'DELIVERED', changed_by=_uid(user), notes='Vehicle delivered')
+            vehicle_id, 'DELIVERED', changed_by=_uid(user), notes='Vehicle delivered',
+            via_dispo_action=True)
 
         self._notify_vehicle_contacts(
             vehicle, 'Vehicul livrat',
