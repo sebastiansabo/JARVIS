@@ -66,6 +66,30 @@ def transfer_destinations():
 
 
 # ═══════════════════════════════════════════════
+# TRANSFER — OUTBOUND HISTORY (SOURCE COMPANY)
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/vehicles/transfers-out', methods=['GET'])
+@login_required
+@carpark_required
+def transfers_out():
+    """Caller company's OUTBOUND transfer history (cars this company
+    transferred away to AutoWorld sibling companies), most recent first —
+    feeds the source company's read-only 'Transferat' entries in the Ieșit
+    view. See TransferRepository.list_outbound for the joined fields
+    (vin/brand/model/nr_stoc + destination company name)."""
+    company_id = _user_company_id()
+    if not company_id:
+        return jsonify({'transfers': []})
+    try:
+        transfers = _transfer_repo.list_outbound(company_id)
+        return jsonify({'transfers': _serialize(transfers)})
+    except Exception as e:
+        logger.error(f'Outbound transfers query failed (company_id={company_id}): {e}', exc_info=True)
+        return jsonify({'error': 'Internal error'}), 500
+
+
+# ═══════════════════════════════════════════════
 # TRANSFER — MOVE + LOG
 # ═══════════════════════════════════════════════
 
