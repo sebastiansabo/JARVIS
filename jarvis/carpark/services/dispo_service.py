@@ -238,7 +238,13 @@ class DispoService:
             'sale_type': data['sale_type'],
             'sale_date': data['sale_date'],
         }
-        if data.get('buyer_client_id'):
+        # Write buyer keys THROUGH by presence, not truthiness: when the caller
+        # sends buyer_client_id (even as an explicit None — a buyer switched
+        # from a CRM-linked client to a walk-in / free-text name), we must
+        # persist that None to CLEAR the old link. A truthy check would drop
+        # the None and leave a stale buyer_client_id pointing at the wrong CRM
+        # client while buyer_name shows the new name — silent corruption.
+        if 'buyer_client_id' in data:
             sale_fields['buyer_client_id'] = data['buyer_client_id']
         if data.get('buyer_name'):
             sale_fields['buyer_name'] = data['buyer_name']

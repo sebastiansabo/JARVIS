@@ -72,7 +72,9 @@ export const carparkDispoApi = {
       sale_type: SaleType
       sale_date: string
       buyer_name?: string
-      buyer_client_id?: number
+      // Explicit null (not just absence) matters: it tells sell() to CLEAR a
+      // stale CRM link when the buyer switches to a free-text/walk-in name.
+      buyer_client_id?: number | null
       confirm_low_margin?: boolean
     },
   ) => api.post<{ vehicle: Vehicle }>(`/api/carpark/vehicles/${vehicleId}/sell`, body),
