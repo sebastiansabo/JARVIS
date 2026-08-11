@@ -15,6 +15,9 @@ interface SearchSelectProps {
   /** Allow typing a custom value not in the list */
   allowCustom?: boolean
   disabled?: boolean
+  /** Controlled open state (e.g. to auto-open on mount for inline editing). Uncontrolled (internal state) when omitted. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 export function SearchSelect({
@@ -26,8 +29,15 @@ export function SearchSelect({
   emptyMessage = 'No results.',
   allowCustom = false,
   disabled = false,
+  open: openProp,
+  onOpenChange,
 }: SearchSelectProps) {
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = openProp ?? internalOpen
+  const setOpen = (v: boolean) => {
+    if (openProp === undefined) setInternalOpen(v)
+    onOpenChange?.(v)
+  }
   const [search, setSearch] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
