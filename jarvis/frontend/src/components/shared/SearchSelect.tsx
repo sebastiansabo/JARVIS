@@ -120,7 +120,14 @@ export function SearchSelect({
             </div>
           )}
           {filtered.length === 0 && !showCustomOption ? (
-            <div className="px-3 py-4 text-center text-sm text-muted-foreground">{emptyMessage}</div>
+            allowCustom && search.trim() === '' ? (
+              <div className="flex flex-col items-center gap-1 px-3 py-4 text-center text-sm text-muted-foreground">
+                <Plus className="h-3.5 w-3.5" />
+                <span>Scrie pentru a adăuga o valoare nouă</span>
+              </div>
+            ) : (
+              <div className="px-3 py-4 text-center text-sm text-muted-foreground">{emptyMessage}</div>
+            )
           ) : (
             <div className="p-1">
               {filtered.map((o) => (
