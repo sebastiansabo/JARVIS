@@ -20,7 +20,7 @@ export type EditableVehicleField =
   | 'acquisition_price' | 'sale_price' | 'salesperson_user_id' | 'acquisition_manager_id'
   | 'is_impus' | 'missing_civ' | 'stock_removed'
 
-export type EditableCellType = 'text' | 'number' | 'money' | 'date' | 'select' | 'user' | 'flag'
+export type EditableCellType = 'text' | 'number' | 'money' | 'date' | 'select' | 'user' | 'combo' | 'flag'
 
 export type EditableCellValue = string | number | boolean | null
 
@@ -34,8 +34,14 @@ interface EditableCellProps {
   row: DispoRow
   field: EditableVehicleField
   type: EditableCellType
-  /** Options for 'select' (dropdown_options) and 'user' (users list) types. */
+  /** Options for 'select' (dropdown_options), 'user' (users list), and 'combo' (catalog values) types. */
   options?: EditableCellOption[]
+  /**
+   * 'combo' only: let the user commit free text that isn't in `options`
+   * (e.g. a brand/model not in the Autovit catalog) instead of restricting
+   * to the list. Passed straight through to SearchSelect.
+   */
+  allowCustom?: boolean
   editable: boolean
   /** Renders both the read-only display and the "not editing yet" display in edit-capable cells. */
   display: (value: EditableCellValue) => ReactNode
@@ -56,7 +62,7 @@ const INVALID = Symbol('invalid')
  * ['carpark','dispo','summary'] cache with revert+toast on failure (see
  * dispoInlineEdit.ts).
  */
-export function EditableCell({ value, row, field, type, options, editable, display, onSaved }: EditableCellProps) {
+export function EditableCell({ value, row, field, type, options, allowCustom, editable, display, onSaved }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -177,6 +183,46 @@ export function EditableCell({ value, row, field, type, options, editable, displ
           onValueChange={(raw) => {
             setEditing(false)
             const newValue = raw === '' ? null : Number(raw)
+            if (newValue === (value ?? null)) return
+            void runSave(newValue)
+          }}
+          placeholder="Alege..."
+          searchPlaceholder="Caută..."
+          emptyMessage="Niciun rezultat"
+        />
+      </div>
+    )
+  }
+
+  // ── combo: searchable dropdown (SearchSelect), string value, optional free text ──
+  if (type === 'combo') {
+    if (!editable) return <>{display(value)}</>
+    if (!editing) {
+      return (
+        <span
+          onClick={(e) => {
+            e.stopPropagation()
+            setEditing(true)
+          }}
+          className="block cursor-text rounded-sm px-0.5 -mx-0.5 hover:bg-accent/60"
+        >
+          {display(value)}
+        </span>
+      )
+    }
+    return (
+      <div onClick={(e) => e.stopPropagation()} className="min-w-[10rem]">
+        <SearchSelect
+          value={value == null ? '' : String(value)}
+          options={options ?? []}
+          allowCustom={allowCustom}
+          open
+          onOpenChange={(o) => {
+            if (!o) setEditing(false)
+          }}
+          onValueChange={(raw) => {
+            setEditing(false)
+            const newValue = raw === '' ? null : raw
             if (newValue === (value ?? null)) return
             void runSave(newValue)
           }}
