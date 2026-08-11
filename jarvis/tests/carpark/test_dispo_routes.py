@@ -250,6 +250,79 @@ def test_list_vehicle_reservations_delegates_to_repo(client, monkeypatch):
     assert len(resp.get_json()['reservations']) == 2
 
 
+# ── PUT /vehicles/<id> — company reassignment IDOR guard ─────────────────
+# Regression tests for the fix that keeps 'company_id' /
+# 'transferred_from_company_id' — added to VEHICLE_UPDATABLE_FIELDS ONLY so
+# DispoService.transfer() can persist an inter-company move — from being
+# writable via the *generic* PUT /vehicles/<id> route. update_vehicle()
+# .pop()s both before handing the body to the service, so a plain PUT can
+# never reassign a car's owning company (which would bypass transfer()'s
+# AutoWorld-group/price/document guards). These guard the .pop() against a
+# future refactor silently removing it.
+
+def _capturing_update_vehicle(monkeypatch, base_vehicle):
+    """Patch _vehicle_service.update_vehicle to (a) record the exact data
+    dict the route passed it (post-strip) and (b) simulate a real repo
+    update: merge that data onto base_vehicle and return the result, so the
+    response reflects what the DB *would* persist. Returns the captured
+    dict, mutated in place on call."""
+    captured = {}
+
+    def _update(vehicle_id, data, updated_by=None, updated_by_name=None):
+        captured['data'] = dict(data)
+        merged = dict(base_vehicle)
+        merged.update(data)  # only keys the route actually forwarded land here
+        return merged
+    monkeypatch.setattr(vehicles_mod._vehicle_service, 'update_vehicle', _update)
+    return captured
+
+
+def test_put_vehicle_cannot_reassign_company_id(client, monkeypatch):
+    """A PUT body that tries to move the car to company B (and set a
+    transferred_from marker) leaves company_id / transferred_from_company_id
+    UNCHANGED at company A, while a legitimate co-submitted field
+    (current_price) DOES update — proving the strip is targeted, not a
+    blanket reject."""
+    base = _own_vehicle(1, company_id=COMPANY_ID,
+                        transferred_from_company_id=None, current_price=10000)
+    monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle', lambda vid: dict(base))
+    captured = _capturing_update_vehicle(monkeypatch, base)
+
+    resp = client.put('/api/carpark/vehicles/1', json={
+        'company_id': OTHER_COMPANY_ID,
+        'transferred_from_company_id': OTHER_COMPANY_ID,
+        'current_price': 12345,
+    })
+    assert resp.status_code == 200
+    vehicle = resp.get_json()['vehicle']
+
+    # The move was stripped: still company A, marker untouched.
+    assert vehicle['company_id'] == COMPANY_ID
+    assert vehicle['transferred_from_company_id'] is None
+    # The legitimate field flowed through.
+    assert vehicle['current_price'] == 12345
+
+    # And prove it at the source: the two protected keys never even reached
+    # the service, while current_price did.
+    assert 'company_id' not in captured['data']
+    assert 'transferred_from_company_id' not in captured['data']
+    assert captured['data']['current_price'] == 12345
+
+
+def test_put_vehicle_strips_company_id_even_when_sole_field(client, monkeypatch):
+    """A PUT whose ONLY field is company_id must not reassign the company —
+    the stripped body is empty, so update_vehicle is handed nothing that
+    changes ownership."""
+    base = _own_vehicle(1, company_id=COMPANY_ID)
+    monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle', lambda vid: dict(base))
+    captured = _capturing_update_vehicle(monkeypatch, base)
+
+    resp = client.put('/api/carpark/vehicles/1', json={'company_id': OTHER_COMPANY_ID})
+    assert resp.status_code == 200
+    assert resp.get_json()['vehicle']['company_id'] == COMPANY_ID
+    assert 'company_id' not in captured['data']
+
+
 # ── FINANCE GATING ────────────────────────────────────────────────────────
 
 def _canned_summary():

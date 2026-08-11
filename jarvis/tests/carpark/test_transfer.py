@@ -17,10 +17,16 @@ Invocation:
 from datetime import date
 
 import pytest
+from flask import Flask
 
+from carpark import carpark_bp
+from carpark.repositories.document_repository import DocumentRepository
 from carpark.repositories.reservation_repository import ReservationRepository
 from carpark.repositories.transfer_repository import TransferRepository
+from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.services.dispo_service import DispoService
+import carpark.routes.vehicles as vehicles_mod
+import carpark.routes.transfers as transfers_mod
 
 from database import get_db, get_cursor, release_db
 from .conftest import REAL_DB_AVAILABLE
@@ -183,7 +189,6 @@ def test_transfer_moves_vehicle_sets_fields_and_logs(transfer_seed):
     assert outbound[0]['to_company_id'] == COMPANY_B
     assert float(outbound[0]['transfer_price']) == 10000
 
-    from carpark.repositories.vehicle_repository import VehicleRepository
     persisted = VehicleRepository().get_by_id(vehicle_id)
     assert persisted['company_id'] == COMPANY_B
     assert persisted['status'] == 'ACQUIRED'
@@ -304,7 +309,112 @@ def test_rejected_transfer_leaves_no_transfer_row_and_vehicle_unmoved(transfer_s
 
     assert TransferRepository().list_outbound(COMPANY_A) == []
 
-    from carpark.repositories.vehicle_repository import VehicleRepository
     persisted = VehicleRepository().get_by_id(vehicle_id)
     assert persisted['company_id'] == COMPANY_A
     assert persisted['status'] == 'READY_FOR_SALE'
+
+
+# ── ROUTE-LEVEL: invalid transfer must not create an orphaned document ────
+# The "validate before creating the document" reorder lives in the ROUTE
+# (carpark/routes/transfers.py), not the service — the service never creates
+# documents. So this behaviour needs a real Flask-client + real-DB test that
+# drives POST /vehicles/<id>/transfer end-to-end. Mirrors the mock-based
+# auth pattern in test_dispo_routes.py (LOGIN_DISABLED + current_user
+# monkeypatched onto both the transfers route module and vehicles_mod, where
+# the carpark_required family / _verify_vehicle_ownership / _user_company_id
+# live), but against the real seeded sentinel companies/vehicle so document
+# and transfer rows are actually (not) written.
+
+class _FakeUser:
+    def __init__(self, id=1, company_id=COMPANY_A):
+        self.id = id
+        self.company_id = company_id
+        self.name = 'Test User'
+        self.is_authenticated = True
+        self.can_access_carpark = True
+        self.can_edit_carpark = True
+        self.can_delete_carpark = True
+        self.can_view_carpark_finance = False
+
+
+@pytest.fixture
+def route_client(monkeypatch):
+    """Flask test client for the transfer routes, authenticated as a
+    company-A carpark editor. Patches current_user on both modules that read
+    it at call time."""
+    app = Flask(__name__)
+    app.register_blueprint(carpark_bp)
+    app.config['TESTING'] = True
+    app.config['LOGIN_DISABLED'] = True
+    user = _FakeUser()
+    monkeypatch.setattr(vehicles_mod, 'current_user', user)
+    monkeypatch.setattr(transfers_mod, 'current_user', user)
+    return app.test_client()
+
+
+def test_route_invalid_destination_creates_no_document_or_transfer(transfer_seed, route_client):
+    """POST /vehicles/<id>/transfer with a destination OUTSIDE the AutoWorld
+    group is rejected (400) BEFORE the transfer document is created — so the
+    vehicle's document count is unchanged (no orphan), no carpark_transfers
+    row is written, and the vehicle stays put in COMPANY_A."""
+    vehicle_id = transfer_seed['vehicle_id']
+    doc_repo = DocumentRepository()
+    docs_before = len(doc_repo.list_for_vehicle(vehicle_id))
+
+    resp = route_client.post(f'/api/carpark/vehicles/{vehicle_id}/transfer', json={
+        'to_company_id': OUTSIDE_COMPANY,
+        'transfer_price': 5000,
+        'document_file_url': 'https://example.com/transfer.pdf',
+    })
+    assert resp.status_code == 400
+    assert 'AutoWorld' in resp.get_json()['error']
+
+    # No orphaned document, no transfer row, vehicle unmoved.
+    assert len(doc_repo.list_for_vehicle(vehicle_id)) == docs_before
+    assert TransferRepository().list_outbound(COMPANY_A) == []
+    persisted = VehicleRepository().get_by_id(vehicle_id)
+    assert persisted['company_id'] == COMPANY_A
+    assert persisted['status'] == 'READY_FOR_SALE'
+
+
+def test_route_missing_price_creates_no_document(transfer_seed, route_client):
+    """A zero transfer_price is likewise rejected before document creation —
+    the cheap price guard runs ahead of the document, so no orphan row."""
+    vehicle_id = transfer_seed['vehicle_id']
+    doc_repo = DocumentRepository()
+    docs_before = len(doc_repo.list_for_vehicle(vehicle_id))
+
+    resp = route_client.post(f'/api/carpark/vehicles/{vehicle_id}/transfer', json={
+        'to_company_id': COMPANY_B,
+        'transfer_price': 0,
+        'document_file_url': 'https://example.com/transfer.pdf',
+    })
+    assert resp.status_code == 400
+    assert len(doc_repo.list_for_vehicle(vehicle_id)) == docs_before
+
+
+def test_route_valid_transfer_creates_one_document_and_moves_vehicle(transfer_seed, route_client):
+    """Happy path through the route (proving the validate-first reorder
+    didn't break it): a valid link-mode transfer creates exactly ONE new
+    document, writes the carpark_transfers row, and moves the vehicle to
+    COMPANY_B as a fresh ACQUIRED intake."""
+    vehicle_id = transfer_seed['vehicle_id']
+    doc_repo = DocumentRepository()
+    docs_before = len(doc_repo.list_for_vehicle(vehicle_id))
+
+    resp = route_client.post(f'/api/carpark/vehicles/{vehicle_id}/transfer', json={
+        'to_company_id': COMPANY_B,
+        'transfer_price': 9000,
+        'document_file_url': 'https://example.com/transfer.pdf',
+    })
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body['vehicle']['company_id'] == COMPANY_B
+    assert body['vehicle']['status'] == 'ACQUIRED'
+
+    # Exactly one document was created (the transfer invoice).
+    assert len(doc_repo.list_for_vehicle(vehicle_id)) == docs_before + 1
+    outbound = TransferRepository().list_outbound(COMPANY_A)
+    assert len(outbound) == 1
+    assert outbound[0]['to_company_id'] == COMPANY_B
+    assert outbound[0]['document_id'] is not None

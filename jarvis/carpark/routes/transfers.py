@@ -87,9 +87,10 @@ def transfer_vehicle(vehicle_id):
         integration is enabled, mirroring documents.py's upload mode.
       - JSON document_file_url (http(s) URL) and/or dms_document_id.
 
-    The document row is created FIRST — before DispoService.transfer is
-    even called — so a caller can inspect the created document even if the
-    transfer itself is later rejected (e.g. an invalid to_company_id).
+    The cheap, document-independent guards (destination present + a valid
+    AutoWorld-group sibling, price > 0) run BEFORE the document is created,
+    so a rejected transfer never leaves an orphaned carpark_vehicle_documents
+    row. DispoService.transfer re-validates all of them as defense-in-depth.
     """
     vehicle, err = _verify_vehicle_ownership(vehicle_id)
     if err:
@@ -98,9 +99,19 @@ def transfer_vehicle(vehicle_id):
     uploaded_file = request.files.get('file') if request.files else None
     if uploaded_file:
         data = request.form.to_dict()
-        document, doc_err = _create_transfer_document_via_upload(vehicle_id, vehicle, uploaded_file, data)
     else:
         data = request.get_json(silent=True) or {}
+
+    # Validate BEFORE creating the document — otherwise an invalid transfer
+    # (missing/zero price, non-group destination) would still persist a
+    # dangling carpark_vehicle_documents row on the vehicle.
+    val_err = _validate_transfer_request(data, _user_company_id())
+    if val_err:
+        return val_err
+
+    if uploaded_file:
+        document, doc_err = _create_transfer_document_via_upload(vehicle_id, vehicle, uploaded_file, data)
+    else:
         document, doc_err = _create_transfer_document_via_link(vehicle_id, data)
     if doc_err:
         return doc_err
@@ -117,6 +128,42 @@ def transfer_vehicle(vehicle_id):
     except Exception as e:
         logger.error(f'Transfer failed for vehicle {vehicle_id}: {e}', exc_info=True)
         return jsonify({'error': 'Internal error'}), 500
+
+
+def _validate_transfer_request(data, source_company_id):
+    """Cheap, document-independent transfer guards, run BEFORE the transfer
+    document is created so an invalid request leaves no orphaned
+    carpark_vehicle_documents row. Mirrors DispoService.transfer's own
+    guards (which still re-run as defense-in-depth) with the SAME RO
+    messages. Returns an error response tuple, or None when valid.
+
+    Calls TransferRepository.group_company_ids from the route — that's a
+    repo method, not inline SQL, so the no-SQL-in-routes rule holds. The
+    document-dependency guard (document_id required) is intentionally NOT
+    here: the document doesn't exist yet at this point and is guaranteed by
+    the route creating it next, then re-checked by the service."""
+    to_company_id = data.get('to_company_id')
+    if not to_company_id:
+        return jsonify({'error': 'to_company_id is required'}), 400
+    try:
+        to_company_id = int(to_company_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'to_company_id must be a valid company id'}), 400
+
+    transfer_price = data.get('transfer_price')
+    try:
+        price_ok = (transfer_price is not None and str(transfer_price).strip() != ''
+                    and float(transfer_price) > 0)
+    except (TypeError, ValueError):
+        price_ok = False
+    if not price_ok:
+        return jsonify({'error': 'transfer_price is required and must be greater than 0'}), 400
+
+    group_ids = _transfer_repo.group_company_ids(source_company_id)
+    if to_company_id == source_company_id or to_company_id not in group_ids:
+        return jsonify({'error': 'Transfer permis doar între companiile AutoWorld'}), 400
+
+    return None
 
 
 def _create_transfer_document_via_link(vehicle_id, data):
