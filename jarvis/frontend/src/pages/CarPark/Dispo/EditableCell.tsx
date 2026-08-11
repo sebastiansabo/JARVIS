@@ -52,6 +52,16 @@ const SELECT_NONE = '__dispo_none__'
 // Sentinel distinguishing "not a number" from a legitimate null/empty commit.
 const INVALID = Symbol('invalid')
 
+// IMPUS and SCOS din evidență are mutually exclusive at the DB level
+// (vehicle_service.update_vehicle raises/normalizes to enforce it
+// server-side). Turning one flag on here must clear the other so the
+// optimistic cache patch — and the persisted PUT payload — never assert
+// both at once; LIPSĂ CIV has no entry and stays a plain single-field toggle.
+const FLAG_EXCLUSIVITY: Partial<Record<EditableVehicleField, EditableVehicleField>> = {
+  is_impus: 'stock_removed',
+  stock_removed: 'is_impus',
+}
+
 /**
  * Generic Excel-like inline cell for the Dispo workspace table: click an
  * editable cell to swap its display for the right input; Enter/blur saves
@@ -79,12 +89,22 @@ export function EditableCell({ value, row, field, type, options, allowCustom, ed
   )
 
   async function runSave(newValue: EditableCellValue) {
-    const patch = { [field]: newValue } as Partial<DispoRow>
-    const revert = { [field]: value } as Partial<DispoRow>
+    // When switching a mutually-exclusive flag ON, pair it with clearing
+    // its sibling in the same patch/request; OFF (and every non-exclusive
+    // field) stays a plain single-field update.
+    const opposite = FLAG_EXCLUSIVITY[field]
+    const clearsOpposite = Boolean(opposite) && newValue === true
+    const payload = clearsOpposite
+      ? ({ [field]: newValue, [opposite as string]: false } as Partial<Vehicle>)
+      : ({ [field]: newValue } as Partial<Vehicle>)
+    const patch = payload as Partial<DispoRow>
+    const revert = clearsOpposite
+      ? ({ [field]: value, [opposite as string]: row[opposite as EditableVehicleField] } as Partial<DispoRow>)
+      : ({ [field]: value } as Partial<DispoRow>)
     const ok = await save({
       patch,
       revert,
-      request: () => carparkApi.updateVehicle(row.id, { [field]: newValue } as Partial<Vehicle>),
+      request: () => carparkApi.updateVehicle(row.id, payload),
       errorFallback: 'Eroare la salvare',
     })
     if (ok) onSaved?.(patch)

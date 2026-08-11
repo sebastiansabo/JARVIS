@@ -143,6 +143,23 @@ class VehicleService:
         if not old_vehicle:
             return None
 
+        # INVARIANT: NOT (is_impus AND stock_removed) — IMPUS and SCOS din
+        # evidență are mutually exclusive lifecycle flags. A payload that
+        # explicitly asserts both at once is a contradiction (raised as a
+        # ValueError, mapped to 400 by the route). A payload that turns ONE
+        # of them on implicitly clears the other, so callers that only know
+        # about one flag (e.g. DispoService.remove_from_stock(), which sends
+        # only stock_removed=True) transparently clear the sibling without
+        # needing to know it exists. missing_civ is untouched — independent.
+        wants_impus = bool(data.get('is_impus'))
+        wants_stock_removed = bool(data.get('stock_removed'))
+        if wants_impus and wants_stock_removed:
+            raise ValueError('IMPUS și SCOS din evidență nu pot fi active simultan')
+        elif wants_impus:
+            data['stock_removed'] = False
+        elif wants_stock_removed:
+            data['is_impus'] = False
+
         updated = self._repo.update(vehicle_id, data, updated_by=updated_by)
         if not updated:
             return old_vehicle
