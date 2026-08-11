@@ -12,6 +12,8 @@ import {
   DollarSign,
   Paperclip,
   FileSpreadsheet,
+  LayoutGrid,
+  Table as TableIcon,
 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchInput } from '@/components/shared/SearchInput'
@@ -48,7 +50,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAuthStore } from '@/stores/authStore'
 import { useIsMobile } from '@/hooks/useMediaQuery'
-import { cn } from '@/lib/utils'
+import { cn, usePersistedState } from '@/lib/utils'
 import { carparkDispoApi } from '@/api/carparkDispo'
 import { carparkApi } from '@/api/carpark'
 import { usersApi } from '@/api/users'
@@ -59,12 +61,13 @@ import {
   DISPO_STAGES,
   type DispoRow,
   type DispoFilters,
-  type VehicleStatus,
 } from '@/types/carpark'
 import { DispoStatusBadge } from './DispoStatusBadge'
 import { EditableCell, type EditableCellOption } from './EditableCell'
 import { StatusEditCell } from './StatusEditCell'
 import { useDispoInlineSave } from './dispoInlineEdit'
+import { agingClass } from './dispoAging'
+import { KanbanBoard } from './KanbanBoard'
 
 function Muted() {
   return <span className="text-muted-foreground">—</span>
@@ -94,22 +97,6 @@ const SORTABLE_KEYS = new Set([
   'days_in_stock', 'gross_margin', 'current_price', 'sale_price',
   'acquisition_price', 'brand', 'model', 'status', 'vin', 'created_at',
 ])
-
-// Stages that are no longer "in the pipeline" for aging purposes — a sold,
-// delivered, or exited vehicle stops accumulating stock-aging risk.
-const SOLD_OR_EXITED_STATUSES = new Set<VehicleStatus>(
-  DISPO_STAGES.filter((s) => s.key === 'vandut' || s.key === 'livrat' || s.key === 'iesit').flatMap(
-    (s) => s.statuses,
-  ),
-)
-
-function agingClass(days: number, status: VehicleStatus): string {
-  if (SOLD_OR_EXITED_STATUSES.has(status)) return ''
-  if (days > 90) return 'text-red-800 dark:text-red-300 font-semibold'
-  if (days > 60) return 'text-red-600 dark:text-red-400 font-medium'
-  if (days >= 30) return 'text-amber-600 dark:text-amber-500'
-  return 'text-green-600 dark:text-green-500'
-}
 
 function fmtDate(d: string | null | undefined): string {
   if (!d) return '—'
@@ -284,6 +271,10 @@ export default function CarParkDispo() {
   const [searchParams, setSearchParams] = useSearchParams()
   const activeStage = searchParams.get('stage') || ''
 
+  // Table ⇄ Kanban toggle — persisted per-browser, defaults to table (prior
+  // behavior unchanged for anyone who's never touched the toggle).
+  const [view, setView] = usePersistedState<'table' | 'kanban'>('dispo-view', 'table')
+
   const [filterValues, setFilterValues] = useState<Record<string, string>>({
     brand: '',
     location_id: '',
@@ -356,10 +347,20 @@ export default function CarParkDispo() {
     return f
   }, [activeStage, filterValues, dateFrom, dateTo, search])
 
+  // Same filters, minus `stage` — the Kanban board renders all 7 stages as
+  // columns at once, so a pipeline-tab stage filter (which only makes sense
+  // against the tabs+table view, hidden while view === 'kanban') never gets
+  // forwarded to its fetch.
+  const kanbanFilters: DispoFilters = useMemo(() => {
+    const { stage: _stage, ...rest } = activeFilters
+    return rest
+  }, [activeFilters])
+
   // ── Data fetching ────────────────────────────────────────
   const { data: summaryData, isLoading: summaryLoading } = useQuery({
     queryKey: ['carpark', 'dispo', 'summary', activeFilters, page, perPage, sortBy, sortDir],
     queryFn: () => carparkDispoApi.getSummary(activeFilters, page, perPage, sortBy, sortDir),
+    enabled: view === 'table',
   })
 
   const { data: kpisData, isLoading: kpisLoading } = useQuery({
@@ -902,47 +903,78 @@ export default function CarParkDispo() {
         )}
       </div>
 
-      {/* Zone 2 — pipeline tabs */}
-      <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none">
-        {DISPO_STAGES.map((stage) => {
-          const isActive = activeStage === stage.key
-          const count = stageCounts ? (stage.key ? stageCounts[stage.key] : stageCounts.all) : undefined
-          return (
-            <button
-              key={stage.key || 'all'}
-              onClick={() => setActiveStage(stage.key)}
-              className={cn(
-                'shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
-                isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80',
-              )}
-            >
-              {stage.label}
-              {count != null && (
-                <span className={cn('ml-1.5 text-xs', isActive ? 'text-primary-foreground/70' : 'text-muted-foreground/60')}>
-                  {count}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
+      {/* Zone 2 — pipeline tabs (table view only; the Kanban board shows every
+          stage as its own column at once, so a single-stage tab filter
+          doesn't apply there) */}
+      {view === 'table' && (
+        <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none">
+          {DISPO_STAGES.map((stage) => {
+            const isActive = activeStage === stage.key
+            const count = stageCounts ? (stage.key ? stageCounts[stage.key] : stageCounts.all) : undefined
+            return (
+              <button
+                key={stage.key || 'all'}
+                onClick={() => setActiveStage(stage.key)}
+                className={cn(
+                  'shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+                  isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80',
+                )}
+              >
+                {stage.label}
+                {count != null && (
+                  <span className={cn('ml-1.5 text-xs', isActive ? 'text-primary-foreground/70' : 'text-muted-foreground/60')}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
-      {/* Filters toolbar */}
+      {/* Filters toolbar — stays visible in both views; filters still apply
+          to the Kanban board's fetch (minus the stage tab, see kanbanFilters) */}
       <div className="flex flex-wrap items-center gap-2">
         <FilterBar fields={filterFields} values={filterValues} onChange={handleFilterChange} />
         <DateField mode="range" startDate={dateFrom} endDate={dateTo} onRangeChange={handleDateChange} showPresets />
-        <div className="ml-auto">
-          <ColumnToggle
-            visibleColumns={visibleColumns}
-            defaultColumns={defaultColumns}
-            columnDefs={columnDefs as ColumnDef<never>[]}
-            onChange={setVisibleColumns}
-          />
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            variant={view === 'table' ? 'secondary' : 'ghost'}
+            size="icon"
+            onClick={() => setView('table')}
+            title="Vizualizare tabel"
+          >
+            <TableIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={view === 'kanban' ? 'secondary' : 'ghost'}
+            size="icon"
+            onClick={() => setView('kanban')}
+            title="Vizualizare kanban"
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          {view === 'table' && (
+            <ColumnToggle
+              visibleColumns={visibleColumns}
+              defaultColumns={defaultColumns}
+              columnDefs={columnDefs as ColumnDef<never>[]}
+              onChange={setVisibleColumns}
+            />
+          )}
         </div>
       </div>
 
-      {/* Zone 3 — dense table */}
-      {summaryLoading ? (
+      {/* Zone 3 — dense table (table view) / Kanban board (kanban view) */}
+      {view === 'kanban' ? (
+        <KanbanBoard
+          filters={kanbanFilters}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          canViewFinance={canViewFinance}
+          onCardClick={handleRowClick}
+        />
+      ) : summaryLoading ? (
         <TableSkeleton rows={10} columns={8} />
       ) : rows.length === 0 ? (
         <EmptyState
@@ -1062,7 +1094,10 @@ export default function CarParkDispo() {
         />
       )}
 
-      {/* Pagination */}
+      {/* Pagination — table view only; the Kanban board fetches its own
+          large, unpaginated batch and shows a per-column "+N mai multe"
+          instead. */}
+      {view === 'table' && (
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>{total} vehicule</span>
@@ -1122,6 +1157,7 @@ export default function CarParkDispo() {
           </Pagination>
         )}
       </div>
+      )}
     </div>
   )
 }

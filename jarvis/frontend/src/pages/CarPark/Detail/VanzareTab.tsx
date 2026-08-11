@@ -82,6 +82,8 @@ function buildDispoRow(vehicle: Vehicle, activeReservation: DispoReservation | n
     stock_removed_date: vehicle.stock_removed_date,
     days_in_stock: vehicle.stationary_days,
     current_price: vehicle.current_price,
+    list_price: vehicle.list_price,
+    promotional_price: vehicle.promotional_price,
     sale_price: vehicle.sale_price,
     gw_file_number: vehicle.gw_file_number,
     is_impus: vehicle.is_impus,
