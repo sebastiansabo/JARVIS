@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { MoreHorizontal, BookmarkCheck, DollarSign, PackageCheck, RotateCcw, ExternalLink, XCircle } from 'lucide-react'
+import { MoreHorizontal, BookmarkCheck, DollarSign, PackageCheck, RotateCcw, ExternalLink, XCircle, Paperclip } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -16,6 +16,7 @@ import { SellDialog } from './SellDialog'
 import { DeliverDialog } from './DeliverDialog'
 import { ReopenDialog } from './ReopenDialog'
 import { CancelReservationDialog } from './CancelReservationDialog'
+import { AttachDocumentDialog } from './AttachDocumentDialog'
 
 // A vehicle already RESERVED/SOLD/DELIVERED or in the "iesit" (exited) stage
 // (DISPO_STAGES's iesit statuses) can't be reserved again — mirrors
@@ -32,7 +33,7 @@ const SELLABLE_STATUSES = new Set<VehicleStatus>([
   'READY_FOR_SALE', 'LISTED', 'PRICE_REDUCED', 'AUCTION_CANDIDATE', 'RESERVED',
 ])
 
-type DialogKind = 'reserve' | 'sell' | 'deliver' | 'reopen' | 'cancel-reservation' | null
+type DialogKind = 'reserve' | 'sell' | 'deliver' | 'reopen' | 'cancel-reservation' | 'attach-document' | null
 
 export function DispoRowActions({ row }: { row: DispoRow }) {
   const navigate = useNavigate()
@@ -85,7 +86,12 @@ export function DispoRowActions({ row }: { row: DispoRow }) {
               <RotateCcw className="mr-2 h-4 w-4" /> Redeschide
             </DropdownMenuItem>
           )}
-          {(canReserve || canSell || canDeliver || canCancelReservation || canReopen) && <DropdownMenuSeparator />}
+          {canEdit && (
+            <DropdownMenuItem onClick={() => setDialog('attach-document')}>
+              <Paperclip className="mr-2 h-4 w-4" /> Atașează document
+            </DropdownMenuItem>
+          )}
+          {(canReserve || canSell || canDeliver || canCancelReservation || canReopen || canEdit) && <DropdownMenuSeparator />}
           <DropdownMenuItem onClick={() => navigate(`/app/carpark/${row.id}`)}>
             <ExternalLink className="mr-2 h-4 w-4" /> Deschide detalii
           </DropdownMenuItem>
@@ -97,6 +103,13 @@ export function DispoRowActions({ row }: { row: DispoRow }) {
       {dialog === 'deliver' && <DeliverDialog row={row} onClose={() => setDialog(null)} />}
       {dialog === 'reopen' && <ReopenDialog row={row} onClose={() => setDialog(null)} />}
       {dialog === 'cancel-reservation' && <CancelReservationDialog row={row} onClose={() => setDialog(null)} />}
+      {dialog === 'attach-document' && (
+        <AttachDocumentDialog
+          vehicleId={row.id}
+          open
+          onOpenChange={(open) => { if (!open) setDialog(null) }}
+        />
+      )}
     </div>
   )
 }
