@@ -16,6 +16,7 @@ import {
   type DispoFilters,
   type DispoStageKey,
   type VehicleStatus,
+  type TransferOut,
 } from '@/types/carpark'
 import { agingClass } from './dispoAging'
 import { reductionPct, formatReductionPct } from '../priceReduction'
@@ -241,6 +242,62 @@ function KanbanCard({
   )
 }
 
+// Same rendering as index.tsx's own fmtDate (not imported — that module
+// doesn't export it, and this is a one-line format, not worth threading
+// through a shared util for a single-file duplication).
+function fmtDate(d: string | null | undefined): string {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('ro-RO')
+}
+
+// Read-only "ghost" card for a vehicle this company transferred OUT to an
+// AutoWorld sibling — rendered below the real cards in the 'iesit' column
+// (stage grouping mode only, see groupedByDays/AGING_BUCKETS comment for why
+// the 'days' mode skips these). The underlying vehicle row now belongs to
+// the destination company (DispoService.transfer reassigns company_id on
+// the SAME vehicle id), so there is no valid source-side Detail route left
+// to navigate to — this card is deliberately non-draggable, has no ⋯ menu,
+// and its onClick is a no-op (cursor-default, not cursor-pointer) rather
+// than silently 404ing or showing another company's data.
+//
+// Styled distinctly from KanbanCard (dashed violet border + tint, reduced
+// opacity) and from the existing indigo "Transferat" badge used elsewhere
+// for TRANSFERRED-IN vehicles (index.tsx's FlagsCell, KanbanCard above) —
+// violet here so an outbound ghost is never visually confused with an
+// inbound marker on a real, still-owned card.
+function TransferGhostCard({ transfer }: { transfer: TransferOut }) {
+  return (
+    <div
+      className="cursor-default space-y-1.5 rounded-md border border-dashed border-violet-300 bg-violet-50/50 p-2.5 opacity-80 dark:border-violet-800 dark:bg-violet-950/20"
+      title="Vehicul transferat către o altă companie — doar informativ"
+    >
+      <div className="min-w-0 truncate text-sm leading-tight">
+        <span className="text-muted-foreground">{transfer.brand ?? '—'}</span>{' '}
+        <span className="font-semibold">{transfer.model ?? ''}</span>
+      </div>
+      <div className="truncate font-mono text-[11px] text-muted-foreground" title={transfer.vin}>
+        {transfer.vin ? transfer.vin.slice(-6) : '—'}
+      </div>
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="text-sm font-semibold text-muted-foreground">
+          {transfer.transfer_price != null ? (
+            <CurrencyDisplay value={transfer.transfer_price} currency={transfer.transfer_currency ?? undefined} />
+          ) : (
+            <Muted />
+          )}
+        </span>
+        <span className="text-muted-foreground">{fmtDate(transfer.transfer_date)}</span>
+      </div>
+      <Badge
+        variant="outline"
+        className="w-full justify-center truncate border-violet-500 bg-violet-100/60 text-[10px] font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-300"
+      >
+        Transferat → {transfer.to_company_name ?? 'companie necunoscută'}
+      </Badge>
+    </div>
+  )
+}
+
 function KanbanColumnSkeleton() {
   return (
     <div className="space-y-2 p-2">
@@ -266,6 +323,7 @@ function KanbanColumn({
   onDragOver,
   onDragLeave,
   onDrop,
+  ghostTransfers = [],
 }: {
   stage: (typeof STAGE_COLUMNS)[number]
   cards: DispoRow[]
@@ -281,8 +339,12 @@ function KanbanColumn({
   onDragOver: (e: DragEvent<HTMLDivElement>) => void
   onDragLeave: (e: DragEvent<HTMLDivElement>) => void
   onDrop: (e: DragEvent<HTMLDivElement>) => void
+  /** Read-only transfer-out "ghost" cards appended below the real ones —
+   * only ever non-empty for the 'iesit' column (stage mode). `totalCount`
+   * passed in by the caller already folds these into the header badge. */
+  ghostTransfers?: TransferOut[]
 }) {
-  const hiddenCount = Math.max(0, totalCount - cards.length)
+  const hiddenCount = Math.max(0, totalCount - cards.length - ghostTransfers.length)
 
   return (
     <div
@@ -303,7 +365,7 @@ function KanbanColumn({
       <div className="max-h-[calc(100vh-24rem)] min-h-[6rem] flex-1 overflow-y-auto p-2">
         {isLoading ? (
           <KanbanColumnSkeleton />
-        ) : cards.length === 0 ? (
+        ) : cards.length === 0 && ghostTransfers.length === 0 ? (
           <div className={cn('py-6 text-center text-xs text-muted-foreground', isDragOver && 'text-primary')}>
             {isDragOver ? 'Eliberează aici' : '—'}
           </div>
@@ -323,6 +385,16 @@ function KanbanColumn({
             ))}
             {hiddenCount > 0 && (
               <div className="pt-1 text-center text-[11px] text-muted-foreground">+{hiddenCount} mai multe</div>
+            )}
+            {ghostTransfers.length > 0 && (
+              <>
+                {(cards.length > 0 || hiddenCount > 0) && (
+                  <div className="pt-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">Transferate</div>
+                )}
+                {ghostTransfers.map((t) => (
+                  <TransferGhostCard key={`transfer-${t.id}`} transfer={t} />
+                ))}
+              </>
             )}
           </div>
         )}
@@ -437,6 +509,15 @@ interface KanbanBoardProps {
  *
  * Both modes share one fetch: a single large page (no server-side stage
  * filter) so every column, in either mode, renders from one request.
+ *
+ * A separate, small fetch (getTransfersOut) backs the read-only "Transferat"
+ * ghost cards appended below the real cards in the 'iesit' column — ONLY in
+ * 'stage' mode. 'days' mode deliberately skips them: a transferred-out
+ * vehicle carries no days_in_stock (it stopped accumulating stock-aging the
+ * moment it left this company), so there's no non-arbitrary bucket to place
+ * it in; rather than invent one (e.g. bucketing by transfer age, which would
+ * mean something different from "days in stock" and could confuse the
+ * bucket's own meaning), they're simply omitted from that view.
  */
 export function KanbanBoard({ filters, sortBy, sortDir, canViewFinance, canEdit, onCardClick }: KanbanBoardProps) {
   const queryClient = useQueryClient()
@@ -444,6 +525,17 @@ export function KanbanBoard({ filters, sortBy, sortDir, canViewFinance, canEdit,
     queryKey: ['carpark', 'dispo', 'summary', 'kanban', filters, sortBy, sortDir],
     queryFn: () => carparkDispoApi.getSummary(filters, 1, KANBAN_PER_PAGE, sortBy, sortDir),
   })
+
+  // Caller company's outbound transfers — feeds the 'iesit' column's
+  // read-only ghost cards (stage mode only, see the JSDoc above). Shares the
+  // ['carpark','transfers-out'] key TransferDialog already invalidates on a
+  // successful transfer, so a fresh transfer shows up here without a
+  // dedicated invalidation path being added.
+  const { data: transfersOutData } = useQuery({
+    queryKey: ['carpark', 'transfers-out'],
+    queryFn: () => carparkDispoApi.getTransfersOut(),
+  })
+  const transfersOut = transfersOutData?.transfers ?? []
 
   const grouped = useMemo(() => {
     const map = new Map<string, DispoRow[]>()
@@ -655,13 +747,18 @@ export function KanbanBoard({ filters, sortBy, sortDir, canViewFinance, canEdit,
         <div className="flex gap-3 overflow-x-auto pb-2">
           {STAGE_COLUMNS.map((stage) => {
             const cards = grouped.get(stage.key) ?? []
-            const totalCount = stageCounts ? (stageCounts[stage.key] ?? cards.length) : cards.length
+            // Ghost cards (and their contribution to the header count) only
+            // ever apply to 'iesit' — every other stage always gets [].
+            const ghostTransfers = stage.key === 'iesit' ? transfersOut : []
+            const totalCount =
+              (stageCounts ? (stageCounts[stage.key] ?? cards.length) : cards.length) + ghostTransfers.length
             return (
               <KanbanColumn
                 key={stage.key}
                 stage={stage}
                 cards={cards}
                 totalCount={totalCount}
+                ghostTransfers={ghostTransfers}
                 isLoading={isLoading}
                 canViewFinance={canViewFinance}
                 canEdit={canEdit}

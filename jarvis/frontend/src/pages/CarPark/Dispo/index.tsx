@@ -61,6 +61,7 @@ import {
   DISPO_STAGES,
   type DispoRow,
   type DispoFilters,
+  type TransferOut,
 } from '@/types/carpark'
 import { DispoStatusBadge } from './DispoStatusBadge'
 import { EditableCell, type EditableCellOption } from './EditableCell'
@@ -272,6 +273,74 @@ function ClientCell({ row, editable }: { row: DispoRow; editable: boolean }) {
   )
 }
 
+// Read-only "Transferate" sub-table — the source company's outbound
+// AutoWorld transfers, appended below the main Dispo table for the 'iesit'
+// stage tab and the '' (TOATE) tab (the two views a transferred-out vehicle
+// would otherwise seem to be "missing" from). A separate, clearly-labeled
+// Card rather than fake rows spliced into the main table: the main table's
+// rows are built for DispoRowActions/EditableCell/inline-edit/click-to-
+// navigate, none of which apply to a vehicle this company no longer owns
+// (DispoService.transfer reassigns the SAME vehicle id's company_id to the
+// destination — there is no valid source-side Detail route left for it).
+// No row click handler, no actions column, no inline edit — every cell is a
+// plain read.
+function TransferatOutTable({ transfers }: { transfers: TransferOut[] }) {
+  if (transfers.length === 0) return null
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <div className="flex items-center justify-between border-b px-4 py-2.5">
+          <span className="text-sm font-semibold text-muted-foreground">Transferate ({transfers.length})</span>
+          <span className="text-xs text-muted-foreground">
+            Vehicule transferate către alte companii AutoWorld — doar informativ, nemodificabil
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Marca</TableHead>
+                <TableHead>Model</TableHead>
+                <TableHead className="font-mono text-xs">VIN</TableHead>
+                <TableHead className="text-right">Preț transfer</TableHead>
+                <TableHead className="whitespace-nowrap">Dată transfer</TableHead>
+                <TableHead>Destinație</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {transfers.map((t) => (
+                <TableRow key={`transfer-${t.id}`} className="cursor-default opacity-80 hover:bg-transparent">
+                  <TableCell className="font-medium whitespace-nowrap">{t.brand ?? <Muted />}</TableCell>
+                  <TableCell className="whitespace-nowrap">{t.model ?? <Muted />}</TableCell>
+                  <TableCell className="font-mono text-xs whitespace-nowrap" title={t.vin}>
+                    {t.vin ? t.vin.slice(-6) : <Muted />}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {t.transfer_price != null ? (
+                      <CurrencyDisplay value={t.transfer_price} currency={t.transfer_currency ?? undefined} />
+                    ) : (
+                      <Muted />
+                    )}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-sm tabular-nums">{fmtDate(t.transfer_date)}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className="border-violet-500 bg-violet-100/60 text-[10px] font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-300"
+                    >
+                      Transferat → {t.to_company_name ?? 'companie necunoscută'}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── Dispo workspace page ──────────────────────────────────────
 export default function CarParkDispo() {
   const navigate = useNavigate()
@@ -385,6 +454,17 @@ export default function CarParkDispo() {
     queryFn: () => carparkDispoApi.getKpis(),
     staleTime: 30_000,
   })
+
+  // Caller company's outbound AutoWorld transfers — feeds the read-only
+  // "Transferate" sub-table (below) and the 'iesit' pipeline tab's count.
+  // Shares the ['carpark','transfers-out'] key TransferDialog invalidates on
+  // a successful transfer and KanbanBoard's own fetch uses, so React Query
+  // dedupes/refreshes it consistently across table ⇄ kanban toggles.
+  const { data: transfersOutData } = useQuery({
+    queryKey: ['carpark', 'transfers-out'],
+    queryFn: () => carparkDispoApi.getTransfersOut(),
+  })
+  const transfersOut = transfersOutData?.transfers ?? []
 
   const { data: filterOptions } = useQuery({
     queryKey: ['carpark', 'filter-options'],
@@ -927,7 +1007,11 @@ export default function CarParkDispo() {
         <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none">
           {DISPO_STAGES.map((stage) => {
             const isActive = activeStage === stage.key
-            const count = stageCounts ? (stage.key ? stageCounts[stage.key] : stageCounts.all) : undefined
+            const baseCount = stageCounts ? (stage.key ? stageCounts[stage.key] : stageCounts.all) : undefined
+            // 'iesit' count = owned iesit vehicles + transfer-out ghosts
+            // (the count shown next to the tab should match what a user
+            // sees after clicking into it, ghosts included).
+            const count = baseCount != null && stage.key === 'iesit' ? baseCount + transfersOut.length : baseCount
             return (
               <button
                 key={stage.key || 'all'}
@@ -1110,6 +1194,14 @@ export default function CarParkDispo() {
             </Card>
           }
         />
+      )}
+
+      {/* Read-only "Transferate" sub-table — only where a transferred-out
+          vehicle would otherwise seem to have vanished: the 'iesit' tab and
+          the '' (TOATE) tab. Table view only (Kanban shows the same rows as
+          ghost cards appended to KanbanBoard's own 'iesit' column). */}
+      {view === 'table' && (activeStage === 'iesit' || activeStage === '') && (
+        <TransferatOutTable transfers={transfersOut} />
       )}
 
       {/* Pagination — table view only; the Kanban board fetches its own
