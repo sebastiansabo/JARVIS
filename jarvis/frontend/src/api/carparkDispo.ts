@@ -11,6 +11,9 @@ import type {
   TimelineEvent,
   SaleType,
   Vehicle,
+  TransferDestination,
+  TransferOut,
+  TransferBody,
 } from '../types/carpark'
 
 // Query-string params shared by getSummary and exportUrl: every non-empty
@@ -102,6 +105,27 @@ export const carparkDispoApi = {
 
   reopen: (vehicleId: number, body: { reason: string; target_status: string }) =>
     api.post<{ vehicle: Vehicle }>(`/api/carpark/vehicles/${vehicleId}/reopen`, body),
+
+  // ── Inter-company transfer (AutoWorld group) ─────────────
+  // Sibling companies in the caller's AutoWorld group, EXCLUDING the
+  // caller's own company (transfer_repository.group_companies) — feeds
+  // TransferDialog's destination picker. A non-AutoWorld (single-member
+  // group) company gets `companies: []` — handled gracefully by the dialog.
+  getTransferDestinations: () =>
+    api.get<{ companies: TransferDestination[] }>('/api/carpark/vehicles/transfer-destinations'),
+
+  // Accepts either a FormData (multipart UPLOAD MODE — file + to_company_id
+  // etc as form fields, only available when Google Drive is enabled server-
+  // side) or a plain JSON body (LINK MODE — file_url/dms_document_id),
+  // exactly like uploadDocument above. Returns the moved vehicle + the
+  // carpark_transfers log row (transfers.py's transfer_vehicle route).
+  transfer: (vehicleId: number, data: FormData | TransferBody) =>
+    api.post<{ vehicle: Vehicle; transfer: TransferOut }>(`/api/carpark/vehicles/${vehicleId}/transfer`, data),
+
+  // Caller company's OUTBOUND transfer history — not yet rendered anywhere
+  // (later "ghost" row task), but the client method is added now so that
+  // task only needs to build UI on top of it.
+  getTransfersOut: () => api.get<{ transfers: TransferOut[] }>('/api/carpark/vehicles/transfers-out'),
 
   // ── Reservations ─────────────────────────────────────────
   cancelReservation: (vehicleId: number, body: { reason: string }) =>

@@ -175,6 +175,14 @@ function KanbanCard({
         <div className="min-w-0 flex-1 truncate text-sm leading-tight">
           <span className="text-muted-foreground">{row.brand}</span>{' '}
           <span className="font-semibold">{row.model}</span>
+          {row.transferred_from_company_id != null && (
+            <Badge
+              variant="outline"
+              className="ml-1.5 align-middle text-[10px] font-normal border-indigo-500 text-indigo-600 dark:text-indigo-400"
+            >
+              Transferat
+            </Badge>
+          )}
         </div>
         {/* Explicit "open Detail" affordance — cards are now drag handles, so
             a plain click on the body still navigates (native DnD suppresses

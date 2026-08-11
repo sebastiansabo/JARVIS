@@ -995,6 +995,12 @@ export interface DispoRow {
   // named finance fields — just wasn't previously typed since nothing read it.
   buyer_client_id: number | null
   company_id: number | null
+  // Set by DispoService.transfer on the destination side (see
+  // dispo_service.py's transfer()) — non-null marks this vehicle as a
+  // fresh intake that landed here via an inter-company transfer rather than
+  // a normal acquisition. Not finance-gated (absent from dispo.py's
+  // _FINANCE_ROW_FIELDS), always present on the wire like buyer_client_id.
+  transferred_from_company_id: number | null
   reservation_id: number | null
   reservation_end: string | null
   reservation_client_name: string | null
@@ -1111,6 +1117,56 @@ export interface DispoDocumentLinkBody {
   mime_type?: string
   file_size?: number
   notes?: string
+}
+
+// ── Inter-company transfer (AutoWorld group) ────────────────────────────
+
+// GET /vehicles/transfer-destinations item (TransferRepository.group_companies
+// — `companies` table columns, id + display name only).
+export interface TransferDestination {
+  id: number
+  company: string
+}
+
+// A carpark_transfers row (transfer_repository.py's TRANSFER_FIELDS + id/
+// created_at), as returned by POST /vehicles/:id/transfer's `transfer` key
+// and by GET /vehicles/transfers-out's `transfers` list. list_outbound joins
+// in the vehicle's identifying fields + destination company name; those are
+// therefore only guaranteed present on transfers-out rows, not on the bare
+// record POST /transfer returns — hence optional here.
+export interface TransferOut {
+  id: number
+  vehicle_id: number
+  from_company_id: number
+  to_company_id: number
+  transfer_price: number | null
+  transfer_currency: string | null
+  transfer_date: string
+  document_id: number | null
+  notes: string | null
+  created_by: number | null
+  created_at?: string
+  // list_outbound joins only:
+  vin?: string
+  brand?: string
+  model?: string
+  nr_stoc?: string | null
+  to_company_name?: string | null
+}
+
+// Body for POST /vehicles/:id/transfer in LINK MODE (JSON, no file part) —
+// mirrors DispoDocumentLinkBody's file_url/dms_document_id split but for the
+// transfer route's own field names (transfers.py's _create_transfer_document_via_link
+// reads document_file_url OR file_url; both accepted, file_url sent here).
+export interface TransferBody {
+  to_company_id: number
+  transfer_price: number
+  transfer_date?: string
+  transfer_currency?: string
+  notes?: string
+  file_url?: string
+  dms_document_id?: number | string
+  document_title?: string
 }
 
 // A row from carpark_reservations (ReservationRepository).

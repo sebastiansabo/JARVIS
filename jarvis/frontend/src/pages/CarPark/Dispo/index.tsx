@@ -120,8 +120,10 @@ function FlagsCell({ row, editable = false }: { row: DispoRow; editable?: boolea
   const missingPvLivrare =
     (row.status === 'SOLD' || row.status === 'DELIVERED') && !row.doc_types.includes('pv_livrare')
 
+  const isTransferredIn = row.transferred_from_company_id != null
+
   if (!editable) {
-    if (!row.is_impus && !row.missing_civ && !row.stock_removed && !missingPvLivrare) return <Muted />
+    if (!row.is_impus && !row.missing_civ && !row.stock_removed && !missingPvLivrare && !isTransferredIn) return <Muted />
     return (
       <div className="flex flex-wrap items-center gap-1">
         {row.is_impus && (
@@ -137,6 +139,11 @@ function FlagsCell({ row, editable = false }: { row: DispoRow; editable?: boolea
         {row.stock_removed && (
           <Badge variant="secondary" className="text-[10px] font-normal">
             SCOS
+          </Badge>
+        )}
+        {isTransferredIn && (
+          <Badge variant="outline" className="text-[10px] font-normal border-indigo-500 text-indigo-600 dark:text-indigo-400">
+            Transferat
           </Badge>
         )}
         {missingPvLivrare && (
@@ -198,6 +205,11 @@ function FlagsCell({ row, editable = false }: { row: DispoRow; editable?: boolea
           </Badge>
         )}
       />
+      {isTransferredIn && (
+        <Badge variant="outline" className="text-[10px] font-normal border-indigo-500 text-indigo-600 dark:text-indigo-400">
+          Transferat
+        </Badge>
+      )}
       {missingPvLivrare && (
         <span title="Lipsă PV livrare" className="inline-flex text-red-600 dark:text-red-400">
           <Paperclip className="h-3.5 w-3.5" />

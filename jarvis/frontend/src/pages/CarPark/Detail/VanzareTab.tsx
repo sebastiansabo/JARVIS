@@ -92,6 +92,11 @@ function buildDispoRow(vehicle: Vehicle, activeReservation: DispoReservation | n
     buyer_name: vehicle.buyer_name,
     buyer_client_id: vehicle.buyer_client_id,
     company_id: vehicle.company_id,
+    // Not on the Vehicle type (untyped, though present on the wire) and
+    // never read by ReserveDialog/SellDialog/DeliverDialog/ReopenDialog —
+    // same inert-placeholder treatment as doc_types/supplier_payment_date
+    // above.
+    transferred_from_company_id: null,
     reservation_id: activeReservation?.id ?? null,
     reservation_end: activeReservation?.reservation_end ?? null,
     reservation_client_name: activeReservation?.client_name ?? null,
