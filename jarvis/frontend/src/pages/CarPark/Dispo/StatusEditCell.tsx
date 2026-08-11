@@ -20,17 +20,26 @@ import { useDispoInlineSave } from './dispoInlineEdit'
 // STATUS_TRANSITIONS, changed via the plain PUT /status endpoint.
 const GUARDED_TARGETS = new Set<VehicleStatus>(['RESERVED', 'SOLD', 'DELIVERED'])
 
-// Leaving SOLD or DELIVERED is itself a guarded reversal (clears sale/
-// delivery fields) — STATUS_TRANSITIONS['SOLD'] MINUS the guarded targets
-// still leaves {LISTED}, and DELIVERED still leaves {RETURNED}, but both
-// must route through DispoRowActions' ReopenDialog, not a plain PUT. So
-// unlike every other current status, these two force an empty safe set
-// regardless of what the plain subtraction would yield.
-const REOPEN_ONLY_STATUSES = new Set<VehicleStatus>(['SOLD', 'DELIVERED'])
+// Statuses whose only legal exits carry guarded server-side side effects, so
+// the inline (plain PUT /status) dropdown must offer NOTHING and force the
+// exit through DispoRowActions' guarded dialogs instead:
+//   • SOLD/DELIVERED — STATUS_TRANSITIONS['SOLD'] MINUS the guarded targets
+//     still leaves {LISTED}, DELIVERED still leaves {RETURNED}, but both are
+//     reversals that clear sale/delivery fields → must go through ReopenDialog.
+//   • RESERVED — a plain PUT to LISTED/READY_FOR_SALE would flip the status
+//     column WITHOUT closing the active carpark_reservations row (that side
+//     effect lives only in DispoService.cancel_reservation), orphaning a
+//     stale active reservation. Its legitimate exit is the "Anulează
+//     rezervarea" action (DispoRowActions → cancelReservation), which
+//     restores the pre-RESERVED status server-side.
+const REOPEN_ONLY_STATUSES = new Set<VehicleStatus>(['RESERVED', 'SOLD', 'DELIVERED'])
 
 export function safeStatusTransitions(current: VehicleStatus): VehicleStatus[] {
   if (REOPEN_ONLY_STATUSES.has(current)) return []
-  return STATUS_TRANSITIONS[current].filter((s) => !GUARDED_TARGETS.has(s))
+  // Defensive `?? []` mirrors DispoStatusBadge's `?? ''`/`?? status`: an
+  // out-of-union status (bad server data) yields no options instead of a
+  // white-screen crash on `.filter` of undefined.
+  return (STATUS_TRANSITIONS[current] ?? []).filter((s) => !GUARDED_TARGETS.has(s))
 }
 
 export function StatusEditCell({ row, editable }: { row: DispoRow; editable: boolean }) {

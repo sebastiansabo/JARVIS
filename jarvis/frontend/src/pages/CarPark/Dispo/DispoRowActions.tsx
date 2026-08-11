@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { MoreHorizontal, BookmarkCheck, DollarSign, PackageCheck, RotateCcw, ExternalLink } from 'lucide-react'
+import { MoreHorizontal, BookmarkCheck, DollarSign, PackageCheck, RotateCcw, ExternalLink, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -15,6 +15,7 @@ import { ReserveDialog } from './ReserveDialog'
 import { SellDialog } from './SellDialog'
 import { DeliverDialog } from './DeliverDialog'
 import { ReopenDialog } from './ReopenDialog'
+import { CancelReservationDialog } from './CancelReservationDialog'
 
 // A vehicle already RESERVED/SOLD/DELIVERED or in the "iesit" (exited) stage
 // (DISPO_STAGES's iesit statuses) can't be reserved again — mirrors
@@ -31,7 +32,7 @@ const SELLABLE_STATUSES = new Set<VehicleStatus>([
   'READY_FOR_SALE', 'LISTED', 'PRICE_REDUCED', 'AUCTION_CANDIDATE', 'RESERVED',
 ])
 
-type DialogKind = 'reserve' | 'sell' | 'deliver' | 'reopen' | null
+type DialogKind = 'reserve' | 'sell' | 'deliver' | 'reopen' | 'cancel-reservation' | null
 
 export function DispoRowActions({ row }: { row: DispoRow }) {
   const navigate = useNavigate()
@@ -44,6 +45,11 @@ export function DispoRowActions({ row }: { row: DispoRow }) {
   const canSell = canEdit && SELLABLE_STATUSES.has(row.status)
   const canDeliver = canEdit && row.status === 'SOLD'
   const canReopen = canDelete && (row.status === 'SOLD' || row.status === 'DELIVERED')
+  // The only frontend path to close an active reservation — the inline status
+  // dropdown deliberately refuses to move a RESERVED car (StatusEditCell), so
+  // this guarded action is its legitimate exit (calls cancel_reservation,
+  // which restores the pre-RESERVED status server-side).
+  const canCancelReservation = canEdit && row.status === 'RESERVED'
 
   return (
     <div onClick={(e) => e.stopPropagation()}>
@@ -69,12 +75,17 @@ export function DispoRowActions({ row }: { row: DispoRow }) {
               <PackageCheck className="mr-2 h-4 w-4" /> Livrează
             </DropdownMenuItem>
           )}
+          {canCancelReservation && (
+            <DropdownMenuItem onClick={() => setDialog('cancel-reservation')}>
+              <XCircle className="mr-2 h-4 w-4" /> Anulează rezervarea
+            </DropdownMenuItem>
+          )}
           {canReopen && (
             <DropdownMenuItem onClick={() => setDialog('reopen')}>
               <RotateCcw className="mr-2 h-4 w-4" /> Redeschide
             </DropdownMenuItem>
           )}
-          {(canReserve || canSell || canDeliver || canReopen) && <DropdownMenuSeparator />}
+          {(canReserve || canSell || canDeliver || canCancelReservation || canReopen) && <DropdownMenuSeparator />}
           <DropdownMenuItem onClick={() => navigate(`/app/carpark/${row.id}`)}>
             <ExternalLink className="mr-2 h-4 w-4" /> Deschide detalii
           </DropdownMenuItem>
@@ -85,6 +96,7 @@ export function DispoRowActions({ row }: { row: DispoRow }) {
       {dialog === 'sell' && <SellDialog row={row} onClose={() => setDialog(null)} />}
       {dialog === 'deliver' && <DeliverDialog row={row} onClose={() => setDialog(null)} />}
       {dialog === 'reopen' && <ReopenDialog row={row} onClose={() => setDialog(null)} />}
+      {dialog === 'cancel-reservation' && <CancelReservationDialog row={row} onClose={() => setDialog(null)} />}
     </div>
   )
 }

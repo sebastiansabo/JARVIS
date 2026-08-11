@@ -7,7 +7,7 @@ import { carparkApi } from '@/api/carpark'
 import type { DispoRow, Vehicle } from '@/types/carpark'
 import { useDispoInlineSave } from './dispoInlineEdit'
 
-// The Dispo summary row fields wired for inline editing (see index.tsx's
+// The 19 Dispo summary row fields wired for inline editing (see index.tsx's
 // column defs). Restricted to this literal union — rather than a bare
 // `keyof DispoRow` — so `{ [field]: value }` is a structurally valid
 // Partial<Vehicle> patch for every field this cell can ever be given
