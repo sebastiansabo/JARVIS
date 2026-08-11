@@ -143,6 +143,12 @@ function KanbanCard({
             e.stopPropagation()
             onClick()
           }}
+          onKeyDown={(e) => {
+            // The button already fires its own click on Enter/Space; without
+            // stopPropagation the keydown also bubbles to the parent card's
+            // onKeyDown and navigates a second time (harmless, same route).
+            if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()
+          }}
         >
           <ExternalLink className="h-3 w-3" />
         </Button>
@@ -407,16 +413,11 @@ export function KanbanBoard({ filters, sortBy, sortDir, canViewFinance, canEdit,
 
       const current = row.status
 
-      // RESERVED carries an active reservation record — its only legitimate
-      // exit is cancel_reservation (closes the reservation row + restores
-      // the pre-RESERVED status server-side), regardless of which column it
-      // was dropped on. The card may therefore land back in its prior
-      // stage rather than the drop target; that's expected, not a bug.
-      if (current === 'RESERVED' && targetStageKey !== 'rezervat') {
-        setPendingDialog({ type: 'cancel-reservation', row })
-        return
-      }
-
+      // Target-stage guarded checks run FIRST, before the RESERVED-source
+      // cancel branch below — so a RESERVED card dropped onto Vândut routes
+      // to SellDialog (RESERVED → SOLD is a valid, common conversion), and
+      // onto Livrat toasts (RESERVED is not SOLD), rather than both being
+      // swallowed by "leaving RESERVED = cancel the reservation."
       if (targetStageKey === 'rezervat') {
         if (STATUS_TRANSITIONS[current]?.includes('RESERVED')) {
           setPendingDialog({ type: 'reserve', row })
@@ -442,6 +443,19 @@ export function KanbanBoard({ filters, sortBy, sortDir, canViewFinance, canEdit,
         } else {
           toast.error('Doar mașinile VÂNDUT pot fi livrate')
         }
+        return
+      }
+
+      // RESERVED dropped onto a NON-guarded (prep/safe) stage — in_pregatire
+      // / in_stoc / promovat / iesit. A RESERVED car carries an active
+      // reservation record, so its only legitimate exit toward these stages
+      // is cancel_reservation (closes the reservation row + restores the
+      // pre-RESERVED status server-side). The card may therefore land back
+      // in its prior stage rather than the drop target; that's expected.
+      // (Reached only after the rezervat/vandut/livrat targets returned
+      // above, so `targetStageKey` here is guaranteed one of the safe stages.)
+      if (current === 'RESERVED') {
+        setPendingDialog({ type: 'cancel-reservation', row })
         return
       }
 
