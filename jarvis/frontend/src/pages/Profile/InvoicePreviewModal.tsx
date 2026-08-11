@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Download, Loader2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { profileApi, type InvoicePreview } from '@/api/profile'
 import { efacturaApi } from '@/api/efactura'
 import { invoicesApi } from '@/api/invoices'
@@ -147,18 +150,74 @@ export function InvoicePreviewModal({ invoiceId, onClose, source = 'profile' }: 
   onClose: () => void
   source?: keyof typeof PREVIEW_FETCHERS
 }) {
+  const [downloading, setDownloading] = useState(false)
+
   const { data, isLoading, isError } = useQuery({
     queryKey: [source, 'invoice-preview', invoiceId],
     queryFn: () => PREVIEW_FETCHERS[source](invoiceId),
   })
 
+  // Try the official ANAF-rendered PDF first (efactura only); if it's
+  // unavailable (no live ANAF connection, error, non-PDF response) fall back
+  // to a client-side PDF built from the preview data already loaded here.
+  const handleDownloadPdf = async () => {
+    if (!data) return
+    setDownloading(true)
+    try {
+      if (source === 'efactura') {
+        try {
+          const res = await fetch(efacturaApi.getInvoicePdfUrl(invoiceId))
+          const ct = res.headers.get('Content-Type') || ''
+          if (res.ok && ct.includes('pdf')) {
+            const blob = await res.blob()
+            const filename =
+              res.headers.get('Content-Disposition')?.match(/filename="?([^";\n]+)"?/)?.[1] ||
+              `factura-${data.invoice_number || invoiceId}.pdf`
+            const a = document.createElement('a')
+            a.href = URL.createObjectURL(blob)
+            a.download = filename
+            document.body.appendChild(a)
+            a.click()
+            URL.revokeObjectURL(a.href)
+            a.remove()
+            return
+          }
+        } catch {
+          /* fall through to client-side generation */
+        }
+      }
+      const { buildInvoicePreviewPdf } = await import('./buildInvoicePreviewPdf')
+      buildInvoicePreviewPdf(data)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-h-[85vh] w-[95vw] max-w-[1120px] overflow-y-auto sm:max-w-[1120px]">
         <DialogHeader>
-          <DialogTitle>
-            Previzualizare factură{data?.invoice_number ? ` #${data.invoice_number}` : ''}
-          </DialogTitle>
+          <div className="flex items-center justify-between gap-2 pr-8">
+            <DialogTitle>
+              Previzualizare factură{data?.invoice_number ? ` #${data.invoice_number}` : ''}
+            </DialogTitle>
+            {data && source === 'efactura' && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-1.5"
+                onClick={handleDownloadPdf}
+                disabled={downloading}
+              >
+                {downloading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Descarcă PDF
+              </Button>
+            )}
+          </div>
         </DialogHeader>
 
         {isLoading && (
