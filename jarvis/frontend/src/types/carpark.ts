@@ -979,6 +979,11 @@ export interface DispoRow {
   missing_civ: boolean
   stock_removed: boolean
   buyer_name: string | null
+  // Present on the wire (summary() selects `v.*`, and neither buyer_client_id
+  // nor company_id is finance-gated) even though the API route only strips
+  // named finance fields — just wasn't previously typed since nothing read it.
+  buyer_client_id: number | null
+  company_id: number | null
   reservation_id: number | null
   reservation_end: string | null
   reservation_client_name: string | null
