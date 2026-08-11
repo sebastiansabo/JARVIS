@@ -18,6 +18,7 @@ import {
   type VehicleStatus,
 } from '@/types/carpark'
 import { agingClass } from './dispoAging'
+import { reductionPct, formatReductionPct } from '../priceReduction'
 import { safeStatusTransitions } from './StatusEditCell'
 import { patchDispoRow } from './dispoInlineEdit'
 import { apiErrorMessage } from './dispoApiError'
@@ -105,6 +106,7 @@ function CardPrice({ row }: { row: DispoRow }) {
     promo != null && ((original != null && promo < original) || row.status === 'PRICE_REDUCED')
 
   if (isPromoted && promo != null) {
+    const pct = reductionPct(original, promo)
     return (
       <div className="flex items-baseline gap-1.5">
         {original != null && (
@@ -115,6 +117,11 @@ function CardPrice({ row }: { row: DispoRow }) {
         <span className="text-sm font-semibold text-red-600 dark:text-red-400">
           <CurrencyDisplay value={promo} />
         </span>
+        {pct != null && (
+          <span className="text-[11px] font-medium text-red-600 dark:text-red-400">
+            {formatReductionPct(pct)}
+          </span>
+        )}
       </div>
     )
   }
