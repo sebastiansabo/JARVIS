@@ -418,3 +418,53 @@ def test_route_valid_transfer_creates_one_document_and_moves_vehicle(transfer_se
     assert len(outbound) == 1
     assert outbound[0]['to_company_id'] == COMPANY_B
     assert outbound[0]['document_id'] is not None
+
+
+# ── ROUTE-LEVEL: GET /vehicles/transfers-out ─────────────────────────────
+# Source-side outbound transfer history, surfaced read-only as 'Transferat'
+# entries in the source company's Ieșit view. Delegates to
+# TransferRepository.list_outbound(company_id) — no inline SQL in the route.
+
+def test_transfers_out_route_returns_outbound_for_source_company(transfer_seed, route_client):
+    """After a transfer, GET /vehicles/transfers-out as a company-A user
+    (the source) returns the transfer with the display fields the frontend
+    needs (vin/brand/model/to_company_name/transfer_price)."""
+    DispoService().transfer(transfer_seed['vehicle_id'], COMPANY_A, USER, {
+        'to_company_id': COMPANY_B, 'transfer_price': 8800,
+        'document_id': transfer_seed['document_id'],
+    })
+
+    resp = route_client.get('/api/carpark/vehicles/transfers-out')
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert len(body['transfers']) == 1
+    t = body['transfers'][0]
+    assert t['vehicle_id'] == transfer_seed['vehicle_id']
+    assert t['vin'] == 'TESTTRANSFER00001'
+    assert t['brand'] == 'TestBrand'
+    assert t['model'] == 'TestModel'
+    assert t['to_company_name'] == 'TEST TRANSFER COMPANY B SRL'
+    assert float(t['transfer_price']) == 8800
+
+
+def test_transfers_out_route_empty_for_destination_company(transfer_seed, monkeypatch):
+    """COMPANY_B is the DESTINATION of the transfer, not a source of any
+    outbound transfer of its own — GET /vehicles/transfers-out as a
+    company-B user returns an empty list."""
+    DispoService().transfer(transfer_seed['vehicle_id'], COMPANY_A, USER, {
+        'to_company_id': COMPANY_B, 'transfer_price': 8800,
+        'document_id': transfer_seed['document_id'],
+    })
+
+    app = Flask(__name__)
+    app.register_blueprint(carpark_bp)
+    app.config['TESTING'] = True
+    app.config['LOGIN_DISABLED'] = True
+    user_b = _FakeUser(company_id=COMPANY_B)
+    monkeypatch.setattr(vehicles_mod, 'current_user', user_b)
+    monkeypatch.setattr(transfers_mod, 'current_user', user_b)
+    client_b = app.test_client()
+
+    resp = client_b.get('/api/carpark/vehicles/transfers-out')
+    assert resp.status_code == 200
+    assert resp.get_json()['transfers'] == []
