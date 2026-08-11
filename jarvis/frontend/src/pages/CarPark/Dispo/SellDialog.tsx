@@ -59,7 +59,10 @@ export function SellDialog({
         sale_price: Number(salePrice),
         sale_type: saleType as SaleType,
         buyer_name: buyer?.name,
-        buyer_client_id: buyer?.id ?? undefined,
+        // Explicit null, never undefined: a free-text buyer (id null) must
+        // reach the backend as null so sell() clears any prior CRM link
+        // rather than JSON.stringify dropping the key and leaving it stale.
+        buyer_client_id: buyer?.id ?? null,
         sale_date: saleDate,
         confirm_low_margin: confirm || undefined,
       }),

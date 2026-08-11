@@ -265,6 +265,31 @@ def test_sell_at_or_above_minimum_with_positive_margin_does_not_require_confirm(
         1, 'SOLD', changed_by=42, notes=ANY)
 
 
+def test_sell_persists_crm_buyer_client_id():
+    """A CRM-linked buyer writes buyer_client_id through to the vehicle."""
+    svc, mocks = _svc()
+    svc.sell(1, COMPANY_ID, USER, _sell_data(sale_price=12000, buyer_client_id=123))
+    persisted = mocks['vehicle_service'].update_vehicle.call_args[0][1]
+    assert persisted['buyer_client_id'] == 123
+    assert persisted['buyer_name'] == 'Popescu Vasile'
+
+
+def test_sell_free_text_buyer_clears_stale_crm_link():
+    """Switching from a CRM-linked buyer to a walk-in / free-text name must
+    CLEAR the old buyer_client_id (persist explicit None), not leave a stale
+    link pointing at the wrong CRM client. The frontend sends buyer_client_id
+    as an explicit null in this case; sell() keys off presence, not truthiness,
+    so the None reaches update_vehicle and NULLs the column."""
+    vehicle = dict(BASE_VEHICLE, buyer_client_id=123)
+    svc, mocks = _svc(vehicle)
+    svc.sell(1, COMPANY_ID, USER,
+             _sell_data(sale_price=12000, buyer_client_id=None, buyer_name='Walk-in'))
+    persisted = mocks['vehicle_service'].update_vehicle.call_args[0][1]
+    assert 'buyer_client_id' in persisted
+    assert persisted['buyer_client_id'] is None
+    assert persisted['buyer_name'] == 'Walk-in'
+
+
 # ── DELIVER ───────────────────────────────────────────────────────────────
 
 def test_deliver_without_pv_livrare_raises():
