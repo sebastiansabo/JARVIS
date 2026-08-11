@@ -54,6 +54,7 @@ import { carparkApi } from '@/api/carpark'
 import { usersApi } from '@/api/users'
 import { settingsApi } from '@/api/settings'
 import { ClientSearchSelect } from '@/components/shared/ClientSearchSelect'
+import { AUTOVIT_BRANDS, AUTOVIT_MODELS } from '@/data/autovitData'
 import {
   DISPO_STAGES,
   type DispoRow,
@@ -73,6 +74,12 @@ function Muted() {
 // static list keeps the filter selectable even before any row using a given
 // type has loaded on the current page.
 const SALE_TYPE_OPTIONS = ['PLR', 'CASH', 'CREDIT PLR', 'BT LEASING', 'BRD', 'BCR', 'AW NEXT']
+
+// Same brand catalog as VehicleForm's "Add vehicle" form (autovitData.ts) —
+// static, so a module-level constant is fine (no per-render/per-row cost).
+// Model options are NOT hoisted the same way: they depend on each row's own
+// current brand, so they're computed inline in the model column's `render`.
+const BRAND_EDIT_OPTIONS: EditableCellOption[] = AUTOVIT_BRANDS.map((b) => ({ value: b, label: b }))
 
 const STOCK_REMOVED_OPTIONS = [
   { value: 'false', label: 'Activ (nescos)' },
@@ -492,7 +499,16 @@ export default function CarParkDispo() {
         label: 'Marca',
         className: 'font-medium whitespace-nowrap',
         render: (r) => (
-          <EditableCell row={r} field="brand" type="text" value={r.brand} editable={canEdit} display={(v) => (v as string) || r.brand} />
+          <EditableCell
+            row={r}
+            field="brand"
+            type="combo"
+            value={r.brand}
+            editable={canEdit}
+            options={BRAND_EDIT_OPTIONS}
+            allowCustom
+            display={(v) => (v as string) || r.brand}
+          />
         ),
       },
       {
@@ -503,9 +519,15 @@ export default function CarParkDispo() {
           <EditableCell
             row={r}
             field="model"
-            type="text"
+            type="combo"
             value={r.model}
             editable={canEdit}
+            // Dependent on THIS row's own current brand (not the currently
+            // edited draft), same as VehicleForm's modelOptions — falls back
+            // to [] for brands outside the catalog rather than throwing;
+            // allowCustom still lets those be typed freely.
+            options={(AUTOVIT_MODELS[r.brand] ?? []).map((m) => ({ value: m, label: m }))}
+            allowCustom
             display={(v) => (
               <>
                 {(v as string) || r.model}
