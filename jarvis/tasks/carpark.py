@@ -59,9 +59,14 @@ def expire_reservations():
                     # the reservation lapsed — don't fight that transition.
                     continue
 
+                # Legitimate RESERVED-exit (the reservation is being expired,
+                # analogous to cancel_reservation) — must opt past the
+                # via_dispo_action guard in VehicleService.change_status, or
+                # the RESERVED-exit ValueError is raised and swallowed by the
+                # per-row except below, leaving the vehicle stuck in RESERVED.
                 vehicle_service.change_status(
                     vehicle_id, 'LISTED', changed_by=None,
-                    notes='Reservation expired')
+                    notes='Reservation expired', via_dispo_action=True)
 
                 user_id = reservation.get('user_id')
                 if user_id:
