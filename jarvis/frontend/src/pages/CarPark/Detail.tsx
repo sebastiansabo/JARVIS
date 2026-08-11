@@ -63,6 +63,7 @@ import { DocumenteTab } from './Detail/DocumenteTab'
 import { CronologieTab } from './Detail/CronologieTab'
 import { VanzareTab } from './Detail/VanzareTab'
 import { StatusStepper } from './Detail/StatusStepper'
+import { safeStatusTransitions } from './Dispo/statusTransitions'
 import {
   STATUS_LABELS,
   CATEGORY_LABELS,
@@ -109,35 +110,6 @@ const STATUS_COLORS: Record<string, string> = {
   SCRAPPED: 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200',
   TRANSFERRED: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200',
 }
-
-// ── Status transitions (which statuses can follow which) ───
-const STATUS_TRANSITIONS: Record<string, VehicleStatus[]> = {
-  ACQUIRED: ['INSPECTION', 'RECONDITIONING', 'IN_TRANSIT', 'RETURNED', 'SCRAPPED'],
-  INSPECTION: ['RECONDITIONING', 'READY_FOR_SALE', 'AT_BODYSHOP', 'RETURNED'],
-  RECONDITIONING: ['READY_FOR_SALE', 'AT_BODYSHOP', 'INSURANCE_CLAIM'],
-  READY_FOR_SALE: ['LISTED', 'RESERVED', 'PRICE_REDUCED', 'TRANSFERRED'],
-  LISTED: ['RESERVED', 'SOLD', 'PRICE_REDUCED', 'AUCTION_CANDIDATE', 'RETURNED'],
-  RESERVED: ['SOLD', 'LISTED', 'RETURNED'],
-  SOLD: ['DELIVERED', 'RETURNED'],
-  DELIVERED: ['RETURNED'],
-  PRICE_REDUCED: ['LISTED', 'RESERVED', 'SOLD', 'AUCTION_CANDIDATE'],
-  AUCTION_CANDIDATE: ['LISTED', 'SOLD', 'SCRAPPED'],
-  IN_TRANSIT: ['ACQUIRED', 'INSPECTION'],
-  AT_BODYSHOP: ['RECONDITIONING', 'READY_FOR_SALE'],
-  INSURANCE_CLAIM: ['RECONDITIONING', 'SCRAPPED'],
-  RETURNED: ['ACQUIRED', 'SCRAPPED'],
-  SCRAPPED: [],
-  TRANSFERRED: [],
-}
-
-// RESERVED carries an active carpark_reservations row that only the backend
-// guarded paths (DispoService.cancel_reservation() / sell()) know how to
-// close — a plain PUT /vehicles/:id/status out of RESERVED is now rejected
-// server-side (VehicleService.change_status's allow_reserved_exit guard).
-// This dropdown has no Reserve/Sell/Cancel-reservation dialogs of its own
-// (those live in the Dispo workspace), so a RESERVED vehicle offers no
-// direct status change here — mirrors StatusEditCell's REOPEN_ONLY_STATUSES.
-const NO_DIRECT_EXIT_STATUSES = new Set<VehicleStatus>(['RESERVED'])
 
 // ── Helpers ────────────────────────────────────────────────
 function formatDate(d: string | null): string {
@@ -303,11 +275,14 @@ export default function CarParkDetail() {
     onError: () => toast.error('Failed to delete vehicle'),
   })
 
-  // Available next statuses
+  // Available next statuses — the same safe, legal transitions the Dispo
+  // inline editor and Kanban board offer (canonical STATUS_TRANSITIONS minus
+  // the guarded RESERVED/SOLD/DELIVERED targets, which require the guarded
+  // Reserve/Sell/Deliver dialogs on the Vânzare tab instead of a plain
+  // status change).
   const nextStatuses = useMemo(() => {
     if (!vehicle) return []
-    if (NO_DIRECT_EXIT_STATUSES.has(vehicle.status)) return []
-    return STATUS_TRANSITIONS[vehicle.status] ?? []
+    return safeStatusTransitions(vehicle.status)
   }, [vehicle])
 
   if (isLoading) return <DetailSkeleton />
@@ -491,6 +466,9 @@ export default function CarParkDetail() {
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              Pentru Rezervare, Vânzare sau Livrare folosește acțiunile din tab-ul «Vânzare».
+            </p>
             <Textarea
               placeholder="Notes (optional)"
               value={statusNotes}
