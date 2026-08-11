@@ -4,7 +4,8 @@
 // the same dialogs as the Dispo workspace, see ../Dispo/*Dialog.tsx), and a
 // finance-gated profitability mini-panel.
 import { useMemo, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   BookmarkCheck,
   DollarSign,
@@ -16,11 +17,13 @@ import {
   TrendingUp,
   TrendingDown,
   Wallet,
+  Pencil,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
+import { ClientSearchSelect, type ClientSearchSelection } from '@/components/shared/ClientSearchSelect'
 import { useAuthStore } from '@/stores/authStore'
 import { carparkApi } from '@/api/carpark'
 import { carparkDispoApi } from '@/api/carparkDispo'
@@ -29,6 +32,7 @@ import { ReserveDialog } from '../Dispo/ReserveDialog'
 import { SellDialog } from '../Dispo/SellDialog'
 import { DeliverDialog } from '../Dispo/DeliverDialog'
 import { ReopenDialog } from '../Dispo/ReopenDialog'
+import { apiErrorMessage } from '../Dispo/dispoApiError'
 
 function formatDate(d: string | null): string {
   if (!d) return '-'
@@ -84,6 +88,8 @@ function buildDispoRow(vehicle: Vehicle, activeReservation: DispoReservation | n
     missing_civ: vehicle.missing_civ,
     stock_removed: vehicle.stock_removed,
     buyer_name: vehicle.buyer_name,
+    buyer_client_id: vehicle.buyer_client_id,
+    company_id: vehicle.company_id,
     reservation_id: activeReservation?.id ?? null,
     reservation_end: activeReservation?.reservation_end ?? null,
     reservation_client_name: activeReservation?.client_name ?? null,
@@ -95,10 +101,31 @@ function buildDispoRow(vehicle: Vehicle, activeReservation: DispoReservation | n
 }
 
 // ── Sale record card ────────────────────────────────────────
-function SaleRecordCard({ vehicle, canViewFinance }: { vehicle: Vehicle; canViewFinance: boolean }) {
+function SaleRecordCard({
+  vehicle,
+  canViewFinance,
+  canEdit,
+  onBuyerUpdated,
+}: {
+  vehicle: Vehicle
+  canViewFinance: boolean
+  canEdit: boolean
+  onBuyerUpdated: () => void
+}) {
   const hasSale = vehicle.sale_price != null || vehicle.sale_date != null
   const margin =
     vehicle.sale_price != null && vehicle.total_cost != null ? vehicle.sale_price - vehicle.total_cost : null
+
+  const [editingBuyer, setEditingBuyer] = useState(false)
+  const buyerMutation = useMutation({
+    mutationFn: (client: ClientSearchSelection) =>
+      carparkApi.updateVehicle(vehicle.id, { buyer_client_id: client.id, buyer_name: client.name }),
+    onSuccess: () => {
+      toast.success('Cumpărător actualizat')
+      onBuyerUpdated()
+    },
+    onError: (err) => toast.error(apiErrorMessage(err, 'Eroare la salvare')),
+  })
 
   return (
     <Card className="p-4">
@@ -132,7 +159,34 @@ function SaleRecordCard({ vehicle, canViewFinance }: { vehicle: Vehicle; canView
           <div>
             <dt className="text-xs text-muted-foreground">Cumpărător</dt>
             <dd className="text-sm font-medium">
-              {vehicle.buyer_name ?? (vehicle.buyer_client_id ? `Client #${vehicle.buyer_client_id} (CRM)` : '-')}
+              {editingBuyer ? (
+                <ClientSearchSelect
+                  value={{ id: vehicle.buyer_client_id, name: vehicle.buyer_name }}
+                  companyId={vehicle.company_id ?? undefined}
+                  open
+                  onOpenChange={(o) => { if (!o) setEditingBuyer(false) }}
+                  onSelect={(client) => {
+                    setEditingBuyer(false)
+                    if (client.id === vehicle.buyer_client_id && client.name === (vehicle.buyer_name ?? '')) return
+                    buyerMutation.mutate(client)
+                  }}
+                />
+              ) : (
+                <span className="inline-flex items-center gap-1.5">
+                  {vehicle.buyer_name ?? (vehicle.buyer_client_id ? `Client #${vehicle.buyer_client_id} (CRM)` : '-')}
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingBuyer(true)}
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label="Editează cumpărătorul"
+                      title="Editează cumpărătorul"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  )}
+                </span>
+              )}
             </dd>
           </div>
           <div>
@@ -362,7 +416,12 @@ export function VanzareTab({ vehicle, onChanged }: { vehicle: Vehicle; onChanged
         </div>
       )}
 
-      <SaleRecordCard vehicle={vehicle} canViewFinance={canViewFinance} />
+      <SaleRecordCard
+        vehicle={vehicle}
+        canViewFinance={canViewFinance}
+        canEdit={canEdit}
+        onBuyerUpdated={handleActionSuccess}
+      />
       <ReservationCard vehicleId={vehicle.id} />
       {canViewFinance && <ProfitabilityPanel vehicleId={vehicle.id} currency={vehicle.price_currency || 'RON'} />}
 

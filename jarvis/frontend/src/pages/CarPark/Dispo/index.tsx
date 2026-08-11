@@ -53,6 +53,7 @@ import { carparkDispoApi } from '@/api/carparkDispo'
 import { carparkApi } from '@/api/carpark'
 import { usersApi } from '@/api/users'
 import { settingsApi } from '@/api/settings'
+import { ClientSearchSelect } from '@/components/shared/ClientSearchSelect'
 import {
   DISPO_STAGES,
   type DispoRow,
@@ -62,6 +63,7 @@ import {
 import { DispoStatusBadge } from './DispoStatusBadge'
 import { EditableCell, type EditableCellOption } from './EditableCell'
 import { StatusEditCell } from './StatusEditCell'
+import { useDispoInlineSave } from './dispoInlineEdit'
 
 function Muted() {
   return <span className="text-muted-foreground">—</span>
@@ -207,6 +209,59 @@ function FlagsCell({ row, editable = false }: { row: DispoRow; editable?: boolea
           <Paperclip className="h-3.5 w-3.5" />
         </span>
       )}
+    </div>
+  )
+}
+
+// Client cell: async CRM search over buyer_name + buyer_client_id together.
+// Bypasses EditableCell's generic single-field flow (its runSave always
+// patches exactly one `field`) and drives useDispoInlineSave directly —
+// its patch/revert/request triple is field-count-agnostic, so a two-key
+// Partial<DispoRow> patch works exactly like EditableCell's one-key ones.
+function ClientCell({ row, editable }: { row: DispoRow; editable: boolean }) {
+  const [editing, setEditing] = useState(false)
+  const save = useDispoInlineSave(row.id)
+
+  const displayName = row.buyer_name ?? row.reservation_client_name ?? null
+
+  if (!editable) return <>{displayName ?? <Muted />}</>
+
+  if (!editing) {
+    return (
+      <span
+        onClick={(e) => {
+          e.stopPropagation()
+          setEditing(true)
+        }}
+        className="block cursor-text rounded-sm px-0.5 -mx-0.5 hover:bg-accent/60"
+      >
+        {displayName ?? <Muted />}
+      </span>
+    )
+  }
+
+  return (
+    <div onClick={(e) => e.stopPropagation()} className="min-w-[12rem]">
+      <ClientSearchSelect
+        value={{ id: row.buyer_client_id, name: row.buyer_name }}
+        companyId={row.company_id ?? undefined}
+        open
+        onOpenChange={(o) => {
+          if (!o) setEditing(false)
+        }}
+        onSelect={(client) => {
+          setEditing(false)
+          if (client.id === row.buyer_client_id && client.name === (row.buyer_name ?? '')) return
+          const patch: Partial<DispoRow> = { buyer_client_id: client.id, buyer_name: client.name }
+          const revert: Partial<DispoRow> = { buyer_client_id: row.buyer_client_id, buyer_name: row.buyer_name }
+          void save({
+            patch,
+            revert,
+            request: () => carparkApi.updateVehicle(row.id, { buyer_client_id: client.id, buyer_name: client.name }),
+            errorFallback: 'Eroare la salvare',
+          })
+        }}
+      />
     </div>
   )
 }
@@ -632,16 +687,7 @@ export default function CarParkDispo() {
         key: 'client',
         label: 'Client',
         className: 'text-sm',
-        render: (r) => (
-          <EditableCell
-            row={r}
-            field="buyer_name"
-            type="text"
-            value={r.buyer_name}
-            editable={canEdit}
-            display={(v) => (v as string) || r.reservation_client_name || <Muted />}
-          />
-        ),
+        render: (r) => <ClientCell row={r} editable={canEdit} />,
       },
       {
         key: 'salesperson',

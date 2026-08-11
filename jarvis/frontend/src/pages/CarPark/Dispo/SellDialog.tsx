@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ClientSearchSelect, type ClientSearchSelection } from '@/components/shared/ClientSearchSelect'
 import { carparkDispoApi } from '@/api/carparkDispo'
 import type { DispoRow, SaleType } from '@/types/carpark'
 import { apiErrorMessage } from './dispoApiError'
@@ -37,7 +38,9 @@ export function SellDialog({
   const queryClient = useQueryClient()
   const [salePrice, setSalePrice] = useState(row.current_price != null ? String(row.current_price) : '')
   const [saleType, setSaleType] = useState<SaleType | ''>('')
-  const [buyerName, setBuyerName] = useState(row.buyer_name ?? '')
+  const [buyer, setBuyer] = useState<ClientSearchSelection | null>(
+    row.buyer_name ? { id: row.buyer_client_id, name: row.buyer_name } : null,
+  )
   const [saleDate, setSaleDate] = useState(todayStr())
   const [lowMarginMsg, setLowMarginMsg] = useState<string | null>(null)
   const [confirmLowMargin, setConfirmLowMargin] = useState(false)
@@ -55,7 +58,8 @@ export function SellDialog({
       carparkDispoApi.sell(row.id, {
         sale_price: Number(salePrice),
         sale_type: saleType as SaleType,
-        buyer_name: buyerName.trim(),
+        buyer_name: buyer?.name,
+        buyer_client_id: buyer?.id ?? undefined,
         sale_date: saleDate,
         confirm_low_margin: confirm || undefined,
       }),
@@ -76,7 +80,7 @@ export function SellDialog({
     },
   })
 
-  const canSubmit = salePrice !== '' && saleType !== '' && buyerName.trim() !== '' && saleDate !== ''
+  const canSubmit = salePrice !== '' && saleType !== '' && !!buyer?.name.trim() && saleDate !== ''
   const blockedByLowMargin = lowMarginMsg !== null && !confirmLowMargin
 
   return (
@@ -110,10 +114,11 @@ export function SellDialog({
           </div>
           <div>
             <Label>Cumpărător *</Label>
-            <Input
-              value={buyerName}
-              onChange={(e) => setBuyerName(e.target.value)}
-              placeholder="Nume cumpărător"
+            <ClientSearchSelect
+              value={buyer ?? undefined}
+              companyId={row.company_id ?? undefined}
+              onSelect={setBuyer}
+              placeholder="Caută sau adaugă cumpărător..."
             />
           </div>
           <div>
