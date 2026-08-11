@@ -131,6 +131,11 @@ export interface Vehicle extends VehicleCatalogItem {
   listing_date: string | null
   reservation_date: string | null
   delivery_date: string | null
+  // Real carpark_vehicles column (in VEHICLE_UPDATABLE_FIELDS server-side,
+  // already typed on DispoRow) that was never added here — needed so
+  // AttachDocumentDialog's factura_achizitie → Data plată wiring can PUT it
+  // through carparkApi.updateVehicle's Partial<Vehicle> body.
+  supplier_payment_date: string | null
   notes: string | null
   internal_notes: string | null
   created_by: number | null
