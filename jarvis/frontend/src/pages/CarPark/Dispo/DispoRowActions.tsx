@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { MoreHorizontal, BookmarkCheck, DollarSign, PackageCheck, RotateCcw, ExternalLink, XCircle, Paperclip } from 'lucide-react'
+import { MoreHorizontal, BookmarkCheck, DollarSign, PackageCheck, RotateCcw, ExternalLink, XCircle, Paperclip, ArrowRightLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -17,6 +17,7 @@ import { DeliverDialog } from './DeliverDialog'
 import { ReopenDialog } from './ReopenDialog'
 import { CancelReservationDialog } from './CancelReservationDialog'
 import { AttachDocumentDialog } from './AttachDocumentDialog'
+import { TransferDialog } from './TransferDialog'
 
 // A vehicle already RESERVED/SOLD/DELIVERED or in the "iesit" (exited) stage
 // (DISPO_STAGES's iesit statuses) can't be reserved again — mirrors
@@ -33,7 +34,16 @@ const SELLABLE_STATUSES = new Set<VehicleStatus>([
   'READY_FOR_SALE', 'LISTED', 'PRICE_REDUCED', 'AUCTION_CANDIDATE', 'RESERVED',
 ])
 
-type DialogKind = 'reserve' | 'sell' | 'deliver' | 'reopen' | 'cancel-reservation' | 'attach-document' | null
+// A transfer MOVES the vehicle to another company's pipeline, so it only
+// makes sense for a car still "active" here — excludes the terminal/exited
+// statuses DispoService.transfer would still technically accept but where
+// offering the action would be misleading (already sold/delivered/scrapped/
+// returned/insurance-claimed, or already the result of a prior transfer).
+const TRANSFER_HIDDEN_STATUSES = new Set<VehicleStatus>([
+  'SOLD', 'DELIVERED', 'TRANSFERRED', 'SCRAPPED', 'RETURNED', 'INSURANCE_CLAIM',
+])
+
+type DialogKind = 'reserve' | 'sell' | 'deliver' | 'reopen' | 'cancel-reservation' | 'attach-document' | 'transfer' | null
 
 export function DispoRowActions({ row }: { row: DispoRow }) {
   const navigate = useNavigate()
@@ -51,6 +61,7 @@ export function DispoRowActions({ row }: { row: DispoRow }) {
   // this guarded action is its legitimate exit (calls cancel_reservation,
   // which restores the pre-RESERVED status server-side).
   const canCancelReservation = canEdit && row.status === 'RESERVED'
+  const canTransfer = canEdit && !TRANSFER_HIDDEN_STATUSES.has(row.status)
 
   return (
     <div onClick={(e) => e.stopPropagation()}>
@@ -91,7 +102,12 @@ export function DispoRowActions({ row }: { row: DispoRow }) {
               <Paperclip className="mr-2 h-4 w-4" /> Atașează document
             </DropdownMenuItem>
           )}
-          {(canReserve || canSell || canDeliver || canCancelReservation || canReopen || canEdit) && <DropdownMenuSeparator />}
+          {canTransfer && (
+            <DropdownMenuItem onClick={() => setDialog('transfer')}>
+              <ArrowRightLeft className="mr-2 h-4 w-4" /> Transferă
+            </DropdownMenuItem>
+          )}
+          {(canReserve || canSell || canDeliver || canCancelReservation || canReopen || canEdit || canTransfer) && <DropdownMenuSeparator />}
           <DropdownMenuItem onClick={() => navigate(`/app/carpark/${row.id}`)}>
             <ExternalLink className="mr-2 h-4 w-4" /> Deschide detalii
           </DropdownMenuItem>
@@ -110,6 +126,7 @@ export function DispoRowActions({ row }: { row: DispoRow }) {
           onOpenChange={(open) => { if (!open) setDialog(null) }}
         />
       )}
+      {dialog === 'transfer' && <TransferDialog row={row} onClose={() => setDialog(null)} />}
     </div>
   )
 }
