@@ -905,7 +905,7 @@ export const CATALOG_TABS = [
 export const DISPO_STAGES = [
   { key: '', label: 'Toate', statuses: [] },
   { key: 'in_pregatire', label: 'În pregătire', statuses: ['ACQUIRED', 'IN_TRANSIT', 'INSPECTION', 'RECONDITIONING', 'AT_BODYSHOP'] },
-  { key: 'in_stoc', label: 'În stoc', statuses: ['READY_FOR_SALE'] },
+  { key: 'in_stoc', label: 'Pregătit Vânzare', statuses: ['READY_FOR_SALE'] },
   { key: 'promovat', label: 'Promovat', statuses: ['LISTED', 'PRICE_REDUCED', 'AUCTION_CANDIDATE'] },
   { key: 'rezervat', label: 'Rezervat', statuses: ['RESERVED'] },
   { key: 'vandut', label: 'Vândut', statuses: ['SOLD'] },
@@ -978,6 +978,11 @@ export interface DispoRow {
   stock_removed_date: string | null
   days_in_stock: number
   current_price: number | null
+  // Not finance-gated (absent from dispo.py's _FINANCE_ROW_FIELDS) — v.*
+  // selects every carpark_vehicles column, these two just weren't typed
+  // before nothing read them. Used by the Kanban card's promo-price display.
+  list_price: number | null
+  promotional_price: number | null
   sale_price: number | null
   gw_file_number: string | null
   is_impus: boolean
