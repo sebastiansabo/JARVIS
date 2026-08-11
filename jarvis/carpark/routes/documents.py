@@ -68,6 +68,9 @@ VALID_DOCUMENT_TYPES = frozenset({
     'pv_intrare', 'contract_achizitie', 'civ', 'talon', 'factura_achizitie',
     'contract_vanzare', 'factura_vanzare', 'pv_livrare', 'dosar_gw',
     'asigurare', 'itp', 'mandat', 'altele',
+    # Inter-company transfer (carpark/routes/transfers.py) — the invoice
+    # backing a transfer between AutoWorld sibling companies.
+    'factura_transfer',
 })
 
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB

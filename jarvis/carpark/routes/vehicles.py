@@ -227,6 +227,18 @@ def update_vehicle(vehicle_id):
     if err:
         return err
 
+    # SECURITY: company_id/transferred_from_company_id are in
+    # VEHICLE_UPDATABLE_FIELDS ONLY so DispoService.transfer() (the guarded,
+    # audited inter-company move — see carpark/routes/transfers.py) can
+    # persist a company reassignment through this same
+    # VehicleService.update_vehicle() audit-trail path. This generic PUT
+    # must not let a caller reassign a vehicle's owning company without
+    # transfer()'s AutoWorld-group + price + document guards, so both
+    # fields are stripped here — mirrors the analogous
+    # data.pop('company_id', None) guard on PUT /locations/<id> below.
+    data.pop('company_id', None)
+    data.pop('transferred_from_company_id', None)
+
     try:
         vehicle = _vehicle_service.update_vehicle(
             vehicle_id, data,

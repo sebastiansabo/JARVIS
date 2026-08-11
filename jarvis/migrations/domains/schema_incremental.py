@@ -1678,6 +1678,12 @@ def _create_carpark_incremental(conn, cursor):
         ('gw_file_number', 'VARCHAR(50)'), ('is_impus', 'BOOLEAN DEFAULT FALSE'),
         ('missing_civ', 'BOOLEAN DEFAULT FALSE'), ('stock_removed', 'BOOLEAN DEFAULT FALSE'),
         ('stock_removed_date', 'DATE'),
+        # Inter-company transfer: marks a vehicle that landed here via a
+        # transfer FROM another AutoWorld sibling company (see
+        # carpark_transfers below — this column is the fast "is this a
+        # transferred-in car" flag on the vehicle row itself, the transfers
+        # table is the full log with price/date/document).
+        ('transferred_from_company_id', 'INTEGER'),
     ]:
         cursor.execute(f"""
             DO $$ BEGIN
@@ -1687,6 +1693,30 @@ def _create_carpark_incremental(conn, cursor):
               END IF;
             END $$;
         """)
+
+    # ── CarPark Dispo: inter-company vehicle transfer log ──
+    # A transfer MOVES the vehicle row to the destination company
+    # (carpark_vehicles.company_id changes — see DispoService.transfer /
+    # VehicleRepository.VEHICLE_UPDATABLE_FIELDS) and this table is the
+    # append-only audit record of that move: who moved what, from which
+    # company, to which company, for how much, backed by which document.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_transfers (
+            id SERIAL PRIMARY KEY,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            from_company_id INTEGER NOT NULL REFERENCES companies(id),
+            to_company_id INTEGER NOT NULL REFERENCES companies(id),
+            transfer_price DECIMAL(12,2),
+            transfer_currency VARCHAR(3) DEFAULT 'EUR',
+            transfer_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            document_id INTEGER REFERENCES carpark_vehicle_documents(id) ON DELETE SET NULL,
+            notes TEXT,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_carpark_transfers_from ON carpark_transfers(from_company_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_carpark_transfers_vehicle ON carpark_transfers(vehicle_id)')
 
 
 def _create_schema_incremental_continued(conn, cursor):
