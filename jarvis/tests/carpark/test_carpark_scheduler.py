@@ -17,9 +17,21 @@ import os
 
 os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')
 
+from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import tasks.carpark as job
+
+from database import get_db, get_cursor, release_db
+
+from .conftest import REAL_DB_AVAILABLE
+
+# Sentinel company_id for THIS file's real-DB test — distinct from
+# TEST_COMPANY_ID=990001 (test_dispo_repository_sql.py) and 990002
+# (test_phase2_e2e.py) so the three DB-backed suites can never collide.
+SCHED_COMPANY_ID = 990003
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -72,7 +84,7 @@ def test_expire_reservations_marks_expired_moves_vehicle_and_notifies():
 
     reservation_repo.set_status.assert_called_once_with(101, 'expired')
     vehicle_service.change_status.assert_called_once_with(
-        1, 'LISTED', changed_by=None, notes='Reservation expired')
+        1, 'LISTED', changed_by=None, notes='Reservation expired', via_dispo_action=True)
     notify_fn.assert_called_once()
     assert notify_fn.call_args[0][0] == 42
 
@@ -143,7 +155,7 @@ def test_expire_reservations_one_bad_row_does_not_abort_batch():
     assert reservation_repo.set_status.call_count == 2
     # ...but only the second (surviving) row reaches change_status/notify.
     vehicle_service.change_status.assert_called_once_with(
-        2, 'LISTED', changed_by=None, notes='Reservation expired')
+        2, 'LISTED', changed_by=None, notes='Reservation expired', via_dispo_action=True)
     notify_fn.assert_called_once()
     assert notify_fn.call_args[0][0] == 43
 
@@ -236,3 +248,117 @@ def test_carpark_aging_alerts_one_bad_vehicle_does_not_abort_batch():
         job.carpark_aging_alerts()
 
     assert notify_fn.call_count == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# expire_reservations — REAL-DB integration (proves the via_dispo_action fix)
+# ─────────────────────────────────────────────────────────────────────────
+#
+# The mocked expire_reservations tests above swap VehicleService for a
+# MagicMock, so change_status never runs the real via_dispo_action guard —
+# which is exactly how the INLINE-4 regression (a RESERVED-exit blocked by
+# the guard, then swallowed by the job's per-row try/except, leaving the
+# vehicle stuck in RESERVED) slipped through. This test runs the REAL
+# VehicleService/VehicleRepository/ReservationRepository against
+# localhost/defaultdb so the fix (expire_reservations passing
+# via_dispo_action=True) is exercised end-to-end: it fails on the pre-fix
+# code because the vehicle never leaves RESERVED.
+#
+# Only ReservationRepository.expired() is patched — to scope the job to our
+# single seeded reservation. expire_reservations() otherwise queries EVERY
+# active-but-past reservation in the DB (it's not company-scoped), so an
+# unpatched run against a shared dev DB could destructively expire/relist
+# unrelated real vehicles. set_status() and change_status() (through the real
+# guard and real carpark_status_history write) stay 100% real DB.
+
+
+@pytest.fixture
+def reserved_expired_seed():
+    """Seed one RESERVED vehicle under SCHED_COMPANY_ID with an ACTIVE
+    reservation whose reservation_end is in the past. user_id is NULL so the
+    job skips notify_user (no notifications row to clean up). Yields
+    {'vehicle_id': ..., 'reservation_id': ...}.
+
+    Teardown deletes every carpark_vehicles row for SCHED_COMPANY_ID (the
+    carpark_reservations + carpark_status_history rows cascade via
+    vehicle_id ... ON DELETE CASCADE) and asserts zero remain.
+    """
+    if not REAL_DB_AVAILABLE:
+        pytest.skip(
+            'Real Postgres not available (DATABASE_URL unreachable or psycopg2 '
+            'mocked) — skipping carpark scheduler DB-backed test'
+        )
+
+    conn = get_db()
+    conn.autocommit = False
+    cur = get_cursor(conn)
+    today = date.today()
+    ids = {}
+    try:
+        # Defensive: clear any leftover rows from a previously crashed run.
+        cur.execute('DELETE FROM carpark_vehicles WHERE company_id = %s', (SCHED_COMPANY_ID,))
+
+        cur.execute('''
+            INSERT INTO carpark_vehicles
+                (vin, brand, model, status, company_id, acquisition_date, acquisition_price)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        ''', ('TESTSCHED0000001', 'TestBrand', 'TestModelSched', 'RESERVED',
+              SCHED_COMPANY_ID, today - timedelta(days=30), 10000))
+        ids['vehicle_id'] = cur.fetchone()['id']
+
+        # Active reservation, already past its end date → the job must expire
+        # it and relist the (still-RESERVED) vehicle.
+        cur.execute('''
+            INSERT INTO carpark_reservations
+                (vehicle_id, client_name, reservation_start, reservation_end, status, user_id)
+            VALUES (%s, %s, %s, %s, 'active', NULL)
+            RETURNING id
+        ''', (ids['vehicle_id'], 'Overdue Client',
+              today - timedelta(days=10), today - timedelta(days=1)))
+        ids['reservation_id'] = cur.fetchone()['id']
+
+        conn.commit()
+        yield ids
+    finally:
+        try:
+            cur.execute('DELETE FROM carpark_vehicles WHERE company_id = %s', (SCHED_COMPANY_ID,))
+            conn.commit()
+            cur.execute('SELECT COUNT(*) AS cnt FROM carpark_vehicles WHERE company_id = %s',
+                        (SCHED_COMPANY_ID,))
+            remaining = cur.fetchone()['cnt']
+        finally:
+            release_db(conn)
+        assert remaining == 0, (
+            f'teardown left {remaining} orphan carpark_vehicles row(s) for '
+            f'company_id={SCHED_COMPANY_ID}'
+        )
+
+
+def test_expire_reservations_real_db_unsticks_reserved_vehicle(reserved_expired_seed):
+    """End-to-end: expire_reservations() marks the reservation 'expired' AND
+    actually moves the vehicle RESERVED -> LISTED through the real
+    via_dispo_action guard. Pre-fix this asserts-fail: the guard raised, the
+    job swallowed it, and the vehicle stayed RESERVED."""
+    from core.base_repository import BaseRepository
+
+    vehicle_id = reserved_expired_seed['vehicle_id']
+    reservation_id = reserved_expired_seed['reservation_id']
+
+    # Scope the (globally-querying) job to just our seeded reservation.
+    with patch(
+        'carpark.repositories.reservation_repository.ReservationRepository.expired',
+        return_value=[{'id': reservation_id, 'vehicle_id': vehicle_id, 'user_id': None}],
+    ):
+        job.expire_reservations()
+
+    raw = BaseRepository()
+    reservation_row = raw.query_one(
+        'SELECT status FROM carpark_reservations WHERE id = %s', (reservation_id,))
+    vehicle_row = raw.query_one(
+        'SELECT status FROM carpark_vehicles WHERE id = %s', (vehicle_id,))
+
+    # (a) reservation closed out...
+    assert reservation_row['status'] == 'expired'
+    # (b) ...AND the vehicle is really LISTED, not stuck at RESERVED (the fix).
+    assert vehicle_row['status'] == 'LISTED'
