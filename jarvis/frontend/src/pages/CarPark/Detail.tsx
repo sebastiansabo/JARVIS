@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Pencil,
@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronRight,
+  ArrowLeft,
   Car,
   ImageIcon,
   X,
@@ -161,10 +162,24 @@ function Field({ label, value, className }: { label: string; value: React.ReactN
 export default function CarParkDetail() {
   const { vehicleId } = useParams<{ vehicleId: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const canEdit = user?.can_edit_carpark ?? false
   const canDelete = user?.can_delete_carpark ?? false
+
+  // Back navigation — returns to the Dispo view (table/kanban, same stage) the
+  // user opened this car from, when that origin was passed via router state.
+  const backTo = (location.state as { from?: string } | null)?.from
+  const goBack = () => {
+    if (backTo) {
+      navigate(backTo)
+    } else if (window.history.length > 1) {
+      navigate(-1)
+    } else {
+      navigate('/app/carpark/dispo')
+    }
+  }
 
   const id = Number(vehicleId)
 
@@ -313,6 +328,17 @@ export default function CarParkDetail() {
 
   return (
     <div className="space-y-6">
+      {/* Back navigation — returns to the Dispo origin (table/kanban, same stage) */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="-ml-2 h-8 gap-1 text-muted-foreground hover:text-foreground"
+        onClick={goBack}
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Înapoi
+      </Button>
+
       {/* Header */}
       <PageHeader
         title={`${vehicle.brand} ${vehicle.model}`}
