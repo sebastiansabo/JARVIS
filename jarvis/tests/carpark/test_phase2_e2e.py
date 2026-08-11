@@ -32,6 +32,7 @@ import pytest
 from database import get_db, get_cursor, release_db
 from core.base_repository import BaseRepository
 from carpark.services.dispo_service import DispoService
+from carpark.services.vehicle_service import VehicleService
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.reservation_repository import ReservationRepository
 from carpark.repositories.document_repository import DocumentRepository
@@ -201,3 +202,39 @@ def test_full_dispo_lifecycle_reserve_deliver_guard_sell_deliver_remove(e2e_vehi
     final_vehicle = vehicle_repo.get_by_id(vehicle_id)
     assert final_vehicle['stock_removed'] is True
     assert final_vehicle['stock_removed_date'] == today.isoformat()
+
+
+def test_remove_from_stock_clears_impus_flag(e2e_vehicle):
+    """remove_from_stock() must succeed on an IMPUS-flagged vehicle and
+    auto-clear is_impus — INVARIANT: NOT (is_impus AND stock_removed).
+    DispoService.remove_from_stock() only ever sends
+    {stock_removed: True, ...} to VehicleService.update_vehicle() and has no
+    notion of IMPUS; the mutual-exclusivity guard lives entirely in
+    update_vehicle(), which must clear the sibling flag rather than block
+    this call (contrast with test_vehicle_service.py's mocked-repo tests,
+    which prove the guard in isolation — this proves it against the real
+    VEHICLE_UPDATABLE_FIELDS whitelist + a real UPDATE)."""
+    vehicle_id = e2e_vehicle
+    svc = DispoService()  # REAL repos — nothing injected, nothing mocked
+    vehicle_service = VehicleService()
+    vehicle_repo = VehicleRepository()
+    raw = BaseRepository()
+
+    # Fast-forward straight to a stock-removable status + IMPUS, bypassing
+    # the full reserve/sell/deliver dance already proven by the lifecycle
+    # test above.
+    raw.execute(
+        "UPDATE carpark_vehicles SET status = 'DELIVERED' WHERE id = %s", (vehicle_id,))
+    vehicle_service.update_vehicle(vehicle_id, {'is_impus': True}, updated_by=TEST_USER['id'])
+
+    flagged = vehicle_repo.get_by_id(vehicle_id)
+    assert flagged['is_impus'] is True
+    assert flagged['stock_removed'] is False
+
+    remove_result = svc.remove_from_stock(vehicle_id, E2E_COMPANY_ID, TEST_USER)
+    assert remove_result['vehicle']['stock_removed'] is True
+    assert remove_result['vehicle']['is_impus'] is False
+
+    final_vehicle = vehicle_repo.get_by_id(vehicle_id)
+    assert final_vehicle['stock_removed'] is True
+    assert final_vehicle['is_impus'] is False

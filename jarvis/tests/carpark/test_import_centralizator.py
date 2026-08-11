@@ -440,6 +440,62 @@ def test_cross_company_vin_is_rejected_and_other_company_vehicle_unchanged(
         release_db(conn)
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# IMPUS / SCOS mutual exclusivity (INVARIANT: NOT (is_impus AND stock_removed))
+# ─────────────────────────────────────────────────────────────────────────
+
+VIN_BOTH_FLAGS = 'TESTIMPORT0000007'
+assert len(VIN_BOTH_FLAGS) == 17
+
+
+def _both_flags_workbook() -> io.BytesIO:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'AUDI'
+    ws.append(_HEADERS)
+    ws.append(_row(VIN_BOTH_FLAGS, **{'IMPUS': 'DA', 'SCOS DIN EVIDENTA': 'DA'}))
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def test_row_with_both_impus_and_scos_keeps_scos_and_warns(
+        require_real_db, cleanup_import_company):
+    """A centralizator row can carry both IMPUS='DA' and SCOS DIN
+    EVIDENTA='DA' (a vehicle flagged IMPUS that was later removed from
+    stock). That's a contradiction under the mutual-exclusivity invariant —
+    SCOS wins as the later lifecycle state, is_impus is cleared, and the row
+    is still imported (`ok`), just carrying a warning so the discrepancy
+    stays visible in the report."""
+    importer = CentralizatorImporter()
+    vehicle_repo = VehicleRepository()
+
+    report = importer.run(_both_flags_workbook(), IMPORT_COMPANY_ID, dry_run=True)
+
+    assert report.total == 1
+    assert report.ok == 1
+    assert report.rejects == 0
+    assert report.warnings == 1
+    row = report.rows[0]
+    assert row['vin'] == VIN_BOTH_FLAGS
+    assert row['status'] == 'ok'
+    assert any('IMPUS' in w and 'SCOS' in w for w in row['warnings'])
+
+    # dry-run writes nothing
+    assert vehicle_repo.get_by_vin(VIN_BOTH_FLAGS) is None
+
+    committed = importer.run(_both_flags_workbook(), IMPORT_COMPANY_ID, dry_run=False)
+    assert committed.committed_vehicles_created == 1
+
+    # get_by_vin() only projects id/vin/brand/model/status — go through
+    # get_by_id() for the full row (mirrors the VIN_COSTS lookup above).
+    vehicle = vehicle_repo.get_by_id(vehicle_repo.get_by_vin(VIN_BOTH_FLAGS)['id'])
+    assert vehicle is not None
+    assert vehicle['stock_removed'] is True
+    assert vehicle['is_impus'] is False
+
+
 def _rebuild_cross_workbook() -> io.BytesIO:
     """Fresh stream for the second (commit) importer.run in the
     cross-company test — read_only workbooks consume their stream."""

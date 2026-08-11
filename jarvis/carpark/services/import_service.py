@@ -429,6 +429,15 @@ class CentralizatorImporter:
         if stock_removed:
             vehicle_fields['stock_removed'] = True
 
+        # INVARIANT: NOT (is_impus AND stock_removed). A centralizator row
+        # can legitimately carry both IMPUS='DA' and SCOS DIN EVIDENTA='DA'
+        # (a vehicle that was flagged IMPUS and later removed from stock).
+        # SCOS wins as the later lifecycle state; is_impus is cleared and
+        # the row is flagged so the discrepancy stays visible in the report.
+        if vehicle_fields.get('is_impus') and stock_removed:
+            vehicle_fields['is_impus'] = False
+            row.warnings.append('IMPUS și SCOS ambele DA — păstrat SCOS')
+
         delivery_date = _parse_date(get('delivery_date'))
         if delivery_date:
             vehicle_fields['delivery_date'] = delivery_date
