@@ -52,42 +52,16 @@ import { cn } from '@/lib/utils'
 import { carparkDispoApi } from '@/api/carparkDispo'
 import { carparkApi } from '@/api/carpark'
 import { usersApi } from '@/api/users'
+import { settingsApi } from '@/api/settings'
 import {
   DISPO_STAGES,
-  STATUS_LABELS,
   type DispoRow,
   type DispoFilters,
   type VehicleStatus,
 } from '@/types/carpark'
-
-// ── Status colors (mirrors the local VehicleStatusBadge in pages/CarPark/index.tsx,
-//    kept as its own copy per that page's precedent rather than a shared export) ──
-const STATUS_COLORS: Record<string, string> = {
-  ACQUIRED: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-  INSPECTION: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-  RECONDITIONING: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
-  READY_FOR_SALE: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
-  LISTED: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-  RESERVED: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-  SOLD: 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
-  DELIVERED: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
-  PRICE_REDUCED: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-  AUCTION_CANDIDATE: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
-  IN_TRANSIT: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
-  AT_BODYSHOP: 'bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200',
-  INSURANCE_CLAIM: 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200',
-  RETURNED: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200',
-  SCRAPPED: 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200',
-  TRANSFERRED: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200',
-}
-
-function DispoStatusBadge({ status }: { status: VehicleStatus }) {
-  return (
-    <Badge variant="secondary" className={cn('font-normal text-[11px] whitespace-nowrap', STATUS_COLORS[status] ?? '')}>
-      {STATUS_LABELS[status] ?? status}
-    </Badge>
-  )
-}
+import { DispoStatusBadge } from './DispoStatusBadge'
+import { EditableCell, type EditableCellOption } from './EditableCell'
+import { StatusEditCell } from './StatusEditCell'
 
 function Muted() {
   return <span className="text-muted-foreground">—</span>
@@ -142,27 +116,92 @@ function fmtKpiCurrency(val: number | null | undefined): string {
   return `${new Intl.NumberFormat('ro-RO', { maximumFractionDigits: 0 }).format(val)} €`
 }
 
-function FlagsCell({ row }: { row: DispoRow }) {
+// `editable` wires each flag badge through EditableCell(type='flag') so a
+// click toggles + saves that single boolean; the missingPvLivrare paperclip
+// stays a computed, non-interactive indicator either way. Mobile card usage
+// (mobileFields below) omits `editable`, keeping it read-only there.
+function FlagsCell({ row, editable = false }: { row: DispoRow; editable?: boolean }) {
   const missingPvLivrare =
     (row.status === 'SOLD' || row.status === 'DELIVERED') && !row.doc_types.includes('pv_livrare')
-  if (!row.is_impus && !row.missing_civ && !row.stock_removed && !missingPvLivrare) return <Muted />
+
+  if (!editable) {
+    if (!row.is_impus && !row.missing_civ && !row.stock_removed && !missingPvLivrare) return <Muted />
+    return (
+      <div className="flex flex-wrap items-center gap-1">
+        {row.is_impus && (
+          <Badge variant="destructive" className="text-[10px] font-normal">
+            IMPUS
+          </Badge>
+        )}
+        {row.missing_civ && (
+          <Badge variant="outline" className="text-[10px] font-normal border-amber-500 text-amber-600 dark:text-amber-400">
+            LIPSĂ CIV
+          </Badge>
+        )}
+        {row.stock_removed && (
+          <Badge variant="secondary" className="text-[10px] font-normal">
+            SCOS
+          </Badge>
+        )}
+        {missingPvLivrare && (
+          <span title="Lipsă PV livrare" className="inline-flex text-red-600 dark:text-red-400">
+            <Paperclip className="h-3.5 w-3.5" />
+          </span>
+        )}
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      {row.is_impus && (
-        <Badge variant="destructive" className="text-[10px] font-normal">
-          IMPUS
-        </Badge>
-      )}
-      {row.missing_civ && (
-        <Badge variant="outline" className="text-[10px] font-normal border-amber-500 text-amber-600 dark:text-amber-400">
-          LIPSĂ CIV
-        </Badge>
-      )}
-      {row.stock_removed && (
-        <Badge variant="secondary" className="text-[10px] font-normal">
-          SCOS
-        </Badge>
-      )}
+    <div className="flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <EditableCell
+        row={row}
+        field="is_impus"
+        type="flag"
+        value={row.is_impus}
+        editable
+        display={(v) => (
+          <Badge
+            variant={v ? 'destructive' : 'outline'}
+            className={cn('text-[10px] font-normal', !v && 'border-dashed text-muted-foreground/50')}
+          >
+            IMPUS
+          </Badge>
+        )}
+      />
+      <EditableCell
+        row={row}
+        field="missing_civ"
+        type="flag"
+        value={row.missing_civ}
+        editable
+        display={(v) => (
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-[10px] font-normal',
+              v ? 'border-amber-500 text-amber-600 dark:text-amber-400' : 'border-dashed text-muted-foreground/50',
+            )}
+          >
+            LIPSĂ CIV
+          </Badge>
+        )}
+      />
+      <EditableCell
+        row={row}
+        field="stock_removed"
+        type="flag"
+        value={row.stock_removed}
+        editable
+        display={(v) => (
+          <Badge
+            variant={v ? 'secondary' : 'outline'}
+            className={cn('text-[10px] font-normal', !v && 'border-dashed text-muted-foreground/50')}
+          >
+            SCOS
+          </Badge>
+        )}
+      />
       {missingPvLivrare && (
         <span title="Lipsă PV livrare" className="inline-flex text-red-600 dark:text-red-400">
           <Paperclip className="h-3.5 w-3.5" />
@@ -178,6 +217,7 @@ export default function CarParkDispo() {
   const isMobile = useIsMobile()
   const user = useAuthStore((s) => s.user)
   const canViewFinance = !!user?.can_view_carpark_finance
+  const canEdit = !!user?.can_edit_carpark
 
   const [searchParams, setSearchParams] = useSearchParams()
   const activeStage = searchParams.get('stage') || ''
@@ -284,11 +324,46 @@ export default function CarParkDispo() {
     staleTime: 5 * 60_000,
   })
 
+  // Canonical dropdown_options lists (settings/dropdowns — seeded per
+  // dropdown_type in schema_carpark.py) back the source/sale_type inline
+  // edit selects, unlike the filter bar's page-scoped sourceOptions below.
+  const { data: sourceDropdown } = useQuery({
+    queryKey: ['dropdown-options', 'carpark_source'],
+    queryFn: () => settingsApi.getDropdownOptions('carpark_source'),
+    staleTime: 5 * 60_000,
+    enabled: canEdit,
+  })
+
+  const { data: saleTypeDropdown } = useQuery({
+    queryKey: ['dropdown-options', 'carpark_sale_type'],
+    queryFn: () => settingsApi.getDropdownOptions('carpark_sale_type'),
+    staleTime: 5 * 60_000,
+    enabled: canEdit,
+  })
+
+  const sourceEditOptions: EditableCellOption[] = useMemo(
+    () => (sourceDropdown ?? []).filter((o) => o.is_active).map((o) => ({ value: o.value, label: o.label })),
+    [sourceDropdown],
+  )
+
+  const saleTypeEditOptions: EditableCellOption[] = useMemo(
+    () => (saleTypeDropdown ?? []).filter((o) => o.is_active).map((o) => ({ value: o.value, label: o.label })),
+    [saleTypeDropdown],
+  )
+
   const userNameMap = useMemo(() => {
     const m = new Map<number, string>()
     for (const u of usersData ?? []) m.set(u.id, u.name)
     return m
   }, [usersData])
+
+  const userEditOptions: EditableCellOption[] = useMemo(
+    () =>
+      (usersData ?? [])
+        .map((u) => ({ value: String(u.id), label: u.name }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [usersData],
+  )
 
   const rows = summaryData?.rows ?? []
   const total = summaryData?.total ?? 0
@@ -348,18 +423,41 @@ export default function CarParkDispo() {
   )
 
   // ── Column definitions (centralizator order) ────────────
+  // Editable columns route through EditableCell/StatusEditCell (click →
+  // input → Enter/blur saves, Escape cancels; see EditableCell.tsx). Each
+  // `display` callback reproduces that column's exact prior read-only
+  // markup, so a non-editing/non-`canEdit` viewer sees byte-for-byte the
+  // same cell as before this feature. days_in_stock/total_costs/
+  // gross_margin/margin_pct/vin stay plain renders — all computed, never
+  // editable.
   const columnDefs: ColumnDef<DispoRow>[] = useMemo(() => {
     const cols: ColumnDef<DispoRow>[] = [
-      { key: 'brand', label: 'Marca', className: 'font-medium whitespace-nowrap', render: (r) => r.brand },
+      {
+        key: 'brand',
+        label: 'Marca',
+        className: 'font-medium whitespace-nowrap',
+        render: (r) => (
+          <EditableCell row={r} field="brand" type="text" value={r.brand} editable={canEdit} display={(v) => (v as string) || r.brand} />
+        ),
+      },
       {
         key: 'model',
         label: 'Model',
         className: 'whitespace-nowrap',
         render: (r) => (
-          <>
-            {r.model}
-            {r.variant && <span className="ml-1 text-xs text-muted-foreground">{r.variant}</span>}
-          </>
+          <EditableCell
+            row={r}
+            field="model"
+            type="text"
+            value={r.model}
+            editable={canEdit}
+            display={(v) => (
+              <>
+                {(v as string) || r.model}
+                {r.variant && <span className="ml-1 text-xs text-muted-foreground">{r.variant}</span>}
+              </>
+            )}
+          />
         ),
       },
       {
@@ -368,26 +466,82 @@ export default function CarParkDispo() {
         className: 'font-mono text-xs whitespace-nowrap',
         render: (r) => <span title={r.vin}>{r.vin.slice(-6)}</span>,
       },
-      { key: 'status', label: 'Status', render: (r) => <DispoStatusBadge status={r.status} /> },
-      { key: 'source', label: 'Furnizor', className: 'text-sm', render: (r) => r.source ?? <Muted /> },
-      { key: 'location', label: 'Locație', className: 'text-sm', render: (r) => r.location_text ?? <Muted /> },
+      { key: 'status', label: 'Status', render: (r) => <StatusEditCell row={r} editable={canEdit} /> },
+      {
+        key: 'source',
+        label: 'Furnizor',
+        className: 'text-sm',
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="source"
+            type="select"
+            value={r.source}
+            editable={canEdit}
+            options={sourceEditOptions}
+            display={(v) => (v ? String(v) : <Muted />)}
+          />
+        ),
+      },
+      {
+        key: 'location',
+        label: 'Locație',
+        className: 'text-sm',
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="location_text"
+            type="text"
+            value={r.location_text}
+            editable={canEdit}
+            display={(v) => (v ? String(v) : <Muted />)}
+          />
+        ),
+      },
       {
         key: 'acquisition_date',
         label: 'Data achiziție',
         className: 'whitespace-nowrap text-sm tabular-nums',
-        render: (r) => fmtDate(r.acquisition_date),
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="acquisition_date"
+            type="date"
+            value={r.acquisition_date}
+            editable={canEdit}
+            display={(v) => fmtDate(v as string | null)}
+          />
+        ),
       },
       {
         key: 'supplier_payment_date',
         label: 'Data plată',
         className: 'whitespace-nowrap text-sm tabular-nums',
-        render: (r) => fmtDate(r.supplier_payment_date),
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="supplier_payment_date"
+            type="date"
+            value={r.supplier_payment_date}
+            editable={canEdit}
+            display={(v) => fmtDate(v as string | null)}
+          />
+        ),
       },
       {
         key: 'listing_date',
         label: 'Data promovare',
         className: 'whitespace-nowrap text-sm tabular-nums',
-        render: (r) => fmtDate(r.listing_date),
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="listing_date"
+            type="date"
+            value={r.listing_date}
+            editable={canEdit}
+            display={(v) => fmtDate(v as string | null)}
+          />
+        ),
       },
       {
         key: 'days_in_stock',
@@ -401,7 +555,16 @@ export default function CarParkDispo() {
               key: 'acquisition_price',
               label: 'Preț achiziție',
               className: 'text-right tabular-nums',
-              render: (r) => (r.acquisition_price != null ? <CurrencyDisplay value={r.acquisition_price} /> : <Muted />),
+              render: (r) => (
+                <EditableCell
+                  row={r}
+                  field="acquisition_price"
+                  type="money"
+                  value={r.acquisition_price ?? null}
+                  editable={canEdit}
+                  display={(v) => (v != null ? <CurrencyDisplay value={v as number} /> : <Muted />)}
+                />
+              ),
             },
             {
               key: 'total_costs',
@@ -415,7 +578,16 @@ export default function CarParkDispo() {
         key: 'sale_price',
         label: 'Preț vânzare',
         className: 'text-right tabular-nums',
-        render: (r) => (r.sale_price != null ? <CurrencyDisplay value={r.sale_price} /> : <Muted />),
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="sale_price"
+            type="money"
+            value={r.sale_price}
+            editable={canEdit}
+            display={(v) => (v != null ? <CurrencyDisplay value={v as number} /> : <Muted />)}
+          />
+        ),
       },
       ...(canViewFinance
         ? ([
@@ -440,49 +612,118 @@ export default function CarParkDispo() {
             },
           ] as ColumnDef<DispoRow>[])
         : []),
-      { key: 'sale_type', label: 'Tip vânzare', className: 'text-sm whitespace-nowrap', render: (r) => r.sale_type ?? <Muted /> },
+      {
+        key: 'sale_type',
+        label: 'Tip vânzare',
+        className: 'text-sm whitespace-nowrap',
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="sale_type"
+            type="select"
+            value={r.sale_type}
+            editable={canEdit}
+            options={saleTypeEditOptions}
+            display={(v) => (v ? String(v) : <Muted />)}
+          />
+        ),
+      },
       {
         key: 'client',
         label: 'Client',
         className: 'text-sm',
-        render: (r) => r.buyer_name ?? r.reservation_client_name ?? <Muted />,
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="buyer_name"
+            type="text"
+            value={r.buyer_name}
+            editable={canEdit}
+            display={(v) => (v as string) || r.reservation_client_name || <Muted />}
+          />
+        ),
       },
       {
         key: 'salesperson',
         label: 'Vânzător',
         className: 'text-sm whitespace-nowrap',
-        render: (r) =>
-          r.salesperson_user_id ? (userNameMap.get(r.salesperson_user_id) ?? `#${r.salesperson_user_id}`) : <Muted />,
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="salesperson_user_id"
+            type="user"
+            value={r.salesperson_user_id}
+            editable={canEdit}
+            options={userEditOptions}
+            display={(v) => (v != null ? (userNameMap.get(v as number) ?? `#${v}`) : <Muted />)}
+          />
+        ),
       },
       {
         key: 'acquisition_manager',
         label: 'Achizitor',
         className: 'text-sm whitespace-nowrap',
-        render: (r) =>
-          r.acquisition_manager_id ? (userNameMap.get(r.acquisition_manager_id) ?? `#${r.acquisition_manager_id}`) : <Muted />,
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="acquisition_manager_id"
+            type="user"
+            value={r.acquisition_manager_id}
+            editable={canEdit}
+            options={userEditOptions}
+            display={(v) => (v != null ? (userNameMap.get(v as number) ?? `#${v}`) : <Muted />)}
+          />
+        ),
       },
       {
         key: 'gw_file_number',
         label: 'Dosar GW',
         className: 'text-sm whitespace-nowrap',
-        render: (r) => r.gw_file_number ?? <Muted />,
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="gw_file_number"
+            type="text"
+            value={r.gw_file_number}
+            editable={canEdit}
+            display={(v) => (v as string) || <Muted />}
+          />
+        ),
       },
       {
         key: 'sale_date',
         label: 'Data vânzării',
         className: 'whitespace-nowrap text-sm tabular-nums',
-        render: (r) => fmtDate(r.sale_date),
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="sale_date"
+            type="date"
+            value={r.sale_date}
+            editable={canEdit}
+            display={(v) => fmtDate(v as string | null)}
+          />
+        ),
       },
       {
         key: 'delivery_date',
         label: 'Data livrării',
         className: 'whitespace-nowrap text-sm tabular-nums',
-        render: (r) => fmtDate(r.delivery_date),
+        render: (r) => (
+          <EditableCell
+            row={r}
+            field="delivery_date"
+            type="date"
+            value={r.delivery_date}
+            editable={canEdit}
+            display={(v) => fmtDate(v as string | null)}
+          />
+        ),
       },
-      { key: 'flags', label: 'Flags', render: (r) => <FlagsCell row={r} /> },
+      { key: 'flags', label: 'Flags', render: (r) => <FlagsCell row={r} editable={canEdit} /> },
     ]
     return cols
-  }, [canViewFinance, userNameMap])
+  }, [canViewFinance, canEdit, userNameMap, sourceEditOptions, saleTypeEditOptions, userEditOptions])
 
   const defaultVisible = useMemo(() => columnDefs.map((c) => c.key), [columnDefs])
 

@@ -632,6 +632,30 @@ export const STATUS_LABELS: Record<VehicleStatus, string> = {
   TRANSFERRED: 'Transferat',
 }
 
+// Mirrors carpark/services/vehicle_service.py's TRANSITIONS dict exactly
+// (the single source of truth behind is_valid_transition, enforced
+// server-side on PUT /vehicles/<id>/status — this copy is UI-only, used to
+// decide which targets are worth offering, never to bypass the server
+// check). Keep in sync if TRANSITIONS changes.
+export const STATUS_TRANSITIONS: Record<VehicleStatus, VehicleStatus[]> = {
+  ACQUIRED: ['IN_TRANSIT', 'INSPECTION', 'READY_FOR_SALE', 'RETURNED', 'TRANSFERRED'],
+  IN_TRANSIT: ['INSPECTION', 'ACQUIRED'],
+  INSPECTION: ['RECONDITIONING', 'READY_FOR_SALE', 'AT_BODYSHOP', 'INSURANCE_CLAIM'],
+  RECONDITIONING: ['READY_FOR_SALE', 'AT_BODYSHOP', 'INSPECTION'],
+  AT_BODYSHOP: ['RECONDITIONING', 'READY_FOR_SALE', 'INSURANCE_CLAIM'],
+  INSURANCE_CLAIM: ['RECONDITIONING', 'READY_FOR_SALE', 'SCRAPPED'],
+  READY_FOR_SALE: ['LISTED', 'RESERVED', 'SOLD', 'TRANSFERRED', 'RECONDITIONING'],
+  LISTED: ['PRICE_REDUCED', 'AUCTION_CANDIDATE', 'RESERVED', 'SOLD', 'READY_FOR_SALE'],
+  PRICE_REDUCED: ['AUCTION_CANDIDATE', 'RESERVED', 'SOLD', 'LISTED'],
+  AUCTION_CANDIDATE: ['RESERVED', 'SOLD', 'LISTED', 'TRANSFERRED'],
+  RESERVED: ['SOLD', 'LISTED', 'READY_FOR_SALE'],
+  SOLD: ['DELIVERED', 'RESERVED', 'LISTED'],
+  DELIVERED: ['RETURNED'],
+  RETURNED: ['INSPECTION', 'READY_FOR_SALE'],
+  SCRAPPED: [],
+  TRANSFERRED: [],
+}
+
 export const CATEGORY_LABELS: Record<VehicleCategory, string> = {
   NEW: 'Nou',
   ORD: 'Comandă',
