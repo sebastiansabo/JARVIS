@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
+import { reductionPct, formatReductionPct } from './priceReduction'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -666,6 +667,7 @@ function PhotoLightbox({
 
 // ── Details Tab ────────────────────────────────────────────
 function DetailsTab({ vehicle: v, photos, onPhotoClick }: { vehicle: Vehicle; photos: VehiclePhoto[]; onPhotoClick: (index: number) => void }) {
+  const pricePct = reductionPct(v.list_price, v.current_price)
   return (
     <div className="space-y-6">
       {/* Photo Gallery + Quick Info */}
@@ -682,8 +684,15 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick }: { vehicle: Vehicle; ph
                 className="text-2xl font-bold"
               />
               {v.list_price != null && v.list_price !== v.current_price && (
-                <div className="text-sm text-muted-foreground line-through">
-                  {new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2 }).format(v.list_price)} {v.price_currency}
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-sm text-muted-foreground line-through">
+                    {new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2 }).format(v.list_price)} {v.price_currency}
+                  </span>
+                  {pricePct != null && (
+                    <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                      {formatReductionPct(pricePct)}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
