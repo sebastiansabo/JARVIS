@@ -6,7 +6,7 @@ import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { cn } from '@/lib/utils'
+import { cn, usePersistedState } from '@/lib/utils'
 import { carparkApi } from '@/api/carpark'
 import { carparkDispoApi } from '@/api/carparkDispo'
 import {
@@ -44,6 +44,48 @@ const STAGE_COLUMNS = DISPO_STAGES.filter((s) => s.key !== '')
 const STATUS_TO_STAGE = new Map<VehicleStatus, string>()
 for (const stage of STAGE_COLUMNS) {
   for (const status of stage.statuses) STATUS_TO_STAGE.set(status, stage.key)
+}
+
+// ── Grouping mode ────────────────────────────────────────────────────────
+// The board can group cards by pipeline stage (original behavior, drag-
+// enabled) or by days-in-stock aging bucket (read-only — a card's bucket is
+// derived from acquisition_date, not something a drag can change).
+type GroupMode = 'stage' | 'days'
+
+const GROUP_MODE_OPTIONS: { key: GroupMode; label: string }[] = [
+  { key: 'stage', label: 'Etape' },
+  { key: 'days', label: 'Zile în stoc' },
+]
+
+// Aging buckets for the 'days' grouping mode. Boundaries are half-open
+// ([min, max)) and deliberately match this task's spec (0–30 / 30–60 /
+// 60–90 / 90+) rather than dispoAging.ts's agingClass thresholds exactly at
+// the edges (agingClass treats day 60 and day 90 as still amber/red, i.e.
+// its bands are (30,60]/(60,90] — a one-day difference at each boundary
+// that doesn't matter for a coarse 4-column grouping). The `dot`/`text`
+// colors ARE reused verbatim from agingClass's classes so a bucket's header
+// visually matches how the same days-in-stock value would render in the
+// table's aging cell.
+const AGING_BUCKETS = [
+  { key: 'b0_30', label: '0–30 zile', min: 0, max: 30, dot: 'bg-green-500', text: 'text-green-600 dark:text-green-500' },
+  { key: 'b30_60', label: '30–60 zile', min: 30, max: 60, dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-500' },
+  { key: 'b60_90', label: '60–90 zile', min: 60, max: 90, dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400' },
+  { key: 'b90_plus', label: '90+ zile', min: 90, max: Infinity, dot: 'bg-red-800', text: 'text-red-800 dark:text-red-300' },
+] as const
+
+type AgingBucketKey = (typeof AGING_BUCKETS)[number]['key']
+
+// Defensive bucketing: days_in_stock is always a non-negative server-computed
+// integer in practice, but null/undefined/negative/NaN values are folded
+// into the freshest bucket rather than thrown away or allowed to crash the
+// grouping — an aging card belongs somewhere, and "just arrived" is the
+// least alarming default. Reads AGING_BUCKETS' min/max directly (rather than
+// re-stating 30/60/90 here) so the buckets and their boundaries can't drift
+// apart.
+function bucketForDays(days: number | null | undefined): AgingBucketKey {
+  const value = days == null || !Number.isFinite(days) || days < 0 ? 0 : days
+  const bucket = AGING_BUCKETS.find((b) => value >= b.min && value < b.max)
+  return (bucket ?? AGING_BUCKETS[0]).key
 }
 
 function Muted() {
@@ -274,6 +316,67 @@ function KanbanColumn({
   )
 }
 
+// Column for the 'days' (aging-bucket) grouping mode. Deliberately NOT
+// drag-enabled — days_in_stock is derived from acquisition_date server-side,
+// so there's no "move a card between buckets" action for a drop handler to
+// perform. Reuses KanbanCard with canDrag={false} (draggable is then false,
+// so the no-op onDragStart/onDragEnd below never actually fire — they're
+// only present because KanbanCard's props aren't optional).
+function AgingKanbanColumn({
+  bucket,
+  cards,
+  isLoading,
+  canViewFinance,
+  onCardClick,
+}: {
+  bucket: (typeof AGING_BUCKETS)[number]
+  cards: DispoRow[]
+  isLoading: boolean
+  canViewFinance: boolean
+  onCardClick: (row: DispoRow) => void
+}) {
+  return (
+    <div className="flex w-[260px] shrink-0 flex-col rounded-lg border bg-muted/30">
+      <div className="flex items-center justify-between border-b px-3 py-2">
+        <span className="flex items-center gap-1.5 text-sm font-semibold">
+          <span className={cn('h-2 w-2 shrink-0 rounded-full', bucket.dot)} aria-hidden="true" />
+          <span className={bucket.text}>{bucket.label}</span>
+        </span>
+        {/* No server-side per-bucket total exists (unlike stage_counts), so
+            unlike KanbanColumn's totalCount/hiddenCount pair, this is just
+            the count of rows that landed in this bucket among whatever the
+            single KANBAN_PER_PAGE fetch returned — no "+N mai multe" footer
+            since we have no reliable total to diff against. */}
+        <Badge variant="secondary" className="h-5 px-1.5 text-xs tabular-nums">
+          {cards.length}
+        </Badge>
+      </div>
+      <div className="max-h-[calc(100vh-24rem)] min-h-[6rem] flex-1 overflow-y-auto p-2">
+        {isLoading ? (
+          <KanbanColumnSkeleton />
+        ) : cards.length === 0 ? (
+          <div className="py-6 text-center text-xs text-muted-foreground">—</div>
+        ) : (
+          <div className="space-y-2">
+            {cards.map((row) => (
+              <KanbanCard
+                key={row.id}
+                row={row}
+                canViewFinance={canViewFinance}
+                canDrag={false}
+                isDragging={false}
+                onClick={() => onCardClick(row)}
+                onDragStart={() => {}}
+                onDragEnd={() => {}}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // A card being dragged out of a dialog-guarded stage opens the matching
 // guarded dialog instead of moving directly — same dialogs DispoRowActions'
 // row menu uses, so the reservation/sale/delivery side effects (and their
@@ -296,21 +399,29 @@ interface KanbanBoardProps {
 }
 
 /**
- * Kanban view of the Dispo pipeline — one column per real stage (DISPO_STAGES
- * minus the '' TOATE pseudo-stage), cards grouped by mapping each row's
- * status through the same stage.statuses lists the pipeline tabs use.
- * Fetches a single large page (no server-side stage filter) so every column
- * can render from one request.
+ * Kanban view of the Dispo pipeline. Supports two grouping modes, switched
+ * via the "Grupare" toggle (persisted to localStorage, default 'stage'):
  *
- * Cards support native HTML5 drag-and-drop (desktop only — no touch/mobile
- * fallback) to move a vehicle between stages. Status changes are guarded
- * server-side (RESERVED/SOLD/DELIVERED, and leaving RESERVED, carry side
- * effects), so a drop never fires a raw status change into those states —
- * it either routes through the same guarded dialogs DispoRowActions' row
- * menu uses (reserve/sell/deliver/cancel-reservation), or, for the
- * remaining "safe" transitions, calls carparkApi.changeStatus with an
- * optimistic move that reverts on failure. See handleDrop for the full
- * per-target-stage routing.
+ * - 'stage' (default, unchanged from before this mode was added): one
+ *   column per real stage (DISPO_STAGES minus the '' TOATE pseudo-stage),
+ *   cards grouped by mapping each row's status through the same
+ *   stage.statuses lists the pipeline tabs use. Cards support native HTML5
+ *   drag-and-drop (desktop only — no touch/mobile fallback) to move a
+ *   vehicle between stages. Status changes are guarded server-side
+ *   (RESERVED/SOLD/DELIVERED, and leaving RESERVED, carry side effects), so
+ *   a drop never fires a raw status change into those states — it either
+ *   routes through the same guarded dialogs DispoRowActions' row menu uses
+ *   (reserve/sell/deliver/cancel-reservation), or, for the remaining "safe"
+ *   transitions, calls carparkApi.changeStatus with an optimistic move that
+ *   reverts on failure. See handleDrop for the full per-target-stage
+ *   routing.
+ * - 'days': four columns by days-in-stock aging bucket (AGING_BUCKETS),
+ *   read-only (no drag) since a bucket is derived from acquisition_date, not
+ *   something a drop could change. Buckets ALL currently-fetched/filtered
+ *   rows, including sold/delivered/exited vehicles — see groupedByDays.
+ *
+ * Both modes share one fetch: a single large page (no server-side stage
+ * filter) so every column, in either mode, renders from one request.
  */
 export function KanbanBoard({ filters, sortBy, sortDir, canViewFinance, canEdit, onCardClick }: KanbanBoardProps) {
   const queryClient = useQueryClient()
@@ -330,6 +441,27 @@ export function KanbanBoard({ filters, sortBy, sortDir, canViewFinance, canEdit,
   }, [data])
 
   const stageCounts = data?.stage_counts
+
+  // Which grouping renders below the toggle. Persisted so a user's preferred
+  // view survives a reload; defaults to 'stage' so pre-existing behavior is
+  // unchanged for anyone who's never touched the toggle.
+  const [groupMode, setGroupMode] = usePersistedState<GroupMode>('dispo-kanban-group', 'stage')
+
+  // 'days' grouping: buckets EVERY fetched/filtered row by days_in_stock,
+  // intentionally including sold/delivered/exited vehicles — unlike the
+  // table's agingClass (which blanks out coloring for those statuses since
+  // they've stopped accumulating stock-aging risk), this is a plain
+  // days-in-stock histogram of whatever the current filters returned. A
+  // later "active only" toggle could layer SOLD_OR_EXITED_STATUSES
+  // filtering on top; out of scope here.
+  const groupedByDays = useMemo(() => {
+    const map = new Map<AgingBucketKey, DispoRow[]>()
+    for (const bucket of AGING_BUCKETS) map.set(bucket.key, [])
+    for (const row of data?.rows ?? []) {
+      map.get(bucketForDays(row.days_in_stock))?.push(row)
+    }
+    return map
+  }, [data])
 
   // Drag state: the row currently being dragged (source of truth — read by
   // handleDrop) and which column it's currently hovering over (highlight
@@ -485,42 +617,77 @@ export function KanbanBoard({ filters, sortBy, sortDir, canViewFinance, canEdit,
   const onDialogSuccess = useCallback(() => invalidateDispo(), [invalidateDispo])
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-2">
-      {STAGE_COLUMNS.map((stage) => {
-        const cards = grouped.get(stage.key) ?? []
-        const totalCount = stageCounts ? (stageCounts[stage.key] ?? cards.length) : cards.length
-        return (
-          <KanbanColumn
-            key={stage.key}
-            stage={stage}
-            cards={cards}
-            totalCount={totalCount}
-            isLoading={isLoading}
-            canViewFinance={canViewFinance}
-            canEdit={canEdit}
-            draggedRowId={draggedRow?.id ?? null}
-            isDragOver={dragOverStage === stage.key}
-            onCardClick={onCardClick}
-            onCardDragStart={handleCardDragStart}
-            onCardDragEnd={handleCardDragEnd}
-            onDragOver={(e) => handleColumnDragOver(e, stage.key)}
-            onDragLeave={(e) => handleColumnDragLeave(e, stage.key)}
-            onDrop={(e) => handleDrop(e, stage.key)}
-          />
-        )
-      })}
+    <div className="space-y-3">
+      {/* Grouping selector — styled like index.tsx's table/kanban view
+          toggle (Button variant flips secondary/ghost on the active option)
+          for visual consistency with that adjacent control. */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs text-muted-foreground">Grupare:</span>
+        {GROUP_MODE_OPTIONS.map((opt) => (
+          <Button
+            key={opt.key}
+            type="button"
+            variant={groupMode === opt.key ? 'secondary' : 'ghost'}
+            size="xs"
+            onClick={() => setGroupMode(opt.key)}
+          >
+            {opt.label}
+          </Button>
+        ))}
+      </div>
 
-      {pendingDialog?.type === 'reserve' && (
-        <ReserveDialog row={pendingDialog.row} onClose={closeDialog} onSuccess={onDialogSuccess} />
-      )}
-      {pendingDialog?.type === 'sell' && (
-        <SellDialog row={pendingDialog.row} onClose={closeDialog} onSuccess={onDialogSuccess} />
-      )}
-      {pendingDialog?.type === 'deliver' && (
-        <DeliverDialog row={pendingDialog.row} onClose={closeDialog} onSuccess={onDialogSuccess} />
-      )}
-      {pendingDialog?.type === 'cancel-reservation' && (
-        <CancelReservationDialog row={pendingDialog.row} onClose={closeDialog} onSuccess={onDialogSuccess} />
+      {groupMode === 'stage' ? (
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {STAGE_COLUMNS.map((stage) => {
+            const cards = grouped.get(stage.key) ?? []
+            const totalCount = stageCounts ? (stageCounts[stage.key] ?? cards.length) : cards.length
+            return (
+              <KanbanColumn
+                key={stage.key}
+                stage={stage}
+                cards={cards}
+                totalCount={totalCount}
+                isLoading={isLoading}
+                canViewFinance={canViewFinance}
+                canEdit={canEdit}
+                draggedRowId={draggedRow?.id ?? null}
+                isDragOver={dragOverStage === stage.key}
+                onCardClick={onCardClick}
+                onCardDragStart={handleCardDragStart}
+                onCardDragEnd={handleCardDragEnd}
+                onDragOver={(e) => handleColumnDragOver(e, stage.key)}
+                onDragLeave={(e) => handleColumnDragLeave(e, stage.key)}
+                onDrop={(e) => handleDrop(e, stage.key)}
+              />
+            )
+          })}
+
+          {pendingDialog?.type === 'reserve' && (
+            <ReserveDialog row={pendingDialog.row} onClose={closeDialog} onSuccess={onDialogSuccess} />
+          )}
+          {pendingDialog?.type === 'sell' && (
+            <SellDialog row={pendingDialog.row} onClose={closeDialog} onSuccess={onDialogSuccess} />
+          )}
+          {pendingDialog?.type === 'deliver' && (
+            <DeliverDialog row={pendingDialog.row} onClose={closeDialog} onSuccess={onDialogSuccess} />
+          )}
+          {pendingDialog?.type === 'cancel-reservation' && (
+            <CancelReservationDialog row={pendingDialog.row} onClose={closeDialog} onSuccess={onDialogSuccess} />
+          )}
+        </div>
+      ) : (
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {AGING_BUCKETS.map((bucket) => (
+            <AgingKanbanColumn
+              key={bucket.key}
+              bucket={bucket}
+              cards={groupedByDays.get(bucket.key) ?? []}
+              isLoading={isLoading}
+              canViewFinance={canViewFinance}
+              onCardClick={onCardClick}
+            />
+          ))}
+        </div>
       )}
     </div>
   )
