@@ -972,6 +972,7 @@ export default function CarParkDispo() {
           sortBy={sortBy}
           sortDir={sortDir}
           canViewFinance={canViewFinance}
+          canEdit={canEdit}
           onCardClick={handleRowClick}
         />
       ) : summaryLoading ? (
