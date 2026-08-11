@@ -1,5 +1,6 @@
 """Pure-function tests for the CarPark status-transition matrix, plus
-VehicleService.change_status's RESERVED-exit guard.
+VehicleService.change_status's via_dispo_action guard (RESERVED-exit +
+SOLD/DELIVERED).
 
 No DB access — TRANSITIONS and is_valid_transition are plain module-level
 data/logic, so these run fine under the psycopg2 mock installed by
@@ -55,14 +56,17 @@ def test_transitions_dict_integrity():
             )
 
 
-# ── change_status RESERVED-exit guard ───────────────────────────────────
+# ── change_status via_dispo_action guard ────────────────────────────────
 #
 # A RESERVED vehicle carries an active carpark_reservations row that only
 # DispoService.cancel_reservation()/sell() know how to close. A plain status
 # flip (e.g. via PUT /vehicles/:id/status) that moves a vehicle OUT of
 # RESERVED without going through one of those two paths would orphan that
-# row. change_status() blocks that by default; allow_reserved_exit=True is
-# the opt-in reserved for the two guarded paths.
+# row. Likewise, reaching SOLD/DELIVERED via a plain flip bypasses
+# DispoService.sell()'s side effects and DispoService.deliver()'s hard
+# pv_livrare requirement. change_status() blocks all three by default;
+# via_dispo_action=True is the single opt-in reserved for DispoService's own
+# guarded actions.
 
 def _svc_with_status(status):
     """A real VehicleService with `_repo` swapped for a MagicMock — no DB
@@ -83,7 +87,7 @@ def test_change_status_blocks_reserved_exit_by_default():
 
 def test_change_status_allows_reserved_exit_with_flag():
     svc = _svc_with_status('RESERVED')
-    result = svc.change_status(1, 'LISTED', allow_reserved_exit=True)
+    result = svc.change_status(1, 'LISTED', via_dispo_action=True)
     svc._repo.change_status.assert_called_once_with(1, 'LISTED', changed_by=None, notes=None)
     assert result == {'id': 1, 'status': 'CHANGED'}
 
@@ -91,16 +95,50 @@ def test_change_status_allows_reserved_exit_with_flag():
 def test_change_status_illegal_transition_raises_before_reserved_guard():
     """RESERVED -> AUCTION_CANDIDATE isn't in TRANSITIONS['RESERVED'] at all
     — the transition-matrix error must fire, not the RESERVED-exit message,
-    even with allow_reserved_exit=True."""
+    even with via_dispo_action=True."""
     svc = _svc_with_status('RESERVED')
     with pytest.raises(ValueError, match='Tranziție interzisă'):
-        svc.change_status(1, 'AUCTION_CANDIDATE', allow_reserved_exit=True)
+        svc.change_status(1, 'AUCTION_CANDIDATE', via_dispo_action=True)
     svc._repo.change_status.assert_not_called()
 
 
 def test_change_status_normal_transition_unaffected():
-    """A non-RESERVED transition is untouched by the new guard."""
+    """A non-RESERVED, non-SOLD/DELIVERED transition is untouched by the new
+    guard."""
     svc = _svc_with_status('LISTED')
     result = svc.change_status(1, 'PRICE_REDUCED')
     svc._repo.change_status.assert_called_once_with(1, 'PRICE_REDUCED', changed_by=None, notes=None)
+    assert result == {'id': 1, 'status': 'CHANGED'}
+
+
+def test_change_status_blocks_sold_by_default():
+    """READY_FOR_SALE -> SOLD is transition-legal but must be blocked by
+    default — reaching SOLD bypasses DispoService.sell()'s side effects."""
+    svc = _svc_with_status('READY_FOR_SALE')
+    with pytest.raises(ValueError, match='VÂNDUT'):
+        svc.change_status(1, 'SOLD')
+    svc._repo.change_status.assert_not_called()
+
+
+def test_change_status_allows_sold_with_flag():
+    svc = _svc_with_status('READY_FOR_SALE')
+    result = svc.change_status(1, 'SOLD', via_dispo_action=True)
+    svc._repo.change_status.assert_called_once_with(1, 'SOLD', changed_by=None, notes=None)
+    assert result == {'id': 1, 'status': 'CHANGED'}
+
+
+def test_change_status_blocks_delivered_by_default():
+    """SOLD -> DELIVERED is transition-legal but must be blocked by default
+    — reaching DELIVERED bypasses DispoService.deliver()'s hard pv_livrare
+    requirement."""
+    svc = _svc_with_status('SOLD')
+    with pytest.raises(ValueError, match='LIVRAT'):
+        svc.change_status(1, 'DELIVERED')
+    svc._repo.change_status.assert_not_called()
+
+
+def test_change_status_allows_delivered_with_flag():
+    svc = _svc_with_status('SOLD')
+    result = svc.change_status(1, 'DELIVERED', via_dispo_action=True)
+    svc._repo.change_status.assert_called_once_with(1, 'DELIVERED', changed_by=None, notes=None)
     assert result == {'id': 1, 'status': 'CHANGED'}
