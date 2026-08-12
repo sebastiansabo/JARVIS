@@ -19,6 +19,8 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { carparkApi } from '@/api/carpark'
+import { useAuthStore } from '@/stores/authStore'
+import { useCarParkStore } from '@/stores/carParkStore'
 import { toast } from 'sonner'
 import {
   CATEGORY_LABELS,
@@ -200,6 +202,12 @@ export default function VehicleForm() {
   const queryClient = useQueryClient()
   const isEdit = vehicleId && vehicleId !== 'new'
   const id = isEdit ? Number(vehicleId) : null
+
+  // Tenant switcher: new cars are created into the selected (acting) company,
+  // defaulting to the user's own company. Never applied on edit.
+  const user = useAuthStore((s) => s.user)
+  const selectedCompanyId = useCarParkStore((s) => s.selectedCompanyId)
+  const effectiveCompanyId = selectedCompanyId ?? user?.company_id ?? null
 
   // Load existing vehicle for edit
   const { data: existingData, isLoading: isLoadingVehicle } = useQuery({
@@ -383,7 +391,7 @@ export default function VehicleForm() {
 
   // Submit
   const createMutation = useMutation({
-    mutationFn: (data: Partial<Vehicle>) => carparkApi.createVehicle(data),
+    mutationFn: (data: Partial<Vehicle>) => carparkApi.createVehicle(data, effectiveCompanyId),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['carpark'] })
       toast.success('Vehicle created')
