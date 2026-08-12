@@ -309,6 +309,46 @@ class FoiParcursRepository(BaseRepository):
         )
         return row['id'] if row else None
 
+    def get_overdue_return_sessions(self) -> list:
+        """Active TD sessions (FILLED) whose scheduled return passed >1h ago and
+        that the consilier never returned — i.e. the derived 'incomplete' state
+        plus a 1h grace. Excludes any already alerted within the 4h cooldown
+        (smart_notification_state), so callers just iterate and send. Joins the
+        advisor (users), company and vehicle so the caller can notify + email +
+        resolve the brand CC without extra queries."""
+        sql = (
+            "SELECT fp.id, fp.advisor_name, au.id AS advisor_user_id, au.email AS advisor_email, "
+            "COALESCE(fp.client_name, c.name) AS client_name, fp.vin, "
+            "v.mark, v.model, fp.registration_number, fp.return_datetime, "
+            "fp.company_id, co.company AS company_name, v.brand AS vehicle_brand, "
+            f"CEIL(EXTRACT(EPOCH FROM ({NOW_LOCAL_SQL} - fp.return_datetime)) / 3600.0)::int AS overdue_hours "
+            "FROM foi_de_parcurs fp "
+            "LEFT JOIN fp_clients c ON c.id = fp.client_id "
+            "LEFT JOIN companies co ON co.id = fp.company_id "
+            "LEFT JOIN fp_vehicles v ON v.vin = fp.vin "
+            "LEFT JOIN LATERAL (SELECT id, email FROM users "
+            "WHERE LOWER(name) = LOWER(fp.advisor_name) ORDER BY id LIMIT 1) au ON TRUE "
+            "WHERE fp.route_type = 'TD' AND fp.status = 'FILLED' "
+            "AND fp.return_datetime IS NOT NULL "
+            f"AND fp.return_datetime + INTERVAL '1 hour' < {NOW_LOCAL_SQL} "
+            "AND NOT EXISTS ("
+            "SELECT 1 FROM smart_notification_state s "
+            "WHERE s.alert_type = 'fp_return_overdue' AND s.entity_type = 'foi_parcurs_td' "
+            "AND s.entity_id = fp.id "
+            "AND s.last_alerted_at > CURRENT_TIMESTAMP - INTERVAL '4 hours')"
+        )
+        return self.query_all(sql)
+
+    def mark_overdue_return_notified(self, session_id: int) -> None:
+        """Record/refresh the 4h cooldown for a session's overdue-return alert."""
+        self.execute(
+            "INSERT INTO smart_notification_state (alert_type, entity_type, entity_id, last_alerted_at) "
+            "VALUES ('fp_return_overdue', 'foi_parcurs_td', %s, CURRENT_TIMESTAMP) "
+            "ON CONFLICT (alert_type, entity_type, entity_id) "
+            "DO UPDATE SET last_alerted_at = CURRENT_TIMESTAMP",
+            (session_id,),
+        )
+
     def record_return(self, contract_id: int, data: dict) -> dict:
         """Update a TD contract with return data (km/fuel/damage/signatures) and mark COMPLETED.
 
