@@ -9,6 +9,8 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { carparkApi } from '@/api/carpark'
+import { useAuthStore } from '@/stores/authStore'
+import { useCarParkStore } from '@/stores/carParkStore'
 import type {
   DashboardData,
   AgingBucket,
@@ -45,9 +47,14 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function CarParkDashboard() {
+  const user = useAuthStore((s) => s.user)
+  const selectedCompanyId = useCarParkStore((s) => s.selectedCompanyId)
+  // Tenant switcher: acting company (defaults to the current user's own company)
+  const effectiveCompanyId = selectedCompanyId ?? user?.company_id ?? null
+
   const { data, isLoading } = useQuery({
-    queryKey: ['carpark', 'dashboard'],
-    queryFn: () => carparkApi.getDashboard(90),
+    queryKey: ['carpark', 'dashboard', effectiveCompanyId],
+    queryFn: () => carparkApi.getDashboard(90, effectiveCompanyId),
     refetchInterval: 60000,
   })
 

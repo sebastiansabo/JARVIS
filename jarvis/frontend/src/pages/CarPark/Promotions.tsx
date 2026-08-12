@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/select'
 import { carparkApi } from '@/api/carpark'
 import { useAuthStore } from '@/stores/authStore'
+import { useCarParkStore } from '@/stores/carParkStore'
 import { toast } from 'sonner'
 import {
   PROMO_TYPE_LABELS,
@@ -64,20 +65,23 @@ export default function PromotionsPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const canEdit = user?.can_edit_carpark ?? false
+  const selectedCompanyId = useCarParkStore((s) => s.selectedCompanyId)
+  // Tenant switcher: acting company (defaults to the current user's own company)
+  const effectiveCompanyId = selectedCompanyId ?? user?.company_id ?? null
 
   const [promoDialogOpen, setPromoDialogOpen] = useState(false)
   const [editingPromo, setEditingPromo] = useState<Partial<Promotion> | null>(null)
   const [vehicleDialogPromoId, setVehicleDialogPromoId] = useState<number | null>(null)
 
   const { data: promosData, isLoading } = useQuery({
-    queryKey: ['carpark', 'promotions'],
-    queryFn: () => carparkApi.getPromotions(),
+    queryKey: ['carpark', 'promotions', effectiveCompanyId],
+    queryFn: () => carparkApi.getPromotions(false, effectiveCompanyId),
   })
 
   const promotions = promosData?.promotions ?? []
 
   const createMutation = useMutation({
-    mutationFn: (data: Partial<Promotion>) => carparkApi.createPromotion(data),
+    mutationFn: (data: Partial<Promotion>) => carparkApi.createPromotion(data, effectiveCompanyId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['carpark', 'promotions'] })
       toast.success('Promoție creată')
@@ -382,6 +386,7 @@ export default function PromotionsPage() {
         <VehicleManagementDialog
           promoId={vehicleDialogPromoId}
           promoName={promotions.find((p) => p.id === vehicleDialogPromoId)?.name ?? ''}
+          companyId={effectiveCompanyId}
           onClose={() => setVehicleDialogPromoId(null)}
         />
       )}
@@ -393,10 +398,12 @@ export default function PromotionsPage() {
 function VehicleManagementDialog({
   promoId,
   promoName,
+  companyId,
   onClose,
 }: {
   promoId: number
   promoName: string
+  companyId: number | null
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
@@ -408,8 +415,8 @@ function VehicleManagementDialog({
   })
 
   const { data: searchData, isFetching: isSearching } = useQuery({
-    queryKey: ['carpark', 'catalog-search', searchQuery],
-    queryFn: () => carparkApi.getCatalog({ search: searchQuery }, 1, 20),
+    queryKey: ['carpark', 'catalog-search', searchQuery, companyId],
+    queryFn: () => carparkApi.getCatalog({ search: searchQuery }, 1, 20, undefined, undefined, companyId),
     enabled: searchQuery.length >= 2,
   })
 
