@@ -250,7 +250,7 @@ def _ai_prose(data: dict) -> dict:
 
     # Every Comodat session may be tied to its own project or an in-interval event.
     to_fill = [
-        {'id': t['id'], 'data': t['date'], 'km_parcursi': t['distance_km'],
+        {'id': t['id'], 'data': t['date'], 'km_parcursi': session_actual_km(t),
          'sofer': t['driver'], 'proiect_promovare': t['project'],
          'eveniment_eligibil': _eligible_event(t.get('iso', ''))}
         for t in data['trips'] if not t['is_td']
