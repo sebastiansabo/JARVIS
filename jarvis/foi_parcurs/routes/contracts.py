@@ -3,9 +3,10 @@
 import re
 import time
 import uuid
+from datetime import datetime
 from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required, current_user,
-    logger, _fp_repo, _client_repo,
+    logger, _fp_repo, _client_repo, _vehicle_repo,
 )
 from ..services.fuel_service import calculate_fuel_distribution
 from ..services.route_service import calculate_route_assignments
@@ -234,6 +235,82 @@ def api_delete_contract(id):
     _fp_repo.delete_contract(id)
     logger.info('foi-parcurs contract %s deleted by admin %s', id, getattr(current_user, 'email', '?'))
     return jsonify({'success': True})
+
+
+def _parse_dt(v):
+    """Best-effort ISO parse for date-order validation; None if absent/unparseable."""
+    if not v:
+        return None
+    try:
+        return datetime.fromisoformat(str(v).replace('Z', '+00:00'))
+    except ValueError:
+        return None
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/correct', methods=['PUT'])
+@login_required
+def api_correct_contract(id):
+    """Admin-only: correct a session's drive date(s) and/or odometer readings to
+    fix data-entry anomalies (date↔odometer inversions, overlapping km). Works on
+    any status; does NOT change the status. Validates km_end >= km_start and
+    return >= departure against the resulting (new-or-existing) values."""
+    if not _is_admin():
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    contract = _fp_repo.get_contract_by_id(id)
+    if not contract:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    fields = {}
+    for k in ('km_start', 'km_end'):
+        if k in data and data[k] not in (None, ''):
+            try:
+                fields[k] = int(data[k])
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': f'{k} must be a number'}), 400
+    for k in ('departure_datetime', 'return_datetime'):
+        if k in data:
+            fields[k] = data[k] or None
+
+    if not fields:
+        return jsonify({'success': False, 'error': 'No fields to correct'}), 400
+
+    # Reject malformed dates with a clean 400 rather than letting the raw string
+    # reach the timestamptz column and blow up as a 500.
+    for k in ('departure_datetime', 'return_datetime'):
+        if fields.get(k) and _parse_dt(fields[k]) is None:
+            return jsonify({'success': False, 'error': f'{k} is not a valid datetime'}), 400
+
+    # Odometer sanity on the resulting state (new value, else the stored one).
+    eff_start = fields.get('km_start', contract.get('km_start'))
+    eff_end = fields.get('km_end', contract.get('km_end'))
+    if eff_start is not None and eff_end is not None and eff_end < eff_start:
+        return jsonify({'success': False,
+                        'error': f'km_end ({eff_end}) cannot be less than km_start ({eff_start})'}), 400
+
+    # Date sanity on the resulting state (return not before departure).
+    eff_dep = _parse_dt(fields['departure_datetime'] if 'departure_datetime' in fields
+                        else contract.get('departure_datetime'))
+    eff_ret = _parse_dt(fields['return_datetime'] if 'return_datetime' in fields
+                        else contract.get('return_datetime'))
+    if eff_dep and eff_ret and eff_ret < eff_dep:
+        return jsonify({'success': False,
+                        'error': 'return_datetime cannot be before departure_datetime'}), 400
+
+    updated = _fp_repo.correct_session(id, fields)
+    logger.info('foi-parcurs contract %s corrected by admin %s: %s',
+                id, getattr(current_user, 'email', '?'), fields)
+
+    # Keep the vehicle's odometer floor honest if km_end was raised (mirrors return).
+    try:
+        if 'km_end' in fields and contract.get('vin'):
+            veh = _vehicle_repo.get_by_vin(contract['vin'])
+            if veh and (veh.get('odometer_km') is None or fields['km_end'] > veh['odometer_km']):
+                _vehicle_repo.update(veh['id'], {'odometer_km': fields['km_end']})
+    except Exception:
+        logger.warning('Could not advance vehicle odometer after correcting contract %s', id, exc_info=True)
+
+    return jsonify({'success': True, 'contract': updated})
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/reset', methods=['POST'])
