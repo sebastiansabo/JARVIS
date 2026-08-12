@@ -9,6 +9,7 @@ import {
   Eye,
   ImageIcon,
 } from 'lucide-react'
+import { mediaUrl } from '@/lib/media'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
@@ -437,7 +438,7 @@ function VehicleRow({ vehicle: v }: { vehicle: VehicleCatalogItem }) {
       <TableCell className="p-2">
         {v.primary_photo_url ? (
           <img
-            src={v.primary_photo_url}
+            src={mediaUrl(v.primary_photo_url)}
             alt={`${v.brand} ${v.model}`}
             className="h-10 w-14 rounded object-cover"
             loading="lazy"
@@ -542,7 +543,7 @@ function MobileCardList({ items }: { items: VehicleCatalogItem[] }) {
               {/* Thumbnail */}
               {v.primary_photo_url ? (
                 <img
-                  src={v.primary_photo_url}
+                  src={mediaUrl(v.primary_photo_url)}
                   alt={`${v.brand} ${v.model}`}
                   className="h-16 w-20 shrink-0 rounded object-cover"
                   loading="lazy"

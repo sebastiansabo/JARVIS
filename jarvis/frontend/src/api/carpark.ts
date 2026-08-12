@@ -111,6 +111,12 @@ export const carparkApi = {
   addPhotoBatch: (vehicleId: number, photos: Partial<VehiclePhoto>[]) =>
     api.post<{ photos: VehiclePhoto[] }>(`/api/carpark/vehicles/${vehicleId}/photos`, { photos }),
 
+  uploadPhotos: (vehicleId: number, files: File[]) => {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f))
+    return api.post<{ photos: VehiclePhoto[] }>(`/api/carpark/vehicles/${vehicleId}/photos/upload`, form)
+  },
+
   updatePhoto: (photoId: number, data: Partial<VehiclePhoto>) =>
     api.put<{ photo: VehiclePhoto }>(`/api/carpark/photos/${photoId}`, data),
 
