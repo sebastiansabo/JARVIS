@@ -298,6 +298,10 @@ export const foiParcursApi = {
     },
   ) => api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${id}/correct`, data),
 
+  // Advisor extends an OPEN test drive's return time (any logged-in user).
+  extendReturn: (id: number, data: { return_datetime: string }) =>
+    api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/extend`, data),
+
   // ── Discard a PLANNED draft (PLANNED-only; 409 otherwise) ──
   discardTestDrive: (id: number) =>
     api.delete<{ success: boolean }>(`${BASE}/test-drive/${id}`),

@@ -246,6 +246,10 @@ export interface FoiContract {
   departure_datetime?: string | null
   return_datetime?: string | null
   returned_at?: string | null
+  // Set when an admin corrected the session or an advisor extended its return
+  // → drives the "Modificat" badge + who/when tooltip.
+  corrected_at?: string | null
+  corrected_by?: string | null
   departure_damage?: TdDamageItem[] | null
   // Optional marketing project (campaign/event) this session is tied to.
   mkt_project_id?: number | null

@@ -1938,6 +1938,10 @@ def _create_schema_incremental_continued(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_client ON foi_de_parcurs(client_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_status ON foi_de_parcurs(status)')
     cursor.execute('ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS general_observation TEXT')
+    # Manual-edit audit marker: set when an admin corrects a session (date/km) or
+    # an advisor extends its return. Drives the "Modificat" badge + who/when tooltip.
+    cursor.execute('ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS corrected_at TIMESTAMP WITH TIME ZONE')
+    cursor.execute('ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS corrected_by VARCHAR(255)')
     # Migrate: drop FK on client_id if exists, make nullable, add new columns
     cursor.execute('''
         DO $$ BEGIN

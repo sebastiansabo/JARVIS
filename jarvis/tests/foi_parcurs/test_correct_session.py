@@ -99,13 +99,29 @@ def test_correct_rejects_return_before_departure(client, as_admin, monkeypatch):
     assert 'return' in resp.get_json()['error'].lower()
 
 
+def test_correct_tolerates_tzaware_stored_dates(client, as_admin, monkeypatch):
+    # REGRESSION: stored departure/return come back tz-AWARE from the DB; a
+    # km-only correction still runs the date-order check against them and must
+    # not raise TypeError → 500 when compared to a naive submitted value.
+    monkeypatch.setattr(contracts_mod._fp_repo, 'get_contract_by_id',
+                        lambda id: _contract(departure_datetime='2026-08-03T09:00:00+03:00',
+                                             return_datetime='2026-08-03T10:00:00+03:00'))
+    monkeypatch.setattr(contracts_mod._fp_repo, 'correct_session',
+                        lambda cid, fields, modified_by=None: _contract())
+    # naive submitted departure vs tz-aware stored return — must compare cleanly.
+    resp = client.put('/api/foi-parcurs/contracts/1/correct',
+                      json={'departure_datetime': '2026-08-03T08:00'})
+    assert resp.status_code == 200
+
+
 def test_correct_km_happy_path(client, as_admin, monkeypatch):
     monkeypatch.setattr(contracts_mod._fp_repo, 'get_contract_by_id', lambda id: _contract())
     captured = {}
 
-    def fake_correct(cid, fields):
+    def fake_correct(cid, fields, modified_by=None):
         captured['cid'] = cid
         captured['fields'] = dict(fields)
+        captured['by'] = modified_by
         return _contract(km_start=1258, km_end=1300)
 
     monkeypatch.setattr(contracts_mod._fp_repo, 'correct_session', fake_correct)
@@ -127,7 +143,7 @@ def test_correct_dates_happy_path(client, as_admin, monkeypatch):
     monkeypatch.setattr(contracts_mod._fp_repo, 'get_contract_by_id', lambda id: _contract())
     captured = {}
     monkeypatch.setattr(contracts_mod._fp_repo, 'correct_session',
-                        lambda cid, fields: captured.update(fields) or _contract())
+                        lambda cid, fields, modified_by=None: captured.update(fields) or _contract())
     resp = client.put('/api/foi-parcurs/contracts/1/correct',
                       json={'departure_datetime': '2026-08-06T09:00',
                             'return_datetime': '2026-08-06T11:00'})

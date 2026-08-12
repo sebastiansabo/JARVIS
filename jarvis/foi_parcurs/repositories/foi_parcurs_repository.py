@@ -24,7 +24,8 @@ _LIST_COLUMNS = (
     'fp.return_datetime, fp.returned_at, fp.return_notes, fp.source, '
     'fp.driver_license_number, fp.driver_license_expiry, fp.gdpr_consent, '
     'fp.inspection_acceptance, fp.inspection_id, fp.general_conditions_accepted, '
-    'fp.general_conditions_accepted_at, fp.pdf_legal_path, fp.pdf_custom_path'
+    'fp.general_conditions_accepted_at, fp.pdf_legal_path, fp.pdf_custom_path, '
+    'fp.corrected_at, fp.corrected_by'
 )
 
 
@@ -271,21 +272,45 @@ class FoiParcursRepository(BaseRepository):
             return self.get_contract_by_id(row['id']) or row
         return row
 
-    def correct_session(self, contract_id: int, fields: dict) -> dict:
+    def correct_session(self, contract_id: int, fields: dict, modified_by=None) -> dict:
         """Admin correction of a session's drive date(s) and/or odometer readings
         to fix data-entry anomalies (wrong date, overlapping km). Whitelisted
-        columns only; applies to ANY status; bumps updated_at. Returns the fresh
-        row. Validation (km_end >= km_start, return >= departure, admin gate)
-        lives in the route — this is the persistence primitive."""
+        columns only; applies to ANY status; bumps updated_at and stamps
+        corrected_at/corrected_by (the "Modificat" audit marker). Returns the
+        fresh row. Validation (km_end >= km_start, return >= departure, admin
+        gate) lives in the route — this is the persistence primitive."""
         allowed = ('departure_datetime', 'return_datetime', 'km_start', 'km_end')
         sets = {k: fields[k] for k in allowed if k in fields}
         if not sets:
             return self.get_contract_by_id(contract_id)
         cols = ', '.join(f'{k} = %s' for k in sets)
-        params = list(sets.values()) + [contract_id]
-        sql = f'UPDATE foi_de_parcurs SET {cols}, updated_at = NOW() WHERE id = %s RETURNING id'
+        params = list(sets.values()) + [modified_by, contract_id]
+        sql = (f'UPDATE foi_de_parcurs SET {cols}, corrected_at = NOW(), corrected_by = %s, '
+               f'updated_at = NOW() WHERE id = %s RETURNING id')
         row = self.execute(sql, tuple(params), returning=True)
         return self.get_contract_by_id(row['id']) if row and row.get('id') else None
+
+    def extend_return(self, contract_id: int, return_datetime, modified_by=None) -> dict:
+        """Advisor extends/changes the return time of an OPEN (FILLED) TD session.
+        Stamps corrected_at/corrected_by and clears the overdue-return alert
+        cooldown so a fresh overdue can re-notify. Guarded to open TD sessions;
+        returns the fresh row, or None if the session is not extendable."""
+        sql = (
+            "UPDATE foi_de_parcurs SET return_datetime = %s, corrected_at = NOW(), "
+            "corrected_by = %s, updated_at = NOW() "
+            "WHERE id = %s AND route_type = 'TD' AND status = 'FILLED' RETURNING id"
+        )
+        row = self.execute(sql, (return_datetime, modified_by, contract_id), returning=True)
+        if not (row and row.get('id')):
+            return None
+        # The return moved — let a future overdue re-alert from scratch.
+        try:
+            self.execute(
+                "DELETE FROM smart_notification_state WHERE alert_type = 'fp_return_overdue' "
+                "AND entity_type = 'foi_parcurs_td' AND entity_id = %s", (contract_id,))
+        except Exception:
+            logger.warning('Could not clear overdue-return cooldown for %s', contract_id, exc_info=True)
+        return self.get_contract_by_id(contract_id)
 
     def get_sessions_pending_late_notify(self) -> list:
         """PLANNED TD rows whose start just passed (still in the 8h grace) and

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, PlayCircle, XIcon, FileText } from 'lucide-react'
+import { ChevronLeft, ChevronRight, PlayCircle, XIcon, FileText, Clock } from 'lucide-react'
 import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -14,9 +14,12 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import { toast } from 'sonner'
 import { foiParcursApi } from '@/api/foiParcurs'
 import type { FoiContract } from '@/types/foiParcurs'
 import { sessionStatus, carColor } from './sessionStatus'
+import ExtendSessionDialog from './ExtendSessionDialog'
+import ModifiedBadge from './ModifiedBadge'
 import { naiveDate } from '@/lib/naiveDate'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 
@@ -102,6 +105,18 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
       queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
       setSelected(null)
     },
+  })
+
+  const [extending, setExtending] = useState<FoiContract | null>(null)
+  const extendMutation = useMutation({
+    mutationFn: (vars: { id: number; return_datetime: string }) =>
+      foiParcursApi.extendReturn(vars.id, { return_datetime: vars.return_datetime }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      setExtending(null)
+      setSelected(null)
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Prelungirea a eșuat'),
   })
 
   // Drag-to-reschedule (PLANNED only) — optimistic on the visible month's cache,
@@ -349,6 +364,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
               <DialogTitle className="flex items-center gap-2">
                 Detalii sesiune
                 <Badge className={cn('text-xs', sessionStatus(selected).badgeClass)}>{sessionStatus(selected).label}</Badge>
+                <ModifiedBadge session={selected} />
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-1.5 text-sm">
@@ -365,6 +381,11 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
               <p><span className="text-muted-foreground">Retur:</span> {selected.return_datetime ? naiveDate(selected.return_datetime)!.toLocaleString('ro-RO') : '—'}</p>
             </div>
             <DialogFooter className="flex-col sm:flex-row gap-2">
+              {selected.status === 'FILLED' && (
+                <Button variant="outline" className="w-full sm:w-auto" onClick={() => setExtending(selected)}>
+                  <Clock className="mr-1.5 h-4 w-4" />Prelungește
+                </Button>
+              )}
               {selected.status === 'PLANNED' && (
                 <>
                   <Button
@@ -392,6 +413,14 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+      {extending && (
+        <ExtendSessionDialog
+          session={extending}
+          submitting={extendMutation.isPending}
+          onClose={() => setExtending(null)}
+          onSubmit={(returnDatetime) => extendMutation.mutate({ id: extending.id, return_datetime: returnDatetime })}
+        />
       )}
     </div>
   )
