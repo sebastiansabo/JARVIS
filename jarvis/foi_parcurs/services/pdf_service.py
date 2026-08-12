@@ -268,6 +268,15 @@ def _fmt_dt(dt_val) -> str:
     return dt_val.strftime('%d.%m.%Y %H:%M')
 
 
+def _odometer_distance_km(contract: dict):
+    """Distance driven = odometer delta (km_final − km_start). None until a
+    return odometer is recorded (renders as '—'). Never the entered estimate."""
+    km_end = contract.get('km_end')
+    if km_end in (None, ''):
+        return None
+    return int(km_end) - int(contract.get('km_start') or 0)
+
+
 def _sig_image(data_url: str, width: float = 55 * mm, height: float = 22 * mm):
     """Return a ReportLab Image flowable from a base64 data URL, or None."""
     path = _decode_signature(data_url)
@@ -426,10 +435,12 @@ def generate_legal_pdf(contract: dict) -> str:
 
     # ---- Odometer ----
     story.append(Paragraph('Kilometraj', section_style))
+    _dist = _odometer_distance_km(contract)
     km_data = [
         [Paragraph('Km start', label_style), Paragraph(str(contract.get('km_start') or '—'), value_style),
          Paragraph('Km final', label_style), Paragraph(str(contract.get('km_end') or '—'), value_style)],
-        [Paragraph('Distanță parcursă', label_style), Paragraph(f"{contract.get('distance_km') or '—'} km", value_style), '', ''],
+        [Paragraph('Distanță parcursă', label_style),
+         Paragraph((f"{_dist} km" if _dist is not None else '—'), value_style), '', ''],
     ]
     km_table = Table(km_data, colWidths=[38 * mm, 35 * mm, 38 * mm, W - 111 * mm])
     km_table.setStyle(TableStyle([
@@ -628,7 +639,6 @@ def generate_custom_pdf(contract: dict) -> str:
         row('Itinerar', contract.get('itinerary')),
         row('Plecare', _fmt_dt(contract.get('departure_datetime'))),
         row('Retur', _fmt_dt(contract.get('return_datetime'))),
-        row('Distanță estimată', f"{contract.get('distance_km') or '—'} km"),
     ]))
     story.append(Spacer(1, 4))
 
