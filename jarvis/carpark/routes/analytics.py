@@ -4,16 +4,12 @@ from flask import request, jsonify
 from flask_login import login_required, current_user
 
 from carpark import carpark_bp
-from carpark.routes.vehicles import carpark_required
+from carpark.routes.vehicles import carpark_required, _acting_company_id
 from carpark.services.analytics_service import AnalyticsService
 
 logger = logging.getLogger('jarvis.carpark.analytics')
 
 _analytics = AnalyticsService()
-
-
-def _user_company_id():
-    return getattr(current_user, 'company_id', None)
 
 
 # ── Full dashboard ─────────────────────────────────────────
@@ -23,7 +19,7 @@ def _user_company_id():
 @carpark_required
 def analytics_dashboard():
     """Full dashboard payload — single endpoint for the frontend."""
-    cid = _user_company_id()
+    cid = _acting_company_id()
     if not cid:
         return jsonify({'success': False, 'error': 'No company assigned'}), 400
     period = request.args.get('period', '90', type=str)
@@ -42,7 +38,7 @@ def analytics_dashboard():
 @carpark_required
 def analytics_summary():
     """Lightweight inventory summary."""
-    cid = _user_company_id()
+    cid = _acting_company_id()
     if not cid:
         return jsonify({'success': False, 'error': 'No company assigned'}), 400
     return jsonify(_analytics.get_summary(cid))
@@ -53,7 +49,7 @@ def analytics_summary():
 @carpark_required
 def analytics_kpis():
     """KPI metrics only."""
-    cid = _user_company_id()
+    cid = _acting_company_id()
     if not cid:
         return jsonify({'success': False, 'error': 'No company assigned'}), 400
     return jsonify(_analytics.get_kpis(cid))
@@ -63,7 +59,7 @@ def analytics_kpis():
 @login_required
 @carpark_required
 def analytics_status_breakdown():
-    cid = _user_company_id()
+    cid = _acting_company_id()
     if not cid:
         return jsonify({'success': False, 'error': 'No company assigned'}), 400
     return jsonify({'breakdown': _analytics.get_status_breakdown(cid)})
@@ -73,7 +69,7 @@ def analytics_status_breakdown():
 @login_required
 @carpark_required
 def analytics_category_breakdown():
-    cid = _user_company_id()
+    cid = _acting_company_id()
     if not cid:
         return jsonify({'success': False, 'error': 'No company assigned'}), 400
     return jsonify({'breakdown': _analytics.get_category_breakdown(cid)})
@@ -83,7 +79,7 @@ def analytics_category_breakdown():
 @login_required
 @carpark_required
 def analytics_aging():
-    cid = _user_company_id()
+    cid = _acting_company_id()
     if not cid:
         return jsonify({'success': False, 'error': 'No company assigned'}), 400
     return jsonify({'distribution': _analytics.get_aging_distribution(cid)})
@@ -93,7 +89,7 @@ def analytics_aging():
 @login_required
 @carpark_required
 def analytics_brands():
-    cid = _user_company_id()
+    cid = _acting_company_id()
     if not cid:
         return jsonify({'success': False, 'error': 'No company assigned'}), 400
     return jsonify({'brands': _analytics.get_brand_breakdown(cid)})
@@ -103,7 +99,7 @@ def analytics_brands():
 @login_required
 @carpark_required
 def analytics_monthly_sales():
-    cid = _user_company_id()
+    cid = _acting_company_id()
     if not cid:
         return jsonify({'success': False, 'error': 'No company assigned'}), 400
     months = request.args.get('months', '12', type=str)
@@ -118,7 +114,7 @@ def analytics_monthly_sales():
 @login_required
 @carpark_required
 def analytics_costs():
-    cid = _user_company_id()
+    cid = _acting_company_id()
     if not cid:
         return jsonify({'success': False, 'error': 'No company assigned'}), 400
     return jsonify({'costs': _analytics.get_cost_overview(cid)})
@@ -128,7 +124,7 @@ def analytics_costs():
 @login_required
 @carpark_required
 def analytics_activity():
-    cid = _user_company_id()
+    cid = _acting_company_id()
     if not cid:
         return jsonify({'success': False, 'error': 'No company assigned'}), 400
     limit = request.args.get('limit', '15', type=str)

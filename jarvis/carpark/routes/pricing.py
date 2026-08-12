@@ -8,7 +8,7 @@ from carpark import carpark_bp
 from carpark.services.pricing_service import PricingService
 from carpark.routes.vehicles import (
     carpark_required, carpark_edit_required, _serialize,
-    _verify_vehicle_ownership, _user_company_id,
+    _verify_vehicle_ownership, _acting_company_id,
 )
 
 logger = logging.getLogger('jarvis.carpark')
@@ -26,7 +26,7 @@ _pricing_service = PricingService()
 def list_pricing_rules():
     """List pricing rules. Query: ?active_only=true"""
     active_only = request.args.get('active_only', '').lower() == 'true'
-    company_id = _user_company_id()
+    company_id = _acting_company_id()
     rules = _pricing_service.list_rules(company_id, active_only)
     return jsonify({'rules': _serialize(rules)})
 
@@ -47,7 +47,7 @@ def create_pricing_rule():
     if not data:
         return jsonify({'error': 'Request body required'}), 400
 
-    data['company_id'] = _user_company_id()
+    data['company_id'] = _acting_company_id()
 
     try:
         rule = _pricing_service.create_rule(data, created_by=current_user.id)
@@ -115,7 +115,7 @@ def execute_pricing_rule(rule_id):
     data = request.get_json(silent=True) or {}
     dry_run = data.get('dry_run', False)
     approver_id = data.get('approver_id')
-    company_id = _user_company_id()
+    company_id = _acting_company_id()
 
     try:
         result = _pricing_service.execute_rule(
@@ -268,7 +268,7 @@ def simulate_pricing():
         if err:
             return err
 
-    company_id = _user_company_id()
+    company_id = _acting_company_id()
     results = _pricing_service.simulate_rules(
         vehicle_id=vehicle_id, rule_id=rule_id, company_id=company_id
     )
@@ -333,7 +333,7 @@ def vehicle_promotions(vehicle_id):
 def list_promotions():
     """List promotions. Query: ?active_only=true"""
     active_only = request.args.get('active_only', '').lower() == 'true'
-    company_id = _user_company_id()
+    company_id = _acting_company_id()
     promos = _pricing_service.list_promotions(company_id, active_only)
     return jsonify({'promotions': _serialize(promos)})
 
@@ -353,7 +353,7 @@ def create_promotion():
     if not data:
         return jsonify({'error': 'Request body required'}), 400
 
-    data['company_id'] = _user_company_id()
+    data['company_id'] = _acting_company_id()
 
     try:
         promo = _pricing_service.create_promotion(data, created_by=current_user.id)
@@ -466,6 +466,6 @@ def aging_vehicles():
     """
     min_days_str = request.args.get('min_days')
     min_days = int(min_days_str) if min_days_str else None
-    company_id = _user_company_id()
+    company_id = _acting_company_id()
     vehicles = _pricing_service.get_aging_vehicles(company_id, min_days)
     return jsonify({'vehicles': _serialize(vehicles), 'count': len(vehicles)})
