@@ -222,6 +222,26 @@ def test_upload_rejects_oversize_file_with_413(client, monkeypatch):
     create.assert_not_called()
 
 
+def test_upload_rejects_oversize_pixels_with_400(client, monkeypatch):
+    _login(client, monkeypatch, uid=90013)
+    # Patch the pixel cap tiny so a normal ~2000x1500 (3M px) test JPEG trips
+    # the decompression-bomb guard without allocating a giant image — mirrors
+    # the byte-size cap test's approach.
+    monkeypatch.setattr('carpark.routes.photos.MAX_PHOTO_PIXELS', 100)
+    with mock.patch('carpark.routes.photos.spaces_service.is_enabled', return_value=True), \
+         mock.patch('carpark.routes.photos.spaces_service.upload') as up, \
+         mock.patch('carpark.routes.photos._photo_repo.create') as create, \
+         mock.patch('carpark.routes.photos._photo_repo.get_by_vehicle', return_value=[]), \
+         mock.patch('carpark.routes.photos._verify_vehicle_ownership', return_value=({'id': 18}, None)):
+        data = {'file': (io.BytesIO(_jpeg_bytes(size=(2000, 1500))), 'huge.jpg')}
+        r = client.post('/api/carpark/vehicles/18/photos/upload',
+                        data=data, content_type='multipart/form-data')
+    assert r.status_code == 400
+    # Guard trips on header dimensions before any write — nothing persisted.
+    up.assert_not_called()
+    create.assert_not_called()
+
+
 def test_upload_rejects_too_many_files_with_400(client, monkeypatch):
     _login(client, monkeypatch, uid=90011)
     with mock.patch('carpark.routes.photos.spaces_service.is_enabled', return_value=True), \
