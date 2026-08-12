@@ -52,3 +52,6 @@ apscheduler>=3.10,<4
 
 # QR codes (test-drive review email)
 segno>=1.6,<2
+
+# DigitalOcean Spaces (S3-compatible) image storage
+boto3
