@@ -146,18 +146,18 @@ def test_unknown_vehicle_returns_404(client, monkeypatch):
     assert calls == []
 
 
-def test_vehicle_owned_by_other_company_returns_404_at_ownership_check(client, monkeypatch):
-    """_verify_vehicle_ownership itself 404s a cross-company vehicle (the
-    route's first line of defense) before DispoService is ever consulted —
-    distinct from test_cross_tenant_permission_error_returns_403, which
-    exercises the service-level PermissionError mapping in isolation."""
+def test_vehicle_owned_by_other_company_blocked_at_service_403(client, monkeypatch):
+    """Permissive tenant switcher: _verify_vehicle_ownership is now exists-only
+    (no route-level 404), but the money operations still enforce isolation at
+    the SERVICE layer — DispoService.reserve raises PermissionError for a
+    cross-company vehicle, mapped to 403. So cross-tenant reserve/sell/deliver
+    stay blocked, just as 403 (service) instead of 404 (route)."""
     monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle',
                          lambda vid: _own_vehicle(vid, company_id=OTHER_COMPANY_ID))
 
     resp = client.post('/api/carpark/vehicles/1/reserve', json={
         'client_name': 'Ion Pop', 'reservation_end': '2026-09-01'})
-    assert resp.status_code == 404
-
+    assert resp.status_code == 403
 
 def test_sell_low_margin_validation_error_returns_400(client, monkeypatch):
     monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle',
