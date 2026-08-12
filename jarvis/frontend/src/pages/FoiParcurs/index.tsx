@@ -27,6 +27,7 @@ import {
   FileSpreadsheet,
   PlayCircle,
   Loader2,
+  AlertTriangle,
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -85,6 +86,8 @@ import {
 import { VehicleOdometerHistory } from './VehicleOdometerHistory'
 import { sessionStatus, type SessionStatusKey } from './sessionStatus'
 import { sessionActualKm, sessionEstimatedKm, carSpanKm } from './distance'
+import { sessionAnomalies, driveDate } from './anomalies'
+import CorrectSessionDialog, { type CorrectionPayload } from './CorrectSessionDialog'
 import { naiveDate } from '@/lib/naiveDate'
 import { CalendarTab } from './CalendarTab'
 
@@ -342,6 +345,18 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [previewVin, setPreviewVin] = useState<string | null>(null)
   const [redistribute, setRedistribute] = useState<{ vin: string; gap: GapRow; sessions: WinSession[] } | null>(null)
+  const [correcting, setCorrecting] = useState<FoiContract | null>(null)
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
+  const correctMutation = useMutation({
+    mutationFn: (vars: { id: number; data: CorrectionPayload }) =>
+      foiParcursApi.correctSession(vars.id, vars.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      queryClient.invalidateQueries({ queryKey: ['fp-route-sheets'] })
+      setCorrecting(null)
+    },
+  })
   const now = new Date()
   const [filterYear, setFilterYear] = useState<number>(now.getFullYear())
   const [filterMonth, setFilterMonth] = useState<number>(now.getMonth() + 1) // 0 = all months
@@ -470,6 +485,7 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
                 const kmStart = Math.min(...sheet.sessions.map((c) => c.km_start ?? 0))
                 const kmEnd = Math.max(...sheet.sessions.map((c) => c.km_end ?? 0))
                 const totalKm = carSpanKm(sheet.sessions)
+                const anomalies = sessionAnomalies(sheet.sessions)
                 const clientCount = new Set(sheet.sessions.map((c) => c.client_name).filter(Boolean)).size
                 const stored = storedByVin.get(sheet.vin)
 
@@ -570,9 +586,14 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
                                   const ss = sessionStatus(c)
                                   const hasPdf = c.status !== 'PENDING' && c.status !== 'PLANNED'
                                   return (
-                                    <TableRow key={c.id} className={ss.rowClass}>
-                                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                                        {new Date(c.created_at).toLocaleDateString('ro-RO')}
+                                    <TableRow key={c.id} className={`${ss.rowClass} ${anomalies.has(c.id) ? 'bg-amber-500/10' : ''}`}>
+                                      <TableCell className="text-xs whitespace-nowrap">
+                                        <span className="text-muted-foreground">{new Date(driveDate(c)).toLocaleDateString('ro-RO')}</span>
+                                        {anomalies.has(c.id) && (
+                                          <span title={anomalies.get(c.id)} className="ml-1 inline-flex align-middle text-amber-600 dark:text-amber-500">
+                                            <AlertTriangle className="h-3.5 w-3.5" />
+                                          </span>
+                                        )}
                                       </TableCell>
                                       <TableCell>
                                         {c.client_name ? (
@@ -591,18 +612,26 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
                                         <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
                                       </TableCell>
                                       <TableCell className="text-right">
-                                        {hasPdf ? (
-                                          <div className="flex justify-end gap-1">
-                                            <a href={foiParcursApi.getContractPdfUrl(c.id, 'legal')} target="_blank" rel="noopener" title="Legal PDF">
-                                              <Button variant="outline" size="sm" className="h-7 px-2 text-xs">Legal</Button>
-                                            </a>
-                                            <a href={foiParcursApi.getContractPdfUrl(c.id, 'custom')} target="_blank" rel="noopener" title="Custom PDF">
-                                              <Button variant="outline" size="sm" className="h-7 px-2 text-xs">Custom</Button>
-                                            </a>
-                                          </div>
-                                        ) : (
-                                          <span className="text-muted-foreground text-xs">—</span>
-                                        )}
+                                        <div className="flex justify-end gap-1">
+                                          {isAdmin && (
+                                            <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
+                                              onClick={() => setCorrecting(c)} title="Corectează data/kilometrajul">
+                                              Corectează
+                                            </Button>
+                                          )}
+                                          {hasPdf ? (
+                                            <>
+                                              <a href={foiParcursApi.getContractPdfUrl(c.id, 'legal')} target="_blank" rel="noopener" title="Legal PDF">
+                                                <Button variant="outline" size="sm" className="h-7 px-2 text-xs">Legal</Button>
+                                              </a>
+                                              <a href={foiParcursApi.getContractPdfUrl(c.id, 'custom')} target="_blank" rel="noopener" title="Custom PDF">
+                                                <Button variant="outline" size="sm" className="h-7 px-2 text-xs">Custom</Button>
+                                              </a>
+                                            </>
+                                          ) : (
+                                            !isAdmin && <span className="text-muted-foreground text-xs">—</span>
+                                          )}
+                                        </div>
                                       </TableCell>
                                     </TableRow>
                                   )
@@ -645,6 +674,14 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
           }
         }}
       />
+      {correcting && (
+        <CorrectSessionDialog
+          session={correcting}
+          submitting={correctMutation.isPending}
+          onClose={() => setCorrecting(null)}
+          onSubmit={(data) => correctMutation.mutate({ id: correcting.id, data })}
+        />
+      )}
     </div>
   )
 }

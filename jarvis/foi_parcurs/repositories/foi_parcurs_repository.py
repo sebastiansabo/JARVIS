@@ -271,6 +271,22 @@ class FoiParcursRepository(BaseRepository):
             return self.get_contract_by_id(row['id']) or row
         return row
 
+    def correct_session(self, contract_id: int, fields: dict) -> dict:
+        """Admin correction of a session's drive date(s) and/or odometer readings
+        to fix data-entry anomalies (wrong date, overlapping km). Whitelisted
+        columns only; applies to ANY status; bumps updated_at. Returns the fresh
+        row. Validation (km_end >= km_start, return >= departure, admin gate)
+        lives in the route — this is the persistence primitive."""
+        allowed = ('departure_datetime', 'return_datetime', 'km_start', 'km_end')
+        sets = {k: fields[k] for k in allowed if k in fields}
+        if not sets:
+            return self.get_contract_by_id(contract_id)
+        cols = ', '.join(f'{k} = %s' for k in sets)
+        params = list(sets.values()) + [contract_id]
+        sql = f'UPDATE foi_de_parcurs SET {cols}, updated_at = NOW() WHERE id = %s RETURNING id'
+        row = self.execute(sql, tuple(params), returning=True)
+        return self.get_contract_by_id(row['id']) if row and row.get('id') else None
+
     def get_sessions_pending_late_notify(self) -> list:
         """PLANNED TD rows whose start just passed (still in the 8h grace) and
         that haven't been late-notified yet."""

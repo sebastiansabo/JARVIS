@@ -286,6 +286,18 @@ export const foiParcursApi = {
   rescheduleTestDrive: (id: number, data: { departure_datetime: string; return_datetime?: string }) =>
     api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/reschedule`, data),
 
+  // Admin-only: correct a session's drive date(s) and/or odometer to fix
+  // data-entry anomalies (wrong date, overlapping km). Any status; status unchanged.
+  correctSession: (
+    id: number,
+    data: {
+      departure_datetime?: string | null
+      return_datetime?: string | null
+      km_start?: number
+      km_end?: number
+    },
+  ) => api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${id}/correct`, data),
+
   // ── Discard a PLANNED draft (PLANNED-only; 409 otherwise) ──
   discardTestDrive: (id: number) =>
     api.delete<{ success: boolean }>(`${BASE}/test-drive/${id}`),
