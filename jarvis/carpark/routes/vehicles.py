@@ -67,14 +67,29 @@ def _user_company_id():
     return getattr(current_user, 'company_id', None)
 
 
+def _acting_company_id():
+    """Company the caller is acting as: request-provided company_id (permissive —
+    NO authorization) else the user's own company."""
+    cid = None
+    if request.method == 'GET':
+        cid = request.args.get('company_id')
+    else:
+        body = request.get_json(silent=True) or request.form
+        cid = body.get('company_id') if body else None
+    if cid not in (None, ''):
+        try:
+            return int(cid)
+        except (TypeError, ValueError):
+            pass
+    return getattr(current_user, 'company_id', None)
+
+
 def _verify_vehicle_ownership(vehicle_id):
-    """Fetch vehicle and verify it belongs to the current user's company.
-    Returns (vehicle_dict, None) on success, or (None, error_response) on failure."""
+    """Fetch a vehicle by id. Returns (vehicle_dict, None) if it exists, or
+    (None, error_response) if it doesn't. Exists-only: no company check —
+    the tenant switcher is permissive by design (see Slice A design doc)."""
     vehicle = _vehicle_service.get_vehicle(vehicle_id)
     if not vehicle:
-        return None, (jsonify({'success': False, 'error': 'Vehicle not found'}), 404)
-    cid = _user_company_id()
-    if cid and vehicle.get('company_id') and vehicle['company_id'] != cid:
         return None, (jsonify({'success': False, 'error': 'Vehicle not found'}), 404)
     return vehicle, None
 
@@ -128,8 +143,8 @@ def list_vehicles():
         if val:
             filters[key] = val
 
-    # SECURITY: Force company_id to current user's company (tenant isolation)
-    cid = _user_company_id()
+    # Acting-company scoping (permissive tenant switcher — see design doc)
+    cid = _acting_company_id()
     if cid:
         filters['company_id'] = str(cid)
 
@@ -148,7 +163,7 @@ def list_vehicles():
 @carpark_required
 def vehicle_status_counts():
     """Vehicle counts per status for catalog tabs."""
-    cid = _user_company_id()
+    cid = _acting_company_id()
     counts = _vehicle_service.get_status_counts(cid)
     return jsonify({'counts': _serialize(counts)})
 
@@ -158,7 +173,7 @@ def vehicle_status_counts():
 @carpark_required
 def vehicle_filter_options():
     """Distinct values for filter dropdowns (brands, fuel types, body types)."""
-    cid = _user_company_id()
+    cid = _acting_company_id()
     options = _vehicle_service.get_filter_options(cid)
     return jsonify(options)
 
@@ -194,8 +209,8 @@ def create_vehicle():
     if not data:
         return jsonify({'success': False, 'error': 'Request body required'}), 400
 
-    # SECURITY: Force company_id to current user's company
-    cid = _user_company_id()
+    # Acting-company scoping (permissive tenant switcher — see design doc)
+    cid = _acting_company_id()
     if cid:
         data['company_id'] = cid
 
@@ -366,8 +381,8 @@ def check_vin():
 @login_required
 @carpark_required
 def list_locations():
-    """List all active locations for current user's company."""
-    cid = _user_company_id()
+    """List all active locations for the acting company."""
+    cid = _acting_company_id()
     locations = _vehicle_service.get_locations(cid)
     return jsonify({'locations': _serialize(locations)})
 
@@ -380,8 +395,8 @@ def create_location():
     data = request.get_json(silent=True)
     if not data:
         return jsonify({'success': False, 'error': 'Request body required'}), 400
-    # SECURITY: Force company_id to current user's company
-    cid = _user_company_id()
+    # Acting-company scoping (permissive tenant switcher — see design doc)
+    cid = _acting_company_id()
     if cid:
         data['company_id'] = cid
     try:
