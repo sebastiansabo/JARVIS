@@ -113,6 +113,62 @@ def api_db_invoice_preview(invoice_id):
     return jsonify(build_invoice_preview(xml_content))
 
 
+@invoices_bp.route('/api/db/invoices/<int:invoice_id>/pdf')
+@login_required
+def api_db_invoice_pdf(invoice_id):
+    """Download the official ANAF-rendered PDF for an accounting invoice.
+
+    Maps the jarvis invoice id to its linked e-Factura PK and renders the PDF
+    on demand via ANAF (nothing is stored). Same permission + scope gating as
+    the preview route. 404 if the invoice has no linked e-Factura record; the
+    ANAF render itself may still fail (dead connection), in which case the
+    frontend falls back to a client-side PDF built from the preview data.
+    """
+    if not _check_invoice_perm('view'):
+        return error_response('You do not have permission to view invoices', 403)
+
+    invoice = _invoice_repo.get_with_allocations(invoice_id)
+    if not invoice:
+        return error_response('Invoice not found', 404)
+
+    # Scope check: restrict visibility based on permission scope (mirrors preview route).
+    scope = _get_invoice_scope('view')
+    if scope == 'own':
+        user_ids = {a.get('responsible_user_id') for a in invoice.get('allocations', []) if a}
+        if current_user.id not in user_ids:
+            return error_response('Invoice not found', 404)
+    elif scope == 'department':
+        org_filter = _get_org_filter_for_scope(scope)
+        if org_filter and not _allocation_repo.invoice_matches_org_filter(invoice_id, org_filter):
+            return error_response('Invoice not found', 404)
+
+    from core.base_repository import BaseRepository
+    row = BaseRepository().query_one(
+        'SELECT id FROM efactura_invoices WHERE jarvis_invoice_id = %s',
+        (invoice_id,)
+    )
+    if not row:
+        return error_response('No e-Factura PDF available for this invoice', 404)
+
+    from core.connectors.efactura.services.pdf_service import PDFService
+    result = PDFService().get_invoice_pdf(row['id'])
+    if not result.success:
+        return error_response(result.error, 404)
+
+    from flask import Response
+    filename = result.data['filename']
+    # RFC 6266: quote filename and add UTF-8 fallback for non-ASCII chars (Edge compat)
+    safe_name = filename.encode('ascii', 'ignore').decode()
+    return Response(
+        result.data['pdf_data'],
+        mimetype='application/pdf',
+        headers={
+            'Content-Disposition': f'attachment; filename="{safe_name}"; filename*=UTF-8\'\'{filename}',
+            'Content-Length': str(len(result.data['pdf_data'])),
+        }
+    )
+
+
 @invoices_bp.route('/api/db/invoices/archive-counts')
 @login_required
 def api_db_archive_counts():

@@ -145,6 +145,14 @@ const PREVIEW_FETCHERS = {
   invoices: (id: number) => invoicesApi.getInvoicePreview(id), // /api/db/invoices, by jarvis invoice id (accounting scope)
 } as const
 
+// Sources that expose an official ANAF-rendered PDF endpoint. Others (profile)
+// only get the client-side fallback. A "Descarcă PDF" button shows for any
+// source listed here.
+const PDF_URL_BUILDERS: Partial<Record<keyof typeof PREVIEW_FETCHERS, (id: number) => string>> = {
+  efactura: (id) => efacturaApi.getInvoicePdfUrl(id),
+  invoices: (id) => invoicesApi.getInvoicePdfUrl(id),
+}
+
 export function InvoicePreviewModal({ invoiceId, onClose, source = 'profile' }: {
   invoiceId: number
   onClose: () => void
@@ -157,16 +165,17 @@ export function InvoicePreviewModal({ invoiceId, onClose, source = 'profile' }: 
     queryFn: () => PREVIEW_FETCHERS[source](invoiceId),
   })
 
-  // Try the official ANAF-rendered PDF first (efactura only); if it's
-  // unavailable (no live ANAF connection, error, non-PDF response) fall back
-  // to a client-side PDF built from the preview data already loaded here.
+  // Try the official ANAF-rendered PDF first (for sources that expose one); if
+  // it's unavailable (no live ANAF connection, error, non-PDF response) fall
+  // back to a client-side PDF built from the preview data already loaded here.
   const handleDownloadPdf = async () => {
     if (!data) return
     setDownloading(true)
     try {
-      if (source === 'efactura') {
+      const pdfUrl = PDF_URL_BUILDERS[source]?.(invoiceId)
+      if (pdfUrl) {
         try {
-          const res = await fetch(efacturaApi.getInvoicePdfUrl(invoiceId))
+          const res = await fetch(pdfUrl)
           const ct = res.headers.get('Content-Type') || ''
           if (res.ok && ct.includes('pdf')) {
             const blob = await res.blob()
@@ -201,7 +210,7 @@ export function InvoicePreviewModal({ invoiceId, onClose, source = 'profile' }: 
             <DialogTitle>
               Previzualizare factură{data?.invoice_number ? ` #${data.invoice_number}` : ''}
             </DialogTitle>
-            {data && source === 'efactura' && (
+            {data && PDF_URL_BUILDERS[source] && (
               <Button
                 variant="outline"
                 size="sm"
