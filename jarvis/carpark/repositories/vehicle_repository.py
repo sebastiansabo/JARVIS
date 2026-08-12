@@ -453,3 +453,22 @@ class VehicleRepository(BaseRepository):
             f"UPDATE carpark_locations SET {', '.join(sets)} WHERE id = %s RETURNING *",
             tuple(params), returning=True
         )
+
+    # ── COMPANIES / BRANDS (tenant-switcher selectors) ──
+
+    def list_companies(self) -> List[Dict[str, Any]]:
+        """All companies, for the tenant-switcher company selector."""
+        return self.query_all('SELECT id, company AS name FROM companies ORDER BY company')
+
+    def list_brands(self, company_id: int) -> List[str]:
+        """Car brands carried by a company (from the company_brands catalog),
+        for the tenant-switcher brand selector."""
+        rows = self.query_all(
+            '''SELECT DISTINCT b.name
+               FROM company_brands cb
+               JOIN brands b ON b.id = cb.brand_id
+               WHERE cb.company_id = %s
+               ORDER BY b.name''',
+            (company_id,),
+        )
+        return [r['name'] for r in (rows or [])]

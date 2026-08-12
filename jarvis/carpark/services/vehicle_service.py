@@ -279,6 +279,16 @@ class VehicleService:
                         data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return self._repo.update_location(location_id, data)
 
+    # ── COMPANIES / BRANDS (tenant-switcher selectors) ──
+
+    def get_companies(self) -> List[Dict[str, Any]]:
+        """All companies, for the tenant-switcher company selector."""
+        return self._repo.list_companies()
+
+    def get_brands(self, company_id: int) -> List[str]:
+        """Car brands carried by a company, for the tenant-switcher brand selector."""
+        return self._repo.list_brands(company_id)
+
     # ── COSTS ──
 
     def get_costs(self, vehicle_id: int,
