@@ -25,7 +25,7 @@ from carpark.repositories.transfer_repository import TransferRepository
 from carpark.services.dispo_service import DispoService
 from carpark.routes.vehicles import (
     carpark_required, carpark_edit_required,
-    _serialize, _verify_vehicle_ownership, _user_company_id,
+    _serialize, _verify_vehicle_ownership, _user_company_id, _acting_company_id,
 )
 # Reused (not duplicated) — same Drive-upload plumbing and document-type
 # whitelist as the general vehicle-documents route. Referenced via the
@@ -77,8 +77,12 @@ def transfers_out():
     transferred away to AutoWorld sibling companies), most recent first —
     feeds the source company's read-only 'Transferat' entries in the Ieșit
     view. See TransferRepository.list_outbound for the joined fields
-    (vin/brand/model/nr_stoc + destination company name)."""
-    company_id = _user_company_id()
+    (vin/brand/model/nr_stoc + destination company name).
+
+    Read-only listing: honors the acting company (request company_id, permissive)
+    so it stays coherent with the Dispo summary/KPIs when the tenant switcher is
+    used. The transfer-CREATE endpoint below is unchanged (own-company only)."""
+    company_id = _acting_company_id()
     if not company_id:
         return jsonify({'transfers': []})
     try:
