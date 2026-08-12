@@ -407,6 +407,50 @@ def api_reschedule_test_drive(id):
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
 
+@foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>/extend', methods=['PUT'])
+@login_required
+def api_extend_test_drive(id):
+    """Advisor extends an OPEN (FILLED) test drive's return time when the client
+    keeps the car longer and the return hasn't been recorded yet. Any logged-in
+    user; status/km unchanged; the overdue-return alert recomputes against the
+    new time. Records who did it (corrected_by) → 'Modificat' marker."""
+    data = request.get_json(silent=True) or {}
+    ret = data.get('return_datetime')
+    if not ret:
+        return jsonify({'success': False, 'error': 'return_datetime is required'}), 400
+    contract = _fp_repo.get_contract_by_id(id)
+    if not contract:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    if contract.get('route_type') != 'TD' or contract.get('status') != 'FILLED':
+        return jsonify({'success': False, 'error': 'Only an open (in-progress) test drive can be extended'}), 409
+    try:
+        ret_dt = datetime.fromisoformat(str(ret).replace('Z', '+00:00'))
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Invalid return_datetime'}), 400
+    # Normalize to naive: the frontend sends a naive datetime-local value, while
+    # departure_datetime comes back tz-aware from the DB (dict_from_row) — a
+    # direct naive-vs-aware comparison raises TypeError.
+    if ret_dt.tzinfo:
+        ret_dt = ret_dt.replace(tzinfo=None)
+    dep = contract.get('departure_datetime')
+    if dep:
+        try:
+            dep_dt = datetime.fromisoformat(str(dep).replace('Z', '+00:00'))
+            if dep_dt.tzinfo:
+                dep_dt = dep_dt.replace(tzinfo=None)
+        except ValueError:
+            dep_dt = None
+        if dep_dt and ret_dt < dep_dt:
+            return jsonify({'success': False,
+                            'error': 'return_datetime cannot be before departure_datetime'}), 400
+    updated = _fp_repo.extend_return(id, ret, getattr(current_user, 'email', None))
+    if not updated:
+        return jsonify({'success': False, 'error': 'Session is no longer extendable'}), 409
+    logger.info('foi-parcurs TD %s return extended to %s by %s',
+                id, ret, getattr(current_user, 'email', '?'))
+    return jsonify({'success': True, 'contract': updated})
+
+
 def _autosend_contract(contract_id, simple=False):
     """Email the contract PDF to the client + consilier. Best-effort — recipients
     are deduped and failures are logged, never raised. Client email comes from

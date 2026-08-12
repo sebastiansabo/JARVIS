@@ -238,13 +238,18 @@ def api_delete_contract(id):
 
 
 def _parse_dt(v):
-    """Best-effort ISO parse for date-order validation; None if absent/unparseable."""
+    """Best-effort ISO parse for date-order validation, returned as a NAIVE
+    datetime (tzinfo stripped). DB timestamptz values come back tz-aware via
+    dict_from_row.isoformat(), while frontend datetime-local values are naive —
+    comparing the two directly raises TypeError, so normalize both to naive.
+    None if absent/unparseable."""
     if not v:
         return None
     try:
-        return datetime.fromisoformat(str(v).replace('Z', '+00:00'))
+        dt = datetime.fromisoformat(str(v).replace('Z', '+00:00'))
     except ValueError:
         return None
+    return dt.replace(tzinfo=None) if dt.tzinfo else dt
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/correct', methods=['PUT'])
@@ -297,7 +302,7 @@ def api_correct_contract(id):
         return jsonify({'success': False,
                         'error': 'return_datetime cannot be before departure_datetime'}), 400
 
-    updated = _fp_repo.correct_session(id, fields)
+    updated = _fp_repo.correct_session(id, fields, getattr(current_user, 'email', None))
     logger.info('foi-parcurs contract %s corrected by admin %s: %s',
                 id, getattr(current_user, 'email', '?'), fields)
 

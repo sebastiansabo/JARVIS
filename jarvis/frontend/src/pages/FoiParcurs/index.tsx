@@ -28,6 +28,7 @@ import {
   PlayCircle,
   Loader2,
   AlertTriangle,
+  Clock,
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -88,6 +89,9 @@ import { sessionStatus, type SessionStatusKey } from './sessionStatus'
 import { sessionActualKm, sessionEstimatedKm, carSpanKm } from './distance'
 import { sessionAnomalies, driveDate } from './anomalies'
 import CorrectSessionDialog, { type CorrectionPayload } from './CorrectSessionDialog'
+import ExtendSessionDialog from './ExtendSessionDialog'
+import ModifiedBadge from './ModifiedBadge'
+import { toast } from 'sonner'
 import { naiveDate } from '@/lib/naiveDate'
 import { CalendarTab } from './CalendarTab'
 
@@ -356,6 +360,7 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
       queryClient.invalidateQueries({ queryKey: ['fp-route-sheets'] })
       setCorrecting(null)
     },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Corectarea a eșuat'),
   })
   const now = new Date()
   const [filterYear, setFilterYear] = useState<number>(now.getFullYear())
@@ -609,7 +614,10 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
                                       <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{sessionEstimatedKm(c)} km</TableCell>
                                       <TableCell className="text-xs whitespace-nowrap">{c.km_start} - {c.km_end}</TableCell>
                                       <TableCell>
-                                        <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
+                                        <div className="flex items-center gap-1">
+                                          <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
+                                          <ModifiedBadge session={c} />
+                                        </div>
                                       </TableCell>
                                       <TableCell className="text-right">
                                         <div className="flex justify-end gap-1">
@@ -1427,6 +1435,16 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
   const now = new Date()
   const [allocatingContract, setAllocatingContract] = useState<FoiContract | null>(null)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
+  const [extending, setExtending] = useState<FoiContract | null>(null)
+  const extendMutation = useMutation({
+    mutationFn: (vars: { id: number; return_datetime: string }) =>
+      foiParcursApi.extendReturn(vars.id, { return_datetime: vars.return_datetime }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      setExtending(null)
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Prelungirea a eșuat'),
+  })
   const [search, setSearch] = useState('')
   const [filterVin, setFilterVin] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
@@ -1669,7 +1687,10 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
                           : new Date(c.created_at).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </TableCell>
                       <TableCell>
-                        <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
+                        <div className="flex items-center gap-1">
+                          <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
+                          <ModifiedBadge session={c} />
+                        </div>
                       </TableCell>
                       <TableCell className="text-xs">{c.company_name || '—'}</TableCell>
                       <TableCell className="text-xs">
@@ -1774,6 +1795,16 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
                                 <RotateCcw className="h-3.5 w-3.5" /> Retur
                               </Link>
                             )
+                          )}
+                          {c.status === 'FILLED' && (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-xs text-amber-600 hover:underline"
+                              title="Prelungește returul"
+                              onClick={(e) => { e.stopPropagation(); setExtending(c) }}
+                            >
+                              <Clock className="h-3.5 w-3.5" /> Prelungește
+                            </button>
                           )}
                           {isAdmin && c.route_type === 'TD' && ss.key !== 'nealocat' && ss.key !== 'planificat' && (
                             <Button
@@ -1916,6 +1947,14 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
             setAllocatingContract(null)
             queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
           }}
+        />
+      )}
+      {extending && (
+        <ExtendSessionDialog
+          session={extending}
+          submitting={extendMutation.isPending}
+          onClose={() => setExtending(null)}
+          onSubmit={(returnDatetime) => extendMutation.mutate({ id: extending.id, return_datetime: returnDatetime })}
         />
       )}
     </div>
