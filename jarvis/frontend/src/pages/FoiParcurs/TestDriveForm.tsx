@@ -111,6 +111,8 @@ interface TestDriveFormProps {
 export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, initialDeparture, initialReturn, onDone, onCancel }: TestDriveFormProps = {}) {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
+  const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
+  const [openBlock, setOpenBlock] = useState<{ message: string; retry: () => void } | null>(null)
 
   // ── Activation mode — reopens this form pre-filled from a PLANNED draft ──
   const [searchParams] = useSearchParams()
@@ -403,6 +405,11 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const submitMutation = useMutation({
     mutationFn: (payload: TestDriveFormPayload) => foiParcursApi.submitTestDrive(payload),
     onSuccess: (data) => { if (embedded) onDone?.(data.contract); else setSubmittedContract(data.contract) },
+    onError: (err: any, variables) => {
+      if (err?.data?.open_session) {
+        setOpenBlock({ message: err.data.error, retry: () => { setOpenBlock(null); submitMutation.mutate({ ...variables, allow_open_session: true }) } })
+      }
+    },
   })
   const planMutation = useMutation({
     mutationFn: (payload: PlanTestDrivePayload) => foiParcursApi.planTestDrive(payload),
@@ -492,6 +499,11 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const activateMutation = useMutation({
     mutationFn: (payload: ActivateTestDrivePayload) => foiParcursApi.activateTestDrive(activateId!, payload),
     onSuccess: (data) => { if (embedded) onDone?.(data.contract); else setSubmittedContract(data.contract) },
+    onError: (err: any, variables) => {
+      if (err?.data?.open_session) {
+        setOpenBlock({ message: err.data.error, retry: () => { setOpenBlock(null); activateMutation.mutate({ ...variables, allow_open_session: true }) } })
+      }
+    },
   })
 
   function handleActivate() {
@@ -947,7 +959,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       </Card>
 
       {/* ── Submit ── */}
-      {(submitMutation.isError || planMutation.isError || activateMutation.isError) && (
+      {(submitMutation.isError || planMutation.isError || activateMutation.isError) && !openBlock && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           Eroare la trimitere. Vă rugăm încercați din nou.
         </div>
@@ -989,6 +1001,22 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           setPendingRun(null)
         }}
       />
+      {/* Single-open-session block — car already out; admins may force-start. */}
+      {openBlock && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => { setOpenBlock(null); submitMutation.reset(); activateMutation.reset() }}>
+          <div className="w-full max-w-sm rounded-2xl bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-5 w-5" />
+              <h3 className="text-base font-semibold">Mașina e deja plecată</h3>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{openBlock.message}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setOpenBlock(null); submitMutation.reset(); activateMutation.reset() }}>Închide</Button>
+              {isAdmin && <Button size="sm" onClick={() => openBlock.retry()}>Pornește oricum</Button>}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Blocked-car override confirm — the car stays selectable only after this. */}
       {pendingLockedVehicle && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setPendingLockedVehicle(null)}>

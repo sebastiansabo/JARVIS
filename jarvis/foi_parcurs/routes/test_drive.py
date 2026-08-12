@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required, current_user,
     logger, _fp_repo, _inspection_repo, _crm_client_repo, _vehicle_repo,
-    _dealer_repo,
+    _dealer_repo, open_session_block, is_privileged,
 )
 from ..services.fuel_service import parse_fuel_level
 
@@ -60,6 +60,15 @@ def api_submit_test_drive():
             _cat, _note = _lock.get('lockout_category'), _lock.get('lockout_note')
             msg = 'Mașină blocată în parcul auto' + (f' ({_cat})' if _cat else '') + (f': {_note}' if _note else '')
             return jsonify({'success': False, 'error': msg, 'locked_out': True}), 409
+
+    # Single-open-session rule (Rule A): a car that already has a session out
+    # (FILLED, not returned) can't start a new one — only when actually starting
+    # (a PLANNED draft is fine). Admins may override with allow_open_session.
+    if not is_draft:
+        _priv = is_privileged()
+        _osb = open_session_block(data['vin'], allow_override=data.get('allow_open_session'), privileged=_priv)
+        if _osb:
+            return jsonify(_osb[0]), _osb[1]
 
     if not is_draft and _company_gdpr_text(data.get('company_id')).strip() and not data.get('gdpr_consent'):
         return jsonify({'success': False, 'error': 'GDPR consent is required'}), 400
@@ -217,6 +226,13 @@ def api_activate_test_drive(id):
                 _cat, _note = _lock.get('lockout_category'), _lock.get('lockout_note')
                 msg = 'Mașină blocată în parcul auto' + (f' ({_cat})' if _cat else '') + (f': {_note}' if _note else '')
                 return jsonify({'success': False, 'error': msg, 'locked_out': True}), 409
+        # Single-open-session rule: don't activate a draft while the car is still
+        # out on another session (unless an admin overrides).
+        _priv = is_privileged()
+        _osb = open_session_block(contract.get('vin'), exclude_id=id,
+                                  allow_override=data.get('allow_open_session'), privileged=_priv)
+        if _osb:
+            return jsonify(_osb[0]), _osb[1]
         if not data.get('client_signature'):
             return jsonify({'success': False, 'error': 'client_signature is required'}), 400
 

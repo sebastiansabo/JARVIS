@@ -411,6 +411,7 @@ export interface TestDriveFormPayload {
   mkt_project_id?: number
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
+  allow_open_session?: boolean
 }
 
 // ── Plan (draft) Test Drive Payload — POST /test-drive with status:'PLANNED'.
@@ -443,6 +444,7 @@ export interface ActivateTestDrivePayload {
   mkt_project_id?: number
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
+  allow_open_session?: boolean
 }
 
 // ── Return (completion) Test Drive Payload — PUT /test-drive/:id/return.
