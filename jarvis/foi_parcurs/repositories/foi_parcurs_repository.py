@@ -451,6 +451,28 @@ class FoiParcursRepository(BaseRepository):
         )
         return self.query_all(sql, tuple(params))
 
+    def get_open_session(self, vin: str, exclude_id: int | None = None) -> dict | None:
+        """The earliest genuinely-OUT live session for a car: a live Test Drive
+        (source='td_form') that's been handed over (status='FILLED') and not yet
+        returned. Drives the single-open-session rule — you can't start a new
+        session while one is out. Excludes `exclude_id` (the row being
+        activated). NOTE: batch/allocation rows (source='batch') are also
+        'FILLED' but carry both odometers at creation and are never returned —
+        they are NOT live sessions and must not block, hence the source filter."""
+        params = [vin]
+        excl = ''
+        if exclude_id is not None:
+            excl = ' AND fp.id <> %s'
+            params.append(exclude_id)
+        sql = (
+            "SELECT fp.id, fp.route_type, fp.departure_datetime, "
+            "COALESCE(fp.client_name, c.name) AS client_name, fp.advisor_name "
+            "FROM foi_de_parcurs fp LEFT JOIN fp_clients c ON c.id = fp.client_id "
+            f"WHERE fp.vin = %s AND fp.status = 'FILLED' AND fp.source = 'td_form'{excl} "
+            "ORDER BY fp.departure_datetime ASC NULLS LAST, fp.id ASC LIMIT 1"
+        )
+        return self.query_one(sql, tuple(params))
+
     def record_activation(self, contract_id: int, data: dict) -> dict:
         """Turn a PLANNED draft into a live FILLED contract: write the handover
         fields (km/fuel/signatures/departure) and set status='FILLED'."""
