@@ -1,6 +1,9 @@
 import os
 os.environ.setdefault('DATABASE_URL', 'postgresql://test:test@localhost:5432/test')
 
+import inspect
+
+from foi_parcurs.services import route_sheet_service as rss
 from foi_parcurs.services.route_sheet_service import session_actual_km, _span_km
 
 
@@ -29,3 +32,9 @@ def test_span_km_is_max_end_minus_min_start():
 
 def test_span_km_empty():
     assert _span_km([]) == 0
+
+
+def test_ai_prose_feeds_actual_km_not_estimate():
+    src = inspect.getsource(rss._ai_prose)
+    assert "'km_parcursi': session_actual_km(t)" in src
+    assert "'km_parcursi': t['distance_km']" not in src
