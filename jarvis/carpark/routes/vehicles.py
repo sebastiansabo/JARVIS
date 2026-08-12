@@ -237,7 +237,8 @@ def update_vehicle(vehicle_id):
     if not data:
         return jsonify({'success': False, 'error': 'Request body required'}), 400
 
-    # SECURITY: Verify vehicle belongs to user's company
+    # Verify vehicle exists (exists-only check — permissive tenant switcher,
+    # no company restriction; see _verify_vehicle_ownership docstring)
     _, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err
@@ -279,7 +280,8 @@ def update_vehicle(vehicle_id):
 @carpark_delete_required
 def delete_vehicle(vehicle_id):
     """Soft-delete a vehicle."""
-    # SECURITY: Verify vehicle belongs to user's company
+    # Verify vehicle exists (exists-only check — permissive tenant switcher,
+    # no company restriction; see _verify_vehicle_ownership docstring)
     _, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err
@@ -302,7 +304,8 @@ def change_vehicle_status(vehicle_id):
     if not data or not data.get('status'):
         return jsonify({'success': False, 'error': 'status is required'}), 400
 
-    # SECURITY: Verify vehicle belongs to user's company
+    # Verify vehicle exists (exists-only check — permissive tenant switcher,
+    # no company restriction; see _verify_vehicle_ownership docstring)
     _, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err
@@ -332,7 +335,8 @@ def change_vehicle_status(vehicle_id):
 @carpark_required
 def vehicle_status_history(vehicle_id):
     """Status change history for a vehicle."""
-    # SECURITY: Verify vehicle belongs to user's company
+    # Verify vehicle exists (exists-only check — permissive tenant switcher,
+    # no company restriction; see _verify_vehicle_ownership docstring)
     _, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err
@@ -345,7 +349,8 @@ def vehicle_status_history(vehicle_id):
 @carpark_required
 def vehicle_modifications(vehicle_id):
     """Field-level modification history."""
-    # SECURITY: Verify vehicle belongs to user's company
+    # Verify vehicle exists (exists-only check — permissive tenant switcher,
+    # no company restriction; see _verify_vehicle_ownership docstring)
     _, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err

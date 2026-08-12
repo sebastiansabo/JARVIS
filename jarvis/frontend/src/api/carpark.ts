@@ -19,7 +19,6 @@ import type {
   PricingHistoryEntry,
   Promotion,
   FloorPrice,
-  SimulationResult,
   RuleExecutionResult,
   AgingVehicle,
   PublishingPlatform,
@@ -156,8 +155,11 @@ export const carparkApi = {
     api.delete<{ success: boolean }>(`/api/carpark/vehicles/${vehicleId}/photos`),
 
   // ── Locations ────────────────────────────────────────────
-  getLocations: () =>
-    api.get<{ locations: Location[] }>('/api/carpark/locations'),
+  getLocations: (companyId?: number | null) =>
+    api.get<{ locations: Location[] }>(
+      '/api/carpark/locations',
+      companyId != null ? { company_id: String(companyId) } : undefined,
+    ),
 
   createLocation: (data: Partial<Location>) =>
     api.post<{ location: Location }>('/api/carpark/locations', data),
@@ -255,15 +257,12 @@ export const carparkApi = {
   deletePricingRule: (ruleId: number) =>
     api.delete<{ success: boolean }>(`/api/carpark/pricing/rules/${ruleId}`),
 
-  executePricingRule: (ruleId: number, dryRun = false, approverId?: number) =>
+  executePricingRule: (ruleId: number, dryRun = false, approverId?: number, companyId?: number | null) =>
     api.post<RuleExecutionResult>(`/api/carpark/pricing/rules/${ruleId}/execute`, {
       dry_run: dryRun,
       ...(approverId ? { approver_id: approverId } : {}),
+      ...(companyId != null ? { company_id: companyId } : {}),
     }),
-
-  // ── Pricing Simulation ───────────────────────────────
-  simulatePricing: (params: { vehicle_id?: number; rule_id?: number }) =>
-    api.post<{ simulations: SimulationResult[] }>('/api/carpark/pricing/simulate', params),
 
   // ── Floor Price ──────────────────────────────────────
   getFloorPrice: (vehicleId: number) =>
@@ -362,8 +361,11 @@ export const carparkApi = {
   publishVehicle: (vehicleId: number, platformId: number, expiresAt?: string) =>
     api.post<{ listing: VehicleListing; action: string }>(`/api/carpark/vehicles/${vehicleId}/publish`, { platform_id: platformId, expires_at: expiresAt }),
 
-  publishVehicleAll: (vehicleId: number, expiresAt?: string) =>
-    api.post<{ results: Array<{ platform_id: number; platform_name: string; action: string }> }>(`/api/carpark/vehicles/${vehicleId}/publish-all`, { expires_at: expiresAt }),
+  publishVehicleAll: (vehicleId: number, expiresAt?: string, companyId?: number | null) =>
+    api.post<{ results: Array<{ platform_id: number; platform_name: string; action: string }> }>(
+      `/api/carpark/vehicles/${vehicleId}/publish-all`,
+      { expires_at: expiresAt, ...(companyId != null ? { company_id: companyId } : {}) },
+    ),
 
   updateListing: (listingId: number, data: Partial<VehicleListing>) =>
     api.put<{ listing: VehicleListing }>(`/api/carpark/listings/${listingId}`, data),

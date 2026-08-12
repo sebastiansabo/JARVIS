@@ -216,10 +216,10 @@ export default function VehicleForm() {
     enabled: !!id,
   })
 
-  // Load locations for dropdown
+  // Load locations for dropdown (scoped to the acting company)
   const { data: locationsData } = useQuery({
-    queryKey: ['carpark', 'locations'],
-    queryFn: () => carparkApi.getLocations(),
+    queryKey: ['carpark', 'locations', effectiveCompanyId],
+    queryFn: () => carparkApi.getLocations(effectiveCompanyId),
     staleTime: 5 * 60_000,
   })
 
