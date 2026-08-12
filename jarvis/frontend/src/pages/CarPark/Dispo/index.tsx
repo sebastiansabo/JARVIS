@@ -49,6 +49,7 @@ import {
 } from '@/components/ui/pagination'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAuthStore } from '@/stores/authStore'
+import { useCarParkStore } from '@/stores/carParkStore'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { cn, usePersistedState } from '@/lib/utils'
 import { carparkDispoApi } from '@/api/carparkDispo'
@@ -350,6 +351,37 @@ export default function CarParkDispo() {
   const canViewFinance = !!user?.can_view_carpark_finance
   const canEdit = !!user?.can_edit_carpark
 
+  // Tenant switcher: acting company (defaults to the current user's own
+  // company) — same pattern as pages/CarPark/index.tsx (Slice A).
+  const selectedCompanyId = useCarParkStore((s) => s.selectedCompanyId)
+  const setSelectedCompanyId = useCarParkStore((s) => s.setSelectedCompanyId)
+  const selectedBrand = useCarParkStore((s) => s.selectedBrand)
+  const setSelectedBrand = useCarParkStore((s) => s.setSelectedBrand)
+  const effectiveCompanyId = selectedCompanyId ?? user?.company_id ?? null
+
+  const handleCompanyChange = useCallback(
+    (companyId: number) => {
+      setSelectedCompanyId(companyId)
+      setSelectedBrand('')
+    },
+    [setSelectedCompanyId, setSelectedBrand],
+  )
+
+  const { data: companiesData } = useQuery({
+    queryKey: ['carpark', 'companies'],
+    queryFn: () => carparkApi.getCompanies(),
+    staleTime: 60_000,
+  })
+  const companies = companiesData?.companies ?? []
+
+  const { data: brandsData } = useQuery({
+    queryKey: ['carpark', 'brands', effectiveCompanyId],
+    queryFn: () => carparkApi.getBrands(effectiveCompanyId as number),
+    enabled: effectiveCompanyId != null,
+    staleTime: 60_000,
+  })
+  const brands = brandsData?.brands ?? []
+
   const [searchParams, setSearchParams] = useSearchParams()
   const activeStage = searchParams.get('stage') || ''
 
@@ -444,14 +476,14 @@ export default function CarParkDispo() {
 
   // ── Data fetching ────────────────────────────────────────
   const { data: summaryData, isLoading: summaryLoading } = useQuery({
-    queryKey: ['carpark', 'dispo', 'summary', activeFilters, page, perPage, sortBy, sortDir],
-    queryFn: () => carparkDispoApi.getSummary(activeFilters, page, perPage, sortBy, sortDir),
+    queryKey: ['carpark', 'dispo', 'summary', activeFilters, page, perPage, sortBy, sortDir, effectiveCompanyId],
+    queryFn: () => carparkDispoApi.getSummary(activeFilters, page, perPage, sortBy, sortDir, effectiveCompanyId),
     enabled: view === 'table',
   })
 
   const { data: kpisData, isLoading: kpisLoading } = useQuery({
-    queryKey: ['carpark', 'dispo', 'kpis'],
-    queryFn: () => carparkDispoApi.getKpis(),
+    queryKey: ['carpark', 'dispo', 'kpis', effectiveCompanyId],
+    queryFn: () => carparkDispoApi.getKpis(effectiveCompanyId),
     staleTime: 30_000,
   })
 
@@ -952,12 +984,47 @@ export default function CarParkDispo() {
           />
         }
         actions={
-          <Button variant="outline" size="sm" asChild>
-            <a href={carparkDispoApi.exportUrl(activeFilters)} download>
-              <FileSpreadsheet className="mr-1.5 h-4 w-4" />
-              {isMobile ? 'Export' : 'Export Excel'}
-            </a>
-          </Button>
+          <div className="flex items-center gap-2">
+            {effectiveCompanyId != null && (
+              <Select
+                value={String(effectiveCompanyId)}
+                onValueChange={(v) => handleCompanyChange(Number(v))}
+              >
+                <SelectTrigger className="w-40 sm:w-48">
+                  <SelectValue placeholder="Companie" />
+                </SelectTrigger>
+                <SelectContent>
+                  {companies.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Select
+              value={selectedBrand || '__all__'}
+              onValueChange={(v) => setSelectedBrand(v === '__all__' ? '' : v)}
+            >
+              <SelectTrigger className="w-32 sm:w-40">
+                <SelectValue placeholder="Toate mărcile" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Toate mărcile</SelectItem>
+                {brands.map((b) => (
+                  <SelectItem key={b} value={b}>
+                    {b}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" asChild>
+              <a href={carparkDispoApi.exportUrl(activeFilters)} download>
+                <FileSpreadsheet className="mr-1.5 h-4 w-4" />
+                {isMobile ? 'Export' : 'Export Excel'}
+              </a>
+            </Button>
+          </div>
         }
       />
 

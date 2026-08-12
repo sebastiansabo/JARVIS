@@ -9,6 +9,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn, usePersistedState } from '@/lib/utils'
 import { carparkApi } from '@/api/carpark'
 import { carparkDispoApi } from '@/api/carparkDispo'
+import { useAuthStore } from '@/stores/authStore'
+import { useCarParkStore } from '@/stores/carParkStore'
 import {
   DISPO_STAGES,
   STATUS_TRANSITIONS,
@@ -521,9 +523,16 @@ interface KanbanBoardProps {
  */
 export function KanbanBoard({ filters, sortBy, sortDir, canViewFinance, canEdit, onCardClick }: KanbanBoardProps) {
   const queryClient = useQueryClient()
+
+  // Tenant switcher: acting company (defaults to the current user's own
+  // company) — same pattern as index.tsx / pages/CarPark/index.tsx (Slice A).
+  const user = useAuthStore((s) => s.user)
+  const selectedCompanyId = useCarParkStore((s) => s.selectedCompanyId)
+  const effectiveCompanyId = selectedCompanyId ?? user?.company_id ?? null
+
   const { data, isLoading } = useQuery({
-    queryKey: ['carpark', 'dispo', 'summary', 'kanban', filters, sortBy, sortDir],
-    queryFn: () => carparkDispoApi.getSummary(filters, 1, KANBAN_PER_PAGE, sortBy, sortDir),
+    queryKey: ['carpark', 'dispo', 'summary', 'kanban', filters, sortBy, sortDir, effectiveCompanyId],
+    queryFn: () => carparkDispoApi.getSummary(filters, 1, KANBAN_PER_PAGE, sortBy, sortDir, effectiveCompanyId),
   })
 
   // Caller company's outbound transfers — feeds the 'iesit' column's

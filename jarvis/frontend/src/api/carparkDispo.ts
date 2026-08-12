@@ -35,6 +35,7 @@ export const carparkDispoApi = {
     perPage = 25,
     sortBy = 'acquisition_date',
     sortDir = 'desc',
+    companyId?: number | null,
   ) => {
     const params: Record<string, string> = {
       page: String(page),
@@ -43,10 +44,15 @@ export const carparkDispoApi = {
       sort_dir: sortDir,
       ...filterParams(filters),
     }
+    if (companyId != null) params.company_id = String(companyId)
     return api.get<DispoSummaryResponse>('/api/carpark/dispo/summary', params)
   },
 
-  getKpis: () => api.get<DispoKpis>('/api/carpark/dispo/kpis'),
+  getKpis: (companyId?: number | null) => {
+    const params: Record<string, string> = {}
+    if (companyId != null) params.company_id = String(companyId)
+    return api.get<DispoKpis>('/api/carpark/dispo/kpis', params)
+  },
 
   // ── CRM client search (carpark-scoped) ──────────────────
   // Same response shape as fieldSalesApi.searchClients, gated on carpark
