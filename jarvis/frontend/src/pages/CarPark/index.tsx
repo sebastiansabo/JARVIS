@@ -208,12 +208,12 @@ export default function CarPark() {
   }, [statusCountsData])
 
   // ── Filter fields ──────────────────────────────────────
+  // Brand is intentionally NOT a FilterBar field — the header Brand <Select> is
+  // the single source of the `brand` catalog param (avoids two conflicting controls).
   const filterFields: FilterField[] = useMemo(() => {
-    const brands = (filterOptions?.brands ?? []).map((b) => ({ value: b, label: b }))
     const fuels = (filterOptions?.fuel_types ?? []).map((f) => ({ value: f, label: f }))
     const bodies = (filterOptions?.body_types ?? []).map((b) => ({ value: b, label: b }))
     return [
-      { key: 'brand', label: 'Brand', type: 'select' as const, options: brands },
       { key: 'fuel_type', label: 'Fuel', type: 'select' as const, options: fuels },
       { key: 'body_type', label: 'Body', type: 'select' as const, options: bodies },
       { key: 'year_min', label: 'Year From', type: 'text' as const, placeholder: 'e.g. 2020' },
@@ -225,7 +225,6 @@ export default function CarPark() {
 
   const filterValues: Record<string, string> = useMemo(
     () => ({
-      brand: filters.brand ?? '',
       fuel_type: filters.fuel_type ?? '',
       body_type: filters.body_type ?? '',
       year_min: filters.year_min ?? '',
