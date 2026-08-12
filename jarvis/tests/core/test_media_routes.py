@@ -44,10 +44,16 @@ def test_media_requires_auth(client):
     assert r.status_code in (401, 302)
 
 
+_STRICT_CSP = "default-src 'none'; sandbox"
+
+
 def test_media_rejects_disallowed_prefix(client):
     _login(client)
     r = client.get('/api/media/private/signatures/user-1.png')
     assert r.status_code == 403
+    # Even the 403 error path must carry the strict media CSP.
+    assert r.headers.get('Content-Security-Policy') == _STRICT_CSP
+    assert r.headers.get('X-Content-Type-Options') == 'nosniff'
 
 
 def test_media_rejects_license_prefix(client):
@@ -116,3 +122,16 @@ def test_media_404_when_missing(client):
                     side_effect=Exception('NoSuchKey')):
         r = client.get('/api/media/private/carpark/18/99.jpg')
     assert r.status_code == 404
+    # The 404 error path (fetch failure) must also carry the strict media CSP.
+    assert r.headers.get('Content-Security-Policy') == _STRICT_CSP
+    assert r.headers.get('X-Content-Type-Options') == 'nosniff'
+
+
+def test_non_media_endpoint_keeps_app_wide_csp(client):
+    # Regression guard: switching the CSP branch in add_security_headers must
+    # NOT change the app-wide CSP served on every other endpoint.
+    r = client.get('/login')
+    csp = r.headers.get('Content-Security-Policy', '')
+    assert "default-src 'self'" in csp
+    assert csp != _STRICT_CSP
+    assert 'sandbox' not in csp

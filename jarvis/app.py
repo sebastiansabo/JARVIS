@@ -325,9 +325,12 @@ def _register_hooks(flask_app: Flask):
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
         response.headers['X-XSS-Protection'] = '1; mode=block'
         response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=(self)'
-        # The media proxy serves untrusted stored bytes and sets its own
-        # locked-down CSP ("default-src 'none'; sandbox") — never loosen it.
-        if request.endpoint != 'media.get_media':
+        # The media proxy serves untrusted stored bytes — lock it down with a
+        # strict CSP on EVERY response, including its own 403/404 error paths
+        # (which abort before the route builds its own headers).
+        if request.endpoint == 'media.get_media':
+            response.headers['Content-Security-Policy'] = "default-src 'none'; sandbox"
+        else:
             response.headers['Content-Security-Policy'] = (
                 "default-src 'self'; "
                 "script-src 'self' 'unsafe-inline'; "
