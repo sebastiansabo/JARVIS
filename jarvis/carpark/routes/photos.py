@@ -1,14 +1,18 @@
 """Photo API routes — Upload, reorder, delete vehicle photos."""
+import io
 import logging
+import uuid
 
 from flask import request, jsonify
 from flask_login import login_required, current_user
+from PIL import Image, ImageOps
 
 from carpark import carpark_bp
 from carpark.repositories.photo_repository import PhotoRepository
 from carpark.routes.vehicles import (
     carpark_required, carpark_edit_required, _serialize, _verify_vehicle_ownership,
 )
+from core.services import spaces_service
 
 logger = logging.getLogger('jarvis.carpark')
 
@@ -112,6 +116,67 @@ def add_photo(vehicle_id):
         caption=data.get('caption'),
     )
     return jsonify({'photo': _serialize(photo)}), 201
+
+
+# ═══════════════════════════════════════════════
+# PHOTOS — UPLOAD (multipart → private Spaces)
+# ═══════════════════════════════════════════════
+
+def _compress_jpeg(raw: bytes, max_px: int = 1600, q: int = 80) -> bytes:
+    """Re-encode arbitrary image bytes as a size-capped, EXIF-corrected JPEG."""
+    im = Image.open(io.BytesIO(raw))
+    im = ImageOps.exif_transpose(im).convert('RGB')
+    im.thumbnail((max_px, max_px), Image.LANCZOS)
+    out = io.BytesIO()
+    im.save(out, 'JPEG', quality=q, optimize=True, progressive=True)
+    return out.getvalue()
+
+
+@carpark_bp.route('/vehicles/<int:vehicle_id>/photos/upload', methods=['POST'])
+@login_required
+@carpark_edit_required
+def upload_photos(vehicle_id):
+    """Accept multipart image file(s), compress, upload PRIVATE to Spaces,
+    and store the returned key (never raw bytes or a public URL) in
+    carpark_vehicle_photos.url.
+
+    Multipart fields: `files` (list) and/or `file` (single).
+    """
+    # SECURITY: Verify vehicle belongs to user's company
+    _, err = _verify_vehicle_ownership(vehicle_id)
+    if err:
+        return err
+
+    files = request.files.getlist('files')
+    if 'file' in request.files:
+        files.append(request.files['file'])
+    if not files:
+        return jsonify({'success': False, 'error': 'No file'}), 400
+
+    if not spaces_service.is_enabled():
+        return jsonify({'success': False, 'error': 'Storage not configured'}), 503
+
+    # Only the first photo uploaded for a vehicle with no existing photos
+    # becomes primary — never overrides an already-set primary photo.
+    existing = _photo_repo.get_by_vehicle(vehicle_id)
+    make_primary = len(existing) == 0
+
+    created = []
+    for i, fs in enumerate(files):
+        raw = fs.read()
+        data = _compress_jpeg(raw)
+        key = f'private/carpark/{vehicle_id}/{uuid.uuid4().hex}.jpg'
+        spaces_service.upload(data, key, 'image/jpeg')
+        photo = _photo_repo.create(
+            vehicle_id=vehicle_id,
+            url=key,
+            photo_type='gallery',
+            is_primary=(make_primary and i == 0),
+            file_size=len(data),
+        )
+        created.append(photo)
+
+    return jsonify({'photos': _serialize(created)}), 201
 
 
 # ═══════════════════════════════════════════════
