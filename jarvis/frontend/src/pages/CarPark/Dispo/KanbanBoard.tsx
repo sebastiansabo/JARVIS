@@ -536,13 +536,14 @@ export function KanbanBoard({ filters, sortBy, sortDir, canViewFinance, canEdit,
   })
 
   // Caller company's outbound transfers — feeds the 'iesit' column's
-  // read-only ghost cards (stage mode only, see the JSDoc above). Shares the
-  // ['carpark','transfers-out'] key TransferDialog already invalidates on a
-  // successful transfer, so a fresh transfer shows up here without a
-  // dedicated invalidation path being added.
+  // read-only ghost cards (stage mode only, see the JSDoc above). Scoped to the
+  // acting company (effectiveCompanyId in queryFn + key) so the ghosts + total
+  // stay coherent with the summary after a tenant switch. TransferDialog's
+  // ['carpark','transfers-out'] invalidation is a prefix, so it still matches
+  // this extended key and a fresh transfer shows up here without extra wiring.
   const { data: transfersOutData } = useQuery({
-    queryKey: ['carpark', 'transfers-out'],
-    queryFn: () => carparkDispoApi.getTransfersOut(),
+    queryKey: ['carpark', 'transfers-out', effectiveCompanyId],
+    queryFn: () => carparkDispoApi.getTransfersOut(effectiveCompanyId),
   })
   const transfersOut = transfersOutData?.transfers ?? []
 

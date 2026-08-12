@@ -128,10 +128,15 @@ export const carparkDispoApi = {
   transfer: (vehicleId: number, data: FormData | TransferBody) =>
     api.post<{ vehicle: Vehicle; transfer: TransferOut }>(`/api/carpark/vehicles/${vehicleId}/transfer`, data),
 
-  // Caller company's OUTBOUND transfer history — not yet rendered anywhere
-  // (later "ghost" row task), but the client method is added now so that
-  // task only needs to build UI on top of it.
-  getTransfersOut: () => api.get<{ transfers: TransferOut[] }>('/api/carpark/vehicles/transfers-out'),
+  // Caller company's OUTBOUND transfer history — feeds the read-only
+  // "Transferate" ghost rows/cards. Honors the acting company (company_id,
+  // like getSummary/getKpis) so the ghosts + Ieșit count stay coherent with
+  // the summary/KPIs after a tenant switch.
+  getTransfersOut: (companyId?: number | null) => {
+    const params: Record<string, string> = {}
+    if (companyId != null) params.company_id = String(companyId)
+    return api.get<{ transfers: TransferOut[] }>('/api/carpark/vehicles/transfers-out', params)
+  },
 
   // ── Reservations ─────────────────────────────────────────
   cancelReservation: (vehicleId: number, body: { reason: string }) =>

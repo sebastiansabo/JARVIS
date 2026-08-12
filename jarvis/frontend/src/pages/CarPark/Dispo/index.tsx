@@ -494,18 +494,19 @@ export default function CarParkDispo() {
 
   // Caller company's outbound AutoWorld transfers — feeds the read-only
   // "Transferate" sub-table (below) and the 'iesit' pipeline tab's count.
-  // Shares the ['carpark','transfers-out'] key TransferDialog invalidates on
-  // a successful transfer and KanbanBoard's own fetch uses, so React Query
-  // dedupes/refreshes it consistently across table ⇄ kanban toggles.
+  // Scoped to the acting company (effectiveCompanyId in both queryFn and key)
+  // so the ghosts + count stay coherent with the summary/KPIs after a switch;
+  // TransferDialog + KanbanBoard invalidate/read the same ['carpark',
+  // 'transfers-out', ...] prefix, so React Query still dedupes across views.
   const { data: transfersOutData } = useQuery({
-    queryKey: ['carpark', 'transfers-out'],
-    queryFn: () => carparkDispoApi.getTransfersOut(),
+    queryKey: ['carpark', 'transfers-out', effectiveCompanyId],
+    queryFn: () => carparkDispoApi.getTransfersOut(effectiveCompanyId),
   })
   const transfersOut = transfersOutData?.transfers ?? []
 
   const { data: locationsData } = useQuery({
-    queryKey: ['carpark', 'locations'],
-    queryFn: () => carparkApi.getLocations(),
+    queryKey: ['carpark', 'locations', effectiveCompanyId],
+    queryFn: () => carparkApi.getLocations(effectiveCompanyId),
     staleTime: 60_000,
   })
 
