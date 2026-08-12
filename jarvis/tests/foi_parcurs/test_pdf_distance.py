@@ -13,6 +13,11 @@ def test_odometer_distance_none_without_return():
     assert ps._odometer_distance_km({'km_start': 1236, 'km_end': None}) is None
 
 
+def test_odometer_distance_none_for_in_progress_placeholder():
+    # In-progress sessions store km_end == km_start (placeholder), not NULL.
+    assert ps._odometer_distance_km({'km_start': 921, 'km_end': 921}) is None
+
+
 def test_odometer_distance_handles_missing_start():
     assert ps._odometer_distance_km({'km_end': 50}) == 50
 
