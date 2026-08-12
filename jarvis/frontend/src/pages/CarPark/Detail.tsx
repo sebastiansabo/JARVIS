@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -27,7 +27,9 @@ import {
   Link2,
   Search,
   Unlink,
+  Upload,
 } from 'lucide-react'
+import { mediaUrl } from '@/lib/media'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { reductionPct, formatReductionPct } from './priceReduction'
@@ -392,7 +394,7 @@ export default function CarParkDetail() {
         </TabsList>
 
         <TabsContent value="details" className="mt-4">
-          <DetailsTab vehicle={vehicle} photos={photos} onPhotoClick={setLightboxIndex} />
+          <DetailsTab vehicle={vehicle} photos={photos} onPhotoClick={setLightboxIndex} canEdit={canEdit} />
         </TabsContent>
 
         <TabsContent value="vanzare" className="mt-4">
@@ -557,7 +559,7 @@ function PhotoGallery({
         onClick={() => onPhotoClick(0)}
       >
         <img
-          src={primary.url}
+          src={mediaUrl(primary.url)}
           alt="Primary"
           className="h-full w-full object-cover hover:scale-105 transition-transform"
         />
@@ -570,7 +572,7 @@ function PhotoGallery({
           onClick={() => onPhotoClick(i + 1)}
         >
           <img
-            src={photo.thumbnail_url || photo.url}
+            src={mediaUrl(photo.thumbnail_url || photo.url)}
             alt={`Photo ${i + 2}`}
             className="h-full w-full object-cover hover:scale-105 transition-transform"
           />
@@ -624,7 +626,7 @@ function PhotoLightbox({
       </button>
 
       <img
-        src={photos[index].url}
+        src={mediaUrl(photos[index].url)}
         alt={`Photo ${index + 1}`}
         className="max-h-[85vh] max-w-[90vw] object-contain"
       />
@@ -644,13 +646,55 @@ function PhotoLightbox({
 }
 
 // ── Details Tab ────────────────────────────────────────────
-function DetailsTab({ vehicle: v, photos, onPhotoClick }: { vehicle: Vehicle; photos: VehiclePhoto[]; onPhotoClick: (index: number) => void }) {
+function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Vehicle; photos: VehiclePhoto[]; onPhotoClick: (index: number) => void; canEdit: boolean }) {
   const pricePct = reductionPct(v.list_price, v.current_price)
+  const queryClient = useQueryClient()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const uploadMutation = useMutation({
+    mutationFn: (files: File[]) => carparkApi.uploadPhotos(v.id, files),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', v.id] })
+      toast.success('Photos uploaded')
+    },
+    onError: () => toast.error('Failed to upload photos'),
+  })
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    if (files.length > 0) uploadMutation.mutate(files)
+  }
+
   return (
     <div className="space-y-6">
       {/* Photo Gallery + Quick Info */}
       <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
-        <PhotoGallery photos={photos} onPhotoClick={onPhotoClick} />
+        <div className="space-y-2">
+          <PhotoGallery photos={photos} onPhotoClick={onPhotoClick} />
+          {canEdit && (
+            <div className="flex justify-end">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={uploadMutation.isPending}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="mr-1 h-3.5 w-3.5" />
+                {uploadMutation.isPending ? 'Uploading...' : 'Upload Photos'}
+              </Button>
+            </div>
+          )}
+        </div>
 
         <Card className="p-4 space-y-4 h-fit">
           {v.current_price != null && (
