@@ -270,11 +270,14 @@ def _fmt_dt(dt_val) -> str:
 
 def _odometer_distance_km(contract: dict):
     """Distance driven = odometer delta (km_final − km_start). None until a
-    return odometer is recorded (renders as '—'). Never the entered estimate."""
+    genuine return odometer exists (renders as '—'). In-progress sessions carry
+    a placeholder km_end == km_start, so a non-positive delta means 'not returned
+    yet', not a real 0-km drive. Never the entered estimate."""
     km_end = contract.get('km_end')
     if km_end in (None, ''):
         return None
-    return int(km_end) - int(contract.get('km_start') or 0)
+    delta = int(km_end) - int(contract.get('km_start') or 0)
+    return delta if delta > 0 else None
 
 
 def _sig_image(data_url: str, width: float = 55 * mm, height: float = 22 * mm):
