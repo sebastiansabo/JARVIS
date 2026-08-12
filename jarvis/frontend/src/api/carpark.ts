@@ -36,8 +36,23 @@ import type {
 } from '../types/carpark'
 
 export const carparkApi = {
+  // ── Tenant switcher ──────────────────────────────────────
+  getCompanies: () =>
+    api.get<{ companies: { id: number; name: string }[] }>('/api/carpark/companies'),
+
+  getBrands: (companyId: number) =>
+    api.get<{ brands: string[] }>(`/api/carpark/brands/${companyId}`),
+
   // ── Catalog ──────────────────────────────────────────────
-  getCatalog: (filters: CatalogFilters, page = 1, perPage = 25, sort = 'acquisition_date', order = 'desc') => {
+  getCatalog: (
+    filters: CatalogFilters,
+    page = 1,
+    perPage = 25,
+    sort = 'acquisition_date',
+    order = 'desc',
+    companyId?: number | null,
+    brand?: string,
+  ) => {
     const params: Record<string, string> = {
       page: String(page),
       per_page: String(perPage),
@@ -47,21 +62,32 @@ export const carparkApi = {
     for (const [k, v] of Object.entries(filters)) {
       if (v !== undefined && v !== '') params[k] = v
     }
+    if (companyId != null) params.company_id = String(companyId)
+    if (brand) params.brand = brand
     return api.get<PaginatedResponse<VehicleCatalogItem>>('/api/carpark/vehicles', params)
   },
 
-  getStatusCounts: () =>
-    api.get<{ counts: StatusCount[] }>('/api/carpark/vehicles/status-counts'),
+  getStatusCounts: (companyId?: number | null) =>
+    api.get<{ counts: StatusCount[] }>(
+      '/api/carpark/vehicles/status-counts',
+      companyId != null ? { company_id: String(companyId) } : undefined,
+    ),
 
-  getFilterOptions: () =>
-    api.get<FilterOptions>('/api/carpark/vehicles/filter-options'),
+  getFilterOptions: (companyId?: number | null) =>
+    api.get<FilterOptions>(
+      '/api/carpark/vehicles/filter-options',
+      companyId != null ? { company_id: String(companyId) } : undefined,
+    ),
 
   // ── Single vehicle ───────────────────────────────────────
   getVehicle: (id: number) =>
     api.get<{ vehicle: Vehicle }>(`/api/carpark/vehicles/${id}`),
 
-  createVehicle: (data: Partial<Vehicle>) =>
-    api.post<{ vehicle: Vehicle }>('/api/carpark/vehicles', data),
+  createVehicle: (data: Partial<Vehicle>, companyId?: number | null) =>
+    api.post<{ vehicle: Vehicle }>(
+      '/api/carpark/vehicles',
+      companyId != null ? { ...data, company_id: companyId } : data,
+    ),
 
   updateVehicle: (id: number, data: Partial<Vehicle>) =>
     api.put<{ vehicle: Vehicle }>(`/api/carpark/vehicles/${id}`, data),
