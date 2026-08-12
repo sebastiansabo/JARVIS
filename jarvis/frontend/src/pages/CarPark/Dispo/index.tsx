@@ -389,8 +389,12 @@ export default function CarParkDispo() {
   // behavior unchanged for anyone who's never touched the toggle).
   const [view, setView] = usePersistedState<'table' | 'kanban'>('dispo-view', 'table')
 
+  // Brand is intentionally NOT a FilterBar field — the header Brand <Select>
+  // (store.selectedBrand) is the single source of the `brand` filter param, so
+  // a company switch (which resets selectedBrand) can never leave a stale brand
+  // filtering the table while the header shows "Toate mărcile". Mirrors Slice A
+  // (pages/CarPark/index.tsx). Everything else stays a FilterBar field.
   const [filterValues, setFilterValues] = useState<Record<string, string>>({
-    brand: '',
     location_id: '',
     salesperson_user_id: '',
     source: '',
@@ -453,7 +457,8 @@ export default function CarParkDispo() {
   const activeFilters: DispoFilters = useMemo(() => {
     const f: DispoFilters = {}
     if (activeStage) f.stage = activeStage
-    if (filterValues.brand) f.brand = filterValues.brand
+    // Brand comes from the header <Select> (store.selectedBrand), not FilterBar.
+    if (selectedBrand) f.brand = selectedBrand
     if (filterValues.location_id) f.location_id = filterValues.location_id
     if (filterValues.salesperson_user_id) f.salesperson_user_id = filterValues.salesperson_user_id
     if (filterValues.source) f.source = filterValues.source
@@ -463,7 +468,7 @@ export default function CarParkDispo() {
     if (dateTo) f.date_to = dateTo
     if (search) f.search = search
     return f
-  }, [activeStage, filterValues, dateFrom, dateTo, search])
+  }, [activeStage, selectedBrand, filterValues, dateFrom, dateTo, search])
 
   // Same filters, minus `stage` — the Kanban board renders all 7 stages as
   // columns at once, so a pipeline-tab stage filter (which only makes sense
@@ -497,12 +502,6 @@ export default function CarParkDispo() {
     queryFn: () => carparkDispoApi.getTransfersOut(),
   })
   const transfersOut = transfersOutData?.transfers ?? []
-
-  const { data: filterOptions } = useQuery({
-    queryKey: ['carpark', 'filter-options'],
-    queryFn: () => carparkApi.getFilterOptions(),
-    staleTime: 60_000,
-  })
 
   const { data: locationsData } = useQuery({
     queryKey: ['carpark', 'locations'],
@@ -578,12 +577,6 @@ export default function CarParkDispo() {
   const filterFields: FilterField[] = useMemo(
     () => [
       {
-        key: 'brand',
-        label: 'Marcă',
-        type: 'select' as const,
-        options: (filterOptions?.brands ?? []).map((b) => ({ value: b, label: b })),
-      },
-      {
         key: 'location_id',
         label: 'Locație',
         type: 'select' as const,
@@ -611,7 +604,7 @@ export default function CarParkDispo() {
         options: STOCK_REMOVED_OPTIONS,
       },
     ],
-    [filterOptions, locationsData, usersData, sourceOptions],
+    [locationsData, usersData, sourceOptions],
   )
 
   // ── Column definitions (centralizator order) ────────────
@@ -1019,7 +1012,7 @@ export default function CarParkDispo() {
               </SelectContent>
             </Select>
             <Button variant="outline" size="sm" asChild>
-              <a href={carparkDispoApi.exportUrl(activeFilters)} download>
+              <a href={carparkDispoApi.exportUrl(activeFilters, effectiveCompanyId)} download>
                 <FileSpreadsheet className="mr-1.5 h-4 w-4" />
                 {isMobile ? 'Export' : 'Export Excel'}
               </a>
