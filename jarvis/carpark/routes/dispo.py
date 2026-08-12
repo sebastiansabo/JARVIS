@@ -22,7 +22,7 @@ from carpark.services.dispo_service import DispoService
 from carpark.services.import_service import CentralizatorImporter
 from carpark.routes.vehicles import (
     carpark_required, carpark_edit_required, carpark_delete_required,
-    _serialize, _verify_vehicle_ownership, _user_company_id,
+    _serialize, _verify_vehicle_ownership, _user_company_id, _acting_company_id,
 )
 
 logger = logging.getLogger('jarvis.carpark')
@@ -142,7 +142,7 @@ def dispo_summary():
         if val is not None and val != '':
             filters[key] = val
 
-    company_id = _user_company_id()
+    company_id = _acting_company_id()
 
     try:
         result = _dispo_repo.summary(company_id, filters, page, per_page, sort_by, sort_dir)
@@ -176,7 +176,7 @@ def dispo_summary():
 @carpark_required
 def dispo_kpis():
     """Company-wide Dispo KPI tile values."""
-    company_id = _user_company_id()
+    company_id = _acting_company_id()
     try:
         kpis = _dispo_repo.kpis(company_id)
     except Exception as e:
