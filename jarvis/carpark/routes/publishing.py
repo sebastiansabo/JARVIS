@@ -8,7 +8,7 @@ from carpark import carpark_bp
 from carpark.services.publishing_service import PublishingService
 from carpark.routes.vehicles import (
     carpark_required, carpark_edit_required, _serialize,
-    _verify_vehicle_ownership, _user_company_id,
+    _verify_vehicle_ownership, _acting_company_id,
 )
 
 logger = logging.getLogger('jarvis.carpark')
@@ -26,7 +26,7 @@ _pub_service = PublishingService()
 def list_platforms():
     """List publishing platforms. Query: ?active_only=true"""
     active_only = request.args.get('active_only', '').lower() == 'true'
-    company_id = _user_company_id()
+    company_id = _acting_company_id()
     platforms = _pub_service.list_platforms(company_id, active_only)
     return jsonify({'platforms': _serialize(platforms)})
 
@@ -45,7 +45,7 @@ def create_platform():
     if not data:
         return jsonify({'error': 'Request body required'}), 400
 
-    data['company_id'] = _user_company_id()
+    data['company_id'] = _acting_company_id()
 
     try:
         platform = _pub_service.create_platform(data)
@@ -161,7 +161,7 @@ def publish_vehicle_all(vehicle_id):
         return err
 
     data = request.get_json(silent=True) or {}
-    company_id = _user_company_id()
+    company_id = _acting_company_id()
 
     results = _pub_service.publish_to_all(
         vehicle_id, company_id=company_id,

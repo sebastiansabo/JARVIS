@@ -35,6 +35,7 @@ import pytest
 import app as app_module
 from app import app as flask_app
 from carpark.routes import vehicles as vehicles_module
+from carpark.routes import analytics as analytics_module
 
 
 @pytest.fixture
@@ -127,3 +128,22 @@ def test_verify_ownership_missing_vehicle_404(monkeypatch):
     assert vehicle is None
     assert err is not None
     assert err[1] == 404
+
+
+# ═══════════════════════════════════════════════
+# analytics_summary: request-provided company_id scopes analytics too
+# (analytics/pricing/publishing all delegate to the same
+# _acting_company_id() from vehicles.py)
+# ═══════════════════════════════════════════════
+
+def test_analytics_summary_uses_requested_company_id(client, monkeypatch):
+    """?company_id=11 from a user in company 1 must be honored by the
+    analytics routes too (permissive tenant switch — no authorization
+    check), not just by vehicles.py."""
+    _login(client, monkeypatch, uid=91004, company_id=1)
+    with mock.patch.object(analytics_module._analytics, 'get_summary',
+                            return_value={'total': 0}) as get_summary:
+        r = client.get('/api/carpark/analytics/summary?company_id=11')
+    assert r.status_code == 200
+    cid = get_summary.call_args.args[0]
+    assert cid == 11
