@@ -33,6 +33,7 @@ import { carparkApi } from '@/api/carpark'
 import { marketingApi } from '@/api/marketing'
 import { usersApi } from '@/api/users'
 import { useAuthStore } from '@/stores/authStore'
+import { useCarParkStore } from '@/stores/carParkStore'
 import { toast } from 'sonner'
 import {
   ACTION_TYPE_LABELS,
@@ -76,6 +77,9 @@ export default function PricingRulesPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const canEdit = user?.can_edit_carpark ?? false
+  const selectedCompanyId = useCarParkStore((s) => s.selectedCompanyId)
+  // Tenant switcher: acting company (defaults to the current user's own company)
+  const effectiveCompanyId = selectedCompanyId ?? user?.company_id ?? null
 
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<Partial<PricingRule> | null>(null)
@@ -86,13 +90,13 @@ export default function PricingRulesPage() {
   const [approverId, setApproverId] = useState<number | null>(null)
 
   const { data: rulesData, isLoading } = useQuery({
-    queryKey: ['carpark', 'pricing-rules'],
-    queryFn: () => carparkApi.getPricingRules(),
+    queryKey: ['carpark', 'pricing-rules', effectiveCompanyId],
+    queryFn: () => carparkApi.getPricingRules(false, effectiveCompanyId),
   })
 
   const { data: agingData } = useQuery({
-    queryKey: ['carpark', 'aging-vehicles'],
-    queryFn: () => carparkApi.getAgingVehicles(),
+    queryKey: ['carpark', 'aging-vehicles', effectiveCompanyId],
+    queryFn: () => carparkApi.getAgingVehicles(undefined, effectiveCompanyId),
   })
 
   const { data: projectsData } = useQuery({
@@ -111,7 +115,7 @@ export default function PricingRulesPage() {
   const allUsers = usersData ?? []
 
   const createMutation = useMutation({
-    mutationFn: (data: Partial<PricingRule>) => carparkApi.createPricingRule(data),
+    mutationFn: (data: Partial<PricingRule>) => carparkApi.createPricingRule(data, effectiveCompanyId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['carpark', 'pricing-rules'] })
       toast.success('Regulă creată')
@@ -553,6 +557,7 @@ export default function PricingRulesPage() {
         <RuleVehicleDialog
           ruleId={vehicleDialogRuleId}
           ruleName={vehicleDialogRuleName}
+          companyId={effectiveCompanyId}
           onClose={() => setVehicleDialogRuleId(null)}
         />
       )}
@@ -564,10 +569,12 @@ export default function PricingRulesPage() {
 function RuleVehicleDialog({
   ruleId,
   ruleName,
+  companyId,
   onClose,
 }: {
   ruleId: number
   ruleName: string
+  companyId: number | null
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
@@ -579,8 +586,8 @@ function RuleVehicleDialog({
   })
 
   const { data: searchData, isFetching: isSearching } = useQuery({
-    queryKey: ['carpark', 'catalog-search', searchQuery],
-    queryFn: () => carparkApi.getCatalog({ search: searchQuery }, 1, 20),
+    queryKey: ['carpark', 'catalog-search', searchQuery, companyId],
+    queryFn: () => carparkApi.getCatalog({ search: searchQuery }, 1, 20, undefined, undefined, companyId),
     enabled: searchQuery.length >= 2,
   })
 

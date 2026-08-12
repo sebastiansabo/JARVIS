@@ -230,14 +230,24 @@ export const carparkApi = {
     api.get<Profitability>(`/api/carpark/vehicles/${vehicleId}/profitability`),
 
   // ── Pricing Rules ────────────────────────────────────
-  getPricingRules: (activeOnly = false) =>
-    api.get<{ rules: PricingRule[] }>('/api/carpark/pricing/rules', activeOnly ? { active_only: 'true' } : undefined),
+  getPricingRules: (activeOnly = false, companyId?: number | null) => {
+    const params: Record<string, string> = {}
+    if (activeOnly) params.active_only = 'true'
+    if (companyId != null) params.company_id = String(companyId)
+    return api.get<{ rules: PricingRule[] }>(
+      '/api/carpark/pricing/rules',
+      Object.keys(params).length ? params : undefined,
+    )
+  },
 
   getPricingRule: (ruleId: number) =>
     api.get<{ rule: PricingRule }>(`/api/carpark/pricing/rules/${ruleId}`),
 
-  createPricingRule: (data: Partial<PricingRule>) =>
-    api.post<{ rule: PricingRule }>('/api/carpark/pricing/rules', data),
+  createPricingRule: (data: Partial<PricingRule>, companyId?: number | null) =>
+    api.post<{ rule: PricingRule }>(
+      '/api/carpark/pricing/rules',
+      companyId != null ? { ...data, company_id: companyId } : data,
+    ),
 
   updatePricingRule: (ruleId: number, data: Partial<PricingRule>) =>
     api.put<{ rule: PricingRule }>(`/api/carpark/pricing/rules/${ruleId}`, data),
@@ -268,14 +278,24 @@ export const carparkApi = {
     api.get<{ promotions: Promotion[] }>(`/api/carpark/vehicles/${vehicleId}/promotions`),
 
   // ── Promotions ───────────────────────────────────────
-  getPromotions: (activeOnly = false) =>
-    api.get<{ promotions: Promotion[] }>('/api/carpark/promotions', activeOnly ? { active_only: 'true' } : undefined),
+  getPromotions: (activeOnly = false, companyId?: number | null) => {
+    const params: Record<string, string> = {}
+    if (activeOnly) params.active_only = 'true'
+    if (companyId != null) params.company_id = String(companyId)
+    return api.get<{ promotions: Promotion[] }>(
+      '/api/carpark/promotions',
+      Object.keys(params).length ? params : undefined,
+    )
+  },
 
   getPromotion: (promoId: number) =>
     api.get<{ promotion: Promotion }>(`/api/carpark/promotions/${promoId}`),
 
-  createPromotion: (data: Partial<Promotion>) =>
-    api.post<{ promotion: Promotion }>('/api/carpark/promotions', data),
+  createPromotion: (data: Partial<Promotion>, companyId?: number | null) =>
+    api.post<{ promotion: Promotion }>(
+      '/api/carpark/promotions',
+      companyId != null ? { ...data, company_id: companyId } : data,
+    ),
 
   updatePromotion: (promoId: number, data: Partial<Promotion>) =>
     api.put<{ promotion: Promotion }>(`/api/carpark/promotions/${promoId}`, data),
@@ -309,8 +329,15 @@ export const carparkApi = {
     api.get<{ changes: PendingPriceChange[]; count: number }>(`/api/carpark/pricing/rules/${ruleId}/pending`, status ? { status } : undefined),
 
   // ── Aging Alerts ─────────────────────────────────────
-  getAgingVehicles: (minDays?: number) =>
-    api.get<{ vehicles: AgingVehicle[]; count: number }>('/api/carpark/pricing/aging', minDays ? { min_days: String(minDays) } : undefined),
+  getAgingVehicles: (minDays?: number, companyId?: number | null) => {
+    const params: Record<string, string> = {}
+    if (minDays) params.min_days = String(minDays)
+    if (companyId != null) params.company_id = String(companyId)
+    return api.get<{ vehicles: AgingVehicle[]; count: number }>(
+      '/api/carpark/pricing/aging',
+      Object.keys(params).length ? params : undefined,
+    )
+  },
 
   // ── Publishing Platforms ─────────────────────────────
   getPlatforms: (activeOnly = false) =>
@@ -361,8 +388,11 @@ export const carparkApi = {
     api.get<{ log: SyncLogEntry[] }>(`/api/carpark/vehicles/${vehicleId}/sync-log`),
 
   // ── Analytics / Dashboard ──────────────────────────────
-  getDashboard: (period = 90) =>
-    api.get<DashboardData>('/api/carpark/analytics/dashboard', { period: String(period) }),
+  getDashboard: (period = 90, companyId?: number | null) => {
+    const params: Record<string, string> = { period: String(period) }
+    if (companyId != null) params.company_id = String(companyId)
+    return api.get<DashboardData>('/api/carpark/analytics/dashboard', params)
+  },
 
   // ── Vehicle Links ─────────────────────────────────────
   getVehicleLinks: (vehicleId: number, entityType?: LinkedEntityType) =>
