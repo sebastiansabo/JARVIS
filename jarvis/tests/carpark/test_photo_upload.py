@@ -182,3 +182,90 @@ def test_upload_403_without_edit_permission(client, monkeypatch):
         r = client.post('/api/carpark/vehicles/18/photos/upload',
                         data=data, content_type='multipart/form-data')
     assert r.status_code == 403
+
+
+# ── Robustness fixes (round 1): size/pixel/count caps, 4xx on bad image,
+#    atomic multi-file upload with rollback ──
+
+def test_upload_rejects_non_image_with_400(client, monkeypatch):
+    _login(client, monkeypatch, uid=90009)
+    with mock.patch('carpark.routes.photos.spaces_service.is_enabled', return_value=True), \
+         mock.patch('carpark.routes.photos.spaces_service.upload') as up, \
+         mock.patch('carpark.routes.photos._photo_repo.create') as create, \
+         mock.patch('carpark.routes.photos._photo_repo.get_by_vehicle', return_value=[]), \
+         mock.patch('carpark.routes.photos._verify_vehicle_ownership', return_value=({'id': 18}, None)):
+        data = {'file': (io.BytesIO(b'not an image'), 'evil.jpg')}
+        r = client.post('/api/carpark/vehicles/18/photos/upload',
+                        data=data, content_type='multipart/form-data')
+    assert r.status_code == 400
+    # Nothing must be written to Spaces or the DB for a bad-image request.
+    up.assert_not_called()
+    create.assert_not_called()
+
+
+def test_upload_rejects_oversize_file_with_413(client, monkeypatch):
+    _login(client, monkeypatch, uid=90010)
+    # Patch the cap tiny so we can trip it with a small (but > cap) payload
+    # without allocating 15 MB — this exercises OUR per-file size check
+    # directly, independent of any Flask global MAX_CONTENT_LENGTH.
+    with mock.patch('carpark.routes.photos.MAX_PHOTO_SIZE', 100), \
+         mock.patch('carpark.routes.photos.spaces_service.is_enabled', return_value=True), \
+         mock.patch('carpark.routes.photos.spaces_service.upload') as up, \
+         mock.patch('carpark.routes.photos._photo_repo.create') as create, \
+         mock.patch('carpark.routes.photos._photo_repo.get_by_vehicle', return_value=[]), \
+         mock.patch('carpark.routes.photos._verify_vehicle_ownership', return_value=({'id': 18}, None)):
+        data = {'file': (io.BytesIO(b'x' * 500), 'big.jpg')}
+        r = client.post('/api/carpark/vehicles/18/photos/upload',
+                        data=data, content_type='multipart/form-data')
+    assert r.status_code in (400, 413)
+    up.assert_not_called()
+    create.assert_not_called()
+
+
+def test_upload_rejects_too_many_files_with_400(client, monkeypatch):
+    _login(client, monkeypatch, uid=90011)
+    with mock.patch('carpark.routes.photos.spaces_service.is_enabled', return_value=True), \
+         mock.patch('carpark.routes.photos.spaces_service.upload') as up, \
+         mock.patch('carpark.routes.photos._photo_repo.create') as create, \
+         mock.patch('carpark.routes.photos._photo_repo.get_by_vehicle', return_value=[]), \
+         mock.patch('carpark.routes.photos._verify_vehicle_ownership', return_value=({'id': 18}, None)):
+        # 51 > MAX_BATCH_PHOTOS (50). Count is checked before any read, so the
+        # payloads can be trivial.
+        data = {'files': [(io.BytesIO(b'x'), f'{i}.jpg') for i in range(51)]}
+        r = client.post('/api/carpark/vehicles/18/photos/upload',
+                        data=data, content_type='multipart/form-data')
+    assert r.status_code == 400
+    up.assert_not_called()
+    create.assert_not_called()
+
+
+def test_upload_rolls_back_this_requests_writes_on_midbatch_failure(client, monkeypatch):
+    _login(client, monkeypatch, uid=90012)
+    upload_calls = {'n': 0}
+
+    def _upload(data, key, ct):
+        upload_calls['n'] += 1
+        if upload_calls['n'] == 2:
+            raise RuntimeError('spaces down')
+        return key
+
+    with mock.patch('carpark.routes.photos.spaces_service.is_enabled', return_value=True), \
+         mock.patch('carpark.routes.photos.spaces_service.upload', side_effect=_upload) as up, \
+         mock.patch('carpark.routes.photos.spaces_service.delete') as sp_delete, \
+         mock.patch('carpark.routes.photos._photo_repo.create',
+                    return_value={'id': 101, 'url': 'private/carpark/18/a.jpg'}), \
+         mock.patch('carpark.routes.photos._photo_repo.delete') as repo_delete, \
+         mock.patch('carpark.routes.photos._photo_repo.get_by_vehicle', return_value=[]), \
+         mock.patch('carpark.routes.photos._verify_vehicle_ownership', return_value=({'id': 18}, None)):
+        data = {'files': [
+            (io.BytesIO(_jpeg_bytes()), 'a.jpg'),
+            (io.BytesIO(_jpeg_bytes()), 'b.jpg'),
+        ]}
+        r = client.post('/api/carpark/vehicles/18/photos/upload',
+                        data=data, content_type='multipart/form-data')
+    assert r.status_code == 500
+    # File 1's object was uploaded and its row created before file 2 failed —
+    # both must be rolled back for this request to be all-or-nothing.
+    first_key = up.call_args_list[0].args[1]
+    repo_delete.assert_called_once_with(101)
+    sp_delete.assert_called_once_with(first_key)
