@@ -6,6 +6,7 @@ from datetime import datetime
 from flask import Response
 from ._shared import foi_parcurs_bp, jsonify, request, login_required, logger, _fp_repo
 from .pdf import _ensure_pdf_path
+from foi_parcurs.services.route_sheet_service import session_actual_km
 
 _MAX_ROWS = 100000
 
@@ -31,6 +32,25 @@ def _fmt_dt(v):
         return datetime.fromisoformat(s.replace('Z', '')).strftime('%Y-%m-%d %H:%M')
     except ValueError:
         return s
+
+
+def _session_export_row(r: dict) -> list:
+    """One flat-export row. Distanță = actual odometer delta (km_end − km_start),
+    never the entered estimate (distance_km)."""
+    return [
+        _fmt_dt(r.get('departure_datetime')),
+        _fmt_dt(r.get('return_datetime')),
+        r.get('company_name') or '',
+        r.get('registration_number') or '',
+        r.get('vin') or '',
+        r.get('client_name') or '',
+        r.get('advisor_name') or '',
+        r.get('route_type') or '',
+        r.get('status') or '',
+        _num(r.get('km_start')),
+        _num(r.get('km_end')),
+        _num(session_actual_km(r)),
+    ]
 
 
 def _filters_from_request():
@@ -89,20 +109,7 @@ def api_export_xlsx():
         cell.alignment = Alignment(horizontal='center')
 
     for r in rows:
-        ws.append([
-            _fmt_dt(r.get('departure_datetime')),
-            _fmt_dt(r.get('return_datetime')),
-            r.get('company_name') or '',
-            r.get('registration_number') or '',
-            r.get('vin') or '',
-            r.get('client_name') or '',
-            r.get('advisor_name') or '',
-            r.get('route_type') or '',
-            r.get('status') or '',
-            _num(r.get('km_start')),
-            _num(r.get('km_end')),
-            _num(r.get('distance_km')),
-        ])
+        ws.append(_session_export_row(r))
 
     widths = [17, 17, 26, 16, 20, 24, 20, 8, 12, 12, 12, 13]
     for i, w in enumerate(widths, start=1):
