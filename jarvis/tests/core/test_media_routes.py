@@ -50,6 +50,13 @@ def test_media_rejects_disallowed_prefix(client):
     assert r.status_code == 403
 
 
+def test_media_rejects_license_prefix(client):
+    # Driver-license images must never be served via this generic proxy.
+    _login(client)
+    r = client.get('/api/media/private/foi-parcurs/license/abc.png')
+    assert r.status_code == 403
+
+
 def test_media_streams_allowed_key(client):
     _login(client)
     with mock.patch('core.media.routes.spaces_service.fetch',
@@ -59,6 +66,48 @@ def test_media_streams_allowed_key(client):
     assert r.data == b'JPEGDATA'
     assert r.headers['Content-Type'] == 'image/jpeg'
     assert 'max-age' in r.headers.get('Cache-Control', '')
+
+
+def test_media_image_sets_security_headers(client):
+    # Every response — including a legitimate inline image — must carry the
+    # anti-sniff + locked-down CSP defense-in-depth headers.
+    _login(client)
+    with mock.patch('core.media.routes.spaces_service.fetch',
+                    return_value=(b'PNGDATA', 'image/png')):
+        r = client.get('/api/media/private/logos/co16.png')
+    assert r.status_code == 200
+    assert r.headers['Content-Type'] == 'image/png'
+    assert r.headers.get('X-Content-Type-Options') == 'nosniff'
+    csp = r.headers.get('Content-Security-Policy', '')
+    assert "default-src 'none'" in csp
+    assert 'sandbox' in csp
+
+
+def test_media_svg_forced_to_download(client):
+    # image/svg+xml can carry inline script → must NEVER be served inline
+    # from our origin. Force an octet-stream attachment download instead.
+    _login(client)
+    with mock.patch('core.media.routes.spaces_service.fetch',
+                    return_value=(b'<svg onload="alert(1)"/>', 'image/svg+xml')):
+        r = client.get('/api/media/private/carpark/18/evil.svg')
+    assert r.status_code == 200
+    assert r.headers['Content-Type'] == 'application/octet-stream'
+    assert 'attachment' in r.headers.get('Content-Disposition', '')
+    assert 'evil.svg' in r.headers.get('Content-Disposition', '')
+    # Security headers still present on the forced-download path.
+    assert r.headers.get('X-Content-Type-Options') == 'nosniff'
+    assert "default-src 'none'" in r.headers.get('Content-Security-Policy', '')
+
+
+def test_media_html_forced_to_download(client):
+    # A stored text/html object must not render inline (stored XSS vector).
+    _login(client)
+    with mock.patch('core.media.routes.spaces_service.fetch',
+                    return_value=(b'<script>alert(1)</script>', 'text/html')):
+        r = client.get('/api/media/private/carpark/18/evil.html')
+    assert r.status_code == 200
+    assert r.headers['Content-Type'] == 'application/octet-stream'
+    assert 'attachment' in r.headers.get('Content-Disposition', '')
 
 
 def test_media_404_when_missing(client):
