@@ -325,19 +325,22 @@ def _register_hooks(flask_app: Flask):
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
         response.headers['X-XSS-Protection'] = '1; mode=block'
         response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=(self)'
-        response.headers['Content-Security-Policy'] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: https:; "
-            "font-src 'self' data:; "
-            "connect-src 'self' https:; "
-            # blob: needed to preview generated PDFs in an <iframe>/<object>
-            # (e.g. Foaie de Parcurs preview) — without it default-src blocks them.
-            "frame-src 'self' blob:; "
-            "object-src 'self' blob:; "
-            "frame-ancestors 'self'"
-        )
+        # The media proxy serves untrusted stored bytes and sets its own
+        # locked-down CSP ("default-src 'none'; sandbox") — never loosen it.
+        if request.endpoint != 'media.get_media':
+            response.headers['Content-Security-Policy'] = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: https:; "
+                "font-src 'self' data:; "
+                "connect-src 'self' https:; "
+                # blob: needed to preview generated PDFs in an <iframe>/<object>
+                # (e.g. Foaie de Parcurs preview) — without it default-src blocks them.
+                "frame-src 'self' blob:; "
+                "object-src 'self' blob:; "
+                "frame-ancestors 'self'"
+            )
         if flask_app.config.get('SESSION_COOKIE_SECURE'):
             response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
         return response
