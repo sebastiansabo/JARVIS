@@ -172,7 +172,7 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
             'fuel_consumed': float(c.get('fuel_consumed_liters') or 0),
         })
 
-    total_km = sum(t['distance_km'] for t in trips)
+    total_km = _span_km(trips)
     km_start = min((t['km_start'] for t in trips), default=0)
     km_end = max((t['km_end'] for t in trips), default=0)
     clients = len({t['driver'] for t in trips if t['driver']})
@@ -298,6 +298,23 @@ def _ai_prose(data: dict) -> dict:
         return fallback
 
 
+def session_actual_km(row: dict) -> int:
+    """Actual distance a session drove = odometer delta (km_end − km_start).
+    0 while the car is still out (km_end == km_start placeholder). This is what
+    an export shows — never the advisor's entered estimate (distance_km)."""
+    return int(row.get('km_end') or 0) - int(row.get('km_start') or 0)
+
+
+def _span_km(trips: list) -> int:
+    """Total physical distance the car moved across the sheet = odometer span
+    (max km_end − min km_start). Authoritative even when individual session
+    ranges overlap on bad data; 0 when there are no trips."""
+    if not trips:
+        return 0
+    return (max(int(t.get('km_end') or 0) for t in trips)
+            - min(int(t.get('km_start') or 0) for t in trips))
+
+
 def _rows_with_gaps(trips: list) -> list:
     """Order trips by odometer and interleave gap markers wherever the odometer
     jumps between logged sessions (km moved without a logged drive). Gap dict:
@@ -420,7 +437,7 @@ def _skeleton_html(data: dict, prose: dict) -> str:
             f'<td>{e(t["driver"] or "—")}</td>'
             f'<td class="n">{t["km_start"]:,}</td>'
             f'<td class="n">{t["km_end"]:,}</td>'
-            f'<td class="n">{t["distance_km"]:,}</td>'
+            f'<td class="n">{session_actual_km(t):,}</td>'
             '</tr>'
         )
     if not rows:
@@ -894,7 +911,7 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
         ws.cell(row=r, column=4, value=t['driver'] or '')
         ws.cell(row=r, column=5, value=t['km_start'])
         ws.cell(row=r, column=6, value=t['km_end'])
-        ws.cell(row=r, column=7, value=t['distance_km'])
+        ws.cell(row=r, column=7, value=session_actual_km(t))
         r += 1
 
     tot = data['totals']
