@@ -84,6 +84,7 @@ import {
 } from '@/types/foiParcurs'
 import { VehicleOdometerHistory } from './VehicleOdometerHistory'
 import { sessionStatus, type SessionStatusKey } from './sessionStatus'
+import { sessionActualKm, sessionEstimatedKm, carSpanKm } from './distance'
 import { naiveDate } from '@/lib/naiveDate'
 import { CalendarTab } from './CalendarTab'
 
@@ -468,7 +469,7 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
                 const veh = vinMap.get(sheet.vin)
                 const kmStart = Math.min(...sheet.sessions.map((c) => c.km_start ?? 0))
                 const kmEnd = Math.max(...sheet.sessions.map((c) => c.km_end ?? 0))
-                const totalKm = sheet.sessions.reduce((s, c) => s + (c.distance_km || 0), 0)
+                const totalKm = carSpanKm(sheet.sessions)
                 const clientCount = new Set(sheet.sessions.map((c) => c.client_name).filter(Boolean)).size
                 const stored = storedByVin.get(sheet.vin)
 
@@ -527,14 +528,15 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
                                   <TableHead>Data</TableHead>
                                   <TableHead>Client</TableHead>
                                   <TableHead>Traseu</TableHead>
-                                  <TableHead>Distanță</TableHead>
+                                  <TableHead>Distanță parcursă</TableHead>
+                                  <TableHead>Distanță estimată</TableHead>
                                   <TableHead>KM</TableHead>
                                   <TableHead>Status</TableHead>
                                   <TableHead className="text-right">PDF</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {withGaps(sheet.sessions).map((row) => {
+                                {withGaps(sheet.sessions).slice().reverse().map((row) => {
                                   if (row.gap) {
                                     return (
                                       <TableRow key={row.id} className="bg-amber-500/10">
@@ -544,6 +546,7 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
                                         <TableCell><span className="text-muted-foreground text-xs">—</span></TableCell>
                                         <TableCell className="text-xs italic text-amber-700 dark:text-amber-500">Gap kilometraj (nejustificat)</TableCell>
                                         <TableCell className="text-sm whitespace-nowrap font-medium">{row.distance} km</TableCell>
+                                        <TableCell className="text-xs text-muted-foreground">—</TableCell>
                                         <TableCell className="text-xs whitespace-nowrap">{row.kmStart} - {row.kmEnd}</TableCell>
                                         <TableCell><Badge variant="outline" className="text-xs">Gap</Badge></TableCell>
                                         <TableCell className="text-right">
@@ -579,7 +582,10 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
                                         )}
                                       </TableCell>
                                       <TableCell className="max-w-[220px] truncate text-sm">{c.itinerary || '—'}</TableCell>
-                                      <TableCell className="text-sm whitespace-nowrap">{c.distance_km} km</TableCell>
+                                      <TableCell className="text-sm whitespace-nowrap">
+                                        {sessionActualKm(c) != null ? `${sessionActualKm(c)} km` : '—'}
+                                      </TableCell>
+                                      <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{sessionEstimatedKm(c)} km</TableCell>
                                       <TableCell className="text-xs whitespace-nowrap">{c.km_start} - {c.km_end}</TableCell>
                                       <TableCell>
                                         <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
