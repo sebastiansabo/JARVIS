@@ -263,6 +263,9 @@ def _register_blueprints(flask_app: Flask):
     from hr.evaluation360 import eval360_bp
     flask_app.register_blueprint(eval360_bp)
 
+    from core.media.routes import media_bp
+    flask_app.register_blueprint(media_bp)
+
 
 def _register_hooks(flask_app: Flask):
     """Register before/after request hooks and approval notification handlers."""
