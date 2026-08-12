@@ -166,8 +166,9 @@ export const carparkDispoApi = {
   // ── Export ───────────────────────────────────────────────
   // Not routed through api.get: this is a direct-download URL (xlsx binary
   // response), meant for an <a href> / window.location, not a fetch() call.
-  exportUrl: (filters: DispoFilters = {}) => {
-    const params = { export: 'xlsx', ...filterParams(filters) }
+  exportUrl: (filters: DispoFilters = {}, companyId?: number | null) => {
+    const params: Record<string, string> = { export: 'xlsx', ...filterParams(filters) }
+    if (companyId != null) params.company_id = String(companyId)
     const qs = new URLSearchParams(params).toString()
     return `/api/carpark/dispo/summary?${qs}`
   },
