@@ -5,7 +5,7 @@ import uuid
 
 from flask import request, jsonify
 from flask_login import login_required, current_user
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from carpark import carpark_bp
 from carpark.repositories.photo_repository import PhotoRepository
@@ -20,6 +20,9 @@ _photo_repo = PhotoRepository()
 
 VALID_PHOTO_TYPES = {'gallery', 'interior_360', 'exterior_360'}
 MAX_BATCH_PHOTOS = 50
+# Upload hardening (multipart /photos/upload route only):
+MAX_PHOTO_SIZE = 15 * 1024 * 1024  # 15 MB per file (matches DMS/statements norm)
+MAX_PHOTO_PIXELS = 50_000_000      # decompression-bomb guard (~50 MP source)
 
 
 def _validate_url(url: str) -> bool:
@@ -122,13 +125,43 @@ def add_photo(vehicle_id):
 # PHOTOS — UPLOAD (multipart → private Spaces)
 # ═══════════════════════════════════════════════
 
+class _InvalidImage(Exception):
+    """Client-input image error (undecodable or decompression-bomb-sized).
+
+    Carries an HTTP status (400 by default) so the route can surface a 4xx —
+    a bad upload must never fall through to the global 500 handler.
+    """
+
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.message = message
+        self.status = status
+
+
 def _compress_jpeg(raw: bytes, max_px: int = 1600, q: int = 80) -> bytes:
-    """Re-encode arbitrary image bytes as a size-capped, EXIF-corrected JPEG."""
-    im = Image.open(io.BytesIO(raw))
-    im = ImageOps.exif_transpose(im).convert('RGB')
-    im.thumbnail((max_px, max_px), Image.LANCZOS)
-    out = io.BytesIO()
-    im.save(out, 'JPEG', quality=q, optimize=True, progressive=True)
+    """Re-encode arbitrary image bytes as a size-capped, EXIF-corrected JPEG.
+
+    Raises _InvalidImage on undecodable input or a decompression-bomb-sized
+    source so callers can map it to a 4xx (never a 500).
+    """
+    try:
+        im = Image.open(io.BytesIO(raw))
+    except (UnidentifiedImageError, OSError, ValueError) as e:
+        raise _InvalidImage('Invalid image file') from e
+
+    # Decompression-bomb guard: reject absurd source dimensions from the header
+    # BEFORE decoding pixels (im.size reads the header, not the pixel buffer).
+    w, h = im.size
+    if w * h > MAX_PHOTO_PIXELS:
+        raise _InvalidImage('Image dimensions too large')
+
+    try:
+        im = ImageOps.exif_transpose(im).convert('RGB')
+        im.thumbnail((max_px, max_px), Image.LANCZOS)
+        out = io.BytesIO()
+        im.save(out, 'JPEG', quality=q, optimize=True, progressive=True)
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as e:
+        raise _InvalidImage('Invalid image file') from e
     return out.getvalue()
 
 
@@ -141,6 +174,12 @@ def upload_photos(vehicle_id):
     carpark_vehicle_photos.url.
 
     Multipart fields: `files` (list) and/or `file` (single).
+
+    Hardening: per-file size cap (MAX_PHOTO_SIZE), batch count cap
+    (MAX_BATCH_PHOTOS), decompression-bomb guard (MAX_PHOTO_PIXELS), 4xx on a
+    non-image upload, and all-or-nothing semantics — every file is validated
+    and compressed BEFORE anything is written, and a mid-batch failure rolls
+    back this request's Spaces objects + DB rows.
     """
     # SECURITY: Verify vehicle belongs to user's company
     _, err = _verify_vehicle_ownership(vehicle_id)
@@ -152,29 +191,68 @@ def upload_photos(vehicle_id):
         files.append(request.files['file'])
     if not files:
         return jsonify({'success': False, 'error': 'No file'}), 400
+    if len(files) > MAX_BATCH_PHOTOS:
+        return jsonify({'success': False,
+                        'error': f'Max {MAX_BATCH_PHOTOS} files per upload'}), 400
 
     if not spaces_service.is_enabled():
         return jsonify({'success': False, 'error': 'Storage not configured'}), 503
+
+    # ── Phase 1: read + validate + compress EVERY file first. Writes NOTHING
+    # to Spaces or the DB until all files pass, so one bad file in a batch can
+    # never orphan a half-uploaded set. Client-input errors return a 4xx here.
+    payloads = []
+    for fs in files:
+        raw = fs.read()
+        if len(raw) > MAX_PHOTO_SIZE:
+            return jsonify({'success': False,
+                            'error': f'File too large (max {MAX_PHOTO_SIZE // (1024 * 1024)} MB)'}), 413
+        try:
+            payloads.append(_compress_jpeg(raw))
+        except _InvalidImage as e:
+            return jsonify({'success': False, 'error': e.message}), e.status
 
     # Only the first photo uploaded for a vehicle with no existing photos
     # becomes primary — never overrides an already-set primary photo.
     existing = _photo_repo.get_by_vehicle(vehicle_id)
     make_primary = len(existing) == 0
 
+    # ── Phase 2: upload + insert. On ANY mid-batch failure, best-effort roll
+    # back THIS request's Spaces objects + DB rows so the request stays
+    # all-or-nothing, then surface a clean 500.
     created = []
-    for i, fs in enumerate(files):
-        raw = fs.read()
-        data = _compress_jpeg(raw)
-        key = f'private/carpark/{vehicle_id}/{uuid.uuid4().hex}.jpg'
-        spaces_service.upload(data, key, 'image/jpeg')
-        photo = _photo_repo.create(
-            vehicle_id=vehicle_id,
-            url=key,
-            photo_type='gallery',
-            is_primary=(make_primary and i == 0),
-            file_size=len(data),
-        )
-        created.append(photo)
+    uploaded_keys = []
+    try:
+        for i, data in enumerate(payloads):
+            key = f'private/carpark/{vehicle_id}/{uuid.uuid4().hex}.jpg'
+            spaces_service.upload(data, key, 'image/jpeg')
+            uploaded_keys.append(key)
+            photo = _photo_repo.create(
+                vehicle_id=vehicle_id,
+                url=key,
+                photo_type='gallery',
+                is_primary=(make_primary and i == 0),
+                file_size=len(data),
+            )
+            created.append(photo)
+    except Exception:
+        logger.exception(
+            'Photo upload failed for vehicle %s — rolling back %d object(s), %d row(s)',
+            vehicle_id, len(uploaded_keys), len(created))
+        for photo in created:
+            pid = photo.get('id') if isinstance(photo, dict) else None
+            if pid is None:
+                continue
+            try:
+                _photo_repo.delete(pid)
+            except Exception:
+                logger.exception('Rollback: failed to delete photo row %r', pid)
+        for key in uploaded_keys:
+            try:
+                spaces_service.delete(key)
+            except Exception:
+                logger.exception('Rollback: failed to delete Spaces object %s', key)
+        return jsonify({'success': False, 'error': 'Upload failed'}), 500
 
     return jsonify({'photos': _serialize(created)}), 201
 
