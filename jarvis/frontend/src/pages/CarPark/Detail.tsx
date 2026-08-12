@@ -59,6 +59,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/stores/authStore'
+import { useCarParkStore } from '@/stores/carParkStore'
 import { carparkApi } from '@/api/carpark'
 import { toast } from 'sonner'
 import { DocumenteTab } from './Detail/DocumenteTab'
@@ -1020,6 +1021,10 @@ function ListingsTab({
   canEdit: boolean
 }) {
   const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.user)
+  const selectedCompanyId = useCarParkStore((s) => s.selectedCompanyId)
+  // Tenant switcher: acting company (defaults to the current user's own company)
+  const effectiveCompanyId = selectedCompanyId ?? user?.company_id ?? null
 
   const publishMutation = useMutation({
     mutationFn: (platformId: number) => carparkApi.publishVehicle(vehicleId, platformId),
@@ -1031,7 +1036,7 @@ function ListingsTab({
   })
 
   const publishAllMutation = useMutation({
-    mutationFn: () => carparkApi.publishVehicleAll(vehicleId),
+    mutationFn: () => carparkApi.publishVehicleAll(vehicleId, undefined, effectiveCompanyId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['carpark', 'listings', vehicleId] })
       toast.success('Publicat pe toate platformele')

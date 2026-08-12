@@ -148,7 +148,7 @@ export default function PricingRulesPage() {
 
   const executeMutation = useMutation({
     mutationFn: ({ id, dryRun, approver }: { id: number; dryRun: boolean; approver?: number }) =>
-      carparkApi.executePricingRule(id, dryRun, approver),
+      carparkApi.executePricingRule(id, dryRun, approver, effectiveCompanyId),
     onSuccess: (result) => {
       setExecResult(result)
       setExecDialogOpen(true)
