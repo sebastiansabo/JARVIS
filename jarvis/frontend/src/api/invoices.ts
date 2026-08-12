@@ -8,6 +8,7 @@ export const invoicesApi = {
     api.get<Invoice[]>(`/api/db/invoices${buildQs(filters)}`),
   getInvoice: (id: number) => api.get<Invoice>(`/api/db/invoices/${id}`),
   getInvoicePreview: (id: number) => api.get<import('@/api/profile').InvoicePreview>(`/api/db/invoices/${id}/preview`),
+  getInvoicePdfUrl: (id: number) => `/api/db/invoices/${id}/pdf`,
   updateInvoice: (id: number, data: Partial<Invoice> & { observer_user_ids?: number[] }) =>
     api.put<{ success: boolean }>(`/api/db/invoices/${id}`, data),
   deleteInvoice: (id: number) => api.delete<{ success: boolean }>(`/api/db/invoices/${id}`),
