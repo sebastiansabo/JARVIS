@@ -27,6 +27,54 @@ interface CarParkState extends DataTableState<CatalogFilters>, ColumnState {
   sort: string
   order: 'asc' | 'desc'
   setSort: (sort: string, order: 'asc' | 'desc') => void
+  /** Tenant switcher: acting company (null = use the current user's own company). */
+  selectedCompanyId: number | null
+  setSelectedCompanyId: (companyId: number | null) => void
+  /** Tenant switcher: brand narrowing within the acting company ('' = All). */
+  selectedBrand: string
+  setSelectedBrand: (brand: string) => void
+}
+
+// ---- Tenant switcher persistence (mirrors loadColumns/saveColumns above) ----
+const SELECTED_COMPANY_KEY = 'carpark-selected-company-id'
+const SELECTED_BRAND_KEY = 'carpark-selected-brand'
+
+function loadSelectedCompanyId(): number | null {
+  try {
+    const raw = localStorage.getItem(SELECTED_COMPANY_KEY)
+    if (raw != null && raw !== '') {
+      const n = Number(raw)
+      if (!Number.isNaN(n)) return n
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+function saveSelectedCompanyId(companyId: number | null) {
+  try {
+    if (companyId == null) localStorage.removeItem(SELECTED_COMPANY_KEY)
+    else localStorage.setItem(SELECTED_COMPANY_KEY, String(companyId))
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadSelectedBrand(): string {
+  try {
+    return localStorage.getItem(SELECTED_BRAND_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function saveSelectedBrand(brand: string) {
+  try {
+    localStorage.setItem(SELECTED_BRAND_KEY, brand)
+  } catch {
+    /* ignore */
+  }
 }
 
 export const useCarParkStore = create<CarParkState>((set) => ({
@@ -49,4 +97,14 @@ export const useCarParkStore = create<CarParkState>((set) => ({
   sort: 'acquisition_date',
   order: 'desc',
   setSort: (sort, order) => set({ sort, order }),
+  selectedCompanyId: loadSelectedCompanyId(),
+  setSelectedCompanyId: (companyId) => {
+    saveSelectedCompanyId(companyId)
+    set({ selectedCompanyId: companyId })
+  },
+  selectedBrand: loadSelectedBrand(),
+  setSelectedBrand: (brand) => {
+    saveSelectedBrand(brand)
+    set({ selectedBrand: brand })
+  },
 }))

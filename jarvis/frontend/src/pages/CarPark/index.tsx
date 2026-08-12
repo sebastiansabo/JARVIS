@@ -20,6 +20,13 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Table,
   TableBody,
   TableCell,
@@ -113,6 +120,21 @@ export default function CarPark() {
   const sort = useCarParkStore((s) => s.sort)
   const order = useCarParkStore((s) => s.order)
   const setSort = useCarParkStore((s) => s.setSort)
+  const selectedCompanyId = useCarParkStore((s) => s.selectedCompanyId)
+  const setSelectedCompanyId = useCarParkStore((s) => s.setSelectedCompanyId)
+  const selectedBrand = useCarParkStore((s) => s.selectedBrand)
+  const setSelectedBrand = useCarParkStore((s) => s.setSelectedBrand)
+
+  // Tenant switcher: acting company (defaults to the current user's own company)
+  const effectiveCompanyId = selectedCompanyId ?? user?.company_id ?? null
+
+  const handleCompanyChange = useCallback(
+    (companyId: number) => {
+      setSelectedCompanyId(companyId)
+      setSelectedBrand('')
+    },
+    [setSelectedCompanyId, setSelectedBrand],
+  )
 
   // Active status tab from URL
   const activeTab = searchParams.get('status') || ''
@@ -135,21 +157,37 @@ export default function CarPark() {
     return f
   }, [filters, activeTab])
 
+  // ── Tenant switcher: companies + brands ─────────────────
+  const { data: companiesData } = useQuery({
+    queryKey: ['carpark', 'companies'],
+    queryFn: () => carparkApi.getCompanies(),
+    staleTime: 60_000,
+  })
+  const companies = companiesData?.companies ?? []
+
+  const { data: brandsData } = useQuery({
+    queryKey: ['carpark', 'brands', effectiveCompanyId],
+    queryFn: () => carparkApi.getBrands(effectiveCompanyId as number),
+    enabled: effectiveCompanyId != null,
+    staleTime: 60_000,
+  })
+  const brands = brandsData?.brands ?? []
+
   // ── Data fetching ──────────────────────────────────────
   const { data: catalogData, isLoading } = useQuery({
-    queryKey: ['carpark', 'catalog', activeFilters, page, perPage, sort, order],
-    queryFn: () => carparkApi.getCatalog(activeFilters, page, perPage, sort, order),
+    queryKey: ['carpark', 'catalog', activeFilters, page, perPage, sort, order, effectiveCompanyId, selectedBrand],
+    queryFn: () => carparkApi.getCatalog(activeFilters, page, perPage, sort, order, effectiveCompanyId, selectedBrand),
   })
 
   const { data: statusCountsData } = useQuery({
-    queryKey: ['carpark', 'status-counts'],
-    queryFn: () => carparkApi.getStatusCounts(),
+    queryKey: ['carpark', 'status-counts', effectiveCompanyId],
+    queryFn: () => carparkApi.getStatusCounts(effectiveCompanyId),
     staleTime: 30_000,
   })
 
   const { data: filterOptions } = useQuery({
-    queryKey: ['carpark', 'filter-options'],
-    queryFn: () => carparkApi.getFilterOptions(),
+    queryKey: ['carpark', 'filter-options', effectiveCompanyId],
+    queryFn: () => carparkApi.getFilterOptions(effectiveCompanyId),
     staleTime: 60_000,
   })
 
@@ -265,6 +303,39 @@ export default function CarPark() {
         }
         actions={
           <div className="flex items-center gap-2">
+            {effectiveCompanyId != null && (
+              <Select
+                value={String(effectiveCompanyId)}
+                onValueChange={(v) => handleCompanyChange(Number(v))}
+              >
+                <SelectTrigger className="w-40 sm:w-48">
+                  <SelectValue placeholder="Companie" />
+                </SelectTrigger>
+                <SelectContent>
+                  {companies.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Select
+              value={selectedBrand || '__all__'}
+              onValueChange={(v) => setSelectedBrand(v === '__all__' ? '' : v)}
+            >
+              <SelectTrigger className="w-32 sm:w-40">
+                <SelectValue placeholder="Toate mărcile" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Toate mărcile</SelectItem>
+                {brands.map((b) => (
+                  <SelectItem key={b} value={b}>
+                    {b}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               variant="outline"
               size="icon"
