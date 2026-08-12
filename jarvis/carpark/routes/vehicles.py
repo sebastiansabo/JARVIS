@@ -460,3 +460,25 @@ def search_clients():
     except Exception as e:
         logger.error(f'Carpark client search failed: {e}', exc_info=True)
         return jsonify({'success': False, 'error': 'Internal error'}), 500
+
+
+# ═══════════════════════════════════════════════
+# COMPANIES / BRANDS — TENANT SWITCHER
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/companies', methods=['GET'])
+@login_required
+@carpark_required
+def list_companies():
+    """All companies, for the tenant-switcher company selector."""
+    companies = _vehicle_service.get_companies()
+    return jsonify({'companies': _serialize(companies)})
+
+
+@carpark_bp.route('/brands/<int:company_id>', methods=['GET'])
+@login_required
+@carpark_required
+def list_brands(company_id):
+    """Car brands carried by a company, for the tenant-switcher brand selector."""
+    brands = _vehicle_service.get_brands(company_id)
+    return jsonify({'brands': brands})
