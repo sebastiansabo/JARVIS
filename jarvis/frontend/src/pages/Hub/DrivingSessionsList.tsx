@@ -2,13 +2,17 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Car, Gauge, User2, Search, RotateCcw, PlayCircle, ChevronDown,
-  FileDown, Trash2, Phone, CalendarDays,
+  FileDown, Trash2, Phone, CalendarDays, Clock, Pencil,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
 import ModifiedBadge from '@/pages/FoiParcurs/ModifiedBadge'
+import CorrectSessionDialog, { type CorrectionPayload } from '@/pages/FoiParcurs/CorrectSessionDialog'
+import ExtendSessionDialog from '@/pages/FoiParcurs/ExtendSessionDialog'
+import { useAuthStore } from '@/stores/authStore'
+import { toast } from 'sonner'
 import type { FoiContract, FpVehicle } from '@/types/foiParcurs'
 
 /** Short ro-RO date+time. TD departure/return are naive Bucharest wall-clock
@@ -47,6 +51,10 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
   const [showArchived, setShowArchived] = useState(false)
   const [search, setSearch] = useState('')
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [correcting, setCorrecting] = useState<FoiContract | null>(null)
+  const [extending, setExtending] = useState<FoiContract | null>(null)
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['foi-contracts-all', companyId],
@@ -63,6 +71,16 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
   const discardMutation = useMutation({
     mutationFn: (id: number) => foiParcursApi.discardTestDrive(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }),
+  })
+  const correctMutation = useMutation({
+    mutationFn: (vars: { id: number; data: CorrectionPayload }) => foiParcursApi.correctSession(vars.id, vars.data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }); setCorrecting(null) },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Corectarea a eșuat'),
+  })
+  const extendMutation = useMutation({
+    mutationFn: (vars: { id: number; return_datetime: string }) => foiParcursApi.extendReturn(vars.id, { return_datetime: vars.return_datetime }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }); setExtending(null) },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Prelungirea a eșuat'),
   })
 
   const items = useMemo(() => {
@@ -152,9 +170,28 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
                 if (confirm('Renunți la această sesiune planificată? Acțiunea nu poate fi anulată.')) discardMutation.mutate(c.id)
               }}
               discarding={discardMutation.isPending}
+              isAdmin={isAdmin}
+              onExtend={() => setExtending(c)}
+              onCorrect={() => setCorrecting(c)}
             />
           ))}
         </div>
+      )}
+      {correcting && (
+        <CorrectSessionDialog
+          session={correcting}
+          submitting={correctMutation.isPending}
+          onClose={() => setCorrecting(null)}
+          onSubmit={(d) => correctMutation.mutate({ id: correcting.id, data: d })}
+        />
+      )}
+      {extending && (
+        <ExtendSessionDialog
+          session={extending}
+          submitting={extendMutation.isPending}
+          onClose={() => setExtending(null)}
+          onSubmit={(rd) => extendMutation.mutate({ id: extending.id, return_datetime: rd })}
+        />
       )}
     </div>
   )
@@ -162,6 +199,7 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
 
 function SessionCard({
   contract: c, vehicle, expanded, onToggle, onActivate, onReturn, onDiscard, discarding,
+  isAdmin, onExtend, onCorrect,
 }: {
   contract: FoiContract
   vehicle?: FpVehicle
@@ -171,6 +209,9 @@ function SessionCard({
   onReturn: () => void
   onDiscard: () => void
   discarding: boolean
+  isAdmin: boolean
+  onExtend: () => void
+  onCorrect: () => void
 }) {
   const ss = sessionStatus(c)
   const isPlanned = ss.key === 'planificat'
@@ -272,6 +313,26 @@ function SessionCard({
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-destructive ring-1 ring-destructive/30 transition-colors hover:bg-destructive/10 disabled:opacity-50"
               >
                 <Trash2 className="h-3.5 w-3.5" /> Renunță
+              </button>
+            )}
+            {/* Prelungește — extend the return of an open session */}
+            {showRetur && (
+              <button
+                type="button"
+                onClick={onExtend}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-amber-700 ring-1 ring-amber-300 transition-colors hover:bg-amber-50 dark:text-amber-400 dark:ring-amber-800 dark:hover:bg-amber-950/20"
+              >
+                <Clock className="h-3.5 w-3.5" /> Prelungește
+              </button>
+            )}
+            {/* Corectează — admin fix of date/odometer */}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={onCorrect}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-background px-3 text-[13px] font-medium shadow-sm ring-1 ring-border transition-colors hover:bg-muted"
+              >
+                <Pencil className="h-3.5 w-3.5" /> Corectează
               </button>
             )}
           </div>
