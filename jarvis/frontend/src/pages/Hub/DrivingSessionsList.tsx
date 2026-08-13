@@ -5,20 +5,22 @@ import {
   FileDown, Trash2, Phone, CalendarDays,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
 import ModifiedBadge from '@/pages/FoiParcurs/ModifiedBadge'
 import type { FoiContract, FpVehicle } from '@/types/foiParcurs'
 
-/** Short ro-RO date+time. Departure/return are naive wall-clock strings; the
- *  standalone module renders them with plain Date, so we match that (no TZ shift
- *  logic here — consistent with the rest of the web FoiParcurs module). */
-function fmtDateTime(iso?: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso.length <= 16 ? `${iso}` : iso)
-  return isNaN(d.getTime())
-    ? '—'
-    : d.toLocaleString('ro-RO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+/** Short ro-RO date+time. TD departure/return are naive Bucharest wall-clock
+ *  strings that the backend serializes as timestamptz (with a "+00:00" zone);
+ *  naiveDate strips the zone so they read exactly as stored, with no viewer-tz
+ *  shift — matching the rest of the web FoiParcurs module (which uses naiveDate
+ *  everywhere). A plain `new Date` here rendered them +2/+3h late in Romania. */
+export function fmtDateTime(iso?: string | null): string {
+  const d = naiveDate(iso)
+  return d
+    ? d.toLocaleString('ro-RO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : '—'
 }
 
 interface Props {
