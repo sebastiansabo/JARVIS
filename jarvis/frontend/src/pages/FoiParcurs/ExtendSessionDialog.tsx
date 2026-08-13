@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { naiveDate } from '@/lib/naiveDate'
 import type { FoiContract } from '@/types/foiParcurs'
 
 const toLocalInput = (iso?: string | null) => (iso ? iso.slice(0, 16) : '')
@@ -30,7 +31,7 @@ export default function ExtendSessionDialog({ session, onClose, onSubmit, submit
         <DialogHeader><DialogTitle>Prelungește sesiunea</DialogTitle></DialogHeader>
         <p className="text-sm text-muted-foreground">
           {session.client_name || session.advisor_name || '—'}
-          {session.departure_datetime && <> · plecare {new Date(session.departure_datetime).toLocaleString('ro-RO')}</>}
+          {session.departure_datetime && <> · plecare {naiveDate(session.departure_datetime)?.toLocaleString('ro-RO') ?? '—'}</>}
         </p>
         <div className="space-y-1.5 pt-1">
           <Label className="text-xs">Nou retur</Label>
