@@ -7,6 +7,7 @@ import {
 import { cn } from '@/lib/utils'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
+import ModifiedBadge from '@/pages/FoiParcurs/ModifiedBadge'
 import type { FoiContract, FpVehicle } from '@/types/foiParcurs'
 
 /** Short ro-RO date+time. Departure/return are naive wall-clock strings; the
@@ -197,6 +198,7 @@ function SessionCard({
               <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', ss.badgeClass)}>
                 {ss.label}
               </span>
+              <ModifiedBadge session={c} />
             </div>
             <div className="mt-0.5 flex items-center gap-1 truncate text-[13px] text-muted-foreground">
               <Gauge className="h-3.5 w-3.5 shrink-0" />
