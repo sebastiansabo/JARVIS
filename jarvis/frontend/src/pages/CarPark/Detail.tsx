@@ -955,8 +955,8 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
 
   return (
     <div className="space-y-6">
-      {/* Photo Gallery + Quick Info */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
+      {/* Photo Gallery + Identification + Quick Info */}
+      <div className="grid gap-6 items-start xl:grid-cols-[600px_minmax(0,1fr)_400px]">
         <div className="space-y-2">
           <PhotoGallery photos={photos} onPhotoClick={onPhotoClick} />
           {canEdit && (
@@ -982,6 +982,19 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
             </div>
           )}
         </div>
+
+        {/* Identification */}
+        <Card className="p-4 h-fit">
+          <h3 className="text-sm font-semibold mb-3">Identification</h3>
+          <dl className="grid grid-cols-2 gap-3">
+            <Field label="VIN" value={v.vin} />
+            <Field label="Stock #" value={v.nr_stoc} />
+            <Field label="Registration" value={v.registration_number} />
+            <Field label="Chassis Code" value={v.chassis_code} />
+            <Field label="Emission Code" value={v.emission_code} />
+            <Field label="First Registration" value={formatDate(v.first_registration_date)} />
+          </dl>
+        </Card>
 
         <Card className="p-4 space-y-4 h-fit">
           {v.current_price != null && (
@@ -1033,19 +1046,6 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
 
       {/* Detail cards */}
       <div className="grid gap-6 md:grid-cols-2">
-      {/* Identification */}
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold mb-3">Identification</h3>
-        <dl className="grid grid-cols-2 gap-3">
-          <Field label="VIN" value={v.vin} />
-          <Field label="Stock #" value={v.nr_stoc} />
-          <Field label="Registration" value={v.registration_number} />
-          <Field label="Chassis Code" value={v.chassis_code} />
-          <Field label="Emission Code" value={v.emission_code} />
-          <Field label="First Registration" value={formatDate(v.first_registration_date)} />
-        </dl>
-      </Card>
-
       {/* Technical */}
       <Card className="p-4">
         <h3 className="text-sm font-semibold mb-3">Technical</h3>
