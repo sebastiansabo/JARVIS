@@ -36,11 +36,17 @@ def api_submit_test_drive():
     """Submit test drive form — creates FILLED contract."""
     data = request.get_json(silent=True) or {}
     is_draft = data.get('status') == 'PLANNED'
+    is_internal = bool(data.get('is_internal'))
 
     # `itinerary` is intentionally NOT required — the mobile Test Drive form
     # dropped the Traseu/Itinerariu field. It's still stored when provided
     # (e.g. by the web form) via data.get('itinerary', '') below.
-    if is_draft:
+    if is_internal:
+        # Internal driving log (QuickSession) — no customer, no signature, no
+        # fuel/estimate. Just the car, the driver, the times and the start km.
+        required = ['company_id', 'vin', 'departure_datetime',
+                    'odometer_start', 'advisor_name']
+    elif is_draft:
         # Planning a session only needs the car, the client (name) and the
         # date. Odometer/fuel/advisor/signature are all deferred to activation.
         required = ['company_id', 'vin', 'client_id', 'departure_datetime']
@@ -70,7 +76,7 @@ def api_submit_test_drive():
         if _osb:
             return jsonify(_osb[0]), _osb[1]
 
-    if not is_draft and _company_gdpr_text(data.get('company_id')).strip() and not data.get('gdpr_consent'):
+    if not is_draft and not is_internal and _company_gdpr_text(data.get('company_id')).strip() and not data.get('gdpr_consent'):
         return jsonify({'success': False, 'error': 'GDPR consent is required'}), 400
 
     # General conditions (per company+brand) — required only when configured.
@@ -82,7 +88,7 @@ def api_submit_test_drive():
     except Exception:
         logger.warning('general-conditions lookup failed at submit', exc_info=True)
         general_conditions_text = ''
-    if not is_draft and general_conditions_text.strip() and not data.get('general_conditions_accepted'):
+    if not is_draft and not is_internal and general_conditions_text.strip() and not data.get('general_conditions_accepted'):
         return jsonify({'success': False, 'error': 'General conditions acceptance is required'}), 400
 
     contract_id = f"TD-{data['vin'][:8]}-{int(time.time())}-{uuid.uuid4().hex[:4]}"
@@ -104,10 +110,15 @@ def api_submit_test_drive():
         # Client comes from the CRM (crm_clients), not the legacy fp_clients table.
         # Resolve name/phone now and store them directly on the contract so old
         # contracts (joined via fp_clients) and new ones (CRM-sourced) both resolve.
-        client_id = int(data['client_id'])
-        crm_client = _crm_client_repo.get_by_id(client_id)
-        client_name = crm_client.get('display_name') if crm_client else None
-        client_phone = crm_client.get('phone') if crm_client else None
+        if is_internal:
+            client_id = None
+            client_name = None
+            client_phone = None
+        else:
+            client_id = int(data['client_id'])
+            crm_client = _crm_client_repo.get_by_id(client_id)
+            client_name = crm_client.get('display_name') if crm_client else None
+            client_phone = crm_client.get('phone') if crm_client else None
 
         # Structured vehicle-condition report captured at handover (optional).
         departure_damage = data.get('departure_damage') or []
@@ -154,6 +165,7 @@ def api_submit_test_drive():
             'mkt_project_id': int(data['mkt_project_id']) if data.get('mkt_project_id') else None,
             'source': 'td_form',
             'status': 'PLANNED' if is_draft else 'FILLED',
+            'is_internal': is_internal,
         }
         if not is_draft and general_conditions_text.strip():
             contract_data['general_conditions_accepted'] = True
@@ -178,8 +190,9 @@ def api_submit_test_drive():
         except Exception:
             logger.warning('Could not store driving license on CRM client %s', client_id, exc_info=True)
 
-        # Generate PDFs (skipped for PLANNED drafts — no signature/GDPR captured yet)
-        if not is_draft:
+        # Generate PDFs (skipped for PLANNED drafts + internal sessions — no
+        # signature/GDPR/contract captured for those)
+        if not is_draft and not is_internal:
             try:
                 from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
                 legal_path = generate_legal_pdf(contract)
