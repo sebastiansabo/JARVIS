@@ -25,7 +25,8 @@ _LIST_COLUMNS = (
     'fp.driver_license_number, fp.driver_license_expiry, fp.gdpr_consent, '
     'fp.inspection_acceptance, fp.inspection_id, fp.general_conditions_accepted, '
     'fp.general_conditions_accepted_at, fp.pdf_legal_path, fp.pdf_custom_path, '
-    'fp.corrected_at, fp.corrected_by'
+    'fp.corrected_at, fp.corrected_by, '
+    'fp.is_internal'
 )
 
 

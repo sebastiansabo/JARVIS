@@ -1967,6 +1967,11 @@ def _create_schema_incremental_continued(conn, cursor):
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='slot_number') THEN
                 ALTER TABLE foi_de_parcurs ADD COLUMN slot_number INTEGER NOT NULL DEFAULT 0;
             END IF;
+            -- Internal driving session (QuickSession): a slim FILLED TD with no
+            -- customer/signature, created from the mobile quick form.
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='is_internal') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN is_internal BOOLEAN NOT NULL DEFAULT FALSE;
+            END IF;
         END $$;
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_batch ON foi_de_parcurs(batch_id)')
