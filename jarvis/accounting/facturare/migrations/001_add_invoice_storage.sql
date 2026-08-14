@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS facturare_invoices (
     created_by      INTEGER REFERENCES users(id),
     notes           TEXT,
 
-    CONSTRAINT ck_invoice_number_range CHECK (invoice_number IS NULL OR (invoice_number >= 1 AND invoice_number <= 9999999))
+    CONSTRAINT ck_invoice_number_range CHECK (invoice_number IS NULL OR (invoice_number >= 1 AND invoice_number <= 999999999))
 );
 
 -- Partial unique indexes: only PROFORMA/STORNO/FINAL are 1-per-cod_comanda.

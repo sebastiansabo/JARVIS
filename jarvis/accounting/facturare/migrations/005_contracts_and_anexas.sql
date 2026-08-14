@@ -94,7 +94,7 @@ CREATE TABLE facturare_invoices (
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     created_by      INTEGER REFERENCES users(id),
 
-    CONSTRAINT ck_invoice_number_range CHECK (invoice_number IS NULL OR (invoice_number >= 1 AND invoice_number <= 9999999))
+    CONSTRAINT ck_invoice_number_range CHECK (invoice_number IS NULL OR (invoice_number >= 1 AND invoice_number <= 999999999))
 );
 
 -- One STORNO and FINAL per anexa; PROFORMA and INVOICE allow multiple
