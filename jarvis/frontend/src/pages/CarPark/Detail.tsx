@@ -983,18 +983,35 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           )}
         </div>
 
-        {/* Identification */}
-        <Card className="p-4 h-fit">
-          <h3 className="text-sm font-semibold mb-3">Identification</h3>
-          <dl className="grid grid-cols-2 gap-3">
-            <Field label="VIN" value={v.vin} />
-            <Field label="Stock #" value={v.nr_stoc} />
-            <Field label="Registration" value={v.registration_number} />
-            <Field label="Chassis Code" value={v.chassis_code} />
-            <Field label="Emission Code" value={v.emission_code} />
-            <Field label="First Registration" value={formatDate(v.first_registration_date)} />
-          </dl>
-        </Card>
+        {/* Identification + Technical */}
+        <div className="space-y-6">
+          <Card className="p-4 h-fit">
+            <h3 className="text-sm font-semibold mb-3">Identification</h3>
+            <dl className="grid grid-cols-2 gap-3">
+              <Field label="VIN" value={v.vin} />
+              <Field label="Stock #" value={v.nr_stoc} />
+              <Field label="Registration" value={v.registration_number} />
+              <Field label="Chassis Code" value={v.chassis_code} />
+              <Field label="Emission Code" value={v.emission_code} />
+              <Field label="First Registration" value={formatDate(v.first_registration_date)} />
+            </dl>
+          </Card>
+
+          {/* Technical */}
+          <Card className="p-4 h-fit">
+            <h3 className="text-sm font-semibold mb-3">Technical</h3>
+            <dl className="grid grid-cols-2 gap-3">
+              <Field label="Engine" value={v.engine_displacement_cc ? `${v.engine_displacement_cc} cc` : null} />
+              <Field label="Power" value={v.engine_power_hp ? `${v.engine_power_hp} HP (${v.engine_power_kw} kW)` : null} />
+              <Field label="Torque" value={v.engine_torque_nm ? `${v.engine_torque_nm} Nm` : null} />
+              <Field label="Drive" value={v.drive_type} />
+              <Field label="CO2" value={v.co2_emissions ? `${v.co2_emissions} g/km` : null} />
+              <Field label="Euro Standard" value={v.euro_standard} />
+              <Field label="Fuel Consumption" value={v.fuel_consumption} />
+              <Field label="Seats" value={v.seats} />
+            </dl>
+          </Card>
+        </div>
 
         <Card className="p-4 space-y-4 h-fit">
           {v.current_price != null && (
@@ -1046,21 +1063,6 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
 
       {/* Detail cards */}
       <div className="grid gap-6 md:grid-cols-2">
-      {/* Technical */}
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold mb-3">Technical</h3>
-        <dl className="grid grid-cols-2 gap-3">
-          <Field label="Engine" value={v.engine_displacement_cc ? `${v.engine_displacement_cc} cc` : null} />
-          <Field label="Power" value={v.engine_power_hp ? `${v.engine_power_hp} HP (${v.engine_power_kw} kW)` : null} />
-          <Field label="Torque" value={v.engine_torque_nm ? `${v.engine_torque_nm} Nm` : null} />
-          <Field label="Drive" value={v.drive_type} />
-          <Field label="CO2" value={v.co2_emissions ? `${v.co2_emissions} g/km` : null} />
-          <Field label="Euro Standard" value={v.euro_standard} />
-          <Field label="Fuel Consumption" value={v.fuel_consumption} />
-          <Field label="Seats" value={v.seats} />
-        </dl>
-      </Card>
-
       {/* Condition */}
       <Card className="p-4">
         <h3 className="text-sm font-semibold mb-3">Condition & Warranty</h3>
