@@ -2509,4 +2509,21 @@ def _create_schema_incremental_continued(conn, cursor):
         ON hr_dept_pulse_votes(department_node_id, perspective)
     ''')
 
+    # ── Facturare — widen invoice_number range 7 → 9 digits ──
+    # The original ck_invoice_number_range capped invoice_number at 9,999,999
+    # (7 digits). Suppliers now issue 8-digit numbers (e.g. 92005610), so relax
+    # the CHECK to 999,999,999 — still well inside the INTEGER column's range.
+    # Idempotent: no-op if the table is absent; loosening the bound never
+    # violates existing rows (all ≤ 9,999,999).
+    cursor.execute('''
+        DO $$ BEGIN
+            IF to_regclass('public.facturare_invoices') IS NOT NULL THEN
+                ALTER TABLE facturare_invoices DROP CONSTRAINT IF EXISTS ck_invoice_number_range;
+                ALTER TABLE facturare_invoices
+                    ADD CONSTRAINT ck_invoice_number_range
+                    CHECK (invoice_number IS NULL OR (invoice_number >= 1 AND invoice_number <= 999999999));
+            END IF;
+        END $$;
+    ''')
+
     conn.commit()

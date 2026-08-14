@@ -60,7 +60,7 @@ class ProformaCreateRequest(BaseModel):
     anexa_id: int
     amount_eur: Decimal = Field(gt=0)
     split_mode: str = "equal"  # "equal" or "proportional"
-    invoice_number: Optional[int] = Field(None, ge=1, le=9999999)
+    invoice_number: Optional[int] = Field(None, ge=1, le=999999999)
     issued_date: Optional[date] = None
     intocmit_de: Optional[str] = None
     notes: Optional[str] = None
@@ -71,7 +71,7 @@ class ProformaCreateRequest(BaseModel):
 class InvoiceCreateRequest(BaseModel):
     anexa_id: int
     sequence_number: int = Field(ge=1)
-    invoice_number: Optional[int] = Field(None, ge=1, le=9999999)
+    invoice_number: Optional[int] = Field(None, ge=1, le=999999999)
     issued_date: Optional[date] = None
     intocmit_de: Optional[str] = None
     notes: Optional[str] = None
@@ -81,7 +81,7 @@ class InvoiceCreateRequest(BaseModel):
 
 class StornoCreateRequest(BaseModel):
     anexa_id: int
-    invoice_number: Optional[int] = Field(None, ge=1, le=9999999)
+    invoice_number: Optional[int] = Field(None, ge=1, le=999999999)
     issued_date: Optional[date] = None
     intocmit_de: Optional[str] = None
     notes: Optional[str] = None
@@ -92,7 +92,7 @@ class StornoCreateRequest(BaseModel):
 
 class FinalCreateRequest(BaseModel):
     anexa_id: int
-    invoice_number: Optional[int] = Field(None, ge=1, le=9999999)
+    invoice_number: Optional[int] = Field(None, ge=1, le=999999999)
     issued_date: Optional[date] = None
     intocmit_de: Optional[str] = None
     notes: Optional[str] = None
