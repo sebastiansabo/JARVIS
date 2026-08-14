@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect, type PointerEvent as ReactPointerEvent } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -12,7 +12,8 @@ import {
   ChevronRight,
   ArrowLeft,
   Car,
-  ImageIcon,
+  LayoutGrid,
+  Maximize2,
   X,
   Plus,
   DollarSign,
@@ -530,7 +531,93 @@ export default function CarParkDetail() {
   )
 }
 
+// Momentum drag-to-scroll for horizontal strips — grab, flick, and it glides to a
+// stop with iOS-style inertia (exponential deceleration). Mouse only; touch/pen keep
+// the browser's native momentum scrolling.
+function useDragScroll() {
+  const ref = useRef<HTMLDivElement>(null)
+  const st = useRef({
+    down: false, moved: false, startX: 0, startLeft: 0,
+    lastX: 0, lastT: 0, velocity: 0, amplitude: 0, target: 0, timestamp: 0, raf: 0,
+  })
+
+  const stopInertia = () => {
+    if (st.current.raf) cancelAnimationFrame(st.current.raf)
+    st.current.raf = 0
+  }
+
+  // exponential glide toward target; ~325ms time-constant matches the iOS feel
+  const glide = () => {
+    const el = ref.current
+    const s = st.current
+    if (!el) return
+    const delta = -s.amplitude * Math.exp(-(performance.now() - s.timestamp) / 325)
+    if (delta > 0.4 || delta < -0.4) {
+      el.scrollLeft = s.target + delta
+      s.raf = requestAnimationFrame(glide)
+    } else {
+      el.scrollLeft = s.target
+      s.raf = 0
+    }
+  }
+
+  const release = (e?: ReactPointerEvent) => {
+    const s = st.current
+    const el = ref.current
+    if (!s.down || !el) return
+    s.down = false
+    if (e) { try { el.releasePointerCapture(e.pointerId) } catch { /* already released */ } }
+    if (performance.now() - s.lastT > 100) s.velocity = 0 // paused before release → no fling
+    s.amplitude = -s.velocity * 600
+    s.target = el.scrollLeft + s.amplitude
+    s.timestamp = performance.now()
+    stopInertia()
+    if (Math.abs(s.amplitude) > 1) s.raf = requestAnimationFrame(glide)
+  }
+
+  return {
+    ref,
+    didDrag: () => st.current.moved,
+    dragProps: {
+      onPointerDown: (e: ReactPointerEvent) => {
+        if (e.pointerType !== 'mouse') return
+        const el = ref.current
+        if (!el) return
+        const s = st.current
+        stopInertia()
+        s.down = true
+        s.moved = false
+        s.startX = e.clientX
+        s.startLeft = el.scrollLeft
+        s.lastX = e.clientX
+        s.lastT = performance.now()
+        s.velocity = 0
+        try { el.setPointerCapture(e.pointerId) } catch { /* noop */ }
+      },
+      onPointerMove: (e: ReactPointerEvent) => {
+        const s = st.current
+        const el = ref.current
+        if (!s.down || !el) return
+        const t = performance.now()
+        const dx = e.clientX - s.lastX
+        const dt = t - s.lastT
+        if (Math.abs(e.clientX - s.startX) > 4) s.moved = true
+        if (dt > 0) s.velocity = 0.8 * (dx / dt) + 0.2 * s.velocity
+        el.scrollLeft = s.startLeft - (e.clientX - s.startX)
+        s.lastX = e.clientX
+        s.lastT = t
+      },
+      onPointerUp: (e: ReactPointerEvent) => release(e),
+      onPointerCancel: (e: ReactPointerEvent) => release(e),
+    },
+  }
+}
+
 // ── Photo Gallery ──────────────────────────────────────────
+// Hero + horizontal thumbnail filmstrip. The whole gallery block is capped at
+// 600px wide (GALLERY_MAX_WIDTH); "show all" grid overlay + fullscreen lightbox on click.
+const GALLERY_MAX_WIDTH = 600 // px — the whole gallery block never exceeds this width
+
 function PhotoGallery({
   photos,
   onPhotoClick,
@@ -538,6 +625,16 @@ function PhotoGallery({
   photos: VehiclePhoto[]
   onPhotoClick: (index: number) => void
 }) {
+  const [active, setActive] = useState(0)
+  const [gridOpen, setGridOpen] = useState(false)
+  const strip = useDragScroll()
+  const idx = photos.length ? Math.min(active, photos.length - 1) : 0
+
+  useEffect(() => {
+    const el = strip.ref.current?.querySelector<HTMLElement>(`[data-i="${idx}"]`)
+    el?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
+  }, [idx])
+
   if (photos.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center rounded-lg border border-dashed bg-muted/30">
@@ -549,56 +646,156 @@ function PhotoGallery({
     )
   }
 
-  const primary = photos[0]
-  const rest = photos.slice(1, 5)
+  const go = (i: number) => setActive((i + photos.length) % photos.length)
 
   return (
-    <div className="grid gap-2 grid-cols-4 grid-rows-2 h-80">
-      {/* Primary large */}
+    <div className="w-full space-y-2" style={{ maxWidth: GALLERY_MAX_WIDTH }}>
+      {/* Hero — the main viewing zone */}
       <div
-        className="col-span-2 row-span-2 cursor-pointer overflow-hidden rounded-lg"
-        onClick={() => onPhotoClick(0)}
+        className="group relative aspect-[3/2] w-full cursor-zoom-in overflow-hidden rounded-xl bg-muted"
+        onClick={() => onPhotoClick(idx)}
       >
         <img
-          src={mediaUrl(primary.url)}
-          alt="Primary"
-          className="h-full w-full object-cover hover:scale-105 transition-transform"
+          src={mediaUrl(photos[idx].url)}
+          alt={`Photo ${idx + 1}`}
+          className="h-full w-full object-cover"
         />
-      </div>
-      {/* Secondary photos */}
-      {rest.map((photo, i) => (
-        <div
-          key={photo.id}
-          className="relative cursor-pointer overflow-hidden rounded-lg"
-          onClick={() => onPhotoClick(i + 1)}
-        >
-          <img
-            src={mediaUrl(photo.thumbnail_url || photo.url)}
-            alt={`Photo ${i + 2}`}
-            className="h-full w-full object-cover hover:scale-105 transition-transform"
-          />
-          {i === rest.length - 1 && photos.length > 5 && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white font-semibold">
-              +{photos.length - 5}
-            </div>
-          )}
+        <div className="absolute left-3 top-3 rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium tabular-nums text-white backdrop-blur">
+          {idx + 1} / {photos.length}
         </div>
-      ))}
-      {/* Placeholder slots */}
-      {rest.length < 4 &&
-        Array.from({ length: 4 - rest.length }).map((_, i) => (
-          <div
-            key={`empty-${i}`}
-            className="flex items-center justify-center rounded-lg bg-muted"
+        <div className="absolute right-3 top-3 flex gap-2">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setGridOpen(true) }}
+            className="flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-white backdrop-blur transition hover:bg-black/80"
           >
-            <ImageIcon className="h-5 w-5 text-muted-foreground" />
-          </div>
+            <LayoutGrid className="h-3.5 w-3.5" /> Toate pozele
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onPhotoClick(idx) }}
+            className="flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-white backdrop-blur transition hover:bg-black/80"
+          >
+            <Maximize2 className="h-3.5 w-3.5" /> Ecran complet
+          </button>
+        </div>
+        {photos.length > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); go(idx - 1) }}
+              className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white opacity-0 backdrop-blur transition hover:bg-black/80 group-hover:opacity-100"
+              aria-label="Previous photo"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); go(idx + 1) }}
+              className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white opacity-0 backdrop-blur transition hover:bg-black/80 group-hover:opacity-100"
+              aria-label="Next photo"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Filmstrip */}
+      {photos.length > 1 && (
+        <div
+          ref={strip.ref}
+          {...strip.dragProps}
+          className="flex cursor-grab select-none gap-2 overflow-x-auto overscroll-x-contain pb-1 active:cursor-grabbing"
+          style={{ scrollbarWidth: 'thin' }}
+        >
+          {photos.map((p, i) => (
+            <button
+              type="button"
+              key={p.id}
+              data-i={i}
+              onClick={() => { if (strip.didDrag()) return; go(i) }}
+              className={`h-16 w-[96px] flex-none overflow-hidden rounded-md border-2 transition ${
+                i === idx ? 'border-primary opacity-100' : 'border-transparent opacity-60 hover:opacity-100'
+              }`}
+            >
+              <img
+                src={mediaUrl(p.thumbnail_url || p.url)}
+                alt={`Thumbnail ${i + 1}`}
+                draggable={false}
+                className="h-full w-full object-cover"
+              />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {gridOpen && (
+        <PhotoGridOverlay
+          photos={photos}
+          onClose={() => setGridOpen(false)}
+          onSelect={(i) => { setGridOpen(false); onPhotoClick(i) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Photo Grid Overlay ("Toate pozele") ────────────────────
+function PhotoGridOverlay({
+  photos,
+  onClose,
+  onSelect,
+}: {
+  photos: VehiclePhoto[]
+  onClose: () => void
+  onSelect: (index: number) => void
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = ''
+    }
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-background">
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-background/85 px-6 py-4 backdrop-blur">
+        <h2 className="text-base font-semibold">Toate pozele · {photos.length}</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          aria-label="Close"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      <div className="mx-auto grid max-w-5xl grid-cols-2 gap-2 p-6 sm:grid-cols-3">
+        {photos.map((p, i) => (
+          <button
+            type="button"
+            key={p.id}
+            onClick={() => onSelect(i)}
+            className="group aspect-[3/2] overflow-hidden rounded-lg border bg-muted"
+          >
+            <img
+              src={mediaUrl(p.thumbnail_url || p.url)}
+              alt={`Photo ${i + 1}`}
+              className="h-full w-full object-cover transition group-hover:scale-105"
+            />
+          </button>
         ))}
+      </div>
     </div>
   )
 }
 
 // ── Photo Lightbox ─────────────────────────────────────────
+// Fullscreen viewer: keyboard (← → Esc), swipe, click-to-zoom, thumbnail strip.
 function PhotoLightbox({
   photos,
   index,
@@ -610,38 +807,127 @@ function PhotoLightbox({
   onClose: () => void
   onNavigate: (index: number) => void
 }) {
+  const [zoomed, setZoomed] = useState(false)
+  const [origin, setOrigin] = useState('50% 50%')
+  const touchX = useRef<number | null>(null)
+  const lbStrip = useDragScroll()
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') onNavigate((index + 1) % photos.length)
+      else if (e.key === 'ArrowLeft') onNavigate((index - 1 + photos.length) % photos.length)
+      else if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = ''
+    }
+  }, [index, photos.length, onNavigate, onClose])
+
+  useEffect(() => { setZoomed(false) }, [index])
+
+  useEffect(() => {
+    const el = lbStrip.ref.current?.querySelector<HTMLElement>(`[data-i="${index}"]`)
+    el?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
+  }, [index])
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90">
-      <button
-        onClick={onClose}
-        className="absolute right-4 top-4 text-white/80 hover:text-white"
-      >
-        <X className="h-6 w-6" />
-      </button>
-
-      <button
-        onClick={() => onNavigate((index - 1 + photos.length) % photos.length)}
-        className="absolute left-4 text-white/80 hover:text-white"
-      >
-        <ChevronLeft className="h-8 w-8" />
-      </button>
-
-      <img
-        src={mediaUrl(photos[index].url)}
-        alt={`Photo ${index + 1}`}
-        className="max-h-[85vh] max-w-[90vw] object-contain"
-      />
-
-      <button
-        onClick={() => onNavigate((index + 1) % photos.length)}
-        className="absolute right-4 text-white/80 hover:text-white"
-      >
-        <ChevronRight className="h-8 w-8" />
-      </button>
-
-      <div className="absolute bottom-4 text-white/70 text-sm">
-        {index + 1} / {photos.length}
+    <div className="fixed inset-0 z-50 flex flex-col bg-black/95" onClick={onClose}>
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-5 py-3" onClick={(e) => e.stopPropagation()}>
+        <span className="text-sm tabular-nums text-white/70">
+          {index + 1} / {photos.length}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md bg-white/10 p-2 text-white transition hover:bg-white/20"
+          aria-label="Close"
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
+
+      {/* Stage */}
+      <div
+        className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => { touchX.current = e.touches[0].clientX }}
+        onTouchEnd={(e) => {
+          if (touchX.current === null) return
+          const dx = e.changedTouches[0].clientX - touchX.current
+          if (!zoomed && Math.abs(dx) > 40) {
+            if (dx < 0) onNavigate((index + 1) % photos.length)
+            else onNavigate((index - 1 + photos.length) % photos.length)
+          }
+          touchX.current = null
+        }}
+      >
+        {photos.length > 1 && (
+          <button
+            type="button"
+            onClick={() => onNavigate((index - 1 + photos.length) % photos.length)}
+            className="absolute left-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/25"
+            aria-label="Previous photo"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+        )}
+        <img
+          src={mediaUrl(photos[index].url)}
+          alt={`Photo ${index + 1}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (zoomed) { setZoomed(false); return }
+            const r = e.currentTarget.getBoundingClientRect()
+            setOrigin(`${((e.clientX - r.left) / r.width) * 100}% ${((e.clientY - r.top) / r.height) * 100}%`)
+            setZoomed(true)
+          }}
+          className={
+            zoomed
+              ? 'max-h-none max-w-none cursor-zoom-out'
+              : 'max-h-full max-w-[94vw] cursor-zoom-in object-contain'
+          }
+          style={zoomed ? { transform: 'scale(2.2)', transformOrigin: origin } : undefined}
+        />
+        {photos.length > 1 && (
+          <button
+            type="button"
+            onClick={() => onNavigate((index + 1) % photos.length)}
+            className="absolute right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/25"
+            aria-label="Next photo"
+          >
+            <ChevronRight className="h-6 w-6" />
+          </button>
+        )}
+      </div>
+
+      {/* Thumbnail strip */}
+      {photos.length > 1 && (
+        <div
+          ref={lbStrip.ref}
+          {...lbStrip.dragProps}
+          className="flex cursor-grab select-none gap-1.5 overflow-x-auto overscroll-x-contain px-4 py-3 active:cursor-grabbing"
+          onClick={(e) => e.stopPropagation()}
+          style={{ scrollbarWidth: 'thin' }}
+        >
+          {photos.map((p, i) => (
+            <button
+              type="button"
+              key={p.id}
+              data-i={i}
+              onClick={() => { if (lbStrip.didDrag()) return; onNavigate(i) }}
+              className={`h-14 w-[84px] flex-none overflow-hidden rounded border-2 transition ${
+                i === index ? 'border-white opacity-100' : 'border-transparent opacity-50 hover:opacity-100'
+              }`}
+            >
+              <img src={mediaUrl(p.thumbnail_url || p.url)} alt="" draggable={false} className="h-full w-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
