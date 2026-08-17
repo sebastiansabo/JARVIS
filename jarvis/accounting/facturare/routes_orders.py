@@ -391,8 +391,10 @@ def api_toggle_archive(anexa_id):
         return error_response("Permission denied", 403)
     data = request.get_json(force=True)
     archived = bool(data.get("archived", True))
-    _repo.execute("UPDATE facturare_anexas SET archived = %s WHERE id = %s", (archived, anexa_id))
-    _repo.execute("UPDATE facturare_invoices SET archived = %s WHERE anexa_id = %s", (archived, anexa_id))
+    if archived:
+        _repo.archive_anexa_now(anexa_id)
+    else:
+        _repo.unarchive_anexa(anexa_id)
     _invalidate_doc_items_cache()
     return jsonify({"success": True, "archived": archived})
 
