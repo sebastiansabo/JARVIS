@@ -128,24 +128,32 @@ export const organizationApi = {
 
 export interface SincronOrgEmployee {
   sincron_employee_id: string
+  company_name: string
   nume: string
   prenume: string
   nr_contract: string | null
   norma_lucru: number | null
-  department: string | null
   mapped_jarvis_user_id: number | null
   mapped_user_name: string | null
 }
 
-export interface SincronOrgDepartment {
+export interface SincronOrgTreeNode {
+  id: number
   name: string
-  count: number
-  employees: SincronOrgEmployee[]
+  node_type: string
+  level: number
+  parent_id: number | null
+  display_order: number
+  responsables: SincronOrgEmployee[]
+  members: SincronOrgEmployee[]
+  children: SincronOrgTreeNode[]
 }
 
 export interface SincronOrgCompany {
   company_name: string
+  company_id: number | null
   count: number
-  employees: SincronOrgEmployee[]
-  departments: SincronOrgDepartment[]
+  mapped_count: number
+  nodes: SincronOrgTreeNode[]
+  unassigned: SincronOrgEmployee[]
 }
