@@ -25,7 +25,7 @@ $$;
 CREATE TABLE IF NOT EXISTS ai_agent.model_configs (
     id SERIAL PRIMARY KEY,
     provider VARCHAR(50) NOT NULL,           -- claude, openai, gemini, groq, local
-    model_name VARCHAR(100) NOT NULL,        -- claude-sonnet-4-20250514, gpt-4, etc.
+    model_name VARCHAR(100) NOT NULL,        -- claude-sonnet-4-6, gpt-4, etc.
     display_name VARCHAR(100),               -- User-friendly name
     api_key_encrypted TEXT,                  -- Encrypted API key (NULL for local/env-based)
     base_url VARCHAR(255),                   -- Custom endpoint (for local LLaMA)
@@ -237,8 +237,8 @@ CREATE INDEX IF NOT EXISTS idx_conversation_logs_created ON ai_agent.conversatio
 -- ============================================================
 
 INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
-SELECT 'claude', 'claude-sonnet-4-20250514', 'Claude Sonnet (Fast)', 0.003, 0.015, 4096, 200000, TRUE
-WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'claude' AND model_name = 'claude-sonnet-4-20250514');
+SELECT 'claude', 'claude-sonnet-4-6', 'Claude Sonnet (Fast)', 0.003, 0.015, 4096, 200000, TRUE
+WHERE NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'claude' AND model_name = 'claude-sonnet-4-6');
 
 INSERT INTO ai_agent.model_configs (provider, model_name, display_name, cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_default)
 SELECT 'claude', 'claude-opus-4-5-20251101', 'Claude Opus (Smart)', 0.015, 0.075, 4096, 200000, FALSE
