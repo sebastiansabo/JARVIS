@@ -11,7 +11,9 @@ from ._shared import (
 )
 from ..services.fuel_service import parse_fuel_level
 
-_PHONE_RE = re.compile(r'^(07\d{8}|\+40\d{9}|004\d{10})$')
+# International E.164 (+ and 7–15 digits) plus legacy RO national formats so
+# existing stored numbers still validate.
+_PHONE_RE = re.compile(r'^(\+\d{7,15}|07\d{8}|004\d{10})$')
 
 
 def _company_gdpr_text(company_id) -> str:
@@ -682,7 +684,7 @@ def api_create_crm_client():
     if not _PHONE_RE.match(phone_clean):
         return jsonify({
             'success': False,
-            'error': 'Invalid phone. Must start with 07, +40, or 004',
+            'error': 'Invalid phone. Use international format, e.g. +40721234567',
         }), 400
 
     cnp = (data.get('cnp') or '').strip() or None
@@ -748,7 +750,7 @@ def api_update_crm_client(id):
         if not _PHONE_RE.match(phone_clean):
             return jsonify({
                 'success': False,
-                'error': 'Invalid phone. Must start with 07, +40, or 004',
+                'error': 'Invalid phone. Use international format, e.g. +40721234567',
             }), 400
         update_data['phone'] = phone_clean
 
