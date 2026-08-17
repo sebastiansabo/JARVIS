@@ -42,6 +42,16 @@ def test_unpaired_proforma_blocks_completion():
     ])
     assert is_anexa_complete(repo, 1) is False
 
+def test_unpaired_proforma_blocks_even_when_lines_fully_invoiced():
+    # Line fully covered by INVOICE seq 1 (net check passes on its own),
+    # but a stray PROFORMA seq 2 has no matching INVOICE seq 2 -> the
+    # unpaired-proforma gate must still block completion.
+    repo = FakeRepo(_lines(10000), [
+        _inv('INVOICE', 10000, seq=1, line_ids=[1]),
+        _inv('PROFORMA', 5000, seq=2, line_ids=[1]),
+    ])
+    assert is_anexa_complete(repo, 1) is False
+
 def test_fully_invoiced_no_final_is_complete():
     repo = FakeRepo(_lines(10000, 10000), [
         _inv('PROFORMA', 20000, seq=1), _inv('INVOICE', 20000, seq=1),
