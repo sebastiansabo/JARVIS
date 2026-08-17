@@ -251,3 +251,110 @@ class InvoiceStorageRepository(BaseRepository):
             "SELECT line_id, document_number FROM facturare_document_numbers "
             "WHERE invoice_id=%s AND document_number IS NOT NULL", (invoice_id,))
         return {r["line_id"]: r["document_number"] for r in (rows or [])}
+
+    # ── Archive lifecycle ────────────────────────────────────────
+
+    def list_active_anexas(self):
+        return self.query_all(
+            "SELECT id, contract_id, archive_after FROM facturare_anexas WHERE archived = FALSE")
+
+    def list_active_contracts(self):
+        return self.query_all(
+            "SELECT id, archive_after FROM facturare_contracts WHERE archived = FALSE")
+
+    def set_anexa_archive_after(self, anexa_id, delay_hours):
+        return self.execute(
+            "UPDATE facturare_anexas SET archive_after = now() + make_interval(hours => %s) "
+            "WHERE id = %s AND archived = FALSE",
+            (int(delay_hours), anexa_id))
+
+    def clear_anexa_archive_after(self, anexa_id):
+        return self.execute(
+            "UPDATE facturare_anexas SET archive_after = NULL WHERE id = %s", (anexa_id,))
+
+    def set_contract_archive_after(self, contract_id, delay_hours):
+        return self.execute(
+            "UPDATE facturare_contracts SET archive_after = now() + make_interval(hours => %s) "
+            "WHERE id = %s AND archived = FALSE",
+            (int(delay_hours), contract_id))
+
+    def clear_contract_archive_after(self, contract_id):
+        return self.execute(
+            "UPDATE facturare_contracts SET archive_after = NULL WHERE id = %s", (contract_id,))
+
+    def archive_due_anexas(self):
+        """Archive anexas past their deadline + their invoices. Returns anexa count."""
+        def _work(cursor):
+            cursor.execute(
+                "UPDATE facturare_invoices SET archived = TRUE WHERE anexa_id IN ("
+                "  SELECT id FROM facturare_anexas "
+                "  WHERE archived = FALSE AND archive_after IS NOT NULL AND archive_after <= now())")
+            cursor.execute(
+                "UPDATE facturare_anexas SET archived = TRUE, archived_at = now(), archive_after = NULL "
+                "WHERE archived = FALSE AND archive_after IS NOT NULL AND archive_after <= now()")
+            return cursor.rowcount
+        return self.execute_many(_work)
+
+    def archive_due_contracts(self):
+        """Archive contracts past deadline + cascade anexas + invoices. Returns contract count."""
+        def _work(cursor):
+            cursor.execute(
+                "UPDATE facturare_invoices SET archived = TRUE WHERE anexa_id IN ("
+                "  SELECT a.id FROM facturare_anexas a JOIN facturare_contracts c ON c.id = a.contract_id "
+                "  WHERE c.archived = FALSE AND c.archive_after IS NOT NULL AND c.archive_after <= now())")
+            cursor.execute(
+                "UPDATE facturare_anexas SET archived = TRUE, archived_at = now(), archive_after = NULL "
+                "WHERE contract_id IN ("
+                "  SELECT id FROM facturare_contracts "
+                "  WHERE archived = FALSE AND archive_after IS NOT NULL AND archive_after <= now())")
+            cursor.execute(
+                "UPDATE facturare_contracts SET archived = TRUE, archived_at = now(), archive_after = NULL "
+                "WHERE archived = FALSE AND archive_after IS NOT NULL AND archive_after <= now()")
+            return cursor.rowcount
+        return self.execute_many(_work)
+
+    def archive_anexa_now(self, anexa_id):
+        def _work(cursor):
+            cursor.execute("UPDATE facturare_invoices SET archived = TRUE WHERE anexa_id = %s", (anexa_id,))
+            cursor.execute(
+                "UPDATE facturare_anexas SET archived = TRUE, archived_at = now(), archive_after = NULL WHERE id = %s",
+                (anexa_id,))
+            return cursor.rowcount
+        return self.execute_many(_work)
+
+    def unarchive_anexa(self, anexa_id):
+        def _work(cursor):
+            cursor.execute("UPDATE facturare_invoices SET archived = FALSE WHERE anexa_id = %s", (anexa_id,))
+            cursor.execute(
+                "UPDATE facturare_anexas SET archived = FALSE, archived_at = NULL, archive_after = NULL WHERE id = %s",
+                (anexa_id,))
+            return cursor.rowcount
+        return self.execute_many(_work)
+
+    def archive_contract_now(self, contract_id):
+        def _work(cursor):
+            cursor.execute(
+                "UPDATE facturare_invoices SET archived = TRUE WHERE anexa_id IN ("
+                "  SELECT id FROM facturare_anexas WHERE contract_id = %s)", (contract_id,))
+            cursor.execute(
+                "UPDATE facturare_anexas SET archived = TRUE, archived_at = now(), archive_after = NULL "
+                "WHERE contract_id = %s", (contract_id,))
+            cursor.execute(
+                "UPDATE facturare_contracts SET archived = TRUE, archived_at = now(), archive_after = NULL WHERE id = %s",
+                (contract_id,))
+            return cursor.rowcount
+        return self.execute_many(_work)
+
+    def unarchive_contract(self, contract_id):
+        def _work(cursor):
+            cursor.execute(
+                "UPDATE facturare_invoices SET archived = FALSE WHERE anexa_id IN ("
+                "  SELECT id FROM facturare_anexas WHERE contract_id = %s)", (contract_id,))
+            cursor.execute(
+                "UPDATE facturare_anexas SET archived = FALSE, archived_at = NULL, archive_after = NULL "
+                "WHERE contract_id = %s", (contract_id,))
+            cursor.execute(
+                "UPDATE facturare_contracts SET archived = FALSE, archived_at = NULL, archive_after = NULL WHERE id = %s",
+                (contract_id,))
+            return cursor.rowcount
+        return self.execute_many(_work)
