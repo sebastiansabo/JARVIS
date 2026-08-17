@@ -29,6 +29,7 @@ interface ContractSummary {
   responsible: string | null; anexa_count: number; notes: string | null
   total_value: number; invoiced_total: number
   created_at: string | null
+  archived: boolean; archive_after: string | null
 }
 
 interface AnexaSummary {
@@ -36,6 +37,7 @@ interface AnexaSummary {
   proformas_total: number; invoiced_total: number; pct_proforma: number; pct_invoiced: number
   invoice_count: number; stage: string; status: string; archived: boolean; types: string[]; notes: string | null
   lines_with_proforma: number; lines_invoiced: number; created_at: string | null
+  archive_after: string | null
 }
 
 interface LineCoverage { invoice_id: number; invoice_type: string; sequence_number: number; amount_eur?: number; amount_ron?: number; invoice_number?: number | null; kurs_applied?: number | null; issued_date?: string | null }
@@ -67,6 +69,16 @@ interface AnexaDetail {
 // ── Helpers ─────────────────────────────────────────────────────
 
 function fmtEur(n: number) { return new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) }
+
+/** Hours remaining until an archive_after ISO timestamp; null if not set/past-formatting. */
+function archiveCountdownLabel(archiveAfter: string | null): string | null {
+  if (!archiveAfter) return null
+  const ms = new Date(archiveAfter).getTime() - Date.now()
+  if (Number.isNaN(ms)) return null
+  if (ms <= 0) return 'Se arhivează…'
+  const hours = Math.ceil(ms / 3_600_000)
+  return hours <= 1 ? 'Se arhivează în <1h' : `Se arhivează în ~${hours}h`
+}
 
 /** Validate VIN (17 chars, ISO 3779 check digit). Returns error message or null. */
 function validateVin(vin: string): string | null {
@@ -2227,6 +2239,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
   const uniqueClients = [...new Set(contracts.map(c => c.customer_name))].sort()
 
   const filtered = contracts.filter(c => {
+    if (c.archived) return false
     if (filterCompany !== 'all' && c.supplier_name !== filterCompany) return false
     if (filterClient !== 'all' && c.customer_name !== filterClient) return false
     if (dateFrom && (!c.contract_date || c.contract_date < dateFrom)) return false
@@ -2330,7 +2343,15 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                             </span>
                           </td>
                           <td className="px-3 py-2.5 text-center"><Badge variant="outline" className="text-xs">{a.line_count}</Badge></td>
-                          <td className="px-3 py-2.5"><Badge className={`${cfg.color} text-xs`}>{cfg.label}</Badge></td>
+                          <td className="px-3 py-2.5">
+                            <Badge className={`${cfg.color} text-xs`}>{cfg.label}</Badge>
+                            {archiveCountdownLabel(a.archive_after) && (
+                              <Badge className="ml-1 bg-amber-100 text-amber-800 text-[10px] whitespace-nowrap">
+                                <Archive className="h-2.5 w-2.5 mr-0.5 inline" />
+                                {archiveCountdownLabel(a.archive_after)}
+                              </Badge>
+                            )}
+                          </td>
                           <td className="px-3 py-1" onClick={e => e.stopPropagation()}>
                             <Select value={a.status} onValueChange={async (v) => {
                               try {
@@ -2369,6 +2390,32 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                               onClick={(e) => { e.stopPropagation(); window.open(`/facturare/api/anexas/${a.id}/status-export.xlsx`, '_blank') }}>
                               <FileSpreadsheet className="h-3.5 w-3.5 text-muted-foreground hover:text-emerald-500" />
                             </Button>
+                            {a.archive_after ? (
+                              <Button variant="ghost" size="icon" className="h-6 w-6" title="Anulează arhivarea"
+                                onClick={async (e) => {
+                                  e.stopPropagation()
+                                  await fetch(`/facturare/api/anexas/${a.id}/archive`, {
+                                    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ archived: false }),
+                                  })
+                                  refreshAnexas()
+                                }}>
+                                <Ban className="h-3.5 w-3.5 text-amber-600" />
+                              </Button>
+                            ) : (
+                              <Button variant="ghost" size="icon" className="h-6 w-6" title="Arhivează acum"
+                                onClick={async (e) => {
+                                  e.stopPropagation()
+                                  if (!confirm(`Arhivezi Anexa ${a.anexa_number} acum?`)) return
+                                  await fetch(`/facturare/api/anexas/${a.id}/archive`, {
+                                    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ archived: true }),
+                                  })
+                                  refreshAnexas()
+                                }}>
+                                <Archive className="h-3.5 w-3.5 text-muted-foreground" />
+                              </Button>
+                            )}
                             {a.stage === 'NEW' && (
                               <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete anexa (no invoices yet)"
                                 onClick={async (e) => {
@@ -2545,6 +2592,11 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                                       <span className="font-medium">{c.contract_ref}</span>
                                       {c.contract_date && <span className="text-xs text-muted-foreground">{new Date(c.contract_date).toLocaleDateString('ro-RO')}</span>}
                                       {c.responsible && <span className="text-xs text-muted-foreground">· {c.responsible}</span>}
+                                      {archiveCountdownLabel(c.archive_after) && (
+                                        <Badge className="ml-1 bg-amber-100 text-amber-800 text-[10px] whitespace-nowrap">
+                                          <Archive className="h-2.5 w-2.5 mr-0.5 inline" /> {archiveCountdownLabel(c.archive_after)}
+                                        </Badge>
+                                      )}
                                     </div>
                                   )}
                                   <div className="flex items-center gap-3 shrink-0">
