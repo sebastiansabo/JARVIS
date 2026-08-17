@@ -114,65 +114,77 @@ function fmtKpiCurrency(val: number | null | undefined): string {
   return `${new Intl.NumberFormat('ro-RO', { maximumFractionDigits: 0 }).format(val)} €`
 }
 
-// `editable` wires each flag badge through EditableCell(type='flag') so a
+// Compact one-line flag chips. Each config carries the short on-cell label,
+// the full-label native tooltip (same lightweight `title` approach as the
+// paperclip), and the "on" color classes (mirroring the old badge variants:
+// IMPUS red-solid, LIPSĂ CIV amber-outline, SCOS gray-solid, Transferat
+// indigo-outline). Off is a shared faint dashed outline so an inactive flag
+// stays visible + clickable in edit mode.
+const FLAG_CHIP = {
+  impus: { label: 'IMP', title: 'IMPUS', on: 'border-transparent bg-destructive text-white' },
+  civ: { label: 'CIV', title: 'Lipsă CIV', on: 'border-amber-500 text-amber-600 dark:text-amber-400' },
+  scos: { label: 'SCOS', title: 'Scos din evidență', on: 'border-transparent bg-secondary text-secondary-foreground' },
+  transferat: { label: 'TRF', title: 'Transferat', on: 'border-indigo-500 text-indigo-600 dark:text-indigo-400' },
+} as const
+
+function FlagChip({ cfg, active }: { cfg: { label: string; title: string; on: string }; active: boolean }) {
+  return (
+    <Badge
+      variant="outline"
+      title={cfg.title}
+      className={cn(
+        'h-4 rounded px-1 py-0 text-[10px] font-medium leading-none',
+        active ? cfg.on : 'border-dashed text-muted-foreground/50',
+      )}
+    >
+      {cfg.label}
+    </Badge>
+  )
+}
+
+// `editable` wires each flag chip through EditableCell(type='flag') so a
 // click toggles + saves that single boolean; the missingPvLivrare paperclip
 // stays a computed, non-interactive indicator either way. Mobile card usage
-// (mobileFields below) omits `editable`, keeping it read-only there.
+// (mobileFields below) omits `editable`, keeping it read-only there. Both
+// branches render compact FlagChips on a single (non-wrapping) line.
 function FlagsCell({ row, editable = false }: { row: DispoRow; editable?: boolean }) {
   const missingPvLivrare =
     (row.status === 'SOLD' || row.status === 'DELIVERED') && !row.doc_types.includes('pv_livrare')
 
   const isTransferredIn = row.transferred_from_company_id != null
 
+  const trailing = (
+    <>
+      {isTransferredIn && <FlagChip cfg={FLAG_CHIP.transferat} active />}
+      {missingPvLivrare && (
+        <span title="Lipsă PV livrare" className="inline-flex text-red-600 dark:text-red-400">
+          <Paperclip className="h-3.5 w-3.5" />
+        </span>
+      )}
+    </>
+  )
+
   if (!editable) {
     if (!row.is_impus && !row.missing_civ && !row.stock_removed && !missingPvLivrare && !isTransferredIn) return <Muted />
     return (
-      <div className="flex flex-wrap items-center gap-1">
-        {row.is_impus && (
-          <Badge variant="destructive" className="text-[10px] font-normal">
-            IMPUS
-          </Badge>
-        )}
-        {row.missing_civ && (
-          <Badge variant="outline" className="text-[10px] font-normal border-amber-500 text-amber-600 dark:text-amber-400">
-            LIPSĂ CIV
-          </Badge>
-        )}
-        {row.stock_removed && (
-          <Badge variant="secondary" className="text-[10px] font-normal">
-            SCOS
-          </Badge>
-        )}
-        {isTransferredIn && (
-          <Badge variant="outline" className="text-[10px] font-normal border-indigo-500 text-indigo-600 dark:text-indigo-400">
-            Transferat
-          </Badge>
-        )}
-        {missingPvLivrare && (
-          <span title="Lipsă PV livrare" className="inline-flex text-red-600 dark:text-red-400">
-            <Paperclip className="h-3.5 w-3.5" />
-          </span>
-        )}
+      <div className="flex items-center gap-1">
+        {row.is_impus && <FlagChip cfg={FLAG_CHIP.impus} active />}
+        {row.missing_civ && <FlagChip cfg={FLAG_CHIP.civ} active />}
+        {row.stock_removed && <FlagChip cfg={FLAG_CHIP.scos} active />}
+        {trailing}
       </div>
     )
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
+    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
       <EditableCell
         row={row}
         field="is_impus"
         type="flag"
         value={row.is_impus}
         editable
-        display={(v) => (
-          <Badge
-            variant={v ? 'destructive' : 'outline'}
-            className={cn('text-[10px] font-normal', !v && 'border-dashed text-muted-foreground/50')}
-          >
-            IMPUS
-          </Badge>
-        )}
+        display={(v) => <FlagChip cfg={FLAG_CHIP.impus} active={Boolean(v)} />}
       />
       <EditableCell
         row={row}
@@ -180,17 +192,7 @@ function FlagsCell({ row, editable = false }: { row: DispoRow; editable?: boolea
         type="flag"
         value={row.missing_civ}
         editable
-        display={(v) => (
-          <Badge
-            variant="outline"
-            className={cn(
-              'text-[10px] font-normal',
-              v ? 'border-amber-500 text-amber-600 dark:text-amber-400' : 'border-dashed text-muted-foreground/50',
-            )}
-          >
-            LIPSĂ CIV
-          </Badge>
-        )}
+        display={(v) => <FlagChip cfg={FLAG_CHIP.civ} active={Boolean(v)} />}
       />
       <EditableCell
         row={row}
@@ -198,25 +200,9 @@ function FlagsCell({ row, editable = false }: { row: DispoRow; editable?: boolea
         type="flag"
         value={row.stock_removed}
         editable
-        display={(v) => (
-          <Badge
-            variant={v ? 'secondary' : 'outline'}
-            className={cn('text-[10px] font-normal', !v && 'border-dashed text-muted-foreground/50')}
-          >
-            SCOS
-          </Badge>
-        )}
+        display={(v) => <FlagChip cfg={FLAG_CHIP.scos} active={Boolean(v)} />}
       />
-      {isTransferredIn && (
-        <Badge variant="outline" className="text-[10px] font-normal border-indigo-500 text-indigo-600 dark:text-indigo-400">
-          Transferat
-        </Badge>
-      )}
-      {missingPvLivrare && (
-        <span title="Lipsă PV livrare" className="inline-flex text-red-600 dark:text-red-400">
-          <Paperclip className="h-3.5 w-3.5" />
-        </span>
-      )}
+      {trailing}
     </div>
   )
 }
