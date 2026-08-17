@@ -2328,8 +2328,8 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                   </thead>
                   <tbody>
                     {anexasLoading && <tr><td colSpan={8} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></td></tr>}
-                    {!anexasLoading && anexas.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No anexas yet</td></tr>}
-                    {anexas.map(a => {
+                    {!anexasLoading && anexas.filter(a => !a.archived).length === 0 && <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No anexas yet</td></tr>}
+                    {anexas.filter(a => !a.archived).map(a => {
                       const cfg = STAGE_CONFIG[a.stage] || STAGE_CONFIG.NEW
                       const isSelected = selectedAnexaId === a.id
                       return (
