@@ -235,6 +235,8 @@ def api_list_contracts():
             "anexa_count": r.get("anexa_count", 0),
             "total_value": float(r.get("total_value", 0) or 0),
             "invoiced_total": float(r.get("invoiced_total", 0) or 0),
+            "archived": bool(r.get("archived")),
+            "archive_after": str(r["archive_after"]) if r.get("archive_after") else None,
             "notes": r.get("notes"),
             "created_at": str(r["created_at"]) if r.get("created_at") else None,
         })
@@ -354,6 +356,7 @@ def api_list_anexas(contract_id):
             "pct_proforma": pct_proforma, "pct_invoiced": pct_invoiced,
             "invoice_count": len(invoices), "stage": stage, "status": status, "types": types,
             "archived": bool(a.get("archived")),
+            "archive_after": str(a["archive_after"]) if a.get("archive_after") else None,
             "lines_with_proforma": len(proforma_line_ids | invoiced_line_ids),
             "lines_invoiced": len(invoiced_line_ids),
             "created_at": str(a["created_at"]) if a.get("created_at") else None,
@@ -377,16 +380,6 @@ def api_update_anexa_status(anexa_id):
     if status not in ANEXA_STATUSES:
         return error_response(f"Invalid status. Must be one of: {', '.join(ANEXA_STATUSES)}")
     _repo.execute("UPDATE facturare_anexas SET status = %s, updated_at = now() WHERE id = %s", (status, anexa_id))
-
-    # Auto-archive when status is PROCESSED and final invoice exists
-    if status == "PROCESSED":
-        has_final = _repo.query_one(
-            "SELECT id FROM facturare_invoices WHERE anexa_id = %s AND invoice_type = 'FINAL'", (anexa_id,))
-        if has_final:
-            _repo.execute("UPDATE facturare_anexas SET archived = TRUE WHERE id = %s", (anexa_id,))
-            _repo.execute("UPDATE facturare_invoices SET archived = TRUE WHERE anexa_id = %s", (anexa_id,))
-            _invalidate_doc_items_cache()
-
     return jsonify({"success": True, "status": status})
 
 
@@ -400,6 +393,22 @@ def api_toggle_archive(anexa_id):
     archived = bool(data.get("archived", True))
     _repo.execute("UPDATE facturare_anexas SET archived = %s WHERE id = %s", (archived, anexa_id))
     _repo.execute("UPDATE facturare_invoices SET archived = %s WHERE anexa_id = %s", (archived, anexa_id))
+    _invalidate_doc_items_cache()
+    return jsonify({"success": True, "archived": archived})
+
+
+@facturare_bp.route("/facturare/api/contracts/<int:contract_id>/archive", methods=["PATCH"])
+@login_required
+@handle_api_errors
+def api_toggle_contract_archive(contract_id):
+    if not _check_perm("add"):
+        return error_response("Permission denied", 403)
+    data = request.get_json(force=True)
+    archived = bool(data.get("archived", True))
+    if archived:
+        _repo.archive_contract_now(contract_id)
+    else:
+        _repo.unarchive_contract(contract_id)
     _invalidate_doc_items_cache()
     return jsonify({"success": True, "archived": archived})
 
