@@ -8,7 +8,7 @@ const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getD
 const todayIso = `${todayKey}T10:00`
 
 const { getContracts, getVehicles, rescheduleTestDrive } = vi.hoisted(() => ({ getContracts: vi.fn(), getVehicles: vi.fn(), rescheduleTestDrive: vi.fn() }))
-vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { getContracts, getVehicles, rescheduleTestDrive } }))
+vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { getContracts, getVehicles, rescheduleTestDrive, getContractPdfUrl: (id: number) => `/pdf/${id}` } }))
 
 // jsdom (v26) doesn't implement the PointerEvent constructor — build the event
 // on MouseEvent and attach pointerId manually (mirrors FieldSalesCalendar.test).
@@ -61,11 +61,22 @@ describe('DrivingCalendar', () => {
     expect(screen.getByText('Lu')).toBeInTheDocument()   // Monday-first weekday header
   })
 
-  it('tapping a driving session block opens the return overlay via onReturn', async () => {
+  it('tapping a driving session block opens the detail modal; Retur calls onReturn', async () => {
     const onReturn = vi.fn()
     wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={onReturn} onAdd={vi.fn()} />)
     fireEvent.click(await screen.findByTestId('tg-block-11'))
+    expect(await screen.findByText('Detalii sesiune')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Retur/ }))
     expect(onReturn).toHaveBeenCalledWith(11)
+  })
+
+  it('tapping a planned session block opens the detail modal; Începe calls onActivate', async () => {
+    const onActivate = vi.fn()
+    wrap(<DrivingCalendar companyId={11} brand="" onActivate={onActivate} onReturn={vi.fn()} onAdd={vi.fn()} />)
+    fireEvent.click(await screen.findByTestId('tg-block-12'))
+    expect(await screen.findByText('Detalii sesiune')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Începe sesiunea/ }))
+    expect(onActivate).toHaveBeenCalledWith(12)
   })
 
   it('drag-moves a PLANNED session block and reschedules it via the API', async () => {
