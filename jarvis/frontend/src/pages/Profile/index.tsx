@@ -59,6 +59,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
 import { useIsMobile } from '@/hooks/useMediaQuery'
+import { fmtPunchTime } from '@/lib/punchTime'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { profileApi, type ProfileUpdatePayload } from '@/api/profile'
 import { sincronApi, type SincronTimesheetData } from '@/api/sincron'
@@ -222,7 +223,7 @@ export default function Profile() {
                         <div className="text-xs text-right leading-tight">
                           <p className="font-medium">
                             {lastPunch.direction === 'IN' ? 'In' : 'Out'} at{' '}
-                            {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+                            {fmtPunchTime(lastPunch.event_datetime)}
                           </p>
                           {lastPunch.raw_data?.location_name && (
                             <p className="text-muted-foreground">{lastPunch.raw_data.location_name}</p>
@@ -883,8 +884,9 @@ function daysAgo(n: number) {
 }
 
 function fmtTime(dt: string | null) {
-  if (!dt) return '-'
-  return new Date(dt).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
+  // Punch times are Romania-local wall-clock stored with a +00:00 zone; format
+  // via fmtPunchTime so `new Date` doesn't shift them by the viewer's offset (+3h).
+  return fmtPunchTime(dt, { empty: '-' })
 }
 
 function fmtDuration(seconds: number | null) {
@@ -966,7 +968,7 @@ function QuickCheckinCard() {
           {lastPunch && (
             <p className="text-xs text-muted-foreground">
               Last: {lastPunch.direction} at{' '}
-              {new Date(lastPunch.event_datetime).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+              {fmtPunchTime(lastPunch.event_datetime)}
             </p>
           )}
           {punchMut.isSuccess && punchMut.data?.success && (
@@ -1876,11 +1878,7 @@ function DailyChart({ data, compact }: { data: { date: string; label: string; ho
 // ─── Punch Timeline Line ───────────────────────────────────────────
 
 function PunchLine({ punch, isFirst, isLast }: { punch: BioStarPunchLog; isFirst: boolean; isLast: boolean }) {
-  const time = new Date(punch.event_datetime).toLocaleTimeString('ro-RO', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
+  const time = fmtPunchTime(punch.event_datetime, { seconds: true })
 
   const dirIcon = punch.direction === 'IN'
     ? <LogIn className="h-3.5 w-3.5 text-green-600" />
