@@ -43,7 +43,13 @@ def api_get_organigram():
 @login_required
 @hr_required
 def api_get_sincron_organigram():
-    """API: Get Sincron employees grouped by company for organigram view."""
+    """API: Sincron organigram as the hierarchical node tree per company.
+
+    Mirrors the node tree built in the editor (sincron_org_nodes /
+    sincron_org_members). Employees assigned to no node land under 'Neatribuit'
+    (the ``unassigned`` bucket) — the flat sincron_employees.department column is
+    no longer used, so a person assigned in the editor stops showing unassigned.
+    """
     role_id = getattr(current_user, 'role_id', None)
     if role_id:
         from core.roles.repositories.permission_repository import PermissionRepository
@@ -52,52 +58,13 @@ def api_get_sincron_organigram():
             from flask import abort
             abort(403)
 
-    from core.connectors.sincron.repositories.sincron_repository import SincronRepository
-    rows = SincronRepository().query_all('''
-        SELECT se.sincron_employee_id, se.company_name,
-               se.nume, se.prenume, se.nr_contract, se.norma_lucru,
-               se.department,
-               se.mapped_jarvis_user_id, u.name AS mapped_user_name
-        FROM sincron_employees se
-        LEFT JOIN users u ON u.id = se.mapped_jarvis_user_id
-        WHERE se.is_active = TRUE
-        ORDER BY se.company_name, se.department NULLS LAST, se.nume, se.prenume
-    ''')
-
-    companies = {}
-    for r in rows:
-        cn = r['company_name']
-        if cn not in companies:
-            companies[cn] = {'company_name': cn, 'employees': [], 'departments': {}, 'count': 0}
-        emp = {
-            'sincron_employee_id': r['sincron_employee_id'],
-            'nume': r['nume'],
-            'prenume': r['prenume'],
-            'nr_contract': r['nr_contract'],
-            'norma_lucru': float(r['norma_lucru']) if r['norma_lucru'] else None,
-            'department': r['department'],
-            'mapped_jarvis_user_id': r['mapped_jarvis_user_id'],
-            'mapped_user_name': r['mapped_user_name'],
-        }
-        companies[cn]['employees'].append(emp)
-        dept = r['department'] or 'Neatribuit'
-        companies[cn]['departments'].setdefault(dept, [])
-        companies[cn]['departments'][dept].append(emp)
-        companies[cn]['count'] += 1
-
-    # Convert departments dict to sorted list
-    for c in companies.values():
-        c['departments'] = [
-            {'name': name, 'employees': emps, 'count': len(emps)}
-            for name, emps in sorted(c['departments'].items(), key=lambda x: (x[0] == 'Neatribuit', x[0]))
-        ]
-
-    result = sorted(companies.values(), key=lambda c: c['company_name'])
+    from core.connectors.sincron.repositories.sincron_org_node_repository import SincronOrgNodeRepository
+    data = SincronOrgNodeRepository().get_organigram_tree()
     return jsonify({
         'success': True,
-        'data': result,
-        'total_employees': sum(c['count'] for c in result),
-        'total_companies': len(result),
+        'data': data,
+        'total_employees': sum(c['count'] for c in data),
+        'total_companies': len(data),
     })
 
 

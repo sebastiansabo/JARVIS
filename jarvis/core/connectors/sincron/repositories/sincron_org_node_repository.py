@@ -119,6 +119,119 @@ class SincronOrgNodeRepository(BaseRepository):
             WHERE node_id = %s AND sincron_employee_id = %s AND company_name = %s
         ''', (node_id, sincron_employee_id, company_name)) > 0
 
+    # ── Read-only organigram tree (powers the Sincron organigram VIEW) ──
+
+    def get_organigram_tree(self) -> list[dict]:
+        """Per-company hierarchical node tree with resolved members, plus a
+        'Neatribuit' bucket of active employees assigned to no node.
+
+        This makes the read-only organigram view mirror the node tree built in
+        the editor (sincron_org_nodes / sincron_org_members) instead of grouping
+        by the flat, backfill-only sincron_employees.department column — which
+        left every new hire permanently under 'Neatribuit'.
+        """
+        employees = self.query_all('''
+            SELECT se.sincron_employee_id, se.company_name,
+                   se.nume, se.prenume, se.nr_contract, se.norma_lucru,
+                   se.mapped_jarvis_user_id, u.name AS mapped_user_name
+            FROM sincron_employees se
+            LEFT JOIN users u ON u.id = se.mapped_jarvis_user_id
+            WHERE se.is_active = TRUE
+            ORDER BY se.company_name, se.nume, se.prenume
+        ''')
+        nodes = self.query_all('''
+            SELECT id, company_id, parent_id, name, node_type, level, display_order
+            FROM sincron_org_nodes
+            ORDER BY company_id, level, display_order, name
+        ''')
+        members = self.query_all(
+            'SELECT node_id, sincron_employee_id, company_name, role FROM sincron_org_members'
+        )
+        # company_name → company_id (companies table is mixed-case, sincron upper)
+        id_by_name = {
+            r['company'].upper(): r['id']
+            for r in self.query_all('SELECT id, company FROM companies')
+            if r['company']
+        }
+
+        def _emp(row):
+            return {
+                'sincron_employee_id': row['sincron_employee_id'],
+                'company_name': row['company_name'],
+                'nume': row['nume'],
+                'prenume': row['prenume'],
+                'nr_contract': row['nr_contract'],
+                'norma_lucru': float(row['norma_lucru']) if row['norma_lucru'] is not None else None,
+                'mapped_jarvis_user_id': row['mapped_jarvis_user_id'],
+                'mapped_user_name': row['mapped_user_name'],
+            }
+
+        emp_by_key, emps_by_company = {}, {}
+        for row in employees:
+            emp = _emp(row)
+            key = (row['sincron_employee_id'], row['company_name'])
+            emp_by_key[key] = emp
+            emps_by_company.setdefault(row['company_name'], []).append(emp)
+
+        # Resolve members → employees; a member pointing at an inactive/removed
+        # employee has no active row and is silently skipped (matches active view).
+        resp_by_node, mem_by_node, assigned = {}, {}, set()
+        for m in members:
+            key = (m['sincron_employee_id'], m['company_name'])
+            emp = emp_by_key.get(key)
+            if not emp:
+                continue
+            assigned.add(key)
+            bucket = resp_by_node if m['role'] == 'responsable' else mem_by_node
+            bucket.setdefault(m['node_id'], []).append(emp)
+
+        nodes_by_company = {}
+        for n in nodes:
+            nodes_by_company.setdefault(n['company_id'], []).append(n)
+
+        def _sort_emps(lst):
+            return sorted(lst, key=lambda e: ((e['nume'] or '').lower(), (e['prenume'] or '').lower()))
+
+        def _build(company_id):
+            by_id = {}
+            for n in nodes_by_company.get(company_id, []):
+                by_id[n['id']] = {
+                    'id': n['id'], 'name': n['name'], 'node_type': n['node_type'],
+                    'level': n['level'], 'parent_id': n['parent_id'],
+                    'display_order': n['display_order'],
+                    'responsables': _sort_emps(resp_by_node.get(n['id'], [])),
+                    'members': _sort_emps(mem_by_node.get(n['id'], [])),
+                    'children': [],
+                }
+            roots = []
+            for n in nodes_by_company.get(company_id, []):
+                node = by_id[n['id']]
+                parent = by_id.get(n['parent_id']) if n['parent_id'] else None
+                (parent['children'] if parent else roots).append(node)
+
+            def _sort_nodes(lst):
+                lst.sort(key=lambda x: (x['display_order'], (x['name'] or '').lower()))
+                for x in lst:
+                    _sort_nodes(x['children'])
+            _sort_nodes(roots)
+            return roots
+
+        result = []
+        for company_name in sorted(emps_by_company):
+            company_id = id_by_name.get(company_name.upper())
+            comp_emps = emps_by_company[company_name]
+            unassigned = [e for e in comp_emps
+                          if (e['sincron_employee_id'], company_name) not in assigned]
+            result.append({
+                'company_name': company_name,
+                'company_id': company_id,
+                'nodes': _build(company_id) if company_id is not None else [],
+                'unassigned': _sort_emps(unassigned),
+                'count': len(comp_emps),
+                'mapped_count': sum(1 for e in comp_emps if e['mapped_jarvis_user_id']),
+            })
+        return result
+
     # ── Sincron companies (derived from sincron_employees) ──
 
     def get_sincron_companies(self) -> list[dict]:
