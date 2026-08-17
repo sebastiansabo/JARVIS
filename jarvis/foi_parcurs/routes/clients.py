@@ -30,7 +30,9 @@ def api_search_clients():
 # Create new client
 # ════════════════════════════════════════════════════════════════
 
-_PHONE_RE = re.compile(r'^(07\d{8}|\+40\d{9}|004\d{10})$')
+# International E.164 (+ and 7–15 digits) plus legacy RO national formats so
+# existing stored numbers still validate.
+_PHONE_RE = re.compile(r'^(\+\d{7,15}|07\d{8}|004\d{10})$')
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/clients', methods=['POST'])
@@ -48,12 +50,12 @@ def api_create_client():
     if not phone:
         return jsonify({'success': False, 'error': 'phone is required'}), 400
 
-    # Validate phone format: 07xxxxxxxx, +40xxxxxxxxx, or 004xxxxxxxxxx
+    # Validate phone format: international E.164 (+…) or legacy RO national.
     phone_clean = phone.replace(' ', '').replace('-', '')
     if not _PHONE_RE.match(phone_clean):
         return jsonify({
             'success': False,
-            'error': 'Invalid phone format. Must start with 07, +40, or 004',
+            'error': 'Invalid phone. Use international format, e.g. +40721234567',
         }), 400
 
     id_document_no = (data.get('id_document_no') or '').strip()

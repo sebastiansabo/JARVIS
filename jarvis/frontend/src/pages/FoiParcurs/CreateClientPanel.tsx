@@ -9,7 +9,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -18,6 +20,7 @@ import { fileToCompressedDataUrl } from '@/lib/imageCompress'
 import { RO_COUNTIES, RO_CITIES } from '@/data/roLocalities'
 import { Autocomplete } from '@/components/shared/Autocomplete'
 import type { CrmClient, DriverLicenseOcrData } from '@/types/foiParcurs'
+import { composePhone, COUNTRY_DIAL_CODES } from './phoneFormat'
 
 /** Country options — România default, common others after. */
 const COUNTRIES = [
@@ -155,6 +158,7 @@ export function CreateClientPanel({
   onCreated: (client: CrmClient, licenseNumber: string, licenseExpiry: string) => void
 }) {
   const [name, setName] = useState(prefill?.full_name ?? '')
+  const [dialCode, setDialCode] = useState('+40')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [isCompany, setIsCompany] = useState(false)
@@ -179,8 +183,7 @@ export function CreateClientPanel({
       foiParcursApi.createCrmClient(data),
   })
 
-  const phoneClean = phone.replace(/[\s-]/g, '')
-  const phoneValid = /^(07\d{8}|\+40\d{9}|004\d{10})$/.test(phoneClean)
+  const { full: phoneFull, valid: phoneValid } = composePhone(dialCode, phone)
   const emailValid = email.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
   const canCreate = name.trim() !== '' && phoneValid && emailValid && !create.isPending
 
@@ -190,7 +193,7 @@ export function CreateClientPanel({
     create.mutate(
       {
         display_name: name.trim(),
-        phone: phoneClean,
+        phone: phoneFull,
         ...(email.trim() ? { email: email.trim() } : {}),
         ...(address.trim() ? { address: address.trim() } : {}),
         ...(city.trim() ? { city: city.trim() } : {}),
@@ -241,13 +244,29 @@ export function CreateClientPanel({
       </div>
       <div className="space-y-1">
         <Label className="text-xs">Telefon *</Label>
-        <Input
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          placeholder="07xxxxxxxx"
-          inputMode="tel"
-          className={cn(phone !== '' && !phoneValid && 'ring-2 ring-destructive')}
-        />
+        <div className="flex gap-2">
+          <Select value={dialCode} onValueChange={setDialCode}>
+            <SelectTrigger className="w-[132px] shrink-0"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectLabel>Europa</SelectLabel>
+                {COUNTRY_DIAL_CODES.map((c) => (
+                  <SelectItem key={c.code} value={c.code}>
+                    <span className="mr-1.5">{c.flag}</span>
+                    <span className="font-medium">{c.code}</span>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="0721 234 567"
+            inputMode="tel"
+            className={cn('flex-1', phone !== '' && !phoneValid && 'ring-2 ring-destructive')}
+          />
+        </div>
       </div>
       <div className="space-y-1">
         <Label className="text-xs">Email</Label>

@@ -32,13 +32,14 @@ describe('CreateClientPanel company toggle', () => {
     wrap(<CreateClientPanel prefill={null} onCancel={() => {}} onCreated={vi.fn()} />)
     fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.change(screen.getByPlaceholderText('Nume și prenume'), { target: { value: 'Ion Pop' } })
-    fireEvent.change(screen.getByPlaceholderText('07xxxxxxxx'), { target: { value: '0712345678' } })
+    fireEvent.change(screen.getByPlaceholderText('0721 234 567'), { target: { value: '0712345678' } })
     fireEvent.change(screen.getByPlaceholderText('Denumire firmă'), { target: { value: 'ACME SRL' } })
     fireEvent.change(screen.getByPlaceholderText('CUI / CIF'), { target: { value: 'RO12345' } })
     fireEvent.click(screen.getByRole('button', { name: /creează client/i }))
     await waitFor(() => expect(createCrmClient).toHaveBeenCalled())
+    // Default +40 dial code is applied and the trunk 0 is stripped → E.164.
     expect(createCrmClient).toHaveBeenCalledWith(expect.objectContaining({
-      display_name: 'Ion Pop', phone: '0712345678',
+      display_name: 'Ion Pop', phone: '+40712345678',
       is_company: true, company_name: 'ACME SRL', cui: 'RO12345',
     }))
   })
@@ -46,7 +47,7 @@ describe('CreateClientPanel company toggle', () => {
   it('omits company fields when the toggle stays off', async () => {
     wrap(<CreateClientPanel prefill={null} onCancel={() => {}} onCreated={vi.fn()} />)
     fireEvent.change(screen.getByPlaceholderText('Nume și prenume'), { target: { value: 'Ana' } })
-    fireEvent.change(screen.getByPlaceholderText('07xxxxxxxx'), { target: { value: '0712345678' } })
+    fireEvent.change(screen.getByPlaceholderText('0721 234 567'), { target: { value: '0712345678' } })
     fireEvent.click(screen.getByRole('button', { name: /creează client/i }))
     await waitFor(() => expect(createCrmClient).toHaveBeenCalled())
     const arg = createCrmClient.mock.calls[0][0]
