@@ -45,5 +45,17 @@ def create_schema_facturare(conn, cursor):
         ON facturare_generations(created_at DESC)
     """)
 
+    # ── Comenzi archive lifecycle (mirror of migrations/007) ──
+    cursor.execute("ALTER TABLE facturare_anexas    ADD COLUMN IF NOT EXISTS archive_after TIMESTAMP")
+    cursor.execute("ALTER TABLE facturare_anexas    ADD COLUMN IF NOT EXISTS archived_at   TIMESTAMP")
+    cursor.execute("ALTER TABLE facturare_anexas    ADD COLUMN IF NOT EXISTS archived      BOOLEAN NOT NULL DEFAULT FALSE")
+    cursor.execute("ALTER TABLE facturare_anexas    ADD COLUMN IF NOT EXISTS status        VARCHAR(20) NOT NULL DEFAULT 'NEW'")
+    cursor.execute("ALTER TABLE facturare_invoices  ADD COLUMN IF NOT EXISTS archived      BOOLEAN NOT NULL DEFAULT FALSE")
+    cursor.execute("ALTER TABLE facturare_contracts ADD COLUMN IF NOT EXISTS archived      BOOLEAN NOT NULL DEFAULT FALSE")
+    cursor.execute("ALTER TABLE facturare_contracts ADD COLUMN IF NOT EXISTS archive_after TIMESTAMP")
+    cursor.execute("ALTER TABLE facturare_contracts ADD COLUMN IF NOT EXISTS archived_at   TIMESTAMP")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_fa_archive_after ON facturare_anexas(archive_after) WHERE archive_after IS NOT NULL")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_fc_archive_after ON facturare_contracts(archive_after) WHERE archive_after IS NOT NULL")
+
     conn.commit()
     logger.info('Facturare generations schema created/verified')
