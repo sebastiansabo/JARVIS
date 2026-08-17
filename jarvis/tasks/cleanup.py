@@ -13,6 +13,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from core.utils.logging_config import get_logger
 
 from tasks.archive_invoices import archive_pending_invoices as archive_invoices_task
+from tasks.archive_comenzi import archive_pending_comenzi
 from tasks.efactura import cleanup_old_unallocated_invoices
 from tasks.ai_tasks import reindex_rag_documents, extract_ai_knowledge, run_daily_digest
 from tasks.approvals import process_approval_tasks
@@ -86,6 +87,16 @@ def start_scheduler():
         'interval',
         minutes=15,
         id='archive_invoices',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        archive_pending_comenzi,
+        'interval',
+        minutes=15,
+        id='archive_comenzi',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,
