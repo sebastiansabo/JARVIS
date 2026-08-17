@@ -6,6 +6,7 @@ import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus, carColor } from '@/pages/FoiParcurs/sessionStatus'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
+import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
 import type { FoiContract, FpVehicle } from '@/types/foiParcurs'
 
 type CalView = 'day' | 'week' | 'month'
@@ -113,11 +114,11 @@ export default function DrivingCalendar({ companyId, brand, carFilter = [], cons
 
   const byId = useMemo(() => new Map((data?.contracts ?? []).map((c) => [c.id, c] as const)), [data])
 
-  const openContract = (c: FoiContract) => {
-    if (sessionStatus(c).key === 'planificat') onActivate(c.id)
-    else onReturn(c.id)
-  }
-  const openById = (id: number) => { const c = byId.get(id); if (c) openContract(c) }
+  // Clicking a session opens its detail modal (was: jump straight to
+  // activate/return). The modal's Începe/Retur then call onActivate/onReturn.
+  const [detail, setDetail] = useState<FoiContract | null>(null)
+  const openContract = (c: FoiContract) => setDetail(c)
+  const openById = (id: number) => { const c = byId.get(id); if (c) setDetail(c) }
 
   // Drag-to-reschedule (PLANNED only) — optimistic update of the shared
   // contracts cache, rolled back on error. Backend re-guards status + past-date.
@@ -298,6 +299,16 @@ export default function DrivingCalendar({ companyId, brand, carFilter = [], cons
               needs taller hourly slots than the compact week bars. */}
           <TimeGrid dayCols={dayCols} events={events} onEventClick={openById} onSlotAdd={onAdd} onMove={onMove} pxPerHour={view === 'day' ? 112 : undefined} />
         </>
+      )}
+
+      {detail && (
+        <SessionDetailModal
+          session={detail}
+          vehicle={detail.vin ? vinVehicle.get(detail.vin) : undefined}
+          onClose={() => setDetail(null)}
+          onActivate={() => { const { id } = detail; setDetail(null); onActivate(id) }}
+          onReturn={() => { const { id } = detail; setDetail(null); onReturn(id) }}
+        />
       )}
     </div>
   )

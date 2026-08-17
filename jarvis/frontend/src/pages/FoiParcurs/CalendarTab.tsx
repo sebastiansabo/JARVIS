@@ -1,27 +1,17 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, PlayCircle, XIcon, FileText, Clock } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
-import { toast } from 'sonner'
 import { foiParcursApi } from '@/api/foiParcurs'
 import type { FoiContract } from '@/types/foiParcurs'
 import { sessionStatus, carColor } from './sessionStatus'
-import ExtendSessionDialog from './ExtendSessionDialog'
-import ModifiedBadge from './ModifiedBadge'
 import { naiveDate } from '@/lib/naiveDate'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
+import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
 
 type CalView = 'month' | 'week' | 'day'
 const VIEW_OPTIONS: readonly [CalView, string][] = [['day', 'Zi'], ['week', 'Săptămână'], ['month', 'Lună']]
@@ -98,26 +88,6 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
     const v = vinVehicle.get(vin)
     return v ? [v.brand || v.mark, v.model].filter(Boolean).join(' ') : vin.slice(0, 8)
   }
-
-  const discardMutation = useMutation({
-    mutationFn: (id: number) => foiParcursApi.discardTestDrive(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
-      setSelected(null)
-    },
-  })
-
-  const [extending, setExtending] = useState<FoiContract | null>(null)
-  const extendMutation = useMutation({
-    mutationFn: (vars: { id: number; return_datetime: string }) =>
-      foiParcursApi.extendReturn(vars.id, { return_datetime: vars.return_datetime }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
-      setExtending(null)
-      setSelected(null)
-    },
-    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Prelungirea a eșuat'),
-  })
 
   // Drag-to-reschedule (PLANNED only) — optimistic on the visible month's cache,
   // rolled back on error; backend re-guards status + past-date.
@@ -358,68 +328,12 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
       )}
 
       {selected && (
-        <Dialog open onOpenChange={(o) => { if (!o) setSelected(null) }}>
-          <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                Detalii sesiune
-                <Badge className={cn('text-xs', sessionStatus(selected).badgeClass)}>{sessionStatus(selected).label}</Badge>
-                <ModifiedBadge session={selected} />
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-1.5 text-sm">
-              <p><span className="text-muted-foreground">Client:</span> {selected.client_name || '—'}</p>
-              <p><span className="text-muted-foreground">Consilier:</span> {selected.advisor_name || '—'}</p>
-              <p>
-                <span className="text-muted-foreground">Mașină:</span>{' '}
-                {(() => {
-                  const v = vinVehicle.get(selected.vin)
-                  return v ? `${[v.brand || v.mark, v.model].filter(Boolean).join(' ')} — ${v.registration_number || v.vin}` : selected.vin
-                })()}
-              </p>
-              <p><span className="text-muted-foreground">Plecare:</span> {selected.departure_datetime ? naiveDate(selected.departure_datetime)!.toLocaleString('ro-RO') : '—'}</p>
-              <p><span className="text-muted-foreground">Retur:</span> {selected.return_datetime ? naiveDate(selected.return_datetime)!.toLocaleString('ro-RO') : '—'}</p>
-            </div>
-            <DialogFooter className="flex-col sm:flex-row gap-2">
-              {selected.status === 'FILLED' && (
-                <Button variant="outline" className="w-full sm:w-auto" onClick={() => setExtending(selected)}>
-                  <Clock className="mr-1.5 h-4 w-4" />Prelungește
-                </Button>
-              )}
-              {selected.status === 'PLANNED' && (
-                <>
-                  <Button
-                    variant="outline"
-                    className="w-full sm:w-auto"
-                    onClick={() => {
-                      if (confirm('Renunți la această sesiune planificată? Acțiunea nu poate fi anulată.')) {
-                        discardMutation.mutate(selected.id)
-                      }
-                    }}
-                    disabled={discardMutation.isPending}
-                  >
-                    <XIcon className="mr-1.5 h-4 w-4" />Discard
-                  </Button>
-                  <Button className="w-full sm:w-auto" onClick={() => navigate(`/app/foi-parcurs/test-drive?activate=${selected.id}`)}>
-                    <PlayCircle className="mr-1.5 h-4 w-4" />Începe sesiunea
-                  </Button>
-                </>
-              )}
-              {selected.status !== 'PLANNED' && selected.status !== 'PENDING' && (
-                <a href={foiParcursApi.getContractPdfUrl(selected.id, 'legal')} target="_blank" rel="noopener" className="w-full sm:w-auto">
-                  <Button variant="outline" className="w-full"><FileText className="mr-1.5 h-4 w-4" />PDF</Button>
-                </a>
-              )}
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-      {extending && (
-        <ExtendSessionDialog
-          session={extending}
-          submitting={extendMutation.isPending}
-          onClose={() => setExtending(null)}
-          onSubmit={(returnDatetime) => extendMutation.mutate({ id: extending.id, return_datetime: returnDatetime })}
+        <SessionDetailModal
+          session={selected}
+          vehicle={vinVehicle.get(selected.vin)}
+          onClose={() => setSelected(null)}
+          onActivate={() => { const { id } = selected; setSelected(null); navigate(`/app/foi-parcurs/test-drive?activate=${id}`) }}
+          onReturn={() => { const { id } = selected; setSelected(null); navigate(`/app/foi-parcurs/test-drive/${id}/return`) }}
         />
       )}
     </div>
