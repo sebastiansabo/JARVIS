@@ -101,3 +101,27 @@ def test_reason_opts_from_schema_empty_when_missing_or_blank():
     assert FormService._reason_opts_from_schema(None) == []
     assert FormService._reason_opts_from_schema(
         [{'id': 'f_bi_reason', 'options': ['', '  ']}]) == []
+
+
+def test_leave_form_config_from_schema():
+    schema = [
+        {'id': 'f_bi_leave_date', 'label': 'Data'},
+        {'id': 'f_bi_reason', 'label': 'Motivul', 'options': ['Personal', 'Pauza de masa']},
+        {'id': 'f_bi_notes', 'label': 'Detalii', 'placeholder': 'scrie...'},
+        {'id': 'f_bi_terms', 'label': 'Sunt de acord \U0001f512'},
+    ]  # no f_bi_destination / f_bi_second_approver
+    cfg = FormService._leave_form_config_from_schema(schema)
+    assert cfg['reasons'] == ['Personal', 'Pauza de masa']
+    assert cfg['labels']['f_bi_leave_date'] == 'Data'
+    assert cfg['placeholders']['f_bi_notes'] == 'scrie...'
+    assert cfg['visible'] == {'f_bi_destination': False, 'f_bi_notes': True, 'f_bi_second_approver': False}
+    assert cfg['terms_text'] == 'Sunt de acord \U0001f512'
+
+
+def test_leave_form_config_defaults_when_empty():
+    cfg = FormService._leave_form_config_from_schema([])
+    assert cfg['reasons'] == ['Personal', 'Medical', 'Familial', 'Oficial', 'Altul']
+    assert cfg['labels'] == {}
+    assert cfg['placeholders'] == {}
+    assert cfg['visible'] == {'f_bi_destination': False, 'f_bi_notes': False, 'f_bi_second_approver': False}
+    assert cfg['terms_text'] == FormService.LEAVE_TERMS_TEXT

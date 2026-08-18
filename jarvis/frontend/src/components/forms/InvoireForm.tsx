@@ -29,6 +29,7 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
   const [reason, setReason] = useState('')
   const [secondApprover, setSecondApprover] = useState('')
   const [notes, setNotes] = useState('')
+  const [destination, setDestination] = useState('')
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [signature, setSignature] = useState('')
   const [attempted, setAttempted] = useState(false)
@@ -38,6 +39,13 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
     queryFn: () => connecteamApi.getLeaveSchedule(date),
   })
   const sched = schedRes?.data
+  // Forms-managed content (labels/placeholders/visibility/consent) with coded fallbacks.
+  const L = (id: string, fallback: string) => sched?.labels?.[id] || fallback
+  const P = (id: string, fallback: string) => sched?.placeholders?.[id] ?? fallback
+  const showDestination = sched?.visible?.f_bi_destination ?? false
+  const showNotes = sched?.visible?.f_bi_notes ?? true
+  const showApprover = sched?.visible?.f_bi_second_approver ?? true
+  const termsText = sched?.terms_text || 'Declar că îmi asum responsabilitatea pentru orice eventual eveniment neplăcut care ar putea surveni în legătură cu mine, în această perioadă în care sunt învoit / învoită 🔒'
   const startSlots = useMemo(() => sched ? buildStartSlots(sched.schedule_start, sched.schedule_end) : [], [sched])
   const durationOptions = useMemo(
     () => sched && start ? buildDurationOptions(start, sched.schedule_end, sched.day_cap_hours) : [],
@@ -92,6 +100,7 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
         f_bi_reason: reason,
         f_bi_second_approver: secondApprover,
         f_bi_notes: notes,
+        f_bi_destination: destination,
         f_bi_terms_accepted: termsAccepted,
         signature_image: signature,
       })
@@ -127,14 +136,14 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-lg px-5 py-6 space-y-5">
           <div className="space-y-1">
-            <Label>Data{req}</Label>
+            <Label>{L('f_bi_leave_date', 'Data')}{req}</Label>
             <Input type="date" value={date} onChange={(ev) => setDate(ev.target.value)}
               aria-invalid={attempted && invalid.date ? true : undefined} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>Ora de început{req}</Label>
+              <Label>{L('f_bi_start_time', 'Ora de început')}{req}</Label>
               <Select value={start} onValueChange={setStart}>
                 <SelectTrigger aria-invalid={attempted && invalid.start ? true : undefined}>
                   <SelectValue placeholder="Selectați ora" />
@@ -145,7 +154,7 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
               </Select>
             </div>
             <div className="space-y-1">
-              <Label>Durată{req}</Label>
+              <Label>{L('f_bi_hours', 'Durată')}{req}</Label>
               <Select value={durationHours ? String(durationHours) : ''}
                       onValueChange={(v) => setDurationHours(Number(v))}>
                 <SelectTrigger aria-invalid={attempted && invalid.duration ? true : undefined}>
@@ -168,7 +177,7 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
           </div>
 
           <div className="space-y-1">
-            <Label>Motivul{req}</Label>
+            <Label>{L('f_bi_reason', 'Motivul')}{req}</Label>
             <Select value={reason} onValueChange={setReason}>
               <SelectTrigger aria-invalid={attempted && invalid.reason ? true : undefined}>
                 <SelectValue placeholder="Selectați motivul" />
@@ -179,8 +188,9 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
             </Select>
           </div>
 
+          {showApprover && (
           <div className="space-y-1">
-            <Label>Al doilea aprobator (opțional)</Label>
+            <Label>{L('f_bi_second_approver', 'Al doilea aprobator (opțional)')}</Label>
             <p className="text-xs text-muted-foreground">Oricare dintre aprobatori poate aproba.</p>
             <Popover open={approverOpen} onOpenChange={(v) => { setApproverOpen(v); if (v) setTimeout(() => approverInputRef.current?.focus(), 0) }}>
               <PopoverTrigger asChild>
@@ -216,12 +226,23 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
               </PopoverContent>
             </Popover>
           </div>
+          )}
 
+          {showDestination && (
           <div className="space-y-1">
-            <Label>Detalii suplimentare</Label>
-            <Textarea value={notes} onChange={(ev) => setNotes(ev.target.value)} rows={3}
-              placeholder="Adăugați orice detalii relevante" />
+            <Label>{L('f_bi_destination', 'Destinația')}</Label>
+            <Input value={destination} onChange={(ev) => setDestination(ev.target.value)}
+              placeholder={P('f_bi_destination', 'Unde vă deplasați')} />
           </div>
+          )}
+
+          {showNotes && (
+          <div className="space-y-1">
+            <Label>{L('f_bi_notes', 'Detalii suplimentare')}</Label>
+            <Textarea value={notes} onChange={(ev) => setNotes(ev.target.value)} rows={3}
+              placeholder={P('f_bi_notes', 'Adăugați orice detalii relevante')} />
+          </div>
+          )}
 
           <div className="space-y-2">
             <Label>Semnătură{req}</Label>
@@ -239,7 +260,7 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
             <Checkbox className="mt-0.5" checked={termsAccepted}
               onCheckedChange={(v) => setTermsAccepted(!!v)}
               aria-invalid={attempted && invalid.terms ? true : undefined} />
-            <span>Declar că îmi asum responsabilitatea pentru orice eventual eveniment neplăcut care ar putea surveni în legătură cu mine, în această perioadă în care sunt învoit / învoită 🔒</span>
+            <span>{termsText}</span>
           </label>
 
           <Button className="w-full h-12 text-base font-semibold" onClick={handleSubmit} disabled={submit.isPending}>

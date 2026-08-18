@@ -100,6 +100,10 @@ export interface LeaveSchedule {
   lunch_break_minutes: number
   source: 'sincron' | 'default'
   reasons?: string[]
+  labels?: Record<string, string>
+  placeholders?: Record<string, string>
+  visible?: Record<string, boolean>
+  terms_text?: string
 }
 
 export const connecteamApi = {
