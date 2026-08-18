@@ -177,9 +177,18 @@ def api_submit_test_drive():
             'departure_datetime': data['departure_datetime'],
             'return_datetime': data.get('return_datetime'),
             'departure_damage': json.dumps(departure_damage),
-            'driver_license_photo': data.get('driver_license_photo'),
-            'driver_license_number': data.get('driver_license_number'),
-            'driver_license_expiry': (data.get('driver_license_expiry') or '').strip() or None,
+            # Driver-license fields — for a company client the actual driver is
+            # the gate-validated contact, and the web form hides its standalone
+            # license card, so the payload's photo/number/expiry are empty.
+            # Fall back to the contact's own values (mirrors driver_license_serie
+            # below and the activate path's driver_snapshot) so the FILLED
+            # session + its legal PDF never persist a blank permis for a company.
+            'driver_license_photo': (data.get('driver_license_photo')
+                                     or (driver_contact.get('driver_license_photo') if driver_contact else None)),
+            'driver_license_number': (data.get('driver_license_number')
+                                      or (driver_contact.get('driver_license_number') if driver_contact else None)),
+            'driver_license_expiry': ((data.get('driver_license_expiry') or '').strip()
+                                      or (driver_contact.get('driver_license_expiry') if driver_contact else None)),
             # Driver snapshot: for a company client, the actual driver is the
             # gate-validated contact resolved above; for a person client (or
             # an internal session, where both are None) it mirrors the client.
