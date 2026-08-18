@@ -305,8 +305,16 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     if (c.client_id && c.client_name) {
       setSelectedClient({ id: c.client_id, display_name: c.client_name, phone: c.client_phone ?? null })
     }
-    if (c.mkt_project_id) setMktProject({ id: c.mkt_project_id, name: c.mkt_project_name ?? null })
-    if (c.event_id) { setIsEvent(true); setEventId(c.event_id); setEventName(c.event_name ?? '') }
+    // Event/campaign are mutually exclusive in the UI (the checkbox handler
+    // enforces it), but an event-tagged draft ALSO carries a backend-bridged
+    // mkt_project_id (submit auto-links a marketing project when event_id is
+    // set). Prefill event-first so reopening such a draft never leaves BOTH
+    // eventId and mktProject non-null (which would break the invariant).
+    if (c.event_id) {
+      setIsEvent(true); setEventId(c.event_id); setEventName(c.event_name ?? '')
+    } else if (c.mkt_project_id) {
+      setMktProject({ id: c.mkt_project_id, name: c.mkt_project_name ?? null })
+    }
   }, [draftData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -429,6 +437,9 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   })
   const eventResults = eventSearchData?.events ?? []
   const eventSearchForbidden = (eventSearchErr as any)?.status === 403
+  // Any non-403 search failure (500/network) — distinct from an empty result
+  // set, so we don't mislabel a failed search as "no events found".
+  const eventSearchFailed = !!eventSearchErr && !eventSearchForbidden
 
   // Auto-select the logged-in user's company by name (still switchable)
   useEffect(() => {
@@ -1004,7 +1015,10 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                     Nu ai permisiunea de a căuta evenimente HR — poți totuși crea unul nou mai jos.
                   </p>
                 )}
-                {!eventSearchForbidden && debouncedEventSearch.trim().length >= 2 && !isSearchingEvents && eventResults.length === 0 && (
+                {eventSearchFailed && (
+                  <p className="text-xs text-destructive">Căutarea a eșuat.</p>
+                )}
+                {!eventSearchForbidden && !eventSearchFailed && debouncedEventSearch.trim().length >= 2 && !isSearchingEvents && eventResults.length === 0 && (
                   <p className="text-xs text-muted-foreground">Niciun eveniment găsit.</p>
                 )}
                 {eventResults.length > 0 && (
