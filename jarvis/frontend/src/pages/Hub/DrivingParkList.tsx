@@ -4,6 +4,7 @@ import { Car, Gauge, Search, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { foiParcursApi } from '@/api/foiParcurs'
 import type { FpVehicle } from '@/types/foiParcurs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface Props {
   companyId: number
@@ -26,6 +27,13 @@ function isExpired(iso?: string | null): boolean {
   if (!iso) return false
   const d = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso)
   return !isNaN(d.getTime()) && d.getTime() < Date.now()
+}
+
+/** Client-side sort mode for the fleet list, keyed off the same odometer
+ * reading (`mileage_floor ?? odometer_km`) shown on each ParkCard. */
+type OdoSort = 'default' | 'odo_desc' | 'odo_asc'
+function odoOf(v: FpVehicle): number | null {
+  return v.mileage_floor ?? v.odometer_km ?? null
 }
 
 type ParkStatus = { label: string; badgeClass: string; reason?: string }
@@ -52,6 +60,7 @@ export default function DrivingParkList({ companyId, brand, carFilter = [] }: Pr
   const [showArchived, setShowArchived] = useState(false)
   const [search, setSearch] = useState('')
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [odoSort, setOdoSort] = useState<OdoSort>('default')
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['fp-vehicles', 'all'],
@@ -80,6 +89,22 @@ export default function DrivingParkList({ companyId, brand, carFilter = [] }: Pr
       .sort((a, b) => vehicleName(a).localeCompare(vehicleName(b)))
   }, [data, companyId, brand, carFilter, showArchived, search])
 
+  // Pure client-side re-sort of the already-filtered list; unknown odometer
+  // readings (both mileage_floor and odometer_km null) always sink to the
+  // bottom regardless of direction.
+  const sorted = useMemo(() => {
+    if (odoSort === 'default') return items
+    const withKey = [...items]
+    withKey.sort((a, b) => {
+      const ka = odoOf(a), kb = odoOf(b)
+      if (ka == null && kb == null) return 0
+      if (ka == null) return 1
+      if (kb == null) return -1
+      return odoSort === 'odo_desc' ? kb - ka : ka - kb
+    })
+    return withKey
+  }, [items, odoSort])
+
   return (
     <div className="space-y-3">
       {/* iOS search field */}
@@ -92,6 +117,16 @@ export default function DrivingParkList({ companyId, brand, carFilter = [] }: Pr
           className="h-11 w-full rounded-xl border border-transparent bg-muted/60 pl-9 pr-3 text-base outline-none transition-colors placeholder:text-muted-foreground focus:border-border focus:bg-background"
         />
       </div>
+
+      {/* Client-side odometer sort — purely reorders the list already produced above */}
+      <Select value={odoSort} onValueChange={(v) => setOdoSort(v as OdoSort)}>
+        <SelectTrigger className="w-[190px]"><SelectValue placeholder="Ordonează" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="default">Ordine implicită</SelectItem>
+          <SelectItem value="odo_desc">Odometru: mare → mic</SelectItem>
+          <SelectItem value="odo_asc">Odometru: mic → mare</SelectItem>
+        </SelectContent>
+      </Select>
 
       {/* iOS segmented control — read-only view of active vs archived cars */}
       <div className="flex h-9 gap-0.5 rounded-lg bg-muted p-0.5">
@@ -130,7 +165,7 @@ export default function DrivingParkList({ companyId, brand, carFilter = [] }: Pr
         </div>
       ) : (
         <div className="space-y-2.5">
-          {items.map((v) => (
+          {sorted.map((v) => (
             <ParkCard
               key={v.id}
               vehicle={v}
