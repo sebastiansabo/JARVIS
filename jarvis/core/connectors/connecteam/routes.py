@@ -168,6 +168,18 @@ def get_approvers():
         return safe_error_response(e)
 
 
+@connecteam_bp.route('/api/leave-schedule', methods=['GET'])
+@api_login_required
+def get_leave_schedule_route():
+    """Sincron work window + day cap for the current user's leave form."""
+    from .services.leave_schedule import get_leave_schedule
+    try:
+        data = get_leave_schedule(current_user.id, request.args.get('date'))
+        return jsonify({'success': True, 'data': data})
+    except Exception as e:
+        return safe_error_response(e)
+
+
 # ── Submissions (user-scoped) ──
 
 @connecteam_bp.route('/api/submissions/employee/<int:user_id>', methods=['GET'])
