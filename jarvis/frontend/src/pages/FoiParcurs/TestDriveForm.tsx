@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { foiParcursApi } from '@/api/foiParcurs'
+import { crmApi, type ClientContact } from '@/api/crm'
 import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
+import { fileToCompressedDataUrl } from '@/lib/imageCompress'
 import { useVehicleConflicts } from '@/hooks/useVehicleConflicts'
 import {
   usesFuelTank,
@@ -49,6 +51,7 @@ import {
   Loader2,
   X,
   UserPlus,
+  ImagePlus,
   ChevronDown,
   FileText,
   AlertTriangle,
@@ -133,6 +136,13 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const debouncedSearch = useDebounce(clientSearch, 350)
   const [selectedClient, setSelectedClient] = useState<CrmClient | null>(null)
   const [showManualCreate, setShowManualCreate] = useState(false)
+
+  // Company-client driver gate (Task 11): a company client never drives
+  // itself — the backend hard-blocks a live FILLED submit and an activation
+  // of a company session without a gate-valid driver_contact_id (see the
+  // contacts query + gate below). Not required for a PLANNED draft.
+  const [driverContact, setDriverContact] = useState<ClientContact | null>(null)
+  const [showAddContact, setShowAddContact] = useState(false)
 
   // Campaign / event (optional marketing project) — type-to-search, like mobile
   const [mktProject, setMktProject] = useState<MktProject | null>(null)
@@ -259,6 +269,17 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     enabled: activateId != null,
   })
 
+  // GET /test-drive/{id} denormalizes client_name/client_phone onto the
+  // contract but not client_type — needed to tell a company client (which
+  // must gate on a driver contact, see below) from a person client while
+  // activating a PLANNED draft. Fetched only in activation mode.
+  const draftClientId = draftData?.contract?.client_id ?? null
+  const { data: draftClientData } = useQuery({
+    queryKey: ['fp-draft-client', draftClientId],
+    queryFn: () => crmApi.getClient(draftClientId!),
+    enabled: isActivating && draftClientId != null,
+  })
+
   useEffect(() => {
     const c = draftData?.contract
     if (!c || c.status !== 'PLANNED') return
@@ -294,6 +315,15 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     }
   }, [draftData, allVehicles])
 
+  // Patch client_type onto the prefilled draft client once the lookup above
+  // resolves — only then can isCompanyClient (below) correctly gate the
+  // contact picker/gate for an activation of a company-client draft.
+  useEffect(() => {
+    const c = draftClientData?.client
+    if (!c) return
+    setSelectedClient((prev) => (prev && String(prev.id) === String(c.id) ? { ...prev, client_type: c.client_type } : prev))
+  }, [draftClientData])
+
   const { data: inspectionData } = useQuery({
     queryKey: ['fp-inspection', vehicleId],
     queryFn: () => foiParcursApi.getLatestInspection(vehicleId!),
@@ -319,6 +349,40 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     enabled: debouncedSearch.trim().length >= 2 && !selectedClient,
   })
   const clientResults = clientSearchData?.clients ?? []
+
+  // ── Company-client contact person (Task 11 hard gate) ──
+  // A company client (client_type==='company') never drives itself — the
+  // backend hard-blocks a live FILLED submit and an activation of a company
+  // session without a gate-valid driver_contact_id (crm/repositories/
+  // contact_repository.py: contact_gate_valid / GATE_FIELDS). Mirrored here
+  // with the SAME six fields so the client-side gate never disagrees with
+  // the server. A PLANNED draft is NOT gated (mirrors the server: the gate
+  // only applies to a live FILLED submit and to activation).
+  const isCompanyClient = selectedClient?.client_type === 'company'
+  const { data: contactsData } = useQuery({
+    queryKey: ['client-contacts', selectedClient?.id],
+    queryFn: () => crmApi.listClientContacts(Number(selectedClient!.id)),
+    enabled: !!selectedClient && isCompanyClient,
+  })
+  const contacts = contactsData?.contacts ?? []
+  const contactGateFields = (c: ClientContact | null) =>
+    !!c && !!c.full_name && !!c.email && !!c.phone && !!c.driver_license_photo &&
+    !!c.driver_license_serie && !!c.driver_license_number
+  const contactGateOk = !isCompanyClient || contactGateFields(driverContact)
+
+  // A contact selected for a previous client must never leak into a new
+  // selection — reset whenever the selected client changes (including the
+  // "Schimbă" → null step before a new pick).
+  useEffect(() => {
+    setDriverContact(null)
+  }, [selectedClient?.id])
+
+  // Auto-select the primary (or first) contact once the list loads.
+  useEffect(() => {
+    if (isCompanyClient && !driverContact && contacts.length) {
+      setDriverContact(contacts.find((c) => c.is_primary) ?? contacts[0])
+    }
+  }, [isCompanyClient, contacts, driverContact])
 
   // Campaign/event search — type-to-search (>=2 chars), not scoped by company
   // (matches the mobile form). Optional field, nothing gates on it.
@@ -367,7 +431,13 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     company: !companyId,
     vehicle: !selectedVehicle?.vin,
     client: !selectedClient,
-    license: !driverLicensePhoto,
+    // A company client's license comes from its chosen contact (gated below
+    // via `contact`), not the standalone photo upload — never double-block on it.
+    license: isCompanyClient ? false : !driverLicensePhoto,
+    // Company-client hard gate (Task 11): a company never drives itself — a
+    // gate-valid contact person is required. Mirrors the backend exactly;
+    // NOT part of draftValid (a PLANNED draft defers this to activation).
+    contact: !contactGateOk,
     departure: !departureDatetime,
     odometer: Number.isNaN(odometerNum) || odometerNum < 0,
     estimated: Number.isNaN(estimatedNum) || estimatedNum <= 0,
@@ -395,7 +465,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const activateValid = !(
     missing.company || missing.vehicle || missing.client || missing.departure ||
     missing.odometer || missing.estimated || missing.fuel || missing.advisor || missing.returnInvalid ||
-    missing.clientSig || missing.conditions
+    missing.clientSig || missing.conditions || missing.contact
   )
   const err = (bad: boolean) => attempted && bad          // plan-relevant fields (any attempt)
   const errFull = (bad: boolean) => submitAttempt && bad  // activation-only fields (submit/activate only)
@@ -450,6 +520,9 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       fuel_gauge_start_level: fuelGaugeStart as FuelGaugeLevel,
       departure_datetime: departureDatetime,
       advisor_name: advisorName.trim(),
+      // Task 15 wires the UI that lets an advisor pick a marketing event;
+      // pass the literal undefined until then (no eventId state exists yet).
+      event_id: undefined,
       ...(returnDatetime ? { return_datetime: returnDatetime } : {}),
       ...(capacity != null ? { fuel_tank_capacity_liters: capacity } : {}),
       ...(advisorSignature ? { advisor_signature: advisorSignature } : {}),
@@ -462,6 +535,11 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(generalObservation.trim() ? { general_observation: generalObservation.trim() } : {}),
       ...(mktProject ? { mkt_project_id: Number(mktProject.id) } : {}),
       ...(vehicle.locked_out || vehicle.blocked_now ? { allow_locked: true } : {}),
+      // Company-client driver gate (Task 11) — the gate-valid contact chosen
+      // above; driver_license_serie mirrors the contact's own (a person
+      // client has neither, so both are simply omitted for it).
+      ...(driverContact ? { driver_contact_id: driverContact.id } : {}),
+      ...(driverContact?.driver_license_serie ? { driver_license_serie: driverContact.driver_license_serie } : {}),
     }
   }
 
@@ -528,6 +606,10 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(generalObservation.trim() ? { general_observation: generalObservation.trim() } : {}),
       ...(mktProject ? { mkt_project_id: Number(mktProject.id) } : {}),
       ...(selectedVehicle.locked_out || selectedVehicle.blocked_now ? { allow_locked: true } : {}),
+      // Company-client driver gate (Task 11) — required server-side for a
+      // company client's activation (400s without it); the backend derives
+      // driver_license_serie itself from the contact, so it isn't sent here.
+      ...(driverContact ? { driver_contact_id: driverContact.id } : {}),
     }
     withConflictCheck(selectedVehicle.vin, () => activateMutation.mutate(payload), activateId)
   }
@@ -539,6 +621,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   function resetForm() {
     setCompanyId(null); setVehicleId(null); setSelectedVehicle(null)
     setClientSearch(''); setSelectedClient(null); setShowManualCreate(false)
+    setDriverContact(null); setShowAddContact(false)
     setMktProject(null); setProjectSearch('')
     setDriverLicensePhoto(null); setDriverLicenseNumber(''); setDriverLicenseExpiry('')
     setDepartureDatetime(localDatetimeValue(new Date()))
@@ -695,14 +778,57 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
         </CardHeader>
         <CardContent className="space-y-3">
           {selectedClient ? (
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-sm py-1 px-3">
-                {selectedClient.display_name || selectedClient.name || `Client #${selectedClient.id}`}
-                {selectedClient.phone && ` — ${selectedClient.phone}`}
-              </Badge>
-              <Button variant="ghost" size="sm" onClick={() => { setSelectedClient(null); setClientSearch('') }}>
-                <X className="h-4 w-4 mr-1" />Schimbă
-              </Button>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="text-sm py-1 px-3">
+                  {selectedClient.display_name || selectedClient.name || `Client #${selectedClient.id}`}
+                  {selectedClient.phone && ` — ${selectedClient.phone}`}
+                </Badge>
+                <Button variant="ghost" size="sm" onClick={() => { setSelectedClient(null); setClientSearch('') }}>
+                  <X className="h-4 w-4 mr-1" />Schimbă
+                </Button>
+              </div>
+              {isCompanyClient && (
+                <div className={cn('rounded-md border bg-muted/40 p-3 space-y-2', invalidRingFull(missing.contact))}>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">Persoană de contact *</p>
+                  <p className="text-xs text-muted-foreground">
+                    Firma nu conduce — alege persoana care preia efectiv vehiculul.
+                  </p>
+                  {showAddContact ? (
+                    <AddContactForm
+                      clientId={Number(selectedClient.id)}
+                      onCreated={(c) => { setDriverContact(c); setShowAddContact(false) }}
+                      onCancel={() => setShowAddContact(false)}
+                    />
+                  ) : (
+                    <>
+                      <Select
+                        value={driverContact ? String(driverContact.id) : ''}
+                        onValueChange={(v) => setDriverContact(contacts.find((c) => String(c.id) === v) ?? null)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Alege persoana de contact" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {contacts.map((c) => (
+                            <SelectItem key={c.id} value={String(c.id)}>
+                              {c.full_name}{contactGateFields(c) ? '' : ' ⚠ date incomplete'}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant="outline" size="sm" className="w-full border-dashed" onClick={() => setShowAddContact(true)}>
+                        <UserPlus className="h-3.5 w-3.5 mr-2" />Adaugă persoană de contact
+                      </Button>
+                    </>
+                  )}
+                  {errFull(missing.contact) && (
+                    <p className="text-xs text-destructive">
+                      Firma necesită o persoană de contact cu nume, email, telefon, poză permis, serie și număr complete.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           ) : showManualCreate ? (
             <CreateClientPanel
@@ -811,15 +937,34 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           <CardTitle className="text-base flex items-center gap-2"><IdCard className="h-4 w-4" />Permis de conducere</CardTitle>
         </CardHeader>
         <CardContent>
-          <DriverLicenseSection
-            photo={driverLicensePhoto}
-            onPhotoChange={setDriverLicensePhoto}
-            invalid={errFull(missing.license)}
-            hasClient={!!selectedClient}
-            onSelectClient={setSelectedClient}
-            onLicenseNumber={setDriverLicenseNumber}
-            onLicenseExpiry={setDriverLicenseExpiry}
-          />
+          {isCompanyClient ? (
+            driverContact ? (
+              <div className="rounded-md border bg-muted/40 p-3 space-y-2 text-sm">
+                <p className="text-xs text-muted-foreground">
+                  Preluat din persoana de contact «{driverContact.full_name}» — schimbă persoana de contact mai sus pentru a modifica.
+                </p>
+                {driverContact.driver_license_photo && (
+                  <img src={driverContact.driver_license_photo} alt="Permis de conducere" className="h-20 w-32 rounded-md object-cover border" />
+                )}
+                <p><span className="text-muted-foreground">Serie/număr:</span> {[driverContact.driver_license_serie, driverContact.driver_license_number].filter(Boolean).join(' ') || '—'}</p>
+                <p><span className="text-muted-foreground">Valabilitate:</span> {driverContact.driver_license_expiry || '—'}</p>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Alege sau adaugă mai sus o persoană de contact — permisul se preia automat de acolo.
+              </p>
+            )
+          ) : (
+            <DriverLicenseSection
+              photo={driverLicensePhoto}
+              onPhotoChange={setDriverLicensePhoto}
+              invalid={errFull(missing.license)}
+              hasClient={!!selectedClient}
+              onSelectClient={setSelectedClient}
+              onLicenseNumber={setDriverLicenseNumber}
+              onLicenseExpiry={setDriverLicenseExpiry}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -1073,6 +1218,136 @@ function AdvisorSignatureField({ value, onChange }: { value: string; onChange: (
           <SignatureCanvas onSave={persist} onClear={() => onChange('')} width={500} height={200} />
         </Suspense>
       )}
+    </div>
+  )
+}
+
+/** Inline "new company contact" form (Task 11) — posts to
+ *  crmApi.createClientContact, then hands the created contact back so the
+ *  picker above can auto-select it. Mirrors DriverLicenseSection's
+ *  photo-upload control (compress + preview) without its OCR/create-client
+ *  wiring, which doesn't apply to a company's contact person. */
+function AddContactForm({
+  clientId,
+  onCreated,
+  onCancel,
+}: {
+  clientId: number
+  onCreated: (contact: ClientContact) => void
+  onCancel: () => void
+}) {
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [photo, setPhoto] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [serie, setSerie] = useState('')
+  const [number, setNumber] = useState('')
+  const [expiry, setExpiry] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const create = useMutation({
+    mutationFn: (data: Partial<ClientContact>) => crmApi.createClientContact(clientId, data),
+  })
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setBusy(true)
+    const compressed = await fileToCompressedDataUrl(file)
+    setBusy(false)
+    if (compressed) setPhoto(compressed)
+  }
+
+  const canCreate = fullName.trim() !== '' && !create.isPending
+
+  const handleCreate = () => {
+    if (!canCreate) return
+    setError(null)
+    create.mutate(
+      {
+        full_name: fullName.trim(),
+        ...(email.trim() ? { email: email.trim() } : {}),
+        ...(phone.trim() ? { phone: phone.trim() } : {}),
+        ...(photo ? { driver_license_photo: photo } : {}),
+        ...(serie.trim() ? { driver_license_serie: serie.trim() } : {}),
+        ...(number.trim() ? { driver_license_number: number.trim() } : {}),
+        ...(expiry.trim() ? { driver_license_expiry: expiry.trim() } : {}),
+      },
+      {
+        onSuccess: (res) => {
+          if (res.contact) onCreated(res.contact)
+          else setError('Persoana de contact nu a putut fi creată.')
+        },
+        onError: (err: any) => {
+          setError(err?.data?.error || err?.message || 'Crearea persoanei de contact a eșuat.')
+        },
+      },
+    )
+  }
+
+  return (
+    <div className="space-y-2.5 rounded-md border bg-background p-3">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Persoană de contact nouă</p>
+      <div className="space-y-1">
+        <Label className="text-xs">Nume complet *</Label>
+        <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Nume și prenume" />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Email *</Label>
+        <Input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="email@exemplu.ro"
+          inputMode="email"
+          autoCapitalize="none"
+        />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Telefon *</Label>
+        <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0721 234 567" inputMode="tel" />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Poză permis *</Label>
+        {photo ? (
+          <div className="flex items-center gap-3">
+            <img src={photo} alt="Permis de conducere" className="h-16 w-28 rounded-md object-cover border" />
+            <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => setPhoto(null)}>
+              <X className="h-3.5 w-3.5 mr-1" /> Șterge
+            </Button>
+          </div>
+        ) : (
+          <label className="flex h-16 w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed text-muted-foreground hover:bg-accent transition-colors">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+            <span className="text-xs font-medium">Adaugă poza permisului</span>
+            <input type="file" accept="image/*" className="hidden" onChange={handleFile} />
+          </label>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-xs">Serie *</Label>
+          <Input value={serie} onChange={(e) => setSerie(e.target.value)} placeholder="Serie" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Număr *</Label>
+          <Input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="Număr" />
+        </div>
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Valabilitate permis</Label>
+        <Input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
+      </div>
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
+
+      <div className="flex gap-2 pt-1">
+        <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>Anulează</Button>
+        <Button type="button" className="flex-1" onClick={handleCreate} disabled={!canCreate}>
+          {create.isPending ? 'Se creează...' : 'Creează persoana de contact'}
+        </Button>
+      </div>
     </div>
   )
 }
