@@ -101,7 +101,7 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
       onSubmitted()
       onClose()
     },
-    onError: () => toast.error('Trimiterea învoirii a eșuat.'),
+    onError: (e: any) => toast.error(e?.response?.data?.error || 'Trimiterea învoirii a eșuat.'),
   })
 
   const handleSubmit = () => {

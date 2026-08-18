@@ -306,15 +306,30 @@ class FormService:
 
     LEAVE_FORM_SLUG = 'bilet-de-invoire'
     LEAVE_REQUIRED_FIELDS = ('f_bi_leave_date', 'f_bi_start_time', 'f_bi_duration_hours', 'f_bi_reason')
+    # Old contract, still sent by the live jarvis-mobile-2/-3 apps — no duration,
+    # no consent, no signature. Keep accepting it until those apps are retired.
+    LEAVE_REQUIRED_FIELDS_LEGACY = ('f_bi_leave_date', 'f_bi_start_time', 'f_bi_end_time', 'f_bi_reason')
     LEAVE_TERMS_TEXT = ('Declar că îmi asum responsabilitatea pentru orice eventual '
                         'eveniment neplăcut care ar putea surveni în legătură cu mine, '
                         'în această perioadă în care sunt învoit / învoită 🔒')
 
     @staticmethod
+    def _is_new_leave_contract(answers) -> bool:
+        """True when the submission uses the NEW (duration-based) web contract."""
+        a = answers or {}
+        return bool(str(a.get('f_bi_duration_hours', '')).strip())
+
+    @staticmethod
     def _leave_permit_missing_fields(answers):
-        """Required fields absent/blank from a code-defined Invoire submission."""
+        """Required fields absent/blank from a code-defined Invoire submission (NEW contract)."""
         a = answers or {}
         return [k for k in FormService.LEAVE_REQUIRED_FIELDS if not str(a.get(k, '')).strip()]
+
+    @staticmethod
+    def _leave_permit_missing_fields_legacy(answers):
+        """Required fields absent/blank for the OLD (mobile) Invoire contract."""
+        a = answers or {}
+        return [k for k in FormService.LEAVE_REQUIRED_FIELDS_LEGACY if not str(a.get(k, '')).strip()]
 
     @staticmethod
     def _leave_permit_precheck(answers):
@@ -329,14 +344,18 @@ class FormService:
     def submit_leave_permit(self, answers: Dict, user: UserContext, ip_address=None) -> ServiceResult:
         """Create a Bilet de Invoire (code-defined Invoire module form).
 
-        Server computes/validates hours from start + duration against the
-        employee's Sincron window, persists numeric f_bi_hours + computed
-        return time, records consent, and stores a frozen copy of the
-        signature in document_signatures (never in answers, never touches
-        users.signature — the frontend saves that via the profile endpoint).
+        Branches on the presence of `f_bi_duration_hours`:
+          - NEW (web) contract: server computes/validates hours from start +
+            duration against the employee's Sincron window, requires consent
+            + signature, and stores a frozen signature copy.
+          - LEGACY (mobile) contract: no duration/consent/signature sent by
+            the live jarvis-mobile-2/-3 apps — validate only the old required
+            fields, skip alignment/cap/window checks, but still derive a
+            numeric f_bi_hours from start/end so HR/pontaj/Time-Bank reporting
+            works for mobile submissions too.
         """
         from core.connectors.connecteam.services.leave_schedule import (
-            get_leave_schedule, validate_leave, compute_return)
+            get_leave_schedule, validate_leave, compute_return, parse_hm)
         from datetime import datetime, timezone
 
         form = self.form_repo.get_by_slug(self.LEAVE_FORM_SLUG)
@@ -347,28 +366,42 @@ class FormService:
         # Pull signature out so it never lands in the JSONB.
         signature_image = str(answers.pop('signature_image', '') or '').strip()
 
-        missing = self._leave_permit_missing_fields(answers)
-        if missing:
-            return ServiceResult(success=False,
-                error=f'Missing required fields: {", ".join(missing)}', status_code=400)
-        precheck = self._leave_permit_precheck({**answers, 'signature_image': signature_image})
-        if precheck:
-            return ServiceResult(success=False, error=precheck, status_code=400)
-        if answers.get('f_bi_reason') not in ('Personal', 'Medical', 'Familial', 'Oficial', 'Altul'):
-            return ServiceResult(success=False, error='Motiv invalid', status_code=400)
+        if self._is_new_leave_contract(answers):
+            missing = self._leave_permit_missing_fields(answers)
+            if missing:
+                return ServiceResult(success=False,
+                    error=f'Missing required fields: {", ".join(missing)}', status_code=400)
+            precheck = self._leave_permit_precheck({**answers, 'signature_image': signature_image})
+            if precheck:
+                return ServiceResult(success=False, error=precheck, status_code=400)
+            if answers.get('f_bi_reason') not in ('Personal', 'Medical', 'Familial', 'Oficial', 'Altul'):
+                return ServiceResult(success=False, error='Motiv invalid', status_code=400)
 
-        schedule = get_leave_schedule(user.user_id, answers.get('f_bi_leave_date'))
-        time_err = validate_leave(answers.get('f_bi_start_time'),
-                                  answers.get('f_bi_duration_hours'), schedule)
-        if time_err:
-            return ServiceResult(success=False, error=time_err, status_code=400)
+            schedule = get_leave_schedule(user.user_id, answers.get('f_bi_leave_date'))
+            time_err = validate_leave(answers.get('f_bi_start_time'),
+                                      answers.get('f_bi_duration_hours'), schedule)
+            if time_err:
+                return ServiceResult(success=False, error=time_err, status_code=400)
 
-        duration = float(answers['f_bi_duration_hours'])
-        answers['f_bi_hours'] = duration
-        answers['f_bi_end_time'] = compute_return(answers['f_bi_start_time'], duration)
-        answers['f_bi_terms_accepted'] = True
-        answers['f_bi_terms_text'] = self.LEAVE_TERMS_TEXT
-        answers['f_bi_terms_accepted_at'] = datetime.now(timezone.utc).isoformat()
+            duration = float(answers['f_bi_duration_hours'])
+            answers['f_bi_hours'] = duration
+            answers['f_bi_end_time'] = compute_return(answers['f_bi_start_time'], duration)
+            answers['f_bi_terms_accepted'] = True
+            answers['f_bi_terms_text'] = self.LEAVE_TERMS_TEXT
+            answers['f_bi_terms_accepted_at'] = datetime.now(timezone.utc).isoformat()
+        else:
+            missing = self._leave_permit_missing_fields_legacy(answers)
+            if missing:
+                return ServiceResult(success=False,
+                    error=f'Missing required fields: {", ".join(missing)}', status_code=400)
+
+            # Derive numeric hours from start/end so pontaj/HR/Time-Bank still
+            # get a usable value from legacy mobile submissions.
+            s = parse_hm(answers.get('f_bi_start_time'))
+            e = parse_hm(answers.get('f_bi_end_time'))
+            if s is not None and e is not None and e > s:
+                answers['f_bi_hours'] = round((e - s) / 60, 2)
+            # f_bi_end_time stays exactly as sent by the client.
 
         answers = _sanitize_answers(answers)
         submission_id = self.submission_repo.create(
@@ -378,12 +411,14 @@ class FormService:
         )
 
         # Frozen per-submission signature copy → document_signatures.
-        try:
-            from core.signatures.repositories.signature_repo import SignatureRepository
-            SignatureRepository().create_signed('leave_permit', submission_id,
-                                                 user.user_id, signature_image, ip_address)
-        except Exception as e:
-            logger.warning('signature persist failed for leave permit %s: %s', submission_id, e)
+        # Legacy mobile bodies send no signature — skip creating a row for them.
+        if signature_image:
+            try:
+                from core.signatures.repositories.signature_repo import SignatureRepository
+                SignatureRepository().create_signed('leave_permit', submission_id,
+                                                     user.user_id, signature_image, ip_address)
+            except Exception as e:
+                logger.warning('signature persist failed for leave permit %s: %s', submission_id, e)
 
         if form.get('requires_approval'):
             self._trigger_approval(form, submission_id, {
