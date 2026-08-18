@@ -3,7 +3,7 @@ from forms.services.form_service import FormService
 FULL = {
     'f_bi_leave_date': '2026-07-27',
     'f_bi_start_time': '09:00',
-    'f_bi_end_time': '10:00',
+    'f_bi_duration_hours': '1.5',
     'f_bi_reason': 'Personal',
 }
 
@@ -29,3 +29,33 @@ def test_empty_answers_flags_all_required():
 def test_optional_fields_not_required():
     # second approver + notes are optional — absence does not flag
     assert FormService._leave_permit_missing_fields(FULL) == []
+
+
+def test_required_fields_now_include_duration():
+    missing = FormService._leave_permit_missing_fields({
+        'f_bi_leave_date': '2026-08-18', 'f_bi_start_time': '09:00', 'f_bi_reason': 'Personal'})
+    assert 'f_bi_duration_hours' in missing
+
+
+def test_full_set_no_missing():
+    missing = FormService._leave_permit_missing_fields({
+        'f_bi_leave_date': '2026-08-18', 'f_bi_start_time': '09:00',
+        'f_bi_duration_hours': '1.5', 'f_bi_reason': 'Personal'})
+    assert missing == []
+
+
+def test_leave_precheck_rejects_missing_consent():
+    err = FormService._leave_permit_precheck(
+        {'f_bi_terms_accepted': False, 'signature_image': 'x'})
+    assert err and 'responsabil' in err.lower()
+
+
+def test_leave_precheck_rejects_missing_signature():
+    err = FormService._leave_permit_precheck(
+        {'f_bi_terms_accepted': True, 'signature_image': ''})
+    assert err and 'semn' in err.lower()
+
+
+def test_leave_precheck_ok():
+    assert FormService._leave_permit_precheck(
+        {'f_bi_terms_accepted': True, 'signature_image': 'data:image/png;base64,AAAA'}) is None

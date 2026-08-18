@@ -224,7 +224,7 @@ def create_leave_permit():
     answers = data.get('answers') if isinstance(data.get('answers'), dict) else data
     user = UserContext(user_id=current_user.id, company=getattr(current_user, 'company', None))
     try:
-        result = FormService().submit_leave_permit(answers, user)
+        result = FormService().submit_leave_permit(answers, user, ip_address=request.remote_addr)
     except Exception as e:
         return safe_error_response(e)
     if not result.success:
