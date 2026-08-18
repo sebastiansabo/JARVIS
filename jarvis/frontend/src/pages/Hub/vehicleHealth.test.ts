@@ -38,4 +38,29 @@ describe('vehicleHealth', () => {
     const h = vehicleHealth({ ...complete, odometer_km: null, mileage_floor: null } as any, TODAY)
     expect(h.tags.map(t => t.label)).toContain('Fără km')
   })
+  it('does not flag missing docs by default (Hub behavior unchanged)', () => {
+    const h = vehicleHealth(
+      { ...complete, insurance_valid_until: null, itp_valid_until: null, vignette_valid_until: null } as any,
+      TODAY,
+    )
+    const labels = h.tags.map(t => t.label)
+    expect(labels).not.toContain('Fără RCA')
+    expect(labels).not.toContain('Fără ITP')
+    expect(labels).not.toContain('Fără rovinietă')
+  })
+  it('flags missing RCA/ITP/rovinietă as warning when flagMissingDocs is true', () => {
+    const h = vehicleHealth(
+      { ...complete, insurance_valid_until: null, itp_valid_until: null, vignette_valid_until: null } as any,
+      TODAY,
+      { flagMissingDocs: true },
+    )
+    expect(h.gravity).toBe('warning')
+    const labels = h.tags.map(t => t.label)
+    expect(labels).toEqual(expect.arrayContaining(['Fără RCA', 'Fără ITP', 'Fără rovinietă']))
+  })
+  it('does not flag a car with valid dates even when flagMissingDocs is true', () => {
+    const h = vehicleHealth(complete as any, TODAY, { flagMissingDocs: true })
+    expect(h.gravity).toBe('ok')
+    expect(h.tags).toEqual([])
+  })
 })

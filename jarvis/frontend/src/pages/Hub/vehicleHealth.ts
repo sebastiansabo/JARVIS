@@ -31,19 +31,32 @@ function daysUntil(dateStr: string | null | undefined, today: Date): number | nu
   return Math.round((d.getTime() - t.getTime()) / 86_400_000)
 }
 
-export function vehicleHealth(v: HealthVehicle, today: Date = new Date()): VehicleHealth {
+/**
+ * @param opts.flagMissingDocs When true, cars with a NULL doc-validity date get
+ *   a "Fără …" warning tag for that doc (in addition to the existing expired/
+ *   expiring-soon checks, which only fire when a date IS present). Defaults to
+ *   false so existing callers (Hub's ParkCard) are byte-for-byte unaffected.
+ */
+export function vehicleHealth(
+  v: HealthVehicle,
+  today: Date = new Date(),
+  opts: { flagMissingDocs?: boolean } = {},
+): VehicleHealth {
   const tags: HealthTag[] = []
   if (!v.registration_number) tags.push({ label: 'Fără NR', gravity: 'critical' })
   if (!v.vin) tags.push({ label: 'Fără VIN', gravity: 'critical' })
 
   const docs = [
-    { until: v.insurance_valid_until, name: 'RCA', expired: 'RCA expirat' },
-    { until: v.itp_valid_until, name: 'ITP', expired: 'ITP expirat' },
-    { until: v.vignette_valid_until, name: 'Rovinietă', expired: 'Rovinietă expirată' },
+    { until: v.insurance_valid_until, name: 'RCA', expired: 'RCA expirat', missing: 'Fără RCA' },
+    { until: v.itp_valid_until, name: 'ITP', expired: 'ITP expirat', missing: 'Fără ITP' },
+    { until: v.vignette_valid_until, name: 'Rovinietă', expired: 'Rovinietă expirată', missing: 'Fără rovinietă' },
   ]
   for (const doc of docs) {
     const d = daysUntil(doc.until, today)
-    if (d === null) continue
+    if (d === null) {
+      if (opts.flagMissingDocs) tags.push({ label: doc.missing, gravity: 'warning' })
+      continue
+    }
     if (d < 0) tags.push({ label: doc.expired, gravity: 'critical' })
     else if (d <= 30) tags.push({ label: `${doc.name} expiră ${d}z`, gravity: 'warning' })
   }

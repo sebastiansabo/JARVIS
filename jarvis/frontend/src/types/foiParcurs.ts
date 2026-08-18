@@ -70,6 +70,9 @@ export interface FpVehicle {
   on_drive?: boolean
   on_drive_client?: string | null
   on_drive_until?: string | null
+  // Next ≤3 PLANNED sessions for this car (list query's `up` LATERAL) — lets the
+  // Driving Park surface upcoming bookings inline without a separate fetch.
+  upcoming_planned?: { departure: string | null; client: string | null }[] | null
   // Archival reason — why the car left the fleet (shown on archived rows).
   archive_category?: string | null
   archive_note?: string | null
