@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { ChevronLeft, Check, ChevronsUpDown } from 'lucide-react'
 import { toast } from 'sonner'
@@ -9,8 +9,11 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Checkbox } from '@/components/ui/checkbox'
+import SignatureCanvas from '@/components/shared/SignatureCanvas'
 import { connecteamApi } from '@/api/connecteam'
-import { fmtDuration, durationLinkError, type DurationLink } from './FormRenderer'
+import { profileApi } from '@/api/profile'
+import { buildStartSlots, buildDurationOptions, computeReturn } from './leaveSlots'
 
 // Code-defined "Bilet de Invoire" form. Fields live here (not a DB form schema),
 // so it deploys with the frontend and is identical in every environment. It
@@ -18,46 +21,42 @@ import { fmtDuration, durationLinkError, type DurationLink } from './FormRendere
 // routes it through the approval engine (primary + optional second approver).
 
 const REASONS = ['Personal', 'Medical', 'Familial', 'Oficial', 'Altul']
-const DUR_LINK: DurationLink = { hours: 'h', start: 's', end: 'e' }
-
-function parseHM(v: string): number | null {
-  const m = v.match(/^(\d{1,2}):(\d{1,2})$/)
-  if (!m) return null
-  const h = +m[1], mi = +m[2]
-  return h > 23 || mi > 59 ? null : h * 60 + mi
-}
-
-function toHM(mins: number): string {
-  const t = Math.max(0, Math.min(1439, Math.round(mins)))
-  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
-}
-
-function nowHM(): string {
-  const d = new Date()
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
 
 export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onSubmitted: () => void }) {
-  const start0 = nowHM()
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [start, setStart] = useState(start0)
-  const [end, setEnd] = useState(() => toHM((parseHM(start0) ?? 0) + 60))
+  const [start, setStart] = useState('')
+  const [durationHours, setDurationHours] = useState<number | null>(null)
   const [reason, setReason] = useState('')
   const [secondApprover, setSecondApprover] = useState('')
   const [notes, setNotes] = useState('')
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [signature, setSignature] = useState('')
   const [attempted, setAttempted] = useState(false)
-  const [endTouched, setEndTouched] = useState(false)
 
-  // Default to a 1-hour interval: the end follows the start (+1h) until the user
-  // edits the end time manually.
-  const changeStart = (v: string) => {
-    setStart(v)
-    if (!endTouched) {
-      const m = parseHM(v)
-      if (m !== null) setEnd(toHM(m + 60))
-    }
-  }
-  const changeEnd = (v: string) => { setEnd(v); setEndTouched(true) }
+  const { data: schedRes } = useQuery({
+    queryKey: ['leave-schedule', date],
+    queryFn: () => connecteamApi.getLeaveSchedule(date),
+  })
+  const sched = schedRes?.data
+  const startSlots = useMemo(() => sched ? buildStartSlots(sched.schedule_start, sched.schedule_end) : [], [sched])
+  const durationOptions = useMemo(
+    () => sched && start ? buildDurationOptions(start, sched.schedule_end, sched.day_cap_hours) : [],
+    [sched, start])
+  const returnTime = start && durationHours ? computeReturn(start, durationHours) : ''
+
+  // Default start to first slot; reset duration if it no longer fits.
+  useEffect(() => {
+    if (startSlots.length && !start) setStart(startSlots[0])
+  }, [startSlots, start])
+  useEffect(() => {
+    if (durationHours && !durationOptions.some(o => o.value === durationHours)) setDurationHours(null)
+  }, [durationOptions, durationHours])
+
+  // Preload the user's saved profile signature.
+  const { data: sigRes } = useQuery({ queryKey: ['profile-signature'], queryFn: () => profileApi.getSignature() })
+  useEffect(() => {
+    if (sigRes?.signature && !signature) setSignature(sigRes.signature)
+  }, [sigRes, signature])
 
   const { data: approversRes } = useQuery({
     queryKey: ['leave-approvers'],
@@ -76,26 +75,27 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
     ? approvers.filter((a) => a.name.toLowerCase().includes(approverSearch.toLowerCase()))
     : approvers
 
-  const s = parseHM(start), e = parseHM(end)
-  const durationStr = s !== null && e !== null && e > s ? fmtDuration(e - s) : ''
-  const intervalError = durationLinkError(DUR_LINK, { s: start, e: end })
-
   const invalid = useMemo(() => ({
-    date: !date,
-    start: !start,
-    end: !end || !!intervalError,
-    reason: !reason,
-  }), [date, start, end, reason, intervalError])
+    date: !date, start: !start, duration: !durationHours, reason: !reason,
+    terms: !termsAccepted, signature: !signature,
+  }), [date, start, durationHours, reason, termsAccepted, signature])
 
   const submit = useMutation({
-    mutationFn: () => connecteamApi.submitLeavePermit({
-      f_bi_leave_date: date,
-      f_bi_start_time: start,
-      f_bi_end_time: end,
-      f_bi_reason: reason,
-      f_bi_second_approver: secondApprover,
-      f_bi_notes: notes,
-    }),
+    mutationFn: async () => {
+      if (signature && signature !== sigRes?.signature) {
+        try { await profileApi.saveSignature(signature) } catch { /* non-blocking */ }
+      }
+      return connecteamApi.submitLeavePermit({
+        f_bi_leave_date: date,
+        f_bi_start_time: start,
+        f_bi_duration_hours: durationHours,
+        f_bi_reason: reason,
+        f_bi_second_approver: secondApprover,
+        f_bi_notes: notes,
+        f_bi_terms_accepted: termsAccepted,
+        signature_image: signature,
+      })
+    },
     onSuccess: () => {
       toast.success('Cererea de învoire a fost trimisă spre aprobare.')
       onSubmitted()
@@ -106,7 +106,7 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
 
   const handleSubmit = () => {
     setAttempted(true)
-    if (invalid.date || invalid.start || invalid.end || invalid.reason) return
+    if (Object.values(invalid).some(Boolean)) return
     submit.mutate()
   }
 
@@ -135,22 +135,36 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Ora de început{req}</Label>
-              <Input type="time" value={start} onChange={(ev) => changeStart(ev.target.value)}
-                aria-invalid={attempted && invalid.start ? true : undefined} />
+              <Select value={start} onValueChange={setStart}>
+                <SelectTrigger aria-invalid={attempted && invalid.start ? true : undefined}>
+                  <SelectValue placeholder="Selectați ora" />
+                </SelectTrigger>
+                <SelectContent>
+                  {startSlots.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
-              <Label>Ora de sfârșit{req}</Label>
-              <Input type="time" value={end} onChange={(ev) => changeEnd(ev.target.value)}
-                aria-invalid={(attempted && invalid.end) || !!intervalError ? true : undefined} />
+              <Label>Durată{req}</Label>
+              <Select value={durationHours ? String(durationHours) : ''}
+                      onValueChange={(v) => setDurationHours(Number(v))}>
+                <SelectTrigger aria-invalid={attempted && invalid.duration ? true : undefined}>
+                  <SelectValue placeholder="Selectați durata" />
+                </SelectTrigger>
+                <SelectContent>
+                  {durationOptions.map((o) => <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
           </div>
-          {intervalError && <p className="text-xs text-destructive -mt-2">{intervalError}</p>}
 
           <div className="space-y-1">
-            <Label>Durată</Label>
-            <p className="text-xs text-muted-foreground">Se calculează automat din interval.</p>
-            <Input readOnly tabIndex={-1} value={durationStr} placeholder="—"
+            <Label>Ora de întoarcere</Label>
+            <Input readOnly tabIndex={-1} value={returnTime} placeholder="—"
               className="bg-muted/50 text-muted-foreground cursor-default" />
+            {sched?.source === 'default' && (
+              <p className="text-xs text-muted-foreground">Program implicit (fără contract Sincron).</p>
+            )}
           </div>
 
           <div className="space-y-1">
@@ -208,6 +222,25 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
             <Textarea value={notes} onChange={(ev) => setNotes(ev.target.value)} rows={3}
               placeholder="Adăugați orice detalii relevante" />
           </div>
+
+          <div className="space-y-2">
+            <Label>Semnătură{req}</Label>
+            {signature
+              ? (<div className="rounded border p-2">
+                   <img src={signature} alt="semnătură" className="h-24 object-contain" />
+                   <Button variant="ghost" size="sm" className="mt-1 text-xs"
+                     onClick={() => setSignature('')}>Semnează din nou</Button>
+                 </div>)
+              : (<SignatureCanvas onSave={setSignature} saveLabel="Confirmă semnătura" height={160} />)}
+            {attempted && invalid.signature && <p className="text-xs text-destructive">Semnătura este obligatorie.</p>}
+          </div>
+
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox className="mt-0.5" checked={termsAccepted}
+              onCheckedChange={(v) => setTermsAccepted(!!v)}
+              aria-invalid={attempted && invalid.terms ? true : undefined} />
+            <span>Declar că îmi asum responsabilitatea pentru orice eventual eveniment neplăcut care ar putea surveni în legătură cu mine, în această perioadă în care sunt învoit / învoită 🔒</span>
+          </label>
 
           <Button className="w-full h-12 text-base font-semibold" onClick={handleSubmit} disabled={submit.isPending}>
             {submit.isPending ? 'Se trimite...' : 'Trimite spre aprobare'}
