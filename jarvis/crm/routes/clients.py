@@ -17,6 +17,15 @@ class _LazyFSRepo:
 _fs_repo = _LazyFSRepo()
 
 
+_GATE_FIELDS = ('full_name', 'email', 'phone', 'driver_license_photo',
+                'driver_license_serie', 'driver_license_number')
+
+
+def contact_gate_valid(contact):
+    """A company contact is gate-valid when it carries all personal + license details."""
+    return bool(contact) and all(contact.get(f) for f in _GATE_FIELDS)
+
+
 # ════════════════════════════════════════════════════════════════
 # Clients
 # ════════════════════════════════════════════════════════════════
@@ -698,3 +707,41 @@ def api_client_toggle_blacklist(client_id):
     if not result:
         return jsonify({'success': False, 'error': 'Not found'}), 404
     return jsonify({'success': True, 'client': result})
+
+
+# ════════════════════════════════════════════════════════════════
+# Contact persons
+# ════════════════════════════════════════════════════════════════
+
+@crm_bp.route('/api/crm/clients/<int:client_id>/contacts', methods=['GET'])
+@login_required
+@crm_required
+def api_list_client_contacts(client_id):
+    return jsonify({'contacts': _contact_repo.list_by_client(client_id)})
+
+
+@crm_bp.route('/api/crm/clients/<int:client_id>/contacts', methods=['POST'])
+@login_required
+@crm_required
+def api_create_client_contact(client_id):
+    data = request.get_json(silent=True) or {}
+    if not (data.get('full_name') or '').strip():
+        return jsonify({'success': False, 'error': 'full_name is required'}), 400
+    contact = _contact_repo.create(client_id, data)
+    return jsonify({'success': True, 'contact': contact})
+
+
+@crm_bp.route('/api/crm/contacts/<int:contact_id>', methods=['PUT'])
+@login_required
+@crm_required
+def api_update_client_contact(contact_id):
+    contact = _contact_repo.update(contact_id, request.get_json(silent=True) or {})
+    return jsonify({'success': True, 'contact': contact})
+
+
+@crm_bp.route('/api/crm/contacts/<int:contact_id>', methods=['DELETE'])
+@login_required
+@crm_required
+def api_delete_client_contact(contact_id):
+    _contact_repo.delete(contact_id)
+    return jsonify({'success': True})

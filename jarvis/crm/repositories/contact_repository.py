@@ -16,6 +16,9 @@ class ContactRepository(BaseRepository):
     def get(self, contact_id):
         return self.query_one('SELECT * FROM crm_client_contacts WHERE id = %s', (contact_id,))
 
+    def delete(self, contact_id):
+        return self.execute('DELETE FROM crm_client_contacts WHERE id = %s', (contact_id,))
+
     def create(self, client_id, data):
         first = not self.query_one(
             'SELECT 1 FROM crm_client_contacts WHERE client_id = %s LIMIT 1', (client_id,))

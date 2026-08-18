@@ -6,10 +6,10 @@ __all__ = [
     'jsonify', 'request', 'Response', 'send_file', 'g',
     'login_required', 'current_user',
     # app imports
-    'crm_bp', 'ClientRepository', 'DealRepository', 'ImportRepository',
+    'crm_bp', 'ClientRepository', 'ContactRepository', 'DealRepository', 'ImportRepository',
     'IMPORT_HANDLERS', 'PermissionRepository', 'logger',
     # singletons (private — exported explicitly)
-    '_client_repo', '_deal_repo', '_import_repo', '_perm_repo',
+    '_client_repo', '_contact_repo', '_deal_repo', '_import_repo', '_perm_repo',
     '_enrichment_col_added',
     # private helpers
     '_ai_company_lookup', '_ensure_enrichment_column', '_parse_name_nr_reg',
@@ -32,12 +32,14 @@ from flask_login import login_required, current_user
 
 from .. import crm_bp
 from ..repositories import ClientRepository, DealRepository, ImportRepository
+from ..repositories.contact_repository import ContactRepository
 from ..services.import_service import IMPORT_HANDLERS
 from core.roles.repositories import PermissionRepository
 
 logger = logging.getLogger('jarvis.crm.routes')
 
 _client_repo = ClientRepository()
+_contact_repo = ContactRepository()
 _deal_repo = DealRepository()
 _import_repo = ImportRepository()
 _perm_repo = PermissionRepository()
