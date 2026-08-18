@@ -29,12 +29,15 @@ function isExpired(iso?: string | null): boolean {
 }
 
 type ParkStatus = { label: string; badgeClass: string; reason?: string }
-// Availability derived from the vehicle's own flags (read-only view — no session
-// cross-reference): archived → locked-out → scheduled-block-now → available.
+// Availability precedence: archived → locked-out → scheduled-block-now →
+// out-on-a-test-drive (on_drive) → available. on_drive comes from the list
+// query cross-referencing live FILLED td_form sessions, so a car physically
+// out with a client no longer reads as a false "Disponibil".
 function parkStatus(v: FpVehicle): ParkStatus {
   if (v.is_active === false) return { label: 'Arhivat', badgeClass: 'bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300', reason: v.archive_category ?? v.archive_note ?? undefined }
   if (v.locked_out) return { label: 'Blocat', badgeClass: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300', reason: v.lockout_category ?? v.lockout_note ?? undefined }
   if (v.blocked_now) return { label: 'Blocat', badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200', reason: v.active_block_category ?? undefined }
+  if (v.on_drive) return { label: 'Pe drum', badgeClass: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300', reason: [v.on_drive_client, v.on_drive_until ? `revine ${fmtDate(v.on_drive_until)}` : null].filter(Boolean).join(' · ') || undefined }
   return { label: 'Disponibil', badgeClass: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' }
 }
 

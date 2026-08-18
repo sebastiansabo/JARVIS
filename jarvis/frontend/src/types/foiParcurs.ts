@@ -64,6 +64,12 @@ export interface FpVehicle {
   active_block_end?: string | null
   next_block_start?: string | null
   next_block_end?: string | null
+  // Live-session awareness (set by the list query's LATERAL join): true when the
+  // car is currently OUT on a handed-over test drive (FILLED td_form, not yet
+  // returned), so the park can show "Pe drum" instead of a false "Disponibil".
+  on_drive?: boolean
+  on_drive_client?: string | null
+  on_drive_until?: string | null
   // Archival reason — why the car left the fleet (shown on archived rows).
   archive_category?: string | null
   archive_note?: string | null
