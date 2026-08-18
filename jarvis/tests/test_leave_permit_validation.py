@@ -80,3 +80,22 @@ def test_new_contract_missing_fields_unchanged():
     missing = FormService._leave_permit_missing_fields({
         'f_bi_leave_date': '2026-08-18', 'f_bi_start_time': '09:00', 'f_bi_reason': 'Personal'})
     assert 'f_bi_duration_hours' in missing
+
+
+def test_leave_reason_options_from_draft_schema():
+    form = {'schema': [
+        {'id': 'f_bi_start_time'},
+        {'id': 'f_bi_reason', 'options': ['Personal', 'Pauza de masa']},
+    ]}
+    assert FormService._leave_reason_options(form) == ['Personal', 'Pauza de masa']
+
+
+def test_leave_reason_options_fallback_to_defaults():
+    assert FormService._leave_reason_options({'schema': []}) == \
+        ['Personal', 'Medical', 'Familial', 'Oficial', 'Altul']
+    assert FormService._leave_reason_options({}) == \
+        ['Personal', 'Medical', 'Familial', 'Oficial', 'Altul']
+    # blank/whitespace-only options are ignored → falls back
+    assert FormService._leave_reason_options(
+        {'schema': [{'id': 'f_bi_reason', 'options': ['', '  ']}]}) == \
+        ['Personal', 'Medical', 'Familial', 'Oficial', 'Altul']

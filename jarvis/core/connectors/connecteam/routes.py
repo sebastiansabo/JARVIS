@@ -171,10 +171,12 @@ def get_approvers():
 @connecteam_bp.route('/api/leave-schedule', methods=['GET'])
 @api_login_required
 def get_leave_schedule_route():
-    """Sincron work window + day cap for the current user's leave form."""
+    """Sincron work window + day cap + reason options for the current user's leave form."""
     from .services.leave_schedule import get_leave_schedule
+    from forms.services.form_service import FormService
     try:
         data = get_leave_schedule(current_user.id, request.args.get('date'))
+        data['reasons'] = FormService().get_leave_reason_options()
         return jsonify({'success': True, 'data': data})
     except Exception as e:
         return safe_error_response(e)
