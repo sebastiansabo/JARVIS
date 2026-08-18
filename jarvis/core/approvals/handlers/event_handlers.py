@@ -115,6 +115,11 @@ def _on_approved(payload):
                     f'{_APP_BASE_URL}{link}', 'Vezi proiectul'),
             )
 
+    # Notify the requester's direct manager (scheduler) so they can update the
+    # schedule — unless that manager is the one who just approved it.
+    if entity_type == 'form_submission' and entity_id:
+        _maybe_notify_leave_scheduler(request_id, entity_id, ctx)
+
     # Auto-update form_submission status to 'approved'
     if entity_type == 'form_submission' and entity_id:
         entity_form.handle_approved(entity_id, ctx)
@@ -159,6 +164,65 @@ def _on_approved(payload):
                 )
     except Exception as e:
         logger.error(f'Failed to create signature request on approval: {e}')
+
+
+def _approved_decider_ids(decisions):
+    return {d['decided_by'] for d in (decisions or []) if d.get('decision') == 'approved'}
+
+
+def _load_leave_submission(submission_id):
+    from core.base_repository import BaseRepository
+    return BaseRepository().query_one('''
+        SELECT fs.answers, fs.respondent_user_id, fs.company_id,
+               f.slug, u.name AS requester_name
+        FROM form_submissions fs
+        JOIN forms f ON f.id = fs.form_id
+        LEFT JOIN users u ON u.id = fs.respondent_user_id
+        WHERE fs.id = %s''', (submission_id,))
+
+
+def _resolve_manager(user_id, company_id):
+    from accounting.vouchers.services import VoucherService
+    return VoucherService().resolve_approver(user_id, company_id or 0)
+
+
+def _load_approved_deciders(request_id):
+    from core.approvals.repositories import DecisionRepository
+    return _approved_decider_ids(DecisionRepository().get_decisions_for_request(request_id))
+
+
+def _maybe_notify_leave_scheduler(request_id, submission_id, ctx):
+    """Notify the employee's direct manager (scheduler) that a leave was approved,
+    unless that manager is the person who just approved it."""
+    try:
+        row = _load_leave_submission(submission_id)
+        if not row or row.get('slug') != 'bilet-de-invoire':
+            return
+        requester_id = row.get('respondent_user_id')
+        if not requester_id:
+            return
+        manager = _resolve_manager(requester_id, row.get('company_id'))
+        if not manager:
+            return
+        manager_id = manager['id']
+        if manager_id in _load_approved_deciders(request_id):
+            return  # dedup: they already approved, they know
+        a = row.get('answers') or {}
+        name = row.get('requester_name') or 'Un angajat'
+        msg = (f"{name} va lipsi {a.get('f_bi_leave_date','')} "
+               f"{a.get('f_bi_start_time','')}–{a.get('f_bi_end_time','')} "
+               f"({a.get('f_bi_hours','')}h). Actualizează programul.")
+        title = 'Învoire aprobată — actualizează programul'
+        link = '/app/hub?module=hr&hrtab=leave-permits'
+        notify_user(manager_id, title, message=msg, link=link,
+                    entity_type='form_submission', entity_id=submission_id, type='info')
+        _, email = _get_user_email(manager_id)
+        if email:
+            _send_approval_email(email, title,
+                _approval_email_base('Învoire aprobată', f'<p>{msg}</p>',
+                                     f'{_APP_BASE_URL}{link}', 'Deschide programul'))
+    except Exception as e:
+        logger.warning('scheduler notify failed for submission %s: %s', submission_id, e)
 
 
 def _on_rejected(payload):
