@@ -96,6 +96,7 @@ import { naiveDate } from '@/lib/naiveDate'
 import { cn } from '@/lib/utils'
 import { CalendarTab } from './CalendarTab'
 import { formatRoPlate, isValidRoPlate } from './plateFormat'
+import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
 
 /** useState backed by localStorage — survives a page refresh. */
 function usePersistentState<T>(key: string, initial: T) {
@@ -2435,6 +2436,8 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
   )
   const [showColMenu, setShowColMenu] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  // Odometer column sort — cycles none → asc → desc → none on header click.
+  const [odoSort, setOdoSort] = useState<'none' | 'asc' | 'desc'>('none')
   const [newVehicle, setNewVehicle] = useState<VehicleFormValue>(() => emptyVehicleForm(companyId))
   const [error, setError] = useState('')
 
@@ -2449,6 +2452,20 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
   const filteredVehicles = vehiclesData?.vehicles?.filter(
     (v) => (!companyId || v.company_id === companyId) && (!brand || v.brand === brand)
   ) ?? []
+
+  // Odometer sort — sorts a copy; nulls always sort last regardless of direction.
+  const sortedVehicles = React.useMemo(() => {
+    if (odoSort === 'none') return filteredVehicles
+    const withKey = filteredVehicles.map((v) => ({ v, key: v.odometer_km ?? v.mileage_floor ?? null }))
+    withKey.sort((a, b) => {
+      if (a.key == null && b.key == null) return 0
+      if (a.key == null) return 1
+      if (b.key == null) return -1
+      return odoSort === 'asc' ? a.key - b.key : b.key - a.key
+    })
+    return withKey.map((x) => x.v)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredVehicles, odoSort])
 
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
@@ -2713,7 +2730,21 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                 {show('color') && <TableHead>Color</TableHead>}
                 {show('fuel_type') && <TableHead>Fuel Type</TableHead>}
                 {show('capacity') && <TableHead>Capacity</TableHead>}
-                {show('odometer') && <TableHead>Odometer</TableHead>}
+                {show('odometer') && (
+                  <TableHead
+                    className="cursor-pointer select-none"
+                    title="Sortează după kilometraj"
+                    onClick={() =>
+                      setOdoSort((prev) => (prev === 'asc' ? 'desc' : prev === 'desc' ? 'none' : 'asc'))
+                    }
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      Odometer
+                      {odoSort === 'asc' && <span aria-hidden>▲</span>}
+                      {odoSort === 'desc' && <span aria-hidden>▼</span>}
+                    </span>
+                  </TableHead>
+                )}
                 {show('company') && <TableHead>Company</TableHead>}
                 {show('vignette') && <TableHead>Rovinietă</TableHead>}
                 {show('itp') && <TableHead>ITP</TableHead>}
@@ -2722,10 +2753,25 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredVehicles.map((v) => (
+              {sortedVehicles.map((v) => {
+                const health = vehicleHealth(v, new Date(), { flagMissingDocs: true })
+                const rowGravityCls: Record<Gravity, string> = {
+                  critical: 'border-l-4 border-l-red-500',
+                  warning: 'border-l-4 border-l-amber-500',
+                  info: 'border-l-4 border-l-slate-300',
+                  ok: 'border-l-4 border-l-emerald-500',
+                }
+                const healthChipCls: Record<HealthTag['gravity'], string> = {
+                  critical: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300',
+                  warning: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+                  info: 'bg-slate-100 text-slate-700 dark:bg-slate-800/40 dark:text-slate-300',
+                }
+                const plateFormatted = v.registration_number ? formatRoPlate(v.registration_number) : ''
+                const plateNonConform = !!v.registration_number && !isValidRoPlate(plateFormatted)
+                return (
                 <React.Fragment key={v.id}>
                 <TableRow
-                  className={`cursor-pointer hover:bg-muted/40 ${v.is_active ? '' : 'opacity-60'}`}
+                  className={cn('cursor-pointer hover:bg-muted/40', !v.is_active && 'opacity-60', rowGravityCls[health.gravity])}
                   onClick={() => setExpandedVehicleId((prev) => (prev === v.id ? null : v.id))}
                 >
                   {show('model') && (
@@ -2744,12 +2790,44 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                           🗓 Programat {fmtValidity(v.next_block_start)}
                         </span>
                       )}
+                      {health.tags.slice(0, 3).map((t, i) => (
+                        <span
+                          key={i}
+                          className={cn('ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold', healthChipCls[t.gravity])}
+                        >
+                          {t.label}
+                        </span>
+                      ))}
+                      {health.tags.length > 3 && (
+                        <span
+                          className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground"
+                          title={health.tags.map((t) => t.label).join(', ')}
+                        >
+                          +{health.tags.length - 3}
+                        </span>
+                      )}
                     </TableCell>
                   )}
                   {show('mark') && <TableCell>{v.mark}</TableCell>}
                   {show('vin') && <TableCell className="font-mono text-xs">{v.vin}</TableCell>}
                   {show('car_id') && <TableCell className="text-sm">{v.car_id || '—'}</TableCell>}
-                  {show('reg_number') && <TableCell className="text-sm">{v.registration_number || '—'}</TableCell>}
+                  {show('reg_number') && (
+                    <TableCell className="text-sm">
+                      {v.registration_number ? (
+                        <span className="inline-flex items-center gap-1">
+                          {plateFormatted}
+                          {plateNonConform && (
+                            <span
+                              className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
+                              title="Format neconform"
+                            />
+                          )}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                  )}
                   {show('brand') && <TableCell className="text-sm">{v.brand || '—'}</TableCell>}
                   {show('color') && <TableCell className="text-sm">{v.color || '—'}</TableCell>}
                   {show('fuel_type') && (
@@ -2764,7 +2842,19 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                     </TableCell>
                   )}
                   {show('odometer') && (
-                    <TableCell className="text-sm whitespace-nowrap">{v.odometer_km != null ? `${v.odometer_km.toLocaleString('ro-RO')} km` : '—'}</TableCell>
+                    <TableCell className="text-sm whitespace-nowrap">
+                      {v.odometer_km != null ? `${v.odometer_km.toLocaleString('ro-RO')} km` : '—'}
+                      {!!v.upcoming_planned?.length && (
+                        <span
+                          className="ml-2 inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
+                          title={v.upcoming_planned
+                            .map((p) => `${fmtValidity(p.departure)} — ${p.client || '—'}`)
+                            .join('\n')}
+                        >
+                          🗓 {v.upcoming_planned.length} planificat{v.upcoming_planned.length === 1 ? '' : 'e'}
+                        </span>
+                      )}
+                    </TableCell>
                   )}
                   {show('company') && (
                     <TableCell className="text-sm text-muted-foreground">{v.company_name || '—'}</TableCell>
@@ -2824,7 +2914,8 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                   </TableRow>
                 )}
                 </React.Fragment>
-              ))}
+                )
+              })}
             </TableBody>
           </Table>
         </Card>

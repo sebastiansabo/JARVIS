@@ -69,7 +69,10 @@ class FPVehicleRepository(BaseRepository):
         # session at the car's true latest reading and warn on anything lower.
         "GREATEST(COALESCE(v.odometer_km, 0), COALESCE("
         "(SELECT MAX(f.km_end) FROM foi_de_parcurs f "
-        "WHERE f.vin = v.vin AND f.status <> 'PLANNED'), 0)) AS mileage_floor "
+        "WHERE f.vin = v.vin AND f.status <> 'PLANNED'), 0)) AS mileage_floor, "
+        # Next up-to-3 PLANNED sessions for the car, so the Driving Park can show
+        # an upcoming-bookings chip without a separate round-trip.
+        "COALESCE(up.upcoming_planned, '[]'::json) AS upcoming_planned "
         'FROM fp_vehicles v '
         'LEFT JOIN companies c ON c.id = v.company_id '
         'LEFT JOIN LATERAL ('
@@ -92,7 +95,13 @@ class FPVehicleRepository(BaseRepository):
         '  FROM foi_de_parcurs s LEFT JOIN fp_clients oc ON oc.id = s.client_id '
         "  WHERE s.vin = v.vin AND s.status = 'FILLED' AND s.source = 'td_form' "
         '  ORDER BY s.departure_datetime ASC NULLS LAST, s.id ASC LIMIT 1'
-        ') od ON TRUE'
+        ') od ON TRUE '
+        'LEFT JOIN LATERAL ('
+        "  SELECT json_agg(json_build_object('departure', s.departure_datetime, 'client', s.client_name) ORDER BY s.departure_datetime) AS upcoming_planned "
+        '  FROM (SELECT departure_datetime, client_name FROM foi_de_parcurs f '
+        "         WHERE f.vin = v.vin AND f.status = 'PLANNED' "
+        '         ORDER BY f.departure_datetime ASC NULLS LAST LIMIT 3) s'
+        ') up ON TRUE'
     )
 
     def get_all(self, active_only=True):
