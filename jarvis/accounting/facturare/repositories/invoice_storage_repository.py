@@ -33,6 +33,7 @@ class InvoiceStorageRepository(BaseRepository):
             """WITH anexa_stats AS (
                    SELECT a.contract_id,
                           COUNT(DISTINCT a.id) AS anexa_count,
+                          COUNT(DISTINCT a.id) FILTER (WHERE a.archived) AS archived_anexa_count,
                           COALESCE(SUM(al.selling_price_eur), 0) AS total_value
                    FROM facturare_anexas a
                    LEFT JOIN facturare_anexa_lines al ON al.anexa_id = a.id
@@ -47,6 +48,7 @@ class InvoiceStorageRepository(BaseRepository):
                )
                SELECT c.*, comp.company AS supplier_name, cl.display_name AS customer_name,
                       COALESCE(ast.anexa_count, 0) AS anexa_count,
+                      COALESCE(ast.archived_anexa_count, 0) AS archived_anexa_count,
                       COALESCE(ast.total_value, 0) AS total_value,
                       COALESCE(ist.invoiced_total, 0) AS invoiced_total
                FROM facturare_contracts c
