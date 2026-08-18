@@ -83,3 +83,15 @@ class SignatureRepository(BaseRepository):
             (signature_image, signed_pdf_path, document_hash,
              ip_address, sig_id),
         )
+
+    def create_signed(self, document_type, document_id, signed_by,
+                      signature_image, ip_address=None):
+        """Insert an already-signed signature row in one statement."""
+        return self.execute('''
+            INSERT INTO document_signatures
+                (document_type, document_id, signed_by, signature_image,
+                 ip_address, status, signed_at)
+            VALUES (%s, %s, %s, %s, %s, 'signed', CURRENT_TIMESTAMP)
+            RETURNING id
+        ''', (document_type, document_id, signed_by, signature_image, ip_address),
+            returning=True)
