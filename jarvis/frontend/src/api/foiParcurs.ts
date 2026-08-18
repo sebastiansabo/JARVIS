@@ -17,6 +17,7 @@ import type {
   CreateCrmClientPayload,
   DriverLicenseOcrData,
   MktProject,
+  HrEvent,
   ScheduledBlock,
 } from '../types/foiParcurs'
 
@@ -325,6 +326,17 @@ export const foiParcursApi = {
     api.get<{ success: boolean; projects: MktProject[] }>(
       `${BASE}/mkt-projects/search${qs({ q, company_id: companyId, limit })}`,
     ),
+
+  // HR events (Task 15) - distinct from a marketing project/campaign; type-to-
+  // search + inline create so an advisor can tie a Test Drive to an HR event
+  // without full HR/marketing access. These two hit non-foi-parcurs blueprints
+  // directly (not under BASE) and can 403 for an advisor lacking HR/marketing
+  // permissions - callers must handle that gracefully.
+  searchHrEvents: (q: string, limit = 20) =>
+    api.get<{ events: HrEvent[] }>(`/api/hr-events/search${qs({ q, limit })}`),
+
+  createHrEvent: (data: { name: string; start_date: string; end_date: string; company?: string; brand?: string }) =>
+    api.post<{ success: boolean; id: number }>(`/api/events`, data),
 
   // ── Driver-license OCR (Claude vision) ──
   driverLicenseOcr: (image: string) =>
