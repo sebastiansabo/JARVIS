@@ -17,13 +17,11 @@ class _LazyFSRepo:
 _fs_repo = _LazyFSRepo()
 
 
-_GATE_FIELDS = ('full_name', 'email', 'phone', 'driver_license_photo',
-                'driver_license_serie', 'driver_license_number')
-
-
-def contact_gate_valid(contact):
-    """A company contact is gate-valid when it carries all personal + license details."""
-    return bool(contact) and all(contact.get(f) for f in _GATE_FIELDS)
+# The gate-valid check lives in the side-effect-free repository module so both
+# the CRM routes and the foi_parcurs test-drive submit/activate share one copy.
+# Re-exported here under the same public name so existing importers/tests that
+# do `from crm.routes.clients import contact_gate_valid` keep working.
+from crm.repositories.contact_repository import contact_gate_valid  # noqa: E402,F401
 
 
 # ════════════════════════════════════════════════════════════════

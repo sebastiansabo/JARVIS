@@ -10,28 +10,13 @@ from ._shared import (
     _dealer_repo, open_session_block, is_privileged,
 )
 from ..services.fuel_service import parse_fuel_level
-from crm.repositories.contact_repository import ContactRepository
+from crm.repositories.contact_repository import ContactRepository, contact_gate_valid
 
 # International E.164 (+ and 7–15 digits) plus legacy RO national formats so
 # existing stored numbers still validate.
 _PHONE_RE = re.compile(r'^(\+\d{7,15}|07\d{8}|004\d{10})$')
 
 _contact_repo = ContactRepository()
-
-# The six fields a company's driver contact must carry before a live test
-# drive can be submitted against it (personal identity + driving license).
-# Kept local rather than importing crm.routes.clients.contact_gate_valid:
-# that module is a Flask route file that registers its full CRM blueprint
-# (and pulls in field_sales/ai_agent imports) as an import-time side effect,
-# which is too heavy to pull into every foi_parcurs test-drive submit just
-# for this one pure check. Keep the six fields identical to that copy.
-_GATE_FIELDS = ('full_name', 'email', 'phone', 'driver_license_photo',
-                'driver_license_serie', 'driver_license_number')
-
-
-def _contact_gate_valid(c):
-    """A company contact is gate-valid when it carries all personal + license details."""
-    return bool(c) and all(c.get(f) for f in _GATE_FIELDS)
 
 
 def _company_gdpr_text(company_id) -> str:
@@ -146,15 +131,17 @@ def api_submit_test_drive():
             # Hard company->contact gate: the company entity itself never
             # drives — a company client must name a gate-valid driver contact
             # (person + license details) belonging to that same client before
-            # a live test drive can be submitted against it.
-            if (crm_client or {}).get('client_type') == 'company':
+            # a live test drive can be submitted against it. Only enforced for
+            # a live (FILLED) submit; a PLANNED draft defers the gate to
+            # activation (api_activate_test_drive), when the driver is known.
+            if not is_draft and (crm_client or {}).get('client_type') == 'company':
                 driver_contact_id = data.get('driver_contact_id')
                 if not driver_contact_id:
                     return jsonify({'success': False,
                                     'error': 'Clientul firmă necesită o persoană de contact.'}), 400
                 driver_contact = _contact_repo.get(int(driver_contact_id))
                 if (not driver_contact or driver_contact.get('client_id') != client_id
-                        or not _contact_gate_valid(driver_contact)):
+                        or not contact_gate_valid(driver_contact)):
                     return jsonify({'success': False,
                                     'error': 'Persoana de contact este incompletă sau invalidă.'}), 400
 
@@ -313,6 +300,38 @@ def api_activate_test_drive(id):
         if general_conditions_text.strip() and not data.get('general_conditions_accepted'):
             return jsonify({'success': False, 'error': 'General conditions acceptance is required'}), 400
 
+        # Hard company->contact gate at activation: a PLANNED draft skips the
+        # gate at creation (the driver isn't known yet), so it is enforced here,
+        # when the draft becomes a live FILLED session. The company entity never
+        # drives — a company client must name a gate-valid driver contact
+        # belonging to that same client. On success the driver's details are
+        # snapshotted onto the activated row (via driver_snapshot below) so the
+        # FILLED session carries the actual driver, not the company placeholder.
+        driver_snapshot = {}
+        _client_id = contract.get('client_id')
+        if _client_id:
+            _crm_client = _crm_client_repo.get_by_id(_client_id)
+            if (_crm_client or {}).get('client_type') == 'company':
+                driver_contact_id = data.get('driver_contact_id') or contract.get('driver_contact_id')
+                if not driver_contact_id:
+                    return jsonify({'success': False,
+                                    'error': 'Clientul firmă necesită o persoană de contact.'}), 400
+                driver_contact = _contact_repo.get(int(driver_contact_id))
+                if (not driver_contact or driver_contact.get('client_id') != _client_id
+                        or not contact_gate_valid(driver_contact)):
+                    return jsonify({'success': False,
+                                    'error': 'Persoana de contact este incompletă sau invalidă.'}), 400
+                driver_snapshot = {
+                    'driver_contact_id': int(driver_contact_id),
+                    'driver_name': driver_contact.get('full_name'),
+                    'driver_email': driver_contact.get('email'),
+                    'driver_phone': driver_contact.get('phone'),
+                    'driver_license_serie': driver_contact.get('driver_license_serie'),
+                    'driver_license_photo': driver_contact.get('driver_license_photo'),
+                    'driver_license_number': driver_contact.get('driver_license_number'),
+                    'driver_license_expiry': driver_contact.get('driver_license_expiry'),
+                }
+
         tank = int(data.get('fuel_tank_capacity_liters', contract.get('fuel_tank_capacity_liters') or 0))
         start_level = data.get('fuel_gauge_start_level') or contract.get('fuel_gauge_start_level') or '1'
         try:
@@ -348,6 +367,9 @@ def api_activate_test_drive(id):
             update['general_conditions_accepted'] = True
             update['general_conditions_accepted_at'] = datetime.now(timezone.utc)
             update['general_conditions_text'] = general_conditions_text
+        # Persist the resolved driver snapshot (company clients only; empty for
+        # person clients, which already carry their snapshot from draft creation).
+        update.update(driver_snapshot)
 
         updated = _fp_repo.record_activation(id, update)
         # record_activation only matches PLANNED TD rows; a concurrent/duplicate
