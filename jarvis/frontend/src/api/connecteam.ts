@@ -93,6 +93,14 @@ export interface ConversionRequest {
   created_at: string
 }
 
+export interface LeaveSchedule {
+  schedule_start: string
+  schedule_end: string
+  day_cap_hours: number
+  lunch_break_minutes: number
+  source: 'sincron' | 'default'
+}
+
 export const connecteamApi = {
   getStatus: () =>
     api.get<{ success: boolean; data: ConnecteamStatus }>(`${BASE}/status`),
@@ -119,6 +127,9 @@ export const connecteamApi = {
 
   getApprovers: (scope?: 'all') =>
     api.get<{ success: boolean; data: { id: number; name: string }[] }>(`${BASE}/approvers${scope ? '?scope=all' : ''}`),
+
+  getLeaveSchedule: (date?: string) =>
+    api.get<{ success: boolean; data: LeaveSchedule }>(`${BASE}/leave-schedule${qs({ date })}`),
 
   importExcel: (file: File) => {
     const form = new FormData()
