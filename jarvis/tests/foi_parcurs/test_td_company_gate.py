@@ -129,3 +129,125 @@ def test_company_contact_missing_gate_field_is_rejected(monkeypatch):
                json={**BASE_PAYLOAD, 'driver_contact_id': 7})
     assert r.status_code == 400
     assert 'contact' in r.get_json()['error'].lower() or 'persoan' in r.get_json()['error'].lower()
+
+
+# A PLANNED draft only requires company_id/vin/client_id/departure_datetime and
+# defers the company->contact gate to activation (the driver isn't known when a
+# draft is planned).
+DRAFT_PAYLOAD = {
+    'status': 'PLANNED', 'company_id': 11, 'vin': 'WVW1', 'client_id': 5,
+    'departure_datetime': '2026-08-18T10:00',
+}
+
+
+def test_company_draft_needs_no_contact(monkeypatch):
+    """Planning a draft for a company client must NOT require a contact — the
+    gate is deferred to activation, when the driver is known."""
+    c = make_app(monkeypatch, 'company', None)
+    r = c.post('/api/foi-parcurs/test-drive', json=dict(DRAFT_PAYLOAD))
+    assert r.status_code == 200, r.get_json()
+    contract = r.get_json()['contract']
+    assert contract['status'] == 'PLANNED'
+    assert contract['driver_contact_id'] is None
+
+
+# ── Activation gate (api_activate_test_drive) ──────────────────────────────
+
+class FakeFpActivate:
+    """Stand-in for FoiParcursRepository on the activate path."""
+
+    def __init__(self, session):
+        self.session = session
+        self.activation = None
+
+    def get_contract_by_id(self, i):
+        return dict(self.session)
+
+    def get_mileage_floor(self, vin, exclude_id=None):
+        return 0
+
+    def record_activation(self, i, d):
+        self.activation = d
+        return {**self.session, 'id': i, 'status': 'FILLED', **d}
+
+    def execute(self, *a, **k):
+        return None
+
+
+def make_activate_app(monkeypatch, client_type, contact, session):
+    fake_fp = FakeFpActivate(session)
+    monkeypatch.setattr(td_mod, '_fp_repo', fake_fp)
+    monkeypatch.setattr(td_mod, '_crm_client_repo', FakeCrm(client_type))
+    monkeypatch.setattr(td_mod, '_contact_repo', FakeContacts(contact))
+    # Keep the activate path hermetic: no lock, no open-session block, no
+    # start-of-session email, and stub the PDF generation.
+    monkeypatch.setattr(td_mod._vehicle_repo, 'get_lock_by_vin', lambda vin: None, raising=False)
+    monkeypatch.setattr(td_mod, 'open_session_block', lambda *a, **k: None, raising=False)
+    monkeypatch.setattr(td_mod, 'is_privileged', lambda: False, raising=False)
+    monkeypatch.setattr(td_mod, '_autosend_contract', lambda *a, **k: None, raising=False)
+    import foi_parcurs.services.pdf_service as pdf
+    monkeypatch.setattr(pdf, 'generate_legal_pdf', lambda c: '/tmp/l.pdf')
+    monkeypatch.setattr(pdf, 'generate_custom_pdf', lambda c: '/tmp/c.pdf')
+    app = Flask(__name__)
+    app.register_blueprint(foi_parcurs_bp)
+    app.config['TESTING'] = True
+    app.config['LOGIN_DISABLED'] = True
+    tc = app.test_client()
+    tc._fake_fp = fake_fp
+    return tc
+
+
+PLANNED_COMPANY_SESSION = {
+    'id': 101, 'route_type': 'TD', 'status': 'PLANNED', 'vin': 'WVW1',
+    'company_id': 11, 'client_id': 5, 'km_start': 1000,
+    'fuel_tank_capacity_liters': 50,
+}
+ACTIVATE_BODY = {
+    'client_signature': 'data:sig', 'advisor_signature': 'data:adv',
+    'gdpr_consent': True, 'odometer_start': 1005,
+    'fuel_gauge_start_level': '1/2', 'departure_datetime': '2026-08-18T10:00:00',
+}
+
+
+def test_activate_company_without_contact_is_rejected(monkeypatch):
+    c = make_activate_app(monkeypatch, 'company', None, PLANNED_COMPANY_SESSION)
+    r = c.put('/api/foi-parcurs/test-drive/101/activate', json=dict(ACTIVATE_BODY))
+    assert r.status_code == 400
+    assert 'contact' in r.get_json()['error'].lower() or 'persoan' in r.get_json()['error'].lower()
+    # Gate rejected before the session was flipped to FILLED.
+    assert c._fake_fp.activation is None
+
+
+def test_activate_company_with_valid_contact_snapshots_driver(monkeypatch):
+    c = make_activate_app(monkeypatch, 'company', VALID_CONTACT, PLANNED_COMPANY_SESSION)
+    r = c.put('/api/foi-parcurs/test-drive/101/activate',
+              json={**ACTIVATE_BODY, 'driver_contact_id': 7})
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()['contract']['status'] == 'FILLED'
+    # Driver snapshot persisted onto the activation update.
+    persisted = c._fake_fp.activation
+    assert persisted['driver_contact_id'] == 7
+    assert persisted['driver_name'] == 'Ion'
+    assert persisted['driver_email'] == 'i@b.ro'
+    assert persisted['driver_phone'] == '072'
+    assert persisted['driver_license_serie'] == 'CJ'
+    assert persisted['driver_license_number'] == '123456'
+
+
+def test_activate_company_uses_contact_stored_on_session(monkeypatch):
+    """When the activate payload omits driver_contact_id, fall back to any
+    driver_contact_id already stored on the PLANNED session."""
+    session = {**PLANNED_COMPANY_SESSION, 'driver_contact_id': 7}
+    c = make_activate_app(monkeypatch, 'company', VALID_CONTACT, session)
+    r = c.put('/api/foi-parcurs/test-drive/101/activate', json=dict(ACTIVATE_BODY))
+    assert r.status_code == 200, r.get_json()
+    assert c._fake_fp.activation['driver_contact_id'] == 7
+
+
+def test_activate_person_client_needs_no_contact(monkeypatch):
+    session = {**PLANNED_COMPANY_SESSION, 'client_id': 5}
+    c = make_activate_app(monkeypatch, 'person', None, session)
+    r = c.put('/api/foi-parcurs/test-drive/101/activate', json=dict(ACTIVATE_BODY))
+    assert r.status_code == 200, r.get_json()
+    # No driver snapshot added for a person client (already carried from draft).
+    assert 'driver_contact_id' not in c._fake_fp.activation

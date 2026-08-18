@@ -5,6 +5,19 @@ from core.base_repository import BaseRepository
 _COLS = ('full_name', 'email', 'phone', 'driver_license_serie',
          'driver_license_number', 'driver_license_photo', 'driver_license_expiry')
 
+# The six fields a company's driver contact must carry before it can drive a
+# live test drive (personal identity + driving license). Lives here — a
+# side-effect-free repository module — so both the CRM routes and the
+# foi_parcurs test-drive submit/activate can share one definition without
+# importing a heavy Flask route module.
+GATE_FIELDS = ('full_name', 'email', 'phone', 'driver_license_photo',
+               'driver_license_serie', 'driver_license_number')
+
+
+def contact_gate_valid(contact):
+    """A company contact is gate-valid when it carries all personal + license details."""
+    return bool(contact) and all(contact.get(f) for f in GATE_FIELDS)
+
 
 class ContactRepository(BaseRepository):
 
