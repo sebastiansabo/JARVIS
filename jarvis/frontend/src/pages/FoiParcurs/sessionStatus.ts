@@ -6,7 +6,7 @@ import type { FoiContract } from '@/types/foiParcurs'
 // (Plan a Driving Session) with deferred signature/GDPR/PDF. PENDING is
 // checked next: td_status' ELSE branch returns 'driving' even for
 // un-allocated PENDING batch slots that were never driven.
-export type SessionStatusKey = 'planificat' | 'nealocat' | 'driving' | 'intarziat' | 'finalizat'
+export type SessionStatusKey = 'planificat' | 'nealocat' | 'driving' | 'intarziat' | 'finalizat' | 'ratat'
 
 export function sessionStatus(c: FoiContract): {
   key: SessionStatusKey
@@ -19,6 +19,11 @@ export function sessionStatus(c: FoiContract): {
   }
   if (c.status === 'PENDING') {
     return { key: 'nealocat', label: 'Nealocat', badgeClass: 'bg-muted text-muted-foreground', rowClass: '' }
+  }
+  // A planned drive whose due passed without being driven — the lifecycle marks it
+  // MISSED (a no-show). Distinct from Întârziat (a handed-over drive not yet returned).
+  if (c.status === 'MISSED') {
+    return { key: 'ratat', label: 'Ratat', badgeClass: 'bg-red-500 text-white', rowClass: 'bg-red-500/5 border-l-4 border-l-red-500/40' }
   }
   if (c.td_status === 'complete' || c.status === 'COMPLETED') {
     return { key: 'finalizat', label: 'Finalizat', badgeClass: 'bg-green-600 text-white', rowClass: 'bg-green-500/5 border-l-4 border-l-green-500/40' }
@@ -63,4 +68,5 @@ export const SESSION_BLOCK_COLOR: Record<SessionStatusKey, string> = {
   intarziat: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
   finalizat: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
   nealocat: 'bg-muted text-muted-foreground',
+  ratat: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
 }

@@ -4,6 +4,8 @@ import { AlertTriangle, ChevronDown, FileText } from 'lucide-react'
 import { api } from '@/api/client'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { naiveDate } from '@/lib/naiveDate'
+import { sessionStatus } from './sessionStatus'
+import type { FoiContract } from '@/types/foiParcurs'
 
 interface DamageItem {
   zone?: string | null
@@ -52,6 +54,24 @@ const SEVERITY: Record<string, { label: string; cls: string }> = {
 
 const hasDamage = (items?: DamageItem[] | null) => Array.isArray(items) && items.length > 0
 
+// Mirror the app/Hub session statuses (sessionStatus.ts). The odometer-history
+// endpoint returns `status` + `returned` but not `td_status`, so we synthesize it:
+// returned/COMPLETED → complete (Finalizat); FILLED past its return → incomplete
+// (Întârziat); else driving (În desfășurare). MISSED → Ratat is handled by status.
+function entryStatus(e: OdometerEntry) {
+  const overdue =
+    !e.returned &&
+    e.status === 'FILLED' &&
+    (() => {
+      const r = naiveDate(e.return_datetime)
+      if (r) return r < new Date()
+      const d = naiveDate(e.departure_datetime)
+      return !!d && Date.now() - d.getTime() > 86_400_000
+    })()
+  const td_status = e.returned || e.status === 'COMPLETED' ? 'complete' : overdue ? 'incomplete' : 'driving'
+  return sessionStatus({ status: e.status ?? undefined, td_status } as unknown as FoiContract)
+}
+
 function DamageBlock({ label, items }: { label: string; items?: DamageItem[] | null }) {
   if (!hasDamage(items)) return null
   return (
@@ -88,20 +108,35 @@ function DriveEntry({ e }: { e: OdometerEntry }) {
   const [showDamage, setShowDamage] = useState(false)
   const driven = e.returned && e.km_start != null && e.km_end != null ? e.km_end - e.km_start : null
   const gap = e.gap_km != null && e.gap_km > 0 ? e.gap_km : null
+  const ss = entryStatus(e)
+  const alarm = ss.key === 'intarziat' || ss.key === 'ratat' // needs attention (red)
   const depCount = hasDamage(e.departure_damage) ? e.departure_damage!.length : 0
   const retCount = hasDamage(e.return_damage) ? e.return_damage!.length : 0
   const damageCount = depCount + retCount
 
   return (
-    <div className="space-y-2 rounded-lg border bg-background p-3">
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="font-medium">{fmt(e.departure_datetime)}</span>
-        <span className="text-muted-foreground">→ {e.returned ? fmt(e.return_datetime) : '-'}</span>
-        {!e.returned && (
-          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Driving</span>
+    <div
+      className={`rounded-md border px-3 py-1.5 ${
+        alarm ? 'border-red-300 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20' : 'bg-background'
+      }`}
+    >
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+        <span className="font-medium tabular-nums">{fmt(e.departure_datetime)}</span>
+        <span className="text-muted-foreground tabular-nums">→ {e.returned ? fmt(e.return_datetime) : '-'}</span>
+        {ss.key !== 'finalizat' && (
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${ss.badgeClass}`}>
+            {ss.key === 'intarziat' ? `⚠ ${ss.label}` : ss.label}
+          </span>
         )}
         <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">{e.route_type || '—'}</span>
         <span className="font-medium">{e.client_name || 'Fără client'}</span>
+        <span className="text-muted-foreground tabular-nums">· KM {nf(e.km_start)} → {e.returned ? nf(e.km_end) : '-'}</span>
+        {driven != null && <span className="text-muted-foreground tabular-nums">· Parcurs {nf(driven)}</span>}
+        {gap != null && (
+          <span className="flex items-center gap-1 font-medium text-destructive tabular-nums">
+            <AlertTriangle className="h-3 w-3" />+{nf(gap)} km gol
+          </span>
+        )}
         {e.id != null && (e.status === 'FILLED' || e.status === 'COMPLETED') && (
           <a
             href={foiParcursApi.getContractPdfUrl(e.id, 'legal')}
@@ -115,20 +150,8 @@ function DriveEntry({ e }: { e: OdometerEntry }) {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs tabular-nums">
-        <span>
-          KM: <b>{nf(e.km_start)}</b> → <b>{e.returned ? nf(e.km_end) : '-'}</b>
-        </span>
-        <span className="text-muted-foreground">Parcurs: {driven == null ? '-' : nf(driven)}</span>
-        {gap != null && (
-          <span className="flex items-center gap-1 font-medium text-destructive">
-            <AlertTriangle className="h-3 w-3" />+{nf(gap)} km gol
-          </span>
-        )}
-      </div>
-
       {damageCount > 0 && (
-        <div className="border-t pt-2">
+        <div className="mt-1.5 border-t pt-1.5">
           <button
             type="button"
             onClick={() => setShowDamage((s) => !s)}
@@ -157,6 +180,7 @@ export function VehicleOdometerHistory({ vin }: { vin: string }) {
     queryFn: () => api.get<OdometerHistoryResp>('/api/foi-parcurs/odometer-history', { vin }),
     staleTime: 30_000,
   })
+  const [mode, setMode] = useState<'planned' | 'active' | 'istoric'>('planned')
 
   if (isLoading) return <div className="p-4 text-sm text-muted-foreground">Se încarcă istoricul…</div>
 
@@ -164,13 +188,42 @@ export function VehicleOdometerHistory({ vin }: { vin: string }) {
   if (entries.length === 0)
     return <div className="p-4 text-sm text-muted-foreground">Nicio cursă înregistrată pentru acest vehicul.</div>
 
-  const rows = [...entries].reverse() // newest first
   const totalGap = entries.reduce((s, e) => s + (e.gap_km && e.gap_km > 0 ? e.gap_km : 0), 0)
 
+  // Planned = scheduled, not started yet; Active = out now (incl. overdue-not-returned);
+  // Istoric = finished only (returned or missed). Unfinished sessions never fall into Istoric.
+  const byDepartureAsc = (a: OdometerEntry, b: OdometerEntry) =>
+    (naiveDate(a.departure_datetime)?.getTime() ?? Infinity) - (naiveDate(b.departure_datetime)?.getTime() ?? Infinity)
+  // Bucket by the canonical app/Hub status: Planned = scheduled/unallocated;
+  // Active = out now or overdue-still-out; Istoric = finished (Finalizat) or Ratat.
+  const keyOf = (e: OdometerEntry) => entryStatus(e).key
+  const planned = entries.filter((e) => keyOf(e) === 'planificat' || keyOf(e) === 'nealocat').sort(byDepartureAsc)
+  const active = entries.filter((e) => keyOf(e) === 'driving' || keyOf(e) === 'intarziat').sort(byDepartureAsc)
+  const istoric = entries.filter((e) => keyOf(e) === 'finalizat' || keyOf(e) === 'ratat').reverse() // newest first
+  const rows = mode === 'planned' ? planned : mode === 'active' ? active : istoric
+
+  const tabCls = (m: 'planned' | 'active' | 'istoric') =>
+    `rounded px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+      mode === m ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'
+    }`
+
   return (
-    <div className="space-y-3 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h4 className="text-sm font-semibold">Istoric vehicul — kilometraj & avarii</h4>
+    <div className="space-y-2 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h4 className="text-sm font-semibold">Sesiuni vehicul</h4>
+          <div className="flex items-center gap-1 rounded-md border p-0.5">
+            <button type="button" className={tabCls('planned')} onClick={() => setMode('planned')}>
+              Planned ({planned.length})
+            </button>
+            <button type="button" className={tabCls('active')} onClick={() => setMode('active')}>
+              Active ({active.length})
+            </button>
+            <button type="button" className={tabCls('istoric')} onClick={() => setMode('istoric')}>
+              Istoric ({istoric.length})
+            </button>
+          </div>
+        </div>
         <div className="flex items-center gap-4 text-xs">
           {data?.current_odometer != null && (
             <span className="text-muted-foreground">
@@ -186,11 +239,21 @@ export function VehicleOdometerHistory({ vin }: { vin: string }) {
         </div>
       </div>
 
-      <div className="space-y-2">
-        {rows.map((e, i) => (
-          <DriveEntry key={e.contract_id ?? i} e={e} />
-        ))}
-      </div>
+      {rows.length === 0 ? (
+        <div className="py-2 text-xs text-muted-foreground">
+          {mode === 'planned'
+            ? 'Nicio sesiune planificată.'
+            : mode === 'active'
+              ? 'Nicio sesiune activă acum.'
+              : 'Nicio sesiune în istoric.'}
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {rows.map((e, i) => (
+            <DriveEntry key={e.contract_id ?? i} e={e} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

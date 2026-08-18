@@ -247,7 +247,7 @@ export interface FoiContract {
   // 'PLANNED' — draft session created ahead of time (Plan a Driving Session,
   // Phase 1 backend). Signature/GDPR/PDF are deferred; activated into
   // 'FILLED' when the client arrives (PUT /test-drive/{id}/activate).
-  status: 'PENDING' | 'PLANNED' | 'FILLED' | 'COMPLETED'
+  status: 'PENDING' | 'PLANNED' | 'FILLED' | 'COMPLETED' | 'MISSED'
   created_at: string
   updated_at: string
   // Returned by get_contracts (fp.* + _TD_STATUS_SQL) but previously undeclared:
