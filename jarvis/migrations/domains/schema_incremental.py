@@ -2358,6 +2358,24 @@ def _create_schema_incremental_continued(conn, cursor):
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='driver_license_expiry') THEN
                 ALTER TABLE foi_de_parcurs ADD COLUMN driver_license_expiry VARCHAR(20);
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='driver_contact_id') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN driver_contact_id BIGINT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='driver_name') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN driver_name TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='driver_email') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN driver_email TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='driver_phone') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN driver_phone TEXT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='driver_license_serie') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN driver_license_serie VARCHAR(10);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='event_id') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN event_id BIGINT;
+            END IF;
         END $$;
     ''')
 
