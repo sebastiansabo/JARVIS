@@ -37,15 +37,21 @@ class ContactRepository(BaseRepository):
         return row
 
     def update(self, contact_id, data):
-        # is_primary is intentionally excluded from the generic column loop:
-        # setting it directly to TRUE here would collide with the partial
-        # unique index whenever another contact for the same client is still
-        # primary. set_primary() below applies it atomically instead.
+        # is_primary is intentionally excluded from the generic column loop for
+        # the TRUE case: setting it directly to TRUE here would collide with the
+        # partial unique index whenever another contact for the same client is
+        # still primary, so promotion routes through set_primary() below. An
+        # explicit is_primary=False demote IS safe inline (it only ever removes
+        # an index entry, never adds a colliding one), so it's folded into the
+        # generic SET so a demote-only payload actually writes.
+        demote = 'is_primary' in data and not data['is_primary']
         sets, params = [], []
         for col in _COLS:
             if col in data:
                 sets.append(f'{col} = %s')
                 params.append(data[col])
+        if demote:
+            sets.append('is_primary = FALSE')
         if not sets and 'is_primary' not in data:
             return None
         if sets:
