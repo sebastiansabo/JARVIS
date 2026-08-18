@@ -15,13 +15,22 @@ class FakeUser:
 
 
 class FakeContacts:
+    # Contact 9 belongs to client 5; contact 99 belongs to another client (7)
+    # to prove cross-client contact_id tampering is rejected with a 404.
     def __init__(self):
         self.created = None
         self.updated = None
         self.deleted = None
+        self._by_id = {
+            9: {'id': 9, 'client_id': 5, 'full_name': 'Ion'},
+            99: {'id': 99, 'client_id': 7, 'full_name': 'Alt'},
+        }
 
     def list_by_client(self, client_id):
         return [{'id': 1, 'client_id': client_id, 'full_name': 'Ion', 'is_primary': True}]
+
+    def get(self, contact_id):
+        return self._by_id.get(contact_id)
 
     def create(self, client_id, data):
         self.created = (client_id, data)
@@ -72,7 +81,7 @@ def test_create_contact_requires_full_name(client):
 
 
 def test_update_contact(client):
-    r = client.put('/api/crm/contacts/9', json={'phone': '073'})
+    r = client.put('/api/crm/clients/5/contacts/9', json={'phone': '073'})
     assert r.status_code == 200
     body = r.get_json()
     assert body['success'] is True
@@ -80,10 +89,25 @@ def test_update_contact(client):
 
 
 def test_delete_contact(client):
-    r = client.delete('/api/crm/contacts/9')
+    r = client.delete('/api/crm/clients/5/contacts/9')
     assert r.status_code == 200
     assert r.get_json()['success'] is True
     assert client.application._fake.deleted == 9
+
+
+def test_update_contact_mismatched_client_404(client):
+    # Contact 99 belongs to client 7, not 5 — must not be mutable via client 5's path.
+    r = client.put('/api/crm/clients/5/contacts/99', json={'phone': '073'})
+    assert r.status_code == 404
+    assert r.get_json()['success'] is False
+    assert client.application._fake.updated is None
+
+
+def test_delete_contact_mismatched_client_404(client):
+    r = client.delete('/api/crm/clients/5/contacts/99')
+    assert r.status_code == 404
+    assert r.get_json()['success'] is False
+    assert client.application._fake.deleted is None
 
 
 def test_gate_valid_requires_all_fields():

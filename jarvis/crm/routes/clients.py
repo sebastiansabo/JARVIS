@@ -731,17 +731,26 @@ def api_create_client_contact(client_id):
     return jsonify({'success': True, 'contact': contact})
 
 
-@crm_bp.route('/api/crm/contacts/<int:contact_id>', methods=['PUT'])
+@crm_bp.route('/api/crm/clients/<int:client_id>/contacts/<int:contact_id>', methods=['PUT'])
 @login_required
 @crm_required
-def api_update_client_contact(contact_id):
+def api_update_client_contact(client_id, contact_id):
+    # Nested under client_id so crm_required scopes it (403s a client outside
+    # the user's scope). The ownership check below also closes cross-client
+    # contact_id tampering: a contact_id belonging to another client 404s.
+    existing = _contact_repo.get(contact_id)
+    if not existing or existing['client_id'] != client_id:
+        return jsonify({'success': False, 'error': 'Contact not found'}), 404
     contact = _contact_repo.update(contact_id, request.get_json(silent=True) or {})
     return jsonify({'success': True, 'contact': contact})
 
 
-@crm_bp.route('/api/crm/contacts/<int:contact_id>', methods=['DELETE'])
+@crm_bp.route('/api/crm/clients/<int:client_id>/contacts/<int:contact_id>', methods=['DELETE'])
 @login_required
 @crm_required
-def api_delete_client_contact(contact_id):
+def api_delete_client_contact(client_id, contact_id):
+    existing = _contact_repo.get(contact_id)
+    if not existing or existing['client_id'] != client_id:
+        return jsonify({'success': False, 'error': 'Contact not found'}), 404
     _contact_repo.delete(contact_id)
     return jsonify({'success': True})
