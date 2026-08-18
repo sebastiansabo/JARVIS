@@ -67,7 +67,7 @@ describe('CalendarTab (desktop foi-parcurs)', () => {
     expect(await screen.findByText('Detalii sesiune')).toBeInTheDocument()
   })
 
-  it('navigates to a prefilled new-session form when dragging an empty slot in Day view', async () => {
+  it('opens the Client/Intern chooser, then navigates to a prefilled new-session form when dragging an empty slot in Day view', async () => {
     wrap(<CalendarTab companyId={11} brand="" />)
     await screen.findByTestId('tg-block-11') // week loaded
     fireEvent.click(screen.getByRole('button', { name: 'Zi' })) // drag-create lives in Day view
@@ -77,14 +77,26 @@ describe('CalendarTab (desktop foi-parcurs)', () => {
     firePointer(col, 'pointerdown', 100 + 144)
     firePointer(col, 'pointermove', 100 + 252)
     firePointer(col, 'pointerup', 100 + 252)
+    // The slot-add opens the chooser instead of navigating immediately.
+    expect(navigate).not.toHaveBeenCalled()
+    fireEvent.click(await screen.findByRole('button', { name: /sesiune cu client/i }))
     expect(navigate).toHaveBeenCalledWith(`/app/foi-parcurs/test-drive?departure=${todayKey}T09:00&return=${todayKey}T10:30`)
   })
 
-  it('navigates to a prefilled new-session form when clicking a Week day cell', async () => {
+  it('navigates to a prefilled new-session form when clicking a Week day cell and picking Client', async () => {
     wrap(<CalendarTab companyId={11} brand="" />)
     await screen.findByTestId('tg-block-11') // default Week view
     fireEvent.click(screen.getByTestId(`tg-col-${todayKey}`)) // day-background cell
+    fireEvent.click(await screen.findByRole('button', { name: /sesiune cu client/i }))
     expect(navigate).toHaveBeenCalledWith(`/app/foi-parcurs/test-drive?departure=${todayKey}T09:00&return=${todayKey}T10:00`)
+  })
+
+  it('navigates to the internal session form when clicking a Week day cell and picking Intern', async () => {
+    wrap(<CalendarTab companyId={11} brand="" />)
+    await screen.findByTestId('tg-block-11') // default Week view
+    fireEvent.click(screen.getByTestId(`tg-col-${todayKey}`)) // day-background cell
+    fireEvent.click(await screen.findByRole('button', { name: /sesiune internă/i }))
+    expect(navigate).toHaveBeenCalledWith(`/app/foi-parcurs/internal?departure=${todayKey}T09:00&return=${todayKey}T10:00`)
   })
 
   it('creates a multi-day session by dragging across days in Month view', async () => {
@@ -96,6 +108,7 @@ describe('CalendarTab (desktop foi-parcurs)', () => {
     fireEvent.pointerDown(await screen.findByTestId(`fp-day-${aKey}`))
     fireEvent.pointerEnter(screen.getByTestId(`fp-day-${cKey}`))
     fireEvent.pointerUp(screen.getByTestId(`fp-day-${cKey}`))
+    fireEvent.click(await screen.findByRole('button', { name: /sesiune cu client/i }))
     expect(navigate).toHaveBeenCalledWith(`/app/foi-parcurs/test-drive?departure=${aKey}T09:00&return=${cKey}T18:00`)
   })
 
