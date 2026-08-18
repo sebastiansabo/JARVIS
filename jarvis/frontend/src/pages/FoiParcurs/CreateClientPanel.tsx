@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { foiParcursApi } from '@/api/foiParcurs'
+import { crmApi } from '@/api/crm'
 import { fileToCompressedDataUrl } from '@/lib/imageCompress'
 import { RO_COUNTIES, RO_CITIES } from '@/data/roLocalities'
 import { Autocomplete } from '@/components/shared/Autocomplete'
@@ -164,6 +165,7 @@ export function CreateClientPanel({
   const [isCompany, setIsCompany] = useState(false)
   const [companyName, setCompanyName] = useState('')
   const [cui, setCui] = useState('')
+  const [licenseSerie, setLicenseSerie] = useState('')
   const [licenseNumber, setLicenseNumber] = useState(prefill?.license_number ?? '')
   const [licenseExpiry, setLicenseExpiry] = useState(prefill?.expiry_date ?? '')
   const [address, setAddress] = useState(prefill?.address ?? '')
@@ -208,9 +210,28 @@ export function CreateClientPanel({
           : {}),
       },
       {
-        onSuccess: (res) => {
-          if (res.client) onCreated(res.client, licenseNumber.trim(), licenseExpiry.trim())
-          else setError('Clientul nu a putut fi creat.')
+        onSuccess: async (res) => {
+          if (!res.client) {
+            setError('Clientul nu a putut fi creat.')
+            return
+          }
+          if (isCompany) {
+            try {
+              await crmApi.createClientContact(Number(res.client.id), {
+                full_name: name.trim(),
+                email: email.trim() || null,
+                phone: phoneFull || null,
+                driver_license_serie: licenseSerie.trim() || null,
+                driver_license_number: licenseNumber.trim() || null,
+                driver_license_expiry: licenseExpiry.trim() || null,
+                is_primary: true,
+              })
+            } catch (err: any) {
+              setError(err?.data?.error || err?.message || 'Persoana de contact nu a putut fi creată.')
+              return
+            }
+          }
+          onCreated(res.client, licenseNumber.trim(), licenseExpiry.trim())
         },
         onError: (err: any) => {
           setError(err?.data?.error || err?.message || 'Crearea clientului a eșuat.')
@@ -279,9 +300,15 @@ export function CreateClientPanel({
           className={cn(email.trim() !== '' && !emailValid && 'ring-2 ring-destructive')}
         />
       </div>
-      <div className="space-y-1">
-        <Label className="text-xs">Serie/nr permis</Label>
-        <Input value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} placeholder="Serie/număr" />
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-xs">Serie permis</Label>
+          <Input value={licenseSerie} onChange={(e) => setLicenseSerie(e.target.value.toUpperCase())} placeholder="ex. CJ" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Număr permis</Label>
+          <Input value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} placeholder="ex. 123456" />
+        </div>
       </div>
       <div className="space-y-1">
         <Label className="text-xs">Valabilitate permis (4b)</Label>
