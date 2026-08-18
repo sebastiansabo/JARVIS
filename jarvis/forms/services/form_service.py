@@ -305,7 +305,10 @@ class FormService:
         return ServiceResult(success=True, data=response_data, status_code=201)
 
     LEAVE_FORM_SLUG = 'bilet-de-invoire'
-    LEAVE_REQUIRED_FIELDS = ('f_bi_leave_date', 'f_bi_start_time', 'f_bi_end_time', 'f_bi_reason')
+    LEAVE_REQUIRED_FIELDS = ('f_bi_leave_date', 'f_bi_start_time', 'f_bi_duration_hours', 'f_bi_reason')
+    LEAVE_TERMS_TEXT = ('Declar că îmi asum responsabilitatea pentru orice eventual '
+                        'eveniment neplăcut care ar putea surveni în legătură cu mine, '
+                        'în această perioadă în care sunt învoit / învoită 🔒')
 
     @staticmethod
     def _leave_permit_missing_fields(answers):
@@ -313,34 +316,74 @@ class FormService:
         a = answers or {}
         return [k for k in FormService.LEAVE_REQUIRED_FIELDS if not str(a.get(k, '')).strip()]
 
-    def submit_leave_permit(self, answers: Dict, user: UserContext) -> ServiceResult:
-        """Create a Bilet de Invoire from the code-defined Invoire module form.
+    @staticmethod
+    def _leave_permit_precheck(answers):
+        """Consent + signature presence. Returns error message or None."""
+        a = answers or {}
+        if not a.get('f_bi_terms_accepted'):
+            return 'Trebuie să acceptați declarația de responsabilitate.'
+        if not str(a.get('signature_image', '')).strip():
+            return 'Semnătura este obligatorie.'
+        return None
 
-        Unlike submit_internal, this does NOT depend on the DB form schema — the
-        fields are owned by the frontend Invoire module, so it never strips or
-        validates against a stored schema. It is still stored as a form_submission
-        and routed through the approval engine (primary + optional second approver
-        via answers['f_bi_second_approver']).
+    def submit_leave_permit(self, answers: Dict, user: UserContext, ip_address=None) -> ServiceResult:
+        """Create a Bilet de Invoire (code-defined Invoire module form).
+
+        Server computes/validates hours from start + duration against the
+        employee's Sincron window, persists numeric f_bi_hours + computed
+        return time, records consent, and stores a frozen copy of the
+        signature in document_signatures (never in answers, never touches
+        users.signature — the frontend saves that via the profile endpoint).
         """
+        from core.connectors.connecteam.services.leave_schedule import (
+            get_leave_schedule, validate_leave, compute_return)
+        from datetime import datetime, timezone
+
         form = self.form_repo.get_by_slug(self.LEAVE_FORM_SLUG)
         if not form:
             return ServiceResult(success=False, error='Leave form not configured', status_code=404)
 
+        answers = dict(answers or {})
+        # Pull signature out so it never lands in the JSONB.
+        signature_image = str(answers.pop('signature_image', '') or '').strip()
+
         missing = self._leave_permit_missing_fields(answers)
         if missing:
-            return ServiceResult(success=False, error=f'Missing required fields: {", ".join(missing)}',
-                                 status_code=400)
+            return ServiceResult(success=False,
+                error=f'Missing required fields: {", ".join(missing)}', status_code=400)
+        precheck = self._leave_permit_precheck({**answers, 'signature_image': signature_image})
+        if precheck:
+            return ServiceResult(success=False, error=precheck, status_code=400)
+        if answers.get('f_bi_reason') not in ('Personal', 'Medical', 'Familial', 'Oficial', 'Altul'):
+            return ServiceResult(success=False, error='Motiv invalid', status_code=400)
+
+        schedule = get_leave_schedule(user.user_id, answers.get('f_bi_leave_date'))
+        time_err = validate_leave(answers.get('f_bi_start_time'),
+                                  answers.get('f_bi_duration_hours'), schedule)
+        if time_err:
+            return ServiceResult(success=False, error=time_err, status_code=400)
+
+        duration = float(answers['f_bi_duration_hours'])
+        answers['f_bi_hours'] = duration
+        answers['f_bi_end_time'] = compute_return(answers['f_bi_start_time'], duration)
+        answers['f_bi_terms_accepted'] = True
+        answers['f_bi_terms_text'] = self.LEAVE_TERMS_TEXT
+        answers['f_bi_terms_accepted_at'] = datetime.now(timezone.utc).isoformat()
 
         answers = _sanitize_answers(answers)
         submission_id = self.submission_repo.create(
-            form_id=form['id'],
-            form_version=form.get('version', 1),
-            answers=answers,
-            form_schema_snapshot=[],
-            source='web_internal',
-            company_id=form.get('company_id'),
-            respondent_user_id=user.user_id,
+            form_id=form['id'], form_version=form.get('version', 1),
+            answers=answers, form_schema_snapshot=[], source='web_internal',
+            company_id=form.get('company_id'), respondent_user_id=user.user_id,
         )
+
+        # Frozen per-submission signature copy → document_signatures.
+        try:
+            from core.signatures.repositories.signature_repo import SignatureRepository
+            SignatureRepository().create_signed('leave_permit', submission_id,
+                                                 user.user_id, signature_image, ip_address)
+        except Exception as e:
+            logger.warning('signature persist failed for leave permit %s: %s', submission_id, e)
 
         if form.get('requires_approval'):
             self._trigger_approval(form, submission_id, {
