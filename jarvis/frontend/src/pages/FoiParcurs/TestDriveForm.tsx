@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { crmApi, type ClientContact } from '@/api/crm'
@@ -113,6 +113,7 @@ interface TestDriveFormProps {
 // ── Component ──
 export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, initialDeparture, initialReturn, onDone, onCancel }: TestDriveFormProps = {}) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
   const [openBlock, setOpenBlock] = useState<{ message: string; retry: () => void } | null>(null)
@@ -365,6 +366,13 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     enabled: !!selectedClient && isCompanyClient,
   })
   const contacts = contactsData?.contacts ?? []
+  // Keep the currently-selected contact in the option list even if the query
+  // cache hasn't caught up yet (e.g. a just-created contact whose invalidation
+  // refetch is still in flight) — otherwise the Select trigger has no matching
+  // item and renders blank. Mirrors the visibleVehicles pattern above.
+  const contactOptions = driverContact && !contacts.some((c) => String(c.id) === String(driverContact.id))
+    ? [driverContact, ...contacts]
+    : contacts
   const contactGateFields = (c: ClientContact | null) =>
     !!c && !!c.full_name && !!c.email && !!c.phone && !!c.driver_license_photo &&
     !!c.driver_license_serie && !!c.driver_license_number
@@ -510,6 +518,18 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   function buildBasePayload(vehicle: FpVehicle, client: CrmClient): BasePayload {
     const damagePayload = toDamagePayload(departureDamage)
     const capacity = vehicle.fuel_tank_capacity_liters ?? vehicle.battery_capacity_kwh ?? undefined
+    // A company client's driver license lives on the selected contact (the
+    // standalone card is hidden for them); a person client uses the standalone
+    // fields. Resolve once here so both are fed from the right source.
+    const licenseFor = isCompanyClient
+      ? {
+          photo: driverContact?.driver_license_photo ?? driverLicensePhoto ?? undefined,
+          number: (driverContact?.driver_license_number ?? driverLicenseNumber ?? '').trim() || undefined,
+        }
+      : {
+          photo: driverLicensePhoto ?? undefined,
+          number: driverLicenseNumber.trim() || undefined,
+        }
     return {
       company_id: companyId!,
       vin: vehicle.vin,
@@ -529,8 +549,15 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(inspectionAcceptance ? { inspection_acceptance: inspectionAcceptance } : {}),
       ...(latestInspection?.id ? { inspection_id: latestInspection.id } : {}),
       ...(damagePayload.length ? { departure_damage: damagePayload } : {}),
-      ...(driverLicensePhoto ? { driver_license_photo: driverLicensePhoto } : {}),
-      ...(driverLicenseNumber.trim() ? { driver_license_number: driverLicenseNumber.trim() } : {}),
+      // License fields: for a company client the standalone license card is
+      // hidden (photo/number state stays empty), so the actual driver's
+      // license comes from the selected contact — prefer it, falling back to
+      // any standalone value. A person client keeps its standalone fields.
+      // (Fix round 1: without this a company FILLED submit sent blank
+      // photo/number and the legal PDF's permis fields came out empty; the
+      // backend now also falls back to the contact defensively.)
+      ...(licenseFor.photo ? { driver_license_photo: licenseFor.photo } : {}),
+      ...(licenseFor.number ? { driver_license_number: licenseFor.number } : {}),
       ...(driverLicenseExpiry.trim() ? { driver_license_expiry: driverLicenseExpiry.trim() } : {}),
       ...(generalObservation.trim() ? { general_observation: generalObservation.trim() } : {}),
       ...(mktProject ? { mkt_project_id: Number(mktProject.id) } : {}),
@@ -797,20 +824,27 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                   {showAddContact ? (
                     <AddContactForm
                       clientId={Number(selectedClient.id)}
-                      onCreated={(c) => { setDriverContact(c); setShowAddContact(false) }}
+                      onCreated={(c) => {
+                        // Refresh the picker's option list so the just-created
+                        // contact is present (the Select renders from this
+                        // query; without invalidation its trigger can go blank).
+                        queryClient.invalidateQueries({ queryKey: ['client-contacts', selectedClient.id] })
+                        setDriverContact(c)
+                        setShowAddContact(false)
+                      }}
                       onCancel={() => setShowAddContact(false)}
                     />
                   ) : (
                     <>
                       <Select
                         value={driverContact ? String(driverContact.id) : ''}
-                        onValueChange={(v) => setDriverContact(contacts.find((c) => String(c.id) === v) ?? null)}
+                        onValueChange={(v) => setDriverContact(contactOptions.find((c) => String(c.id) === v) ?? null)}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Alege persoana de contact" />
                         </SelectTrigger>
                         <SelectContent>
-                          {contacts.map((c) => (
+                          {contactOptions.map((c) => (
                             <SelectItem key={c.id} value={String(c.id)}>
                               {c.full_name}{contactGateFields(c) ? '' : ' ⚠ date incomplete'}
                             </SelectItem>

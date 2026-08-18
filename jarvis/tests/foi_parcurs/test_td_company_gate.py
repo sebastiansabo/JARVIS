@@ -51,14 +51,17 @@ class FakeContacts:
 
 
 def make_app(monkeypatch, client_type, contact):
-    monkeypatch.setattr(td_mod, '_fp_repo', FakeFp())
+    fake_fp = FakeFp()
+    monkeypatch.setattr(td_mod, '_fp_repo', fake_fp)
     monkeypatch.setattr(td_mod, '_crm_client_repo', FakeCrm(client_type))
     monkeypatch.setattr(td_mod, '_contact_repo', FakeContacts(contact))
     app = Flask(__name__)
     app.register_blueprint(foi_parcurs_bp)
     app.config['TESTING'] = True
     app.config['LOGIN_DISABLED'] = True
-    return app.test_client()
+    tc = app.test_client()
+    tc._fake_fp = fake_fp
+    return tc
 
 
 # Complete payload for a NON-draft, NON-internal live submit: all of
@@ -99,6 +102,33 @@ def test_company_with_valid_contact_is_accepted(monkeypatch):
     assert contract['driver_email'] == 'i@b.ro'
     assert contract['driver_phone'] == '072'
     assert contract['driver_license_serie'] == 'CJ'
+
+
+def test_company_submit_falls_back_to_contact_license_photo_number(monkeypatch):
+    """A company FILLED submit with a valid driver_contact_id but NO
+    driver_license_photo/number in the payload (the web form hides the
+    standalone license card for a company client) must persist the contact's
+    license photo/number/expiry onto the contract — otherwise the FILLED
+    session + its legal PDF would carry a blank permis. Mirrors how
+    driver_license_serie already falls back to the contact."""
+    contact = {**VALID_CONTACT,
+               'driver_license_photo': 'data:CONTACT_PHOTO',
+               'driver_license_number': 'CONTACT_NUM',
+               'driver_license_expiry': '2030-01-01'}
+    c = make_app(monkeypatch, 'company', contact)
+    # Strip the standalone license fields from the payload, like the web form
+    # does for a company client.
+    payload = {k: v for k, v in BASE_PAYLOAD.items()
+               if k not in ('driver_license_photo', 'driver_license_number')}
+    r = c.post('/api/foi-parcurs/test-drive',
+               json={**payload, 'driver_contact_id': 7})
+    assert r.status_code == 200, r.get_json()
+    persisted = c._fake_fp.last
+    assert persisted['driver_license_photo'] == 'data:CONTACT_PHOTO'
+    assert persisted['driver_license_number'] == 'CONTACT_NUM'
+    assert persisted['driver_license_expiry'] == '2030-01-01'
+    # And the serie fallback (already present pre-fix) still holds.
+    assert persisted['driver_license_serie'] == 'CJ'
 
 
 def test_person_client_needs_no_contact(monkeypatch):
