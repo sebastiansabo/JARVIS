@@ -25,8 +25,8 @@ vi.mock('@/pages/FoiParcurs/TestDriveForm', () => ({
   ),
 }))
 vi.mock('@/pages/FoiParcurs/InternalSessionForm', () => ({
-  default: ({ onDone, onCancel, initialDeparture }: { onDone?: (c: unknown) => void; onCancel: () => void; initialDeparture?: string }) => (
-    <div>internal-form:{initialDeparture ?? ''}<button onClick={onCancel}>x</button><button onClick={() => onDone?.({ id: 2 })}>done</button></div>
+  default: ({ onDone, onCancel, initialDeparture, initialCompanyId }: { onDone?: (c: unknown) => void; onCancel: () => void; initialDeparture?: string; initialCompanyId?: number }) => (
+    <div>internal-form:{initialDeparture ?? ''} company:{initialCompanyId ?? 'none'}<button onClick={onCancel}>x</button><button onClick={() => onDone?.({ id: 2 })}>done</button></div>
   ),
 }))
 vi.mock('@/pages/FoiParcurs/TestDriveReturn', () => ({ default: ({ id }: { id: number }) => <div>return-overlay:{id}</div> }))
@@ -69,13 +69,27 @@ describe('HubDrivingPanel', () => {
     expect(screen.queryByText(/^internal-form:/)).not.toBeInTheDocument()
   })
 
-  it('picking "Sesiune internă" renders InternalSessionForm', async () => {
+  it('picking "Sesiune internă" renders InternalSessionForm (with the active company)', async () => {
     wrap(<HubDrivingPanel />)
     await screen.findByText(/sessions:11/)
     fireEvent.click(screen.getByRole('button', { name: /nou/i }))
     fireEvent.click(await screen.findByRole('button', { name: /sesiune internă/i }))
-    expect(await screen.findByText(/^internal-form:/)).toBeInTheDocument()
+    // Auto-selected company 11 → passed through to the internal form.
+    expect(await screen.findByText(/internal-form:.*company:11/)).toBeInTheDocument()
     expect(screen.queryByText(/^form:/)).not.toBeInTheDocument()
+  })
+
+  it('passes NO company to InternalSessionForm under "Toate companiile" (-1) so its picker shows all cars', async () => {
+    // Seed the persisted company filter to ALL_COMPANIES (-1); the panel's
+    // auto-select only kicks in for 0, so -1 sticks. The fix maps -1 → undefined
+    // (companyId > 0 ? companyId : undefined), otherwise the internal form would
+    // filter vehicles on company_id === -1 → an empty, unrecoverable dropdown.
+    localStorage.setItem('hub-driving-company', '-1')
+    wrap(<HubDrivingPanel />)
+    await screen.findByText(/sessions:-1/)
+    fireEvent.click(screen.getByRole('button', { name: /nou/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /sesiune internă/i }))
+    expect(await screen.findByText(/internal-form:.*company:none/)).toBeInTheDocument()
   })
 
   it('opens the New form prefilled with the slot datetime when the calendar requests an add', async () => {
@@ -91,7 +105,7 @@ describe('HubDrivingPanel', () => {
     fireEvent.mouseDown(await screen.findByRole('tab', { name: /calendar/i }))
     fireEvent.click(await screen.findByRole('button', { name: /mock-add/i }))
     fireEvent.click(await screen.findByRole('button', { name: /sesiune internă/i }))
-    expect(await screen.findByText('internal-form:2026-08-05T11:00')).toBeInTheDocument()
+    expect(await screen.findByText(/internal-form:2026-08-05T11:00/)).toBeInTheDocument()
   })
 
   it('switches to the Calendar tab', async () => {

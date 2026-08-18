@@ -117,8 +117,11 @@ export default function InternalSessionForm({
   const handleVehicleChange = (nextVin: string) => {
     setVin(nextVin)
     setNoCompanyError(false)
+    // Always overwrite KM plecare with the newly-picked car's odometer (mirrors
+    // TestDriveForm.commitVehicle) — otherwise switching from car A to car B
+    // keeps A's mileage and submits a wrong odometer for B. Still editable after.
     const v = allVehicles.find((x) => x.vin === nextVin)
-    if (v?.odometer_km != null && !kmStart) setKmStart(String(v.odometer_km))
+    if (v?.odometer_km != null) setKmStart(String(v.odometer_km))
   }
 
   const validationError = quickSessionError({ vin, driver, departure, ret, kmStart })
