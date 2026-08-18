@@ -260,6 +260,11 @@ export interface FoiContract {
   // Optional marketing project (campaign/event) this session is tied to.
   mkt_project_id?: number | null
   mkt_project_name?: string | null
+  // Snapshot of the actual driver (Task 10) — set on company sessions where
+  // the client is the company and a gate-valid contact person drove.
+  driver_name?: string | null
+  driver_contact_id?: number | null
+  event_id?: number | null
 }
 
 // ── Marketing project (campaign/event) a Test Drive can optionally be tied to.
