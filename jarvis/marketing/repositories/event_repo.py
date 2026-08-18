@@ -21,13 +21,19 @@ class ProjectEventRepository(BaseRepository):
         ''', (event_id,))
 
     def create_event_project(self, name, company_id, user_id, event_id):
-        """Create a marketing 'event' project to bridge an HR event. The
-        caller is responsible for linking it via link() afterwards."""
+        """Create (or return the existing) marketing 'event' project bridging
+        an HR event. The slug is deterministic (``...-ev{event_id}``), so
+        ON CONFLICT (slug) DO UPDATE makes this idempotent/self-healing: if a
+        prior bridge created the project but failed to link it, a re-create
+        returns the SAME project id instead of hitting the UNIQUE slug index.
+        The caller is responsible for linking it via link() afterwards
+        (link()'s own ON CONFLICT DO NOTHING re-links idempotently)."""
         base = re.sub(r'[^a-z0-9]+', '-', (name or 'eveniment').lower()).strip('-')[:50]
         slug = f'{base}-ev{event_id}'
         row = self.execute('''
             INSERT INTO mkt_projects (name, slug, project_type, status, company_id, owner_id, created_by)
             VALUES (%s, %s, 'event', 'active', %s, %s, %s)
+            ON CONFLICT (slug) DO UPDATE SET updated_at = NOW()
             RETURNING id
         ''', (name, slug, company_id, user_id, user_id), returning=True)
         return row['id']
