@@ -104,6 +104,19 @@ FORM_SCHEMA = [
         'placeholder': 'Adăugați orice detalii relevante',
         'order': 9,
     },
+    {
+        # Consent declaration. The Invoire module renders a coded checkbox and reads
+        # THIS field's label as the consent text (edit it in Forms to change the
+        # wording). The generic form engine can't express the module's consent gate;
+        # this field only carries the text — the module enforces acceptance.
+        'id': 'f_bi_terms',
+        'type': 'checkbox',
+        'label': ('Declar că îmi asum responsabilitatea pentru orice eventual '
+                  'eveniment neplăcut care ar putea surveni în legătură cu mine, '
+                  'în această perioadă în care sunt învoit / învoită 🔒'),
+        'required': True,
+        'order': 10,
+    },
 ]
 
 FORM_SETTINGS = {
