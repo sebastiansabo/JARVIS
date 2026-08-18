@@ -93,7 +93,9 @@ import ExtendSessionDialog from './ExtendSessionDialog'
 import ModifiedBadge from './ModifiedBadge'
 import { toast } from 'sonner'
 import { naiveDate } from '@/lib/naiveDate'
+import { cn } from '@/lib/utils'
 import { CalendarTab } from './CalendarTab'
+import { formatRoPlate, isValidRoPlate } from './plateFormat'
 
 /** useState backed by localStorage — survives a page refresh. */
 function usePersistentState<T>(key: string, initial: T) {
@@ -2322,7 +2324,15 @@ function VehicleFormFields({
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs">Reg. No.</Label>
-        <Input value={value.registration_number} onChange={(e) => onChange({ registration_number: e.target.value.toUpperCase() })} placeholder="e.g., CJ-01-ABC" />
+        <Input
+          value={value.registration_number}
+          onChange={(e) => onChange({ registration_number: formatRoPlate(e.target.value) })}
+          placeholder="ex. CJ 12 ABC"
+          className={cn(value.registration_number !== '' && !isValidRoPlate(value.registration_number) && 'ring-2 ring-destructive')}
+        />
+        {value.registration_number !== '' && !isValidRoPlate(value.registration_number) && (
+          <p className="text-xs text-destructive">Format placă invalid (ex. CJ 12 ABC / B 123 XYZ).</p>
+        )}
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs">Brand</Label>
@@ -2534,6 +2544,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
     if (!newVehicle.vin.trim()) return setError('VIN is required')
     if (!newVehicle.mark.trim()) return setError('Mark is required')
     if (!newVehicle.model.trim()) return setError('Model is required')
+    if (newVehicle.registration_number && !isValidRoPlate(newVehicle.registration_number)) return setError('Numărul de înmatriculare are un format invalid.')
     if (usesFuelTank(newVehicle.fuel_type) && newVehicle.fuel_tank_capacity_liters <= 0) return setError('Fuel capacity (L) must be positive')
     if (usesBattery(newVehicle.fuel_type) && newVehicle.battery_capacity_kwh <= 0) return setError('Battery capacity (kWh) must be positive')
     createMutation.mutate()
@@ -2572,6 +2583,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
     if (!editForm.vin.trim()) return setEditError('VIN is required')
     if (!editForm.mark.trim()) return setEditError('Mark is required')
     if (!editForm.model.trim()) return setEditError('Model is required')
+    if (editForm.registration_number && !isValidRoPlate(editForm.registration_number)) return setEditError('Numărul de înmatriculare are un format invalid.')
     const ft = editForm.fuel_type
     if (usesFuelTank(ft) && editForm.fuel_tank_capacity_liters <= 0) return setEditError('Fuel capacity (L) must be positive')
     if (usesBattery(ft) && editForm.battery_capacity_kwh <= 0) return setEditError('Battery capacity (kWh) must be positive')

@@ -1,9 +1,30 @@
 """Data access for fp_vehicles table (foi de parcurs vehicle stock)."""
 
 import logging
+import re
 from core.base_repository import BaseRepository
 
 logger = logging.getLogger('jarvis.foi_parcurs.vehicle_repository')
+
+
+def _normalize_plate(value):
+    """Uppercase + collapse separators to canonical spaced RO plate; pass through unknowns."""
+    if not value:
+        return value
+    s = re.sub(r'[^A-Za-z0-9]', '', str(value)).upper()
+    if not s:
+        return value
+    if s == 'B' or (s[0] == 'B' and len(s) > 1 and s[1].isdigit()):
+        county, rest = 'B', s[1:]
+    else:
+        county, rest = s[:2], s[2:]
+    m = re.match(r'^(\d+)([A-Z]+)?$', rest)
+    if not m:
+        return value
+    max_d = 3 if county == 'B' else 2
+    digits = m.group(1)[:max_d]
+    letters = (m.group(2) or '')[:3]
+    return ' '.join(p for p in (county, digits, letters) if p)
 
 
 class FPVehicleRepository(BaseRepository):
@@ -101,7 +122,7 @@ class FPVehicleRepository(BaseRepository):
                 insurance_doc, talon_doc, civ_doc, registration_doc, offer_doc)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                        %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *''',
-            (data['vin'], data.get('registration_number'), data.get('car_id'),
+            (data['vin'], _normalize_plate(data.get('registration_number')), data.get('car_id'),
              data['mark'], data.get('brand'), data['model'], data.get('color'),
              data.get('fuel_type', 'Diesel'),
              data.get('fuel_tank_capacity_liters'),
@@ -129,7 +150,7 @@ class FPVehicleRepository(BaseRepository):
                     'insurance_doc', 'talon_doc', 'civ_doc', 'registration_doc', 'offer_doc'):
             if col in data:
                 sets.append(f'{col} = %s')
-                params.append(data[col])
+                params.append(_normalize_plate(data[col]) if col == 'registration_number' else data[col])
         if not sets:
             return None
         sets.append('updated_at = NOW()')
