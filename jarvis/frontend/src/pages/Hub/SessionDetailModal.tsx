@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
 import ModifiedBadge from '@/pages/FoiParcurs/ModifiedBadge'
+import EventBadge from '@/pages/FoiParcurs/EventBadge'
 import CorrectSessionDialog, { type CorrectionPayload } from '@/pages/FoiParcurs/CorrectSessionDialog'
 import ExtendSessionDialog from '@/pages/FoiParcurs/ExtendSessionDialog'
 import { useAuthStore } from '@/stores/authStore'
@@ -91,6 +92,7 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
               Detalii sesiune
               <Badge className={cn('text-xs', ss.badgeClass)}>{ss.label}</Badge>
               <ModifiedBadge session={c} />
+              <EventBadge session={c} />
             </DialogTitle>
           </DialogHeader>
 

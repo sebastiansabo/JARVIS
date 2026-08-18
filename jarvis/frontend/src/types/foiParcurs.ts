@@ -265,6 +265,9 @@ export interface FoiContract {
   driver_name?: string | null
   driver_contact_id?: number | null
   event_id?: number | null
+  // Joined HR event name (Task 15) — LEFT JOIN hr.events he ON he.id =
+  // fp.event_id in get_contracts; populates the "Eveniment" list/detail badge.
+  event_name?: string | null
 }
 
 // ── Marketing project (campaign/event) a Test Drive can optionally be tied to.
@@ -275,6 +278,18 @@ export interface MktProject {
   status?: string | null
   company_id?: number | null
   brand_id?: number | null
+}
+
+// ── HR event (hr.events) a Test Drive can optionally be tied to (Task 15) —
+// distinct from a marketing project/campaign; mutually exclusive in the UI.
+// Backed by GET /api/hr-events/search + POST /api/events. ──
+export interface HrEvent {
+  id: number
+  name: string
+  start_date?: string | null
+  end_date?: string | null
+  company?: string | null
+  brand?: string | null
 }
 
 // ── Create Contract Payload ──
@@ -429,8 +444,8 @@ export interface TestDriveFormPayload {
    *  standalone license field. */
   driver_contact_id?: number
   driver_license_serie?: string
-  /** Optional marketing event this Test Drive is tied to (Task 15 wires the
-   *  UI that lets an advisor pick one; left undefined until then). */
+  /** Optional HR event this Test Drive is tied to (Task 15) — mutually
+   *  exclusive with mkt_project_id in the UI (Eveniment checkbox). */
   event_id?: number
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
@@ -465,6 +480,8 @@ export interface ActivateTestDrivePayload {
   general_observation?: string
   /** Optional marketing project (campaign/event) this Test Drive is tied to. */
   mkt_project_id?: number
+  /** Optional HR event (Task 15) — mutually exclusive with mkt_project_id in the UI. */
+  event_id?: number
   /** Company-client driver gate (Task 11) — see TestDriveFormPayload. */
   driver_contact_id?: number
   /** Override the driving-park lockout block, set after the user confirms. */

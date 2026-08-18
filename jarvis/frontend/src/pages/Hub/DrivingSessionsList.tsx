@@ -9,6 +9,7 @@ import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
 import ModifiedBadge from '@/pages/FoiParcurs/ModifiedBadge'
+import EventBadge from '@/pages/FoiParcurs/EventBadge'
 import CorrectSessionDialog, { type CorrectionPayload } from '@/pages/FoiParcurs/CorrectSessionDialog'
 import ExtendSessionDialog from '@/pages/FoiParcurs/ExtendSessionDialog'
 import { useAuthStore } from '@/stores/authStore'
@@ -247,6 +248,7 @@ function SessionCard({
                 {ss.label}
               </span>
               <ModifiedBadge session={c} />
+              <EventBadge session={c} />
             </div>
             <div className="mt-0.5 flex items-center gap-1 truncate text-[13px] text-muted-foreground">
               <Gauge className="h-3.5 w-3.5 shrink-0" />

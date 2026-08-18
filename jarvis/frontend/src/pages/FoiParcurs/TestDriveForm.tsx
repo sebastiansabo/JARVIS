@@ -150,6 +150,15 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const [projectSearch, setProjectSearch] = useState('')
   const debouncedProjectSearch = useDebounce(projectSearch, 350)
 
+  // HR event (Task 15) — mutually exclusive with the campaign/mktProject
+  // above; the "Este eveniment" checkbox switches the card between the two.
+  const [isEvent, setIsEvent] = useState(false)
+  const [eventId, setEventId] = useState<number | null>(null)
+  const [eventName, setEventName] = useState('')
+  const [eventSearch, setEventSearch] = useState('')
+  const debouncedEventSearch = useDebounce(eventSearch, 350)
+  const [showAddEvent, setShowAddEvent] = useState(false)
+
   // Driver license
   const [driverLicensePhoto, setDriverLicensePhoto] = useState<string | null>(null)
   const [driverLicenseNumber, setDriverLicenseNumber] = useState('')
@@ -297,6 +306,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       setSelectedClient({ id: c.client_id, display_name: c.client_name, phone: c.client_phone ?? null })
     }
     if (c.mkt_project_id) setMktProject({ id: c.mkt_project_id, name: c.mkt_project_name ?? null })
+    if (c.event_id) { setIsEvent(true); setEventId(c.event_id); setEventName(c.event_name ?? '') }
   }, [draftData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -392,14 +402,33 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     }
   }, [isCompanyClient, contacts, driverContact])
 
-  // Campaign/event search — type-to-search (>=2 chars), not scoped by company
-  // (matches the mobile form). Optional field, nothing gates on it.
+  // Campaign search — type-to-search (>=2 chars), not scoped by company
+  // (matches the mobile form). Optional field, nothing gates on it. Only
+  // active in the non-event branch of the Campanie/Eveniment card (isEvent
+  // false); the Eveniment checkbox switches to the HR-event search below.
   const { data: projectSearchData, isFetching: isSearchingProjects } = useQuery({
     queryKey: ['fp-mkt-project-search', debouncedProjectSearch],
     queryFn: () => foiParcursApi.searchMktProjects(debouncedProjectSearch, undefined, 20),
-    enabled: debouncedProjectSearch.trim().length >= 2 && !mktProject,
+    enabled: !isEvent && debouncedProjectSearch.trim().length >= 2 && !mktProject,
   })
   const projectResults = projectSearchData?.projects ?? []
+
+  // HR-event search (Task 15) — mirrors the campaign search above but hits a
+  // separate HR/marketing-gated endpoint that a driving advisor may lack
+  // permission for; a 403 is surfaced inline (eventSearchForbidden) rather
+  // than crashing the form.
+  const {
+    data: eventSearchData,
+    isFetching: isSearchingEvents,
+    error: eventSearchErr,
+  } = useQuery({
+    queryKey: ['fp-hr-event-search', debouncedEventSearch],
+    queryFn: () => foiParcursApi.searchHrEvents(debouncedEventSearch, 20),
+    enabled: isEvent && debouncedEventSearch.trim().length >= 2 && eventId == null,
+    retry: false,
+  })
+  const eventResults = eventSearchData?.events ?? []
+  const eventSearchForbidden = (eventSearchErr as any)?.status === 403
 
   // Auto-select the logged-in user's company by name (still switchable)
   useEffect(() => {
@@ -540,9 +569,10 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       fuel_gauge_start_level: fuelGaugeStart as FuelGaugeLevel,
       departure_datetime: departureDatetime,
       advisor_name: advisorName.trim(),
-      // Task 15 wires the UI that lets an advisor pick a marketing event;
-      // pass the literal undefined until then (no eventId state exists yet).
-      event_id: undefined,
+      // HR event (Task 15) — mutually exclusive with mkt_project_id below;
+      // only sent when the "Este eveniment" checkbox is on and an event has
+      // actually been picked/created.
+      event_id: isEvent ? (eventId ?? undefined) : undefined,
       ...(returnDatetime ? { return_datetime: returnDatetime } : {}),
       ...(capacity != null ? { fuel_tank_capacity_liters: capacity } : {}),
       ...(advisorSignature ? { advisor_signature: advisorSignature } : {}),
@@ -632,6 +662,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(conditionsRequired ? { general_conditions_accepted: conditionsAccepted } : {}),
       ...(generalObservation.trim() ? { general_observation: generalObservation.trim() } : {}),
       ...(mktProject ? { mkt_project_id: Number(mktProject.id) } : {}),
+      ...(isEvent && eventId != null ? { event_id: eventId } : {}),
       ...(selectedVehicle.locked_out || selectedVehicle.blocked_now ? { allow_locked: true } : {}),
       // Company-client driver gate (Task 11) — required server-side for a
       // company client's activation (400s without it); the backend derives
@@ -650,6 +681,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     setClientSearch(''); setSelectedClient(null); setShowManualCreate(false)
     setDriverContact(null); setShowAddContact(false)
     setMktProject(null); setProjectSearch('')
+    setIsEvent(false); setEventId(null); setEventName(''); setEventSearch(''); setShowAddEvent(false)
     setDriverLicensePhoto(null); setDriverLicenseNumber(''); setDriverLicenseExpiry('')
     setDepartureDatetime(localDatetimeValue(new Date()))
     setReturnDatetime(localDatetimeValue(new Date(Date.now() + 60 * 60 * 1000)))
@@ -920,7 +952,82 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           <CardTitle className="text-base flex items-center gap-2"><Megaphone className="h-4 w-4" />Campanie / Eveniment</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {mktProject ? (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="is-event"
+              checked={isEvent}
+              onCheckedChange={(v) => {
+                const checked = v === true
+                setIsEvent(checked)
+                // Event/campaign are mutually exclusive — switching either way
+                // clears the other pick so a stray value never reaches the payload.
+                setMktProject(null); setProjectSearch('')
+                setEventId(null); setEventName(''); setEventSearch(''); setShowAddEvent(false)
+              }}
+            />
+            <Label htmlFor="is-event" className="text-xs cursor-pointer">Este eveniment</Label>
+          </div>
+
+          {isEvent ? (
+            eventId != null ? (
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="text-sm py-1 px-3">
+                  {eventName || `Eveniment #${eventId}`}
+                </Badge>
+                <Button variant="ghost" size="sm" onClick={() => { setEventId(null); setEventName(''); setEventSearch('') }}>
+                  <X className="h-4 w-4 mr-1" />Schimbă
+                </Button>
+              </div>
+            ) : showAddEvent ? (
+              <AddEventForm
+                defaultStartDate={departureDatetime.slice(0, 10)}
+                defaultEndDate={(returnDatetime || departureDatetime).slice(0, 10)}
+                defaultCompany={companies.find((c) => c.id === companyId)?.company}
+                defaultBrand={selectedVehicle?.brand ?? undefined}
+                onCreated={(id, name) => { setEventId(id); setEventName(name); setShowAddEvent(false); setEventSearch('') }}
+                onCancel={() => setShowAddEvent(false)}
+              />
+            ) : (
+              <div className="space-y-2 relative">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    className="pl-9"
+                    placeholder="Caută eveniment (opțional)..."
+                    value={eventSearch}
+                    onChange={(e) => setEventSearch(e.target.value)}
+                  />
+                  {isSearchingEvents && <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 text-muted-foreground animate-spin" />}
+                </div>
+                {eventSearchForbidden && (
+                  <p className="text-xs text-destructive">
+                    Nu ai permisiunea de a căuta evenimente HR — poți totuși crea unul nou mai jos.
+                  </p>
+                )}
+                {!eventSearchForbidden && debouncedEventSearch.trim().length >= 2 && !isSearchingEvents && eventResults.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Niciun eveniment găsit.</p>
+                )}
+                {eventResults.length > 0 && (
+                  <div className="border rounded-md divide-y max-h-60 overflow-y-auto">
+                    {eventResults.map((e) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        className="w-full text-left px-3 py-2 hover:bg-accent text-sm transition-colors flex items-center justify-between gap-2"
+                        onClick={() => { setEventId(e.id); setEventName(e.name || `Eveniment #${e.id}`); setEventSearch('') }}
+                      >
+                        <span className="font-medium truncate">{e.name || '—'}</span>
+                        {e.start_date && <span className="text-xs text-muted-foreground shrink-0">{e.start_date}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <Button type="button" variant="outline" className="w-full border-dashed" onClick={() => setShowAddEvent(true)}>
+                  <Plus className="h-4 w-4 mr-2" />Adaugă eveniment nou
+                </Button>
+              </div>
+            )
+          ) : mktProject ? (
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="text-sm py-1 px-3">
                 {mktProject.name || `Campanie #${mktProject.id}`}
@@ -936,7 +1043,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   className="pl-9"
-                  placeholder="Caută campanie sau eveniment (opțional)..."
+                  placeholder="Caută campanie (opțional)..."
                   value={projectSearch}
                   onChange={(e) => setProjectSearch(e.target.value)}
                 />
@@ -1380,6 +1487,108 @@ function AddContactForm({
         <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>Anulează</Button>
         <Button type="button" className="flex-1" onClick={handleCreate} disabled={!canCreate}>
           {create.isPending ? 'Se creează...' : 'Creează persoana de contact'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** Inline "Adaugă eveniment nou" form for the Campanie/Eveniment card (Task
+ *  15) — creates an HR event via POST /api/events, then hands the new
+ *  {id, name} back so the card can select it. Requires HR/marketing
+ *  permissions the current user may lack; a 403 is surfaced inline rather
+ *  than crashing the form (mirrors AddContactForm's error handling). */
+function AddEventForm({
+  onCreated,
+  onCancel,
+  defaultStartDate,
+  defaultEndDate,
+  defaultCompany,
+  defaultBrand,
+}: {
+  onCreated: (id: number, name: string) => void
+  onCancel: () => void
+  defaultStartDate?: string
+  defaultEndDate?: string
+  defaultCompany?: string
+  defaultBrand?: string
+}) {
+  const [name, setName] = useState('')
+  const [startDate, setStartDate] = useState(defaultStartDate ?? '')
+  const [endDate, setEndDate] = useState(defaultEndDate ?? '')
+  const [company, setCompany] = useState(defaultCompany ?? '')
+  const [brand, setBrand] = useState(defaultBrand ?? '')
+  const [error, setError] = useState<string | null>(null)
+
+  const create = useMutation({
+    mutationFn: (data: { name: string; start_date: string; end_date: string; company?: string; brand?: string }) =>
+      foiParcursApi.createHrEvent(data),
+  })
+
+  const canCreate = name.trim() !== '' && startDate !== '' && endDate !== '' && !create.isPending
+
+  const handleCreate = () => {
+    if (!canCreate) return
+    setError(null)
+    const trimmedName = name.trim()
+    create.mutate(
+      {
+        name: trimmedName,
+        start_date: startDate,
+        end_date: endDate,
+        ...(company.trim() ? { company: company.trim() } : {}),
+        ...(brand.trim() ? { brand: brand.trim() } : {}),
+      },
+      {
+        onSuccess: (res) => {
+          if (res?.success && res.id) onCreated(res.id, trimmedName)
+          else setError('Evenimentul nu a putut fi creat.')
+        },
+        onError: (err: any) => {
+          setError(
+            err?.status === 403
+              ? 'Nu ai permisiunea de a crea evenimente HR.'
+              : err?.data?.error || err?.message || 'Crearea evenimentului a eșuat.',
+          )
+        },
+      },
+    )
+  }
+
+  return (
+    <div className="space-y-2.5 rounded-md border bg-background p-3">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Eveniment nou</p>
+      <div className="space-y-1">
+        <Label className="text-xs">Denumire *</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Numele evenimentului" />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-xs">Data început *</Label>
+          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Data sfârșit *</Label>
+          <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-xs">Companie</Label>
+          <Input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Opțional" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Brand</Label>
+          <Input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Opțional" />
+        </div>
+      </div>
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
+
+      <div className="flex gap-2 pt-1">
+        <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>Anulează</Button>
+        <Button type="button" className="flex-1" onClick={handleCreate} disabled={!canCreate}>
+          {create.isPending ? 'Se creează...' : 'Creează eveniment'}
         </Button>
       </div>
     </div>
