@@ -99,6 +99,7 @@ export interface LeaveSchedule {
   day_cap_hours: number
   lunch_break_minutes: number
   source: 'sincron' | 'default'
+  reasons?: string[]
 }
 
 export const connecteamApi = {

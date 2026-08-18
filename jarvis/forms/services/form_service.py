@@ -312,6 +312,24 @@ class FormService:
     LEAVE_TERMS_TEXT = ('Declar că îmi asum responsabilitatea pentru orice eventual '
                         'eveniment neplăcut care ar putea surveni în legătură cu mine, '
                         'în această perioadă în care sunt învoit / învoită 🔒')
+    LEAVE_DEFAULT_REASONS = ('Personal', 'Medical', 'Familial', 'Oficial', 'Altul')
+
+    @staticmethod
+    def _leave_reason_options(form):
+        """Reason (Motivul) options for the leave form, read from its DRAFT `schema`
+        so Forms-admin edits apply immediately (no publish step). Falls back to the
+        built-in defaults when the schema has no usable f_bi_reason options."""
+        for f in (form or {}).get('schema') or []:
+            if isinstance(f, dict) and f.get('id') == 'f_bi_reason':
+                cleaned = [str(o).strip() for o in (f.get('options') or []) if str(o).strip()]
+                if cleaned:
+                    return cleaned
+        return list(FormService.LEAVE_DEFAULT_REASONS)
+
+    def get_leave_reason_options(self):
+        """Public: current reason options for the leave form (for the API)."""
+        form = self.form_repo.get_by_slug(self.LEAVE_FORM_SLUG)
+        return self._leave_reason_options(form)
 
     @staticmethod
     def _is_new_leave_contract(answers) -> bool:
@@ -374,7 +392,7 @@ class FormService:
             precheck = self._leave_permit_precheck({**answers, 'signature_image': signature_image})
             if precheck:
                 return ServiceResult(success=False, error=precheck, status_code=400)
-            if answers.get('f_bi_reason') not in ('Personal', 'Medical', 'Familial', 'Oficial', 'Altul'):
+            if answers.get('f_bi_reason') not in self._leave_reason_options(form):
                 return ServiceResult(success=False, error='Motiv invalid', status_code=400)
 
             schedule = get_leave_schedule(user.user_id, answers.get('f_bi_leave_date'))

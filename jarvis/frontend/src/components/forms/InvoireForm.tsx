@@ -174,7 +174,7 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
                 <SelectValue placeholder="Selectați motivul" />
               </SelectTrigger>
               <SelectContent>
-                {REASONS.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                {(sched?.reasons?.length ? sched.reasons : REASONS).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
