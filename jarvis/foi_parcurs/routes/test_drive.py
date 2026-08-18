@@ -10,10 +10,28 @@ from ._shared import (
     _dealer_repo, open_session_block, is_privileged,
 )
 from ..services.fuel_service import parse_fuel_level
+from crm.repositories.contact_repository import ContactRepository
 
 # International E.164 (+ and 7–15 digits) plus legacy RO national formats so
 # existing stored numbers still validate.
 _PHONE_RE = re.compile(r'^(\+\d{7,15}|07\d{8}|004\d{10})$')
+
+_contact_repo = ContactRepository()
+
+# The six fields a company's driver contact must carry before a live test
+# drive can be submitted against it (personal identity + driving license).
+# Kept local rather than importing crm.routes.clients.contact_gate_valid:
+# that module is a Flask route file that registers its full CRM blueprint
+# (and pulls in field_sales/ai_agent imports) as an import-time side effect,
+# which is too heavy to pull into every foi_parcurs test-drive submit just
+# for this one pure check. Keep the six fields identical to that copy.
+_GATE_FIELDS = ('full_name', 'email', 'phone', 'driver_license_photo',
+                'driver_license_serie', 'driver_license_number')
+
+
+def _contact_gate_valid(c):
+    """A company contact is gate-valid when it carries all personal + license details."""
+    return bool(c) and all(c.get(f) for f in _GATE_FIELDS)
 
 
 def _company_gdpr_text(company_id) -> str:
@@ -112,15 +130,33 @@ def api_submit_test_drive():
         # Client comes from the CRM (crm_clients), not the legacy fp_clients table.
         # Resolve name/phone now and store them directly on the contract so old
         # contracts (joined via fp_clients) and new ones (CRM-sourced) both resolve.
+        driver_contact = None
+        driver_contact_id = None
         if is_internal:
             client_id = None
             client_name = None
             client_phone = None
+            crm_client = None
         else:
             client_id = int(data['client_id'])
             crm_client = _crm_client_repo.get_by_id(client_id)
             client_name = crm_client.get('display_name') if crm_client else None
             client_phone = crm_client.get('phone') if crm_client else None
+
+            # Hard company->contact gate: the company entity itself never
+            # drives — a company client must name a gate-valid driver contact
+            # (person + license details) belonging to that same client before
+            # a live test drive can be submitted against it.
+            if (crm_client or {}).get('client_type') == 'company':
+                driver_contact_id = data.get('driver_contact_id')
+                if not driver_contact_id:
+                    return jsonify({'success': False,
+                                    'error': 'Clientul firmă necesită o persoană de contact.'}), 400
+                driver_contact = _contact_repo.get(int(driver_contact_id))
+                if (not driver_contact or driver_contact.get('client_id') != client_id
+                        or not _contact_gate_valid(driver_contact)):
+                    return jsonify({'success': False,
+                                    'error': 'Persoana de contact este incompletă sau invalidă.'}), 400
 
         # Structured vehicle-condition report captured at handover (optional).
         departure_damage = data.get('departure_damage') or []
@@ -157,6 +193,19 @@ def api_submit_test_drive():
             'driver_license_photo': data.get('driver_license_photo'),
             'driver_license_number': data.get('driver_license_number'),
             'driver_license_expiry': (data.get('driver_license_expiry') or '').strip() or None,
+            # Driver snapshot: for a company client, the actual driver is the
+            # gate-validated contact resolved above; for a person client (or
+            # an internal session, where both are None) it mirrors the client.
+            'driver_contact_id': int(driver_contact_id) if driver_contact_id else None,
+            'driver_name': (driver_contact.get('full_name') if driver_contact else client_name),
+            'driver_email': (driver_contact.get('email') if driver_contact
+                             else (crm_client or {}).get('email')),
+            'driver_phone': (driver_contact.get('phone') if driver_contact else client_phone),
+            'driver_license_serie': (data.get('driver_license_serie')
+                                     or (driver_contact.get('driver_license_serie') if driver_contact else None)),
+            # Optional link to a marketing event — a later task wires the UI
+            # that lets an advisor pick one; just persist it when present.
+            'event_id': int(data['event_id']) if data.get('event_id') else None,
             # Live submit keeps the historical hardcoded True (GDPR is gated by the
             # validation above); a PLANNED draft stores whatever was sent (consent
             # is deferred to activation, so typically absent → False).
