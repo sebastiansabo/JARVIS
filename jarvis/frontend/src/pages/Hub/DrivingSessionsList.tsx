@@ -218,7 +218,12 @@ function SessionCard({
   const isDone = ss.key === 'finalizat'
   const showRetur = ss.key === 'driving' || ss.key === 'intarziat'
 
-  const tester = c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—')
+  const clientLabel = c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—')
+  // Company sessions carry a driver_name snapshot (Task 10) — show
+  // "Company · Driver" when it's set and differs from the client label.
+  const tester = c.driver_name && c.driver_name !== c.client_name
+    ? `${clientLabel} · ${c.driver_name}`
+    : clientLabel
   const vehicleName = vehicle
     ? [vehicle.mark, vehicle.model].filter(Boolean).join(' ') || vehicle.registration_number || c.vin
     : c.vin || '—'
