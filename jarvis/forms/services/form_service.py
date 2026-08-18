@@ -328,19 +328,55 @@ class FormService:
                 return [str(o).strip() for o in (f.get('options') or []) if str(o).strip()]
         return []
 
-    def get_leave_reason_options(self):
-        """Current Motivul options for the leave form. Reads the form's DRAFT `schema`
-        (via get_by_id — the Forms editor state, so admin edits apply immediately on
-        Save, no Publish needed), falling back to the published schema, then defaults."""
+    def _leave_draft_schema(self):
+        """The leave form's schema list — DRAFT (via get_by_id, the Forms editor state,
+        so admin edits apply on Save with no Publish) preferred, falling back to the
+        published schema, then []."""
+        import json
         form = self.form_repo.get_by_slug(self.LEAVE_FORM_SLUG)
         if not form:
-            return list(self.LEAVE_DEFAULT_REASONS)
+            return []
         full = self.form_repo.get_by_id(form['id']) or {}
-        for schema in (full.get('schema'), form.get('published_schema')):
-            opts = self._reason_opts_from_schema(schema)
-            if opts:
-                return opts
-        return list(self.LEAVE_DEFAULT_REASONS)
+        schema = full.get('schema') or form.get('published_schema')
+        if isinstance(schema, str):
+            try:
+                schema = json.loads(schema)
+            except Exception:
+                schema = []
+        return schema or []
+
+    def get_leave_reason_options(self):
+        """Current Motivul options for the leave form (draft schema, else defaults)."""
+        return self._reason_opts_from_schema(self._leave_draft_schema()) \
+            or list(self.LEAVE_DEFAULT_REASONS)
+
+    def get_leave_form_config(self):
+        """Forms-managed content for the coded Invoire module — reasons, field
+        labels/placeholders, optional-field visibility, and the consent text — all
+        read from the form's DRAFT schema (edits apply on Save)."""
+        return self._leave_form_config_from_schema(self._leave_draft_schema())
+
+    @staticmethod
+    def _leave_form_config_from_schema(schema):
+        """Build the module content-config from a form schema list. Pure/testable."""
+        import json
+        if isinstance(schema, str):
+            try:
+                schema = json.loads(schema)
+            except Exception:
+                schema = []
+        by_id = {f.get('id'): f for f in (schema or []) if isinstance(f, dict) and f.get('id')}
+        terms = (by_id.get('f_bi_terms') or {}).get('label')
+        return {
+            'reasons': FormService._reason_opts_from_schema(schema)
+                       or list(FormService.LEAVE_DEFAULT_REASONS),
+            'labels': {i: f['label'] for i, f in by_id.items() if f.get('label')},
+            'placeholders': {i: f['placeholder'] for i, f in by_id.items() if f.get('placeholder')},
+            # Optional fields the module shows only when present in the Forms schema.
+            'visible': {k: (k in by_id) for k in
+                        ('f_bi_destination', 'f_bi_notes', 'f_bi_second_approver')},
+            'terms_text': (str(terms).strip() if terms else '') or FormService.LEAVE_TERMS_TEXT,
+        }
 
     @staticmethod
     def _is_new_leave_contract(answers) -> bool:
@@ -403,7 +439,8 @@ class FormService:
             precheck = self._leave_permit_precheck({**answers, 'signature_image': signature_image})
             if precheck:
                 return ServiceResult(success=False, error=precheck, status_code=400)
-            if answers.get('f_bi_reason') not in self.get_leave_reason_options():
+            cfg = self.get_leave_form_config()
+            if answers.get('f_bi_reason') not in cfg['reasons']:
                 return ServiceResult(success=False, error='Motiv invalid', status_code=400)
 
             schedule = get_leave_schedule(user.user_id, answers.get('f_bi_leave_date'))
@@ -416,7 +453,7 @@ class FormService:
             answers['f_bi_hours'] = duration
             answers['f_bi_end_time'] = compute_return(answers['f_bi_start_time'], duration)
             answers['f_bi_terms_accepted'] = True
-            answers['f_bi_terms_text'] = self.LEAVE_TERMS_TEXT
+            answers['f_bi_terms_text'] = cfg['terms_text']
             answers['f_bi_terms_accepted_at'] = datetime.now(timezone.utc).isoformat()
         else:
             missing = self._leave_permit_missing_fields_legacy(answers)
