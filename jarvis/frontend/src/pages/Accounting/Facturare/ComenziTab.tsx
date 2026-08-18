@@ -26,7 +26,7 @@ interface Company { id: number; company: string; vat: string | null; eurofib_kli
 interface ContractSummary {
   id: number; contract_ref: string; supplier_id: number; customer_id: number
   supplier_name: string; customer_name: string; contract_date: string | null
-  responsible: string | null; anexa_count: number; notes: string | null
+  responsible: string | null; anexa_count: number; archived_anexa_count: number; notes: string | null
   total_value: number; invoiced_total: number
   created_at: string | null
   archived: boolean; archive_after: string | null
@@ -2239,7 +2239,7 @@ export default function ComenziTab({ companies, archived = false }: { companies:
   const uniqueClients = [...new Set(contracts.map(c => c.customer_name))].sort()
 
   const filtered = contracts.filter(c => {
-    if (archived ? !c.archived : c.archived) return false
+    if (archived ? !(c.archived || c.archived_anexa_count > 0) : c.archived) return false
     if (filterCompany !== 'all' && c.supplier_name !== filterCompany) return false
     if (filterClient !== 'all' && c.customer_name !== filterClient) return false
     if (dateFrom && (!c.contract_date || c.contract_date < dateFrom)) return false

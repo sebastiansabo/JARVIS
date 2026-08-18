@@ -233,6 +233,7 @@ def api_list_contracts():
             "contract_date": str(r["contract_date"]) if r.get("contract_date") else None,
             "responsible": r.get("responsible"),
             "anexa_count": r.get("anexa_count", 0),
+            "archived_anexa_count": r.get("archived_anexa_count", 0),
             "total_value": float(r.get("total_value", 0) or 0),
             "invoiced_total": float(r.get("invoiced_total", 0) or 0),
             "archived": bool(r.get("archived")),
