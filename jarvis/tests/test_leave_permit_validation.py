@@ -82,20 +82,22 @@ def test_new_contract_missing_fields_unchanged():
     assert 'f_bi_duration_hours' in missing
 
 
-def test_leave_reason_options_from_draft_schema():
-    form = {'schema': [
+def test_reason_opts_from_schema_extracts_options():
+    schema = [
         {'id': 'f_bi_start_time'},
         {'id': 'f_bi_reason', 'options': ['Personal', 'Pauza de masa']},
-    ]}
-    assert FormService._leave_reason_options(form) == ['Personal', 'Pauza de masa']
+    ]
+    assert FormService._reason_opts_from_schema(schema) == ['Personal', 'Pauza de masa']
 
 
-def test_leave_reason_options_fallback_to_defaults():
-    assert FormService._leave_reason_options({'schema': []}) == \
-        ['Personal', 'Medical', 'Familial', 'Oficial', 'Altul']
-    assert FormService._leave_reason_options({}) == \
-        ['Personal', 'Medical', 'Familial', 'Oficial', 'Altul']
-    # blank/whitespace-only options are ignored → falls back
-    assert FormService._leave_reason_options(
-        {'schema': [{'id': 'f_bi_reason', 'options': ['', '  ']}]}) == \
-        ['Personal', 'Medical', 'Familial', 'Oficial', 'Altul']
+def test_reason_opts_from_schema_parses_json_string():
+    import json
+    schema = json.dumps([{'id': 'f_bi_reason', 'options': ['A', 'B']}])
+    assert FormService._reason_opts_from_schema(schema) == ['A', 'B']
+
+
+def test_reason_opts_from_schema_empty_when_missing_or_blank():
+    assert FormService._reason_opts_from_schema([]) == []
+    assert FormService._reason_opts_from_schema(None) == []
+    assert FormService._reason_opts_from_schema(
+        [{'id': 'f_bi_reason', 'options': ['', '  ']}]) == []

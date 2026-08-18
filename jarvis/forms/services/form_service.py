@@ -315,21 +315,32 @@ class FormService:
     LEAVE_DEFAULT_REASONS = ('Personal', 'Medical', 'Familial', 'Oficial', 'Altul')
 
     @staticmethod
-    def _leave_reason_options(form):
-        """Reason (Motivul) options for the leave form, read from its DRAFT `schema`
-        so Forms-admin edits apply immediately (no publish step). Falls back to the
-        built-in defaults when the schema has no usable f_bi_reason options."""
-        for f in (form or {}).get('schema') or []:
+    def _reason_opts_from_schema(schema):
+        """Non-blank f_bi_reason options from a form schema list ([] if none/blank)."""
+        import json
+        if isinstance(schema, str):
+            try:
+                schema = json.loads(schema)
+            except Exception:
+                return []
+        for f in schema or []:
             if isinstance(f, dict) and f.get('id') == 'f_bi_reason':
-                cleaned = [str(o).strip() for o in (f.get('options') or []) if str(o).strip()]
-                if cleaned:
-                    return cleaned
-        return list(FormService.LEAVE_DEFAULT_REASONS)
+                return [str(o).strip() for o in (f.get('options') or []) if str(o).strip()]
+        return []
 
     def get_leave_reason_options(self):
-        """Public: current reason options for the leave form (for the API)."""
+        """Current Motivul options for the leave form. Reads the form's DRAFT `schema`
+        (via get_by_id — the Forms editor state, so admin edits apply immediately on
+        Save, no Publish needed), falling back to the published schema, then defaults."""
         form = self.form_repo.get_by_slug(self.LEAVE_FORM_SLUG)
-        return self._leave_reason_options(form)
+        if not form:
+            return list(self.LEAVE_DEFAULT_REASONS)
+        full = self.form_repo.get_by_id(form['id']) or {}
+        for schema in (full.get('schema'), form.get('published_schema')):
+            opts = self._reason_opts_from_schema(schema)
+            if opts:
+                return opts
+        return list(self.LEAVE_DEFAULT_REASONS)
 
     @staticmethod
     def _is_new_leave_contract(answers) -> bool:
@@ -392,7 +403,7 @@ class FormService:
             precheck = self._leave_permit_precheck({**answers, 'signature_image': signature_image})
             if precheck:
                 return ServiceResult(success=False, error=precheck, status_code=400)
-            if answers.get('f_bi_reason') not in self._leave_reason_options(form):
+            if answers.get('f_bi_reason') not in self.get_leave_reason_options():
                 return ServiceResult(success=False, error='Motiv invalid', status_code=400)
 
             schedule = get_leave_schedule(user.user_id, answers.get('f_bi_leave_date'))
