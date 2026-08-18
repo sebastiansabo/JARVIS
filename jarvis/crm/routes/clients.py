@@ -713,14 +713,19 @@ def api_client_toggle_blacklist(client_id):
 
 @crm_bp.route('/api/crm/clients/<int:client_id>/contacts', methods=['GET'])
 @login_required
-@crm_required
 def api_list_client_contacts(client_id):
+    # Login-only (no @crm_required): mirrors the login-gated TD-flow CRM
+    # endpoints in foi_parcurs/routes/test_drive.py (api_search_crm_clients /
+    # api_create_crm_client / api_update_crm_client), so consilieri without
+    # full CRM module access can still satisfy the company->contact gate on
+    # test-drive submit/activate. There is no per-client tenant scope here
+    # (that's what @crm_required added) — anti-IDOR is instead enforced by
+    # nesting under client_id plus the ownership check in PUT/DELETE below.
     return jsonify({'contacts': _contact_repo.list_by_client(client_id)})
 
 
 @crm_bp.route('/api/crm/clients/<int:client_id>/contacts', methods=['POST'])
 @login_required
-@crm_required
 def api_create_client_contact(client_id):
     data = request.get_json(silent=True) or {}
     if not (data.get('full_name') or '').strip():
@@ -731,10 +736,8 @@ def api_create_client_contact(client_id):
 
 @crm_bp.route('/api/crm/clients/<int:client_id>/contacts/<int:contact_id>', methods=['PUT'])
 @login_required
-@crm_required
 def api_update_client_contact(client_id, contact_id):
-    # Nested under client_id so crm_required scopes it (403s a client outside
-    # the user's scope). The ownership check below also closes cross-client
+    # Nested under client_id; the ownership check below closes cross-client
     # contact_id tampering: a contact_id belonging to another client 404s.
     existing = _contact_repo.get(contact_id)
     if not existing or existing['client_id'] != client_id:
@@ -745,7 +748,6 @@ def api_update_client_contact(client_id, contact_id):
 
 @crm_bp.route('/api/crm/clients/<int:client_id>/contacts/<int:contact_id>', methods=['DELETE'])
 @login_required
-@crm_required
 def api_delete_client_contact(client_id, contact_id):
     existing = _contact_repo.get(contact_id)
     if not existing or existing['client_id'] != client_id:

@@ -378,12 +378,20 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // the server. A PLANNED draft is NOT gated (mirrors the server: the gate
   // only applies to a live FILLED submit and to activation).
   const isCompanyClient = selectedClient?.client_type === 'company'
-  const { data: contactsData } = useQuery({
+  // retry:false + error surfaced inline mirrors the HR-event search query
+  // below (eventSearchForbidden) — the contacts route is now login-only
+  // (see crm/routes/clients.py) but a 403 can still happen for other
+  // reasons; silently retrying and landing on an empty list left the gate
+  // permanently blocked with no hint to the advisor.
+  const { data: contactsData, error: contactsErr } = useQuery({
     queryKey: ['client-contacts', selectedClient?.id],
     queryFn: () => crmApi.listClientContacts(Number(selectedClient!.id)),
     enabled: !!selectedClient && isCompanyClient,
+    retry: false,
   })
   const contacts = contactsData?.contacts ?? []
+  const contactsForbidden = (contactsErr as any)?.status === 403
+  const contactsErrored = !!contactsErr
   // Keep the currently-selected contact in the option list even if the query
   // cache hasn't caught up yet (e.g. a just-created contact whose invalidation
   // refetch is still in flight) — otherwise the Select trigger has no matching
@@ -864,7 +872,15 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                   <p className="text-xs text-muted-foreground">
                     Firma nu conduce — alege persoana care preia efectiv vehiculul.
                   </p>
-                  {showAddContact ? (
+                  {contactsForbidden ? (
+                    <p className="text-xs text-destructive">
+                      Nu ai acces la persoanele de contact CRM. Contactează un administrator.
+                    </p>
+                  ) : contactsErrored ? (
+                    <p className="text-xs text-destructive">
+                      Persoanele de contact nu au putut fi încărcate. Încearcă din nou.
+                    </p>
+                  ) : showAddContact ? (
                     <AddContactForm
                       clientId={Number(selectedClient.id)}
                       onCreated={(c) => {

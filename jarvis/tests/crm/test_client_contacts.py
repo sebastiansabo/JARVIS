@@ -4,14 +4,6 @@ import pytest
 from flask import Flask
 from crm import crm_bp
 import crm.routes.clients as clients_mod
-import crm.routes._shared as shared
-
-
-class FakeUser:
-    is_authenticated = True
-    role_id = None
-    can_access_crm = True
-    company_id = None
 
 
 class FakeContacts:
@@ -47,9 +39,12 @@ class FakeContacts:
 
 @pytest.fixture
 def client(monkeypatch):
+    # The four contact routes are @login_required only (no @crm_required —
+    # see crm/routes/clients.py), so LOGIN_DISABLED alone satisfies auth and
+    # the shared.current_user monkeypatch (needed only for @crm_required's
+    # role/scope checks) is no longer required here.
     fake = FakeContacts()
     monkeypatch.setattr(clients_mod, '_contact_repo', fake)
-    monkeypatch.setattr(shared, 'current_user', FakeUser())
     app = Flask(__name__)
     app.register_blueprint(crm_bp)
     app.config['TESTING'] = True
