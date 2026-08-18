@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { foiParcursApi } from '@/api/foiParcurs'
 import type { FpVehicle } from '@/types/foiParcurs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { vehicleHealth, type Gravity, type HealthTag } from './vehicleHealth'
 
 interface Props {
   companyId: number
@@ -179,13 +180,26 @@ export default function DrivingParkList({ companyId, brand, carFilter = [] }: Pr
   )
 }
 
+const GRAVITY_ACCENT: Record<Gravity, string> = {
+  critical: 'border-l-4 border-l-red-500',
+  warning: 'border-l-4 border-l-amber-500',
+  info: 'border-l-4 border-l-slate-300',
+  ok: 'border-l-4 border-l-emerald-500',
+}
+const TAG_CLASS: Record<HealthTag['gravity'], string> = {
+  critical: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
+  warning: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  info: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+}
+
 function ParkCard({ vehicle: v, expanded, onToggle }: { vehicle: FpVehicle; expanded: boolean; onToggle: () => void }) {
   const st = parkStatus(v)
   const name = vehicleName(v)
   const odo = v.mileage_floor ?? v.odometer_km
+  const health = vehicleHealth(v)
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
+    <div className={cn('overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm', GRAVITY_ACCENT[health.gravity])}>
       <button
         type="button"
         onClick={onToggle}
@@ -208,6 +222,20 @@ function ParkCard({ vehicle: v, expanded, onToggle }: { vehicle: FpVehicle; expa
             <span className="shrink-0">{odo != null ? `${odo.toLocaleString('ro-RO')} km` : '— km'}</span>
             {st.reason && <span className="truncate">· {st.reason}</span>}
           </div>
+          {health.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1" title={health.tags.map((t) => t.label).join(' · ')}>
+              {health.tags.slice(0, 3).map((t) => (
+                <span key={t.label} className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', TAG_CLASS[t.gravity])}>
+                  {t.label}
+                </span>
+              ))}
+              {health.tags.length > 3 && (
+                <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
+                  +{health.tags.length - 3}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform', expanded && 'rotate-180')} />
       </button>
