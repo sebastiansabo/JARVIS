@@ -2062,7 +2062,7 @@ function AccountingCard({ contractId }: { contractId: number }) {
 
 // ── Main ComenziTab ─────────────────────────────────────────────
 
-export default function ComenziTab({ companies }: { companies: Company[] }) {
+export default function ComenziTab({ companies, archived = false }: { companies: Company[]; archived?: boolean }) {
   const [contracts, setContracts] = useState<ContractSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [createContractOpen, setCreateContractOpen] = useState(false)
@@ -2239,7 +2239,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
   const uniqueClients = [...new Set(contracts.map(c => c.customer_name))].sort()
 
   const filtered = contracts.filter(c => {
-    if (c.archived) return false
+    if (archived ? !c.archived : c.archived) return false
     if (filterCompany !== 'all' && c.supplier_name !== filterCompany) return false
     if (filterClient !== 'all' && c.customer_name !== filterClient) return false
     if (dateFrom && (!c.contract_date || c.contract_date < dateFrom)) return false
@@ -2306,7 +2306,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                   <p className="text-xs text-muted-foreground">{drillContract.customer_name} — {drillContract.supplier_name}</p>
                 </div>
               </div>
-              {!selectedAnexaId && <Button size="sm" onClick={() => setCreateAnexaOpen(true)}><Plus className="h-4 w-4 mr-1" /> New Anexa</Button>}
+              {!archived && !selectedAnexaId && <Button size="sm" onClick={() => setCreateAnexaOpen(true)}><Plus className="h-4 w-4 mr-1" /> New Anexa</Button>}
             </div>
 
             <AccountingCard contractId={drillContract.id} />
@@ -2328,8 +2328,8 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                   </thead>
                   <tbody>
                     {anexasLoading && <tr><td colSpan={8} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></td></tr>}
-                    {!anexasLoading && anexas.filter(a => !a.archived).length === 0 && <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No anexas yet</td></tr>}
-                    {anexas.filter(a => !a.archived).map(a => {
+                    {!anexasLoading && anexas.filter(a => archived ? a.archived : !a.archived).length === 0 && <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No anexas yet</td></tr>}
+                    {anexas.filter(a => archived ? a.archived : !a.archived).map(a => {
                       const cfg = STAGE_CONFIG[a.stage] || STAGE_CONFIG.NEW
                       const isSelected = selectedAnexaId === a.id
                       return (
@@ -2390,7 +2390,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                               onClick={(e) => { e.stopPropagation(); window.open(`/facturare/api/anexas/${a.id}/status-export.xlsx`, '_blank') }}>
                               <FileSpreadsheet className="h-3.5 w-3.5 text-muted-foreground hover:text-emerald-500" />
                             </Button>
-                            {a.archive_after ? (
+                            {!archived && (a.archive_after ? (
                               <Button variant="ghost" size="icon" className="h-6 w-6" title="Anulează arhivarea"
                                 onClick={async (e) => {
                                   e.stopPropagation()
@@ -2415,7 +2415,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                                 }}>
                                 <Archive className="h-3.5 w-3.5 text-muted-foreground" />
                               </Button>
-                            )}
+                            ))}
                             {a.stage === 'NEW' && (
                               <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete anexa (no invoices yet)"
                                 onClick={async (e) => {
@@ -2499,7 +2499,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                     {allExpanded ? 'Collapse All' : 'Expand All'}
                   </Button>
                 )}
-                <Button onClick={() => setCreateContractOpen(true)}><Plus className="h-4 w-4 mr-1" /> New Contract</Button>
+                {!archived && <Button onClick={() => setCreateContractOpen(true)}><Plus className="h-4 w-4 mr-1" /> New Contract</Button>}
               </div>
             </div>
 
@@ -2607,7 +2607,24 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                                         {Math.round(c.invoiced_total / c.total_value * 100)}%
                                       </span>
                                     )}
-                                    {!isEditing && (
+                                    {!isEditing && (archived ? (
+                                      <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6" title="Dezarhivează contract"
+                                          onClick={async () => {
+                                            if (!confirm(`Dezarhivezi contractul ${c.contract_ref} (și anexele lui)?`)) return
+                                            try {
+                                              const res = await fetch(`/facturare/api/contracts/${c.id}/archive`, {
+                                                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ archived: false }),
+                                              })
+                                              if (!res.ok) throw new Error('Failed')
+                                              toast.success('Contract dezarhivat'); loadContracts()
+                                            } catch { toast.error('Dezarhivarea a eșuat') }
+                                          }}>
+                                          <Archive className="h-3 w-3 text-muted-foreground hover:text-emerald-500" />
+                                        </Button>
+                                      </div>
+                                    ) : (
                                       <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
                                         <Button variant="ghost" size="icon" className="h-6 w-6" title="Edit contract"
                                           onClick={() => startEditContract(c)}>
@@ -2627,7 +2644,7 @@ export default function ComenziTab({ companies }: { companies: Company[] }) {
                                           </Button>
                                         )}
                                       </div>
-                                    )}
+                                    ))}
                                   </div>
                                 </div>
                               )
