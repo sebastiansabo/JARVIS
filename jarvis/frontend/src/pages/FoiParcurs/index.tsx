@@ -17,6 +17,7 @@ import {
   Pencil,
   XIcon,
   SlidersHorizontal,
+  Filter,
   Settings,
   Save,
   Sparkles,
@@ -69,6 +70,9 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import SignatureCanvas from '@/components/shared/SignatureCanvas'
@@ -132,11 +136,9 @@ export default function FoiParcurs() {
     staleTime: 60_000,
   })
 
-  // Auto-select first company
+  // companyId === 0 means "All companies" (management view sees every company's
+  // fleet/sessions at once). We no longer force-select the first company.
   const companies = companiesData?.companies ?? []
-  if (companyId === 0 && companies.length > 0) {
-    setCompanyId(companies[0].id)
-  }
 
   // Brands for the selected company (from the company_brands catalog)
   const { data: brandsData } = useQuery({
@@ -173,6 +175,7 @@ export default function FoiParcurs() {
               <SelectValue placeholder="Selectează compania" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="0">Toate companiile</SelectItem>
               {companies.map((c) => (
                 <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
               ))}
@@ -2106,6 +2109,7 @@ const STOCK_COLUMNS = [
   { key: 'fuel_type', label: 'Fuel Type', default: true },
   { key: 'capacity', label: 'Capacity', default: true },
   { key: 'odometer', label: 'Odometer', default: true },
+  { key: 'age', label: 'Zile Stoc', default: true },
   { key: 'company', label: 'Company', default: false },
   { key: 'vignette', label: 'Rovinietă', default: false },
   { key: 'itp', label: 'ITP', default: false },
@@ -2431,13 +2435,31 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
   const [editVehicle, setEditVehicle] = useState<FpVehicle | null>(null)
   const [editForm, setEditForm] = useState<VehicleFormValue>(emptyVehicleForm())
   const [editError, setEditError] = useState('')
-  const [visibleCols, setVisibleCols] = useState<Set<StockColumnKey>>(
-    new Set(STOCK_COLUMNS.filter((c) => c.default).map((c) => c.key))
+  // Persisted per-user column preference — the chosen view survives reloads (the
+  // user's default). Stored as an array of keys; derived into a Set for lookups.
+  const [visibleColKeys, setVisibleColKeys] = usePersistentState<StockColumnKey[]>(
+    'fp.stockCols',
+    STOCK_COLUMNS.filter((c) => c.default).map((c) => c.key),
   )
+  const visibleCols = React.useMemo(() => new Set(visibleColKeys), [visibleColKeys])
   const [showColMenu, setShowColMenu] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
-  // Odometer column sort — cycles none → asc → desc → none on header click.
-  const [odoSort, setOdoSort] = useState<'none' | 'asc' | 'desc'>('none')
+  // Column sort — Odometer / Fuel Type / Zile Stoc. Header click cycles asc → desc → none.
+  const [sort, setSort] = useState<{ key: 'odometer' | 'fuel_type' | 'age' | null; dir: 'asc' | 'desc' }>({
+    key: null,
+    dir: 'asc',
+  })
+  const toggleSort = (key: 'odometer' | 'fuel_type' | 'age') =>
+    setSort((s) => (s.key === key ? (s.dir === 'asc' ? { key, dir: 'desc' } : { key: null, dir: 'asc' }) : { key, dir: 'asc' }))
+  // Fuel-type column filter (empty = show all).
+  const [fuelFilter, setFuelFilter] = useState<Set<string>>(new Set())
+  const toggleFuel = (ft: string) =>
+    setFuelFilter((prev) => {
+      const next = new Set(prev)
+      if (next.has(ft)) next.delete(ft)
+      else next.add(ft)
+      return next
+    })
   const [newVehicle, setNewVehicle] = useState<VehicleFormValue>(() => emptyVehicleForm(companyId))
   const [error, setError] = useState('')
 
@@ -2448,24 +2470,46 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
     staleTime: 30_000,
   })
 
-  // Filter vehicles by selected company and brand
-  const filteredVehicles = vehiclesData?.vehicles?.filter(
+  // Filter vehicles by selected company and brand, then by the Fuel Type column filter.
+  const baseVehicles = vehiclesData?.vehicles?.filter(
     (v) => (!companyId || v.company_id === companyId) && (!brand || v.brand === brand)
   ) ?? []
+  const fuelOptions = [...new Set(baseVehicles.map((v) => v.fuel_type).filter(Boolean))].sort() as string[]
+  const filteredVehicles =
+    fuelFilter.size === 0 ? baseVehicles : baseVehicles.filter((v) => fuelFilter.has(v.fuel_type))
 
-  // Odometer sort — sorts a copy; nulls always sort last regardless of direction.
+  // Sort a copy; numeric nulls always sort last regardless of direction.
   const sortedVehicles = React.useMemo(() => {
-    if (odoSort === 'none') return filteredVehicles
-    const withKey = filteredVehicles.map((v) => ({ v, key: v.odometer_km ?? v.mileage_floor ?? null }))
-    withKey.sort((a, b) => {
-      if (a.key == null && b.key == null) return 0
-      if (a.key == null) return 1
-      if (b.key == null) return -1
-      return odoSort === 'asc' ? a.key - b.key : b.key - a.key
+    if (!sort.key) return filteredVehicles
+    const numKey = (v: FpVehicle): number | null =>
+      sort.key === 'odometer'
+        ? v.odometer_km ?? v.mileage_floor ?? null
+        : sort.key === 'age'
+          ? v.created_at
+            ? Math.floor((Date.now() - new Date(v.created_at).getTime()) / 86_400_000)
+            : null
+          : null
+    const arr = [...filteredVehicles]
+    arr.sort((a, b) => {
+      if (sort.key === 'fuel_type') {
+        const cmp = (a.fuel_type || '').localeCompare(b.fuel_type || '', 'ro')
+        return sort.dir === 'asc' ? cmp : -cmp
+      }
+      const ka = numKey(a)
+      const kb = numKey(b)
+      if (ka == null && kb == null) return 0
+      if (ka == null) return 1
+      if (kb == null) return -1
+      return sort.dir === 'asc' ? ka - kb : kb - ka
     })
-    return withKey.map((x) => x.v)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredVehicles, odoSort])
+    return arr
+  }, [filteredVehicles, sort])
+
+  // Sort affordance shown in a clickable column header.
+  const sortIcon = (key: 'odometer' | 'fuel_type' | 'age') =>
+    sort.key === key ? (sort.dir === 'asc' ? '▲' : '▼') : '⇅'
+  const sortIconCls = (key: 'odometer' | 'fuel_type' | 'age') =>
+    sort.key === key ? 'text-primary' : 'text-muted-foreground/50'
 
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
@@ -2634,13 +2678,14 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
   }
 
   const toggleCol = (key: StockColumnKey) => {
-    setVisibleCols((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+    // Keep persisted order aligned to STOCK_COLUMNS so the header/cell order is stable.
+    setVisibleColKeys((prev) =>
+      prev.includes(key)
+        ? prev.filter((k) => k !== key)
+        : STOCK_COLUMNS.map((c) => c.key).filter((k) => k === key || prev.includes(k)),
+    )
   }
+  const resetCols = () => setVisibleColKeys(STOCK_COLUMNS.filter((c) => c.default).map((c) => c.key))
 
   const show = (key: StockColumnKey) => visibleCols.has(key)
 
@@ -2662,7 +2707,8 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
               Columns
             </Button>
             {showColMenu && (
-              <div className="absolute right-0 z-10 mt-1 w-44 rounded-md border bg-popover p-2 shadow-md">
+              <div className="absolute right-0 z-10 mt-1 w-48 rounded-md border bg-popover p-2 shadow-md">
+                <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Coloane vizibile</p>
                 {STOCK_COLUMNS.map((c) => (
                   <label key={c.key} className="flex items-center gap-2 py-1 text-sm cursor-pointer">
                     <input
@@ -2674,6 +2720,15 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                     {c.label}
                   </label>
                 ))}
+                <div className="mt-1 border-t pt-1">
+                  <button
+                    type="button"
+                    className="w-full rounded px-1 py-1 text-left text-xs text-muted-foreground hover:bg-accent"
+                    onClick={resetCols}
+                  >
+                    Resetează la implicit
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -2728,20 +2783,67 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                 {show('reg_number') && <TableHead>Reg. No.</TableHead>}
                 {show('brand') && <TableHead>Brand</TableHead>}
                 {show('color') && <TableHead>Color</TableHead>}
-                {show('fuel_type') && <TableHead>Fuel Type</TableHead>}
+                {show('fuel_type') && (
+                  <TableHead className="select-none">
+                    <span className="inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 hover:text-foreground"
+                        title="Sortează după combustibil"
+                        onClick={() => toggleSort('fuel_type')}
+                      >
+                        Fuel Type
+                        <span aria-hidden className={sortIconCls('fuel_type')}>{sortIcon('fuel_type')}</span>
+                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            title="Filtrează după combustibil"
+                            className={cn('rounded p-0.5 hover:bg-accent', fuelFilter.size > 0 ? 'text-primary' : 'text-muted-foreground/60')}
+                          >
+                            <Filter className="h-3.5 w-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-44">
+                          <DropdownMenuLabel>Combustibil</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          {fuelOptions.length === 0 && <DropdownMenuItem disabled>Niciun tip</DropdownMenuItem>}
+                          {fuelOptions.map((ft) => (
+                            <DropdownMenuCheckboxItem
+                              key={ft}
+                              checked={fuelFilter.has(ft)}
+                              onCheckedChange={() => toggleFuel(ft)}
+                              onSelect={(e) => e.preventDefault()}
+                            >
+                              {ft}
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                          {fuelFilter.size > 0 && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => setFuelFilter(new Set())}>Arată toate</DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </span>
+                  </TableHead>
+                )}
                 {show('capacity') && <TableHead>Capacity</TableHead>}
                 {show('odometer') && (
-                  <TableHead
-                    className="cursor-pointer select-none"
-                    title="Sortează după kilometraj"
-                    onClick={() =>
-                      setOdoSort((prev) => (prev === 'asc' ? 'desc' : prev === 'desc' ? 'none' : 'asc'))
-                    }
-                  >
-                    <span className="inline-flex items-center gap-1">
+                  <TableHead className="cursor-pointer select-none" title="Sortează după kilometraj" onClick={() => toggleSort('odometer')}>
+                    <span className="inline-flex items-center gap-1 hover:text-foreground">
                       Odometer
-                      {odoSort === 'asc' && <span aria-hidden>▲</span>}
-                      {odoSort === 'desc' && <span aria-hidden>▼</span>}
+                      <span aria-hidden className={sortIconCls('odometer')}>{sortIcon('odometer')}</span>
+                    </span>
+                  </TableHead>
+                )}
+                {show('age') && (
+                  <TableHead className="cursor-pointer select-none" title="Sortează după zile în stoc" onClick={() => toggleSort('age')}>
+                    <span className="inline-flex items-center gap-1 hover:text-foreground">
+                      Zile Stoc
+                      <span aria-hidden className={sortIconCls('age')}>{sortIcon('age')}</span>
                     </span>
                   </TableHead>
                 )}
@@ -2756,55 +2858,86 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
               {sortedVehicles.map((v) => {
                 const health = vehicleHealth(v, new Date(), { flagMissingDocs: true })
                 const rowGravityCls: Record<Gravity, string> = {
-                  critical: 'border-l-4 border-l-red-500',
-                  warning: 'border-l-4 border-l-amber-500',
-                  info: 'border-l-4 border-l-slate-300',
-                  ok: 'border-l-4 border-l-emerald-500',
+                  critical: 'border-l-4 border-l-red-500 bg-red-50/70 hover:bg-red-100/70 dark:bg-red-950/20 dark:hover:bg-red-950/30',
+                  warning: 'border-l-4 border-l-amber-500 bg-amber-50/70 hover:bg-amber-100/70 dark:bg-amber-950/20 dark:hover:bg-amber-950/30',
+                  info: 'border-l-4 border-l-slate-300 bg-slate-50/70 hover:bg-slate-100/70 dark:bg-slate-900/20 dark:hover:bg-slate-900/30',
+                  ok: 'border-l-4 border-l-emerald-500 bg-emerald-50/50 hover:bg-emerald-100/60 dark:bg-emerald-950/15 dark:hover:bg-emerald-950/25',
                 }
                 const healthChipCls: Record<HealthTag['gravity'], string> = {
-                  critical: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300',
-                  warning: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
-                  info: 'bg-slate-100 text-slate-700 dark:bg-slate-800/40 dark:text-slate-300',
+                  critical: 'bg-red-50 text-red-600 dark:bg-red-950/25 dark:text-red-400',
+                  warning: 'bg-amber-50 text-amber-600 dark:bg-amber-950/25 dark:text-amber-400',
+                  info: 'bg-slate-50 text-slate-500 dark:bg-slate-900/25 dark:text-slate-400',
                 }
                 const plateFormatted = v.registration_number ? formatRoPlate(v.registration_number) : ''
                 const plateNonConform = !!v.registration_number && !isValidRoPlate(plateFormatted)
                 return (
                 <React.Fragment key={v.id}>
                 <TableRow
-                  className={cn('cursor-pointer hover:bg-muted/40', !v.is_active && 'opacity-60', rowGravityCls[health.gravity])}
+                  className={cn('cursor-pointer', !v.is_active && 'opacity-60', rowGravityCls[health.gravity])}
                   onClick={() => setExpandedVehicleId((prev) => (prev === v.id ? null : v.id))}
                 >
                   {show('model') && (
                     <TableCell>
-                      {v.model}
-                      {!v.is_active && (
-                        <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Arhivat</span>
-                      )}
-                      {v.is_active && (v.locked_out || v.blocked_now) && (
-                        <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                          🔒 Blocat{v.blocked_now && !v.locked_out && v.active_block_end ? ` până ${fmtValidity(v.active_block_end)}` : ''}
-                        </span>
-                      )}
-                      {v.is_active && !v.locked_out && !v.blocked_now && v.next_block_start && (
-                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                          🗓 Programat {fmtValidity(v.next_block_start)}
-                        </span>
-                      )}
-                      {health.tags.slice(0, 3).map((t, i) => (
-                        <span
-                          key={i}
-                          className={cn('ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold', healthChipCls[t.gravity])}
-                        >
-                          {t.label}
-                        </span>
-                      ))}
-                      {health.tags.length > 3 && (
-                        <span
-                          className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground"
-                          title={health.tags.map((t) => t.label).join(', ')}
-                        >
-                          +{health.tags.length - 3}
-                        </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span>{v.model}</span>
+                        {!v.is_active && (
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Arhivat</span>
+                        )}
+                        {v.is_active && (v.locked_out || v.blocked_now) && (
+                          <span
+                            className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                            title={v.lockout_note || undefined}
+                          >
+                            🔒 {(v.locked_out ? v.lockout_category : v.active_block_category) || 'Blocat'}
+                            {v.blocked_now && !v.locked_out && v.active_block_end ? ` · până ${fmtValidity(v.active_block_end)}` : ''}
+                          </span>
+                        )}
+                        {v.is_active && !v.locked_out && !v.blocked_now && v.next_block_start && (
+                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                            🗓 Programat {fmtValidity(v.next_block_start)}
+                          </span>
+                        )}
+                      </div>
+                      {(health.tags.length > 0 || !!v.upcoming_planned?.length) && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          {health.tags.slice(0, 3).map((t, i) => (
+                            <span
+                              key={i}
+                              className={cn('rounded px-1 py-px text-[10px] font-medium leading-tight', healthChipCls[t.gravity])}
+                            >
+                              {t.label}
+                            </span>
+                          ))}
+                          {health.tags.length > 3 && (
+                            <span
+                              className="rounded px-1 py-px text-[10px] font-medium leading-tight text-muted-foreground"
+                              title={health.tags.map((t) => t.label).join(', ')}
+                            >
+                              +{health.tags.length - 3}
+                            </span>
+                          )}
+                          {!!v.upcoming_planned?.length && (
+                            <span className="inline-flex flex-wrap items-center gap-1 align-middle">
+                              <span aria-hidden title="Sesiuni planificate" className="text-[10px] text-muted-foreground">🗓</span>
+                              {v.upcoming_planned.map((p, i) => {
+                                const d = naiveDate(p.departure)
+                                const short = d ? d.toLocaleDateString('ro-RO', { day: '2-digit', month: 'short' }) : '—'
+                                const full = d
+                                  ? d.toLocaleString('ro-RO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                                  : '—'
+                                return (
+                                  <span
+                                    key={i}
+                                    className="rounded bg-indigo-50 px-1 py-px text-[10px] font-medium leading-tight text-indigo-600 dark:bg-indigo-950/25 dark:text-indigo-400"
+                                    title={`${full} — ${p.client || 'Fără client'}`}
+                                  >
+                                    {short}
+                                  </span>
+                                )
+                              })}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </TableCell>
                   )}
@@ -2844,16 +2977,13 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
                   {show('odometer') && (
                     <TableCell className="text-sm whitespace-nowrap">
                       {v.odometer_km != null ? `${v.odometer_km.toLocaleString('ro-RO')} km` : '—'}
-                      {!!v.upcoming_planned?.length && (
-                        <span
-                          className="ml-2 inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
-                          title={v.upcoming_planned
-                            .map((p) => `${fmtValidity(p.departure)} — ${p.client || '—'}`)
-                            .join('\n')}
-                        >
-                          🗓 {v.upcoming_planned.length} planificat{v.upcoming_planned.length === 1 ? '' : 'e'}
-                        </span>
-                      )}
+                    </TableCell>
+                  )}
+                  {show('age') && (
+                    <TableCell className="text-sm whitespace-nowrap text-muted-foreground">
+                      {v.created_at
+                        ? `${Math.max(0, Math.floor((Date.now() - new Date(v.created_at).getTime()) / 86_400_000))} zile`
+                        : '—'}
                     </TableCell>
                   )}
                   {show('company') && (
