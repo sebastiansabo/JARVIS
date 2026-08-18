@@ -238,16 +238,16 @@ def api_submit_test_drive():
             contract_data['general_conditions_accepted_at'] = datetime.now(timezone.utc)
             contract_data['general_conditions_text'] = general_conditions_text
 
-        # HR-event -> marketing-project bridge: when the advisor picked an HR
-        # event, find-or-create the marketing 'event' project bridged to it
-        # and attach the session to it (unless a project was already picked
-        # explicitly via mkt_project_id). Best-effort — the event link is
-        # secondary to creating the driving session, so a bridge failure must
-        # not 500 the whole submit.
+        # HR-event -> marketing-project bridge: when the session is tagged with
+        # an HR event, bridge it to a marketing 'event' project and point
+        # mkt_project_id at that project (an event and a campaign are mutually
+        # exclusive in the form). Best-effort — the event link is secondary to
+        # creating the driving session, so a bridge failure must not 500 the
+        # whole submit.
         if contract_data.get('event_id'):
             try:
                 bridged = _ensure_event_project(
-                    contract_data['event_id'], int(data['company_id']),
+                    contract_data['event_id'], contract_data['company_id'],
                     getattr(current_user, 'id', None))
                 if bridged:
                     contract_data['mkt_project_id'] = bridged
