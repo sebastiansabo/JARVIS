@@ -1,12 +1,36 @@
 """Repository for mkt_project_events — links HR events to marketing projects."""
 
 import logging
+import re
 from core.base_repository import BaseRepository
 
 logger = logging.getLogger('jarvis.marketing.event_repo')
 
 
 class ProjectEventRepository(BaseRepository):
+
+    def get_project_for_event(self, event_id):
+        """Find the marketing 'event' project already bridged to this HR
+        event, if any (a live, non-deleted project). Used to make the
+        HR-event -> marketing-project bridge idempotent."""
+        return self.query_one('''
+            SELECT p.* FROM mkt_projects p
+            JOIN mkt_project_events e ON e.project_id = p.id
+            WHERE e.event_id = %s AND p.project_type = 'event' AND p.deleted_at IS NULL
+            LIMIT 1
+        ''', (event_id,))
+
+    def create_event_project(self, name, company_id, user_id, event_id):
+        """Create a marketing 'event' project to bridge an HR event. The
+        caller is responsible for linking it via link() afterwards."""
+        base = re.sub(r'[^a-z0-9]+', '-', (name or 'eveniment').lower()).strip('-')[:50]
+        slug = f'{base}-ev{event_id}'
+        row = self.execute('''
+            INSERT INTO mkt_projects (name, slug, project_type, status, company_id, owner_id, created_by)
+            VALUES (%s, %s, 'event', 'active', %s, %s, %s)
+            RETURNING id
+        ''', (name, slug, company_id, user_id, user_id), returning=True)
+        return row['id']
 
     def get_by_project(self, project_id):
         """Get all linked HR events for a project."""

@@ -11,12 +11,31 @@ from ._shared import (
 )
 from ..services.fuel_service import parse_fuel_level
 from crm.repositories.contact_repository import ContactRepository, contact_gate_valid
+from marketing.repositories.event_repo import ProjectEventRepository
 
 # International E.164 (+ and 7–15 digits) plus legacy RO national formats so
 # existing stored numbers still validate.
 _PHONE_RE = re.compile(r'^(\+\d{7,15}|07\d{8}|004\d{10})$')
 
 _contact_repo = ContactRepository()
+_event_bridge_repo = ProjectEventRepository()
+
+
+def _ensure_event_project(event_id, company_id, user_id):
+    """Find-or-create the marketing 'event' project bridged to an HR event,
+    linking it if newly created. Idempotent — a second call for the same
+    event_id reuses the already-bridged project instead of creating a
+    duplicate. Returns the project id, or None if the HR event doesn't
+    exist (e.g. stale/bad event_id)."""
+    existing = _event_bridge_repo.get_project_for_event(event_id)
+    if existing:
+        return existing['id']
+    info = _event_bridge_repo.get_event_info(event_id)
+    if not info:
+        return None
+    project_id = _event_bridge_repo.create_event_project(info['name'], company_id, user_id, event_id)
+    _event_bridge_repo.link(project_id, event_id, user_id)
+    return project_id
 
 
 def _company_gdpr_text(company_id) -> str:
@@ -218,6 +237,23 @@ def api_submit_test_drive():
             contract_data['general_conditions_accepted'] = True
             contract_data['general_conditions_accepted_at'] = datetime.now(timezone.utc)
             contract_data['general_conditions_text'] = general_conditions_text
+
+        # HR-event -> marketing-project bridge: when the advisor picked an HR
+        # event, find-or-create the marketing 'event' project bridged to it
+        # and attach the session to it (unless a project was already picked
+        # explicitly via mkt_project_id). Best-effort — the event link is
+        # secondary to creating the driving session, so a bridge failure must
+        # not 500 the whole submit.
+        if contract_data.get('event_id'):
+            try:
+                bridged = _ensure_event_project(
+                    contract_data['event_id'], int(data['company_id']),
+                    getattr(current_user, 'id', None))
+                if bridged:
+                    contract_data['mkt_project_id'] = bridged
+            except Exception:
+                logger.warning('Event->project bridge failed for event_id=%s',
+                               contract_data.get('event_id'), exc_info=True)
 
         contract = _fp_repo.create_from_td_form(contract_data)
 
