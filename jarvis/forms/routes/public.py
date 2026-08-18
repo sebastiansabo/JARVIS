@@ -41,9 +41,18 @@ def _get_client_ip() -> str:
     return ip or '0.0.0.0'
 
 
+# Slugs whose canonical UI is a dedicated Hub module (not the generic public
+# form). The public /f/<slug> page and its unauthenticated submit are disabled
+# for these, so there is no divergent, no-auth bypass of the module's rules
+# (e.g. the leave-permit consent/signature/Sincron validation).
+MODULE_ONLY_SLUGS = {'bilet-de-invoire'}
+
+
 @forms_bp.route('/public/<slug>', methods=['GET'])
 def api_get_public_form(slug):
     """Get a published form by slug (no auth). Returns form schema + settings."""
+    if slug in MODULE_ONLY_SLUGS:
+        return jsonify({'success': False, 'error': 'Form not found'}), 404
     form = _form_repo.get_by_slug(slug)
     if not form:
         return jsonify({'success': False, 'error': 'Form not found'}), 404
@@ -64,6 +73,8 @@ def api_get_public_form(slug):
 @forms_bp.route('/public/<slug>/submit', methods=['POST'])
 def api_submit_public_form(slug):
     """Submit a response to a public form (no auth)."""
+    if slug in MODULE_ONLY_SLUGS:
+        return jsonify({'success': False, 'error': 'Form not found'}), 404
     ip = _get_client_ip()
 
     # Rate limit check
