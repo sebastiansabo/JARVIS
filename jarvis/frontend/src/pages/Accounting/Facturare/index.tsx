@@ -327,7 +327,7 @@ export default function Facturare() {
           <DocumentItemsTab docType="PROFORMA,INVOICE,STORNO,FINAL" />
         </TabsContent>
         <TabsContent value="archive" className="mt-4">
-          <DocumentItemsTab docType="PROFORMA,INVOICE,STORNO,FINAL" archived />
+          <ComenziTab companies={companies} archived />
         </TabsContent>
         <TabsContent value="settings" className="mt-4 space-y-6">
           <KontoSettingsTab companies={companies} />
