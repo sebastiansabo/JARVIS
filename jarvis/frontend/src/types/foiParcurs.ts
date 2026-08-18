@@ -345,6 +345,9 @@ export interface CrmClient {
   display_name?: string | null
   name?: string | null
   phone?: string | null
+  /** 'company' | 'person' — a company client never drives itself; the TD form
+   *  gates submit/activate on a gate-valid contact person (see ClientContact). */
+  client_type?: string | null
 }
 
 export interface CreateCrmClientPayload {
@@ -415,6 +418,15 @@ export interface TestDriveFormPayload {
   general_conditions_accepted?: boolean
   /** Optional marketing project (campaign/event) this Test Drive is tied to. */
   mkt_project_id?: number
+  /** Company-client driver gate (Task 11): the gate-valid contact person who
+   *  actually drives, required server-side for a live FILLED submit against a
+   *  company client. driver_license_serie may come from the contact or the
+   *  standalone license field. */
+  driver_contact_id?: number
+  driver_license_serie?: string
+  /** Optional marketing event this Test Drive is tied to (Task 15 wires the
+   *  UI that lets an advisor pick one; left undefined until then). */
+  event_id?: number
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
   allow_open_session?: boolean
@@ -448,6 +460,8 @@ export interface ActivateTestDrivePayload {
   general_observation?: string
   /** Optional marketing project (campaign/event) this Test Drive is tied to. */
   mkt_project_id?: number
+  /** Company-client driver gate (Task 11) — see TestDriveFormPayload. */
+  driver_contact_id?: number
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
   allow_open_session?: boolean

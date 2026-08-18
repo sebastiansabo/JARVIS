@@ -89,6 +89,23 @@ export interface CrmVisit {
   visit_summary?: string
 }
 
+/** A company client's contact/driver person (crm_client_contacts). Gate-valid
+ *  (drivable) iff all six of full_name/email/phone/driver_license_photo/
+ *  driver_license_serie/driver_license_number are truthy — mirrors the
+ *  backend's `contact_gate_valid()` in crm/repositories/contact_repository.py. */
+export interface ClientContact {
+  id: number
+  client_id: number
+  full_name: string
+  email?: string | null
+  phone?: string | null
+  driver_license_serie?: string | null
+  driver_license_number?: string | null
+  driver_license_photo?: string | null
+  driver_license_expiry?: string | null
+  is_primary?: boolean
+}
+
 export interface ClientProfile {
   id: number
   client_id: number
@@ -262,4 +279,11 @@ export const crmApi = {
     return api.post<{ success: boolean; stats: Record<string, number | string[]> }>('/api/crm/import', fd)
   },
   getImportBatches: (params?: Record<string, string>) => api.get<{ batches: ImportBatch[] }>('/api/crm/import/batches', params),
+  // Contact persons (company clients) — nested under the client so backend
+  // scoping (crm_required) applies and cross-client contact_id tampering 404s.
+  listClientContacts: (clientId: number) => api.get<{ contacts: ClientContact[] }>(`/api/crm/clients/${clientId}/contacts`),
+  createClientContact: (clientId: number, data: Partial<ClientContact>) =>
+    api.post<{ success: boolean; contact: ClientContact }>(`/api/crm/clients/${clientId}/contacts`, data),
+  updateClientContact: (clientId: number, contactId: number, data: Partial<ClientContact>) =>
+    api.put<{ success: boolean; contact: ClientContact }>(`/api/crm/clients/${clientId}/contacts/${contactId}`, data),
 }
