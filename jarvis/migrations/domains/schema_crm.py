@@ -213,6 +213,27 @@ def create_schema_crm(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_client_phones_phone ON client_phones(phone)')
     cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_client_phones_uniq ON client_phones(client_id, phone)')
 
+    # -- Company contact persons (drivers) attached to a CRM company client.
+    #    A company must have a gate-valid primary contact to run a driving session.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS crm_client_contacts (
+            id                    BIGSERIAL PRIMARY KEY,
+            client_id             BIGINT NOT NULL REFERENCES crm_clients(id) ON DELETE CASCADE,
+            full_name             TEXT NOT NULL,
+            email                 TEXT,
+            phone                 TEXT,
+            driver_license_serie  VARCHAR(10),
+            driver_license_number TEXT,
+            driver_license_photo  TEXT,
+            driver_license_expiry VARCHAR(20),
+            is_primary            BOOLEAN DEFAULT FALSE,
+            created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_crm_client_contacts_client ON crm_client_contacts(client_id)')
+    cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_client_contacts_primary ON crm_client_contacts(client_id) WHERE is_primary')
+
     # Enable pg_trgm for fuzzy name matching (ignore if not available)
     cursor.execute("""
         DO $$ BEGIN
