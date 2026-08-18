@@ -85,6 +85,22 @@ describe('InternalSessionForm embedded mode', () => {
     await waitFor(() => expect(onDone).toHaveBeenCalledWith({ id: 5, contract_id: 'INT-1' }))
   })
 
+  it('overwrites KM plecare with the newly-picked car odometer when switching cars', async () => {
+    wrap(<InternalSessionForm embedded onCancel={vi.fn()} onDone={vi.fn()} />)
+    await screen.findByTestId('internal-driver')
+
+    // Pick car A (Dacia Duster, odometer 50000).
+    fireEvent.click(screen.getByTestId('internal-vehicle'))
+    fireEvent.click(await screen.findByText(/Dacia Duster/))
+    expect(await screen.findByTestId('internal-km')).toHaveValue(50000)
+
+    // Switch to car B (Renault Clio, odometer 12000) — KM must follow, not
+    // keep car A's 50000 (the pre-fix bug).
+    fireEvent.click(screen.getByTestId('internal-vehicle'))
+    fireEvent.click(await screen.findByText(/Renault Clio/))
+    expect(await screen.findByTestId('internal-km')).toHaveValue(12000)
+  })
+
   it('surfaces a backend 409 (locked_out) error inline', async () => {
     const { ApiError } = await import('@/api/client')
     submitInternalSession.mockRejectedValue(new ApiError(409, { error: 'Mașină blocată în parcul auto', locked_out: true }))

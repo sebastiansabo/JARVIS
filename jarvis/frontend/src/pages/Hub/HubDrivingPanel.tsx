@@ -316,7 +316,10 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
             {overlay.kind === 'new-internal' && (
               <InternalSessionForm
                 embedded
-                initialCompanyId={companyId || undefined}
+                // companyId can be ALL_COMPANIES (-1, "Toate companiile") — pass
+                // undefined for it so the internal form's picker shows every
+                // vehicle instead of filtering on company_id === -1 (empty).
+                initialCompanyId={companyId > 0 ? companyId : undefined}
                 initialDeparture={overlay.departure}
                 initialReturn={overlay.ret}
                 onDone={handleOverlayDone}
