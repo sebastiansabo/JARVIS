@@ -29,3 +29,31 @@ def test_part_time_cap(monkeypatch):
 def test_compute_return():
     assert ls.compute_return('09:00', 1.5) == '10:30'
     assert ls.compute_return('09:30', 0.5) == '10:00'
+
+
+SCHED = {'schedule_start': '09:00', 'schedule_end': '18:00', 'day_cap_hours': 7.0,
+         'lunch_break_minutes': 60, 'source': 'sincron'}
+
+
+def test_validate_ok():
+    assert ls.validate_leave('09:00', 1.5, SCHED) is None
+
+
+def test_validate_rejects_unaligned_start():
+    assert ls.validate_leave('09:10', 1.0, SCHED) is not None
+
+
+def test_validate_rejects_over_cap():
+    assert ls.validate_leave('09:00', 7.5, SCHED) is not None
+
+
+def test_validate_rejects_half_step():
+    assert ls.validate_leave('09:00', 0.75, SCHED) is not None
+
+
+def test_validate_rejects_before_window():
+    assert ls.validate_leave('08:00', 1.0, SCHED) is not None
+
+
+def test_validate_rejects_return_past_window():
+    assert ls.validate_leave('17:30', 1.0, SCHED) is not None

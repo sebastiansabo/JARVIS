@@ -74,3 +74,36 @@ def compute_return(start_hm, duration_hours):
     s = parse_hm(start_hm) or 0
     total = max(0, min(1439, s + int(round(float(duration_hours) * 60))))
     return f'{total // 60:02d}:{total % 60:02d}'
+
+
+def validate_leave(start_hm, duration_hours, schedule):
+    """Validate leave request: alignment, duration, cap, and window.
+
+    Args:
+        start_hm: Start time as HH:MM string
+        duration_hours: Duration in hours (float)
+        schedule: Dict with schedule_start, schedule_end, day_cap_hours
+
+    Returns:
+        Romanian error message string, or None if valid.
+    """
+    s = parse_hm(start_hm)
+    if s is None or s % 30 != 0:
+        return 'Ora de început trebuie să fie la interval de 30 de minute.'
+    try:
+        dur = float(duration_hours)
+    except (TypeError, ValueError):
+        return 'Durată invalidă.'
+    if dur < 0.5 or round(dur * 2) != dur * 2:
+        return 'Durata trebuie să fie un multiplu de 30 de minute.'
+    cap = float(schedule.get('day_cap_hours') or DEFAULT_CAP)
+    if dur > cap:
+        return f'Durata maximă permisă este {cap:g} ore.'
+    ws = parse_hm(schedule.get('schedule_start'))
+    we = parse_hm(schedule.get('schedule_end'))
+    if ws is not None and s < ws:
+        return 'Ora de început este înainte de programul de lucru.'
+    ret = s + int(round(dur * 60))
+    if we is not None and ret > we:
+        return 'Ora de întoarcere depășește programul de lucru.'
+    return None
