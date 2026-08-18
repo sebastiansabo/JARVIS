@@ -21,6 +21,7 @@ vi.mock('@/pages/Hub/DrivingSessionsList', () => ({ default: ({ companyId }: { c
 vi.mock('@/pages/Hub/DrivingCalendar', () => ({ default: ({ companyId }: { companyId: number }) => <div>calendar:{companyId}</div> }))
 vi.mock('@/pages/Hub/DrivingParkList', () => ({ default: ({ companyId }: { companyId: number }) => <div>park:{companyId}</div> }))
 vi.mock('@/pages/FoiParcurs/TestDriveForm', () => ({ default: ({ onCancel }: { onCancel: () => void }) => <div>form<button onClick={onCancel}>x</button></div> }))
+vi.mock('@/pages/FoiParcurs/InternalSessionForm', () => ({ default: ({ onCancel }: { onCancel: () => void }) => <div>internal-form<button onClick={onCancel}>x</button></div> }))
 vi.mock('@/pages/FoiParcurs/TestDriveReturn', () => ({ default: ({ id }: { id: number }) => <div>return-overlay:{id}</div> }))
 
 import HubDrivingPanel from './HubDrivingPanel'
@@ -41,11 +42,28 @@ describe('HubDrivingPanel — mobile bottom bar', () => {
     expect(onBack).toHaveBeenCalledTimes(1)
   })
 
-  it('opens the New overlay from the bottom bar', async () => {
+  it('opens the Client/Intern chooser from the bottom bar', async () => {
     wrap(<HubDrivingPanel onBack={vi.fn()} />)
     await screen.findByText(/sessions:11/)
     fireEvent.click(screen.getByRole('button', { name: /sesiune nouă/i }))
+    expect(await screen.findByRole('button', { name: /sesiune cu client/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /sesiune internă/i })).toBeInTheDocument()
+  })
+
+  it('opens the New (client) form from the bottom bar after picking "Sesiune cu client"', async () => {
+    wrap(<HubDrivingPanel onBack={vi.fn()} />)
+    await screen.findByText(/sessions:11/)
+    fireEvent.click(screen.getByRole('button', { name: /sesiune nouă/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /sesiune cu client/i }))
     expect(screen.getByText(/^form/)).toBeInTheDocument()
+  })
+
+  it('opens InternalSessionForm from the bottom bar after picking "Sesiune internă"', async () => {
+    wrap(<HubDrivingPanel onBack={vi.fn()} />)
+    await screen.findByText(/sessions:11/)
+    fireEvent.click(screen.getByRole('button', { name: /sesiune nouă/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /sesiune internă/i }))
+    expect(screen.getByText(/^internal-form/)).toBeInTheDocument()
   })
 
   it('switches to the Calendar view from the bottom bar', async () => {

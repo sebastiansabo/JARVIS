@@ -17,8 +17,15 @@ import DrivingCalendar from '@/pages/Hub/DrivingCalendar'
 import DrivingParkList from '@/pages/Hub/DrivingParkList'
 import TestDriveForm from '@/pages/FoiParcurs/TestDriveForm'
 import TestDriveReturn from '@/pages/FoiParcurs/TestDriveReturn'
+import InternalSessionForm from '@/pages/FoiParcurs/InternalSessionForm'
+import SessionTypeChooser from '@/pages/FoiParcurs/SessionTypeChooser'
 
-type Overlay = null | { kind: 'new'; departure?: string; ret?: string } | { kind: 'activate'; id: number } | { kind: 'return'; id: number }
+type Overlay = null
+  | { kind: 'choose'; departure?: string; ret?: string }
+  | { kind: 'new'; departure?: string; ret?: string }
+  | { kind: 'new-internal'; departure?: string; ret?: string }
+  | { kind: 'activate'; id: number }
+  | { kind: 'return'; id: number }
 type PanelTab = 'sessions' | 'calendar' | 'park'
 
 // Sentinel company id meaning "all companies" — the list/calendar queries map it
@@ -195,7 +202,7 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
         <SlidersHorizontal className="h-4 w-4" />
         {activeFilters > 0 && <span className="rounded-full bg-primary px-1.5 text-[11px] font-bold leading-5 text-primary-foreground">{activeFilters}</span>}
       </Button>
-      <Button aria-label="Sesiune nouă" className={`${CTRL_H} w-11 shrink-0 rounded-xl p-0`} onClick={() => setOverlay({ kind: 'new' })}>
+      <Button aria-label="Sesiune nouă" className={`${CTRL_H} w-11 shrink-0 rounded-xl p-0`} onClick={() => setOverlay({ kind: 'choose' })}>
         <Plus className="h-5 w-5" />
       </Button>
     </div>
@@ -225,7 +232,7 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
           consultantFilter={consultantFilter}
           onActivate={(id) => setOverlay({ kind: 'activate', id })}
           onReturn={(id) => setOverlay({ kind: 'return', id })}
-          onAdd={(departure, ret) => setOverlay({ kind: 'new', departure, ret })}
+          onAdd={(departure, ret) => setOverlay({ kind: 'choose', departure, ret })}
         />
       )}
       {hasCompany && tab === 'park' && (
@@ -275,9 +282,22 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
         </DialogContent>
       </Dialog>
 
+      {/* Step 1 of "+ Sesiune nouă" — Client (existing TD form) vs Intern (slim
+          driving log). A separate, compact dialog — not the full-screen sheet
+          below, which is sized for the forms themselves. */}
+      <SessionTypeChooser
+        open={overlay?.kind === 'choose'}
+        onOpenChange={(o) => { if (!o) closeOverlay() }}
+        onPick={(type) => {
+          if (!overlay || overlay.kind !== 'choose') return
+          const { departure, ret } = overlay
+          setOverlay(type === 'client' ? { kind: 'new', departure, ret } : { kind: 'new-internal', departure, ret })
+        }}
+      />
+
       {/* iOS-style modal sheet inside the Hub — full-screen on phones, a centered
           floating card on desktop. */}
-      {overlay && (
+      {overlay && overlay.kind !== 'choose' && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-sm">
           <div className="mx-auto min-h-full w-full max-w-2xl bg-background shadow-2xl sm:my-8 sm:min-h-0 sm:rounded-2xl">
             <div className="sticky top-0 z-10 flex items-center justify-end border-b bg-background/95 p-2 backdrop-blur sm:rounded-t-2xl">
@@ -285,6 +305,16 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
             </div>
             {overlay.kind === 'new' && (
               <TestDriveForm
+                embedded
+                initialCompanyId={companyId || undefined}
+                initialDeparture={overlay.departure}
+                initialReturn={overlay.ret}
+                onDone={handleOverlayDone}
+                onCancel={closeOverlay}
+              />
+            )}
+            {overlay.kind === 'new-internal' && (
+              <InternalSessionForm
                 embedded
                 initialCompanyId={companyId || undefined}
                 initialDeparture={overlay.departure}
@@ -311,7 +341,7 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
           onTab={setTab}
           activeFilters={activeFilters}
           onFilters={() => setFiltersOpen(true)}
-          onNew={() => setOverlay({ kind: 'new' })}
+          onNew={() => setOverlay({ kind: 'choose' })}
           onBack={onBack}
         />
       )}

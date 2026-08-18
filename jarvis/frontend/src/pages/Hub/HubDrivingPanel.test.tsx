@@ -24,7 +24,19 @@ vi.mock('@/pages/FoiParcurs/TestDriveForm', () => ({
     <div>form:{initialDeparture ?? ''}<button onClick={onCancel}>x</button><button onClick={() => onDone?.({ id: 1 })}>done</button></div>
   ),
 }))
+vi.mock('@/pages/FoiParcurs/InternalSessionForm', () => ({
+  default: ({ onDone, onCancel, initialDeparture }: { onDone?: (c: unknown) => void; onCancel: () => void; initialDeparture?: string }) => (
+    <div>internal-form:{initialDeparture ?? ''}<button onClick={onCancel}>x</button><button onClick={() => onDone?.({ id: 2 })}>done</button></div>
+  ),
+}))
 vi.mock('@/pages/FoiParcurs/TestDriveReturn', () => ({ default: ({ id }: { id: number }) => <div>return-overlay:{id}</div> }))
+
+// Opens the "+" chooser then picks "Sesiune cu client" so tests that only
+// care about the resulting form don't need to know about the chooser step.
+async function openClientForm() {
+  fireEvent.click(screen.getByRole('button', { name: /nou/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /sesiune cu client/i }))
+}
 
 import HubDrivingPanel from './HubDrivingPanel'
 
@@ -42,15 +54,44 @@ describe('HubDrivingPanel', () => {
   it('renders the Sessions tab by default and can open the New overlay', async () => {
     wrap(<HubDrivingPanel />)
     expect(await screen.findByText(/sessions:11/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /nou/i }))
+    await openClientForm()
     expect(screen.getByText(/^form:/)).toBeInTheDocument()
+  })
+
+  it('clicking "+" opens the Client/Intern chooser', async () => {
+    wrap(<HubDrivingPanel />)
+    await screen.findByText(/sessions:11/)
+    fireEvent.click(screen.getByRole('button', { name: /nou/i }))
+    expect(await screen.findByRole('button', { name: /sesiune cu client/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /sesiune internă/i })).toBeInTheDocument()
+    // Neither form is rendered yet — only the chooser.
+    expect(screen.queryByText(/^form:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^internal-form:/)).not.toBeInTheDocument()
+  })
+
+  it('picking "Sesiune internă" renders InternalSessionForm', async () => {
+    wrap(<HubDrivingPanel />)
+    await screen.findByText(/sessions:11/)
+    fireEvent.click(screen.getByRole('button', { name: /nou/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /sesiune internă/i }))
+    expect(await screen.findByText(/^internal-form:/)).toBeInTheDocument()
+    expect(screen.queryByText(/^form:/)).not.toBeInTheDocument()
   })
 
   it('opens the New form prefilled with the slot datetime when the calendar requests an add', async () => {
     wrap(<HubDrivingPanel />)
     fireEvent.mouseDown(await screen.findByRole('tab', { name: /calendar/i }))
     fireEvent.click(await screen.findByRole('button', { name: /mock-add/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /sesiune cu client/i }))
     expect(await screen.findByText('form:2026-08-05T11:00')).toBeInTheDocument()
+  })
+
+  it('opens the Intern form prefilled with the slot datetime when the calendar requests an add', async () => {
+    wrap(<HubDrivingPanel />)
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: /calendar/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /mock-add/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /sesiune internă/i }))
+    expect(await screen.findByText('internal-form:2026-08-05T11:00')).toBeInTheDocument()
   })
 
   it('switches to the Calendar tab', async () => {
@@ -81,6 +122,7 @@ describe('HubDrivingPanel', () => {
     )
 
     fireEvent.click(await screen.findByRole('button', { name: /nou/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /sesiune cu client/i }))
     expect(screen.getByText(/^form:/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /done/i }))

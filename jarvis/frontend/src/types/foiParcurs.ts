@@ -455,6 +455,24 @@ export interface TestDriveFormPayload {
   allow_open_session?: boolean
 }
 
+// ── Internal driving-log session — POST /test-drive with is_internal:true
+// (see foi_parcurs/routes/test_drive.py's `is_internal` branch). Slim payload:
+// no client/signature/GDPR/fuel/damage — just the car, the driver, the times
+// and the starting km. Returns via the SAME existing TestDriveReturn flow. ──
+export interface InternalSessionPayload {
+  is_internal: true
+  company_id: number
+  vin: string
+  advisor_name: string
+  departure_datetime: string
+  return_datetime?: string
+  odometer_start: number
+  itinerary?: string
+  /** Override the driving-park lockout block, set after the user confirms. */
+  allow_locked?: boolean
+  allow_open_session?: boolean
+}
+
 // ── Plan (draft) Test Drive Payload — POST /test-drive with status:'PLANNED'.
 // Same shape as TestDriveFormPayload except client_signature/gdpr_consent are
 // deferred to activation (backend only requires them when status is

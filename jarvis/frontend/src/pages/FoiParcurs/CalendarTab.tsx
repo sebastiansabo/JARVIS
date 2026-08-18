@@ -12,6 +12,7 @@ import { sessionStatus, carColor } from './sessionStatus'
 import { naiveDate } from '@/lib/naiveDate'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
+import SessionTypeChooser from './SessionTypeChooser'
 
 type CalView = 'month' | 'week' | 'day'
 const VIEW_OPTIONS: readonly [CalView, string][] = [['day', 'Zi'], ['week', 'Săptămână'], ['month', 'Lună']]
@@ -55,6 +56,9 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
   const [cursor, setCursor] = useState(() => new Date())
   const [selected, setSelected] = useState<FoiContract | null>(null)
   const [carFilter, setCarFilter] = useState<string>('') // '' = all cars, else a vin
+  // Slot-add (drag/click empty grid space) opens the Client/Intern chooser
+  // before navigating, instead of always assuming a client test drive.
+  const [slotChooser, setSlotChooser] = useState<{ departure: string; ret: string } | null>(null)
   const [weekOffset, setWeekOffset] = useState(0) // rolling 7-day window: slide by ±1 day
   // Month drag-to-select a date range → multi-day session.
   const [monthDrag, setMonthDrag] = useState<{ a: string; b: string } | null>(null)
@@ -276,7 +280,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
                   onPointerUp={() => {
                     const r = monthRange
                     setMonthDrag(null)
-                    if (r && r[0] !== r[1]) navigate(`/app/foi-parcurs/test-drive?departure=${r[0]}T09:00&return=${r[1]}T18:00`)
+                    if (r && r[0] !== r[1]) setSlotChooser({ departure: `${r[0]}T09:00`, ret: `${r[1]}T18:00` })
                   }}
                   className={cn('min-h-[104px] border-b border-r p-1.5 space-y-1', !inMonth && 'bg-muted/20 text-muted-foreground', inMonth && weekend && 'bg-zinc-100 dark:bg-red-950/20', inMonthRange(key) && 'bg-primary/15')}
                 >
@@ -320,7 +324,7 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
             dayCols={dayCols}
             events={events}
             onEventClick={(id) => { const c = byId.get(id); if (c) setSelected(c) }}
-            onSlotAdd={(departure, ret) => navigate(`/app/foi-parcurs/test-drive?departure=${departure}&return=${ret}`)}
+            onSlotAdd={(departure, ret) => setSlotChooser({ departure, ret })}
             onMove={onMoveEvent}
             pxPerHour={72}
           />
@@ -336,6 +340,19 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
           onReturn={() => { const { id } = selected; setSelected(null); navigate(`/app/foi-parcurs/test-drive/${id}/return`) }}
         />
       )}
+
+      <SessionTypeChooser
+        open={!!slotChooser}
+        onOpenChange={(o) => { if (!o) setSlotChooser(null) }}
+        onPick={(type) => {
+          if (!slotChooser) return
+          const { departure, ret } = slotChooser
+          setSlotChooser(null)
+          navigate(type === 'client'
+            ? `/app/foi-parcurs/test-drive?departure=${departure}&return=${ret}`
+            : `/app/foi-parcurs/internal?departure=${departure}&return=${ret}`)
+        }}
+      />
     </div>
   )
 }

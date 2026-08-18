@@ -89,6 +89,7 @@ import {
   type FpVehicle,
 } from '@/types/foiParcurs'
 import { VehicleOdometerHistory } from './VehicleOdometerHistory'
+import SessionTypeChooser from './SessionTypeChooser'
 import { sessionStatus, type SessionStatusKey } from './sessionStatus'
 import { sessionActualKm, sessionEstimatedKm, carSpanKm } from './distance'
 import { sessionAnomalies, driveDate } from './anomalies'
@@ -129,6 +130,7 @@ export default function FoiParcurs() {
   const [activeTab, setActiveTab] = usePersistentState<'contracts' | 'parcurs' | 'stock' | 'calendar' | 'settings'>('fp.activeTab', 'stock')
   const [companyId, setCompanyId] = usePersistentState<number>('fp.companyId', 0)
   const [brand, setBrand] = usePersistentState<string>('fp.brand', '')
+  const [choosingSession, setChoosingSession] = useState(false)
 
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
@@ -166,7 +168,7 @@ export default function FoiParcurs() {
           <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Driving Hub</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => navigate('/app/foi-parcurs/test-drive')}>
+          <Button variant="outline" onClick={() => setChoosingSession(true)}>
             <FileText className="mr-1.5 h-4 w-4" />
             New Test Drive
           </Button>
@@ -195,6 +197,15 @@ export default function FoiParcurs() {
           )}
         </div>
       </div>
+
+      <SessionTypeChooser
+        open={choosingSession}
+        onOpenChange={setChoosingSession}
+        onPick={(type) => {
+          setChoosingSession(false)
+          navigate(type === 'client' ? '/app/foi-parcurs/test-drive' : '/app/foi-parcurs/internal')
+        }}
+      />
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'calendar' | 'settings')}>
         <TabsList>
