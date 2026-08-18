@@ -28,6 +28,12 @@ class FPVehicleRepository(BaseRepository):
         '(ab.active_block_end IS NOT NULL) AS blocked_now, '
         'ab.active_block_category, ab.active_block_end, '
         'nb.next_block_start, nb.next_block_end, '
+        # Live-session awareness: is the car currently OUT on a handed-over test
+        # drive? Mirrors FPRepository.get_open_session (FILLED + source='td_form',
+        # not the never-returned 'batch' comodat rows) so the Driving Park shows
+        # "Pe drum" instead of a false "Disponibil" for a car at a client now.
+        '(od.on_drive_id IS NOT NULL) AS on_drive, '
+        'od.on_drive_client, od.on_drive_until, '
         'v.created_at, v.updated_at, v.vignette_valid_until, v.itp_valid_until, '
         'v.insurance_valid_until, c.company AS company_name, '
         # Cheap doc-availability flags so clients (mobile Parc Auto) know which
@@ -57,7 +63,15 @@ class FPVehicleRepository(BaseRepository):
         '  FROM fp_vehicle_blocks b '
         '  WHERE b.vehicle_id = v.id AND b.is_active AND b.start_date > CURRENT_DATE '
         '  ORDER BY b.start_date ASC LIMIT 1'
-        ') nb ON TRUE'
+        ') nb ON TRUE '
+        'LEFT JOIN LATERAL ('
+        '  SELECT s.id AS on_drive_id, '
+        '         COALESCE(s.client_name, oc.name) AS on_drive_client, '
+        '         s.return_datetime AS on_drive_until '
+        '  FROM foi_de_parcurs s LEFT JOIN fp_clients oc ON oc.id = s.client_id '
+        "  WHERE s.vin = v.vin AND s.status = 'FILLED' AND s.source = 'td_form' "
+        '  ORDER BY s.departure_datetime ASC NULLS LAST, s.id ASC LIMIT 1'
+        ') od ON TRUE'
     )
 
     def get_all(self, active_only=True):
