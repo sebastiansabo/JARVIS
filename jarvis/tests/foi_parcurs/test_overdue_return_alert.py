@@ -162,6 +162,29 @@ def test_overdue_return_isolates_per_session_failures(wired, monkeypatch):
     assert [p['entity_id'] for p in wired['push']] == [2]
 
 
+def test_overdue_message_formats_iso_string_return_datetime():
+    """dict_from_row serializes timestamps to ISO strings, so in production
+    return_datetime reaches the message as '2026-08-12T14:00:00+00:00', not a
+    datetime. The alert must render the Bucharest wall-clock '12.08 14:00' and
+    never leak the raw ISO string with its misleading +00:00 offset."""
+    row = _row(return_datetime='2026-08-12T14:00:00+00:00')
+    text, body_html = sess_mod._overdue_return_message(row)
+    assert '12.08 14:00' in text
+    assert '+00:00' not in text
+    assert 'T14:00' not in text
+    assert '12.08 14:00' in body_html
+
+
+def test_overdue_message_frames_as_unrecorded_return():
+    """The nudge is about an unrecorded return, not a physically overdue car
+    (the return may already have happened on time). Wording must ask to record
+    the return and drop the alarming 'trebuia predat' phrasing."""
+    row = _row(return_datetime='2026-08-12T14:00:00+00:00', overdue_hours=2)
+    text, _ = sess_mod._overdue_return_message(row)
+    assert 'înregistrat' in text.lower()
+    assert 'trebuia predat' not in text
+
+
 def test_run_session_lifecycle_invokes_overdue_pass(monkeypatch):
     called = {'overdue': False}
     monkeypatch.setattr(sess_mod, 'FoiParcursRepository', lambda: FakeRepo())

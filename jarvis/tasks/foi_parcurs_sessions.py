@@ -7,6 +7,7 @@ to MISSED (which frees the vehicle in conflict checks), (3) nudge the consilier
 ago and was never recorded. All passes idempotent.
 """
 import html as _html
+from datetime import datetime as _datetime
 
 from core.utils.logging_config import get_logger
 from foi_parcurs.repositories.foi_parcurs_repository import FoiParcursRepository
@@ -16,7 +17,23 @@ from core.services.notification_service import send_email
 
 logger = get_logger('jarvis.tasks.foi_parcurs_sessions')
 
-_OVERDUE_TITLE = 'Retur întârziat — sesiune driving nepredată'
+_OVERDUE_TITLE = 'Retur neînregistrat — sesiune driving deschisă'
+
+
+def _fmt_return_when(ret):
+    """'%d.%m %H:%M' for a return_datetime that may be a datetime OR an ISO
+    string. dict_from_row serializes timestamps to ISO ('2026-08-19T17:00:00+00:00'),
+    so production never passes a datetime here. TD datetimes are Bucharest
+    wall-clock stored as-is, so we format the stored digits verbatim — never
+    convert timezone — which also drops the misleading +00:00 the ISO carries."""
+    if hasattr(ret, 'strftime'):
+        return ret.strftime('%d.%m %H:%M')
+    if isinstance(ret, str) and ret:
+        try:
+            return _datetime.fromisoformat(ret).strftime('%d.%m %H:%M')
+        except ValueError:
+            return ret
+    return ''
 
 
 def _vehicle_label(row):
@@ -33,12 +50,11 @@ def _overdue_return_message(row):
     """(plain-text body, html body) for an overdue-return alert."""
     client = (row.get('client_name') or 'Client').strip()
     veh = _vehicle_label(row)
-    ret = row.get('return_datetime')
-    when = ret.strftime('%d.%m %H:%M') if hasattr(ret, 'strftime') else str(ret or '')
+    when = _fmt_return_when(row.get('return_datetime'))
     hrs = row.get('overdue_hours')
-    late = f' (întârziat cu ~{hrs}h)' if hrs else ''
-    text = (f'Test drive {client} — {veh} trebuia predat la {when}{late}. '
-            'Înregistrează returul.')
+    late = f' (de ~{hrs}h)' if hrs else ''
+    text = (f'Test drive {client} — {veh}: returul programat la {when} nu a fost '
+            f'încă înregistrat{late}. Verifică mașina și înregistrează returul.')
     link_path = f"/sales/test-drive/{row['id']}"
     body_html = (f'<p>{_html.escape(text)}</p>'
                  f'<p><a href="https://jarvis.autoworld.ro{link_path}">Deschide sesiunea</a></p>')
