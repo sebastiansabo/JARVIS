@@ -20,6 +20,22 @@ _PHONE_RE = re.compile(r'^(\+\d{7,15}|07\d{8}|004\d{10})$')
 _contact_repo = ContactRepository()
 _event_bridge_repo = ProjectEventRepository()
 
+# CRM data often stores companies as client_type 'person' with the legal form
+# only in the name (e.g. "NELAURA COMIMPEX SRL"), so the company->contact gate
+# must recognise those too. Kept in sync with the frontend `isCompanyClientLike`
+# (jarvis/frontend/src/pages/FoiParcurs/companyClient.ts).
+_COMPANY_NAME_RE = re.compile(r'\b(s\.?r\.?l\.?(-d)?|s\.?a\.?|s\.?n\.?c\.?|s\.?c\.?[as]\.?|p\.?f\.?a\.?)\b', re.IGNORECASE)
+
+
+def _is_company_client(crm_client):
+    """True when a CRM client must be gated as a company (needs a gate-valid
+    driver contact): typed 'company' OR its name carries a RO legal form."""
+    c = crm_client or {}
+    if c.get('client_type') == 'company':
+        return True
+    name = c.get('display_name') or c.get('name') or ''
+    return bool(_COMPANY_NAME_RE.search(name))
+
 
 def _ensure_event_project(event_id, company_id, user_id):
     """Find-or-create the marketing 'event' project bridged to an HR event,
@@ -153,7 +169,7 @@ def api_submit_test_drive():
             # a live test drive can be submitted against it. Only enforced for
             # a live (FILLED) submit; a PLANNED draft defers the gate to
             # activation (api_activate_test_drive), when the driver is known.
-            if not is_draft and (crm_client or {}).get('client_type') == 'company':
+            if not is_draft and _is_company_client(crm_client):
                 driver_contact_id = data.get('driver_contact_id')
                 if not driver_contact_id:
                     return jsonify({'success': False,
@@ -356,7 +372,7 @@ def api_activate_test_drive(id):
         _client_id = contract.get('client_id')
         if _client_id:
             _crm_client = _crm_client_repo.get_by_id(_client_id)
-            if (_crm_client or {}).get('client_type') == 'company':
+            if _is_company_client(_crm_client):
                 driver_contact_id = data.get('driver_contact_id') or contract.get('driver_contact_id')
                 if not driver_contact_id:
                     return jsonify({'success': False,

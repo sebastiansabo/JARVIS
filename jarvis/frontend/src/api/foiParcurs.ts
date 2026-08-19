@@ -338,11 +338,15 @@ export const foiParcursApi = {
   // without full HR/marketing access. These two hit non-foi-parcurs blueprints
   // directly (not under BASE) and can 403 for an advisor lacking HR/marketing
   // permissions - callers must handle that gracefully.
+  // NB: the HR-event endpoints live under their blueprints' prefixes — search is
+  // on marketing_bp (/marketing) and create is on events_bp under hr_bp
+  // (/hr/events). The bare /api/... paths hit the auth audit-log route (405) or
+  // 404, so the full prefixed URLs are required.
   searchHrEvents: (q: string, limit = 20) =>
-    api.get<{ events: HrEvent[] }>(`/api/hr-events/search${qs({ q, limit })}`),
+    api.get<{ events: HrEvent[] }>(`/marketing/api/hr-events/search${qs({ q, limit })}`),
 
   createHrEvent: (data: { name: string; start_date: string; end_date: string; company?: string; brand?: string }) =>
-    api.post<{ success: boolean; id: number }>(`/api/events`, data),
+    api.post<{ success: boolean; id: number }>(`/hr/events/api/events`, data),
 
   // ── Driver-license OCR (Claude vision) ──
   driverLicenseOcr: (image: string) =>
