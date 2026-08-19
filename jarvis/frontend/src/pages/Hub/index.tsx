@@ -1636,12 +1636,12 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
                 const isOpen = expandedId === key
                 const dateStr = s.leave_date ? new Date(s.leave_date + 'T00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short' }) : '—'
                 return (
-                  <button
-                    key={key}
-                    type="button"
-                    className="w-full text-left hover:bg-muted/30 transition-colors"
-                    onClick={() => setExpandedId(isOpen ? null : key)}
-                  >
+                  <div key={key}>
+                    <button
+                      type="button"
+                      className="w-full text-left hover:bg-muted/30 transition-colors"
+                      onClick={() => setExpandedId(isOpen ? null : key)}
+                    >
                     <div className="flex items-center justify-between px-4 py-3">
                       <div>
                         <p className="text-sm font-medium">{dateStr}</p>
@@ -1659,6 +1659,7 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
                         <span className="text-sm font-semibold tabular-nums">{s.leave_hours != null ? `${s.leave_hours}h` : '—'}</span>
                       </div>
                     </div>
+                    </button>
                     {isOpen && (
                       <div className="px-4 pb-3 grid grid-cols-2 gap-2 text-[11px]" onClick={(e) => e.stopPropagation()}>
                         <div>
@@ -1747,7 +1748,7 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
                         })()}
                       </div>
                     )}
-                  </button>
+                  </div>
                 )
               })}
             </div>
