@@ -271,7 +271,9 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
 
           {showApprover && (
           <div className="space-y-1">
-            <Label>{L('f_bi_second_approver', 'Aprobatori (opțional)')}</Label>
+            {/* Label is code-owned: the field is now a multi-select, so the stale
+                Forms-managed "Al doilea aprobator" label must not override it. */}
+            <Label>Aprobatori (opțional)</Label>
             <p className="text-xs text-muted-foreground">
               Implicit merge la managerul direct. Alege unul sau mai mulți aprobatori — cererea le este trimisă tuturor și oricare poate aproba.
             </p>
