@@ -1,12 +1,17 @@
 """Approver-email body for a Bilet de Învoire: the full leave summary plus two
 one-tap action buttons (Aprobă / Respinge) that link to the signed decide endpoint.
-Rendered into `_approval_email_base` (which still adds the 'Vezi cererea' CTA)."""
+Rendered into `_approval_email_base` (which still adds the 'Vezi cererea' CTA).
+
+Summary fields (reason/notes/requester_name) are requester free-text, so every
+interpolated value is HTML-escaped to prevent injection into the approver's email.
+"""
+from html import escape
 
 
 def _row(label, value):
     return (f'<tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:bold;'
             f'border:1px solid #ddd;width:38%;">{label}</td>'
-            f'<td style="padding:8px 12px;border:1px solid #ddd;">{value}</td></tr>')
+            f'<td style="padding:8px 12px;border:1px solid #ddd;">{escape(str(value))}</td></tr>')
 
 
 def _btn(url, label, color):
@@ -28,9 +33,9 @@ def leave_approval_email_body(approver_name, summary, approve_url, reject_url):
       {_btn(reject_url, 'Respinge', '#dc2626')}
     </div>"""
     return f"""
-    <p>Buna ziua {approver_name},</p>
-    <p><strong>{s.get('requester_name', 'Un angajat')}</strong> a solicitat un bilet de învoire
-    care așteaptă decizia dumneavoastră:</p>
+    <p>Buna ziua {escape(str(approver_name))},</p>
+    <p><strong>{escape(str(s.get('requester_name', 'Un angajat')))}</strong> a solicitat un bilet de
+    învoire care așteaptă decizia dumneavoastră:</p>
     <table style="width:100%;border-collapse:collapse;margin:16px 0;">
       {_row('Angajat', s.get('requester_name', ''))}
       {_row('Data', s.get('leave_date', ''))}
