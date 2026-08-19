@@ -76,6 +76,7 @@ export interface LeaveApproval {
   leave_hours: number | null
   leave_reason: string | null
   requested_at: string | null
+  is_cancellation?: boolean
 }
 
 export interface ConversionRequest {

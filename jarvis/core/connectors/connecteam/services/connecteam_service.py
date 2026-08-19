@@ -501,7 +501,7 @@ class ConnecteamService:
             cursor.execute('''
                 SELECT r.id AS request_id, r.entity_id AS submission_id,
                        fs.answers, r.requested_at::text AS requested_at,
-                       u.name AS requester_name
+                       u.name AS requester_name, r.context_snapshot
                 FROM approval_requests r
                 JOIN form_submissions fs ON fs.id = r.entity_id
                 JOIN forms f ON f.id = fs.form_id
@@ -523,6 +523,9 @@ class ConnecteamService:
             answers = r.get('answers') or {}
             if isinstance(answers, str):
                 answers = json.loads(answers)
+            ctx = r.get('context_snapshot') or {}
+            if isinstance(ctx, str):
+                ctx = json.loads(ctx)
             out.append({
                 'request_id': r['request_id'],
                 'submission_id': r['submission_id'],
@@ -533,6 +536,7 @@ class ConnecteamService:
                 'leave_hours': _leave_hours(answers),
                 'leave_reason': answers.get('f_bi_reason'),
                 'requested_at': r.get('requested_at'),
+                'is_cancellation': bool(ctx.get('cancellation')),
             })
         return out
 
