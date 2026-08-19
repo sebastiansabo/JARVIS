@@ -10,23 +10,25 @@ def _pending_request_id(submission_id):
     from core.approvals.repositories.request_repo import RequestRepository
     return RequestRepository().get_pending_for_entity('form_submission', submission_id)
 
-def _engine_cancel(request_id, user_id):
+def _engine_cancel(request_id, user_id, reason=None):
     from core.approvals.engine import ApprovalEngine
-    return ApprovalEngine().cancel(request_id, user_id, reason='withdrawn')
+    return ApprovalEngine().cancel(request_id, user_id, reason=(reason or 'withdrawn'))
 
 def _set_status(submission_id, status):
     from forms.repositories import SubmissionRepository
     return SubmissionRepository().update_status(submission_id, status)
 
-def _open_cancellation_approval(sub, user_id):
+def _open_cancellation_approval(sub, user_id, reason=None):
     """Reuse the form_submission flow with a context.cancellation flag; the manager
-    is the same approver that granted the leave."""
+    is the same approver that granted the leave. The requester's motive is stored on
+    the context so the manager sees why the cancellation is requested."""
     from core.approvals.engine import ApprovalEngine
     from accounting.vouchers.services.voucher_service import VoucherService
     approver = VoucherService().resolve_approver(user_id, sub.get('company_id'), None)
     approver_id = approver['id'] if approver else None
     ctx = {
         'cancellation': True,
+        'cancellation_reason': (reason or '').strip(),
         'title': f'Anulare bilet de invoire #{sub["id"]}',
         'approver_user_id': approver_id,
         'stakeholder_approver_ids': [approver_id] if approver_id else [],
@@ -35,7 +37,7 @@ def _open_cancellation_approval(sub, user_id):
     ApprovalEngine().submit(entity_type='form_submission', entity_id=sub['id'],
                             context=ctx, requested_by=user_id)
 
-def cancel_leave_permit(submission_id, user_id):
+def cancel_leave_permit(submission_id, user_id, reason=None):
     sub = _get_submission(submission_id)
     if not sub:
         raise ValueError('Submission not found')
@@ -45,10 +47,10 @@ def cancel_leave_permit(submission_id, user_id):
         raise ValueError(f"Cannot cancel a request in state {sub.get('status')}")
     pending = _pending_request_id(submission_id)
     if pending:
-        _engine_cancel(pending, user_id)            # self-withdraw
+        _engine_cancel(pending, user_id, reason)        # self-withdraw
         return {'status': 'cancelled'}
     if sub.get('status') == 'approved':
-        _open_cancellation_approval(sub, user_id)   # needs manager approval
+        _open_cancellation_approval(sub, user_id, reason)   # needs manager approval
         _set_status(submission_id, 'cancellation_pending')
         return {'status': 'cancellation_pending'}
     raise ValueError(f"Cannot cancel a request in state {sub.get('status')}")

@@ -14,18 +14,21 @@ def test_cancel_pending_withdraws(monkeypatch):
     monkeypatch.setattr(lpa, '_get_submission', lambda sid: _sub(status='flagged'))
     monkeypatch.setattr(lpa, '_pending_request_id', lambda sid: 100)
     called = {}
-    monkeypatch.setattr(lpa, '_engine_cancel', lambda rid, uid: called.setdefault('cancel', (rid, uid)))
-    out = lpa.cancel_leave_permit(42, user_id=9)
-    assert out == {'status': 'cancelled'} and called['cancel'] == (100, 9)
+    monkeypatch.setattr(lpa, '_engine_cancel',
+                        lambda rid, uid, reason=None: called.setdefault('cancel', (rid, uid, reason)))
+    out = lpa.cancel_leave_permit(42, user_id=9, reason='m-am răzgândit')
+    assert out == {'status': 'cancelled'} and called['cancel'] == (100, 9, 'm-am răzgândit')
 
 def test_cancel_approved_opens_cancellation(monkeypatch):
     monkeypatch.setattr(lpa, '_get_submission', lambda sid: _sub(status='approved'))
     monkeypatch.setattr(lpa, '_pending_request_id', lambda sid: None)
     opened = {}
-    monkeypatch.setattr(lpa, '_open_cancellation_approval', lambda sub, uid: opened.setdefault('open', sub['id']))
+    monkeypatch.setattr(lpa, '_open_cancellation_approval',
+                        lambda sub, uid, reason=None: opened.setdefault('open', (sub['id'], reason)))
     monkeypatch.setattr(lpa, '_set_status', lambda sid, st: opened.setdefault('status', (sid, st)))
-    out = lpa.cancel_leave_permit(42, user_id=9)
-    assert out == {'status': 'cancellation_pending'} and opened['status'] == (42, 'cancellation_pending')
+    out = lpa.cancel_leave_permit(42, user_id=9, reason='nu mai am nevoie')
+    assert out == {'status': 'cancellation_pending'}
+    assert opened['open'] == (42, 'nu mai am nevoie') and opened['status'] == (42, 'cancellation_pending')
 
 def test_cancel_already_cancelled_raises(monkeypatch):
     monkeypatch.setattr(lpa, '_get_submission', lambda sid: _sub(status='cancelled'))

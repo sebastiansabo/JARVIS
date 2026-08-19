@@ -537,6 +537,7 @@ class ConnecteamService:
                 'leave_reason': answers.get('f_bi_reason'),
                 'requested_at': r.get('requested_at'),
                 'is_cancellation': bool(ctx.get('cancellation')),
+                'cancellation_reason': ctx.get('cancellation_reason') or None,
             })
         return out
 

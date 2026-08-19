@@ -241,10 +241,14 @@ def create_leave_permit():
 @connecteam_bp.route('/api/submissions/leave-permit/<int:submission_id>/cancel', methods=['POST'])
 @api_login_required
 def cancel_leave_permit_route(submission_id):
-    """Cancel (or withdraw) the current user's own leave-permit submission."""
+    """Cancel (or withdraw) the current user's own leave-permit submission.
+    A motive is required (shown to the manager on a cancellation request)."""
     from core.connectors.connecteam.services import leave_permit_actions as lpa
+    reason = ((request.get_json(silent=True) or {}).get('reason') or '').strip()
+    if not reason:
+        return jsonify({'success': False, 'error': 'Motivul este obligatoriu.'}), 400
     try:
-        data = lpa.cancel_leave_permit(submission_id, current_user.id)
+        data = lpa.cancel_leave_permit(submission_id, current_user.id, reason=reason)
         return jsonify({'success': True, 'data': data})
     except PermissionError:
         return jsonify({'success': False, 'error': 'Not your leave request'}), 403

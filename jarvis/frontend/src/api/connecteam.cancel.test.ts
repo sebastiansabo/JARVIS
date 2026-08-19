@@ -12,9 +12,10 @@ import { api } from './client'
 import { connecteamApi } from './connecteam'
 
 describe('leave cancel/modify api', () => {
-  it('cancel hits the cancel endpoint', async () => {
-    await connecteamApi.cancelLeavePermit(42)
-    expect(api.post).toHaveBeenCalledWith('/connecteam/api/submissions/leave-permit/42/cancel')
+  it('cancel hits the cancel endpoint with the motive', async () => {
+    await connecteamApi.cancelLeavePermit(42, 'plec la medic')
+    expect(api.post).toHaveBeenCalledWith(
+      '/connecteam/api/submissions/leave-permit/42/cancel', { reason: 'plec la medic' })
   })
 
   it('update PATCHes answers', async () => {

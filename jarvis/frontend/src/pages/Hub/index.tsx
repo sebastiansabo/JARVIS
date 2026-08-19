@@ -37,6 +37,7 @@ import {
 import { SincronTimesheetView } from '@/components/shared/SincronTimesheetView'
 import { PunchCard } from '@/components/shared/PunchCard'
 import { InvoireForm } from '@/components/forms/InvoireForm'
+import { CancelLeaveDialog } from '@/pages/Hub/CancelLeaveDialog'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -1596,10 +1597,12 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
   // (approved, needs manager sign-off) — the backend endpoint is the same;
   // it decides whether to cancel outright or open an approval based on the
   // submission's current status.
+  const [cancelTarget, setCancelTarget] = useState<{ id: number; approved: boolean } | null>(null)
   const cancelMut = useMutation({
-    mutationFn: (id: number) => connecteamApi.cancelLeavePermit(id),
+    mutationFn: ({ id, reason }: { id: number; reason: string }) => connecteamApi.cancelLeavePermit(id, reason),
     onSuccess: (res) => {
       toast.success(res.data.status === 'cancelled' ? 'Cerere anulată' : 'Anulare trimisă spre aprobare')
+      setCancelTarget(null)
       queryClient.invalidateQueries({ queryKey: ['hub', 'leave-permits'] })
     },
     onError: () => toast.error('Acțiunea a eșuat.'),
@@ -1731,9 +1734,7 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
                                   size="sm"
                                   className="h-8 flex-1 text-xs border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-400"
                                   disabled={cancelMut.isPending}
-                                  onClick={() => {
-                                    if (window.confirm('Sigur anulezi această cerere de învoire?')) cancelMut.mutate(s.id)
-                                  }}
+                                  onClick={() => setCancelTarget({ id: s.id, approved: false })}
                                 >
                                   Anulează
                                 </Button>
@@ -1745,9 +1746,7 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
                                   size="sm"
                                   className="h-8 flex-1 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-400"
                                   disabled={cancelMut.isPending}
-                                  onClick={() => {
-                                    if (window.confirm('Trimiți o cerere de anulare a acestei învoiri, spre aprobare?')) cancelMut.mutate(s.id)
-                                  }}
+                                  onClick={() => setCancelTarget({ id: s.id, approved: true })}
                                 >
                                   Cere anulare
                                 </Button>
@@ -1764,6 +1763,14 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
           </CardContent>
         </Card>
       )}
+
+      <CancelLeaveDialog
+        open={!!cancelTarget}
+        approved={!!cancelTarget?.approved}
+        pending={cancelMut.isPending}
+        onOpenChange={(v) => { if (!v) setCancelTarget(null) }}
+        onConfirm={(reason) => { if (cancelTarget) cancelMut.mutate({ id: cancelTarget.id, reason }) }}
+      />
 
       {showForm && (
         <InvoireForm
@@ -1877,6 +1884,11 @@ function HubLeaveApprovalsContent() {
                     <p className="text-sm text-muted-foreground">
                       {dateStr} · {it.leave_start_time?.slice(0, 5) || '—'}–{it.leave_end_time?.slice(0, 5) || '—'} · Motiv: {it.leave_reason || 'Învoire'}
                     </p>
+                    {it.is_cancellation && it.cancellation_reason && (
+                      <p className="mt-0.5 text-sm font-medium text-amber-700 dark:text-amber-400">
+                        Motiv anulare: {it.cancellation_reason}
+                      </p>
+                    )}
                   </div>
                   <span className="text-base font-semibold tabular-nums shrink-0">{it.leave_hours != null ? `${it.leave_hours}h` : ''}</span>
                 </div>
