@@ -5,6 +5,7 @@ import { Bell, CheckCircle2, XCircle, RotateCcw, ClipboardCheck, FileText, Info,
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { resolveNotificationRoute } from '@/lib/notificationRoute'
 import { notificationsApi } from '@/api/notifications'
 import type { InAppNotification } from '@/types/notifications'
 
@@ -83,9 +84,10 @@ export function NotificationBell() {
     if (!n.is_read) {
       markReadMutation.mutate(n.id)
     }
-    if (n.link) {
+    const target = resolveNotificationRoute(n.link)
+    if (target) {
       setOpen(false)
-      navigate(n.link)
+      navigate(target)
     }
   }
 
