@@ -1,14 +1,16 @@
 """Test that cancelled/rejected leaves are excluded from absence counting."""
 import pathlib
 
-SRC = pathlib.Path('jarvis/hr/events/repositories/employee_overview_repository.py').read_text()
+# cwd-independent: from jarvis/tests/hr/<file>, parents[2] == jarvis/
+SRC = (pathlib.Path(__file__).resolve().parents[2]
+       / 'hr' / 'events' / 'repositories' / 'employee_overview_repository.py').read_text()
 
 
 def test_both_form_submissions_leave_reads_exclude_cancelled_and_rejected():
-    """There are two form_submissions (fs) reads joined to the bilet-de-invoire form;
+    """There are three form_submissions (fs) reads joined to the bilet-de-invoire form;
     each must exclude cancelled+rejected (mirroring the sibling connecteam check).
     """
-    assert SRC.count("fs.status NOT IN ('cancelled', 'rejected')") >= 2
+    assert SRC.count("fs.status NOT IN ('cancelled', 'rejected')") >= 3
 
 
 def test_cancellation_pending_still_counts_as_absence():
