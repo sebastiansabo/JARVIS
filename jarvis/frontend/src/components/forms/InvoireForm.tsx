@@ -43,8 +43,12 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
   const L = (id: string, fallback: string) => sched?.labels?.[id] || fallback
   const P = (id: string, fallback: string) => sched?.placeholders?.[id] ?? fallback
   const showDestination = sched?.visible?.f_bi_destination ?? false
-  const showNotes = sched?.visible?.f_bi_notes ?? true
-  const showApprover = sched?.visible?.f_bi_second_approver ?? true
+  // Second approver + notes are standard fields — always shown. A Forms schema that
+  // omits them must NOT hide them: the editor auto-generates field ids, so a removed
+  // field can't be re-added with the exact id the module looks for (one-way gating
+  // that broke prod, where these were absent). Only Destinația stays opt-in.
+  const showNotes = true
+  const showApprover = true
   const termsText = sched?.terms_text || 'Declar că îmi asum responsabilitatea pentru orice eventual eveniment neplăcut care ar putea surveni în legătură cu mine, în această perioadă în care sunt învoit / învoită 🔒'
   const startSlots = useMemo(() => sched ? buildStartSlots(sched.schedule_start, sched.schedule_end) : [], [sched])
   const durationOptions = useMemo(
@@ -62,9 +66,16 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
 
   // Preload the user's saved profile signature.
   const { data: sigRes } = useQuery({ queryKey: ['profile-signature'], queryFn: () => profileApi.getSignature() })
+  // Preload the saved profile signature exactly ONCE — otherwise clearing it via
+  // "Semnează din nou" would immediately re-populate it (the effect would re-fire
+  // because `signature` became empty again), so the canvas never shows.
+  const preloadedSig = useRef(false)
   useEffect(() => {
-    if (sigRes?.signature && !signature) setSignature(sigRes.signature)
-  }, [sigRes, signature])
+    if (!preloadedSig.current && sigRes?.signature) {
+      preloadedSig.current = true
+      setSignature(sigRes.signature)
+    }
+  }, [sigRes])
 
   const { data: approversRes } = useQuery({
     queryKey: ['leave-approvers'],
