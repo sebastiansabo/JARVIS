@@ -68,6 +68,7 @@ import {
   type DamageState,
 } from './testDriveDamage'
 import { ConflictDialog } from './ConflictDialog'
+import { isCompanyClientLike } from './companyClient'
 
 const SignatureCanvas = lazy(() => import('@/components/shared/SignatureCanvas'))
 
@@ -377,7 +378,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // with the SAME six fields so the client-side gate never disagrees with
   // the server. A PLANNED draft is NOT gated (mirrors the server: the gate
   // only applies to a live FILLED submit and to activation).
-  const isCompanyClient = selectedClient?.client_type === 'company'
+  const isCompanyClient = isCompanyClientLike(selectedClient)
   // retry:false + error surfaced inline mirrors the HR-event search query
   // below (eventSearchForbidden) — the contacts route is now login-only
   // (see crm/routes/clients.py) but a 403 can still happen for other

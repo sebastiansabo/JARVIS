@@ -31,11 +31,12 @@ class FakeFp:
 
 
 class FakeCrm:
-    def __init__(self, client_type):
+    def __init__(self, client_type, name='ACME SRL'):
         self.client_type = client_type
+        self.name = name
 
     def get_by_id(self, cid):
-        return {'id': cid, 'display_name': 'ACME SRL', 'phone': '072',
+        return {'id': cid, 'display_name': self.name, 'phone': '072',
                 'email': 'acme@example.ro', 'client_type': self.client_type}
 
     def execute(self, *a, **k):
@@ -50,10 +51,10 @@ class FakeContacts:
         return self.contact
 
 
-def make_app(monkeypatch, client_type, contact):
+def make_app(monkeypatch, client_type, contact, name='ACME SRL'):
     fake_fp = FakeFp()
     monkeypatch.setattr(td_mod, '_fp_repo', fake_fp)
-    monkeypatch.setattr(td_mod, '_crm_client_repo', FakeCrm(client_type))
+    monkeypatch.setattr(td_mod, '_crm_client_repo', FakeCrm(client_type, name))
     monkeypatch.setattr(td_mod, '_contact_repo', FakeContacts(contact))
     app = Flask(__name__)
     app.register_blueprint(foi_parcurs_bp)
@@ -132,13 +133,24 @@ def test_company_submit_falls_back_to_contact_license_photo_number(monkeypatch):
 
 
 def test_person_client_needs_no_contact(monkeypatch):
-    c = make_app(monkeypatch, 'person', None)
+    c = make_app(monkeypatch, 'person', None, name='Ion Popescu')
     r = c.post('/api/foi-parcurs/test-drive', json=dict(BASE_PAYLOAD))
     assert r.status_code == 200, r.get_json()
     contract = r.get_json()['contract']
     assert contract['driver_contact_id'] is None
-    assert contract['driver_name'] == 'ACME SRL'
+    assert contract['driver_name'] == 'Ion Popescu'
     assert contract['driver_phone'] == '072'
+
+
+def test_person_typed_but_company_named_is_gated(monkeypatch):
+    """The NELAURA regression: CRM stores many companies as client_type
+    'person' with the legal form only in the name. Such a client must still be
+    gated on a live submit — otherwise a company session slips through with no
+    driver contact (the prod bug this fixes)."""
+    c = make_app(monkeypatch, 'person', None, name='NELAURA COMIMPEX SRL')
+    r = c.post('/api/foi-parcurs/test-drive', json=dict(BASE_PAYLOAD))
+    assert r.status_code == 400
+    assert 'contact' in r.get_json()['error'].lower() or 'persoan' in r.get_json()['error'].lower()
 
 
 def test_company_contact_mismatched_client_is_rejected(monkeypatch):
@@ -204,10 +216,10 @@ class FakeFpActivate:
         return None
 
 
-def make_activate_app(monkeypatch, client_type, contact, session):
+def make_activate_app(monkeypatch, client_type, contact, session, name='ACME SRL'):
     fake_fp = FakeFpActivate(session)
     monkeypatch.setattr(td_mod, '_fp_repo', fake_fp)
-    monkeypatch.setattr(td_mod, '_crm_client_repo', FakeCrm(client_type))
+    monkeypatch.setattr(td_mod, '_crm_client_repo', FakeCrm(client_type, name))
     monkeypatch.setattr(td_mod, '_contact_repo', FakeContacts(contact))
     # Keep the activate path hermetic: no lock, no open-session block, no
     # start-of-session email, and stub the PDF generation.
@@ -276,8 +288,32 @@ def test_activate_company_uses_contact_stored_on_session(monkeypatch):
 
 def test_activate_person_client_needs_no_contact(monkeypatch):
     session = {**PLANNED_COMPANY_SESSION, 'client_id': 5}
-    c = make_activate_app(monkeypatch, 'person', None, session)
+    c = make_activate_app(monkeypatch, 'person', None, session, name='Ion Popescu')
     r = c.put('/api/foi-parcurs/test-drive/101/activate', json=dict(ACTIVATE_BODY))
     assert r.status_code == 200, r.get_json()
     # No driver snapshot added for a person client (already carried from draft).
     assert 'driver_contact_id' not in c._fake_fp.activation
+
+
+def test_activate_person_typed_but_company_named_is_gated(monkeypatch):
+    """Activation mirrors the submit gate: a company-named client (typed
+    'person') activating a PLANNED draft with no contact must be rejected."""
+    c = make_activate_app(monkeypatch, 'person', None, PLANNED_COMPANY_SESSION,
+                          name='NELAURA COMIMPEX SRL')
+    r = c.put('/api/foi-parcurs/test-drive/101/activate', json=dict(ACTIVATE_BODY))
+    assert r.status_code == 400
+    assert 'contact' in r.get_json()['error'].lower() or 'persoan' in r.get_json()['error'].lower()
+    assert c._fake_fp.activation is None
+
+
+def test_is_company_client_name_heuristic():
+    """A CRM client typed 'person' but carrying a RO legal form in its name must
+    still be treated as a company (the NELAURA COMIMPEX SRL case)."""
+    from foi_parcurs.routes.test_drive import _is_company_client
+    assert _is_company_client({'client_type': 'company'}) is True
+    assert _is_company_client({'client_type': 'person', 'display_name': 'NELAURA COMIMPEX SRL J12/978/1994'}) is True
+    assert _is_company_client({'client_type': 'person', 'display_name': 'DACIA SA'}) is True
+    assert _is_company_client({'client_type': 'person', 'display_name': 'Ionescu PFA'}) is True
+    assert _is_company_client({'client_type': 'person', 'display_name': 'Ion Popescu'}) is False
+    assert _is_company_client({'client_type': 'person', 'name': 'Maria Vasilescu'}) is False
+    assert _is_company_client(None) is False
