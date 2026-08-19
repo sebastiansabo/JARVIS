@@ -445,6 +445,17 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     retry: false,
   })
   const eventResults = eventSearchData?.events ?? []
+  // Only allow picking events that haven't finished yet — no past events. Dates
+  // are ISO YYYY-MM-DD (DB date column) so a lexicographic compare against
+  // today (local) is safe; an event with no dates at all stays selectable.
+  const todayISO = (() => {
+    const n = new Date()
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+  })()
+  const upcomingEvents = eventResults.filter((e) => {
+    const d = e.end_date || e.start_date
+    return !d || d >= todayISO
+  })
   const eventSearchForbidden = (eventSearchErr as any)?.status === 403
   // Any non-403 search failure (500/network) — distinct from an empty result
   // set, so we don't mislabel a failed search as "no events found".
@@ -1048,12 +1059,12 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                 {eventSearchFailed && (
                   <p className="text-xs text-destructive">Căutarea a eșuat.</p>
                 )}
-                {!eventSearchForbidden && !eventSearchFailed && debouncedEventSearch.trim().length >= 2 && !isSearchingEvents && eventResults.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Niciun eveniment găsit.</p>
+                {!eventSearchForbidden && !eventSearchFailed && debouncedEventSearch.trim().length >= 2 && !isSearchingEvents && upcomingEvents.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Niciun eveniment viitor găsit.</p>
                 )}
-                {eventResults.length > 0 && (
+                {upcomingEvents.length > 0 && (
                   <div className="border rounded-md divide-y max-h-60 overflow-y-auto">
-                    {eventResults.map((e) => (
+                    {upcomingEvents.map((e) => (
                       <button
                         key={e.id}
                         type="button"
@@ -1206,36 +1217,6 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
         </CardContent>
       </Card>
 
-      {/* ── Consilier & Semnături ── */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2"><PenLine className="h-4 w-4" />Consilier & Semnături</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-1.5">
-            <Label className="text-xs">Nume consilier *</Label>
-            <Input value={advisorName} onChange={(e) => setAdvisorName(e.target.value)} placeholder="Numele consilierului" className={invalidRingFull(missing.advisor)} />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">Semnătură client *</Label>
-            {clientSignature ? (
-              <div className="space-y-2">
-                <div className="border rounded-lg p-2 bg-white"><img src={clientSignature} alt="Client signature" className="max-h-[100px] mx-auto" /></div>
-                <Button type="button" variant="outline" size="sm" onClick={() => setClientSignature('')}>Resemnează</Button>
-              </div>
-            ) : (
-              <Suspense fallback={<Skeleton className="h-[200px] w-full" />}>
-                <SignatureCanvas onSave={setClientSignature} onClear={() => setClientSignature('')} width={500} height={200} />
-              </Suspense>
-            )}
-            {errFull(missing.clientSig) && <p className="text-xs text-destructive">Semnătura clientului este obligatorie.</p>}
-          </div>
-
-          <AdvisorSignatureField value={advisorSignature} onChange={setAdvisorSignature} />
-        </CardContent>
-      </Card>
-
       {/* ── Raport Avarii (La Predare) — collapsible ── */}
       <Card>
         <CardHeader className="pb-3">
@@ -1285,6 +1266,36 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
               )}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* ── Consilier & Semnături — last, signed after reviewing everything above ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2"><PenLine className="h-4 w-4" />Consilier & Semnături</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Nume consilier *</Label>
+            <Input value={advisorName} onChange={(e) => setAdvisorName(e.target.value)} placeholder="Numele consilierului" className={invalidRingFull(missing.advisor)} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Semnătură client *</Label>
+            {clientSignature ? (
+              <div className="space-y-2">
+                <div className="border rounded-lg p-2 bg-white"><img src={clientSignature} alt="Client signature" className="max-h-[100px] mx-auto" /></div>
+                <Button type="button" variant="outline" size="sm" onClick={() => setClientSignature('')}>Resemnează</Button>
+              </div>
+            ) : (
+              <Suspense fallback={<Skeleton className="h-[200px] w-full" />}>
+                <SignatureCanvas onSave={setClientSignature} onClear={() => setClientSignature('')} width={500} height={200} />
+              </Suspense>
+            )}
+            {errFull(missing.clientSig) && <p className="text-xs text-destructive">Semnătura clientului este obligatorie.</p>}
+          </div>
+
+          <AdvisorSignatureField value={advisorSignature} onChange={setAdvisorSignature} />
         </CardContent>
       </Card>
 
