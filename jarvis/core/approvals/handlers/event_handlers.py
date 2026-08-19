@@ -115,14 +115,17 @@ def _on_approved(payload):
                     f'{_APP_BASE_URL}{link}', 'Vezi proiectul'),
             )
 
-    # Notify the requester's direct manager (scheduler) so they can update the
-    # schedule — unless that manager is the one who just approved it.
+    # form_submission: route cancellation-approval requests separately from
+    # normal submission approvals.
     if entity_type == 'form_submission' and entity_id:
-        _maybe_notify_leave_scheduler(request_id, entity_id, ctx)
-
-    # Auto-update form_submission status to 'approved'
-    if entity_type == 'form_submission' and entity_id:
-        entity_form.handle_approved(entity_id, ctx)
+        if ctx.get('cancellation'):
+            entity_form.handle_cancellation_approved(entity_id, ctx)
+        else:
+            # Notify the requester's direct manager (scheduler) so they can update
+            # the schedule — unless that manager is the one who just approved it.
+            _maybe_notify_leave_scheduler(request_id, entity_id, ctx)
+            # Auto-update form_submission status to 'approved'
+            entity_form.handle_approved(entity_id, ctx)
 
     # Auto-update invoice status to 'approved'
     if entity_type == 'invoice' and entity_id:
@@ -267,9 +270,13 @@ def _on_rejected(payload):
                     f'{_APP_BASE_URL}{link}', 'Vezi proiectul'),
             )
 
-    # Update form_submission status to rejected
+    # form_submission: route cancellation-approval requests separately from
+    # normal submission rejections.
     if entity_type == 'form_submission' and entity_id:
-        entity_form.handle_rejected(entity_id, ctx, note)
+        if ctx.get('cancellation'):
+            entity_form.handle_cancellation_rejected(entity_id, ctx)
+        else:
+            entity_form.handle_rejected(entity_id, ctx, note)
 
     # Mark carpark pending price changes as rejected
     if entity_type == 'carpark_price_change' and entity_id:
