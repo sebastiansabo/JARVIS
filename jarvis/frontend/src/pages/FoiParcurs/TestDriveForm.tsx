@@ -491,6 +491,12 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     // A company client's license comes from its chosen contact (gated below
     // via `contact`), not the standalone photo upload — never double-block on it.
     license: isCompanyClient ? false : !driverLicensePhoto,
+    // Person-client completeness gate: the person IS the driver, so a live
+    // session needs their phone on file (the license photo is gated by
+    // `license` above). A company gets phone from its contact; internal
+    // QuickSessions have no client. Only flags once a person is selected —
+    // NOT part of draftValid (a PLANNED draft defers this to activation).
+    phone: !!selectedClient && !isCompanyClient && !(selectedClient.phone || '').trim(),
     // Company-client hard gate (Task 11): a company never drives itself — a
     // gate-valid contact person is required. Mirrors the backend exactly;
     // NOT part of draftValid (a PLANNED draft defers this to activation).
@@ -522,7 +528,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const activateValid = !(
     missing.company || missing.vehicle || missing.client || missing.departure ||
     missing.odometer || missing.estimated || missing.fuel || missing.advisor || missing.returnInvalid ||
-    missing.clientSig || missing.conditions || missing.contact
+    missing.clientSig || missing.conditions || missing.contact || missing.phone
   )
   const err = (bad: boolean) => attempted && bad          // plan-relevant fields (any attempt)
   const errFull = (bad: boolean) => submitAttempt && bad  // activation-only fields (submit/activate only)
@@ -921,6 +927,13 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                       Firma necesită o persoană de contact cu nume, email, telefon, poză permis, serie și număr complete.
                     </p>
                   )}
+                </div>
+              )}
+              {!isCompanyClient && missing.phone && (
+                <div className={cn('rounded-md border bg-muted/40 p-3', errFull(missing.phone) && 'ring-2 ring-destructive')}>
+                  <p className="text-xs text-destructive">
+                    ⚠ Clientul nu are număr de telefon. Adaugă-l în fișa CRM înainte de a porni cursa.
+                  </p>
                 </div>
               )}
             </div>

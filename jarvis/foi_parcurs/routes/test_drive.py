@@ -179,6 +179,17 @@ def api_submit_test_drive():
                         or not contact_gate_valid(driver_contact)):
                     return jsonify({'success': False,
                                     'error': 'Persoana de contact este incompletă sau invalidă.'}), 400
+            elif not is_draft:
+                # Person-client completeness gate: the person IS the driver, so a
+                # live (FILLED) submit needs the driving-license photo + a phone
+                # on file. Mirrors the frontend missing.license/missing.phone; a
+                # PLANNED draft defers this to activation.
+                if not str(data.get('driver_license_photo') or '').strip():
+                    return jsonify({'success': False,
+                                    'error': 'Permisul de conducere (poză) este obligatoriu.'}), 400
+                if not str(client_phone or '').strip():
+                    return jsonify({'success': False,
+                                    'error': 'Clientul trebuie să aibă un număr de telefon.'}), 400
 
         # Structured vehicle-condition report captured at handover (optional).
         departure_damage = data.get('departure_damage') or []
@@ -392,6 +403,13 @@ def api_activate_test_drive(id):
                     'driver_license_number': driver_contact.get('driver_license_number'),
                     'driver_license_expiry': driver_contact.get('driver_license_expiry'),
                 }
+            elif _crm_client:
+                # Person client: the person is the driver — require a phone on
+                # file before the car goes out (mirrors the submit gate). The
+                # license photo captured at submit already lives on the contract.
+                if not str(_crm_client.get('phone') or '').strip():
+                    return jsonify({'success': False,
+                                    'error': 'Clientul trebuie să aibă un număr de telefon.'}), 400
 
         tank = int(data.get('fuel_tank_capacity_liters', contract.get('fuel_tank_capacity_liters') or 0))
         start_level = data.get('fuel_gauge_start_level') or contract.get('fuel_gauge_start_level') or '1'
