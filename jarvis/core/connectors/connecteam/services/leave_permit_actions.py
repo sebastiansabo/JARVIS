@@ -41,6 +41,8 @@ def cancel_leave_permit(submission_id, user_id):
         raise ValueError('Submission not found')
     if sub.get('respondent_user_id') != user_id:
         raise PermissionError('Not your leave request')
+    if sub.get('status') in ('cancelled', 'rejected', 'cancellation_pending'):
+        raise ValueError(f"Cannot cancel a request in state {sub.get('status')}")
     pending = _pending_request_id(submission_id)
     if pending:
         _engine_cancel(pending, user_id)            # self-withdraw
