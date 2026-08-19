@@ -4,7 +4,7 @@ import core.connectors.connecteam.services.leave_schedule as ls
 def test_default_when_no_sincron(monkeypatch):
     monkeypatch.setattr(ls, '_fetch_day_schedule', lambda uid, d: None)
     out = ls.get_leave_schedule(1, '2026-08-18')
-    assert out == {'schedule_start': '09:00', 'schedule_end': '18:00',
+    assert out == {'schedule_start': '07:00', 'schedule_end': '18:00',
                    'day_cap_hours': 7.0, 'lunch_break_minutes': 60, 'source': 'default'}
 
 

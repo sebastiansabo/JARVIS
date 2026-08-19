@@ -8,7 +8,7 @@ from datetime import date as _date
 
 logger = logging.getLogger('jarvis.connecteam.leave_schedule')
 
-DEFAULT_START = '09:00'
+DEFAULT_START = '07:00'
 DEFAULT_END = '18:00'
 DEFAULT_CAP = 7.0
 

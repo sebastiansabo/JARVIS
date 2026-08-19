@@ -10,9 +10,17 @@ function toHM(mins: number): string {
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
 }
 
-export function buildStartSlots(startHM: string, endHM: string): string[] {
-  const s = parseHM(startHM), e = parseHM(endHM)
-  if (s === null || e === null) return []
+// 30-min start slots from startHM to endHM−30. When minHM is given (e.g. "now"
+// for today), slots earlier than minHM are dropped — the first slot is the next
+// :00/:30 at or after minHM.
+export function buildStartSlots(startHM: string, endHM: string, minHM?: string): string[] {
+  const s0 = parseHM(startHM), e = parseHM(endHM)
+  if (s0 === null || e === null) return []
+  let s = s0
+  if (minHM) {
+    const m = parseHM(minHM)
+    if (m !== null) s = Math.max(s, Math.ceil(m / 30) * 30)
+  }
   const out: string[] = []
   for (let t = s; t <= e - 30; t += 30) out.push(toHM(t))
   return out
