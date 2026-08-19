@@ -288,6 +288,16 @@ def _on_rejected(payload):
         entity_voucher.handle_rejected(entity_id, comment=note)
 
 
+def _on_cancelled(payload):
+    request_id = payload.get('request_id')
+    entity_type = payload.get('entity_type', '')
+    entity_id = payload.get('entity_id')
+    req = _get_request(request_id)
+    ctx = (req or {}).get('context_snapshot') or {}
+    if entity_type == 'form_submission' and entity_id:
+        entity_form.handle_cancelled(entity_id, ctx)
+
+
 def _on_returned(payload):
     """Notify requester their request was returned for changes."""
     request_id = payload.get('request_id')
