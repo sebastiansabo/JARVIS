@@ -310,7 +310,7 @@ def create_schema_sincron(conn, cursor):
 
     for stmt in [
         """ALTER TABLE sincron_org_nodes ADD CONSTRAINT chk_sincron_org_node_type
-           CHECK (node_type IN ('department', 'role', 'team'))""",
+           CHECK (node_type IN ('department', 'role', 'team', 'unallocated'))""",
         """ALTER TABLE sincron_org_nodes ADD CONSTRAINT chk_sincron_org_level
            CHECK (level BETWEEN 1 AND 6)""",
     ]:

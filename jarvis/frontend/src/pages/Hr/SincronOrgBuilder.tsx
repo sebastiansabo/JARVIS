@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Pencil, ChevronRight, ChevronDown, Users, Sprout, Crown } from 'lucide-react'
+import { Plus, Trash2, Pencil, ChevronRight, ChevronDown, Users, Sprout, Crown, FolderInput } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -77,6 +77,7 @@ const nodeTypeLabels: Record<string, string> = {
   department: 'Dept',
   role: 'Role',
   team: 'Team',
+  unallocated: 'Nealocat',
 }
 
 /* ──── Sincron employee type (from /sincron/api/employees) ──── */
@@ -102,6 +103,7 @@ export default function SincronOrgBuilder() {
   const [addNodeParent, setAddNodeParent] = useState<{ companyId: number; parentId?: number; level: number } | null>(null)
   const [editNode, setEditNode] = useState<SincronOrgNode | null>(null)
   const [deleteNodeId, setDeleteNodeId] = useState<number | null>(null)
+  const [moveNode, setMoveNode] = useState<TreeNode | null>(null)
 
   // Data queries — only Sincron companies (not all JARVIS companies)
   const { data: companiesRes } = useQuery({
@@ -194,6 +196,13 @@ export default function SincronOrgBuilder() {
     onError: () => toast.error('Failed to delete node'),
   })
 
+  const moveNodeMut = useMutation({
+    mutationFn: ({ id, parentId }: { id: number; parentId: number | null }) =>
+      organizationApi.updateSincronOrgNode(id, { parent_id: parentId }),
+    onSuccess: () => { invalidate(); setMoveNode(null); toast.success('Node mutat') },
+    onError: (e: any) => toast.error(e?.response?.data?.error || 'Failed to move node'),
+  })
+
   const setMembersMut = useMutation({
     mutationFn: ({ nodeId, role, memberKeys }: { nodeId: number; role: 'responsable' | 'member'; memberKeys: { sincron_employee_id: string; company_name: string }[] }) =>
       organizationApi.setSincronOrgMembers(nodeId, role, memberKeys),
@@ -267,6 +276,7 @@ export default function SincronOrgBuilder() {
                       onAdd={(parentId, level) => setAddNodeParent({ companyId: company.company_id, parentId, level })}
                       onEdit={setEditNode}
                       onDelete={setDeleteNodeId}
+                      onMove={setMoveNode}
                       onSetMembers={(nodeId, role, keys) => setMembersMut.mutate({ nodeId, role, memberKeys: keys })}
                     />
                   ))
@@ -329,6 +339,15 @@ export default function SincronOrgBuilder() {
         onConfirm={() => deleteNodeId && deleteNodeMut.mutate(deleteNodeId)}
         destructive
       />
+
+      {/* Move-under-parent dialog */}
+      <MoveNodeDialog
+        node={moveNode}
+        allNodes={nodes}
+        onClose={() => setMoveNode(null)}
+        onMove={(parentId) => moveNode && moveNodeMut.mutate({ id: moveNode.id, parentId })}
+        isPending={moveNodeMut.isPending}
+      />
     </div>
   )
 }
@@ -346,6 +365,7 @@ function SincronNodeRow({
   onAdd,
   onEdit,
   onDelete,
+  onMove,
   onSetMembers,
 }: {
   node: TreeNode
@@ -358,6 +378,7 @@ function SincronNodeRow({
   onAdd: (parentId: number, level: number) => void
   onEdit: (node: SincronOrgNode) => void
   onDelete: (id: number) => void
+  onMove: (node: TreeNode) => void
   onSetMembers: (nodeId: number, role: 'responsable' | 'member', keys: { sincron_employee_id: string; company_name: string }[]) => void
 }) {
   const nodeKey = `n-${node.id}`
@@ -410,7 +431,15 @@ function SincronNodeRow({
           )}
           <span className={cn('font-medium text-sm', levelColors[levelIdx])}>{node.name}</span>
           <span className="text-[10px] text-muted-foreground">L{node.level}</span>
-          <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-[10px] px-1 py-0 h-4',
+              node.node_type === 'unallocated' &&
+                'border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-500/50 dark:bg-amber-950/40 dark:text-amber-300',
+            )}
+            title={node.node_type === 'unallocated' ? 'Nealocat — atribuie un responsabil sau mută sub un departament' : undefined}
+          >
             {nodeTypeLabels[node.node_type] || node.node_type}
           </Badge>
           {responsables.length > 0 && (
@@ -438,6 +467,15 @@ function SincronNodeRow({
                 <Plus className="h-3 w-3" />
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+              title="Mută sub…"
+              onClick={() => onMove(node)}
+            >
+              <FolderInput className="h-3 w-3" />
+            </Button>
             <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => onEdit(node)}>
               <Pencil className="h-3 w-3" />
             </Button>
@@ -491,6 +529,7 @@ function SincronNodeRow({
             onAdd={onAdd}
             onEdit={onEdit}
             onDelete={onDelete}
+            onMove={onMove}
             onSetMembers={onSetMembers}
           />
         ))}
@@ -549,6 +588,7 @@ function NodeFormDialog({
                 <SelectItem value="department">Department</SelectItem>
                 <SelectItem value="role">Role</SelectItem>
                 <SelectItem value="team">Team</SelectItem>
+                {nodeType === 'unallocated' && <SelectItem value="unallocated">Nealocat</SelectItem>}
               </SelectContent>
             </Select>
           </div>
@@ -557,6 +597,106 @@ function NodeFormDialog({
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button disabled={!name.trim() || isPending} onClick={() => onSave(name.trim(), nodeType)}>
             {isPending ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ──── Move-node dialog (re-parent) ──── */
+
+function MoveNodeDialog({
+  node,
+  allNodes,
+  onClose,
+  onMove,
+  isPending,
+}: {
+  node: TreeNode | null
+  allNodes: SincronOrgNode[]
+  onClose: () => void
+  onMove: (parentId: number | null) => void
+  isPending: boolean
+}) {
+  const [parentId, setParentId] = useState<string>('root')
+
+  useEffect(() => {
+    if (node) setParentId(node.parent_id != null ? String(node.parent_id) : 'root')
+  }, [node])
+
+  // Eligible parents: same company, not the node itself or a descendant, and
+  // deep enough to fit the moved subtree within the 6-level cap.
+  const eligible = useMemo<SincronOrgNode[]>(() => {
+    if (!node) return []
+    const companyNodes = allNodes.filter((n) => n.company_id === node.company_id)
+    const childrenOf = new Map<number, SincronOrgNode[]>()
+    for (const n of companyNodes) {
+      if (n.parent_id != null) {
+        const list = childrenOf.get(n.parent_id) || []
+        list.push(n)
+        childrenOf.set(n.parent_id, list)
+      }
+    }
+    const descendants = new Set<number>()
+    const collect = (id: number) => {
+      for (const k of childrenOf.get(id) || []) { descendants.add(k.id); collect(k.id) }
+    }
+    collect(node.id)
+    const heightOf = (id: number): number => {
+      const kids = childrenOf.get(id) || []
+      return kids.length ? 1 + Math.max(...kids.map((k) => heightOf(k.id))) : 1
+    }
+    const height = heightOf(node.id)
+    return companyNodes.filter(
+      (n) => n.id !== node.id && !descendants.has(n.id) && n.level + height <= 6,
+    )
+  }, [node, allNodes])
+
+  if (!node) return null
+
+  const nodeById = new Map(allNodes.map((n) => [n.id, n]))
+  const pathLabel = (n: SincronOrgNode): string => {
+    const parts: string[] = [n.name]
+    let cur = n.parent_id != null ? nodeById.get(n.parent_id) : undefined
+    while (cur) {
+      parts.unshift(cur.name)
+      cur = cur.parent_id != null ? nodeById.get(cur.parent_id) : undefined
+    }
+    return parts.join(' › ')
+  }
+
+  const current = node.parent_id != null ? String(node.parent_id) : 'root'
+
+  return (
+    <Dialog open={!!node} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Mută „{node.name}" sub…</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <Label className="text-xs text-muted-foreground font-normal">
+            Alege noul părinte. Mutarea sub un departament curăță marcajul „Nealocat".
+          </Label>
+          <Select value={parentId} onValueChange={setParentId}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="root">— Rădăcină (L1) —</SelectItem>
+              {eligible.map((n) => (
+                <SelectItem key={n.id} value={String(n.id)}>
+                  {pathLabel(n)} (L{n.level})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Anulează</Button>
+          <Button
+            disabled={isPending || parentId === current}
+            onClick={() => onMove(parentId === 'root' ? null : Number(parentId))}
+          >
+            {isPending ? 'Se mută…' : 'Mută'}
           </Button>
         </DialogFooter>
       </DialogContent>

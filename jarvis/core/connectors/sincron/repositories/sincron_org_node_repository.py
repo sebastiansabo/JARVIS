@@ -68,6 +68,70 @@ class SincronOrgNodeRepository(BaseRepository):
             (display_order, node_id)
         ) > 0
 
+    def set_parent(self, node_id: int, parent_id: Optional[int]) -> bool:
+        """Move a node under a new parent (or to the root when parent_id is None).
+
+        Recomputes ``level`` for the node and all its descendants, rejects cycles
+        and > 6-level nesting, and clears an 'unallocated' node_type once the node
+        is placed under a parent.
+        """
+        node = self.query_one(
+            'SELECT company_id, parent_id, level, node_type FROM sincron_org_nodes WHERE id = %s',
+            (node_id,)
+        )
+        if not node:
+            raise ValueError('Node not found')
+
+        # Descendants (inclusive) — needed for the cycle guard and level cascade.
+        descendants = self.query_all('''
+            WITH RECURSIVE sub AS (
+                SELECT id, level FROM sincron_org_nodes WHERE id = %s
+                UNION ALL
+                SELECT c.id, c.level FROM sincron_org_nodes c JOIN sub ON c.parent_id = sub.id
+            )
+            SELECT id, level FROM sub
+        ''', (node_id,))
+        desc_ids = {r['id'] for r in descendants}
+
+        if parent_id is None:
+            new_level = 1
+        else:
+            if parent_id == node_id or parent_id in desc_ids:
+                raise ValueError('A node cannot be moved under itself or its own descendant')
+            parent = self.query_one(
+                'SELECT company_id, level FROM sincron_org_nodes WHERE id = %s', (parent_id,)
+            )
+            if not parent:
+                raise ValueError('Parent node not found')
+            if parent['company_id'] != node['company_id']:
+                raise ValueError('Cannot move a node to a different company')
+            new_level = parent['level'] + 1
+
+        delta = new_level - node['level']
+        if max(r['level'] for r in descendants) + delta > 6:
+            raise ValueError('Maximum nesting depth (6 levels) reached')
+
+        new_type = 'department' if (parent_id is not None and node['node_type'] == 'unallocated') \
+            else node['node_type']
+
+        def _work(cursor):
+            cursor.execute(
+                'UPDATE sincron_org_nodes SET parent_id = %s, node_type = %s WHERE id = %s',
+                (parent_id, new_type, node_id)
+            )
+            if delta != 0:
+                cursor.execute('''
+                    WITH RECURSIVE sub AS (
+                        SELECT id FROM sincron_org_nodes WHERE id = %s
+                        UNION ALL
+                        SELECT c.id FROM sincron_org_nodes c JOIN sub ON c.parent_id = sub.id
+                    )
+                    UPDATE sincron_org_nodes n SET level = n.level + %s
+                    FROM sub WHERE n.id = sub.id
+                ''', (node_id, delta))
+        self.execute_many(_work)
+        return True
+
     # ── Member management ──
 
     def get_all_members(self) -> list[dict]:
@@ -101,6 +165,13 @@ class SincronOrgNodeRepository(BaseRepository):
                     VALUES (%s, %s, %s, %s)
                     ON CONFLICT (node_id, sincron_employee_id, company_name) DO UPDATE SET role = EXCLUDED.role
                 ''', (node_id, emp_id, comp, role))
+            # Giving an 'unallocated' node a manager clears the flag.
+            if role == 'responsable' and employee_keys:
+                cursor.execute(
+                    "UPDATE sincron_org_nodes SET node_type = 'department' "
+                    "WHERE id = %s AND node_type = 'unallocated'",
+                    (node_id,)
+                )
         self.execute_many(_work)
 
     def add_member(self, node_id: int, sincron_employee_id: str,
@@ -271,10 +342,14 @@ class SincronOrgNodeRepository(BaseRepository):
         ''', (company_id,))
         existing_names = {r['name'] for r in existing}
 
+        # A genuinely new department is created at L1 but flagged 'unallocated'
+        # so the editor surfaces it as "Nealocat" — needing a manager or a place
+        # in the hierarchy. The flag clears once either is done (set_members with
+        # a responsable, or set_parent). Existing nodes are never re-typed.
         created = 0
         for d in depts:
             if d['department'] not in existing_names:
-                self.create(company_id, d['department'], parent_id=None, node_type='department')
+                self.create(company_id, d['department'], parent_id=None, node_type='unallocated')
                 created += 1
 
         # Auto-assign employees to their department nodes
