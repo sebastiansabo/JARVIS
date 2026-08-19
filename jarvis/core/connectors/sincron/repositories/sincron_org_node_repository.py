@@ -261,10 +261,13 @@ class SincronOrgNodeRepository(BaseRepository):
             ORDER BY department
         ''', (company_name,))
 
-        # Get existing L1 nodes for this company
+        # Get existing nodes for this company at ANY level. Dept nodes are often
+        # re-parented into a hierarchy (e.g. nested under 'Aftersales' at L2), so
+        # a level=1-only check would not see them and would re-create every
+        # department as a fresh L1 root — doubling the tree on every re-seed.
         existing = self.query_all('''
             SELECT name FROM sincron_org_nodes
-            WHERE company_id = %s AND level = 1
+            WHERE company_id = %s
         ''', (company_id,))
         existing_names = {r['name'] for r in existing}
 
@@ -280,10 +283,15 @@ class SincronOrgNodeRepository(BaseRepository):
         return {'created': created, 'skipped': len(depts) - created, 'assigned': assigned}
 
     def _seed_members(self, company_id: int, company_name: str) -> int:
-        """Assign employees to their department nodes based on sincron_employees.department."""
+        """Assign employees to their department nodes based on sincron_employees.department.
+
+        Matches the department node by name at ANY level, so members land on the
+        real (possibly re-parented) node instead of a freshly-seeded L1 duplicate.
+        """
         nodes = self.query_all('''
             SELECT id, name FROM sincron_org_nodes
-            WHERE company_id = %s AND level = 1
+            WHERE company_id = %s
+            ORDER BY level, id
         ''', (company_id,))
         node_map = {n['name']: n['id'] for n in nodes}
 

@@ -107,6 +107,43 @@ from database import get_db, get_cursor, release_db
 
 _MARK = 'ZZ_ORG_TEST_CO'
 _MARK_DZ = 'ZZ_ORG_TEST_DZ'
+_MARK_SEED = 'ZZ_SEED_TEST_CO'
+
+
+@pytest.fixture
+def seed_fixture():
+    """Isolated company with active sincron_employees carrying a `department`,
+    so seed_from_departments() has something to seed. Two employees share
+    'Dept Alpha', one is 'Dept Beta'. localhost/defaultdb only.
+    """
+    if not REAL_DB_AVAILABLE:
+        pytest.skip('no real DB available (CI)')
+    conn = get_db()
+    conn.autocommit = False
+    cur = get_cursor(conn)
+    ids = {}
+    try:
+        cur.execute("INSERT INTO companies (company, vat) VALUES (%s, %s) RETURNING id",
+                    (_MARK_SEED, 'ZZSEEDTESTVAT'))
+        cid = cur.fetchone()['id']
+        ids['company_id'] = cid
+        ids['company_name'] = _MARK_SEED
+
+        for se_id, dept in (('SEED_1', 'Dept Alpha'), ('SEED_2', 'Dept Alpha'),
+                            ('SEED_3', 'Dept Beta')):
+            cur.execute("""INSERT INTO sincron_employees
+                             (sincron_employee_id, company_name, department,
+                              mapped_jarvis_user_id, is_active)
+                           VALUES (%s, %s, %s, NULL, TRUE)""", (se_id, _MARK_SEED, dept))
+        conn.commit()
+        yield ids
+    finally:
+        cur.execute("DELETE FROM sincron_org_nodes WHERE company_id = %s",
+                    (ids.get('company_id'),))  # cascades members
+        cur.execute("DELETE FROM sincron_employees WHERE company_name = %s", (_MARK_SEED,))
+        cur.execute("DELETE FROM companies WHERE id = %s", (ids.get('company_id'),))
+        conn.commit()
+        release_db(conn)
 
 
 @pytest.fixture
