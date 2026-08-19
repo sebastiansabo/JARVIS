@@ -31,12 +31,13 @@ class FakeFp:
 
 
 class FakeCrm:
-    def __init__(self, client_type, name='ACME SRL'):
+    def __init__(self, client_type, name='ACME SRL', phone='072'):
         self.client_type = client_type
         self.name = name
+        self.phone = phone
 
     def get_by_id(self, cid):
-        return {'id': cid, 'display_name': self.name, 'phone': '072',
+        return {'id': cid, 'display_name': self.name, 'phone': self.phone,
                 'email': 'acme@example.ro', 'client_type': self.client_type}
 
     def execute(self, *a, **k):
@@ -51,10 +52,10 @@ class FakeContacts:
         return self.contact
 
 
-def make_app(monkeypatch, client_type, contact, name='ACME SRL'):
+def make_app(monkeypatch, client_type, contact, name='ACME SRL', phone='072'):
     fake_fp = FakeFp()
     monkeypatch.setattr(td_mod, '_fp_repo', fake_fp)
-    monkeypatch.setattr(td_mod, '_crm_client_repo', FakeCrm(client_type, name))
+    monkeypatch.setattr(td_mod, '_crm_client_repo', FakeCrm(client_type, name, phone))
     monkeypatch.setattr(td_mod, '_contact_repo', FakeContacts(contact))
     app = Flask(__name__)
     app.register_blueprint(foi_parcurs_bp)
@@ -153,6 +154,33 @@ def test_person_typed_but_company_named_is_gated(monkeypatch):
     assert 'contact' in r.get_json()['error'].lower() or 'persoan' in r.get_json()['error'].lower()
 
 
+def test_person_without_phone_is_rejected(monkeypatch):
+    """A genuine person client with no phone on file must be flagged on a live
+    submit — the person is the driver, so a phone is required (email optional)."""
+    c = make_app(monkeypatch, 'person', None, name='Ion Popescu', phone='')
+    r = c.post('/api/foi-parcurs/test-drive', json=dict(BASE_PAYLOAD))
+    assert r.status_code == 400
+    assert 'telefon' in r.get_json()['error'].lower()
+
+
+def test_person_without_license_photo_is_rejected(monkeypatch):
+    """A person client submitting live with no driving-license photo is flagged."""
+    c = make_app(monkeypatch, 'person', None, name='Ion Popescu')
+    payload = {k: v for k, v in BASE_PAYLOAD.items() if k != 'driver_license_photo'}
+    r = c.post('/api/foi-parcurs/test-drive', json=payload)
+    assert r.status_code == 400
+    assert 'permis' in r.get_json()['error'].lower()
+
+
+def test_person_draft_needs_no_phone_or_license(monkeypatch):
+    """A PLANNED draft for a person with no phone/license is fine — the gate is
+    deferred to activation (mirrors the company draft exemption)."""
+    c = make_app(monkeypatch, 'person', None, name='Ion Popescu', phone='')
+    r = c.post('/api/foi-parcurs/test-drive', json=dict(DRAFT_PAYLOAD))
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()['contract']['status'] == 'PLANNED'
+
+
 def test_company_contact_mismatched_client_is_rejected(monkeypatch):
     """A contact belonging to a DIFFERENT client must not satisfy the gate."""
     other_client_contact = {**VALID_CONTACT, 'client_id': 999}
@@ -216,10 +244,10 @@ class FakeFpActivate:
         return None
 
 
-def make_activate_app(monkeypatch, client_type, contact, session, name='ACME SRL'):
+def make_activate_app(monkeypatch, client_type, contact, session, name='ACME SRL', phone='072'):
     fake_fp = FakeFpActivate(session)
     monkeypatch.setattr(td_mod, '_fp_repo', fake_fp)
-    monkeypatch.setattr(td_mod, '_crm_client_repo', FakeCrm(client_type, name))
+    monkeypatch.setattr(td_mod, '_crm_client_repo', FakeCrm(client_type, name, phone))
     monkeypatch.setattr(td_mod, '_contact_repo', FakeContacts(contact))
     # Keep the activate path hermetic: no lock, no open-session block, no
     # start-of-session email, and stub the PDF generation.
@@ -303,6 +331,17 @@ def test_activate_person_typed_but_company_named_is_gated(monkeypatch):
     r = c.put('/api/foi-parcurs/test-drive/101/activate', json=dict(ACTIVATE_BODY))
     assert r.status_code == 400
     assert 'contact' in r.get_json()['error'].lower() or 'persoan' in r.get_json()['error'].lower()
+    assert c._fake_fp.activation is None
+
+
+def test_activate_person_without_phone_is_rejected(monkeypatch):
+    """Activation of a person draft whose client has no phone on file is
+    blocked before the session flips to FILLED (mirrors the submit gate)."""
+    c = make_activate_app(monkeypatch, 'person', None, PLANNED_COMPANY_SESSION,
+                          name='Ion Popescu', phone='')
+    r = c.put('/api/foi-parcurs/test-drive/101/activate', json=dict(ACTIVATE_BODY))
+    assert r.status_code == 400
+    assert 'telefon' in r.get_json()['error'].lower()
     assert c._fake_fp.activation is None
 
 
