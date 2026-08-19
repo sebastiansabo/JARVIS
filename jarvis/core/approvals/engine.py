@@ -310,7 +310,7 @@ class ApprovalEngine:
         })
         hooks.fire('approval.cancelled', {
             'request_id': request_id, 'entity_type': req['entity_type'],
-            'entity_id': req['entity_id'],
+            'entity_id': req['entity_id'], 'resolution_note': reason,
         })
         return self._request_repo.get_by_id(request_id)
 

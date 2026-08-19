@@ -76,6 +76,19 @@ def handle_rejected(entity_id, ctx, note=''):
         )
 
 
+def handle_cancelled(entity_id, ctx):
+    # A withdrawn *cancellation request* must NOT cancel the underlying leave.
+    if ctx.get('cancellation'):
+        return
+    try:
+        from forms.repositories import SubmissionRepository
+        SubmissionRepository().update_status(entity_id, 'cancelled')
+    except Exception as e:
+        logger.error(f'handle_cancelled failed for #{entity_id}: {e}')
+    project_title = ctx.get('title') or f'form_submission #{entity_id}'
+    _notify_form_submission_users(ctx, 'notify_on_reject', project_title, 'rejected')
+
+
 def _debit_leave_permit_hours(submission_id, sub_repo):
     """Debit Time Bank hours when a bilet-de-invoire form is approved."""
     try:
