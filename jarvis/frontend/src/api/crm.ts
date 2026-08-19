@@ -15,6 +15,7 @@ export interface CrmClient {
   company_name?: string
   responsible?: string
   nr_reg?: string
+  cui?: string
   client_since?: string
   is_blacklisted?: boolean
   eurofib_konto_debit?: Record<string, number> | null

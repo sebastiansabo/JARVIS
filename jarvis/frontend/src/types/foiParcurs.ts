@@ -368,6 +368,11 @@ export interface CrmClient {
   display_name?: string | null
   name?: string | null
   phone?: string | null
+  email?: string | null
+  /** Fiscal code (Cod Unic de Înregistrare) — required for a company TD. */
+  cui?: string | null
+  /** Trade-register number (Nr. Registrul Comerțului) — distinct from cui. */
+  nr_reg?: string | null
   /** 'company' | 'person' — a company client never drives itself; the TD form
    *  gates submit/activate on a gate-valid contact person (see ClientContact). */
   client_type?: string | null

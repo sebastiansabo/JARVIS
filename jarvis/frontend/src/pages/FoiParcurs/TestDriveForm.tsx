@@ -341,7 +341,9 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   useEffect(() => {
     const c = draftClientData?.client
     if (!c) return
-    setSelectedClient((prev) => (prev && String(prev.id) === String(c.id) ? { ...prev, client_type: c.client_type } : prev))
+    setSelectedClient((prev) => (prev && String(prev.id) === String(c.id)
+      ? { ...prev, client_type: c.client_type, cui: c.cui, nr_reg: c.nr_reg, email: c.email }
+      : prev))
   }, [draftClientData])
 
   const { data: inspectionData } = useQuery({
@@ -512,6 +514,9 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     // gate-valid contact person is required. Mirrors the backend exactly;
     // NOT part of draftValid (a PLANNED draft defers this to activation).
     contact: !contactGateOk,
+    // Company-client CUI hard gate: a company TD requires the fiscal code (CUI)
+    // on file. Only flags once a company is selected; deferred for PLANNED drafts.
+    cui: !!selectedClient && isCompanyClient && !(selectedClient.cui || '').trim(),
     departure: !departureDatetime,
     odometer: Number.isNaN(odometerNum) || odometerNum < 0,
     estimated: Number.isNaN(estimatedNum) || estimatedNum <= 0,
@@ -539,7 +544,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const activateValid = !(
     missing.company || missing.vehicle || missing.client || missing.departure ||
     missing.odometer || missing.estimated || missing.fuel || missing.advisor || missing.returnInvalid ||
-    missing.clientSig || missing.conditions || missing.contact || missing.phone
+    missing.clientSig || missing.conditions || missing.contact || missing.phone || missing.cui
   )
   const err = (bad: boolean) => attempted && bad          // plan-relevant fields (any attempt)
   const errFull = (bad: boolean) => submitAttempt && bad  // activation-only fields (submit/activate only)
@@ -883,6 +888,26 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                 <Button variant="ghost" size="sm" onClick={() => { setSelectedClient(null); setClientSearch('') }}>
                   <X className="h-4 w-4 mr-1" />Schimbă
                 </Button>
+              </div>
+              {/* Required client data — company: CUI (+ Nr. reg.); person: phone + email */}
+              <div className="text-xs space-y-0.5">
+                {isCompanyClient ? (
+                  <>
+                    <p className={cn('text-muted-foreground', errFull(missing.cui) && 'text-destructive font-medium')}>
+                      CUI: {(selectedClient.cui || '').trim() || 'lipsă'}
+                    </p>
+                    {(selectedClient.nr_reg || '').trim() && (
+                      <p className="text-muted-foreground">Nr. reg.: {selectedClient.nr_reg}</p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className={cn('text-muted-foreground', errFull(missing.phone) && 'text-destructive font-medium')}>
+                      Tel: {(selectedClient.phone || '').trim() || 'lipsă'}
+                    </p>
+                    <p className="text-muted-foreground">Email: {(selectedClient.email || '').trim() || '—'}</p>
+                  </>
+                )}
               </div>
               {isCompanyClient && (
                 <div className={cn('rounded-md border bg-muted/40 p-3 space-y-2', invalidRingFull(missing.contact))}>
