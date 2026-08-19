@@ -1542,8 +1542,24 @@ function LeaveStatusBadge({ status }: { status: string }) {
     ? { label: 'Aprobat', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' }
     : s === 'rejected'
       ? { label: 'Respins', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-400' }
-      : { label: 'În așteptare', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400' }
+      : s === 'cancelled'
+        ? { label: 'Anulat', cls: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-500/15 dark:text-zinc-400' }
+        : s === 'cancellation_pending'
+          ? { label: 'Anulare în așteptare', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400' }
+          : { label: 'În așteptare', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400' }
   return <Badge className={cn('text-[9px] border-transparent', ui.cls)}>{ui.label}</Badge>
+}
+
+// Pure gating helper: which row actions are available for a given leave
+// submission status. Pending statuses can still be self-modified/withdrawn;
+// once approved, only a cancellation *request* is possible (it needs manager
+// sign-off since a TimeBank credit already happened); terminal/in-flight
+// statuses (cancelled, rejected, cancellation_pending) offer nothing.
+export function leaveRowActions(status: string) {
+  const s = (status || '').toLowerCase()
+  const approved = s === 'approved'
+  const pending = ['flagged', 'pending_approval', 'new', 'read'].includes(s)
+  return { canModify: pending, canCancel: pending, canRequestCancel: approved }
 }
 
 function HubLeavePermitsContent({ userId, year, month }: { userId: number; year: number; month: number }) {
@@ -1562,6 +1578,23 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
     queryFn: () => connecteamApi.getEmployeeSubmissions(userId, year, month),
   })
   const submissions: ConnecteamSubmission[] = data?.data ?? []
+
+  // Row being modified via the edit overlay (Task 9's InvoireForm edit mode),
+  // separate from `showForm`'s create-new overlay so the two never collide.
+  const [editingSubmission, setEditingSubmission] = useState<ConnecteamSubmission | null>(null)
+
+  // Shared by both "Anulează" (pending, self-withdraw) and "Cere anulare"
+  // (approved, needs manager sign-off) — the backend endpoint is the same;
+  // it decides whether to cancel outright or open an approval based on the
+  // submission's current status.
+  const cancelMut = useMutation({
+    mutationFn: (id: number) => connecteamApi.cancelLeavePermit(id),
+    onSuccess: (res) => {
+      toast.success(res.data.status === 'cancelled' ? 'Cerere anulată' : 'Anulare trimisă spre aprobare')
+      queryClient.invalidateQueries({ queryKey: ['hub', 'leave-permits'] })
+    },
+    onError: () => toast.error('Acțiunea a eșuat.'),
+  })
 
   // "De aprobat" is a tab inside the Învoiri zone, shown only when the user is an
   // approver with pending requests. Falls back to "mine" when nothing's pending.
@@ -1665,6 +1698,53 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
                             <p className="font-medium">{s.leave_reason}</p>
                           </div>
                         )}
+                        {(() => {
+                          const actions = leaveRowActions(s.status)
+                          if (!actions.canModify && !actions.canCancel && !actions.canRequestCancel) return null
+                          return (
+                            <div className="col-span-2 flex gap-2 pt-1">
+                              {actions.canModify && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 flex-1 text-xs"
+                                  onClick={() => setEditingSubmission(s)}
+                                >
+                                  Modifică
+                                </Button>
+                              )}
+                              {actions.canCancel && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 flex-1 text-xs border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-400"
+                                  disabled={cancelMut.isPending}
+                                  onClick={() => {
+                                    if (window.confirm('Sigur anulezi această cerere de învoire?')) cancelMut.mutate(s.id)
+                                  }}
+                                >
+                                  Anulează
+                                </Button>
+                              )}
+                              {actions.canRequestCancel && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 flex-1 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-400"
+                                  disabled={cancelMut.isPending}
+                                  onClick={() => {
+                                    if (window.confirm('Trimiți o cerere de anulare a acestei învoiri, spre aprobare?')) cancelMut.mutate(s.id)
+                                  }}
+                                >
+                                  Cere anulare
+                                </Button>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </div>
                     )}
                   </button>
@@ -1681,6 +1761,29 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
           onSubmitted={() => {
             // Code-defined form → /connecteam/api/submissions/leave-permit → the
             // connecteam service merges it into this list; refetch so it appears.
+            queryClient.invalidateQueries({ queryKey: ['hub', 'leave-permits'] })
+          }}
+        />
+      )}
+
+      {editingSubmission && (
+        <InvoireForm
+          submissionId={editingSubmission.id}
+          initial={{
+            f_bi_leave_date: editingSubmission.leave_date || '',
+            f_bi_start_time: editingSubmission.leave_start_time || '',
+            f_bi_duration_hours: String(editingSubmission.leave_hours ?? ''),
+            f_bi_reason: editingSubmission.leave_reason || '',
+            // Not present on the list row (ConnecteamSubmission has no
+            // second-approver/notes fields) — left blank on prefill. Modify
+            // uses update_answers and never re-triggers approval routing (it
+            // was frozen at submit), so this is cosmetic only.
+            f_bi_second_approver: '',
+            f_bi_notes: '',
+          }}
+          onClose={() => setEditingSubmission(null)}
+          onSubmitted={() => {
+            setEditingSubmission(null)
             queryClient.invalidateQueries({ queryKey: ['hub', 'leave-permits'] })
           }}
         />
