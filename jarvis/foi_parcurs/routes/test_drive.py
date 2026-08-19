@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required, current_user,
     logger, _fp_repo, _inspection_repo, _crm_client_repo, _vehicle_repo,
-    _dealer_repo, open_session_block, is_privileged,
+    _dealer_repo, open_session_block, is_privileged, log_history,
 )
 from ..services.fuel_service import parse_fuel_level
 from crm.repositories.contact_repository import ContactRepository, contact_gate_valid
@@ -283,6 +283,8 @@ def api_submit_test_drive():
                                contract_data.get('event_id'), exc_info=True)
 
         contract = _fp_repo.create_from_td_form(contract_data)
+        if contract and contract.get('id'):
+            log_history(contract['id'], 'create')
 
         # Keep the client's driving license on their CRM record, so it's prefilled
         # on the next test drive (front-end checks the expiry when reusing it).
@@ -457,6 +459,8 @@ def api_activate_test_drive(id):
         if not (updated and updated.get('id')):
             return jsonify({'success': False, 'error': 'Contract is no longer a PLANNED draft'}), 409
 
+        log_history(id, 'activate')
+
         try:
             from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
             legal_path = generate_legal_pdf(updated)
@@ -543,6 +547,7 @@ def api_update_plan(id):
         updated = _fp_repo.update_plan(id, update)
         if not (updated and updated.get('id')):
             return jsonify({'success': False, 'error': 'Contract is no longer a PLANNED draft'}), 409
+        log_history(id, 'edit_plan')
         return jsonify({'success': True, 'contract': updated})
     except Exception as e:
         logger.exception('Failed to edit planned test drive %s', id)
@@ -582,6 +587,7 @@ def api_reschedule_test_drive(id):
         updated = _fp_repo.reschedule_session(id, departure, data.get('return_datetime'))
         if not (updated and updated.get('id')):
             return jsonify({'success': False, 'error': 'Session is no longer reschedulable'}), 409
+        log_history(id, 'reschedule')
         return jsonify({'success': True, 'contract': updated})
     except Exception as e:
         logger.exception('Failed to reschedule test drive %s', id)
@@ -629,6 +635,7 @@ def api_extend_test_drive(id):
         return jsonify({'success': False, 'error': 'Session is no longer extendable'}), 409
     logger.info('foi-parcurs TD %s return extended to %s by %s',
                 id, ret, getattr(current_user, 'email', '?'))
+    log_history(id, 'extend')
     return jsonify({'success': True, 'contract': updated})
 
 
@@ -718,6 +725,7 @@ def api_return_test_drive(id):
         }
 
         updated = _fp_repo.record_return(id, update_data)
+        log_history(id, 'return')
 
         # Advance the vehicle's stored odometer to the latest reading (never backwards)
         try:
@@ -759,6 +767,14 @@ def api_get_test_drive(id):
         'contract': contract,
         'inspection': inspection,
     })
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>/history', methods=['GET'])
+@login_required
+def api_test_drive_history(id):
+    """Audit trail for a session (newest first) — powers the 'Istoric' modal in
+    the Driving Hub → Sesiuni Driving tab."""
+    return jsonify({'success': True, 'events': _fp_repo.get_session_events(id)})
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>', methods=['DELETE'])

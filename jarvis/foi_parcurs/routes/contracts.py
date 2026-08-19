@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required, current_user,
-    logger, _fp_repo, _client_repo, _vehicle_repo,
+    logger, _fp_repo, _client_repo, _vehicle_repo, log_history,
 )
 from ..services.fuel_service import calculate_fuel_distribution
 from ..services.route_service import calculate_route_assignments
@@ -303,6 +303,7 @@ def api_correct_contract(id):
                         'error': 'return_datetime cannot be before departure_datetime'}), 400
 
     updated = _fp_repo.correct_session(id, fields, getattr(current_user, 'email', None))
+    log_history(id, 'correct')
     logger.info('foi-parcurs contract %s corrected by admin %s: %s',
                 id, getattr(current_user, 'email', '?'), fields)
 
@@ -331,6 +332,7 @@ def api_reset_contract(id):
     if contract.get('route_type') != 'TD':
         return jsonify({'success': False, 'error': 'Only Test Drive registrations can be reset'}), 400
     updated = _fp_repo.reset_return(id)
+    log_history(id, 'reset')
     logger.info('foi-parcurs contract %s reset to driving by admin %s', id, getattr(current_user, 'email', '?'))
     return jsonify({'success': True, 'contract': updated})
 
@@ -439,6 +441,7 @@ def api_allocate_client(id):
             update_data['signature_ai_generated'] = signature_svg
 
         updated = _fp_repo.allocate_client(id, update_data)
+        log_history(id, 'allocate')
         return jsonify({'success': True, 'contract': updated})
     except Exception as e:
         logger.exception('Failed to allocate client to contract %s', id)

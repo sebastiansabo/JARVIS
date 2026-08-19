@@ -2576,4 +2576,25 @@ def _create_schema_incremental_continued(conn, cursor):
         END $$;
     ''')
 
+    # ── Foi de Parcurs — per-session audit log ──
+    # One row per session mutation (create/activate/return/correct/extend/…) with
+    # the acting user + timestamp, surfaced as the "Istoric" modal in the Driving
+    # Hub → Sesiuni Driving tab. FK cascades so deleting a session drops its log.
+    # Idempotent: no-op if foi_de_parcurs is absent or the table already exists.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF to_regclass('public.foi_de_parcurs') IS NOT NULL THEN
+                CREATE TABLE IF NOT EXISTS foi_parcurs_session_events (
+                    id SERIAL PRIMARY KEY,
+                    session_id INTEGER NOT NULL REFERENCES foi_de_parcurs(id) ON DELETE CASCADE,
+                    action TEXT NOT NULL,
+                    actor TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_fp_session_events_session
+                    ON foi_parcurs_session_events(session_id, created_at DESC);
+            END IF;
+        END $$;
+    ''')
+
     conn.commit()

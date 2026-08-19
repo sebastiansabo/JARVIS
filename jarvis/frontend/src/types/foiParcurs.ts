@@ -541,3 +541,13 @@ export interface VehicleConflict {
   client_name: string | null
   advisor_name: string
 }
+
+// One row of a session's audit trail (foi_parcurs_session_events), shown in the
+// "Istoric" modal. `actor` is the acting user's name (or email); null for system
+// actions. `created_at` is a real server timestamp — render with new Date().
+export interface SessionEvent {
+  id: number
+  action: string
+  actor: string | null
+  created_at: string
+}

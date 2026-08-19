@@ -30,6 +30,7 @@ import {
   Loader2,
   AlertTriangle,
   Clock,
+  History,
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -95,6 +96,7 @@ import { sessionActualKm, sessionEstimatedKm, carSpanKm } from './distance'
 import { sessionAnomalies, driveDate } from './anomalies'
 import CorrectSessionDialog, { type CorrectionPayload } from './CorrectSessionDialog'
 import ExtendSessionDialog from './ExtendSessionDialog'
+import SessionHistoryModal from './SessionHistoryModal'
 import ModifiedBadge from './ModifiedBadge'
 import { toast } from 'sonner'
 import { naiveDate } from '@/lib/naiveDate'
@@ -1453,6 +1455,7 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
   const [allocatingContract, setAllocatingContract] = useState<FoiContract | null>(null)
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
   const [extending, setExtending] = useState<FoiContract | null>(null)
+  const [historySession, setHistorySession] = useState<FoiContract | null>(null)
   const extendMutation = useMutation({
     mutationFn: (vars: { id: number; return_datetime: string }) =>
       foiParcursApi.extendReturn(vars.id, { return_datetime: vars.return_datetime }),
@@ -1922,23 +1925,29 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
                               </div>
                             </div>
                           </div>
-                          {/* PDF Downloads — none yet for a PLANNED draft (generated at activation) */}
-                          {c.status !== 'PENDING' && c.status !== 'PLANNED' && (
-                            <div className="flex gap-2 mt-3 pt-3 border-t">
-                              <a href={foiParcursApi.getContractPdfUrl(c.id, 'legal')} target="_blank" rel="noopener">
-                                <Button variant="outline" size="sm">
-                                  <FileText className="mr-1.5 h-3.5 w-3.5" />
-                                  Legal PDF
-                                </Button>
-                              </a>
-                              <a href={foiParcursApi.getContractPdfUrl(c.id, 'custom')} target="_blank" rel="noopener">
-                                <Button variant="outline" size="sm">
-                                  <FileText className="mr-1.5 h-3.5 w-3.5" />
-                                  Custom PDF
-                                </Button>
-                              </a>
-                            </div>
-                          )}
+                          {/* Footer: history (always) + PDF downloads (not for a PENDING/PLANNED draft) */}
+                          <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t">
+                            <Button variant="outline" size="sm" onClick={() => setHistorySession(c)}>
+                              <History className="mr-1.5 h-3.5 w-3.5" />
+                              Istoric
+                            </Button>
+                            {c.status !== 'PENDING' && c.status !== 'PLANNED' && (
+                              <>
+                                <a href={foiParcursApi.getContractPdfUrl(c.id, 'legal')} target="_blank" rel="noopener">
+                                  <Button variant="outline" size="sm">
+                                    <FileText className="mr-1.5 h-3.5 w-3.5" />
+                                    Legal PDF
+                                  </Button>
+                                </a>
+                                <a href={foiParcursApi.getContractPdfUrl(c.id, 'custom')} target="_blank" rel="noopener">
+                                  <Button variant="outline" size="sm">
+                                    <FileText className="mr-1.5 h-3.5 w-3.5" />
+                                    Custom PDF
+                                  </Button>
+                                </a>
+                              </>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     )}
@@ -1973,6 +1982,9 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
           onClose={() => setExtending(null)}
           onSubmit={(returnDatetime) => extendMutation.mutate({ id: extending.id, return_datetime: returnDatetime })}
         />
+      )}
+      {historySession && (
+        <SessionHistoryModal session={historySession} onClose={() => setHistorySession(null)} />
       )}
     </div>
   )

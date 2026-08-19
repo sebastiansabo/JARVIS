@@ -9,7 +9,7 @@ __all__ = [
     'logger',
     '_fp_repo', '_client_repo', '_vehicle_repo', '_inspection_repo', '_crm_client_repo',
     '_dealer_repo',
-    'open_session_block', 'is_privileged',
+    'open_session_block', 'is_privileged', '_actor', 'log_history',
 ]
 
 import logging
@@ -35,6 +35,22 @@ _dealer_repo = DealerConfigRepository()
 def is_privileged():
     """Admin/superadmin — the override gate for the single-open-session block."""
     return getattr(current_user, 'role_name', '').lower() in ('admin', 'superadmin')
+
+
+def _actor():
+    """Acting user's display name (falls back to email) for a history row;
+    None when unauthenticated (e.g. a system/cron mutation)."""
+    return getattr(current_user, 'name', None) or getattr(current_user, 'email', None) or None
+
+
+def log_history(session_id, action):
+    """Best-effort append to a session's history log — never raises. An audit
+    write must not break the user action that triggered it, so failures (e.g. a
+    missing table on a stale DB) are swallowed and logged."""
+    try:
+        _fp_repo.log_session_event(session_id, action, _actor())
+    except Exception:
+        logger.warning('session-history log failed for %s (%s)', session_id, action, exc_info=True)
 
 
 def open_session_block(vin, exclude_id=None, allow_override=False, privileged=False):
