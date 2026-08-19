@@ -24,3 +24,16 @@ def test_body_without_urls_keeps_summary_but_omits_buttons():
     html = leave_approval_email_body('Manager X', SUMMARY, '', '')
     assert '07:00' in html and 'Personal' in html
     assert 'href' not in html                         # no action links rendered
+
+
+def test_user_supplied_text_is_html_escaped():
+    # reason/notes/requester_name are requester free-text — must be escaped so a
+    # crafted leave request can't inject markup into the approver's email.
+    evil = {**SUMMARY,
+            'reason': '<script>alert(1)</script>',
+            'notes': '<img src=x onerror=alert(1)>',
+            'requester_name': 'A & B <x>'}
+    html = leave_approval_email_body('Manager X', evil, 'u/approve', 'u/reject')
+    assert '<script>' not in html and '&lt;script&gt;' in html
+    assert '<img' not in html
+    assert 'A &amp; B &lt;x&gt;' in html
