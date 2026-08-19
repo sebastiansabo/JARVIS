@@ -2549,4 +2549,20 @@ def _create_schema_incremental_continued(conn, cursor):
         END $$;
     ''')
 
+    # ── Sincron org nodes — allow 'unallocated' node_type ──
+    # Seed-from-departments now flags a genuinely new department 'unallocated'
+    # (shown as "Nealocat", needing a manager or placement) until it gets a
+    # responsable or is moved under a parent. Widen the CHECK to accept it.
+    # Idempotent: no-op if the table is absent; widening never violates rows.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF to_regclass('public.sincron_org_nodes') IS NOT NULL THEN
+                ALTER TABLE sincron_org_nodes DROP CONSTRAINT IF EXISTS chk_sincron_org_node_type;
+                ALTER TABLE sincron_org_nodes
+                    ADD CONSTRAINT chk_sincron_org_node_type
+                    CHECK (node_type IN ('department', 'role', 'team', 'unallocated'));
+            END IF;
+        END $$;
+    ''')
+
     conn.commit()

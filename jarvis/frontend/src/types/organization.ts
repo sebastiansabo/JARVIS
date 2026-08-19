@@ -98,7 +98,7 @@ export interface SincronOrgNode {
   company_id: number
   parent_id: number | null
   name: string
-  node_type: 'department' | 'role' | 'team'
+  node_type: 'department' | 'role' | 'team' | 'unallocated'
   level: number
   display_order: number
   created_at: string

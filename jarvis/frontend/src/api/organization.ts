@@ -114,7 +114,7 @@ export const organizationApi = {
     ),
   createSincronOrgNode: (data: { company_id: number; parent_id?: number | null; name: string; node_type?: string }) =>
     api.post<{ success: boolean; id: number }>('/sincron/api/org-nodes', data),
-  updateSincronOrgNode: (id: number, data: { name?: string; node_type?: string }) =>
+  updateSincronOrgNode: (id: number, data: { name?: string; node_type?: string; parent_id?: number | null }) =>
     api.put<{ success: boolean }>(`/sincron/api/org-nodes/${id}`, data),
   deleteSincronOrgNode: (id: number) =>
     api.delete<{ success: boolean }>(`/sincron/api/org-nodes/${id}`),

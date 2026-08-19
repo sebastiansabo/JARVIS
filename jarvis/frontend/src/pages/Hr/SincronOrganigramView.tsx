@@ -233,6 +233,15 @@ function NodeRow({
         <Layers className={cn('h-3.5 w-3.5 shrink-0', levelColors[levelIdx])} />
         <span className={cn('text-sm font-medium', levelColors[levelIdx])}>{node.name}</span>
         <span className="text-[10px] text-muted-foreground">L{node.level}</span>
+        {node.node_type === 'unallocated' && (
+          <Badge
+            variant="outline"
+            className="text-[10px] px-1 py-0 h-4 border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-500/50 dark:bg-amber-950/40 dark:text-amber-300"
+            title="Nealocat — fără responsabil sau loc în ierarhie"
+          >
+            Nealocat
+          </Badge>
+        )}
 
         {!isExpanded && node.responsables.length > 0 && (
           <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400 ml-1">

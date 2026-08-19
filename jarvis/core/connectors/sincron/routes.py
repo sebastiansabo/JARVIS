@@ -609,11 +609,18 @@ def create_org_node():
 @sincron_bp.route('/api/org-nodes/<int:node_id>', methods=['PUT'])
 @admin_required
 def update_org_node(node_id):
-    """Update a Sincron org node."""
+    """Update a Sincron org node. Pass `parent_id` to re-parent (moving a node
+    under a parent clears an 'unallocated' flag and recomputes levels)."""
     data = request.get_json()
     if not data:
         return jsonify({'success': False, 'error': 'No data'}), 400
-    _org_repo.update(node_id, name=data.get('name'), node_type=data.get('node_type'))
+    try:
+        if 'parent_id' in data:
+            _org_repo.set_parent(node_id, data['parent_id'])
+        if data.get('name') is not None or data.get('node_type') is not None:
+            _org_repo.update(node_id, name=data.get('name'), node_type=data.get('node_type'))
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
     return jsonify({'success': True})
 
 
