@@ -28,14 +28,37 @@ const localDateStr = (d = new Date()) =>
 const localTimeStr = (d = new Date()) =>
   `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 
-export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onSubmitted: () => void }) {
-  const [date, setDate] = useState(() => localDateStr())
-  const [start, setStart] = useState('')
-  const [durationHours, setDurationHours] = useState<number | null>(null)
-  const [reason, setReason] = useState('')
-  const [secondApprover, setSecondApprover] = useState('')
-  const [notes, setNotes] = useState('')
-  const [termsAccepted, setTermsAccepted] = useState(false)
+interface InvoireFormInitial {
+  f_bi_leave_date: string
+  f_bi_start_time: string
+  f_bi_duration_hours: string | number
+  f_bi_reason: string
+  f_bi_second_approver: string
+  f_bi_notes: string
+}
+
+export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
+  onClose: () => void
+  onSubmitted: () => void
+  submissionId?: number
+  initial?: InvoireFormInitial
+}) {
+  const isEdit = submissionId != null
+  const [date, setDate] = useState(() => initial?.f_bi_leave_date || localDateStr())
+  const [start, setStart] = useState(() => initial?.f_bi_start_time || '')
+  // Number | string: prefill in edit mode carries the original submission's
+  // value through untouched (so the resubmitted payload matches what was
+  // originally accepted); the Select always writes a number when the user
+  // (re)picks a duration. Comparisons below coerce with Number() as needed.
+  const [durationHours, setDurationHours] = useState<number | string | null>(() =>
+    initial?.f_bi_duration_hours ?? null)
+  const [reason, setReason] = useState(() => initial?.f_bi_reason || '')
+  const [secondApprover, setSecondApprover] = useState(() => initial?.f_bi_second_approver || '')
+  const [notes, setNotes] = useState(() => initial?.f_bi_notes || '')
+  // Signature/consent were already given on the original submission, so the
+  // edit-mode gates start pre-satisfied. Signature itself still comes from
+  // the preloaded profile signature (below), not from `initial`.
+  const [termsAccepted, setTermsAccepted] = useState(() => isEdit)
   const [signature, setSignature] = useState('')
   const [attempted, setAttempted] = useState(false)
 
@@ -63,14 +86,17 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
   const durationOptions = useMemo(
     () => sched && start ? buildDurationOptions(start, sched.schedule_end, sched.day_cap_hours) : [],
     [sched, start])
-  const returnTime = start && durationHours ? computeReturn(start, durationHours) : ''
+  const returnTime = start && durationHours ? computeReturn(start, Number(durationHours)) : ''
 
-  // Default start to first slot; reset duration if it no longer fits.
+  // Default start to first slot; reset duration if it no longer fits. Both
+  // guards wait for the schedule-derived options to actually load (non-empty)
+  // before resetting — otherwise a prefilled edit-mode value would get wiped
+  // out by the very first effect pass, which runs before `sched` resolves.
   useEffect(() => {
     if (startSlots.length && (!start || !startSlots.includes(start))) setStart(startSlots[0])
   }, [startSlots, start])
   useEffect(() => {
-    if (durationHours && !durationOptions.some(o => o.value === durationHours)) setDurationHours(null)
+    if (durationHours && durationOptions.length && !durationOptions.some(o => o.value === Number(durationHours))) setDurationHours(null)
   }, [durationOptions, durationHours])
 
   // Preload the user's saved profile signature.
@@ -131,7 +157,7 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
       if (signature && signature !== sigRes?.signature) {
         try { await profileApi.saveSignature(signature) } catch { /* non-blocking */ }
       }
-      return connecteamApi.submitLeavePermit({
+      const payload = {
         f_bi_leave_date: date,
         f_bi_start_time: start,
         f_bi_duration_hours: durationHours,
@@ -140,10 +166,13 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
         f_bi_notes: notes,
         f_bi_terms_accepted: termsAccepted,
         signature_image: signature,
-      })
+      }
+      return submissionId
+        ? connecteamApi.updateLeavePermit(submissionId, payload)
+        : connecteamApi.submitLeavePermit(payload)
     },
     onSuccess: () => {
-      toast.success('Cererea de învoire a fost trimisă spre aprobare.')
+      toast.success(isEdit ? 'Cererea de învoire a fost actualizată.' : 'Cererea de învoire a fost trimisă spre aprobare.')
       onSubmitted()
       onClose()
     },
@@ -296,7 +325,9 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
           </label>
 
           <Button className="w-full h-12 text-base font-semibold" onClick={handleSubmit} disabled={submit.isPending}>
-            {submit.isPending ? 'Se trimite...' : 'Trimite spre aprobare'}
+            {isEdit
+              ? (submit.isPending ? 'Se salvează...' : 'Salvează')
+              : (submit.isPending ? 'Se trimite...' : 'Trimite spre aprobare')}
           </Button>
         </div>
       </div>
