@@ -23,4 +23,9 @@ describe('leave cancel/modify api', () => {
       answers: { f_bi_duration_hours: '1' },
     })
   })
+
+  it('getLeavePermit GETs the full submission', () => {
+    connecteamApi.getLeavePermit(42)
+    expect(api.get).toHaveBeenCalledWith('/connecteam/api/submissions/leave-permit/42')
+  })
 })

@@ -250,6 +250,21 @@ def cancel_leave_permit_route(submission_id):
         return safe_error_response(e)
 
 
+@connecteam_bp.route('/api/submissions/leave-permit/<int:submission_id>', methods=['GET'])
+@api_login_required
+def get_leave_permit_route(submission_id):
+    """Full stored answers for the current user's own leave-permit (edit prefill)."""
+    from core.connectors.connecteam.services import leave_permit_actions as lpa
+    try:
+        return jsonify({'success': True, 'data': lpa.get_leave_permit(submission_id, current_user.id)})
+    except PermissionError:
+        return jsonify({'success': False, 'error': 'Not your leave request'}), 403
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @connecteam_bp.route('/api/submissions/leave-permit/<int:submission_id>', methods=['PATCH'])
 @api_login_required
 def update_leave_permit_route(submission_id):
