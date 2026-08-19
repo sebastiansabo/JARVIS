@@ -89,6 +89,31 @@ def handle_cancelled(entity_id, ctx):
     _notify_form_submission_users(ctx, 'notify_on_reject', project_title, 'rejected')
 
 
+def handle_cancellation_approved(entity_id, ctx):
+    """Manager approved a cancellation of an already-approved leave: reverse
+    the Time Bank debit and mark the submission cancelled."""
+    try:
+        from forms.repositories import SubmissionRepository
+        repo = SubmissionRepository()
+        _reverse_leave_permit_hours(entity_id, repo)
+        repo.update_status(entity_id, 'cancelled')
+    except Exception as e:
+        logger.error(f'handle_cancellation_approved failed for #{entity_id}: {e}')
+    title = ctx.get('title') or f'Anulare invoire #{entity_id}'
+    _notify_form_submission_users(ctx, 'notify_on_approve', title, 'approved')
+
+
+def handle_cancellation_rejected(entity_id, ctx):
+    """Manager rejected the cancellation request: the leave stays approved."""
+    try:
+        from forms.repositories import SubmissionRepository
+        SubmissionRepository().update_status(entity_id, 'approved')
+    except Exception as e:
+        logger.error(f'handle_cancellation_rejected failed for #{entity_id}: {e}')
+    title = ctx.get('title') or f'Anulare invoire #{entity_id}'
+    _notify_form_submission_users(ctx, 'notify_on_reject', title, 'rejected')
+
+
 def _debit_leave_permit_hours(submission_id, sub_repo):
     """Debit Time Bank hours when a bilet-de-invoire form is approved."""
     try:
