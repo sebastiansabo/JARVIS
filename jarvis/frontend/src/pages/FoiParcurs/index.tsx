@@ -97,6 +97,7 @@ import { sessionAnomalies, driveDate } from './anomalies'
 import CorrectSessionDialog, { type CorrectionPayload } from './CorrectSessionDialog'
 import ExtendSessionDialog from './ExtendSessionDialog'
 import SessionHistoryModal from './SessionHistoryModal'
+import { fmtDuration } from './duration'
 import ModifiedBadge from './ModifiedBadge'
 import { toast } from 'sonner'
 import { naiveDate } from '@/lib/naiveDate'
@@ -1695,6 +1696,7 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
                 const isExpanded = expandedRow === c.id
                 const ss = sessionStatus(c)
                 const u = fuelUnit(c.fuel_tank_capacity_liters > 100 ? 'Electric' : undefined)
+                const dur = fmtDuration(c.departure_datetime, c.return_datetime)
                 return (
                   <React.Fragment key={c.id}>
                     <TableRow
@@ -1878,6 +1880,7 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
                                 {c.departure_datetime ? naiveDate(c.departure_datetime)!.toLocaleString('ro-RO') : '—'}
                                 {' → '}
                                 {c.return_datetime ? naiveDate(c.return_datetime)!.toLocaleString('ro-RO') : '—'}
+                                {dur && <span className="text-muted-foreground"> · {dur}</span>}
                               </span>
                               <span className="text-muted-foreground">VIN</span>
                               <span className="font-mono">{c.vin}</span>
