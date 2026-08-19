@@ -653,6 +653,23 @@ class FormService:
                 out.append(a)
         return out
 
+    @staticmethod
+    def _parse_approver_ids(answers):
+        """Picked approver ids from f_bi_second_approver — a comma-separated list of
+        user ids (a single id still parses). When present these REPLACE the default
+        direct manager; all can approve."""
+        raw = (answers or {}).get('f_bi_second_approver')
+        out, seen = [], set()
+        for part in str(raw or '').split(','):
+            try:
+                v = int(part.strip())
+            except (ValueError, TypeError):
+                continue
+            if v and v not in seen:
+                seen.add(v)
+                out.append(v)
+        return out
+
     # ============== Private Helpers ==============
 
     def _validate_answers(self, schema: List[Dict], answers: Dict) -> Optional[str]:
@@ -782,8 +799,14 @@ class FormService:
                 title_parts.append(str(answers['f_client_name']))
             title = ' — '.join(title_parts)
 
-            # Primary (org hierarchy) + optional second approver — either may approve.
-            stakeholder_ids = self._build_stakeholder_ids(approver_user_id, answers)
+            # Picked approver(s) from the leave form REPLACE the default direct
+            # manager; all picked can approve. None picked → org-hierarchy manager.
+            picked = self._parse_approver_ids(answers)
+            if picked:
+                approver_user_id = picked[0]
+                stakeholder_ids = picked
+            else:
+                stakeholder_ids = self._build_stakeholder_ids(approver_user_id, answers)
 
             context = {
                 'title': title,
