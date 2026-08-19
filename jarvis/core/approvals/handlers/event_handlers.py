@@ -42,30 +42,35 @@ def _on_submitted(payload):
             entity_type=entity_type,
             entity_id=entity_id,
             type='approval',
-            push_data={'type': 'approval', 'request_id': str(request_id), 'link': link},
+            push_data={'type': 'approval', 'request_id': str(request_id),
+                       'entity_type': entity_type, 'link': link},
         )
-        # Email approvers
-        for name, email in _get_users_email(approver_ids):
-            body = f"""
-            <p>Buna ziua {name},</p>
-            <p>O cerere noua de aprobare asteapta decizia dumneavoastra:</p>
-            <table style="width:100%;border-collapse:collapse;margin:16px 0;">
-              <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:bold;border:1px solid #ddd;width:40%;">Proiect</td>
-                  <td style="padding:8px 12px;border:1px solid #ddd;">{project_title}</td></tr>
-              <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:bold;border:1px solid #ddd;">Flow</td>
-                  <td style="padding:8px 12px;border:1px solid #ddd;">{flow_name}</td></tr>
-            </table>
-            <p style="color:#555;font-size:13px;">Va rugam sa accesati JARVIS pentru a revizui si lua o decizie.</p>
-            """
+        # Email approvers. Leave permits get a rich, actionable email (full summary
+        # + one-tap Aprobă/Respinge); everything else keeps the generic notice.
+        leave = _leave_summary_for_submission(entity_type, entity_id)
+        for uid in approver_ids:
+            name, email = _get_user_email(uid)
+            if not email:
+                continue
+            if leave:
+                body = _leave_notify_body(name, leave, request_id, uid)
+            else:
+                body = f"""
+                <p>Buna ziua {name},</p>
+                <p>O cerere noua de aprobare asteapta decizia dumneavoastra:</p>
+                <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+                  <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:bold;border:1px solid #ddd;width:40%;">Proiect</td>
+                      <td style="padding:8px 12px;border:1px solid #ddd;">{project_title}</td></tr>
+                  <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:bold;border:1px solid #ddd;">Flow</td>
+                      <td style="padding:8px 12px;border:1px solid #ddd;">{flow_name}</td></tr>
+                </table>
+                <p style="color:#555;font-size:13px;">Va rugam sa accesati JARVIS pentru a revizui si lua o decizie.</p>
+                """
             _send_approval_email(
                 email,
                 f'Cerere de aprobare: {project_title}',
-                _approval_email_base(
-                    f'Cerere de aprobare nouă',
-                    body,
-                    f'{_APP_BASE_URL}{link}',
-                    'Vezi cererea',
-                ),
+                _approval_email_base('Cerere de aprobare nouă', body,
+                    f'{_APP_BASE_URL}{link}', 'Vezi cererea'),
             )
 
     # Form submission: email users in notify_on_submit from approval_config
@@ -182,6 +187,34 @@ def _load_leave_submission(submission_id):
         JOIN forms f ON f.id = fs.form_id
         LEFT JOIN users u ON u.id = fs.respondent_user_id
         WHERE fs.id = %s''', (submission_id,))
+
+
+def _leave_summary_for_submission(entity_type, entity_id):
+    """Leave summary dict for a bilet-de-invoire submission, else None."""
+    if entity_type == 'form_submission' and entity_id:
+        from .leave_summary import build_leave_summary
+        return build_leave_summary(entity_id)
+    return None
+
+
+def _leave_notify_body(approver_name, leave, request_id, approver_id):
+    """Actionable approver email body: leave summary + signed one-tap decide links.
+    Falls back to a button-less summary if there's no app context to sign tokens."""
+    from .leave_email import leave_approval_email_body
+    secret = None
+    try:
+        from flask import current_app
+        secret = current_app.secret_key
+    except Exception:
+        secret = None
+    if not secret:
+        return leave_approval_email_body(approver_name, leave, '', '')
+    from core.approvals.action_token import make_action_token
+
+    def _url(act):
+        tok = make_action_token(request_id, approver_id, act, secret)
+        return f'{_APP_BASE_URL}/go/approval/act?token={tok}'
+    return leave_approval_email_body(approver_name, leave, _url('approve'), _url('reject'))
 
 
 def _resolve_manager(user_id, company_id):

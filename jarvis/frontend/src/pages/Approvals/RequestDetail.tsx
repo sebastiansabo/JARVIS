@@ -17,7 +17,7 @@ import { approvalsApi } from '@/api/approvals'
 import { marketingApi } from '@/api/marketing'
 import { usersApi } from '@/api/users'
 import { toast } from 'sonner'
-import type { ApprovalDecision, ApprovalAuditEntry, ApprovalStep } from '@/types/approvals'
+import type { ApprovalDecision, ApprovalAuditEntry, ApprovalStep, LeaveSummary } from '@/types/approvals'
 import type { MktProjectKpi } from '@/types/marketing'
 import type { UserDetail } from '@/types/users'
 
@@ -167,6 +167,31 @@ function BudgetBreakdown({ lines, totalCurrency }: { lines: BudgetLine[]; totalC
       <div className="flex items-center justify-between border-t pt-1.5 text-xs font-semibold">
         <span>Total Budget</span>
         <span>{formatMoney(total, currency)}</span>
+      </div>
+    </div>
+  )
+}
+
+function LeaveSummaryCard({ summary }: { summary: LeaveSummary }) {
+  const rows: [string, string][] = [
+    ['Angajat', summary.requester_name],
+    ['Data', summary.leave_date],
+    ['Interval', `${summary.start}–${summary.end} (${summary.hours}h)`],
+    ['Motiv', summary.reason || '—'],
+  ]
+  if (summary.notes) rows.push(['Detalii', summary.notes])
+  return (
+    <div>
+      <h4 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
+        <Clock className="h-4 w-4 text-muted-foreground" /> Bilet de Învoire
+      </h4>
+      <div className="rounded-md bg-muted/50 p-3 text-sm">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex justify-between gap-4 py-0.5">
+            <span className="text-muted-foreground">{label}</span>
+            <span className="text-right font-medium">{value}</span>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -472,8 +497,10 @@ export default function RequestDetail({ requestId, open, onClose }: RequestDetai
 
             <Separator />
 
-            {/* Marketing project rich summary OR generic context */}
-            {isMktProject ? (
+            {/* Bilet de Învoire rich summary, marketing project, OR generic context */}
+            {detail.leave_summary ? (
+              <LeaveSummaryCard summary={detail.leave_summary} />
+            ) : isMktProject ? (
               <MktProjectSummary ctx={ctx} entityId={detail.entity_id} />
             ) : Object.keys(ctx).length > 0 ? (
               <div>

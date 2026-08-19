@@ -70,10 +70,23 @@ export interface ApprovalAuditEntry {
   created_at: string | null
 }
 
+/** Leave-permit summary attached to a Bilet de Învoire approval so the detail
+ *  view shows the interval/reason instead of a raw context dump. */
+export interface LeaveSummary {
+  requester_name: string
+  leave_date: string
+  start: string
+  end: string
+  hours: number | string
+  reason: string
+  notes: string
+}
+
 export interface ApprovalRequestDetail extends ApprovalRequest {
   decisions: ApprovalDecision[]
   audit: ApprovalAuditEntry[]
   steps: ApprovalStep[]
+  leave_summary?: LeaveSummary | null
 }
 
 export interface ApprovalFlow {
