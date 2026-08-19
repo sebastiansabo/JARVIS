@@ -1863,66 +1863,40 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
                     {isExpanded && (
                       <TableRow className="bg-muted/30 border-l-4 border-l-primary/30">
                         <TableCell colSpan={9} className="px-6 py-4">
-                          <div className="grid grid-cols-3 gap-6">
-                            {/* Fuel */}
-                            <div className="space-y-1.5">
-                              <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">Fuel</h4>
-                              <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
-                                <span className="text-muted-foreground text-xs">Tank</span>
-                                <span className="text-xs">{c.fuel_tank_capacity_liters}{u}</span>
-                                <span className="text-muted-foreground text-xs">Gauge</span>
-                                <span className="text-xs">{c.fuel_gauge_start_level} → {c.fuel_gauge_end_level}</span>
-                                <span className="text-muted-foreground text-xs">Start</span>
-                                <span className="text-xs">{c.fuel_start_liters}{u}</span>
-                                <span className="text-muted-foreground text-xs">End</span>
-                                <span className="text-xs">{c.fuel_end_liters}{u}</span>
-                                <span className="text-muted-foreground text-xs">Consumed</span>
-                                <span className="text-xs font-medium">{c.fuel_consumed_liters}{u}</span>
-                              </div>
+                          <div className="space-y-3">
+                            {/* Session — the priority info */}
+                            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs sm:max-w-2xl">
+                              <span className="text-muted-foreground">Client</span>
+                              <span className="font-medium">
+                                {c.client_name || 'Neatribuit'}
+                                {c.client_phone && <span className="font-normal text-muted-foreground"> · {c.client_phone}</span>}
+                              </span>
+                              <span className="text-muted-foreground">Consilier</span>
+                              <span>{c.advisor_name || '—'}</span>
+                              <span className="text-muted-foreground">Interval</span>
+                              <span>
+                                {c.departure_datetime ? naiveDate(c.departure_datetime)!.toLocaleString('ro-RO') : '—'}
+                                {' → '}
+                                {c.return_datetime ? naiveDate(c.return_datetime)!.toLocaleString('ro-RO') : '—'}
+                              </span>
+                              <span className="text-muted-foreground">VIN</span>
+                              <span className="font-mono">{c.vin}</span>
+                              <span className="text-muted-foreground">Contract</span>
+                              <span className="font-mono">{c.contract_id}</span>
+                              <span className="text-muted-foreground">Creat</span>
+                              <span>{new Date(c.created_at).toLocaleString('ro-RO')}</span>
                             </div>
 
-                            {/* Client */}
-                            <div className="space-y-1.5">
-                              <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">Client</h4>
-                              {c.client_name ? (
-                                <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
-                                  <span className="text-muted-foreground">Name</span>
-                                  <span className="font-medium">{c.client_name}</span>
-                                  {c.client_phone && (
-                                    <>
-                                      <span className="text-muted-foreground">Phone</span>
-                                      <span>{c.client_phone}</span>
-                                    </>
-                                  )}
-                                  <span className="text-muted-foreground">Advisor</span>
-                                  <span>{c.advisor_name || '—'}</span>
-                                </div>
-                              ) : (
-                                <p className="text-xs text-muted-foreground">Not allocated yet</p>
-                              )}
-                            </div>
-
-                            {/* Route */}
-                            <div className="space-y-1.5">
-                              <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">Route</h4>
-                              <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
-                                <span className="text-muted-foreground">VIN</span>
-                                <span className="font-mono">{c.vin}</span>
-                                <span className="text-muted-foreground">Plecare</span>
-                                <span>{c.departure_datetime ? naiveDate(c.departure_datetime)!.toLocaleString('ro-RO') : '—'}</span>
-                                <span className="text-muted-foreground">Retur</span>
-                                <span>{c.return_datetime ? naiveDate(c.return_datetime)!.toLocaleString('ro-RO') : '—'}</span>
-                                <span className="text-muted-foreground">Itinerary</span>
-                                <span>{c.itinerary || '—'}</span>
-                                <span className="text-muted-foreground">Contract</span>
-                                <span className="font-mono">{c.contract_id}</span>
-                                <span className="text-muted-foreground">Batch</span>
-                                <span className="font-mono">{c.batch_id || '—'}</span>
-                                <span className="text-muted-foreground">Period</span>
-                                <span>{c.month && c.year ? `${String(c.month).padStart(2, '0')}/${c.year}` : '—'}</span>
-                                <span className="text-muted-foreground">Created</span>
-                                <span>{new Date(c.created_at).toLocaleString('ro-RO')}</span>
-                              </div>
+                            {/* Fuel — secondary, one muted strip */}
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-2 text-xs text-muted-foreground">
+                              <span aria-hidden>⛽</span>
+                              <span>Rezervor <span className="text-foreground">{c.fuel_tank_capacity_liters}{u}</span></span>
+                              <span>·</span>
+                              <span>Start→End <span className="text-foreground">{c.fuel_start_liters}→{c.fuel_end_liters}{u}</span></span>
+                              <span>·</span>
+                              <span>Consum <span className="font-medium text-foreground">{c.fuel_consumed_liters}{u}</span></span>
+                              <span>·</span>
+                              <span>Gauge <span className="text-foreground">{c.fuel_gauge_start_level} → {c.fuel_gauge_end_level}</span></span>
                             </div>
                           </div>
                           {/* Footer: history (always) + PDF downloads (not for a PENDING/PLANNED draft) */}
