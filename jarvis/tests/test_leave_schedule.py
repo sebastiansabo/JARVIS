@@ -8,13 +8,15 @@ def test_default_when_no_sincron(monkeypatch):
                    'day_cap_hours': 7.0, 'lunch_break_minutes': 60, 'source': 'default'}
 
 
-def test_sincron_cap_is_norma_minus_lunch_capped_7(monkeypatch):
+def test_sincron_keeps_fixed_window_only_tightens_cap(monkeypatch):
+    # A Sincron contract (e.g. 08:00–17:00) must NOT narrow the selectable
+    # window — that stays the fixed 07:00–18:00 program — it only sets the cap.
     from datetime import time
     monkeypatch.setattr(ls, '_fetch_day_schedule', lambda uid, d: {
-        'schedule_start': time(9, 0), 'schedule_end': time(17, 30),
+        'schedule_start': time(8, 0), 'schedule_end': time(17, 0),
         'norma_lucru': 8, 'lunch_break_minutes': 60})
     out = ls.get_leave_schedule(1, '2026-08-18')
-    assert out['schedule_start'] == '09:00' and out['schedule_end'] == '17:30'
+    assert out['schedule_start'] == '07:00' and out['schedule_end'] == '18:00'
     assert out['day_cap_hours'] == 7.0 and out['source'] == 'sincron'
 
 
