@@ -109,6 +109,14 @@ class SubmissionRepository(BaseRepository):
             WHERE id = %s
         ''', (status, submission_id)) > 0
 
+    def update_answers(self, submission_id, answers):
+        """Update submission answers."""
+        return self.execute('''
+            UPDATE form_submissions
+            SET answers = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        ''', (json.dumps(answers), submission_id)) > 0
+
     def set_approval_request(self, submission_id, approval_request_id):
         """Link submission to an approval request."""
         return self.execute('''
