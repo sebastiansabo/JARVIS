@@ -121,6 +121,16 @@ export const connecteamApi = {
       `${BASE}/submissions/leave-permit`, { answers }
     ),
 
+  cancelLeavePermit: (id: number) =>
+    api.post<{ success: boolean; data: { status: 'cancelled' | 'cancellation_pending' } }>(
+      `${BASE}/submissions/leave-permit/${id}/cancel`
+    ),
+
+  updateLeavePermit: (id: number, answers: Record<string, unknown>) =>
+    api.patch<{ success: boolean; data: { submission_id: number } }>(
+      `${BASE}/submissions/leave-permit/${id}`, { answers }
+    ),
+
   // Leave requests awaiting the current user's approval (empty if not an approver).
   getPendingLeaveApprovals: () =>
     api.get<{ success: boolean; data: LeaveApproval[] }>(`${BASE}/leave-approvals/pending`),
