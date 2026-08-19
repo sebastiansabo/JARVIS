@@ -67,7 +67,7 @@ def create_schema_forms(conn, cursor):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT form_submissions_status_check CHECK (status IN (
-                'new', 'read', 'flagged', 'approved', 'rejected', 'pending_approval'
+                'new', 'read', 'flagged', 'approved', 'rejected', 'pending_approval', 'cancellation_pending', 'cancelled'
             )),
             CONSTRAINT form_submissions_source_check CHECK (source IN (
                 'web_public', 'web_internal', 'mobile'
@@ -79,7 +79,7 @@ def create_schema_forms(conn, cursor):
         DO $$ BEGIN
             ALTER TABLE form_submissions DROP CONSTRAINT IF EXISTS form_submissions_status_check;
             ALTER TABLE form_submissions ADD CONSTRAINT form_submissions_status_check
-                CHECK (status IN ('new', 'read', 'flagged', 'approved', 'rejected', 'pending_approval'));
+                CHECK (status IN ('new', 'read', 'flagged', 'approved', 'rejected', 'pending_approval', 'cancellation_pending', 'cancelled'));
         END $$;
     ''')
 

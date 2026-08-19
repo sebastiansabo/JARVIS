@@ -1514,6 +1514,17 @@ def create_schema_incremental(conn, cursor):
     from core.settings.menus.registry import sync_menu_items
     sync_menu_items(cursor)
 
+    # ── Leave-permit modify/cancel: allow cancellation_pending + cancelled statuses ──
+    cursor.execute("""
+        DO $$ BEGIN
+            ALTER TABLE form_submissions DROP CONSTRAINT IF EXISTS form_submissions_status_check;
+            ALTER TABLE form_submissions ADD CONSTRAINT form_submissions_status_check
+                CHECK (status IN ('new', 'read', 'flagged', 'approved', 'rejected',
+                                  'pending_approval', 'cancellation_pending', 'cancelled'));
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+    """)
+
     # ── BioStar tables (needed for GPS check-in + pontaje) ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS biostar_employees (
