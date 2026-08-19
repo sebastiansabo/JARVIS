@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { foiParcursApi } from '@/api/foiParcurs'
+import { digestApi } from '@/api/digest'
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
@@ -10,13 +11,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Car, ArrowLeft, CalendarPlus, Loader2, CheckCircle2, Plus } from 'lucide-react'
+import { Car, ArrowLeft, CalendarPlus, Loader2, CheckCircle2, Plus, Search, X } from 'lucide-react'
 
 // ── datetime-local helper (local time, no tz suffix) — mirrors TestDriveForm ──
 function localDatetimeValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// Debounce a changing value (mirrors TestDriveForm's local helper).
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay)
+    return () => clearTimeout(t)
+  }, [value, delay])
+  return debounced
 }
 
 export interface QuickSessionForm {
@@ -84,6 +96,11 @@ export default function InternalSessionForm({
 
   const [vin, setVin] = useState('')
   const [driver, setDriver] = useState(user?.name ?? '')
+  // Șofer is now a JARVIS-user search-and-select (all users): `driver` holds the
+  // chosen user's name (still submitted as advisor_name). The search UI shows
+  // only while no driver is picked.
+  const [driverSearch, setDriverSearch] = useState('')
+  const debouncedDriverSearch = useDebounce(driverSearch, 350)
   const [departure, setDeparture] = useState(() => seedDeparture ?? localDatetimeValue(new Date()))
   const [ret, setRet] = useState(() => {
     if (seedReturn) return seedReturn
@@ -99,6 +116,15 @@ export default function InternalSessionForm({
   useEffect(() => {
     if (user?.name && !driver) setDriver(user.name)
   }, [user?.name]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // JARVIS-user search for the Șofer picker (login-gated /api/digest/users/search,
+  // returns all users). Only runs while no driver is selected.
+  const { data: driverSearchData, isFetching: isSearchingDrivers } = useQuery({
+    queryKey: ['fp-driver-user-search', debouncedDriverSearch],
+    queryFn: () => digestApi.searchUsers(debouncedDriverSearch),
+    enabled: !driver && debouncedDriverSearch.trim().length >= 2,
+  })
+  const driverResults = driverSearchData?.data ?? []
 
   const { data: vehiclesData } = useQuery({
     queryKey: ['fp-vehicles', 'all'],
@@ -166,6 +192,7 @@ export default function InternalSessionForm({
   function resetForm() {
     setVin('')
     setDriver(user?.name ?? '')
+    setDriverSearch('')
     setDeparture(localDatetimeValue(new Date()))
     setRet(localDatetimeValue(new Date(Date.now() + 60 * 60 * 1000)))
     setKmStart('')
@@ -247,13 +274,48 @@ export default function InternalSessionForm({
 
           <div className="space-y-1.5">
             <Label className="text-xs">Șofer *</Label>
-            <Input
-              data-testid="internal-driver"
-              className={cn(fieldErr('driver_required') && 'ring-2 ring-destructive')}
-              value={driver}
-              onChange={(e) => setDriver(e.target.value)}
-              placeholder="Numele șoferului"
-            />
+            {driver ? (
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="text-sm py-1 px-3">{driver}</Badge>
+                <Button type="button" variant="ghost" size="sm" onClick={() => { setDriver(''); setDriverSearch('') }}>
+                  <X className="h-4 w-4 mr-1" />Schimbă
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    data-testid="internal-driver"
+                    className={cn('pl-8', fieldErr('driver_required') && 'ring-2 ring-destructive')}
+                    value={driverSearch}
+                    onChange={(e) => setDriverSearch(e.target.value)}
+                    placeholder="Caută un utilizator JARVIS..."
+                  />
+                  {isSearchingDrivers && <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 text-muted-foreground animate-spin" />}
+                </div>
+                {debouncedDriverSearch.trim().length >= 2 && !isSearchingDrivers && driverResults.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Niciun utilizator găsit.</p>
+                )}
+                {driverResults.length > 0 && (
+                  <div className="border rounded-md divide-y max-h-60 overflow-y-auto">
+                    {driverResults.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        className="w-full text-left px-3 py-2 hover:bg-accent text-sm transition-colors flex items-center justify-between gap-2"
+                        onClick={() => { setDriver(u.name); setDriverSearch('') }}
+                      >
+                        <span className="font-medium truncate">{u.name}</span>
+                        {(u.company || u.department) && (
+                          <span className="text-xs text-muted-foreground shrink-0">{u.company || u.department}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
