@@ -248,8 +248,10 @@ export default function DrivingCalendar({ companyId, brand, carFilter = [], cons
       ) : isError ? (
         <p className="py-8 text-center text-sm text-destructive">Nu s-a putut încărca calendarul.</p>
       ) : view === 'month' ? (
-        <>
-          <div className="rounded-2xl border border-border/60 bg-card p-2">
+        // Desktop: calendar (≤600px) and the selected day's sessions sit side by
+        // side on one line; phones stack them.
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+          <div className="w-full rounded-2xl border border-border/60 bg-card p-2 lg:max-w-[600px]">
             <div className="grid grid-cols-7">
               {WEEKDAY_LABELS.map((w) => <div key={w} className="py-1 text-center text-[10px] font-semibold text-muted-foreground">{w}</div>)}
               {monthCells.map((d) => {
@@ -290,8 +292,10 @@ export default function DrivingCalendar({ companyId, brand, carFilter = [], cons
               })}
             </div>
           </div>
-          <DayGroup label={dayLabel(monthActiveKey)} items={byDay.get(monthActiveKey) ?? []} vinVehicle={vinVehicle} onOpen={openContract} emptyText="Nicio sesiune în această zi" />
-        </>
+          <div className="w-full rounded-2xl border border-border/60 bg-card p-3 lg:flex-1">
+            <DayGroup label={dayLabel(monthActiveKey)} items={byDay.get(monthActiveKey) ?? []} vinVehicle={vinVehicle} onOpen={openContract} emptyText="Nicio sesiune în această zi" />
+          </div>
+        </div>
       ) : (
         <>
           {moveErr && <p className="px-1 text-xs text-destructive">{moveErr}</p>}

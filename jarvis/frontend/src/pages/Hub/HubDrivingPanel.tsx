@@ -191,19 +191,21 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
   const inlineActions = (
     <div className="flex items-center gap-2">
       <Tabs value={tab} onValueChange={(v) => setTab(v as PanelTab)}>
-        {/* Icon-only view switch, sized to an 80×44 iOS control. */}
-        <TabsList className="w-28 rounded-xl group-data-[orientation=horizontal]/tabs:h-11">
-          <TabsTrigger value="sessions" aria-label="Sesiuni" className="rounded-lg"><SteeringWheel className="size-5" /></TabsTrigger>
-          <TabsTrigger value="calendar" aria-label="Calendar" className="rounded-lg"><CalendarDays className="size-5" /></TabsTrigger>
-          <TabsTrigger value="park" aria-label="Parc" className="rounded-lg"><Car className="size-5" /></TabsTrigger>
+        {/* Icon + label view switch (desktop only — phones use the bottom pill). */}
+        <TabsList className="rounded-xl group-data-[orientation=horizontal]/tabs:h-11">
+          <TabsTrigger value="sessions" aria-label="Sesiuni" className="gap-1.5 rounded-lg px-3"><SteeringWheel className="size-5" />Sesiuni</TabsTrigger>
+          <TabsTrigger value="calendar" aria-label="Calendar" className="gap-1.5 rounded-lg px-3"><CalendarDays className="size-5" />Calendar</TabsTrigger>
+          <TabsTrigger value="park" aria-label="Parc" className="gap-1.5 rounded-lg px-3"><Car className="size-5" />Parc</TabsTrigger>
         </TabsList>
       </Tabs>
       <Button variant="outline" aria-label="Filtre" className={`${CTRL_H} shrink-0 gap-1.5 rounded-xl px-3`} onClick={() => setFiltersOpen(true)}>
         <SlidersHorizontal className="h-4 w-4" />
+        Filtre
         {activeFilters > 0 && <span className="rounded-full bg-primary px-1.5 text-[11px] font-bold leading-5 text-primary-foreground">{activeFilters}</span>}
       </Button>
-      <Button aria-label="Sesiune nouă" className={`${CTRL_H} w-11 shrink-0 rounded-xl p-0`} onClick={() => setOverlay({ kind: 'choose' })}>
+      <Button aria-label="Sesiune nouă" className={`${CTRL_H} shrink-0 gap-1.5 rounded-xl px-3`} onClick={() => setOverlay({ kind: 'choose' })}>
         <Plus className="h-5 w-5" />
+        Sesiune nouă
       </Button>
     </div>
   )
