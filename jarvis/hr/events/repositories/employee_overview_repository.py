@@ -365,6 +365,7 @@ class EmployeeOverviewRepository(BaseRepository):
                     FROM form_submissions fs
                     JOIN forms f ON f.id = fs.form_id
                     WHERE f.slug = 'bilet-de-invoire'
+                      AND fs.status NOT IN ('cancelled', 'rejected')
                       AND (fs.answers->>'f_bi_leave_date') IS NOT NULL
                       AND (fs.answers->>'f_bi_leave_date') ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}$'
                       AND (fs.answers->>'f_bi_leave_date')::date = %s
