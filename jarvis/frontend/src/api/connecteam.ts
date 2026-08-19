@@ -77,6 +77,8 @@ export interface LeaveApproval {
   leave_reason: string | null
   requested_at: string | null
   is_cancellation?: boolean
+  /** Requester's motive for a cancellation request (shown to the manager). */
+  cancellation_reason?: string | null
 }
 
 export interface ConversionRequest {
@@ -125,9 +127,9 @@ export const connecteamApi = {
       `${BASE}/submissions/leave-permit`, { answers }
     ),
 
-  cancelLeavePermit: (id: number) =>
+  cancelLeavePermit: (id: number, reason: string) =>
     api.post<{ success: boolean; data: { status: 'cancelled' | 'cancellation_pending' } }>(
-      `${BASE}/submissions/leave-permit/${id}/cancel`
+      `${BASE}/submissions/leave-permit/${id}/cancel`, { reason }
     ),
 
   // Full stored answers for the edit-form prefill (includes notes + 2nd approver
