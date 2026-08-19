@@ -10,6 +10,7 @@ const { update } = vi.hoisted(() => ({
 }))
 vi.mock('@/api/connecteam', () => ({ connecteamApi: {
   updateLeavePermit: update, submitLeavePermit: vi.fn(),
+  getApprovers: vi.fn(() => Promise.resolve({ data: [] })),
   getLeaveSchedule: vi.fn(() => Promise.resolve({ success: true, data: { schedule_start: '07:00', schedule_end: '18:00', day_cap_hours: 7, reasons: ['Personal'] } })) } }))
 // profileApi.getSignature() resolves to { signature } directly (api.get<T>
 // unwraps the response body — see src/api/client.ts), not a { data } wrapper.
@@ -38,5 +39,13 @@ it('edit mode PATCHes instead of POSTing', async () => {
   // client-side validation gate.
   await screen.findByAltText('semnătură')
   fireEvent.click(await screen.findByRole('button', { name: /Trimite|Salvează/ }))
-  await waitFor(() => expect(update).toHaveBeenCalledWith(42, expect.objectContaining({ f_bi_duration_hours: '1.5' })))
+  // The PATCH must carry the preloaded signature (backend modify 400s without a
+  // non-empty signature_image) AND the pre-satisfied consent flag — these are
+  // the critical invariants of edit mode, so assert them explicitly, not just
+  // the prefilled duration.
+  await waitFor(() => expect(update).toHaveBeenCalledWith(42, expect.objectContaining({
+    f_bi_duration_hours: '1.5',
+    signature_image: 'sig',
+    f_bi_terms_accepted: true,
+  })))
 })
