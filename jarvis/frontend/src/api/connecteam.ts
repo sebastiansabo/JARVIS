@@ -127,6 +127,13 @@ export const connecteamApi = {
       `${BASE}/submissions/leave-permit/${id}/cancel`
     ),
 
+  // Full stored answers for the edit-form prefill (includes notes + 2nd approver
+  // which the list row omits) — so a modify doesn't silently drop them.
+  getLeavePermit: (id: number) =>
+    api.get<{ success: boolean; data: { status: string; answers: Record<string, string | null> } }>(
+      `${BASE}/submissions/leave-permit/${id}`
+    ),
+
   updateLeavePermit: (id: number, answers: Record<string, unknown>) =>
     api.patch<{ success: boolean; data: { submission_id: number } }>(
       `${BASE}/submissions/leave-permit/${id}`, { answers }

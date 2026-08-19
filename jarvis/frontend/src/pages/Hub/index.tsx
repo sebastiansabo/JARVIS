@@ -32,6 +32,7 @@ import {
   Target,
   FileSpreadsheet,
   MapPin,
+  Loader2,
 } from 'lucide-react'
 import { SincronTimesheetView } from '@/components/shared/SincronTimesheetView'
 import { PunchCard } from '@/components/shared/PunchCard'
@@ -1582,6 +1583,14 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
   // Row being modified via the edit overlay (Task 9's InvoireForm edit mode),
   // separate from `showForm`'s create-new overlay so the two never collide.
   const [editingSubmission, setEditingSubmission] = useState<ConnecteamSubmission | null>(null)
+  // The list row lacks notes / 2nd approver — fetch the full stored answers so the
+  // edit form shows and preserves them (a modify overwrites the whole answer blob).
+  const { data: editDetailRes, isLoading: editDetailLoading } = useQuery({
+    queryKey: ['leave-permit-detail', editingSubmission?.id],
+    queryFn: () => connecteamApi.getLeavePermit(editingSubmission!.id),
+    enabled: !!editingSubmission,
+  })
+  const editAnswers = editDetailRes?.data?.answers
 
   // Shared by both "Anulează" (pending, self-withdraw) and "Cere anulare"
   // (approved, needs manager sign-off) — the backend endpoint is the same;
@@ -1767,20 +1776,18 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
         />
       )}
 
-      {editingSubmission && (
+      {editingSubmission && editAnswers && (
         <InvoireForm
           submissionId={editingSubmission.id}
           initial={{
-            f_bi_leave_date: editingSubmission.leave_date || '',
-            f_bi_start_time: editingSubmission.leave_start_time || '',
-            f_bi_duration_hours: String(editingSubmission.leave_hours ?? ''),
-            f_bi_reason: editingSubmission.leave_reason || '',
-            // Not present on the list row (ConnecteamSubmission has no
-            // second-approver/notes fields) — left blank on prefill. Modify
-            // uses update_answers and never re-triggers approval routing (it
-            // was frozen at submit), so this is cosmetic only.
-            f_bi_second_approver: '',
-            f_bi_notes: '',
+            // Prefer the full stored answers (carry notes + 2nd approver); fall
+            // back to the list row for the fields it does have.
+            f_bi_leave_date: editAnswers.f_bi_leave_date || editingSubmission.leave_date || '',
+            f_bi_start_time: editAnswers.f_bi_start_time || editingSubmission.leave_start_time || '',
+            f_bi_duration_hours: String(editAnswers.f_bi_duration_hours ?? editingSubmission.leave_hours ?? ''),
+            f_bi_reason: editAnswers.f_bi_reason || editingSubmission.leave_reason || '',
+            f_bi_second_approver: editAnswers.f_bi_second_approver || '',
+            f_bi_notes: editAnswers.f_bi_notes || '',
           }}
           onClose={() => setEditingSubmission(null)}
           onSubmitted={() => {
@@ -1788,6 +1795,11 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
             queryClient.invalidateQueries({ queryKey: ['hub', 'leave-permits'] })
           }}
         />
+      )}
+      {editingSubmission && editDetailLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
       )}
     </div>
   )

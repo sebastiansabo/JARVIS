@@ -64,6 +64,24 @@ def update_leave_permit(submission_id, user_id, answers):
     from forms.services.form_service import FormService
     svc = FormService()
     validated = svc.validate_and_normalize_leave_answers(user_id, answers)  # Task 6b
+    # Merge over the stored answers so fields the edit form doesn't resend
+    # (e.g. an original destination) are preserved rather than wiped.
+    merged = {**(sub.get('answers') or {}), **validated}
     from forms.repositories import SubmissionRepository
-    SubmissionRepository().update_answers(submission_id, validated)
+    SubmissionRepository().update_answers(submission_id, merged)
     return {'submission_id': submission_id}
+
+
+def get_leave_permit(submission_id, user_id):
+    """Full stored answers for the edit-form prefill (requester-scoped) — includes
+    f_bi_notes / f_bi_second_approver which the leave-list row does not carry, so
+    a modify no longer silently drops them."""
+    sub = _get_submission(submission_id)
+    if not sub:
+        raise ValueError('Submission not found')
+    if sub.get('respondent_user_id') != user_id:
+        raise PermissionError('Not your leave request')
+    answers = sub.get('answers') or {}
+    keys = ('f_bi_leave_date', 'f_bi_start_time', 'f_bi_duration_hours', 'f_bi_reason',
+            'f_bi_second_approver', 'f_bi_notes')
+    return {'status': sub.get('status'), 'answers': {k: answers.get(k) for k in keys}}
