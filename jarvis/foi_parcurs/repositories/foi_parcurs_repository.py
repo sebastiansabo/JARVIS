@@ -396,6 +396,26 @@ class FoiParcursRepository(BaseRepository):
             (session_id,),
         )
 
+    # ── Session history log (foi_parcurs_session_events) ──
+    def log_session_event(self, session_id: int, action: str, actor: str | None = None) -> None:
+        """Append one audit row for a session mutation (create/activate/return/
+        correct/extend/reschedule/reset/…). `actor` is the acting user's display
+        name (or email); NULL for system actions. Best-effort — callers guard so
+        a log failure never breaks the underlying action."""
+        self.execute(
+            'INSERT INTO foi_parcurs_session_events (session_id, action, actor) '
+            'VALUES (%s, %s, %s)',
+            (session_id, action, actor),
+        )
+
+    def get_session_events(self, session_id: int) -> list:
+        """A session's audit trail, newest first — for the history modal."""
+        return self.query_all(
+            'SELECT id, action, actor, created_at FROM foi_parcurs_session_events '
+            'WHERE session_id = %s ORDER BY created_at DESC, id DESC',
+            (session_id,),
+        )
+
     def record_return(self, contract_id: int, data: dict) -> dict:
         """Update a TD contract with return data (km/fuel/damage/signatures) and mark COMPLETED.
 

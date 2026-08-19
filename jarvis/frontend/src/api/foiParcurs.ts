@@ -20,6 +20,7 @@ import type {
   MktProject,
   HrEvent,
   ScheduledBlock,
+  SessionEvent,
 } from '../types/foiParcurs'
 
 export interface RouteSheetAlimentare {
@@ -308,6 +309,10 @@ export const foiParcursApi = {
   // Advisor extends an OPEN test drive's return time (any logged-in user).
   extendReturn: (id: number, data: { return_datetime: string }) =>
     api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/extend`, data),
+
+  // Session audit trail (newest first) for the "Istoric" modal.
+  getSessionHistory: (id: number) =>
+    api.get<{ success: boolean; events: SessionEvent[] }>(`${BASE}/test-drive/${id}/history`),
 
   // ── Discard a PLANNED draft (PLANNED-only; 409 otherwise) ──
   discardTestDrive: (id: number) =>
