@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { ChevronLeft, Check, ChevronsUpDown } from 'lucide-react'
+import { ChevronLeft, Check, ChevronsUpDown, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -53,7 +53,12 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
   const [durationHours, setDurationHours] = useState<number | string | null>(() =>
     initial?.f_bi_duration_hours ?? null)
   const [reason, setReason] = useState(() => initial?.f_bi_reason || '')
-  const [secondApprover, setSecondApprover] = useState(() => initial?.f_bi_second_approver || '')
+  // Picked approver ids REPLACE the default direct manager (any one can approve).
+  // Empty → the request routes to the org-hierarchy direct manager, as before.
+  const [approverIds, setApproverIds] = useState<number[]>(() =>
+    String(initial?.f_bi_second_approver || '')
+      .split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0))
+  const [approverNames, setApproverNames] = useState<Record<number, string>>({})
   const [notes, setNotes] = useState(() => initial?.f_bi_notes || '')
   // Signature/consent were already given on the original submission, so the
   // edit-mode gates start pre-satisfied. Signature itself still comes from
@@ -123,7 +128,6 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
 
   const [approverOpen, setApproverOpen] = useState(false)
   const [approverSearch, setApproverSearch] = useState('')
-  const [secondApproverName, setSecondApproverName] = useState('')
   const approverInputRef = useRef<HTMLInputElement>(null)
 
   // Typing (≥2 chars) searches ALL JARVIS users (not just the manager list);
@@ -143,9 +147,20 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
   const approverOptions: { id: number; name: string }[] = isApproverSearching
     ? (approverUserRes?.data ?? []).map((u) => ({ id: u.id, name: u.name }))
     : approvers.map((a) => ({ id: Number(a.id), name: a.name }))
-  const selectedApproverName = secondApprover
-    ? (secondApproverName || approvers.find((a) => String(a.id) === secondApprover)?.name || `Utilizator #${secondApprover}`)
-    : 'Doar managerul direct'
+  const nameFor = (id: number) =>
+    approverNames[id]
+    || approvers.find((a) => Number(a.id) === id)?.name
+    || approverOptions.find((o) => o.id === id)?.name
+    || `Utilizator #${id}`
+  const toggleApprover = (id: number, name: string) => {
+    setApproverNames((m) => ({ ...m, [id]: name }))
+    setApproverIds((ids) => ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])
+  }
+  const approverSummary = approverIds.length === 0
+    ? 'Doar managerul direct'
+    : approverIds.length === 1
+      ? nameFor(approverIds[0])
+      : `${approverIds.length} aprobatori`
 
   const invalid = useMemo(() => ({
     date: !date, start: !start, duration: !durationHours, reason: !reason,
@@ -162,7 +177,7 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
         f_bi_start_time: start,
         f_bi_duration_hours: durationHours,
         f_bi_reason: reason,
-        f_bi_second_approver: secondApprover,
+        f_bi_second_approver: approverIds.join(','),
         f_bi_notes: notes,
         f_bi_terms_accepted: termsAccepted,
         signature_image: signature,
@@ -256,12 +271,14 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
 
           {showApprover && (
           <div className="space-y-1">
-            <Label>{L('f_bi_second_approver', 'Al doilea aprobator (opțional)')}</Label>
-            <p className="text-xs text-muted-foreground">Oricare dintre aprobatori poate aproba.</p>
+            <Label>{L('f_bi_second_approver', 'Aprobatori (opțional)')}</Label>
+            <p className="text-xs text-muted-foreground">
+              Implicit merge la managerul direct. Alege unul sau mai mulți aprobatori — cererea le este trimisă tuturor și oricare poate aproba.
+            </p>
             <Popover open={approverOpen} onOpenChange={(v) => { setApproverOpen(v); if (v) setTimeout(() => approverInputRef.current?.focus(), 0) }}>
               <PopoverTrigger asChild>
                 <Button variant="outline" role="combobox" aria-expanded={approverOpen} className="w-full justify-between font-normal">
-                  {selectedApproverName}
+                  {approverSummary}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
@@ -272,16 +289,16 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
                 </div>
                 <div className="max-h-60 overflow-y-auto p-1">
                   <button type="button"
-                    className={cn('flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer', !secondApprover && 'bg-accent')}
-                    onClick={() => { setSecondApprover(''); setSecondApproverName(''); setApproverOpen(false); setApproverSearch('') }}>
-                    <Check className={cn('mr-2 h-4 w-4', secondApprover ? 'opacity-0' : 'opacity-100')} />
+                    className={cn('flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer', approverIds.length === 0 && 'bg-accent')}
+                    onClick={() => { setApproverIds([]); setApproverOpen(false); setApproverSearch('') }}>
+                    <Check className={cn('mr-2 h-4 w-4', approverIds.length ? 'opacity-0' : 'opacity-100')} />
                     Doar managerul direct
                   </button>
                   {approverOptions.map((a) => (
                     <button type="button" key={a.id}
-                      className={cn('flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer', secondApprover === String(a.id) && 'bg-accent')}
-                      onClick={() => { setSecondApprover(String(a.id)); setSecondApproverName(a.name); setApproverOpen(false); setApproverSearch('') }}>
-                      <Check className={cn('mr-2 h-4 w-4', secondApprover === String(a.id) ? 'opacity-100' : 'opacity-0')} />
+                      className={cn('flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer', approverIds.includes(a.id) && 'bg-accent')}
+                      onClick={() => toggleApprover(a.id, a.name)}>
+                      <Check className={cn('mr-2 h-4 w-4', approverIds.includes(a.id) ? 'opacity-100' : 'opacity-0')} />
                       {a.name}
                     </button>
                   ))}
@@ -294,6 +311,19 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
                 </div>
               </PopoverContent>
             </Popover>
+            {approverIds.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {approverIds.map((id) => (
+                  <span key={id} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs">
+                    {nameFor(id)}
+                    <button type="button" className="opacity-60 hover:opacity-100"
+                      onClick={() => setApproverIds((ids) => ids.filter((x) => x !== id))} aria-label="Elimină aprobator">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           )}
 
