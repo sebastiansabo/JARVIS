@@ -192,7 +192,7 @@ def _notify_form_submission_users(ctx: dict, config_key: str, title: str, event:
     """Email users listed in approval_config for form_submission events.
 
     config_key: one of 'notify_on_submit', 'notify_on_approve', 'notify_on_reject'
-    event: 'submitted', 'approved', 'rejected' — used for email copy
+    event: 'submitted', 'approved', 'rejected', 'cancelled' — used for email copy
     """
     user_ids = ctx.get(config_key, [])
     if not user_ids:
@@ -204,6 +204,7 @@ def _notify_form_submission_users(ctx: dict, config_key: str, title: str, event:
             'submitted': ('Trimitere nouă', 'a fost trimis', '#2563eb'),
             'approved': ('Aprobat', 'a fost aprobat', '#16a34a'),
             'rejected': ('Respins', 'a fost respins', '#dc2626'),
+            'cancelled': ('Anulat', 'a fost anulat', '#6b7280'),
         }
         label, verb, color = event_labels.get(event, ('Notificare', '', '#555'))
 

@@ -6,9 +6,12 @@ def test_handle_cancelled_marks_submission_cancelled(monkeypatch):
         def update_status(self, sid, status): seen['status'] = (sid, status); return True
     import forms.repositories as fr
     monkeypatch.setattr(fr, 'SubmissionRepository', lambda: Repo(), raising=False)
-    monkeypatch.setattr(entity_form, '_notify_form_submission_users', lambda *a, **k: None, raising=False)
+    monkeypatch.setattr(entity_form, '_notify_form_submission_users',
+                        lambda ctx, key, title, event: seen.setdefault('notify', (key, event)), raising=False)
     entity_form.handle_cancelled(42, {'title': 'x'})
     assert seen['status'] == (42, 'cancelled')
+    # A self-withdrawal notifies as "cancelled" (anulat), not "rejected" (respins).
+    assert seen['notify'] == ('notify_on_reject', 'cancelled')
 
 def test_handle_cancelled_skips_when_cancellation_request(monkeypatch):
     seen = {}
