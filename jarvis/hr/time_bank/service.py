@@ -8,7 +8,7 @@ from .repository import TimeBankRepository
 logger = logging.getLogger('jarvis.hr.time_bank.service')
 
 # tx_types that are auto-approved (no manual approval needed)
-AUTO_APPROVED_TYPES = ('T0', 'marketing_event', 'co_conversion', 'connecteam', 'leave_permit')
+AUTO_APPROVED_TYPES = ('T0', 'marketing_event', 'co_conversion', 'connecteam', 'leave_permit', 'leave_permit_reversal')
 
 
 class TimeBankService:

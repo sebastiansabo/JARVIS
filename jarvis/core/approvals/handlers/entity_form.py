@@ -112,6 +112,39 @@ def _debit_leave_permit_hours(submission_id, sub_repo):
         logger.error(f'Time Bank debit failed for form_submission #{submission_id}: {e}')
 
 
+def _reverse_leave_permit_hours(submission_id, sub_repo):
+    """Credit back the hours a leave debit removed, when a granted leave is cancelled.
+    Uses a distinct reference so has_reference doesn't collide with the debit and a
+    repeated cancel is idempotent."""
+    try:
+        from core.connectors.connecteam.config import JARVIS_LEAVE_FORM_SLUG
+        from forms.repositories import FormRepository
+        sub = sub_repo.get_by_id(submission_id)
+        if not sub:
+            return
+        form = FormRepository().get_by_id(sub['form_id'])
+        if not form or form.get('slug') != JARVIS_LEAVE_FORM_SLUG:
+            return
+        answers = sub.get('answers') or {}
+        hours = float(answers.get('f_bi_hours') or 0)
+        user_id = sub.get('respondent_user_id')
+        if not user_id or hours <= 0:
+            return
+        from hr.time_bank.service import TimeBankService
+        TimeBankService().credit(
+            user_id=user_id,
+            amount=hours,
+            tx_type='leave_permit_reversal',
+            description=f'Anulare bilet de invoire: +{hours}h',
+            reference_type='form_submission_cancel',
+            reference_id=submission_id,
+            created_by=None,
+        )
+        logger.info(f'Time Bank reversal +{hours}h for cancelled form_submission #{submission_id}')
+    except Exception as e:
+        logger.error(f'Leave reversal failed for #{submission_id}: {e}')
+
+
 def _resolve_voucher_company(sub, form):
     """Get company_id from the submitting user, falling back to form/submission."""
     user_id = sub.get('respondent_user_id')
