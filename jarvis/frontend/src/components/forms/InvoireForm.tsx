@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Checkbox } from '@/components/ui/checkbox'
 import SignatureCanvas from '@/components/shared/SignatureCanvas'
 import { connecteamApi } from '@/api/connecteam'
+import { digestApi } from '@/api/digest'
 import { profileApi } from '@/api/profile'
 import { buildStartSlots, buildDurationOptions, computeReturn } from './leaveSlots'
 
@@ -90,17 +91,35 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
     queryFn: () => connecteamApi.getApprovers(),
     staleTime: 10 * 60_000,
   })
+  // The direct manager(s) — shown by name when the search box is empty, so you
+  // can see the default approver and pick a different one if there are several.
   const approvers = approversRes?.data ?? []
 
   const [approverOpen, setApproverOpen] = useState(false)
   const [approverSearch, setApproverSearch] = useState('')
+  const [secondApproverName, setSecondApproverName] = useState('')
   const approverInputRef = useRef<HTMLInputElement>(null)
+
+  // Typing (≥2 chars) searches ALL JARVIS users (not just the manager list);
+  // an empty box shows the direct manager(s) from getApprovers.
+  const [debouncedApproverSearch, setDebouncedApproverSearch] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedApproverSearch(approverSearch), 300)
+    return () => clearTimeout(t)
+  }, [approverSearch])
+  const { data: approverUserRes, isFetching: approverSearching } = useQuery({
+    queryKey: ['leave-approver-user-search', debouncedApproverSearch],
+    queryFn: () => digestApi.searchUsers(debouncedApproverSearch),
+    enabled: debouncedApproverSearch.trim().length >= 2,
+    staleTime: 60_000,
+  })
+  const isApproverSearching = approverSearch.trim().length >= 2
+  const approverOptions: { id: number; name: string }[] = isApproverSearching
+    ? (approverUserRes?.data ?? []).map((u) => ({ id: u.id, name: u.name }))
+    : approvers.map((a) => ({ id: Number(a.id), name: a.name }))
   const selectedApproverName = secondApprover
-    ? (approvers.find((a) => String(a.id) === secondApprover)?.name ?? 'Doar managerul direct')
+    ? (secondApproverName || approvers.find((a) => String(a.id) === secondApprover)?.name || `Utilizator #${secondApprover}`)
     : 'Doar managerul direct'
-  const filteredApprovers = approverSearch.trim()
-    ? approvers.filter((a) => a.name.toLowerCase().includes(approverSearch.toLowerCase()))
-    : approvers
 
   const invalid = useMemo(() => ({
     date: !date, start: !start, duration: !durationHours, reason: !reason,
@@ -225,20 +244,23 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
                 <div className="max-h-60 overflow-y-auto p-1">
                   <button type="button"
                     className={cn('flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer', !secondApprover && 'bg-accent')}
-                    onClick={() => { setSecondApprover(''); setApproverOpen(false); setApproverSearch('') }}>
+                    onClick={() => { setSecondApprover(''); setSecondApproverName(''); setApproverOpen(false); setApproverSearch('') }}>
                     <Check className={cn('mr-2 h-4 w-4', secondApprover ? 'opacity-0' : 'opacity-100')} />
                     Doar managerul direct
                   </button>
-                  {filteredApprovers.map((a) => (
+                  {approverOptions.map((a) => (
                     <button type="button" key={a.id}
                       className={cn('flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer', secondApprover === String(a.id) && 'bg-accent')}
-                      onClick={() => { setSecondApprover(String(a.id)); setApproverOpen(false); setApproverSearch('') }}>
+                      onClick={() => { setSecondApprover(String(a.id)); setSecondApproverName(a.name); setApproverOpen(false); setApproverSearch('') }}>
                       <Check className={cn('mr-2 h-4 w-4', secondApprover === String(a.id) ? 'opacity-100' : 'opacity-0')} />
                       {a.name}
                     </button>
                   ))}
-                  {filteredApprovers.length === 0 && (
-                    <p className="px-2 py-2 text-sm text-muted-foreground">Niciun rezultat</p>
+                  {isApproverSearching && approverSearching && (
+                    <p className="px-2 py-2 text-sm text-muted-foreground">Se caută...</p>
+                  )}
+                  {isApproverSearching && !approverSearching && approverOptions.length === 0 && (
+                    <p className="px-2 py-2 text-sm text-muted-foreground">Niciun utilizator găsit</p>
                   )}
                 </div>
               </PopoverContent>
