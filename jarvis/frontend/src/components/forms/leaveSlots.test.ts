@@ -5,6 +5,10 @@ describe('buildStartSlots', () => {
   it('30-min slots from start to end-30', () => {
     expect(buildStartSlots('09:00', '11:00')).toEqual(['09:00', '09:30', '10:00', '10:30'])
   })
+  it('minHM drops earlier slots, rounding up to the next :00/:30', () => {
+    expect(buildStartSlots('07:00', '11:00', '09:10')).toEqual(['09:30', '10:00', '10:30'])
+    expect(buildStartSlots('07:00', '11:00', '09:00')).toEqual(['09:00', '09:30', '10:00', '10:30'])
+  })
 })
 
 describe('fmtDurationLabel', () => {

@@ -22,8 +22,13 @@ import { buildStartSlots, buildDurationOptions, computeReturn } from './leaveSlo
 
 const REASONS = ['Personal', 'Medical', 'Familial', 'Oficial', 'Altul']
 
+const localDateStr = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const localTimeStr = (d = new Date()) =>
+  `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+
 export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onSubmitted: () => void }) {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(() => localDateStr())
   const [start, setStart] = useState('')
   const [durationHours, setDurationHours] = useState<number | null>(null)
   const [reason, setReason] = useState('')
@@ -50,7 +55,12 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
   const showNotes = true
   const showApprover = true
   const termsText = sched?.terms_text || 'Declar că îmi asum responsabilitatea pentru orice eventual eveniment neplăcut care ar putea surveni în legătură cu mine, în această perioadă în care sunt învoit / învoită 🔒'
-  const startSlots = useMemo(() => sched ? buildStartSlots(sched.schedule_start, sched.schedule_end) : [], [sched])
+  const startSlots = useMemo(
+    () => (sched
+      ? buildStartSlots(sched.schedule_start, sched.schedule_end,
+          date === localDateStr() ? localTimeStr() : undefined)
+      : []),
+    [sched, date])
   const durationOptions = useMemo(
     () => sched && start ? buildDurationOptions(start, sched.schedule_end, sched.day_cap_hours) : [],
     [sched, start])
@@ -58,7 +68,7 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
 
   // Default start to first slot; reset duration if it no longer fits.
   useEffect(() => {
-    if (startSlots.length && !start) setStart(startSlots[0])
+    if (startSlots.length && (!start || !startSlots.includes(start))) setStart(startSlots[0])
   }, [startSlots, start])
   useEffect(() => {
     if (durationHours && !durationOptions.some(o => o.value === durationHours)) setDurationHours(null)
