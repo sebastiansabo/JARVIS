@@ -112,6 +112,13 @@ def api_get_request(request_id):
     result['decisions'] = [_serialize_decision(d) for d in decisions]
     result['audit'] = [_serialize_audit(a) for a in audit]
     result['steps'] = [_serialize_step(s) for s in steps]
+    # For a Bilet de Învoire, attach the leave summary so the detail view (web +
+    # mobile decision sheet) shows the interval/reason instead of a raw context dump.
+    if req.get('entity_type') == 'form_submission' and req.get('entity_id'):
+        from core.approvals.handlers.leave_summary import build_leave_summary
+        leave = build_leave_summary(req['entity_id'])
+        if leave:
+            result['leave_summary'] = leave
     return jsonify(result)
 
 
