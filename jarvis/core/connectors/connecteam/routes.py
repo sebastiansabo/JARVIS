@@ -234,6 +234,40 @@ def create_leave_permit():
     return jsonify({'success': True, 'data': result.data}), result.status_code
 
 
+@connecteam_bp.route('/api/submissions/leave-permit/<int:submission_id>/cancel', methods=['POST'])
+@api_login_required
+def cancel_leave_permit_route(submission_id):
+    """Cancel (or withdraw) the current user's own leave-permit submission."""
+    from core.connectors.connecteam.services import leave_permit_actions as lpa
+    try:
+        data = lpa.cancel_leave_permit(submission_id, current_user.id)
+        return jsonify({'success': True, 'data': data})
+    except PermissionError:
+        return jsonify({'success': False, 'error': 'Not your leave request'}), 403
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 409
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@connecteam_bp.route('/api/submissions/leave-permit/<int:submission_id>', methods=['PATCH'])
+@api_login_required
+def update_leave_permit_route(submission_id):
+    """Modify the current user's own pending leave-permit submission."""
+    from core.connectors.connecteam.services import leave_permit_actions as lpa
+    body = request.get_json(silent=True) or {}
+    answers = body.get('answers') if isinstance(body.get('answers'), dict) else body
+    try:
+        data = lpa.update_leave_permit(submission_id, current_user.id, answers)
+        return jsonify({'success': True, 'data': data})
+    except PermissionError:
+        return jsonify({'success': False, 'error': 'Not your leave request'}), 403
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 409
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @connecteam_bp.route('/api/leave-approvals/pending', methods=['GET'])
 @api_login_required
 def get_pending_leave_approvals():

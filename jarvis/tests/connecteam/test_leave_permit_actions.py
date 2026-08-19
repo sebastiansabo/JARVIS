@@ -33,6 +33,20 @@ def test_cancel_already_cancelled_raises(monkeypatch):
     with pytest.raises(ValueError):
         lpa.cancel_leave_permit(42, user_id=9)
 
+def test_cancel_second_time_while_cancellation_pending_raises(monkeypatch):
+    # Carried-over fix: a submission already in 'cancellation_pending' has an
+    # open cancellation-approval request, so without a status guard the old
+    # code would take the pending->withdraw branch and wrongly report
+    # {'status': 'cancelled'}, leaving the submission STUCK at
+    # 'cancellation_pending'. The guard must reject before that branch runs.
+    monkeypatch.setattr(lpa, '_get_submission', lambda sid: _sub(status='cancellation_pending'))
+    engine_called = {}
+    monkeypatch.setattr(lpa, '_pending_request_id', lambda sid: 100)  # cancellation-approval is pending
+    monkeypatch.setattr(lpa, '_engine_cancel', lambda rid, uid: engine_called.setdefault('cancel', (rid, uid)))
+    with pytest.raises(ValueError):
+        lpa.cancel_leave_permit(42, user_id=9)
+    assert 'cancel' not in engine_called
+
 def test_modify_non_pending_raises(monkeypatch):
     monkeypatch.setattr(lpa, '_get_submission', lambda sid: _sub(status='approved'))
     monkeypatch.setattr(lpa, '_pending_request_id', lambda sid: None)
