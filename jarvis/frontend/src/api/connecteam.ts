@@ -105,6 +105,9 @@ export interface LeaveSchedule {
   placeholders?: Record<string, string>
   visible?: Record<string, boolean>
   terms_text?: string
+  /** The direct manager the empty-approver default routes to — auto-selected
+   *  as a named chip on form open. Null when none can be resolved. */
+  default_approver?: { id: number; name: string } | null
 }
 
 export const connecteamApi = {

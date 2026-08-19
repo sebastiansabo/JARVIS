@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { ChevronLeft, Check, ChevronsUpDown, X } from 'lucide-react'
+import { ChevronLeft, Check, ChevronsUpDown, X, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -126,6 +126,21 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
   // can see the default approver and pick a different one if there are several.
   const approvers = approversRes?.data ?? []
 
+  // Auto-select the direct manager as a named chip on open (create mode only).
+  // Edit mode prefills from the saved submission, so leave it untouched. Runs
+  // once and only if nothing is picked yet, so a user who clears/changes the
+  // chip isn't fought by re-selection.
+  const didInitApprover = useRef(false)
+  useEffect(() => {
+    if (didInitApprover.current || isEdit || !sched) return
+    didInitApprover.current = true
+    const dm = sched.default_approver
+    if (dm?.id && approverIds.length === 0) {
+      setApproverIds([dm.id])
+      setApproverNames((m) => ({ ...m, [dm.id]: dm.name }))
+    }
+  }, [sched, isEdit, approverIds.length])
+
   const [approverOpen, setApproverOpen] = useState(false)
   const [approverSearch, setApproverSearch] = useState('')
   const approverInputRef = useRef<HTMLInputElement>(null)
@@ -222,11 +237,14 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
               aria-invalid={attempted && invalid.date ? true : undefined} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
+          {/* Start · Duration · derived return time — all on one inline row.
+              The return is computed from start + duration, shown compactly beside
+              the controls instead of a full-width row of its own. */}
+          <div className="flex items-end gap-3">
+            <div className="flex-1 space-y-1">
               <Label>{L('f_bi_start_time', 'Ora de început')}{req}</Label>
               <Select value={start} onValueChange={setStart}>
-                <SelectTrigger aria-invalid={attempted && invalid.start ? true : undefined}>
+                <SelectTrigger className="w-full" aria-invalid={attempted && invalid.start ? true : undefined}>
                   <SelectValue placeholder="Selectați ora" />
                 </SelectTrigger>
                 <SelectContent>
@@ -234,11 +252,11 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
+            <div className="flex-1 space-y-1">
               <Label>{L('f_bi_hours', 'Durată')}{req}</Label>
               <Select value={durationHours ? String(durationHours) : ''}
                       onValueChange={(v) => setDurationHours(Number(v))}>
-                <SelectTrigger aria-invalid={attempted && invalid.duration ? true : undefined}>
+                <SelectTrigger className="w-full" aria-invalid={attempted && invalid.duration ? true : undefined}>
                   <SelectValue placeholder="Selectați durata" />
                 </SelectTrigger>
                 <SelectContent>
@@ -246,16 +264,23 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-1">
+              <Label className="text-muted-foreground">Întoarcere</Label>
+              <div className="flex h-9 items-center gap-1 whitespace-nowrap px-1 text-sm font-semibold tabular-nums">
+                {returnTime ? (
+                  <>
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                    {returnTime}
+                  </>
+                ) : (
+                  <span className="font-normal text-muted-foreground">—</span>
+                )}
+              </div>
+            </div>
           </div>
-
-          <div className="space-y-1">
-            <Label>Ora de întoarcere</Label>
-            <Input readOnly tabIndex={-1} value={returnTime} placeholder="—"
-              className="bg-muted/50 text-muted-foreground cursor-default" />
-            {sched?.source === 'default' && (
-              <p className="text-xs text-muted-foreground">Program implicit (fără contract Sincron).</p>
-            )}
-          </div>
+          {sched?.source === 'default' && (
+            <p className="-mt-3 text-xs text-muted-foreground px-0.5">Program implicit (fără contract Sincron).</p>
+          )}
 
           <div className="space-y-1">
             <Label>{L('f_bi_reason', 'Motivul')}{req}</Label>
@@ -272,10 +297,12 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
           {showApprover && (
           <div className="space-y-1">
             {/* Label is code-owned: the field is now a multi-select, so the stale
-                Forms-managed "Al doilea aprobator" label must not override it. */}
-            <Label>Aprobatori (opțional)</Label>
+                Forms-managed "Al doilea aprobator" label must not override it.
+                Required — there is always an approver (the direct manager by
+                default, or the picked ones). */}
+            <Label>Aprobatori{req}</Label>
             <p className="text-xs text-muted-foreground">
-              Implicit merge la managerul direct. Alege unul sau mai mulți aprobatori — cererea le este trimisă tuturor și oricare poate aproba.
+              Managerul tău direct este selectat implicit. Adaugă sau schimbă aprobatorii — cererea le este trimisă tuturor și oricare poate aproba.
             </p>
             <Popover open={approverOpen} onOpenChange={(v) => { setApproverOpen(v); if (v) setTimeout(() => approverInputRef.current?.focus(), 0) }}>
               <PopoverTrigger asChild>

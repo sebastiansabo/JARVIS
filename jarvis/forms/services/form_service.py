@@ -637,6 +637,21 @@ class FormService:
             logger.warning(f'Failed to resolve approver for user {user_id}: {e}')
             return None
 
+    def get_default_leave_approver(self, user_id):
+        """The direct manager the empty-approver default routes to — {id, name} or
+        None. Uses the SAME resolution as the approval trigger (_resolve_form_approver
+        → VoucherService.resolve_approver), so the form's auto-selected default chip
+        matches the fallback behaviour exactly."""
+        try:
+            from accounting.vouchers.services import VoucherService
+            form = self.form_repo.get_by_slug(self.LEAVE_FORM_SLUG)
+            company_id = (form or {}).get('company_id') or 0
+            approver = VoucherService().resolve_approver(user_id, company_id)
+            return {'id': approver['id'], 'name': approver['name']} if approver else None
+        except Exception as e:
+            logger.warning(f'Failed to resolve default leave approver for user {user_id}: {e}')
+            return None
+
     @staticmethod
     def _build_stakeholder_ids(primary_id, answers):
         """Deduped [primary, second?] approver ids for either-approves routing."""

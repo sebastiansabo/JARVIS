@@ -175,8 +175,12 @@ def get_leave_schedule_route():
     from .services.leave_schedule import get_leave_schedule
     from forms.services.form_service import FormService
     try:
+        fs = FormService()
         data = get_leave_schedule(current_user.id, request.args.get('date'))
-        data.update(FormService().get_leave_form_config())  # reasons, labels, placeholders, visible, terms_text
+        data.update(fs.get_leave_form_config())  # reasons, labels, placeholders, visible, terms_text
+        # {id, name} of the direct manager the empty-approver default routes to, so
+        # the form can auto-select it as a named chip on open.
+        data['default_approver'] = fs.get_default_leave_approver(current_user.id)
         return jsonify({'success': True, 'data': data})
     except Exception as e:
         return safe_error_response(e)
