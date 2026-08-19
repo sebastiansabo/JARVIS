@@ -406,6 +406,47 @@ class FormService:
             return 'Semnătura este obligatorie.'
         return None
 
+    def validate_and_normalize_leave_answers(self, user_id: int, answers: Dict) -> Dict:
+        """Validate a NEW-contract (duration-based) leave-permit answers dict —
+        required fields, consent/signature precheck, reason, and the employee's
+        Sincron window/cap/alignment — then return the normalized dict with
+        f_bi_hours/f_bi_end_time/terms stamped (signature_image stripped).
+
+        Raises ValueError with a user-facing message on validation failure.
+        Shared by `submit_leave_permit` (NEW contract) and `update_leave_permit`.
+        """
+        from core.connectors.connecteam.services.leave_schedule import (
+            get_leave_schedule, validate_leave, compute_return)
+        from datetime import datetime, timezone
+
+        answers = dict(answers or {})
+        # Pull signature out so it never lands in the JSONB.
+        signature_image = str(answers.pop('signature_image', '') or '').strip()
+
+        missing = self._leave_permit_missing_fields(answers)
+        if missing:
+            raise ValueError(f'Missing required fields: {", ".join(missing)}')
+        precheck = self._leave_permit_precheck({**answers, 'signature_image': signature_image})
+        if precheck:
+            raise ValueError(precheck)
+        cfg = self.get_leave_form_config()
+        if answers.get('f_bi_reason') not in cfg['reasons']:
+            raise ValueError('Motiv invalid')
+
+        schedule = get_leave_schedule(user_id, answers.get('f_bi_leave_date'))
+        time_err = validate_leave(answers.get('f_bi_start_time'),
+                                  answers.get('f_bi_duration_hours'), schedule)
+        if time_err:
+            raise ValueError(time_err)
+
+        duration = float(answers['f_bi_duration_hours'])
+        answers['f_bi_hours'] = duration
+        answers['f_bi_end_time'] = compute_return(answers['f_bi_start_time'], duration)
+        answers['f_bi_terms_accepted'] = True
+        answers['f_bi_terms_text'] = cfg['terms_text']
+        answers['f_bi_terms_accepted_at'] = datetime.now(timezone.utc).isoformat()
+        return answers
+
     def submit_leave_permit(self, answers: Dict, user: UserContext, ip_address=None) -> ServiceResult:
         """Create a Bilet de Invoire (code-defined Invoire module form).
 
@@ -419,9 +460,7 @@ class FormService:
             numeric f_bi_hours from start/end so HR/pontaj/Time-Bank reporting
             works for mobile submissions too.
         """
-        from core.connectors.connecteam.services.leave_schedule import (
-            get_leave_schedule, validate_leave, compute_return, parse_hm)
-        from datetime import datetime, timezone
+        from core.connectors.connecteam.services.leave_schedule import parse_hm
 
         form = self.form_repo.get_by_slug(self.LEAVE_FORM_SLUG)
         if not form:
@@ -432,29 +471,11 @@ class FormService:
         signature_image = str(answers.pop('signature_image', '') or '').strip()
 
         if self._is_new_leave_contract(answers):
-            missing = self._leave_permit_missing_fields(answers)
-            if missing:
-                return ServiceResult(success=False,
-                    error=f'Missing required fields: {", ".join(missing)}', status_code=400)
-            precheck = self._leave_permit_precheck({**answers, 'signature_image': signature_image})
-            if precheck:
-                return ServiceResult(success=False, error=precheck, status_code=400)
-            cfg = self.get_leave_form_config()
-            if answers.get('f_bi_reason') not in cfg['reasons']:
-                return ServiceResult(success=False, error='Motiv invalid', status_code=400)
-
-            schedule = get_leave_schedule(user.user_id, answers.get('f_bi_leave_date'))
-            time_err = validate_leave(answers.get('f_bi_start_time'),
-                                      answers.get('f_bi_duration_hours'), schedule)
-            if time_err:
-                return ServiceResult(success=False, error=time_err, status_code=400)
-
-            duration = float(answers['f_bi_duration_hours'])
-            answers['f_bi_hours'] = duration
-            answers['f_bi_end_time'] = compute_return(answers['f_bi_start_time'], duration)
-            answers['f_bi_terms_accepted'] = True
-            answers['f_bi_terms_text'] = cfg['terms_text']
-            answers['f_bi_terms_accepted_at'] = datetime.now(timezone.utc).isoformat()
+            try:
+                answers = self.validate_and_normalize_leave_answers(
+                    user.user_id, {**answers, 'signature_image': signature_image})
+            except ValueError as e:
+                return ServiceResult(success=False, error=str(e), status_code=400)
         else:
             missing = self._leave_permit_missing_fields_legacy(answers)
             if missing:
