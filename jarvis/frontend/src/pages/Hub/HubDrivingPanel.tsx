@@ -193,19 +193,19 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
       <Tabs value={tab} onValueChange={(v) => setTab(v as PanelTab)}>
         {/* Icon + label view switch (desktop only — phones use the bottom pill). */}
         <TabsList className="rounded-xl group-data-[orientation=horizontal]/tabs:h-11">
-          <TabsTrigger value="sessions" aria-label="Sesiuni" className="gap-1.5 rounded-lg px-3"><SteeringWheel className="size-5" />Sesiuni</TabsTrigger>
-          <TabsTrigger value="calendar" aria-label="Calendar" className="gap-1.5 rounded-lg px-3"><CalendarDays className="size-5" />Calendar</TabsTrigger>
-          <TabsTrigger value="park" aria-label="Parc" className="gap-1.5 rounded-lg px-3"><Car className="size-5" />Parc</TabsTrigger>
+          <TabsTrigger value="sessions" aria-label="Sesiuni" className="gap-1.5 rounded-lg px-2.5 lg:px-3"><SteeringWheel className="size-5" /><span className="hidden lg:inline">Sesiuni</span></TabsTrigger>
+          <TabsTrigger value="calendar" aria-label="Calendar" className="gap-1.5 rounded-lg px-2.5 lg:px-3"><CalendarDays className="size-5" /><span className="hidden lg:inline">Calendar</span></TabsTrigger>
+          <TabsTrigger value="park" aria-label="Parc" className="gap-1.5 rounded-lg px-2.5 lg:px-3"><Car className="size-5" /><span className="hidden lg:inline">Parc</span></TabsTrigger>
         </TabsList>
       </Tabs>
-      <Button variant="outline" aria-label="Filtre" className={`${CTRL_H} shrink-0 gap-1.5 rounded-xl px-3`} onClick={() => setFiltersOpen(true)}>
+      <Button variant="outline" aria-label="Filtre" className={`${CTRL_H} shrink-0 gap-1.5 rounded-xl px-2.5 lg:px-3`} onClick={() => setFiltersOpen(true)}>
         <SlidersHorizontal className="h-4 w-4" />
-        Filtre
+        <span className="hidden lg:inline">Filtre</span>
         {activeFilters > 0 && <span className="rounded-full bg-primary px-1.5 text-[11px] font-bold leading-5 text-primary-foreground">{activeFilters}</span>}
       </Button>
-      <Button aria-label="Sesiune nouă" className={`${CTRL_H} shrink-0 gap-1.5 rounded-xl px-3`} onClick={() => setOverlay({ kind: 'choose' })}>
+      <Button aria-label="Sesiune nouă" className={`${CTRL_H} shrink-0 gap-1.5 rounded-xl px-2.5 lg:px-3`} onClick={() => setOverlay({ kind: 'choose' })}>
         <Plus className="h-5 w-5" />
-        Sesiune nouă
+        <span className="hidden lg:inline">Sesiune nouă</span>
       </Button>
     </div>
   )
@@ -214,7 +214,10 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
     <div className="space-y-4">
       {/* Desktop: controls sit inline on the breadcrumb title row. Phones get the
           fixed bottom pill below instead, so skip the header toolbar there. */}
-      {!isMobile && (headerSlot ? createPortal(inlineActions, headerSlot) : <div className="flex justify-end">{inlineActions}</div>)}
+      {/* Controls live in the Hub header slot on ALL widths — the mobile
+          breadcrumb renders that slot too, so phones get icon-only controls on
+          the title row. Inline fallback stays desktop-only. */}
+      {headerSlot ? createPortal(inlineActions, headerSlot) : (!isMobile && <div className="flex justify-end">{inlineActions}</div>)}
 
       {hasCompany && tab === 'sessions' && (
         <DrivingSessionsList
@@ -338,9 +341,9 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
         </div>
       )}
 
-      {/* Phone control surface — replaces the header toolbar and (via Hub) the
-          global Hub pill while Driving is open. Back returns to the Hub grid. */}
-      {isMobile && (
+      {/* Phone fallback control surface — only when there's no header slot to
+          portal into (the breadcrumb normally provides one on mobile too). */}
+      {isMobile && !headerSlot && (
         <DrivingBottomBar
           tab={tab}
           onTab={setTab}
