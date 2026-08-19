@@ -58,11 +58,16 @@ def get_leave_schedule(jarvis_user_id, date_str=None):
     except Exception as e:
         logger.warning('sincron schedule fetch failed for user %s: %s', jarvis_user_id, e)
         row = None
-    if row and row.get('schedule_start') and row.get('schedule_end'):
+    # The selectable window is a FIXED company program (07:00–18:00) for
+    # everyone — the start dropdown always runs 07:00 → 17:30 (for a future day)
+    # or now → 17:30 (for today). Sincron, when available, no longer narrows the
+    # window; it only tightens the daily duration cap (norma − lunch, ≤7h).
+    norma = row.get('norma_lucru') if row else None
+    if norma is not None:
         return {
-            'schedule_start': _hm(row['schedule_start']),
-            'schedule_end': _hm(row['schedule_end']),
-            'day_cap_hours': _day_cap(row.get('norma_lucru'), row.get('lunch_break_minutes')),
+            'schedule_start': DEFAULT_START,
+            'schedule_end': DEFAULT_END,
+            'day_cap_hours': _day_cap(norma, row.get('lunch_break_minutes')),
             'lunch_break_minutes': int(row.get('lunch_break_minutes') or 0),
             'source': 'sincron',
         }

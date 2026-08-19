@@ -34,7 +34,6 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
   const [reason, setReason] = useState('')
   const [secondApprover, setSecondApprover] = useState('')
   const [notes, setNotes] = useState('')
-  const [destination, setDestination] = useState('')
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [signature, setSignature] = useState('')
   const [attempted, setAttempted] = useState(false)
@@ -47,11 +46,10 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
   // Forms-managed content (labels/placeholders/visibility/consent) with coded fallbacks.
   const L = (id: string, fallback: string) => sched?.labels?.[id] || fallback
   const P = (id: string, fallback: string) => sched?.placeholders?.[id] ?? fallback
-  const showDestination = sched?.visible?.f_bi_destination ?? false
   // Second approver + notes are standard fields — always shown. A Forms schema that
   // omits them must NOT hide them: the editor auto-generates field ids, so a removed
   // field can't be re-added with the exact id the module looks for (one-way gating
-  // that broke prod, where these were absent). Only Destinația stays opt-in.
+  // that broke prod, where these were absent).
   const showNotes = true
   const showApprover = true
   const termsText = sched?.terms_text || 'Declar că îmi asum responsabilitatea pentru orice eventual eveniment neplăcut care ar putea surveni în legătură cu mine, în această perioadă în care sunt învoit / învoită 🔒'
@@ -121,7 +119,6 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
         f_bi_reason: reason,
         f_bi_second_approver: secondApprover,
         f_bi_notes: notes,
-        f_bi_destination: destination,
         f_bi_terms_accepted: termsAccepted,
         signature_image: signature,
       })
@@ -246,14 +243,6 @@ export function InvoireForm({ onClose, onSubmitted }: { onClose: () => void; onS
                 </div>
               </PopoverContent>
             </Popover>
-          </div>
-          )}
-
-          {showDestination && (
-          <div className="space-y-1">
-            <Label>{L('f_bi_destination', 'Destinația')}</Label>
-            <Input value={destination} onChange={(ev) => setDestination(ev.target.value)}
-              placeholder={P('f_bi_destination', 'Unde vă deplasați')} />
           </div>
           )}
 
