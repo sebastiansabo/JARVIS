@@ -309,6 +309,7 @@ def _fetch_permits(start, end):
             FROM form_submissions fs
             JOIN forms f ON f.id = fs.form_id
             WHERE f.slug = 'bilet-de-invoire'
+              AND fs.status NOT IN ('cancelled', 'rejected')
               AND fs.respondent_user_id IS NOT NULL
               AND (fs.answers->>'f_bi_leave_date') ~ %s
               AND (fs.answers->>'f_bi_leave_date')::date BETWEEN %s AND %s

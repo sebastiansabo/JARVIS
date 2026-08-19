@@ -1794,6 +1794,27 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
 }
 
 // Manager view: leave requests awaiting my approval, with approve/reject.
+// Pure label helper: for a cancellation request, Aprobă actually CANCELS the
+// already-granted leave (and reverses its TimeBank credit) while Respinge
+// keeps it as-is — the inverse of a grant request's semantics. Same
+// decideLeaveApproval('approved'|'rejected') call either way; only the
+// wording changes so the manager isn't misled into treating it like a grant.
+export function leaveApprovalLabels(isCancellation: boolean) {
+  return isCancellation
+    ? {
+        badge: 'Cerere de anulare',
+        approve: 'Aprobă anularea',
+        reject: 'Respinge anularea',
+        confirmReject: 'Confirmă respingerea anulării',
+      }
+    : {
+        badge: null as string | null,
+        approve: 'Aprobă',
+        reject: 'Respinge',
+        confirmReject: 'Confirmă respingerea',
+      }
+}
+
 function HubLeaveApprovalsContent() {
   const queryClient = useQueryClient()
   const { data, isLoading } = useQuery({
@@ -1829,10 +1850,17 @@ function HubLeaveApprovalsContent() {
               ? new Date(it.leave_date + 'T00:00').toLocaleDateString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short' })
               : '—'
             const busy = decide.isPending && decide.variables?.requestId === it.request_id
+            const labels = leaveApprovalLabels(!!it.is_cancellation)
             return (
               <div key={it.request_id} className="px-4 py-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
+                    {labels.badge && (
+                      <Badge variant="outline"
+                        className="mb-1 border-amber-300 text-amber-700 bg-amber-50 dark:border-amber-500/40 dark:text-amber-400 dark:bg-amber-900/20">
+                        {labels.badge}
+                      </Badge>
+                    )}
                     <p className="text-base font-semibold">{it.requester_name || 'Angajat'}</p>
                     <p className="text-sm text-muted-foreground">
                       {dateStr} · {it.leave_start_time?.slice(0, 5) || '—'}–{it.leave_end_time?.slice(0, 5) || '—'} · Motiv: {it.leave_reason || 'Învoire'}
@@ -1852,7 +1880,7 @@ function HubLeaveApprovalsContent() {
                       </Button>
                       <Button className="flex-1 h-11 text-base bg-rose-600 hover:bg-rose-700 text-white"
                         disabled={busy} onClick={() => decide.mutate({ requestId: it.request_id, decision: 'rejected', comment: rejectComment })}>
-                        Confirmă respingerea
+                        {labels.confirmReject}
                       </Button>
                     </div>
                   </div>
@@ -1861,11 +1889,11 @@ function HubLeaveApprovalsContent() {
                   <Button variant="outline"
                     className="flex-1 h-11 text-base border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-400"
                     disabled={busy} onClick={() => { setRejectingId(it.request_id); setRejectComment('') }}>
-                    Respinge
+                    {labels.reject}
                   </Button>
                   <Button className="flex-1 h-11 text-base bg-emerald-600 hover:bg-emerald-700 text-white"
                     disabled={busy} onClick={() => decide.mutate({ requestId: it.request_id, decision: 'approved' })}>
-                    Aprobă
+                    {labels.approve}
                   </Button>
                 </div>
                 )}

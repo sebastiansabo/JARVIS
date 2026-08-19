@@ -23,7 +23,7 @@ def _open_cancellation_approval(sub, user_id):
     is the same approver that granted the leave."""
     from core.approvals.engine import ApprovalEngine
     from accounting.vouchers.services.voucher_service import VoucherService
-    approver = VoucherService().resolve_approver(user_id, None, None)
+    approver = VoucherService().resolve_approver(user_id, sub.get('company_id'), None)
     approver_id = approver['id'] if approver else None
     ctx = {
         'cancellation': True,
