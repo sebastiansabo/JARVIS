@@ -2622,4 +2622,27 @@ def _create_schema_incremental_continued(conn, cursor):
         END $$;
     ''')
 
+    # ── HR Leave Permits — Trash (soft-delete) distinct from Archive ──
+    # HR now has two separate recoverable states: Archive (filed, kept
+    # indefinitely) and Trash (deleted_at set, auto-purged after 7 days by the
+    # purge_old_trashed_leaves scheduler job). deleted_at takes precedence over
+    # archived_at when both somehow set. archived_by/deleted_by record the actor.
+    # Idempotent: ADD COLUMN IF NOT EXISTS no-ops on re-run.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF to_regclass('public.form_submissions') IS NOT NULL THEN
+                ALTER TABLE form_submissions ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP DEFAULT NULL;
+                ALTER TABLE form_submissions ADD COLUMN IF NOT EXISTS deleted_by INTEGER DEFAULT NULL;
+                CREATE INDEX IF NOT EXISTS idx_form_submissions_trashed
+                    ON form_submissions(deleted_at) WHERE deleted_at IS NOT NULL;
+            END IF;
+            IF to_regclass('public.connecteam_form_submissions') IS NOT NULL THEN
+                ALTER TABLE connecteam_form_submissions ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+                ALTER TABLE connecteam_form_submissions ADD COLUMN IF NOT EXISTS deleted_by INTEGER DEFAULT NULL;
+                CREATE INDEX IF NOT EXISTS idx_connecteam_submissions_trashed
+                    ON connecteam_form_submissions(deleted_at) WHERE deleted_at IS NOT NULL;
+            END IF;
+        END $$;
+    ''')
+
     conn.commit()

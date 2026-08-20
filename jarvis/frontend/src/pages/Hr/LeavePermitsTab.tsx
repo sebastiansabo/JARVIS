@@ -1,11 +1,10 @@
 import { useState, useMemo, useEffect, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Upload, ChevronLeft, ChevronRight, ChevronDown, Info, MoreHorizontal, Pencil, Archive, RotateCcw } from 'lucide-react'
+import { Loader2, Upload, ChevronLeft, ChevronRight, ChevronDown, Info, MoreHorizontal, Pencil, Archive, Trash2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -16,9 +15,25 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { connecteamApi } from '@/api/connecteam'
-import type { ConnecteamSubmission, ConversionRequest, HrLeaveEdit } from '@/api/connecteam'
+import type { ConnecteamSubmission, ConversionRequest, HrLeaveEdit, LeaveView } from '@/api/connecteam'
 import { toast } from 'sonner'
 import { useNavigate } from 'react-router-dom'
+
+const TRASH_RETENTION_DAYS = 7
+const VIEW_TABS: { key: LeaveView; label: string }[] = [
+  { key: 'active', label: 'Active' },
+  { key: 'archived', label: 'Arhivate' },
+  { key: 'trashed', label: 'Coș' },
+]
+
+/** Days remaining before an item in Trash is auto-purged (0 = purges today). */
+function trashDaysLeft(deletedAt?: string | null): number {
+  if (!deletedAt) return TRASH_RETENTION_DAYS
+  const deleted = new Date(deletedAt.replace(' ', 'T')).getTime()
+  if (Number.isNaN(deleted)) return TRASH_RETENTION_DAYS
+  const elapsedDays = (Date.now() - deleted) / 86_400_000
+  return Math.max(0, Math.ceil(TRASH_RETENTION_DAYS - elapsedDays))
+}
 
 const now = new Date()
 
@@ -29,7 +44,7 @@ export default function LeavePermitsTab({ search }: { search: string }) {
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [companyFilter, setCompanyFilter] = useState<string>('all')
   const [collapsedEmployees, setCollapsedEmployees] = useState<Set<string>>(new Set())
-  const [showArchived, setShowArchived] = useState(false)
+  const [view, setView] = useState<LeaveView>('active')
   const [editing, setEditing] = useState<ConnecteamSubmission | null>(null)
 
   useQuery({
@@ -38,9 +53,9 @@ export default function LeavePermitsTab({ search }: { search: string }) {
   })
 
   const { data: recentData, isLoading } = useQuery({
-    queryKey: ['connecteam', 'submissions', year, month, showArchived],
+    queryKey: ['connecteam', 'submissions', year, month, view],
     queryFn: () =>
-      fetch(`/connecteam/api/submissions/recent?year=${year}&month=${month}&limit=500${showArchived ? '&include_archived=1' : ''}`, { credentials: 'include' })
+      fetch(`/connecteam/api/submissions/recent?year=${year}&month=${month}&limit=500&view=${view}`, { credentials: 'include' })
         .then(r => r.json())
         .then(r => r.data as ConnecteamSubmission[]),
   })
@@ -57,6 +72,18 @@ export default function LeavePermitsTab({ search }: { search: string }) {
       })
     },
     onError: () => toast.error('Arhivarea a eșuat'),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: ({ source, id }: { source: 'jarvis' | 'connecteam'; id: number }) =>
+      connecteamApi.hrDeleteLeave(source, id),
+    onSuccess: (_res, vars) => {
+      invalidate()
+      toast.success(`Bilet mutat în Coș · se șterge în ${TRASH_RETENTION_DAYS} zile`, {
+        action: { label: 'Anulează', onClick: () => restoreMut.mutate(vars) },
+      })
+    },
+    onError: () => toast.error('Ștergerea a eșuat'),
   })
 
   const restoreMut = useMutation({
@@ -220,10 +247,22 @@ export default function LeavePermitsTab({ search }: { search: string }) {
         </div>
 
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-            <Switch checked={showArchived} onCheckedChange={setShowArchived} />
-            Arhivate
-          </label>
+          <div className="inline-flex rounded-md border p-0.5 bg-muted/40">
+            {VIEW_TABS.map(t => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setView(t.key)}
+                className={`h-7 px-2.5 text-xs rounded-[5px] transition-colors ${
+                  view === t.key
+                    ? 'bg-background shadow-sm font-medium'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
           {grouped.length > 1 && (
             <div className="flex gap-1">
               <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={expandAll}>Expand All</Button>
@@ -260,7 +299,9 @@ export default function LeavePermitsTab({ search }: { search: string }) {
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-          No submissions for {monthLabel}
+          {view === 'archived' ? `Niciun bilet arhivat pentru ${monthLabel}`
+            : view === 'trashed' ? `Coșul este gol pentru ${monthLabel}`
+            : `No submissions for ${monthLabel}`}
         </div>
       ) : (
         <div className="rounded-md border overflow-auto">
@@ -316,7 +357,11 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                     {!isCollapsed && submissions.map((s) => (
                       <TableRow
                         key={s.submission_id}
-                        className={`hover:bg-muted/20 ${s.archived_at ? 'opacity-50 [&_td]:line-through' : ''}`}
+                        className={`hover:bg-muted/20 ${
+                          s.deleted_at
+                            ? 'opacity-70 bg-red-50/40 dark:bg-red-950/10'
+                            : s.archived_at ? 'opacity-60' : ''
+                        }`}
                       >
                         <TableCell className="w-8 px-2" />
                         <TableCell className="pl-6 text-xs text-muted-foreground whitespace-nowrap">
@@ -354,8 +399,13 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                           }`}>
                             {s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}
                           </span>
+                          {s.deleted_at && (
+                            <span className="ml-1.5 text-[10px] text-red-600 dark:text-red-400 whitespace-nowrap">
+                              se șterge în {trashDaysLeft(s.deleted_at)} {trashDaysLeft(s.deleted_at) === 1 ? 'zi' : 'zile'}
+                            </span>
+                          )}
                         </TableCell>
-                        <TableCell className="w-8 px-1 no-underline">
+                        <TableCell className="w-8 px-1">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7">
@@ -363,22 +413,37 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => setEditing(s)}>
-                                <Pencil className="mr-2 h-3.5 w-3.5" /> Editează
-                              </DropdownMenuItem>
-                              {s.archived_at ? (
+                              {s.deleted_at ? (
                                 <DropdownMenuItem
                                   onClick={() => restoreMut.mutate({ source: (s.source ?? 'connecteam'), id: s.id })}
                                 >
                                   <RotateCcw className="mr-2 h-3.5 w-3.5" /> Restaurează
                                 </DropdownMenuItem>
                               ) : (
-                                <DropdownMenuItem
-                                  className="text-red-600 focus:text-red-600"
-                                  onClick={() => archiveMut.mutate({ source: (s.source ?? 'connecteam'), id: s.id })}
-                                >
-                                  <Archive className="mr-2 h-3.5 w-3.5" /> Arhivează
-                                </DropdownMenuItem>
+                                <>
+                                  <DropdownMenuItem onClick={() => setEditing(s)}>
+                                    <Pencil className="mr-2 h-3.5 w-3.5" /> Editează
+                                  </DropdownMenuItem>
+                                  {s.archived_at ? (
+                                    <DropdownMenuItem
+                                      onClick={() => restoreMut.mutate({ source: (s.source ?? 'connecteam'), id: s.id })}
+                                    >
+                                      <RotateCcw className="mr-2 h-3.5 w-3.5" /> Restaurează
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem
+                                      onClick={() => archiveMut.mutate({ source: (s.source ?? 'connecteam'), id: s.id })}
+                                    >
+                                      <Archive className="mr-2 h-3.5 w-3.5" /> Arhivează
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem
+                                    className="text-red-600 focus:text-red-600"
+                                    onClick={() => deleteMut.mutate({ source: (s.source ?? 'connecteam'), id: s.id })}
+                                  >
+                                    <Trash2 className="mr-2 h-3.5 w-3.5" /> Șterge
+                                  </DropdownMenuItem>
+                                </>
                               )}
                             </DropdownMenuContent>
                           </DropdownMenu>

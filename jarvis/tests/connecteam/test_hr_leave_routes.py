@@ -112,38 +112,62 @@ def test_edit_route_404_on_lookup_error(client, monkeypatch, login_as):
     assert r.status_code == 404
 
 
-# ── archive / restore routes ──
+# ── archive / delete / restore routes (lifecycle) ──
 
-def test_archive_route_calls_service_with_true(client, monkeypatch, login_as):
+def test_archive_route_sets_archived_state(client, monkeypatch, login_as):
     from core.connectors.connecteam.services import leave_permit_actions as lpa
     captured = {}
-    def fake(source, eid, actor_id, archived):
-        captured['args'] = (source, eid, actor_id, archived)
-        return {'source': source, 'id': eid, 'archived': archived}
-    monkeypatch.setattr(lpa, 'hr_set_archived', fake)
+    def fake(source, eid, actor_id, state):
+        captured['args'] = (source, eid, actor_id, state)
+        return {'source': source, 'id': eid, 'state': state}
+    monkeypatch.setattr(lpa, 'hr_set_lifecycle', fake)
     login_as(user_id=9)
     r = client.post('/connecteam/api/hr/leaves/jarvis/42/archive')
-    assert r.status_code == 200 and r.get_json()['data']['archived'] is True
-    assert captured['args'] == ('jarvis', 42, 9, True)
+    assert r.status_code == 200 and r.get_json()['data']['state'] == 'archived'
+    assert captured['args'] == ('jarvis', 42, 9, 'archived')
 
 
-def test_restore_route_calls_service_with_false(client, monkeypatch, login_as):
+def test_delete_route_sets_trashed_state(client, monkeypatch, login_as):
     from core.connectors.connecteam.services import leave_permit_actions as lpa
     captured = {}
-    def fake(source, eid, actor_id, archived):
-        captured['args'] = (source, eid, actor_id, archived)
-        return {'source': source, 'id': eid, 'archived': archived}
-    monkeypatch.setattr(lpa, 'hr_set_archived', fake)
+    def fake(source, eid, actor_id, state):
+        captured['args'] = (source, eid, actor_id, state)
+        return {'source': source, 'id': eid, 'state': state}
+    monkeypatch.setattr(lpa, 'hr_set_lifecycle', fake)
+    login_as(user_id=9)
+    r = client.post('/connecteam/api/hr/leaves/connecteam/7/delete')
+    assert r.status_code == 200 and r.get_json()['data']['state'] == 'trashed'
+    assert captured['args'] == ('connecteam', 7, 9, 'trashed')
+
+
+def test_restore_route_sets_active_state(client, monkeypatch, login_as):
+    from core.connectors.connecteam.services import leave_permit_actions as lpa
+    captured = {}
+    def fake(source, eid, actor_id, state):
+        captured['args'] = (source, eid, actor_id, state)
+        return {'source': source, 'id': eid, 'state': state}
+    monkeypatch.setattr(lpa, 'hr_set_lifecycle', fake)
     login_as(user_id=9)
     r = client.post('/connecteam/api/hr/leaves/connecteam/7/restore')
-    assert r.status_code == 200 and r.get_json()['data']['archived'] is False
-    assert captured['args'] == ('connecteam', 7, 9, False)
+    assert r.status_code == 200 and r.get_json()['data']['state'] == 'active'
+    assert captured['args'] == ('connecteam', 7, 9, 'active')
+
+
+def test_delete_route_requires_auth(client):
+    r = client.post('/connecteam/api/hr/leaves/jarvis/42/delete')
+    assert r.status_code == 401
+
+
+def test_delete_route_forbidden_for_non_admin(client, login_as):
+    login_as(user_id=9, is_admin=False)
+    r = client.post('/connecteam/api/hr/leaves/jarvis/42/delete')
+    assert r.status_code == 403
 
 
 def test_archive_route_404_on_lookup_error(client, monkeypatch, login_as):
     from core.connectors.connecteam.services import leave_permit_actions as lpa
-    monkeypatch.setattr(lpa, 'hr_set_archived',
-        lambda s, e, a, archived: (_ for _ in ()).throw(LookupError('Submission not found')))
+    monkeypatch.setattr(lpa, 'hr_set_lifecycle',
+        lambda s, e, a, state: (_ for _ in ()).throw(LookupError('Submission not found')))
     login_as(user_id=9)
     r = client.post('/connecteam/api/hr/leaves/jarvis/999/archive')
     assert r.status_code == 404

@@ -64,9 +64,14 @@ export interface ConnecteamSubmission {
   created_at: string
   source?: 'connecteam' | 'jarvis'
   jarvis_user_company?: string | null
-  /** Set (non-null) when HR has soft-deleted (archived) the leave. */
+  /** Set (non-null) when HR has archived (filed) the leave. */
   archived_at?: string | null
+  /** Set (non-null) when HR has moved the leave to Coș/Trash (auto-purged after 7 days). */
+  deleted_at?: string | null
 }
+
+/** HR lifecycle bucket shown in the Leave-Permits tab. */
+export type LeaveView = 'active' | 'archived' | 'trashed'
 
 /** HR-editable leave details (date/times/reason) — status is never changed. */
 export interface HrLeaveEdit {
@@ -163,12 +168,18 @@ export const connecteamApi = {
     ),
 
   hrArchiveLeave: (source: 'jarvis' | 'connecteam', id: number) =>
-    api.post<{ success: boolean; data: { archived: boolean } }>(
+    api.post<{ success: boolean; data: { state: string } }>(
       `${BASE}/hr/leaves/${source}/${id}/archive`, {}
     ),
 
+  // Move a leave to Coș/Trash (recoverable for 7 days, then auto-purged).
+  hrDeleteLeave: (source: 'jarvis' | 'connecteam', id: number) =>
+    api.post<{ success: boolean; data: { state: string } }>(
+      `${BASE}/hr/leaves/${source}/${id}/delete`, {}
+    ),
+
   hrRestoreLeave: (source: 'jarvis' | 'connecteam', id: number) =>
-    api.post<{ success: boolean; data: { archived: boolean } }>(
+    api.post<{ success: boolean; data: { state: string } }>(
       `${BASE}/hr/leaves/${source}/${id}/restore`, {}
     ),
 
