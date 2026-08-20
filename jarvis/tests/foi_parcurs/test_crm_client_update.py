@@ -126,3 +126,32 @@ def test_existing_license_is_overwritten(client):
                      json={'driver_license_number': 'NEW999'})
     assert r.status_code == 200
     assert r.get_json()['client']['driver_license_number'] == 'NEW999'
+
+
+# ── widened: fiscal identity + address editable from the Driving Hub ──
+
+def test_fill_cui(client):
+    r = client.patch('/api/foi-parcurs/crm-clients/1', json={'cui': ' RO9999999 '})
+    assert r.status_code == 200
+    _, data = client.application._fake_repo.update_calls[-1]
+    assert data['cui'] == 'RO9999999'  # trimmed
+
+
+def test_edit_full_record(client):
+    r = client.patch('/api/foi-parcurs/crm-clients/1', json={
+        'display_name': 'ACME SRL', 'cui': 'RO123', 'nr_reg': 'J40/1/2020',
+        'street': 'Str. Test 1', 'city': 'Cluj', 'region': 'Cluj',
+    })
+    assert r.status_code == 200
+    _, data = client.application._fake_repo.update_calls[-1]
+    assert data == {
+        'display_name': 'ACME SRL', 'cui': 'RO123', 'nr_reg': 'J40/1/2020',
+        'street': 'Str. Test 1', 'city': 'Cluj', 'region': 'Cluj',
+    }
+
+
+def test_empty_display_name_rejected(client):
+    r = client.patch('/api/foi-parcurs/crm-clients/1', json={'display_name': '  '})
+    assert r.status_code == 400
+    # Must not have attempted an update.
+    assert client.application._fake_repo.update_calls == []

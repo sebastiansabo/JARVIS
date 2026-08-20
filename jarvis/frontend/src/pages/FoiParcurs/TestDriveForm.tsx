@@ -58,6 +58,8 @@ import {
   CalendarPlus,
   PlayCircle,
   Megaphone,
+  Pencil,
+  Save,
 } from 'lucide-react'
 import { CreateClientPanel, DriverLicenseSection } from './CreateClientPanel'
 import {
@@ -94,6 +96,12 @@ function useDebounce(value: string, delay: number) {
     return () => clearTimeout(t)
   }, [value, delay])
   return debounced
+}
+
+/** Join a client's address parts (street, city, region) into a display string. */
+function clientAddress(c: CrmClient | null): string {
+  if (!c) return ''
+  return [c.street, c.city, c.region].map((x) => (x || '').trim()).filter(Boolean).join(', ')
 }
 
 interface TestDriveFormProps {
@@ -420,6 +428,28 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       setDriverContact(contacts.find((c) => c.is_primary) ?? contacts[0])
     }
   }, [isCompanyClient, contacts, driverContact])
+
+  // ── Full client hydration + inline edit (Client card) ──
+  // The search row is lean; fetch the full CRM record so the card can show all
+  // data (email, address, …) and prefill the edit form. Merge missing fields
+  // into selectedClient once, guarded so it never loops.
+  const [editingClient, setEditingClient] = useState(false)
+  const { data: clientFullData } = useQuery({
+    queryKey: ['fp-client-full', selectedClient?.id],
+    queryFn: () => crmApi.getClient(Number(selectedClient!.id)),
+    enabled: !!selectedClient?.id,
+  })
+  useEffect(() => {
+    const c = clientFullData?.client
+    if (!c) return
+    setSelectedClient((prev) => {
+      if (!prev || String(prev.id) !== String(c.id)) return prev
+      // Full record fills in fields the lean search row lacked (email, address…).
+      const merged: CrmClient = { ...prev, ...c }
+      // Only re-set state if something actually changed (avoids a render loop).
+      return JSON.stringify(merged) === JSON.stringify(prev) ? prev : merged
+    })
+  }, [clientFullData])
 
   // Campaign search — type-to-search (>=2 chars), not scoped by company
   // (matches the mobile form). Optional field, nothing gates on it. Only
@@ -880,35 +910,54 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
         <CardContent className="space-y-3">
           {selectedClient ? (
             <div className="space-y-3">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="secondary" className="text-sm py-1 px-3">
                   {selectedClient.display_name || selectedClient.name || `Client #${selectedClient.id}`}
                   {selectedClient.phone && ` — ${selectedClient.phone}`}
                 </Badge>
-                <Button variant="ghost" size="sm" onClick={() => { setSelectedClient(null); setClientSearch('') }}>
+                {!editingClient && (
+                  <Button variant="ghost" size="sm" onClick={() => setEditingClient(true)}>
+                    <Pencil className="h-3.5 w-3.5 mr-1" />Editează
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" onClick={() => { setSelectedClient(null); setClientSearch(''); setEditingClient(false) }}>
                   <X className="h-4 w-4 mr-1" />Schimbă
                 </Button>
               </div>
-              {/* Required client data — company: CUI (+ Nr. reg.); person: phone + email */}
-              <div className="text-xs space-y-0.5">
-                {isCompanyClient ? (
-                  <>
-                    <p className={cn('text-muted-foreground', errFull(missing.cui) && 'text-destructive font-medium')}>
-                      CUI: {(selectedClient.cui || '').trim() || 'lipsă'}
-                    </p>
-                    {(selectedClient.nr_reg || '').trim() && (
-                      <p className="text-muted-foreground">Nr. reg.: {selectedClient.nr_reg}</p>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <p className={cn('text-muted-foreground', errFull(missing.phone) && 'text-destructive font-medium')}>
-                      Tel: {(selectedClient.phone || '').trim() || 'lipsă'}
-                    </p>
-                    <p className="text-muted-foreground">Email: {(selectedClient.email || '').trim() || '—'}</p>
-                  </>
-                )}
-              </div>
+
+              {editingClient ? (
+                <ClientEditForm
+                  client={selectedClient}
+                  isCompany={isCompanyClient}
+                  onCancel={() => setEditingClient(false)}
+                  onSaved={(c) => {
+                    setSelectedClient((prev) => (prev ? { ...prev, ...c } : c))
+                    setEditingClient(false)
+                    queryClient.invalidateQueries({ queryKey: ['fp-client-full', c.id] })
+                  }}
+                />
+              ) : (
+                /* Full client data — read-only (name/CUI/nr.reg/tel/email/adresă) */
+                <div className="text-xs space-y-0.5">
+                  {isCompanyClient && (
+                    <>
+                      <p className={cn('text-muted-foreground', errFull(missing.cui) && 'text-destructive font-medium')}>
+                        CUI: {(selectedClient.cui || '').trim() || 'lipsă'}
+                      </p>
+                      {(selectedClient.nr_reg || '').trim() && (
+                        <p className="text-muted-foreground">Nr. reg.: {selectedClient.nr_reg}</p>
+                      )}
+                    </>
+                  )}
+                  <p className={cn('text-muted-foreground', errFull(missing.phone) && 'text-destructive font-medium')}>
+                    Tel: {(selectedClient.phone || '').trim() || 'lipsă'}
+                  </p>
+                  <p className="text-muted-foreground">Email: {(selectedClient.email || '').trim() || '—'}</p>
+                  {clientAddress(selectedClient) && (
+                    <p className="text-muted-foreground">Adresă: {clientAddress(selectedClient)}</p>
+                  )}
+                </div>
+              )}
               {isCompanyClient && (
                 <div className={cn('rounded-md border bg-muted/40 p-3 space-y-2', invalidRingFull(missing.contact))}>
                   <p className="text-xs font-semibold uppercase text-muted-foreground">Persoană de contact *</p>
@@ -956,6 +1005,28 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                       <Button type="button" variant="outline" size="sm" className="w-full border-dashed" onClick={() => setShowAddContact(true)}>
                         <UserPlus className="h-3.5 w-3.5 mr-2" />Adaugă persoană de contact
                       </Button>
+                      {driverContact && (
+                        <div className="flex items-start gap-3 rounded-md border bg-background p-2.5 mt-1">
+                          {driverContact.driver_license_photo && (
+                            <img
+                              src={driverContact.driver_license_photo}
+                              alt="Permis de conducere"
+                              className="h-14 w-24 shrink-0 rounded object-cover border"
+                            />
+                          )}
+                          <div className="text-xs space-y-0.5 min-w-0">
+                            <p className="font-medium">{driverContact.full_name}</p>
+                            <p className="text-muted-foreground">Tel: {(driverContact.phone || '').trim() || '—'}</p>
+                            <p className="text-muted-foreground truncate">Email: {(driverContact.email || '').trim() || '—'}</p>
+                            <p className="text-muted-foreground">
+                              Serie permis: {[driverContact.driver_license_serie, driverContact.driver_license_number].filter(Boolean).join(' ') || '—'}
+                            </p>
+                            {driverContact.driver_license_expiry && (
+                              <p className="text-muted-foreground">Valabilitate: {driverContact.driver_license_expiry}</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                   {errFull(missing.contact) && (
@@ -1439,6 +1510,89 @@ function AdvisorSignatureField({ value, onChange }: { value: string; onChange: (
           <SignatureCanvas onSave={persist} onClear={() => onChange('')} width={500} height={200} />
         </Suspense>
       )}
+    </div>
+  )
+}
+
+/** Inline edit of the selected CRM client from the Driving Hub Client card.
+ *  Login-gated (any TD user) via foiParcursApi.updateCrmClient — lets a
+ *  consilier correct the fiscal identity + address (e.g. a missing CUI that
+ *  blocks a company TD) without full CRM access. Company clients get CUI +
+ *  Nr. reg fields; persons don't. */
+function ClientEditForm({
+  client,
+  isCompany,
+  onCancel,
+  onSaved,
+}: {
+  client: CrmClient
+  isCompany: boolean
+  onCancel: () => void
+  onSaved: (client: CrmClient) => void
+}) {
+  const [name, setName] = useState(client.display_name || client.name || '')
+  const [cui, setCui] = useState(client.cui || '')
+  const [nrReg, setNrReg] = useState(client.nr_reg || '')
+  const [phone, setPhone] = useState(client.phone || '')
+  const [email, setEmail] = useState(client.email || '')
+  const [street, setStreet] = useState(client.street || '')
+  const [city, setCity] = useState(client.city || '')
+  const [region, setRegion] = useState(client.region || '')
+  const [error, setError] = useState<string | null>(null)
+
+  const save = useMutation({
+    mutationFn: () =>
+      foiParcursApi.updateCrmClient(Number(client.id), {
+        display_name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        street: street.trim(),
+        city: city.trim(),
+        region: region.trim(),
+        ...(isCompany ? { cui: cui.trim(), nr_reg: nrReg.trim() } : {}),
+      }),
+    onSuccess: (res) => {
+      if (res.client) onSaved(res.client)
+      else onCancel()
+    },
+    onError: (e: any) => setError(e?.data?.error || 'Salvarea a eșuat.'),
+  })
+
+  const field = (label: string, value: string, setter: (v: string) => void, placeholder = '') => (
+    <div className="space-y-1">
+      <Label className="text-xs">{label}</Label>
+      <Input value={value} onChange={(e) => setter(e.target.value)} placeholder={placeholder} className="h-8 text-sm" />
+    </div>
+  )
+
+  return (
+    <div className="rounded-md border bg-muted/30 p-3 space-y-2.5">
+      {field('Nume', name, setName)}
+      {isCompany && (
+        <div className="grid grid-cols-2 gap-2">
+          {field('CUI', cui, setCui, 'ex. RO1234567')}
+          {field('Nr. reg.', nrReg, setNrReg, 'ex. J40/1234/2000')}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        {field('Telefon', phone, setPhone, '+40...')}
+        {field('Email', email, setEmail)}
+      </div>
+      {field('Adresă (stradă)', street, setStreet)}
+      <div className="grid grid-cols-2 gap-2">
+        {field('Oraș', city, setCity)}
+        {field('Județ', region, setRegion)}
+      </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      <div className="flex items-center gap-2 pt-0.5">
+        <Button type="button" size="sm" onClick={() => { setError(null); save.mutate() }} disabled={save.isPending || !name.trim()}>
+          {save.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+          Salvează
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={save.isPending}>
+          Anulează
+        </Button>
+      </div>
     </div>
   )
 }

@@ -373,6 +373,11 @@ export interface CrmClient {
   cui?: string | null
   /** Trade-register number (Nr. Registrul Comerțului) — distinct from cui. */
   nr_reg?: string | null
+  /** Address parts — shown/edited in the Driving Hub Client card. */
+  street?: string | null
+  city?: string | null
+  region?: string | null
+  company_name?: string | null
   /** 'company' | 'person' — a company client never drives itself; the TD form
    *  gates submit/activate on a gate-valid contact person (see ClientContact). */
   client_type?: string | null
