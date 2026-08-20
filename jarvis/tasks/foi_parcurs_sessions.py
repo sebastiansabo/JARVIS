@@ -3,8 +3,10 @@
 Every 10 minutes — (1) push the consilier once when a PLANNED session's start
 hour is missed (still inside the 8h grace), (2) archive sessions past the grace
 to MISSED (which frees the vehicle in conflict checks), (3) nudge the consilier
-(and CC the brand inbox) when an active session's scheduled return passed >1h
-ago and was never recorded. All passes idempotent.
+(and CC the brand inbox) when an active session's scheduled return passed >2h
+ago and was never recorded — but only on weekdays between 08:00 and 18:00
+(Europe/Bucharest), so nobody is pinged overnight or on a weekend. All passes
+idempotent.
 """
 import html as _html
 from datetime import datetime as _datetime
@@ -18,6 +20,31 @@ from core.services.notification_service import send_email
 logger = get_logger('jarvis.tasks.foi_parcurs_sessions')
 
 _OVERDUE_TITLE = 'Retur neînregistrat — sesiune driving deschisă'
+
+# Overdue-return alerts are only sent during dealership working hours so the
+# consilier is never pinged overnight or at the weekend. Weekdays only,
+# 08:00 (inclusive) — 18:00 (exclusive), Europe/Bucharest.
+_SEND_START_HOUR = 8
+_SEND_END_HOUR = 18
+
+
+def _within_send_window(now=None):
+    """True only Mon–Fri, 08:00 ≤ time < 18:00 (Europe/Bucharest).
+
+    Gates the overdue-return pass: a car that goes overdue overnight or on a
+    weekend is held and first nudged at the next in-window scheduler tick, never
+    at 3am. `now` is injectable for tests; production reads the Bucharest clock.
+    Fails open (returns True) if the tz database is unavailable — better to alert
+    than to silently swallow the nudge."""
+    if now is None:
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            return True
+        now = _datetime.now(ZoneInfo('Europe/Bucharest'))
+    if now.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+        return False
+    return _SEND_START_HOUR <= now.hour < _SEND_END_HOUR
 
 
 def _fmt_return_when(ret):
@@ -62,10 +89,14 @@ def _overdue_return_message(row):
 
 
 def notify_overdue_returns():
-    """Pass 3: for each active TD session past its return time (>1h) with no
+    """Pass 3: for each active TD session past its return time (>2h) with no
     return recorded, nudge the consilier (in-app + push + email) and CC the
-    brand's configured dealer inbox. Re-fires are gated in SQL by a 4h cooldown;
-    each session is isolated so one failure doesn't abort the rest."""
+    brand's configured dealer inbox. Only sends on weekdays 08:00–18:00
+    (Europe/Bucharest); outside that window the pass is a no-op and the alert
+    waits for the next in-window tick. Re-fires are gated in SQL by a 4h
+    cooldown; each session is isolated so one failure doesn't abort the rest."""
+    if not _within_send_window():
+        return
     repo = FoiParcursRepository()
     for row in repo.get_overdue_return_sessions():
         try:
