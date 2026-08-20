@@ -106,6 +106,10 @@ import { CalendarTab } from './CalendarTab'
 import { formatRoPlate, isValidRoPlate } from './plateFormat'
 import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
 
+/** Truncate a display name to `max` chars with an ellipsis; the full value stays
+ *  available in the cell's title tooltip. */
+const truncName = (s: string, max = 20) => (s.length > max ? s.slice(0, max) + '…' : s)
+
 /** useState backed by localStorage — survives a page refresh. */
 function usePersistentState<T>(key: string, initial: T) {
   const [state, setState] = useState<T>(() => {
@@ -622,7 +626,7 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
                                       </TableCell>
                                       <TableCell>
                                         {c.client_name ? (
-                                          <span className="font-medium text-sm">{c.client_name}</span>
+                                          <span className="font-medium text-sm" title={c.client_name}>{truncName(c.client_name)}</span>
                                         ) : (
                                           <span className="text-muted-foreground text-xs">—</span>
                                         )}
@@ -1729,7 +1733,7 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
                       </TableCell>
                       <TableCell>
                         {c.client_name ? (
-                          <span className="font-medium text-sm">{c.client_name}</span>
+                          <span className="font-medium text-sm" title={c.client_name}>{truncName(c.client_name)}</span>
                         ) : (
                           <span className="text-muted-foreground text-xs">—</span>
                         )}
