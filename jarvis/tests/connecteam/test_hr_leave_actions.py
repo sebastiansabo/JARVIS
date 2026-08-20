@@ -88,33 +88,64 @@ def test_hr_update_missing_entity_raises_lookup(monkeypatch):
             'leave_end_time': '10:00', 'leave_reason': 'x'})
 
 
-# ── archive / restore ──
+# ── lifecycle: archive / trash / restore ──
 
-def test_hr_archive_jarvis_records_actor(monkeypatch):
+def test_hr_archive_jarvis_records_state_and_actor(monkeypatch):
     captured = {}
     monkeypatch.setattr(lpa, '_hr_get_jarvis', lambda eid: {'id': eid})
-    monkeypatch.setattr(lpa, '_hr_archive_jarvis',
-        lambda eid, actor, archived: captured.update(eid=eid, actor=actor, archived=archived))
-    out = lpa.hr_set_archived('jarvis', 42, actor_id=5, archived=True)
-    assert out == {'source': 'jarvis', 'id': 42, 'archived': True}
-    assert captured == {'eid': 42, 'actor': 5, 'archived': True}
+    monkeypatch.setattr(lpa, '_hr_set_lifecycle_jarvis',
+        lambda eid, state, actor: captured.update(eid=eid, state=state, actor=actor))
+    out = lpa.hr_set_lifecycle('jarvis', 42, actor_id=5, state='archived')
+    assert out == {'source': 'jarvis', 'id': 42, 'state': 'archived'}
+    assert captured == {'eid': 42, 'state': 'archived', 'actor': 5}
+
+
+def test_hr_trash_connecteam(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(lpa, '_hr_get_connecteam', lambda eid: {'id': eid})
+    monkeypatch.setattr(lpa, '_hr_set_lifecycle_connecteam',
+        lambda eid, state, actor: captured.update(eid=eid, state=state, actor=actor))
+    out = lpa.hr_set_lifecycle('connecteam', 7, actor_id=5, state='trashed')
+    assert out['state'] == 'trashed' and captured['state'] == 'trashed'
 
 
 def test_hr_restore_connecteam(monkeypatch):
     captured = {}
     monkeypatch.setattr(lpa, '_hr_get_connecteam', lambda eid: {'id': eid})
-    monkeypatch.setattr(lpa, '_hr_archive_connecteam',
-        lambda eid, actor, archived: captured.update(eid=eid, actor=actor, archived=archived))
-    out = lpa.hr_set_archived('connecteam', 7, actor_id=5, archived=False)
-    assert out['archived'] is False and captured['archived'] is False
+    monkeypatch.setattr(lpa, '_hr_set_lifecycle_connecteam',
+        lambda eid, state, actor: captured.update(state=state))
+    out = lpa.hr_set_lifecycle('connecteam', 7, actor_id=5, state='active')
+    assert out['state'] == 'active' and captured['state'] == 'active'
 
 
-def test_hr_archive_missing_entity_raises_lookup(monkeypatch):
+def test_hr_lifecycle_unknown_state_raises(monkeypatch):
+    monkeypatch.setattr(lpa, '_hr_get_jarvis', lambda eid: {'id': eid})
+    with pytest.raises(ValueError):
+        lpa.hr_set_lifecycle('jarvis', 1, actor_id=5, state='banished')
+
+
+def test_hr_lifecycle_missing_entity_raises_lookup(monkeypatch):
     monkeypatch.setattr(lpa, '_hr_get_connecteam', lambda eid: None)
     with pytest.raises(LookupError):
-        lpa.hr_set_archived('connecteam', 999, actor_id=5, archived=True)
+        lpa.hr_set_lifecycle('connecteam', 999, actor_id=5, state='trashed')
 
 
-def test_hr_archive_unknown_source_raises():
+def test_hr_lifecycle_unknown_source_raises():
     with pytest.raises(ValueError):
-        lpa.hr_set_archived('nope', 1, actor_id=5, archived=True)
+        lpa.hr_set_lifecycle('nope', 1, actor_id=5, state='archived')
+
+
+# ── trash purge ──
+
+def test_purge_trashed_sums_both_sources(monkeypatch):
+    calls = {}
+    class FakeSub:
+        def purge_trashed(self, days, slug): calls['sub'] = (days, slug); return 2
+    class FakeCt:
+        def purge_trashed(self, days): calls['ct'] = days; return 3
+    monkeypatch.setattr('forms.repositories.SubmissionRepository', FakeSub)
+    monkeypatch.setattr(
+        'core.connectors.connecteam.repositories.connecteam_repository.ConnecteamRepository', FakeCt)
+    total = lpa.purge_trashed_leaves(days=7)
+    assert total == 5
+    assert calls['ct'] == 7 and calls['sub'][0] == 7 and calls['sub'][1] == 'bilet-de-invoire'

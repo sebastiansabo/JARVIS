@@ -117,16 +117,33 @@ class SubmissionRepository(BaseRepository):
             WHERE id = %s
         ''', (json.dumps(answers), submission_id)) > 0
 
-    def set_archived(self, submission_id, archived_by, archived=True):
-        """Soft-delete (archive) or restore a submission. Recoverable — archived
-        rows are hidden from the default HR list but the row is never removed."""
+    def set_lifecycle(self, submission_id, state, actor_id):
+        """Set a submission's HR lifecycle state: 'active' | 'archived' | 'trashed'.
+
+        Recoverable both ways — no row is removed here (Trash is purged later by
+        the scheduler). 'active' clears both flags; the two states are mutually
+        exclusive (setting one clears the other)."""
         return self.execute('''
             UPDATE form_submissions
-            SET archived_at = CASE WHEN %s THEN CURRENT_TIMESTAMP ELSE NULL END,
-                archived_by = %s,
-                updated_at = CURRENT_TIMESTAMP
+            SET archived_at = CASE WHEN %s = 'archived' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                archived_by = CASE WHEN %s = 'archived' THEN %s ELSE NULL END,
+                deleted_at  = CASE WHEN %s = 'trashed'  THEN CURRENT_TIMESTAMP ELSE NULL END,
+                deleted_by  = CASE WHEN %s = 'trashed'  THEN %s ELSE NULL END,
+                updated_at  = CURRENT_TIMESTAMP
             WHERE id = %s
-        ''', (bool(archived), archived_by, submission_id)) > 0
+        ''', (state, state, actor_id, state, state, actor_id, submission_id)) > 0
+
+    def purge_trashed(self, days, form_slug):
+        """Hard-delete leave-form submissions trashed more than `days` ago.
+        Scoped to the given form slug so no other form's rows are touched."""
+        return self.execute('''
+            DELETE FROM form_submissions fs
+            USING forms f
+            WHERE fs.form_id = f.id
+              AND f.slug = %s
+              AND fs.deleted_at IS NOT NULL
+              AND fs.deleted_at < NOW() - (%s || ' days')::interval
+        ''', (form_slug, str(int(days))))
 
     def set_approval_request(self, submission_id, approval_request_id):
         """Link submission to an approval request."""

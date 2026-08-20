@@ -4,6 +4,23 @@ import json
 from core.base_repository import BaseRepository
 
 
+def _lifecycle_where(alias, view):
+    """SQL WHERE fragment selecting an HR lifecycle bucket for a leave table.
+
+    Both leave sources (connecteam_form_submissions cfs / form_submissions fs)
+    carry archived_at + deleted_at, so this is shared by the connecteam repo and
+    the JARVIS-form queries in connecteam_service. deleted_at (Trash) takes
+    precedence: an archived row that is later trashed shows only under 'trashed'.
+    Unknown views fall back to 'active'. `alias` is trusted (caller-supplied
+    literal), never user input — safe to interpolate.
+    """
+    if view == 'archived':
+        return f'{alias}.archived_at IS NOT NULL AND {alias}.deleted_at IS NULL'
+    if view == 'trashed':
+        return f'{alias}.deleted_at IS NOT NULL'
+    return f'{alias}.archived_at IS NULL AND {alias}.deleted_at IS NULL'
+
+
 class ConnecteamRepository(BaseRepository):
     """CRUD for connecteam_users and connecteam_form_submissions."""
 
@@ -97,6 +114,7 @@ class ConnecteamRepository(BaseRepository):
             LEFT JOIN connecteam_users cu ON cu.connecteam_user_id = cfs.connecteam_user_id
             WHERE cfs.mapped_jarvis_user_id = %s
               AND cfs.archived_at IS NULL
+              AND cfs.deleted_at IS NULL
         '''
         params = [jarvis_user_id]
         if year:
@@ -108,10 +126,11 @@ class ConnecteamRepository(BaseRepository):
         query += ' ORDER BY cfs.leave_date DESC, cfs.submission_timestamp DESC'
         return self.query_all(query, tuple(params))
 
-    def get_recent_submissions(self, limit=50, year=None, month=None, include_archived=False):
+    def get_recent_submissions(self, limit=50, year=None, month=None, view='active'):
         """Get submissions across all users, optionally filtered by year/month.
 
-        Archived (soft-deleted) rows are excluded unless include_archived=True.
+        `view` selects the HR lifecycle bucket: 'active' (default), 'archived',
+        or 'trashed' (Coș).
         """
         query = '''
             SELECT cfs.id, cfs.submission_id, cfs.form_id, cfs.form_name,
@@ -122,7 +141,7 @@ class ConnecteamRepository(BaseRepository):
                    cfs.leave_reason, cfs.leave_destination, cfs.approved_by,
                    cfs.status, cfs.event_type, cfs.entry_num,
                    cfs.received_at::text, cfs.created_at::text,
-                   cfs.archived_at::text,
+                   cfs.archived_at::text, cfs.deleted_at::text,
                    cu.connecteam_user_name,
                    u.name AS jarvis_user_name,
                    u.company AS jarvis_user_company
@@ -132,8 +151,7 @@ class ConnecteamRepository(BaseRepository):
             WHERE 1=1
         '''
         params = []
-        if not include_archived:
-            query += ' AND cfs.archived_at IS NULL'
+        query += ' AND ' + _lifecycle_where('cfs', view)
         if year:
             query += ' AND EXTRACT(YEAR FROM cfs.leave_date) = %s'
             params.append(year)
@@ -169,15 +187,26 @@ class ConnecteamRepository(BaseRepository):
             fields.get('leave_reason'), submission_pk,
         )) > 0
 
-    def set_archived(self, submission_pk, archived_by, archived=True):
-        """Soft-delete (archive) or restore an imported leave. Recoverable."""
+    def set_lifecycle(self, submission_pk, state, actor_id):
+        """Set an imported leave's HR lifecycle state: 'active'|'archived'|'trashed'.
+        Recoverable both ways; the two states are mutually exclusive."""
         return self.execute('''
             UPDATE connecteam_form_submissions
-            SET archived_at = CASE WHEN %s THEN NOW() ELSE NULL END,
-                archived_by = %s,
-                updated_at = NOW()
+            SET archived_at = CASE WHEN %s = 'archived' THEN NOW() ELSE NULL END,
+                archived_by = CASE WHEN %s = 'archived' THEN %s ELSE NULL END,
+                deleted_at  = CASE WHEN %s = 'trashed'  THEN NOW() ELSE NULL END,
+                deleted_by  = CASE WHEN %s = 'trashed'  THEN %s ELSE NULL END,
+                updated_at  = NOW()
             WHERE id = %s
-        ''', (bool(archived), archived_by, submission_pk)) > 0
+        ''', (state, state, actor_id, state, state, actor_id, submission_pk)) > 0
+
+    def purge_trashed(self, days):
+        """Hard-delete imported leaves trashed more than `days` ago."""
+        return self.execute('''
+            DELETE FROM connecteam_form_submissions
+            WHERE deleted_at IS NOT NULL
+              AND deleted_at < NOW() - (%s || ' days')::interval
+        ''', (str(int(days)),))
 
     def update_submissions_mapping(self, connecteam_user_id, jarvis_user_id):
         """Update mapped_jarvis_user_id on all submissions for a Connecteam user."""

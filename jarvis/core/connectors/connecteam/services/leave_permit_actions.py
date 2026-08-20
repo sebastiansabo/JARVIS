@@ -92,10 +92,11 @@ def get_leave_permit(submission_id, user_id):
 # ── HR-scoped actions (admin Leave-Permits tab) ──
 # Unlike the requester-scoped helpers above, these are gated only by the HR/admin
 # route decorator (@admin_required) — no ownership or pending-state check. HR can
-# edit the LEAVE DETAILS (date/start/end/reason) of any leave and soft-delete
-# (archive) / restore it, across both storage backends. Status/approval state is
-# never touched. The per-source DB calls are isolated in thin helpers so the
-# branching + normalization logic is unit-testable without a database.
+# edit the LEAVE DETAILS (date/start/end/reason) of any leave and move it between
+# lifecycle states — active / archived (filed) / trashed (Coș, 7-day auto-purge) —
+# across both storage backends. Status/approval state is never touched. The
+# per-source DB calls are isolated in thin helpers so the branching + normalization
+# logic is unit-testable without a database.
 
 _ALLOWED_SOURCES = ('jarvis', 'connecteam')
 
@@ -108,9 +109,9 @@ def _hr_update_jarvis_answers(entity_id, answers):
     from forms.repositories import SubmissionRepository
     return SubmissionRepository().update_answers(entity_id, answers)
 
-def _hr_archive_jarvis(entity_id, actor_id, archived):
+def _hr_set_lifecycle_jarvis(entity_id, state, actor_id):
     from forms.repositories import SubmissionRepository
-    return SubmissionRepository().set_archived(entity_id, actor_id if archived else None, archived)
+    return SubmissionRepository().set_lifecycle(entity_id, state, actor_id)
 
 def _hr_get_connecteam(entity_id):
     from core.connectors.connecteam.repositories.connecteam_repository import ConnecteamRepository
@@ -120,9 +121,9 @@ def _hr_update_connecteam_fields(entity_id, fields):
     from core.connectors.connecteam.repositories.connecteam_repository import ConnecteamRepository
     return ConnecteamRepository().update_leave_fields(entity_id, fields)
 
-def _hr_archive_connecteam(entity_id, actor_id, archived):
+def _hr_set_lifecycle_connecteam(entity_id, state, actor_id):
     from core.connectors.connecteam.repositories.connecteam_repository import ConnecteamRepository
-    return ConnecteamRepository().set_archived(entity_id, actor_id if archived else None, archived)
+    return ConnecteamRepository().set_lifecycle(entity_id, state, actor_id)
 
 
 def _normalize_hr_edit(fields):
@@ -188,20 +189,44 @@ def hr_update_leave(source, entity_id, fields):
     return {'source': source, 'id': entity_id}
 
 
-def hr_set_archived(source, entity_id, actor_id, archived):
-    """Soft-delete (archived=True) or restore (archived=False) a leave, either source.
+_LIFECYCLE_STATES = ('active', 'archived', 'trashed')
 
-    Archive is a pure visibility toggle — it does not cancel a pending approval.
-    Raises ValueError on unknown source, LookupError if not found.
+
+def hr_set_lifecycle(source, entity_id, actor_id, state):
+    """Move a leave between lifecycle states, either source:
+      - 'archived' → filed out of the active list, kept indefinitely (recoverable)
+      - 'trashed'  → deleted into the Coș/Trash, auto-purged after 7 days (recoverable)
+      - 'active'   → restored from archive or trash
+
+    A pure state change — it never cancels a pending approval. Raises ValueError
+    on unknown source/state, LookupError if the leave does not exist.
     """
     if source not in _ALLOWED_SOURCES:
         raise ValueError('Sursă necunoscută')
+    if state not in _LIFECYCLE_STATES:
+        raise ValueError('Stare necunoscută')
     if source == 'jarvis':
         if not _hr_get_jarvis(entity_id):
             raise LookupError('Submission not found')
-        _hr_archive_jarvis(entity_id, actor_id, archived)
+        _hr_set_lifecycle_jarvis(entity_id, state, actor_id)
     else:
         if not _hr_get_connecteam(entity_id):
             raise LookupError('Submission not found')
-        _hr_archive_connecteam(entity_id, actor_id, archived)
-    return {'source': source, 'id': entity_id, 'archived': archived}
+        _hr_set_lifecycle_connecteam(entity_id, state, actor_id)
+    return {'source': source, 'id': entity_id, 'state': state}
+
+
+def purge_trashed_leaves(days=7):
+    """Hard-delete leaves that have sat in Trash longer than `days`.
+
+    Scoped to leave submissions only: connecteam_form_submissions rows only ever
+    get deleted_at set here, and form_submissions is filtered to the leave form
+    slug (so no other form's submissions — nor voucher-linked rows — are touched).
+    Returns the total number of rows removed. Run daily by the scheduler.
+    """
+    from forms.repositories import SubmissionRepository
+    from core.connectors.connecteam.repositories.connecteam_repository import ConnecteamRepository
+    from ..config import JARVIS_LEAVE_FORM_SLUG
+    n_ct = ConnecteamRepository().purge_trashed(days) or 0
+    n_js = SubmissionRepository().purge_trashed(days, JARVIS_LEAVE_FORM_SLUG) or 0
+    return int(n_ct) + int(n_js)

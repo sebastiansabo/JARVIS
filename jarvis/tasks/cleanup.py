@@ -32,6 +32,7 @@ from tasks.carpark import cleanup_vin_cache, expire_reservations, carpark_aging_
 from tasks.holidays import populate_holidays
 from tasks.telemetry import close_stale_sessions, cleanup_old_telemetry
 from tasks.foi_parcurs_sessions import run_session_lifecycle
+from tasks.hr_leave_trash import purge_old_trashed_leaves
 
 logger = get_logger('jarvis.tasks')
 
@@ -138,6 +139,18 @@ def start_scheduler():
         hour=1,
         minute=0,
         id='cleanup_old_notifications',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    # HR leave permits — purge Coș/Trash older than 7 days (03:15 daily)
+    scheduler.add_job(
+        purge_old_trashed_leaves,
+        'cron',
+        hour=3,
+        minute=15,
+        id='purge_old_trashed_leaves',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,
