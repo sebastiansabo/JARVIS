@@ -161,6 +161,60 @@ def get_visible_tree(manager_user_id):
         release_db(conn)
 
 
+def get_direct_manager(user_id):
+    """The user's DIRECT manager from the Sincron organigram, or None.
+
+    The inverse of get_managed_employee_ids: a responsable of node N manages the
+    members of N + its descendants, so a person's direct manager is the responsable
+    of the nearest node at-or-above the node(s) they sit in — themselves excluded
+    (so a responsable resolves up to their parent's responsable). Sincron-only, no
+    fallback: returns {'id','name','email'} or None when the user has no Sincron
+    manager (unmapped, or no responsable above them). Aligns the leave approver with
+    the HR/360 hierarchy, which reads the same tables.
+    """
+    conn = get_db()
+    try:
+        cursor = get_cursor(conn)
+        try:
+            cursor.execute("""
+                WITH RECURSIVE my_nodes AS (
+                    SELECT som.node_id AS id
+                    FROM sincron_org_members som
+                    JOIN sincron_employees se
+                      ON se.sincron_employee_id = som.sincron_employee_id
+                     AND se.company_name = som.company_name
+                    WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
+                ),
+                ancestors AS (
+                    SELECT n.id, n.parent_id, 0 AS depth
+                    FROM sincron_org_nodes n JOIN my_nodes mn ON mn.id = n.id
+                    UNION ALL
+                    SELECT p.id, p.parent_id, a.depth + 1
+                    FROM sincron_org_nodes p JOIN ancestors a ON p.id = a.parent_id
+                )
+                SELECT u.id, u.name, u.email
+                FROM ancestors a
+                JOIN sincron_org_members r ON r.node_id = a.id AND r.role = 'responsable'
+                JOIN sincron_employees rse
+                  ON rse.sincron_employee_id = r.sincron_employee_id
+                 AND rse.company_name = r.company_name
+                 AND rse.is_active = TRUE
+                JOIN users u ON u.id = rse.mapped_jarvis_user_id
+                WHERE rse.mapped_jarvis_user_id <> %s
+                ORDER BY a.depth ASC
+                LIMIT 1
+            """, (user_id, user_id))
+            row = cursor.fetchone()
+        except Exception:
+            conn.rollback()
+            return None
+        if row:
+            return {'id': row['id'], 'name': row['name'], 'email': row['email']}
+        return None
+    finally:
+        release_db(conn)
+
+
 def is_manager(user_id):
     """True if the user is a Sincron organigram responsable or a company_responsables (L0)."""
     conn = get_db()

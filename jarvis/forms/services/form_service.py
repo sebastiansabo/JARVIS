@@ -624,14 +624,28 @@ class FormService:
             'respondent_email': submission.get('respondent_email'),
         })
 
-    def _resolve_form_approver(self, user_id, company_id, explicit_approver_id=None):
-        """Resolve the approver for a form submission using VoucherService logic."""
+    def _resolve_form_approver(self, user_id, company_id, explicit_approver_id=None,
+                               use_sincron=False):
+        """Resolve the default approver for a form submission.
+
+        Leave permits (use_sincron) read the Sincron organigram
+        (manager_utils.get_direct_manager) so the approver matches the HR/360
+        hierarchy — Sincron-only, no JARVIS fallback (None if the user has no
+        Sincron manager). Every other form keeps the JARVIS voucher tree.
+        An explicit approver always wins.
+        """
         try:
+            if explicit_approver_id:
+                from accounting.vouchers.services import VoucherService
+                approver = VoucherService().resolve_approver(
+                    user_id, company_id or 0, explicit_approver_id=explicit_approver_id)
+                return approver['id'] if approver else None
+            if use_sincron:
+                from core.organization.manager_utils import get_direct_manager
+                mgr = get_direct_manager(user_id)
+                return mgr['id'] if mgr else None
             from accounting.vouchers.services import VoucherService
-            approver = VoucherService().resolve_approver(
-                user_id, company_id or 0,
-                explicit_approver_id=explicit_approver_id,
-            )
+            approver = VoucherService().resolve_approver(user_id, company_id or 0)
             return approver['id'] if approver else None
         except Exception as e:
             logger.warning(f'Failed to resolve approver for user {user_id}: {e}')
@@ -639,15 +653,12 @@ class FormService:
 
     def get_default_leave_approver(self, user_id):
         """The direct manager the empty-approver default routes to — {id, name} or
-        None. Uses the SAME resolution as the approval trigger (_resolve_form_approver
-        → VoucherService.resolve_approver), so the form's auto-selected default chip
-        matches the fallback behaviour exactly."""
+        None. Reads the Sincron organigram (same resolver as the submit-time trigger
+        for the leave form), so the auto-selected default chip matches the routing."""
         try:
-            from accounting.vouchers.services import VoucherService
-            form = self.form_repo.get_by_slug(self.LEAVE_FORM_SLUG)
-            company_id = (form or {}).get('company_id') or 0
-            approver = VoucherService().resolve_approver(user_id, company_id)
-            return {'id': approver['id'], 'name': approver['name']} if approver else None
+            from core.organization.manager_utils import get_direct_manager
+            mgr = get_direct_manager(user_id)
+            return {'id': mgr['id'], 'name': mgr['name']} if mgr else None
         except Exception as e:
             logger.warning(f'Failed to resolve default leave approver for user {user_id}: {e}')
             return None
@@ -797,11 +808,13 @@ class FormService:
 
             approval_config = form.get('approval_config', {})
 
-            # Resolve approver from org hierarchy
+            # Resolve approver from the org hierarchy. Leave permits use the Sincron
+            # organigram; other forms use the JARVIS voucher tree.
             requested_by = respondent_info.get('user_id', form.get('owner_id'))
             approver_user_id = self._resolve_form_approver(
                 requested_by, form.get('company_id'),
                 respondent_info.get('explicit_approver_id'),
+                use_sincron=(form.get('slug') == self.LEAVE_FORM_SLUG),
             )
 
             # Build human-readable title: "Voucher — Dept — Client Name"
