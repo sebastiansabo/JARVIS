@@ -96,6 +96,7 @@ class ConnecteamRepository(BaseRepository):
             FROM connecteam_form_submissions cfs
             LEFT JOIN connecteam_users cu ON cu.connecteam_user_id = cfs.connecteam_user_id
             WHERE cfs.mapped_jarvis_user_id = %s
+              AND cfs.archived_at IS NULL
         '''
         params = [jarvis_user_id]
         if year:
@@ -107,8 +108,11 @@ class ConnecteamRepository(BaseRepository):
         query += ' ORDER BY cfs.leave_date DESC, cfs.submission_timestamp DESC'
         return self.query_all(query, tuple(params))
 
-    def get_recent_submissions(self, limit=50, year=None, month=None):
-        """Get submissions across all users, optionally filtered by year/month."""
+    def get_recent_submissions(self, limit=50, year=None, month=None, include_archived=False):
+        """Get submissions across all users, optionally filtered by year/month.
+
+        Archived (soft-deleted) rows are excluded unless include_archived=True.
+        """
         query = '''
             SELECT cfs.id, cfs.submission_id, cfs.form_id, cfs.form_name,
                    cfs.connecteam_user_id, cfs.mapped_jarvis_user_id,
@@ -118,6 +122,7 @@ class ConnecteamRepository(BaseRepository):
                    cfs.leave_reason, cfs.leave_destination, cfs.approved_by,
                    cfs.status, cfs.event_type, cfs.entry_num,
                    cfs.received_at::text, cfs.created_at::text,
+                   cfs.archived_at::text,
                    cu.connecteam_user_name,
                    u.name AS jarvis_user_name,
                    u.company AS jarvis_user_company
@@ -127,6 +132,8 @@ class ConnecteamRepository(BaseRepository):
             WHERE 1=1
         '''
         params = []
+        if not include_archived:
+            query += ' AND cfs.archived_at IS NULL'
         if year:
             query += ' AND EXTRACT(YEAR FROM cfs.leave_date) = %s'
             params.append(year)
@@ -136,6 +143,41 @@ class ConnecteamRepository(BaseRepository):
         query += ' ORDER BY cfs.leave_date DESC, cfs.entry_num DESC LIMIT %s'
         params.append(limit)
         return self.query_all(query, tuple(params))
+
+    def get_submission_by_id(self, submission_pk):
+        """Get a single Connecteam submission by its integer primary key."""
+        return self.query_one('''
+            SELECT cfs.*, cfs.leave_date::text AS leave_date_text
+            FROM connecteam_form_submissions cfs
+            WHERE cfs.id = %s
+        ''', (submission_pk,))
+
+    def update_leave_fields(self, submission_pk, fields):
+        """HR override edit of an imported leave's details (date/times/hours/reason)."""
+        return self.execute('''
+            UPDATE connecteam_form_submissions
+            SET leave_date = %s,
+                leave_start_time = %s,
+                leave_end_time = %s,
+                leave_hours = %s,
+                leave_reason = %s,
+                updated_at = NOW()
+            WHERE id = %s
+        ''', (
+            fields.get('leave_date'), fields.get('leave_start_time'),
+            fields.get('leave_end_time'), fields.get('leave_hours'),
+            fields.get('leave_reason'), submission_pk,
+        )) > 0
+
+    def set_archived(self, submission_pk, archived_by, archived=True):
+        """Soft-delete (archive) or restore an imported leave. Recoverable."""
+        return self.execute('''
+            UPDATE connecteam_form_submissions
+            SET archived_at = CASE WHEN %s THEN NOW() ELSE NULL END,
+                archived_by = %s,
+                updated_at = NOW()
+            WHERE id = %s
+        ''', (bool(archived), archived_by, submission_pk)) > 0
 
     def update_submissions_mapping(self, connecteam_user_id, jarvis_user_id):
         """Update mapped_jarvis_user_id on all submissions for a Connecteam user."""

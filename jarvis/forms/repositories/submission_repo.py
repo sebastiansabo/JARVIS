@@ -117,6 +117,17 @@ class SubmissionRepository(BaseRepository):
             WHERE id = %s
         ''', (json.dumps(answers), submission_id)) > 0
 
+    def set_archived(self, submission_id, archived_by, archived=True):
+        """Soft-delete (archive) or restore a submission. Recoverable — archived
+        rows are hidden from the default HR list but the row is never removed."""
+        return self.execute('''
+            UPDATE form_submissions
+            SET archived_at = CASE WHEN %s THEN CURRENT_TIMESTAMP ELSE NULL END,
+                archived_by = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        ''', (bool(archived), archived_by, submission_id)) > 0
+
     def set_approval_request(self, submission_id, approval_request_id):
         """Link submission to an approval request."""
         return self.execute('''

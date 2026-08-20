@@ -87,3 +87,121 @@ def get_leave_permit(submission_id, user_id):
     keys = ('f_bi_leave_date', 'f_bi_start_time', 'f_bi_duration_hours', 'f_bi_reason',
             'f_bi_second_approver', 'f_bi_notes')
     return {'status': sub.get('status'), 'answers': {k: answers.get(k) for k in keys}}
+
+
+# ── HR-scoped actions (admin Leave-Permits tab) ──
+# Unlike the requester-scoped helpers above, these are gated only by the HR/admin
+# route decorator (@admin_required) — no ownership or pending-state check. HR can
+# edit the LEAVE DETAILS (date/start/end/reason) of any leave and soft-delete
+# (archive) / restore it, across both storage backends. Status/approval state is
+# never touched. The per-source DB calls are isolated in thin helpers so the
+# branching + normalization logic is unit-testable without a database.
+
+_ALLOWED_SOURCES = ('jarvis', 'connecteam')
+
+
+def _hr_get_jarvis(entity_id):
+    from forms.repositories import SubmissionRepository
+    return SubmissionRepository().get_by_id(entity_id)
+
+def _hr_update_jarvis_answers(entity_id, answers):
+    from forms.repositories import SubmissionRepository
+    return SubmissionRepository().update_answers(entity_id, answers)
+
+def _hr_archive_jarvis(entity_id, actor_id, archived):
+    from forms.repositories import SubmissionRepository
+    return SubmissionRepository().set_archived(entity_id, actor_id if archived else None, archived)
+
+def _hr_get_connecteam(entity_id):
+    from core.connectors.connecteam.repositories.connecteam_repository import ConnecteamRepository
+    return ConnecteamRepository().get_submission_by_id(entity_id)
+
+def _hr_update_connecteam_fields(entity_id, fields):
+    from core.connectors.connecteam.repositories.connecteam_repository import ConnecteamRepository
+    return ConnecteamRepository().update_leave_fields(entity_id, fields)
+
+def _hr_archive_connecteam(entity_id, actor_id, archived):
+    from core.connectors.connecteam.repositories.connecteam_repository import ConnecteamRepository
+    return ConnecteamRepository().set_archived(entity_id, actor_id if archived else None, archived)
+
+
+def _normalize_hr_edit(fields):
+    """Validate + normalize an HR leave-detail edit.
+
+    Returns (leave_date, start_hm, end_hm, hours, reason). Raises ValueError with
+    a user-facing (Romanian) message on bad input. Hours are derived from the
+    start/end span so JARVIS (duration-based) and Connecteam (end-time-based)
+    rows stay consistent under the same HR form.
+    """
+    from datetime import datetime
+    from core.connectors.connecteam.services.leave_schedule import parse_hm
+    fields = fields or {}
+    date_s = str(fields.get('leave_date') or '').strip()
+    reason = str(fields.get('leave_reason') or '').strip()
+    try:
+        datetime.strptime(date_s, '%Y-%m-%d')
+    except ValueError:
+        raise ValueError('Data invalidă (format AAAA-LL-ZZ).')
+    start_m = parse_hm(str(fields.get('leave_start_time') or ''))
+    end_m = parse_hm(str(fields.get('leave_end_time') or ''))
+    if start_m is None or end_m is None:
+        raise ValueError('Ora de început/sfârșit invalidă (HH:MM).')
+    if end_m <= start_m:
+        raise ValueError('Ora de sfârșit trebuie să fie după ora de început.')
+    hours = round((end_m - start_m) / 60.0, 2)
+    return (date_s, f'{start_m // 60:02d}:{start_m % 60:02d}',
+            f'{end_m // 60:02d}:{end_m % 60:02d}', hours, reason)
+
+
+def hr_update_leave(source, entity_id, fields):
+    """HR override edit of leave DETAILS (date/start/end/reason) — status untouched.
+
+    'jarvis'     → merges the normalized details into the answers JSON (untouched
+                   keys like notes / second approver are preserved).
+    'connecteam' → updates the flat leave columns.
+    Raises ValueError on unknown source / bad input, LookupError if not found.
+    """
+    if source not in _ALLOWED_SOURCES:
+        raise ValueError('Sursă necunoscută')
+    date_s, start_hm, end_hm, hours, reason = _normalize_hr_edit(fields)
+    if source == 'jarvis':
+        sub = _hr_get_jarvis(entity_id)
+        if not sub:
+            raise LookupError('Submission not found')
+        answers = dict(sub.get('answers') or {})
+        answers.update({
+            'f_bi_leave_date': date_s,
+            'f_bi_start_time': start_hm,
+            'f_bi_end_time': end_hm,
+            'f_bi_duration_hours': hours,
+            'f_bi_hours': hours,
+            'f_bi_reason': reason,
+        })
+        _hr_update_jarvis_answers(entity_id, answers)
+    else:
+        if not _hr_get_connecteam(entity_id):
+            raise LookupError('Submission not found')
+        _hr_update_connecteam_fields(entity_id, {
+            'leave_date': date_s, 'leave_start_time': start_hm,
+            'leave_end_time': end_hm, 'leave_hours': hours, 'leave_reason': reason,
+        })
+    return {'source': source, 'id': entity_id}
+
+
+def hr_set_archived(source, entity_id, actor_id, archived):
+    """Soft-delete (archived=True) or restore (archived=False) a leave, either source.
+
+    Archive is a pure visibility toggle — it does not cancel a pending approval.
+    Raises ValueError on unknown source, LookupError if not found.
+    """
+    if source not in _ALLOWED_SOURCES:
+        raise ValueError('Sursă necunoscută')
+    if source == 'jarvis':
+        if not _hr_get_jarvis(entity_id):
+            raise LookupError('Submission not found')
+        _hr_archive_jarvis(entity_id, actor_id, archived)
+    else:
+        if not _hr_get_connecteam(entity_id):
+            raise LookupError('Submission not found')
+        _hr_archive_connecteam(entity_id, actor_id, archived)
+    return {'source': source, 'id': entity_id, 'archived': archived}

@@ -1,13 +1,22 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Upload, ChevronLeft, ChevronRight, ChevronDown, Info } from 'lucide-react'
+import { Loader2, Upload, ChevronLeft, ChevronRight, ChevronDown, Info, MoreHorizontal, Pencil, Archive, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { connecteamApi } from '@/api/connecteam'
-import type { ConnecteamSubmission, ConversionRequest } from '@/api/connecteam'
+import type { ConnecteamSubmission, ConversionRequest, HrLeaveEdit } from '@/api/connecteam'
 import { toast } from 'sonner'
 import { useNavigate } from 'react-router-dom'
 
@@ -20,6 +29,8 @@ export default function LeavePermitsTab({ search }: { search: string }) {
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [companyFilter, setCompanyFilter] = useState<string>('all')
   const [collapsedEmployees, setCollapsedEmployees] = useState<Set<string>>(new Set())
+  const [showArchived, setShowArchived] = useState(false)
+  const [editing, setEditing] = useState<ConnecteamSubmission | null>(null)
 
   useQuery({
     queryKey: ['connecteam', 'status'],
@@ -27,11 +38,42 @@ export default function LeavePermitsTab({ search }: { search: string }) {
   })
 
   const { data: recentData, isLoading } = useQuery({
-    queryKey: ['connecteam', 'submissions', year, month],
+    queryKey: ['connecteam', 'submissions', year, month, showArchived],
     queryFn: () =>
-      fetch(`/connecteam/api/submissions/recent?year=${year}&month=${month}&limit=500`, { credentials: 'include' })
+      fetch(`/connecteam/api/submissions/recent?year=${year}&month=${month}&limit=500${showArchived ? '&include_archived=1' : ''}`, { credentials: 'include' })
         .then(r => r.json())
         .then(r => r.data as ConnecteamSubmission[]),
+  })
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['connecteam', 'submissions'] })
+
+  const archiveMut = useMutation({
+    mutationFn: ({ source, id }: { source: 'jarvis' | 'connecteam'; id: number }) =>
+      connecteamApi.hrArchiveLeave(source, id),
+    onSuccess: (_res, vars) => {
+      invalidate()
+      toast.success('Bilet arhivat', {
+        action: { label: 'Anulează', onClick: () => restoreMut.mutate(vars) },
+      })
+    },
+    onError: () => toast.error('Arhivarea a eșuat'),
+  })
+
+  const restoreMut = useMutation({
+    mutationFn: ({ source, id }: { source: 'jarvis' | 'connecteam'; id: number }) =>
+      connecteamApi.hrRestoreLeave(source, id),
+    onSuccess: () => { invalidate(); toast.success('Bilet restaurat') },
+    onError: () => toast.error('Restaurarea a eșuat'),
+  })
+
+  const editMut = useMutation({
+    mutationFn: ({ source, id, fields }: { source: 'jarvis' | 'connecteam'; id: number; fields: HrLeaveEdit }) =>
+      connecteamApi.hrUpdateLeave(source, id, fields),
+    onSuccess: () => { invalidate(); setEditing(null); toast.success('Bilet actualizat') },
+    onError: (e: unknown) => {
+      const msg = (e as { data?: { error?: string } })?.data?.error
+      toast.error(msg || 'Actualizarea a eșuat')
+    },
   })
 
   // Fetch existing conversions for status display
@@ -178,6 +220,10 @@ export default function LeavePermitsTab({ search }: { search: string }) {
         </div>
 
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <Switch checked={showArchived} onCheckedChange={setShowArchived} />
+            Arhivate
+          </label>
           {grouped.length > 1 && (
             <div className="flex gap-1">
               <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={expandAll}>Expand All</Button>
@@ -232,6 +278,7 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                 <TableHead>Approved By</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Source</TableHead>
+                <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -263,10 +310,14 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                         ) : null}
                       </TableCell>
                       <TableCell />
+                      <TableCell />
                     </TableRow>
                     {/* Submission rows */}
                     {!isCollapsed && submissions.map((s) => (
-                      <TableRow key={s.submission_id} className="hover:bg-muted/20">
+                      <TableRow
+                        key={s.submission_id}
+                        className={`hover:bg-muted/20 ${s.archived_at ? 'opacity-50 [&_td]:line-through' : ''}`}
+                      >
                         <TableCell className="w-8 px-2" />
                         <TableCell className="pl-6 text-xs text-muted-foreground whitespace-nowrap">
                           <span className="inline-flex items-center gap-1.5">
@@ -304,6 +355,34 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                             {s.source === 'jarvis' ? 'JARVIS' : 'Connecteam'}
                           </span>
                         </TableCell>
+                        <TableCell className="w-8 px-1 no-underline">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setEditing(s)}>
+                                <Pencil className="mr-2 h-3.5 w-3.5" /> Editează
+                              </DropdownMenuItem>
+                              {s.archived_at ? (
+                                <DropdownMenuItem
+                                  onClick={() => restoreMut.mutate({ source: (s.source ?? 'connecteam'), id: s.id })}
+                                >
+                                  <RotateCcw className="mr-2 h-3.5 w-3.5" /> Restaurează
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem
+                                  className="text-red-600 focus:text-red-600"
+                                  onClick={() => archiveMut.mutate({ source: (s.source ?? 'connecteam'), id: s.id })}
+                                >
+                                  <Archive className="mr-2 h-3.5 w-3.5" /> Arhivează
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </Fragment>
@@ -313,7 +392,89 @@ export default function LeavePermitsTab({ search }: { search: string }) {
           </Table>
         </div>
       )}
+
+      <EditLeaveDialog
+        submission={editing}
+        onClose={() => setEditing(null)}
+        onSave={(fields) => {
+          if (!editing) return
+          editMut.mutate({ source: (editing.source ?? 'connecteam'), id: editing.id, fields })
+        }}
+        saving={editMut.isPending}
+      />
     </div>
+  )
+}
+
+function EditLeaveDialog({
+  submission, onClose, onSave, saving,
+}: {
+  submission: ConnecteamSubmission | null
+  onClose: () => void
+  onSave: (fields: HrLeaveEdit) => void
+  saving: boolean
+}) {
+  const [date, setDate] = useState('')
+  const [start, setStart] = useState('')
+  const [end, setEnd] = useState('')
+  const [reason, setReason] = useState('')
+
+  // Prefill each time a new submission is opened for editing.
+  useEffect(() => {
+    if (!submission) return
+    setDate(submission.leave_date || '')
+    setStart(submission.leave_start_time?.slice(0, 5) || '')
+    setEnd(submission.leave_end_time?.slice(0, 5) || '')
+    setReason(submission.leave_reason || '')
+  }, [submission])
+
+  const valid = date && start && end && end > start
+
+  return (
+    <Dialog open={!!submission} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="sm:max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle>Editează bilet de învoire</DialogTitle>
+          <DialogDescription>
+            {submission?.connecteam_user_name || ''} · modifici detaliile biletului.
+            Statusul aprobării nu se schimbă.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="hr-leave-date" className="text-xs">Data</Label>
+            <Input id="hr-leave-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="hr-leave-start" className="text-xs">Început</Label>
+              <Input id="hr-leave-start" type="time" value={start} onChange={(e) => setStart(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="hr-leave-end" className="text-xs">Sfârșit</Label>
+              <Input id="hr-leave-end" type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+            </div>
+          </div>
+          {!!start && !!end && end <= start && (
+            <p className="text-xs text-red-600">Ora de sfârșit trebuie să fie după ora de început.</p>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="hr-leave-reason" className="text-xs">Motiv</Label>
+            <Input id="hr-leave-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Personal, Medical…" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Anulează</Button>
+          <Button
+            disabled={!valid || saving}
+            onClick={() => onSave({ leave_date: date, leave_start_time: start, leave_end_time: end, leave_reason: reason })}
+          >
+            {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+            Salvează
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

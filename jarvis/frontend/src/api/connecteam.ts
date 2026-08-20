@@ -64,6 +64,16 @@ export interface ConnecteamSubmission {
   created_at: string
   source?: 'connecteam' | 'jarvis'
   jarvis_user_company?: string | null
+  /** Set (non-null) when HR has soft-deleted (archived) the leave. */
+  archived_at?: string | null
+}
+
+/** HR-editable leave details (date/times/reason) — status is never changed. */
+export interface HrLeaveEdit {
+  leave_date: string        // YYYY-MM-DD
+  leave_start_time: string  // HH:MM
+  leave_end_time: string    // HH:MM
+  leave_reason: string
 }
 
 export interface LeaveApproval {
@@ -142,6 +152,24 @@ export const connecteamApi = {
   updateLeavePermit: (id: number, answers: Record<string, unknown>) =>
     api.patch<{ success: boolean; data: { submission_id: number } }>(
       `${BASE}/submissions/leave-permit/${id}`, { answers }
+    ),
+
+  // ── HR-scoped leave management (admin Leave-Permits tab) ──
+  // source is the row's `source` field: 'jarvis' | 'connecteam'; id is `s.id`.
+
+  hrUpdateLeave: (source: 'jarvis' | 'connecteam', id: number, fields: HrLeaveEdit) =>
+    api.patch<{ success: boolean; data: { source: string; id: number } }>(
+      `${BASE}/hr/leaves/${source}/${id}`, fields
+    ),
+
+  hrArchiveLeave: (source: 'jarvis' | 'connecteam', id: number) =>
+    api.post<{ success: boolean; data: { archived: boolean } }>(
+      `${BASE}/hr/leaves/${source}/${id}/archive`, {}
+    ),
+
+  hrRestoreLeave: (source: 'jarvis' | 'connecteam', id: number) =>
+    api.post<{ success: boolean; data: { archived: boolean } }>(
+      `${BASE}/hr/leaves/${source}/${id}/restore`, {}
     ),
 
   // Leave requests awaiting the current user's approval (empty if not an approver).

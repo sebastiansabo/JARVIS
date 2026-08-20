@@ -329,9 +329,64 @@ def get_recent_submissions():
     limit = min(request.args.get('limit', 500, type=int), 1000)
     year = request.args.get('year', type=int)
     month = request.args.get('month', type=int)
+    include_archived = request.args.get('include_archived', '').lower() in ('1', 'true', 'yes')
     try:
-        data = service.get_all_submissions(year=year, month=month, limit=limit)
+        data = service.get_all_submissions(year=year, month=month, limit=limit,
+                                           include_archived=include_archived)
         return jsonify({'success': True, 'data': data})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+# ── HR-scoped leave management (admin Leave-Permits tab) ──
+# Edit details / archive (soft-delete) / restore any leave, either source.
+# source ∈ {'jarvis', 'connecteam'}; validated in the service.
+
+@connecteam_bp.route('/api/hr/leaves/<source>/<int:entity_id>', methods=['PATCH'])
+@admin_required
+def hr_edit_leave(source, entity_id):
+    """HR override edit of a leave's details (date/start/end/reason). Status untouched."""
+    from core.connectors.connecteam.services import leave_permit_actions as lpa
+    fields = request.get_json(silent=True) or {}
+    try:
+        data = lpa.hr_update_leave(source, entity_id, fields)
+        return jsonify({'success': True, 'data': data})
+    except LookupError:
+        return jsonify({'success': False, 'error': 'Bilet inexistent'}), 404
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@connecteam_bp.route('/api/hr/leaves/<source>/<int:entity_id>/archive', methods=['POST'])
+@admin_required
+def hr_archive_leave(source, entity_id):
+    """Soft-delete (archive) a leave — recoverable via restore."""
+    from core.connectors.connecteam.services import leave_permit_actions as lpa
+    try:
+        data = lpa.hr_set_archived(source, entity_id, current_user.id, archived=True)
+        return jsonify({'success': True, 'data': data})
+    except LookupError:
+        return jsonify({'success': False, 'error': 'Bilet inexistent'}), 404
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@connecteam_bp.route('/api/hr/leaves/<source>/<int:entity_id>/restore', methods=['POST'])
+@admin_required
+def hr_restore_leave(source, entity_id):
+    """Restore a previously archived leave."""
+    from core.connectors.connecteam.services import leave_permit_actions as lpa
+    try:
+        data = lpa.hr_set_archived(source, entity_id, current_user.id, archived=False)
+        return jsonify({'success': True, 'data': data})
+    except LookupError:
+        return jsonify({'success': False, 'error': 'Bilet inexistent'}), 404
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
         return safe_error_response(e)
 
