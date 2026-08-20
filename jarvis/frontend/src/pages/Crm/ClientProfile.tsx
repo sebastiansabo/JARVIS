@@ -180,6 +180,10 @@ export default function ClientProfile() {
     for (const k of ['display_name', 'client_type', 'phone', 'email', 'street', 'city', 'region', 'country', 'company_name', 'responsible', 'nr_reg']) {
       init[k] = (client as unknown as Record<string, unknown>)[k] as string ?? ''
     }
+    // CUI: prefer the client's own value, else the ANAF-enriched profile CUI —
+    // so a Save persists it onto the client record (which the Driving session
+    // reads; without it a company TD shows "CUI: lipsă").
+    init.cui = String(client.cui || profile?.cui || '')
     // Flatten konto_debit map into form fields
     const kdMap = (client as unknown as Record<string, unknown>).eurofib_konto_debit as Record<string, number> | null
     for (const c of EUROFIB_COMPANIES) {
@@ -371,6 +375,10 @@ export default function ClientProfile() {
                   <Input value={form.nr_reg ?? ''} onChange={e => set('nr_reg', e.target.value)} />
                 </div>
                 <div>
+                  <Label className="text-xs">CUI</Label>
+                  <Input value={form.cui ?? ''} onChange={e => set('cui', e.target.value)} placeholder="ex. RO225615" />
+                </div>
+                <div>
                   <Label className="text-xs">City</Label>
                   <Input value={form.city ?? ''} onChange={e => set('city', e.target.value)} />
                 </div>
@@ -406,6 +414,7 @@ export default function ClientProfile() {
               <div className="grid grid-cols-2 gap-x-4">
                 <InfoRow icon={Building2} label="Company" value={client.company_name} />
                 <InfoRow icon={Hash} label="Nr. Reg" value={client.nr_reg} />
+                <InfoRow icon={Hash} label="CUI" value={client.cui || profile?.cui} />
                 <InfoRow icon={Phone} label="Phone" value={client.phone} />
                 <InfoRow icon={Mail} label="Email" value={client.email} />
                 <InfoRow icon={MapPin} label="City" value={client.city} />
