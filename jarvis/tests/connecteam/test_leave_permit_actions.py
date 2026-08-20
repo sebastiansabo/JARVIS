@@ -57,38 +57,37 @@ def test_modify_non_pending_raises(monkeypatch):
         lpa.update_leave_permit(42, user_id=9, answers={'f_bi_duration_hours': '1'})
 
 
-def test_open_cancellation_approval_resolves_approver_with_submission_company_id(monkeypatch):
-    # Minor A fix: resolve_approver's 2nd arg is company_id, used ONLY as a fallback
-    # when the requester has no org_unit_id parent (e.g. a leave that was granted
-    # via an explicit second approver with no org-structure parent). Passing None
-    # broke that L0 fallback, stranding the cancellation request with no approver.
-    from accounting.vouchers.services.voucher_service import VoucherService
+def test_open_cancellation_approval_resolves_approver_from_sincron(monkeypatch):
+    # Leave cancellation resolves the manager from the Sincron organigram
+    # (get_direct_manager by user), aligned with leave approval.
+    import core.organization.manager_utils as mu
     from core.approvals.engine import ApprovalEngine
 
     calls = {}
 
-    def fake_resolve_approver(self, user_id, company_id, explicit_approver_id):
-        calls['resolve_approver'] = (user_id, company_id, explicit_approver_id)
+    def fake_mgr(user_id):
+        calls['mgr_uid'] = user_id
         return {'id': 55, 'name': 'Manager', 'email': 'm@x.com'}
 
     def fake_submit(self, entity_type, entity_id, context, requested_by):
         calls['submit_context'] = context
         return {'id': 999}
 
-    monkeypatch.setattr(VoucherService, 'resolve_approver', fake_resolve_approver)
+    monkeypatch.setattr(mu, 'get_direct_manager', fake_mgr)
     monkeypatch.setattr(ApprovalEngine, 'submit', fake_submit)
 
     sub = _sub(status='approved', uid=9, company_id=17)
     lpa._open_cancellation_approval(sub, user_id=9)
 
-    assert calls['resolve_approver'] == (9, 17, None)
+    assert calls['mgr_uid'] == 9
+    assert calls['submit_context']['approver_user_id'] == 55
     assert calls['submit_context']['cancellation'] is True
 
 
-def test_cancel_approved_passes_submission_company_id_to_approver_resolution(monkeypatch):
+def test_cancel_approved_resolves_approver_from_sincron(monkeypatch):
     # End-to-end through cancel_leave_permit: the real _open_cancellation_approval
-    # (not monkeypatched away) must be reachable and forward sub['company_id'].
-    from accounting.vouchers.services.voucher_service import VoucherService
+    # must be reachable and resolve the manager from Sincron (by user).
+    import core.organization.manager_utils as mu
     from core.approvals.engine import ApprovalEngine
 
     monkeypatch.setattr(lpa, '_get_submission', lambda sid: _sub(status='approved', company_id=23))
@@ -96,12 +95,14 @@ def test_cancel_approved_passes_submission_company_id_to_approver_resolution(mon
     monkeypatch.setattr(lpa, '_set_status', lambda sid, st: None)
 
     calls = {}
-    monkeypatch.setattr(VoucherService, 'resolve_approver',
-                         lambda self, user_id, company_id, explicit_approver_id:
-                         calls.setdefault('args', (user_id, company_id, explicit_approver_id)) and None)
+
+    def fake_mgr(user_id):
+        calls['uid'] = user_id
+        return {'id': 7, 'name': 'M', 'email': 'e'}
+    monkeypatch.setattr(mu, 'get_direct_manager', fake_mgr)
     monkeypatch.setattr(ApprovalEngine, 'submit', lambda self, **kw: {'id': 1})
 
     out = lpa.cancel_leave_permit(42, user_id=9)
 
     assert out == {'status': 'cancellation_pending'}
-    assert calls['args'] == (9, 23, None)
+    assert calls['uid'] == 9

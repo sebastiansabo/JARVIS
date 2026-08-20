@@ -218,8 +218,10 @@ def _leave_notify_body(approver_name, leave, request_id, approver_id):
 
 
 def _resolve_manager(user_id, company_id):
-    from accounting.vouchers.services import VoucherService
-    return VoucherService().resolve_approver(user_id, company_id or 0)
+    # Sincron organigram (aligns with leave approval); company_id kept for the
+    # caller's signature though the Sincron resolver keys off the user.
+    from core.organization.manager_utils import get_direct_manager
+    return get_direct_manager(user_id)
 
 
 def _load_approved_deciders(request_id):

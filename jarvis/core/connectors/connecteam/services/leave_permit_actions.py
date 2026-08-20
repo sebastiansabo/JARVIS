@@ -23,8 +23,8 @@ def _open_cancellation_approval(sub, user_id, reason=None):
     is the same approver that granted the leave. The requester's motive is stored on
     the context so the manager sees why the cancellation is requested."""
     from core.approvals.engine import ApprovalEngine
-    from accounting.vouchers.services.voucher_service import VoucherService
-    approver = VoucherService().resolve_approver(user_id, sub.get('company_id'), None)
+    from core.organization.manager_utils import get_direct_manager
+    approver = get_direct_manager(user_id)   # Sincron organigram (aligns leave approval)
     approver_id = approver['id'] if approver else None
     ctx = {
         'cancellation': True,
