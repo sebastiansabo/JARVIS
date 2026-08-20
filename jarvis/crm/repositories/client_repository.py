@@ -304,7 +304,7 @@ class ClientRepository(BaseRepository):
     _EDITABLE = {
         'display_name', 'client_type', 'phone', 'email', 'street',
         'city', 'region', 'country', 'company_name', 'responsible', 'nr_reg',
-        'is_blacklisted', 'contact_person', 'eurofib_konto_debit',
+        'cui', 'is_blacklisted', 'contact_person', 'eurofib_konto_debit',
         'driver_license_number',
     }
 

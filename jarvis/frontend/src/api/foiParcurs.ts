@@ -331,6 +331,12 @@ export const foiParcursApi = {
   createCrmClient: (data: CreateCrmClientPayload) =>
     api.post<{ success: boolean; client: CrmClient }>(`${BASE}/crm-clients`, data),
 
+  // Login-gated partial update of the selected client (fiscal identity + address
+  // + contact details) from the Test Drive Client card — so a consilier can fix
+  // e.g. a missing CUI without full CRM access.
+  updateCrmClient: (id: number, data: Partial<CrmClient>) =>
+    api.patch<{ success: boolean; client: CrmClient }>(`${BASE}/crm-clients/${id}`, data),
+
   // ── Marketing projects (campaign/event) — login-gated type-to-search so a
   //    consilier without marketing access can tie a Test Drive to a campaign ──
   searchMktProjects: (q: string, companyId?: number, limit = 20) =>

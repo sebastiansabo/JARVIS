@@ -892,16 +892,17 @@ def api_create_crm_client():
 @foi_parcurs_bp.route('/api/foi-parcurs/crm-clients/<int:id>', methods=['PATCH'])
 @login_required
 def api_update_crm_client(id):
-    """Login-gated partial update of a CRM client's contact details
-    (phone/email/driver_license_number) from the mobile Test Drive form, so a
+    """Login-gated partial update of a CRM client from the Test Drive form, so a
     consilier can complete OR correct a selected client's info without full CRM
-    access.
+    (sales) access.
 
-    Scope note: only the three contact fields below are editable here, so the
-    blast radius is bounded — a consilier can already search and view every
-    client, and this lets them fix e.g. a mistyped email on the client they are
-    working with. It intentionally allows overwriting existing values (needed to
-    correct mistakes), unlike a fill-only endpoint."""
+    Editable here: contact details (phone/email/driver_license_number) plus the
+    fiscal identity + address (display_name/cui/nr_reg/company_name/street/city/
+    region) — the fields shown in the Driving Hub Client card. A consilier can
+    already search and view every client; this lets them fix e.g. a missing CUI
+    on the client they are working with (unblocking the company-TD CUI gate).
+    Overwriting existing values is intentional (needed to correct mistakes);
+    every change is written to crm_client_audit (who, what, old->new)."""
     data = request.get_json(silent=True) or {}
 
     existing = _crm_client_repo.get_by_id(id)
@@ -925,6 +926,19 @@ def api_update_crm_client(id):
 
     if 'driver_license_number' in data:
         update_data['driver_license_number'] = (data.get('driver_license_number') or '').strip()
+
+    # Full-record edit from the Test Drive form (Driving Hub): the consilier can
+    # correct the selected client's fiscal identity + address inline. display_name
+    # must not be blanked (it's the client's identity); the rest may be cleared.
+    if 'display_name' in data:
+        display_name = (data.get('display_name') or '').strip()
+        if not display_name:
+            return jsonify({'success': False, 'error': 'Numele clientului este obligatoriu.'}), 400
+        update_data['display_name'] = display_name
+
+    for field in ('cui', 'nr_reg', 'company_name', 'street', 'city', 'region'):
+        if field in data:
+            update_data[field] = (data.get(field) or '').strip()
 
     if not update_data:
         return jsonify({'success': True, 'client': existing})
