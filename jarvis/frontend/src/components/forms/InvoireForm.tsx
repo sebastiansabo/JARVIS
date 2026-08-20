@@ -177,10 +177,13 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
       ? nameFor(approverIds[0])
       : `${approverIds.length} aprobatori`
 
+  // A bilet can't be filed for a day that already passed (create mode only —
+  // editing an existing permit must not be blocked by its original past date).
+  const isPastDate = !isEdit && !!date && date < localDateStr()
   const invalid = useMemo(() => ({
-    date: !date, start: !start, duration: !durationHours, reason: !reason,
+    date: !date || isPastDate, start: !start, duration: !durationHours, reason: !reason,
     terms: !termsAccepted, signature: !signature,
-  }), [date, start, durationHours, reason, termsAccepted, signature])
+  }), [date, isPastDate, start, durationHours, reason, termsAccepted, signature])
 
   const submit = useMutation({
     mutationFn: async () => {
@@ -233,8 +236,12 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
         <div className="mx-auto max-w-lg px-5 py-6 space-y-5">
           <div className="space-y-1">
             <Label>{L('f_bi_leave_date', 'Data')}{req}</Label>
-            <Input type="date" value={date} onChange={(ev) => setDate(ev.target.value)}
-              aria-invalid={attempted && invalid.date ? true : undefined} />
+            <Input type="date" value={date} min={isEdit ? undefined : localDateStr()}
+              onChange={(ev) => setDate(ev.target.value)}
+              aria-invalid={(attempted && invalid.date) || isPastDate ? true : undefined} />
+            {isPastDate && (
+              <p className="text-xs text-destructive">Nu poți crea un bilet pentru o zi anterioară.</p>
+            )}
           </div>
 
           {/* Start · Duration · derived return time — all on one inline row.
