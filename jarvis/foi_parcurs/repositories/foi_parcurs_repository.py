@@ -357,9 +357,9 @@ class FoiParcursRepository(BaseRepository):
         return row['id'] if row else None
 
     def get_overdue_return_sessions(self) -> list:
-        """Active TD sessions (FILLED) whose scheduled return passed >1h ago and
+        """Active TD sessions (FILLED) whose scheduled return passed >2h ago and
         that the consilier never returned — i.e. the derived 'incomplete' state
-        plus a 1h grace. Excludes any already alerted within the 4h cooldown
+        plus a 2h grace. Excludes any already alerted within the 4h cooldown
         (smart_notification_state), so callers just iterate and send. Joins the
         advisor (users), company and vehicle so the caller can notify + email +
         resolve the brand CC without extra queries."""
@@ -377,7 +377,7 @@ class FoiParcursRepository(BaseRepository):
             "WHERE LOWER(name) = LOWER(fp.advisor_name) ORDER BY id LIMIT 1) au ON TRUE "
             "WHERE fp.route_type = 'TD' AND fp.status = 'FILLED' "
             "AND fp.return_datetime IS NOT NULL "
-            f"AND fp.return_datetime + INTERVAL '1 hour' < {NOW_LOCAL_SQL} "
+            f"AND fp.return_datetime + INTERVAL '2 hours' < {NOW_LOCAL_SQL} "
             "AND NOT EXISTS ("
             "SELECT 1 FROM smart_notification_state s "
             "WHERE s.alert_type = 'fp_return_overdue' AND s.entity_type = 'foi_parcurs_td' "

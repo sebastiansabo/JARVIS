@@ -79,6 +79,10 @@ def wired(monkeypatch):
         return {'email': box.get('_brand_email', 'vanzarivw@autoworld.ro')}
     monkeypatch.setattr(sess_mod, 'get_dealer_config', fake_dealer)
 
+    # Orchestration tests must not depend on the real wall-clock: force the
+    # weekday/business-hours send window open. Its own gating is covered below.
+    monkeypatch.setattr(sess_mod, '_within_send_window', lambda *a, **k: True)
+
     return box
 
 
@@ -183,6 +187,38 @@ def test_overdue_message_frames_as_unrecorded_return():
     text, _ = sess_mod._overdue_return_message(row)
     assert 'înregistrat' in text.lower()
     assert 'trebuia predat' not in text
+
+
+@pytest.mark.parametrize('dt, expected', [
+    # Mon 2026-08-17 .. Fri 2026-08-21 are weekdays; Sat/Sun 22/23 are weekend.
+    (datetime(2026, 8, 17, 8, 0), True),    # Monday 08:00 — start edge, inclusive
+    (datetime(2026, 8, 17, 12, 30), True),  # Monday midday
+    (datetime(2026, 8, 21, 17, 59), True),  # Friday 17:59 — still inside
+    (datetime(2026, 8, 17, 7, 59), False),  # Monday 07:59 — before window
+    (datetime(2026, 8, 17, 18, 0), False),  # Monday 18:00 — end edge, exclusive
+    (datetime(2026, 8, 17, 23, 30), False), # Monday night
+    (datetime(2026, 8, 17, 3, 0), False),   # Monday small hours
+    (datetime(2026, 8, 22, 10, 0), False),  # Saturday inside hours — still skipped
+    (datetime(2026, 8, 23, 10, 0), False),  # Sunday inside hours — still skipped
+])
+def test_within_send_window(dt, expected):
+    assert sess_mod._within_send_window(now=dt) is expected
+
+
+def test_overdue_return_suppressed_outside_window(wired, monkeypatch):
+    """When the send window is closed the pass is a full no-op: it never even
+    queries the repo, so nothing is sent and no cooldown is written — the alert
+    simply waits for the next in-window tick."""
+    monkeypatch.setattr(sess_mod, '_within_send_window', lambda *a, **k: False)
+
+    def boom():
+        raise AssertionError('repo must not be queried outside the send window')
+    monkeypatch.setattr(sess_mod, 'FoiParcursRepository', boom)
+
+    sess_mod.notify_overdue_returns()
+
+    assert wired['push'] == []
+    assert wired['email'] == []
 
 
 def test_run_session_lifecycle_invokes_overdue_pass(monkeypatch):
