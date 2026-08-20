@@ -347,18 +347,23 @@ class ConnecteamService:
 
     # ── Query ──
 
-    def get_all_submissions(self, year=None, month=None, limit=500):
+    def get_all_submissions(self, year=None, month=None, limit=500, include_archived=False):
         """Get all leave permission submissions across all users.
 
         Combines data from two sources:
         - Connecteam imported submissions (connecteam_form_submissions)
         - JARVIS internal form submissions (form_submissions for 'bilet-de-invoire')
+
+        Archived (soft-deleted) leaves are hidden unless include_archived=True
+        (the HR "Show archived" toggle).
         """
-        ct_submissions = self.repo.get_recent_submissions(limit, year, month)
+        ct_submissions = self.repo.get_recent_submissions(
+            limit, year, month, include_archived=include_archived)
         for s in ct_submissions:
             s['source'] = 'connecteam'
 
-        jarvis_submissions = self._get_all_jarvis_form_submissions(year, month, limit)
+        jarvis_submissions = self._get_all_jarvis_form_submissions(
+            year, month, limit, include_archived=include_archived)
 
         all_subs = ct_submissions + jarvis_submissions
         all_subs.sort(
@@ -367,7 +372,8 @@ class ConnecteamService:
         )
         return all_subs[:limit]
 
-    def _get_all_jarvis_form_submissions(self, year=None, month=None, limit=500):
+    def _get_all_jarvis_form_submissions(self, year=None, month=None, limit=500,
+                                         include_archived=False):
         """Fetch ALL JARVIS internal 'Bilet de Invoire' form submissions."""
         from database import get_db, get_cursor, release_db, dict_from_row
 
@@ -388,6 +394,7 @@ class ConnecteamService:
                 SELECT fs.id, fs.form_id, f.name AS form_name,
                        fs.answers, fs.status, fs.source, fs.approval_request_id,
                        fs.respondent_user_id, fs.created_at::text,
+                       fs.archived_at::text AS archived_at,
                        u.name AS respondent_name,
                        u.company AS respondent_company
                 FROM form_submissions fs
@@ -396,6 +403,9 @@ class ConnecteamService:
                 WHERE fs.form_id = %s
             '''
             params: list = [form_id]
+
+            if not include_archived:
+                query += " AND fs.archived_at IS NULL"
 
             if year:
                 query += " AND EXTRACT(YEAR FROM fs.created_at) = %s"
@@ -454,6 +464,7 @@ class ConnecteamService:
                     'entry_num': None,
                     'received_at': r.get('created_at'),
                     'created_at': r.get('created_at'),
+                    'archived_at': r.get('archived_at'),
                     'source': 'jarvis',
                 })
             return results
@@ -575,6 +586,7 @@ class ConnecteamService:
                 JOIN forms f ON f.id = fs.form_id
                 LEFT JOIN users u ON u.id = fs.respondent_user_id
                 WHERE fs.form_id = %s AND fs.respondent_user_id = %s
+                  AND fs.archived_at IS NULL
             '''
             params = [form_id, jarvis_user_id]
 

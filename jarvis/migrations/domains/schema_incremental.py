@@ -2597,4 +2597,29 @@ def _create_schema_incremental_continued(conn, cursor):
         END $$;
     ''')
 
+    # ── HR Leave Permits — soft-delete (archive) support on both leave sources ──
+    # The HR Leave-Permits tab (/app/hr/leave-permits) merges two backends:
+    # form_submissions (JARVIS/Invoire leaves) and connecteam_form_submissions
+    # (Excel-imported leaves). HR gets edit + archive controls; archive is a
+    # recoverable soft-delete — archived_at IS NOT NULL hides the row from the
+    # default list (HR "Show archived" toggle reveals it, restore clears it).
+    # archived_by records the acting HR user for audit. Idempotent: ADD COLUMN
+    # IF NOT EXISTS no-ops on re-run and never touches existing rows.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF to_regclass('public.form_submissions') IS NOT NULL THEN
+                ALTER TABLE form_submissions ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP DEFAULT NULL;
+                ALTER TABLE form_submissions ADD COLUMN IF NOT EXISTS archived_by INTEGER DEFAULT NULL;
+                CREATE INDEX IF NOT EXISTS idx_form_submissions_active
+                    ON form_submissions(form_id) WHERE archived_at IS NULL;
+            END IF;
+            IF to_regclass('public.connecteam_form_submissions') IS NOT NULL THEN
+                ALTER TABLE connecteam_form_submissions ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+                ALTER TABLE connecteam_form_submissions ADD COLUMN IF NOT EXISTS archived_by INTEGER DEFAULT NULL;
+                CREATE INDEX IF NOT EXISTS idx_connecteam_submissions_active
+                    ON connecteam_form_submissions(leave_date) WHERE archived_at IS NULL;
+            END IF;
+        END $$;
+    ''')
+
     conn.commit()
