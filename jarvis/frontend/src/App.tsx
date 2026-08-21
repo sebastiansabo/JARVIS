@@ -257,8 +257,9 @@ export default function App() {
         <Route path="ticketing" element={<SuspensePage><Ticketing /></SuspensePage>} />
         <Route path="ticketing/:ticketId" element={<SuspensePage><TicketDetail /></SuspensePage>} />
 
-        {/* Digest — open to all authenticated users */}
-        <Route path="digest" element={<SuspensePage><Digest /></SuspensePage>} />
+        {/* Chat (formerly Digest) — open to all authenticated users */}
+        <Route path="chat" element={<SuspensePage><Digest /></SuspensePage>} />
+        <Route path="digest" element={<Navigate to="/app/chat" replace />} />
 
         {/* Open-access modules — all authenticated users */}
         <Route path="mobile-checkin" element={<SuspensePage><MobileCheckin /></SuspensePage>} />
