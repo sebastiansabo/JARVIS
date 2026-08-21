@@ -1526,8 +1526,8 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterMonth, setFilterMonth] = useState<string>('all')
   const [filterYear, setFilterYear] = useState<string>('all')
-  // Finalised sessions are the "archive" — hidden by default, revealed by the toggle.
-  const [showArchived, setShowArchived] = useState(false)
+  // Session view: Active (non-finalised, default) · Arhivate (finalised) · Toate (both).
+  const [sessionView, setSessionView] = useState<'active' | 'archived' | 'all'>('active')
   const [showFilters, setShowFilters] = useState(false) // the Vehicle/Status/Month/Year filters live under a filter icon
   // Persisted per-user column visibility (all shown by default). Mirrors StockTab.
   const [visibleColKeys, setVisibleColKeys] = usePersistentState<SessionColumnKey[]>('fp.sessionCols.v5', SESSION_COLUMNS.map((c) => c.key))
@@ -1595,9 +1595,9 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
     // Client vs internal drive filter (from the header toggle).
     if (driveType === 'client' && c.is_internal) return false
     if (driveType === 'internal' && !c.is_internal) return false
-    // Arhivate toggle switches the view: ONLY archived (finalised) sessions when
-    // on, ONLY active ones when off — never mixed.
-    if (showArchived ? sessionStatus(c).key !== 'finalizat' : sessionStatus(c).key === 'finalizat') return false
+    // Session view: Active = non-finalised only, Arhivate = finalised only, Toate = both.
+    if (sessionView === 'active' && sessionStatus(c).key === 'finalizat') return false
+    if (sessionView === 'archived' && sessionStatus(c).key !== 'finalizat') return false
     if (brand && vinBrand.get(c.vin) !== brand) return false
     if (filterVin !== 'all' && c.vin !== filterVin) return false
     if (filterStatus !== 'all' && sessionStatus(c).key !== filterStatus) return false
@@ -1710,12 +1710,12 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
       </div>
       {onDriveTypeChange && <DriveTypeToggle value={driveType} onChange={onDriveTypeChange} />}
       <div className="flex h-8 shrink-0 gap-0.5 rounded-lg bg-muted p-0.5">
-        {([['active', 'Active'], ['archived', 'Arhivate']] as const).map(([v, label]) => (
+        {([['active', 'Active'], ['archived', 'Arhivate'], ['all', 'Toate']] as const).map(([v, label]) => (
           <button
             key={v}
             type="button"
-            onClick={() => setShowArchived(v === 'archived')}
-            className={cn('rounded-md px-3 text-xs font-medium transition-colors', (v === 'archived') === showArchived ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground')}
+            onClick={() => setSessionView(v)}
+            className={cn('rounded-md px-3 text-xs font-medium transition-colors', sessionView === v ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground')}
           >
             {label}
           </button>
