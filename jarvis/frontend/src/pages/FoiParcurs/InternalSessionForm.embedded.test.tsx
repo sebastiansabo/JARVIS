@@ -3,11 +3,14 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const { submitInternalSession, getVehicles } = vi.hoisted(() => ({
+const { submitInternalSession, getVehicles, getCompanies } = vi.hoisted(() => ({
   submitInternalSession: vi.fn(),
   getVehicles: vi.fn(),
+  getCompanies: vi.fn(),
 }))
-vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { submitInternalSession, getVehicles } }))
+vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { submitInternalSession, getVehicles, getCompanies } }))
+vi.mock('@/api/digest', () => ({ digestApi: { searchUsers: vi.fn() } }))
+// No `company` on the user → company filter stays "Toate companiile" (all cars).
 vi.mock('@/stores/authStore', () => ({ useAuthStore: (sel: (s: unknown) => unknown) => sel({ user: { name: 'Test Advisor' } }) }))
 
 import InternalSessionForm from './InternalSessionForm'
@@ -19,6 +22,7 @@ const vehicles = [
 
 function wrap(ui: React.ReactNode) {
   getVehicles.mockResolvedValue({ vehicles })
+  getCompanies.mockResolvedValue({ companies: [{ id: 11, company: 'Co A' }, { id: 12, company: 'Co B' }] })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={qc}><MemoryRouter>{ui}</MemoryRouter></QueryClientProvider>)
 }
@@ -41,7 +45,10 @@ describe('InternalSessionForm embedded mode', () => {
 
   it('prefills Șofer with the current user name', async () => {
     wrap(<InternalSessionForm embedded onCancel={vi.fn()} onDone={vi.fn()} />)
-    expect(await screen.findByTestId('internal-driver')).toHaveValue('Test Advisor')
+    // A prefilled driver renders as a chosen badge (with a "Schimbă" reset), not
+    // the search input.
+    expect(await screen.findByText('Test Advisor')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /schimbă/i })).toBeInTheDocument()
   })
 
   it('seeds the departure datetime from initialDeparture', async () => {
@@ -51,7 +58,7 @@ describe('InternalSessionForm embedded mode', () => {
 
   it('flags the missing fields and blocks submit until valid', async () => {
     wrap(<InternalSessionForm embedded onCancel={vi.fn()} onDone={vi.fn()} />)
-    await screen.findByTestId('internal-driver')
+    await screen.findByTestId('internal-vehicle')
     fireEvent.click(screen.getByRole('button', { name: /creează sesiunea/i }))
     expect(await screen.findByText('Alege mașina.')).toBeInTheDocument()
     expect(submitInternalSession).not.toHaveBeenCalled()
@@ -61,7 +68,7 @@ describe('InternalSessionForm embedded mode', () => {
     submitInternalSession.mockResolvedValue({ success: true, contract: { id: 5, contract_id: 'INT-1' } })
     const onDone = vi.fn()
     wrap(<InternalSessionForm embedded onCancel={vi.fn()} onDone={onDone} />)
-    await screen.findByTestId('internal-driver')
+    await screen.findByTestId('internal-vehicle')
 
     fireEvent.click(screen.getByTestId('internal-vehicle'))
     fireEvent.click(await screen.findByText(/Renault Clio/))
@@ -87,7 +94,7 @@ describe('InternalSessionForm embedded mode', () => {
 
   it('overwrites KM plecare with the newly-picked car odometer when switching cars', async () => {
     wrap(<InternalSessionForm embedded onCancel={vi.fn()} onDone={vi.fn()} />)
-    await screen.findByTestId('internal-driver')
+    await screen.findByTestId('internal-vehicle')
 
     // Pick car A (Dacia Duster, odometer 50000).
     fireEvent.click(screen.getByTestId('internal-vehicle'))
@@ -105,7 +112,7 @@ describe('InternalSessionForm embedded mode', () => {
     const { ApiError } = await import('@/api/client')
     submitInternalSession.mockRejectedValue(new ApiError(409, { error: 'Mașină blocată în parcul auto', locked_out: true }))
     wrap(<InternalSessionForm embedded onCancel={vi.fn()} onDone={vi.fn()} />)
-    await screen.findByTestId('internal-driver')
+    await screen.findByTestId('internal-vehicle')
 
     fireEvent.click(screen.getByTestId('internal-vehicle'))
     fireEvent.click(await screen.findByText(/Dacia Duster/))
