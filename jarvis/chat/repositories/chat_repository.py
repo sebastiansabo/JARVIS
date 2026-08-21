@@ -243,7 +243,7 @@ class ChatRepository(BaseRepository):
         """Update channel settings columns."""
         sets = []
         params = []
-        for key in ('allow_member_posts', 'allow_reactions', 'allow_images', 'auto_delete_days', 'notify_mode', 'name', 'description', 'type', 'is_private'):
+        for key in ('allow_member_posts', 'allow_reactions', 'allow_images', 'auto_delete_days', 'notify_mode', 'name', 'description', 'type', 'is_private', 'avatar_url'):
             if key in settings:
                 sets.append(f'{key} = %s')
                 params.append(settings[key])

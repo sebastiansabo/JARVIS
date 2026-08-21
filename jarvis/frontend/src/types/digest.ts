@@ -14,6 +14,16 @@ export interface DigestChannel {
   member_count: number
   post_count: number
   unread_count: number
+  avatar_url: string | null
+  // Per-user conversation state (messenger list)
+  pinned_at: string | null
+  archived_at: string | null
+  muted: boolean
+  // Last-message preview (conversation list)
+  last_message_content: string | null
+  last_message_type: string | null
+  last_message_at: string | null
+  last_message_author: string | null
   created_at: string
   updated_at: string
 }
