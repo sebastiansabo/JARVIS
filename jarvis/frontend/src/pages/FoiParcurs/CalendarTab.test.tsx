@@ -125,10 +125,11 @@ describe('CalendarTab (desktop foi-parcurs)', () => {
     expect(navigate).toHaveBeenCalledWith(`/app/foi-parcurs/test-drive?departure=${aKey}T09:00&return=${cKey}T18:00`)
   })
 
-  it('switches to Month view showing the session chip', async () => {
+  it('switches to Month view listing the session in the day panel', async () => {
     wrap(<CalendarTab companyId={11} brand="" />)
     await screen.findByTestId('tg-block-11')
     fireEvent.click(screen.getByRole('button', { name: 'Lună' }))
-    expect(await screen.findByTitle(/Ion Pop/)).toBeInTheDocument()
+    // Month now shows the shared day-list side panel (Toată luna by default).
+    expect(await screen.findByText('Ion Pop')).toBeInTheDocument()
   })
 })

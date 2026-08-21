@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { foiParcursApi } from '@/api/foiParcurs'
 import type { FoiContract } from '@/types/foiParcurs'
@@ -13,10 +12,10 @@ import { naiveDate } from '@/lib/naiveDate'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
 import SessionTypeChooser from './SessionTypeChooser'
+import MonthCalendar from './MonthCalendar'
 
 type CalView = 'month' | 'week' | 'day'
 const VIEW_OPTIONS: readonly [CalView, string][] = [['day', 'Zi'], ['week', 'Săptămână'], ['month', 'Lună']]
-const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mie', 'Joi', 'Vin', 'Sâm', 'Dum']
 
 function dayKey(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -27,18 +26,6 @@ function startOfWeek(d: Date): Date { const x = new Date(d); x.setHours(0, 0, 0,
 function minsOfDay(iso?: string | null): number | null {
   const d = naiveDate(iso)
   return d ? d.getHours() * 60 + d.getMinutes() : null
-}
-
-/** 6-week (42-day) Monday-first grid covering `cursor`'s month, padded with
- *  leading/trailing days from the adjacent months so every week row is full.
- *  Plain Date math — no calendar library is installed in this project. */
-function monthGrid(cursor: Date): Date[] {
-  const year = cursor.getFullYear()
-  const month = cursor.getMonth()
-  const firstOfMonth = new Date(year, month, 1)
-  const startOffset = (firstOfMonth.getDay() + 6) % 7 // Mon=0 .. Sun=6
-  const gridStart = new Date(year, month, 1 - startOffset)
-  return Array.from({ length: 42 }, (_, i) => new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i))
 }
 
 /** Calendar of planned/live/finished TD sessions, keyed on departure_datetime.
@@ -60,10 +47,6 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
   // before navigating, instead of always assuming a client test drive.
   const [slotChooser, setSlotChooser] = useState<{ departure: string; ret: string } | null>(null)
   const [weekOffset, setWeekOffset] = useState(0) // rolling 7-day window: slide by ±1 day
-  // Month drag-to-select a date range → multi-day session.
-  const [monthDrag, setMonthDrag] = useState<{ a: string; b: string } | null>(null)
-  const monthRange = monthDrag ? (monthDrag.a <= monthDrag.b ? [monthDrag.a, monthDrag.b] : [monthDrag.b, monthDrag.a]) : null
-  const inMonthRange = (k: string) => !!monthRange && k >= monthRange[0] && k <= monthRange[1]
 
   // Fetch the visible month's range (± a week to cover the grid's leading/
   // trailing days, and any Week/Day view anchored in this month) so navigating
@@ -155,10 +138,6 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
     return map
   }, [tdContracts])
   const byId = useMemo(() => new Map(tdContracts.map((c) => [c.id, c] as const)), [tdContracts])
-
-  const grid = useMemo(() => monthGrid(cursor), [cursor])
-  const currentMonth = cursor.getMonth()
-  const todayKey = dayKey(new Date())
 
   // Week/Day columns + their time-grid events. Week is a rolling 7-day window
   // (weekOffset in days) so the arrows / edge-drag slide it a day at a time.
@@ -252,74 +231,15 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
       </div>
 
       {view === 'month' ? (
-        <Card className="overflow-hidden">
-          <div className="grid grid-cols-7 border-b bg-muted/40">
-            {WEEKDAY_LABELS.map((d) => (
-              <div key={d} className="px-2 py-1.5 text-center text-xs font-medium text-muted-foreground">{d}</div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7">
-            {grid.map((d) => {
-              const key = dayKey(d)
-              const inMonth = d.getMonth() === currentMonth
-              const isToday = key === todayKey
-              const isPast = key < todayKey
-              const weekend = d.getDay() === 0 || d.getDay() === 6
-              const events = byDay.get(key) ?? []
-              return (
-                <div
-                  key={key}
-                  data-testid={`fp-day-${key}`}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { e.preventDefault(); const id = Number(e.dataTransfer.getData('text/plain')); if (id) rescheduleToDay(id, key) }}
-                  // Drag across empty cell space → a multi-day session (09:00–18:00).
-                  // Skip when the press starts on a draggable chip (that's a reschedule drag).
-                  onPointerDown={(e) => {
-                    if (e.button !== 0 && e.pointerType === 'mouse') return
-                    if ((e.target as HTMLElement).closest('[draggable="true"]')) return
-                    setMonthDrag({ a: key, b: key })
-                  }}
-                  onPointerEnter={() => setMonthDrag((md) => (md ? { ...md, b: key } : md))}
-                  onPointerUp={() => {
-                    const r = monthRange
-                    setMonthDrag(null)
-                    if (r && r[0] !== r[1]) setSlotChooser({ departure: `${r[0]}T09:00`, ret: `${r[1]}T18:00` })
-                  }}
-                  className={cn('min-h-[104px] border-b border-r p-1.5 space-y-1', !inMonth && 'bg-muted/20 text-muted-foreground', inMonth && weekend && 'bg-zinc-100 dark:bg-red-950/20', inMonthRange(key) && 'bg-primary/15')}
-                >
-                  <div className={cn('text-xs font-medium', isToday && 'inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground')}>
-                    {d.getDate()}
-                  </div>
-                  <div className="space-y-1">
-                    {events.slice(0, 3).map((c) => {
-                      const ss = sessionStatus(c)
-                      const time = c.departure_datetime
-                        ? naiveDate(c.departure_datetime)!.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
-                        : ''
-                      const planned = ss.key === 'planificat'
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          draggable={planned}
-                          onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(c.id)); e.dataTransfer.effectAllowed = 'move' }}
-                          onClick={() => setSelected(c)}
-                          className={cn('w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium text-white hover:opacity-90', ss.badgeClass, isPast && 'opacity-60', planned && 'cursor-grab')}
-                          title={`${time} ${carLabel(c.vin)} — ${c.client_name || '—'}${planned ? ' (trage pentru a reprograma)' : ''}`}
-                        >
-                          {time} {carLabel(c.vin)}
-                        </button>
-                      )
-                    })}
-                    {events.length > 3 && (
-                      <div className="text-[10px] text-muted-foreground px-1.5">+{events.length - 3} altele</div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </Card>
+        <MonthCalendar
+          monthDate={cursor}
+          byDay={byDay}
+          vinVehicle={vinVehicle}
+          onOpenDetail={setSelected}
+          onAdd={(departure, ret) => setSlotChooser({ departure, ret })}
+          onRescheduleToDay={rescheduleToDay}
+          dayTestIdPrefix="fp-day"
+        />
       ) : (
         <div className="space-y-1">
           {moveErr && <p className="px-1 text-xs text-destructive">{moveErr}</p>}
