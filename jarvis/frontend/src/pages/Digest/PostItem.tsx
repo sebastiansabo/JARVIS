@@ -58,15 +58,22 @@ function renderContent(content: string) {
 }
 
 function formatTime(iso: string) {
-  const d = new Date(iso)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  if (diff < 60_000) return 'just now'
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`
-  if (diff < 604800_000) return d.toLocaleDateString('en', { weekday: 'short', hour: '2-digit', minute: '2-digit' })
-  return d.toLocaleDateString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
 }
+
+// Stable per-sender colour (name + avatar), Connecteam-style.
+const SENDER_HUES = [
+  { name: 'text-pink-600 dark:text-pink-400', av: 'bg-pink-500/20 text-pink-700 dark:text-pink-300' },
+  { name: 'text-red-600 dark:text-red-400', av: 'bg-red-500/20 text-red-700 dark:text-red-300' },
+  { name: 'text-orange-600 dark:text-orange-400', av: 'bg-orange-500/20 text-orange-700 dark:text-orange-300' },
+  { name: 'text-amber-600 dark:text-amber-400', av: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
+  { name: 'text-emerald-600 dark:text-emerald-400', av: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
+  { name: 'text-teal-600 dark:text-teal-400', av: 'bg-teal-500/20 text-teal-700 dark:text-teal-300' },
+  { name: 'text-cyan-600 dark:text-cyan-400', av: 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300' },
+  { name: 'text-indigo-600 dark:text-indigo-400', av: 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300' },
+  { name: 'text-violet-600 dark:text-violet-400', av: 'bg-violet-500/20 text-violet-700 dark:text-violet-300' },
+  { name: 'text-fuchsia-600 dark:text-fuchsia-400', av: 'bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300' },
+]
 
 export default function PostItem({ post, channelId, onReply, onThread, isThreadReply }: Props) {
   const user = useAuthStore((s) => s.user)
@@ -94,6 +101,7 @@ export default function PostItem({ post, channelId, onReply, onThread, isThreadR
   })
 
   const isOwn = user?.id === post.user_id
+  const hue = SENDER_HUES[post.user_id % SENDER_HUES.length]
   const initials = post.user_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
 
   return (
@@ -102,7 +110,7 @@ export default function PostItem({ post, channelId, onReply, onThread, isThreadR
         {/* Avatar */}
         <div className={cn(
           'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold mt-0.5',
-          isOwn ? 'bg-green-500/20 text-green-700 dark:text-green-400' : 'bg-blue-500/20 text-blue-700 dark:text-blue-400',
+          isOwn ? 'bg-green-500/20 text-green-700 dark:text-green-400' : hue.av,
         )}>
           {initials}
         </div>
@@ -137,10 +145,10 @@ export default function PostItem({ post, channelId, onReply, onThread, isThreadR
           )}>
             {/* Name + time + actions */}
             <div className={cn('flex items-center gap-2 mb-0.5', isOwn && 'flex-row-reverse')}>
-              <span className={cn('text-xs font-semibold', isOwn ? 'text-green-700 dark:text-green-400' : 'text-blue-700 dark:text-blue-400')}>
+              <span className={cn('text-xs font-semibold', isOwn ? 'text-green-700 dark:text-green-400' : hue.name)}>
                 {post.user_name}
               </span>
-              {post.type === 'announcement' && <Badge variant="secondary" className="text-[9px] px-1 py-0">Announcement</Badge>}
+              {post.type === 'announcement' && <Badge variant="secondary" className="text-[9px] px-1 py-0">Anunț</Badge>}
               <span className="text-[10px] text-muted-foreground">{formatTime(post.created_at)}</span>
               {post.updated_at !== post.created_at && (
                 <span className="text-[10px] text-muted-foreground">(edited)</span>

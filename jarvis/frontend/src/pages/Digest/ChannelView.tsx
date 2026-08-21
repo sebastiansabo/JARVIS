@@ -197,18 +197,42 @@ export default function ChannelView({ channel, onBack }: Props) {
           </div>
         ) : posts.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-            <p className="text-sm">No posts yet. Start the conversation!</p>
+            <p className="text-sm">Niciun mesaj încă. Începe conversația!</p>
           </div>
         ) : (
-          [...posts].reverse().map((post) => (
-            <PostItem
-              key={post.id}
-              post={post}
-              channelId={channel.id}
-              onReply={(p) => setReplyTo(p)}
-              onThread={(p) => setActiveThread(p)}
-            />
-          ))
+          (() => {
+            const now = new Date()
+            const dayLabel = (iso: string) => {
+              const d = new Date(iso)
+              if (d.toDateString() === now.toDateString()) return 'Astăzi'
+              const y = new Date(now); y.setDate(now.getDate() - 1)
+              if (d.toDateString() === y.toDateString()) return 'Ieri'
+              return d.toLocaleDateString('ro-RO', { day: 'numeric', month: 'long', year: 'numeric' })
+            }
+            let lastDay = ''
+            return [...posts].reverse().map((post) => {
+              const day = new Date(post.created_at).toDateString()
+              const showSep = day !== lastDay
+              lastDay = day
+              return (
+                <div key={post.id}>
+                  {showSep && (
+                    <div className="my-3 flex justify-center">
+                      <span className="rounded-full bg-muted px-3 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        {dayLabel(post.created_at)}
+                      </span>
+                    </div>
+                  )}
+                  <PostItem
+                    post={post}
+                    channelId={channel.id}
+                    onReply={(p) => setReplyTo(p)}
+                    onThread={(p) => setActiveThread(p)}
+                  />
+                </div>
+              )
+            })
+          })()
         )}
         <div ref={bottomRef} />
       </div>
