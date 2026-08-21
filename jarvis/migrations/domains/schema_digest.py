@@ -136,6 +136,16 @@ def create_schema_digest(conn, cursor):
         "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS allow_images BOOLEAN DEFAULT TRUE",
         "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS auto_delete_days INTEGER",
         "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS notify_mode TEXT DEFAULT 'all'",
+        # Chat messenger: channel avatar/photo (Connecteam-style group image)
+        "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS avatar_url TEXT",
+    ]:
+        cursor.execute(col_sql)
+
+    # Chat messenger: per-member conversation state (pin / archive / mute).
+    for col_sql in [
+        "ALTER TABLE digest_channel_members ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMP",
+        "ALTER TABLE digest_channel_members ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
+        "ALTER TABLE digest_channel_members ADD COLUMN IF NOT EXISTS muted BOOLEAN DEFAULT FALSE",
     ]:
         cursor.execute(col_sql)
 
