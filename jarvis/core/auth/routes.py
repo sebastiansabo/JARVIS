@@ -379,6 +379,7 @@ def api_current_user():
                 'can_access_ai_agent':   _access('ai_agent',   'can_access_ai_agent'),
                 'can_access_forms':      _access('forms',      'can_access_forms'),
                 'can_access_digest':     _access('digest',     'can_access_digest'),
+                'can_access_chat':       _access('digest',     'can_access_digest'),
                 'can_access_field_sales': _access('field_sales', None),
                 'can_access_carpark':    _access('carpark',     'can_access_carpark'),
                 'can_access_service':    _access('service',     None),
