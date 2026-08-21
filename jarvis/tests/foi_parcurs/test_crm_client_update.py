@@ -155,3 +155,24 @@ def test_empty_display_name_rejected(client):
     assert r.status_code == 400
     # Must not have attempted an update.
     assert client.application._fake_repo.update_calls == []
+
+
+# ── GET single client: login-gated full-record hydration for the TD form ──
+# The full CRM GET (/api/crm/clients/<id>) is @crm_required, so a consilier
+# without sales access cannot use it to hydrate CUI/address of a client picked
+# from the lean search results. This login-gated GET mirrors the search/create/
+# PATCH endpoints so the Driving Hub Client card can show/edit those fields.
+
+def test_get_client_returns_full_record(client):
+    r = client.get('/api/foi-parcurs/crm-clients/2')
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['success'] is True
+    assert body['client']['id'] == 2
+    assert body['client']['email'] == 'set@already.ro'
+
+
+def test_get_unknown_client_404(client):
+    r = client.get('/api/foi-parcurs/crm-clients/999')
+    assert r.status_code == 404
+    assert r.get_json()['success'] is False

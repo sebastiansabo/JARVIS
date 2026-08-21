@@ -858,6 +858,22 @@ def api_search_crm_clients():
     return jsonify({'success': True, 'clients': rows})
 
 
+@foi_parcurs_bp.route('/api/foi-parcurs/crm-clients/<int:id>', methods=['GET'])
+@login_required
+def api_get_crm_client(id):
+    """Login-gated single CRM-client fetch for the Test Drive form, so consilieri
+    without full CRM (sales) access can hydrate the full record (CUI, address,
+    company_name, nr_reg…) of a client picked from the lean search results —
+    needed to show/edit those fields inline in the Client card. Mirrors the
+    login-gated search/create/PATCH endpoints; the full CRM GET
+    (/api/crm/clients/<id>) is @crm_required and thus out of reach for the
+    consilier working the TD flow."""
+    client = _crm_client_repo.get_by_id(id)
+    if client is None:
+        return jsonify({'success': False, 'error': 'Client not found'}), 404
+    return jsonify({'success': True, 'client': client})
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/crm-clients', methods=['POST'])
 @login_required
 def api_create_crm_client():
