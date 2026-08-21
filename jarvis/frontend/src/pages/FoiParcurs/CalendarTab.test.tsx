@@ -67,6 +67,18 @@ describe('CalendarTab (desktop foi-parcurs)', () => {
     expect(await screen.findByText('Detalii sesiune')).toBeInTheDocument()
   })
 
+  it('shows an internal session’s comment as the block title', async () => {
+    getContracts.mockResolvedValueOnce({
+      contracts: [
+        { id: 13, route_type: 'TD', status: 'FILLED', td_status: 'driving', vin: 'VF1XXXXXXXX', is_internal: true,
+          itinerary: 'Deplasare SNN – pregatiri livrare', departure_datetime: `${todayKey}T10:00`, return_datetime: `${todayKey}T11:30` },
+      ], total: 1, page: 1, per_page: 2000,
+    })
+    wrap(<CalendarTab companyId={11} brand="" />)
+    const title = await screen.findByTestId('tg-title-13')
+    expect(title).toHaveTextContent('Deplasare SNN – pregatiri livrare')
+  })
+
   it('opens the Client/Intern chooser, then navigates to a prefilled new-session form when dragging an empty slot in Day view', async () => {
     wrap(<CalendarTab companyId={11} brand="" />)
     await screen.findByTestId('tg-block-11') // week loaded

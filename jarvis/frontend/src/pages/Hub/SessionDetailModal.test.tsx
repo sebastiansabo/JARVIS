@@ -23,6 +23,10 @@ const base = {
 }
 const planned = { ...base, status: 'PLANNED' }
 const driving = { ...base, status: 'FILLED', td_status: 'driving' }
+const internalWithComment = {
+  ...base, client_name: null, status: 'FILLED', td_status: 'driving',
+  is_internal: true, itinerary: 'Deplasare SNN – pregatiri livrare',
+}
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -62,5 +66,16 @@ describe('SessionDetailModal', () => {
     auth.role = 'admin'
     wrap(<SessionDetailModal session={driving as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
     expect(screen.getByRole('button', { name: /Corectează/ })).toBeInTheDocument()
+  })
+
+  it('shows a Comentariu row for an internal session that has a comment', () => {
+    wrap(<SessionDetailModal session={internalWithComment as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(screen.getByText('Comentariu')).toBeInTheDocument()
+    expect(screen.getByText('Deplasare SNN – pregatiri livrare')).toBeInTheDocument()
+  })
+
+  it('does not show a Comentariu row for a regular test drive', () => {
+    wrap(<SessionDetailModal session={driving as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(screen.queryByText('Comentariu')).not.toBeInTheDocument()
   })
 })

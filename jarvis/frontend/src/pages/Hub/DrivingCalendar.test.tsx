@@ -54,6 +54,18 @@ describe('DrivingCalendar', () => {
     expect(block).toHaveTextContent('10:00')
   })
 
+  it('shows an internal session’s comment as the block title (in place of the client dash)', async () => {
+    getContracts.mockResolvedValueOnce({
+      contracts: [
+        { id: 13, status: 'FILLED', td_status: 'driving', vin: 'VF9', is_internal: true,
+          itinerary: 'Deplasare SNN – pregatiri livrare', departure_datetime: todayIso, km_start: 5 },
+      ], total: 1, page: 1, per_page: 1000,
+    })
+    wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
+    const title = await screen.findByTestId('tg-title-13')
+    expect(title).toHaveTextContent('Deplasare SNN – pregatiri livrare')
+  })
+
   it('switches to Month view (weekday grid)', async () => {
     wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
     await screen.findByTestId('tg-block-11')

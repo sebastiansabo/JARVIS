@@ -34,6 +34,16 @@ export function sessionStatus(c: FoiContract): {
   return { key: 'driving', label: 'În desfășurare', badgeClass: 'bg-blue-600 text-white', rowClass: 'bg-blue-500/5 border-l-4 border-l-blue-500/40' }
 }
 
+// The free-text comment on an internal driving session (QuickSession). It's the
+// form's "Comentariu"/"Observații" field, stored in `itinerary`. Returns the
+// trimmed comment, or null for a regular test drive (where `itinerary` means the
+// driving route, not a comment) or an internal session with no comment written.
+export function internalComment(c: FoiContract): string | null {
+  if (!c.is_internal) return null
+  const t = c.itinerary?.trim()
+  return t || null
+}
+
 // Stable pastel colour per car (VIN), so a car's sessions read the same across
 // the week and different cars are easy to tell apart. Deterministic hash → a
 // fixed palette (light + dark variants).
