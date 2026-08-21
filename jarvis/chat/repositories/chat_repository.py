@@ -11,10 +11,15 @@ class ChatRepository(BaseRepository):
 
     # ── Channels ─────────────────────────────────────────────
 
-    def get_channels(self, user_id):
-        """Get all channels the user is a member of (or all public channels)."""
+    def get_channels(self, user_id, q=None, archived=False):
+        """Channels the user can see, enriched for the messenger conversation list:
+        member/post/unread counts, a `last_message` preview (content/type/author/time),
+        and the caller's per-conversation state (pinned/archived/muted). Ordered
+        pinned-first, then by most-recent activity. Filters by search term `q`
+        (channel name or last-message content) and archived-vs-active (per-user)."""
         return self.query_all('''
             SELECT c.*, u.name AS created_by_name,
+                   mem.pinned_at, mem.archived_at, COALESCE(mem.muted, FALSE) AS muted,
                    (SELECT COUNT(*) FROM digest_channel_members WHERE channel_id = c.id) AS member_count,
                    (SELECT COUNT(*) FROM digest_posts WHERE channel_id = c.id AND deleted_at IS NULL) AS post_count,
                    COALESCE(
@@ -22,18 +27,38 @@ class ChatRepository(BaseRepository):
                         WHERE p.channel_id = c.id AND p.deleted_at IS NULL
                           AND p.id > COALESCE(
                               (SELECT last_read_post_id FROM digest_read_status
-                               WHERE channel_id = c.id AND user_id = %s), 0
+                               WHERE channel_id = c.id AND user_id = %(uid)s), 0
                           )
                        ), 0
-                   ) AS unread_count
+                   ) AS unread_count,
+                   lm.content AS last_message_content,
+                   lm.type AS last_message_type,
+                   lm.created_at AS last_message_at,
+                   lmu.name AS last_message_author
             FROM digest_channels c
             LEFT JOIN users u ON u.id = c.created_by
+            LEFT JOIN digest_channel_members mem
+                   ON mem.channel_id = c.id AND mem.user_id = %(uid)s
+            LEFT JOIN LATERAL (
+                SELECT LEFT(p.content, 140) AS content, p.type, p.created_at, p.user_id
+                FROM digest_posts p
+                WHERE p.channel_id = c.id AND p.deleted_at IS NULL AND p.parent_id IS NULL
+                ORDER BY p.created_at DESC
+                LIMIT 1
+            ) lm ON TRUE
+            LEFT JOIN users lmu ON lmu.id = lm.user_id
             WHERE c.deleted_at IS NULL
-              AND (c.is_private = FALSE
-                   OR EXISTS (SELECT 1 FROM digest_channel_members m
-                              WHERE m.channel_id = c.id AND m.user_id = %s))
-            ORDER BY c.created_at DESC
-        ''', (user_id, user_id))
+              AND (c.is_private = FALSE OR mem.user_id IS NOT NULL)
+              AND (%(archived)s = (mem.archived_at IS NOT NULL))
+              AND (%(q)s IS NULL OR c.name ILIKE %(qlike)s OR lm.content ILIKE %(qlike)s)
+            ORDER BY (mem.pinned_at IS NOT NULL) DESC, mem.pinned_at DESC,
+                     COALESCE(lm.created_at, c.created_at) DESC
+        ''', {
+            'uid': user_id,
+            'archived': bool(archived),
+            'q': q or None,
+            'qlike': f'%{q}%' if q else None,
+        })
 
     def get_channel(self, channel_id):
         return self.query_one('''
@@ -42,6 +67,30 @@ class ChatRepository(BaseRepository):
             LEFT JOIN users u ON u.id = c.created_by
             WHERE c.id = %s AND c.deleted_at IS NULL
         ''', (channel_id,))
+
+    # ── Per-user conversation state (pin / archive / mute) ───
+    # Operates on the caller's digest_channel_members row; a no-op for public
+    # channels the user hasn't joined (they have no member row yet).
+
+    def set_channel_pinned(self, channel_id, user_id, pinned):
+        ts = 'CURRENT_TIMESTAMP' if pinned else 'NULL'
+        self.execute(
+            f"UPDATE digest_channel_members SET pinned_at = {ts} "
+            "WHERE channel_id = %s AND user_id = %s",
+            (channel_id, user_id))
+
+    def set_channel_archived(self, channel_id, user_id, archived):
+        ts = 'CURRENT_TIMESTAMP' if archived else 'NULL'
+        self.execute(
+            f"UPDATE digest_channel_members SET archived_at = {ts} "
+            "WHERE channel_id = %s AND user_id = %s",
+            (channel_id, user_id))
+
+    def set_channel_muted(self, channel_id, user_id, muted):
+        self.execute(
+            "UPDATE digest_channel_members SET muted = %s "
+            "WHERE channel_id = %s AND user_id = %s",
+            (bool(muted), channel_id, user_id))
 
     def create_channel(self, name, description, channel_type, is_private, created_by, notify_mode='all'):
         return self.execute('''
