@@ -35,7 +35,7 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
 
   const { data: channelsRes, isLoading } = useQuery({
     queryKey: ['digest-channels'],
-    queryFn: digestApi.getChannels,
+    queryFn: () => digestApi.getChannels(),
     refetchInterval: 30_000,
   })
   const channels = channelsRes?.data ?? []
