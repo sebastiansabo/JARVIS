@@ -34,6 +34,9 @@ class FakeRepo:
     def get_sessions_pending_late_notify(self):
         return []
 
+    def get_ids_to_miss(self):
+        return []
+
     def archive_missed_sessions(self):
         return 0
 

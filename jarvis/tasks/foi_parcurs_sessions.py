@@ -155,9 +155,17 @@ def run_session_lifecycle():
             except Exception:
                 logger.warning('late-notify failed for session %s', row.get('id'), exc_info=True)
 
+        # Capture which PLANNED sessions are about to flip to MISSED so each
+        # status change is logged to the session history (system actor).
+        ids_to_miss = repo.get_ids_to_miss()
         count = repo.archive_missed_sessions()
         if count:
             logger.info('Archived %s missed TD session(s)', count)
+        for sid in ids_to_miss:
+            try:
+                repo.log_session_event(sid, 'status:PLANNED:MISSED', None)
+            except Exception:
+                logger.warning('missed status-log failed for session %s', sid, exc_info=True)
 
         notify_overdue_returns()
     except Exception as e:

@@ -1470,6 +1470,12 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
     },
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Prelungirea a eșuat'),
   })
+  const [correcting, setCorrecting] = useState<FoiContract | null>(null)
+  const correctMutation = useMutation({
+    mutationFn: (vars: { id: number; data: CorrectionPayload }) => foiParcursApi.correctSession(vars.id, vars.data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }); setCorrecting(null) },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Corectarea a eșuat'),
+  })
   const [search, setSearch] = useState('')
   const [filterVin, setFilterVin] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
@@ -1912,6 +1918,13 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
                               <History className="mr-1.5 h-3.5 w-3.5" />
                               Istoric
                             </Button>
+                            {isAdmin && (
+                              <Button variant="outline" size="sm" onClick={() => setCorrecting(c)}
+                                title="Corectează data/kilometrajul">
+                                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                                Corectează
+                              </Button>
+                            )}
                             {c.status !== 'PENDING' && c.status !== 'PLANNED' && (
                               <>
                                 <a href={foiParcursApi.getContractPdfUrl(c.id, 'legal')} target="_blank" rel="noopener">
@@ -1966,6 +1979,14 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
       )}
       {historySession && (
         <SessionHistoryModal session={historySession} onClose={() => setHistorySession(null)} />
+      )}
+      {correcting && (
+        <CorrectSessionDialog
+          session={correcting}
+          submitting={correctMutation.isPending}
+          onClose={() => setCorrecting(null)}
+          onSubmit={(data) => correctMutation.mutate({ id: correcting.id, data })}
+        />
       )}
     </div>
   )
