@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Send, Reply, BarChart3, X, Users, Settings, ImagePlus, Plus } from 'lucide-react'
+import { ArrowLeft, Send, Reply, BarChart3, X, Users, Settings, ImagePlus, Plus, Smile, Mic } from 'lucide-react'
 import { digestApi } from '@/api/digest'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import type { DigestChannel, DigestPost } from '@/types/digest'
 import PostItem from './PostItem'
 import PollCreator from './PollCreator'
+import EmojiPicker from './EmojiPicker'
 import ThreadView from './ThreadView'
 import ChannelSettings from './ChannelSettings'
 
@@ -27,6 +28,7 @@ export default function ChannelView({ channel, onBack }: Props) {
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
+  const [emojiOpen, setEmojiOpen] = useState(false)
   const [mentionState, setMentionState] = useState<{ query: string; startPos: number } | null>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -144,14 +146,35 @@ export default function ChannelView({ channel, onBack }: Props) {
     }
   }
 
+  const acceptImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) return
+    setImageFile(file)
+    const reader = new FileReader()
+    reader.onload = () => setImagePreview(reader.result as string)
+    reader.readAsDataURL(file)
+  }
+
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      setImageFile(file)
-      const reader = new FileReader()
-      reader.onload = () => setImagePreview(reader.result as string)
-      reader.readAsDataURL(file)
-    }
+    if (file) acceptImageFile(file)
+  }
+
+  const insertEmoji = (emoji: string) => {
+    const ta = textareaRef.current
+    const pos = ta?.selectionStart ?? content.length
+    setContent(content.slice(0, pos) + emoji + content.slice(pos))
+    setEmojiOpen(false)
+    setTimeout(() => { ta?.focus(); const p = pos + emoji.length; ta?.setSelectionRange(p, p) }, 20)
+  }
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const img = Array.from(e.clipboardData.files).find(f => f.type.startsWith('image/'))
+    if (img) { e.preventDefault(); acceptImageFile(img) }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    const img = Array.from(e.dataTransfer.files).find(f => f.type.startsWith('image/'))
+    if (img) { e.preventDefault(); acceptImageFile(img) }
   }
 
   if (showSettings) {
@@ -293,55 +316,59 @@ export default function ChannelView({ channel, onBack }: Props) {
             </div>
           )}
 
-          <div className="flex items-end gap-2">
-            {/* + menu */}
-            <Popover open={plusMenuOpen} onOpenChange={setPlusMenuOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="shrink-0 mb-0.5">
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-44 p-1" side="top" align="start">
-                <input
-                  ref={imageInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImageSelect}
-                />
-                <button
-                  onClick={() => { imageInputRef.current?.click(); setPlusMenuOpen(false) }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors"
-                >
-                  <ImagePlus className="h-4 w-4" /> Picture
-                </button>
-                <button
-                  onClick={() => { setShowPollCreator(true); setPlusMenuOpen(false) }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors"
-                >
-                  <BarChart3 className="h-4 w-4" /> Poll
-                </button>
-              </PopoverContent>
-            </Popover>
+          <div className="flex items-end gap-2" onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}>
+            {/* Input pill: attach · emoji · textarea */}
+            <div className="flex flex-1 items-end gap-0.5 rounded-2xl border bg-background px-1.5 py-1 transition-shadow focus-within:ring-2 focus-within:ring-primary/30">
+              <Popover open={plusMenuOpen} onOpenChange={setPlusMenuOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-full text-muted-foreground">
+                    <Plus className="h-5 w-5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-44 p-1" side="top" align="start">
+                  <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
+                  <button onClick={() => { imageInputRef.current?.click(); setPlusMenuOpen(false) }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors">
+                    <ImagePlus className="h-4 w-4" /> Poză
+                  </button>
+                  <button onClick={() => { setShowPollCreator(true); setPlusMenuOpen(false) }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors">
+                    <BarChart3 className="h-4 w-4" /> Sondaj
+                  </button>
+                </PopoverContent>
+              </Popover>
 
-            <Textarea
-              ref={textareaRef}
-              value={content}
-              onChange={handleContentChange}
-              onKeyDown={handleKeyDown}
-              placeholder="Write a message... (@ to mention, @poll for poll)"
-              rows={1}
-              className="min-h-[40px] max-h-32 resize-none"
-            />
+              <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-full text-muted-foreground">
+                    <Smile className="h-5 w-5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-2" side="top" align="start">
+                  <EmojiPicker onPick={insertEmoji} />
+                </PopoverContent>
+              </Popover>
 
-            <Button
-              size="icon"
-              className="shrink-0 mb-0.5"
-              disabled={(!content.trim() && !imageFile) || createPost.isPending}
-              onClick={handleSubmit}
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+              <Textarea
+                ref={textareaRef}
+                value={content}
+                onChange={handleContentChange}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                placeholder="Scrie un mesaj…  (@ pentru mențiuni, @poll pentru sondaj)"
+                rows={1}
+                className="min-h-[36px] max-h-40 resize-none border-0 bg-transparent px-1 py-1.5 shadow-none focus-visible:ring-0"
+              />
+            </div>
+
+            {/* Send when there's content, otherwise a mic affordance (voice — soon) */}
+            {content.trim() || imageFile ? (
+              <Button size="icon" className="h-10 w-10 shrink-0 rounded-full" disabled={createPost.isPending} onClick={handleSubmit} title="Trimite">
+                <Send className="h-5 w-5" />
+              </Button>
+            ) : (
+              <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-full text-muted-foreground" title="Mesaje vocale — în curând" disabled>
+                <Mic className="h-5 w-5" />
+              </Button>
+            )}
           </div>
         </div>
       )}
