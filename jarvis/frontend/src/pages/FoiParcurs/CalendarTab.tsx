@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
@@ -13,6 +14,7 @@ import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
 import SessionTypeChooser from './SessionTypeChooser'
 import MonthCalendar from './MonthCalendar'
+import DriveTypeToggle from './DriveTypeToggle'
 
 type CalView = 'month' | 'week' | 'day'
 const VIEW_OPTIONS: readonly [CalView, string][] = [['day', 'Zi'], ['week', 'Săptămână'], ['month', 'Lună']]
@@ -35,7 +37,7 @@ function minsOfDay(iso?: string | null): number | null {
  *  grid space starts a new session prefilled at that slot. Data reuses the same
  *  ['foi-contracts-all', companyId, monthKey] query as SessionsTab (filtered
  *  client-side), so switching Sesiuni Driving ↔ Calendar doesn't refetch. */
-export function CalendarTab({ companyId, brand }: { companyId: number; brand: string }) {
+export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', onDriveTypeChange }: { companyId: number; brand: string; toolbarSlot?: HTMLElement | null; driveType?: 'all' | 'client' | 'internal'; onDriveTypeChange?: (v: 'all' | 'client' | 'internal') => void }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   // Persisted (survives navigating to the new-TD form and back) with Week default.
@@ -116,7 +118,8 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
   }
 
   const brandContracts = (data?.contracts ?? []).filter(
-    (c) => c.route_type === 'TD' && c.departure_datetime && (!brand || vinBrand.get(c.vin) === brand),
+    (c) => c.route_type === 'TD' && c.departure_datetime && (!brand || vinBrand.get(c.vin) === brand)
+      && (driveType === 'all' || (driveType === 'internal' ? !!c.is_internal : !c.is_internal)),
   )
   const tdContracts = carFilter ? brandContracts.filter((c) => c.vin === carFilter) : brandContracts
   // Distinct cars (from the brand-filtered set, so the filter lists all cars).
@@ -163,11 +166,12 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
           endMin: minsOfDay(c.return_datetime),
           color: carColor(c.vin), // colour by car
           groupKey: c.vin || undefined, // same-car overlap (interlaced) detection
-          // Internal sessions have no client — the bold title is the driver
-          // (advisor_name), and their comment takes the secondary line below.
-          title: c.is_internal ? (c.advisor_name || carLabel(c.vin)) : (c.client_name || carLabel(c.vin)),
+          // Compact block: driver (person) · car · driver's company. Title is the
+          // driver (advisor for internal, else the contact who drove / the client);
+          // meta is the client's OWN company (client_company), not the dealership.
+          title: c.is_internal ? (c.advisor_name || carLabel(c.vin)) : (c.driver_name || c.client_name || carLabel(c.vin)),
           subtitle: carLabel(c.vin),
-          meta: c.is_internal ? (internalComment(c) ?? undefined) : undefined,
+          meta: c.is_internal ? (internalComment(c) ?? undefined) : (c.client_company || undefined),
           draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
         }]
       })
@@ -191,9 +195,19 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
     periodLabel = cursor.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' })
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+  const toolbar = (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+        {onDriveTypeChange && <DriveTypeToggle value={driveType} onChange={onDriveTypeChange} />}
+        {/* Car filter (only when >1 car has sessions) — kept first in the row. */}
+        {carOptions.length > 1 && (
+          <Select value={carFilter || 'all'} onValueChange={(v) => setCarFilter(v === 'all' ? '' : v)}>
+            <SelectTrigger className="h-9 w-44 text-sm" aria-label="Filtrează după mașină"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toate mașinile</SelectItem>
+              {carOptions.map((o) => <SelectItem key={o.vin} value={o.vin}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" onClick={() => go(-1)}>
             <ChevronLeft className="h-4 w-4" />
@@ -205,16 +219,6 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
           <h3 className="text-base font-semibold capitalize ml-2">{periodLabel}</h3>
           {isLoading && <span className="text-xs text-muted-foreground">Se încarcă...</span>}
         </div>
-        {/* Car filter (only when >1 car has sessions) */}
-        {carOptions.length > 1 && (
-          <Select value={carFilter || 'all'} onValueChange={(v) => setCarFilter(v === 'all' ? '' : v)}>
-            <SelectTrigger className="h-9 w-44 text-sm" aria-label="Filtrează după mașină"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Toate mașinile</SelectItem>
-              {carOptions.map((o) => <SelectItem key={o.vin} value={o.vin}>{o.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        )}
         {/* View switcher — same segmented control as the Hub / Field Sales calendars. */}
         <div className="flex h-9 gap-0.5 rounded-lg bg-muted p-0.5">
           {VIEW_OPTIONS.map(([v, label]) => (
@@ -228,7 +232,12 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
             </button>
           ))}
         </div>
-      </div>
+    </div>
+  )
+
+  return (
+    <div className="space-y-4">
+      {toolbarSlot ? createPortal(toolbar, toolbarSlot) : toolbar}
 
       {view === 'month' ? (
         <MonthCalendar
