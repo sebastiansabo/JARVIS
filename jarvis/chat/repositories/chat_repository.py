@@ -1,9 +1,13 @@
-"""Repository for digest module — channels, posts, reactions, polls."""
+"""Repository for the Chat module — channels, posts, reactions, polls.
+
+Note: the underlying DB tables intentionally remain `digest_*` (table rename
+deferred to a dedicated migration); only the code layer is renamed to Chat.
+"""
 
 from core.base_repository import BaseRepository
 
 
-class DigestRepository(BaseRepository):
+class ChatRepository(BaseRepository):
 
     # ── Channels ─────────────────────────────────────────────
 

@@ -1,17 +1,17 @@
-"""Service layer for the Digest module."""
+"""Service layer for the Chat module (formerly Digest)."""
 
 import re
 import logging
-from digest.repositories.digest_repository import DigestRepository
+from chat.repositories.chat_repository import ChatRepository
 
 logger = logging.getLogger(__name__)
-_repo = DigestRepository()
+_repo = ChatRepository()
 
 # Matches @[Display Name](user_id)
 _MENTION_RE = re.compile(r'@\[([^\]]+)\]\((\d+)\)')
 
 
-class DigestService:
+class ChatService:
 
     # ── Channels ─────────────────────────────────────────────
 

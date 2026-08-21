@@ -1,27 +1,27 @@
-"""Digest module API routes."""
+"""Chat module API routes (served under both /api/chat and /api/digest)."""
 
 import os
 import uuid
 from flask import request, jsonify, current_app
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
-from digest import digest_bp
-from digest.services.digest_service import DigestService
+from chat import chat_bp
+from chat.services.chat_service import ChatService
 
-_svc = DigestService()
+_svc = ChatService()
 ALLOWED_IMAGE_EXT = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
 
 
 # ── Channels ─────────────────────────────────────────────
 
-@digest_bp.route('/api/digest/channels', methods=['GET'])
+@chat_bp.route('/channels', methods=['GET'])
 @login_required
 def list_channels():
     channels = _svc.get_channels(current_user.id)
     return jsonify({'success': True, 'data': channels})
 
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>', methods=['GET'])
+@chat_bp.route('/channels/<int:channel_id>', methods=['GET'])
 @login_required
 def get_channel(channel_id):
     if not _svc.can_access_channel(channel_id, current_user.id):
@@ -32,7 +32,7 @@ def get_channel(channel_id):
     return jsonify({'success': True, 'data': channel})
 
 
-@digest_bp.route('/api/digest/channels', methods=['POST'])
+@chat_bp.route('/channels', methods=['POST'])
 @login_required
 def create_channel():
     data = request.get_json()
@@ -50,7 +50,7 @@ def create_channel():
     return jsonify({'success': True, 'data': channel}), 201
 
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>', methods=['PUT'])
+@chat_bp.route('/channels/<int:channel_id>', methods=['PUT'])
 @login_required
 def update_channel(channel_id):
     data = request.get_json()
@@ -60,7 +60,7 @@ def update_channel(channel_id):
     return jsonify({'success': True, 'data': channel})
 
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>', methods=['DELETE'])
+@chat_bp.route('/channels/<int:channel_id>', methods=['DELETE'])
 @login_required
 def delete_channel(channel_id):
     _svc.delete_channel(channel_id)
@@ -69,14 +69,14 @@ def delete_channel(channel_id):
 
 # ── Channel Targets ──────────────────────────────────────
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>/targets', methods=['GET'])
+@chat_bp.route('/channels/<int:channel_id>/targets', methods=['GET'])
 @login_required
 def get_channel_targets(channel_id):
     targets = _svc.get_channel_targets(channel_id)
     return jsonify({'success': True, 'data': targets})
 
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>/targets', methods=['PUT'])
+@chat_bp.route('/channels/<int:channel_id>/targets', methods=['PUT'])
 @login_required
 def update_channel_targets(channel_id):
     data = request.get_json()
@@ -88,7 +88,7 @@ def update_channel_targets(channel_id):
 
 # ── Channel Settings ─────────────────────────────────────
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>/settings', methods=['PUT'])
+@chat_bp.route('/channels/<int:channel_id>/settings', methods=['PUT'])
 @login_required
 def update_channel_settings(channel_id):
     if not _svc.is_admin_or_moderator(channel_id, current_user.id):
@@ -100,7 +100,7 @@ def update_channel_settings(channel_id):
     return jsonify({'success': True, 'data': channel})
 
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>/clear-history', methods=['POST'])
+@chat_bp.route('/channels/<int:channel_id>/clear-history', methods=['POST'])
 @login_required
 def clear_channel_history(channel_id):
     if not _svc.is_admin_or_moderator(channel_id, current_user.id):
@@ -111,14 +111,14 @@ def clear_channel_history(channel_id):
 
 # ── Channel Members ──────────────────────────────────────
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>/members', methods=['GET'])
+@chat_bp.route('/channels/<int:channel_id>/members', methods=['GET'])
 @login_required
 def list_members(channel_id):
     members = _svc.get_channel_members(channel_id)
     return jsonify({'success': True, 'data': members})
 
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>/members', methods=['POST'])
+@chat_bp.route('/channels/<int:channel_id>/members', methods=['POST'])
 @login_required
 def add_member(channel_id):
     data = request.get_json()
@@ -128,14 +128,14 @@ def add_member(channel_id):
     return jsonify({'success': True, 'data': member}), 201
 
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>/members/<int:user_id>', methods=['DELETE'])
+@chat_bp.route('/channels/<int:channel_id>/members/<int:user_id>', methods=['DELETE'])
 @login_required
 def remove_member(channel_id, user_id):
     _svc.remove_member(channel_id, user_id)
     return jsonify({'success': True})
 
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>/members/<int:user_id>/role', methods=['PUT'])
+@chat_bp.route('/channels/<int:channel_id>/members/<int:user_id>/role', methods=['PUT'])
 @login_required
 def set_member_role(channel_id, user_id):
     if not _svc.is_admin_or_moderator(channel_id, current_user.id):
@@ -149,7 +149,7 @@ def set_member_role(channel_id, user_id):
 
 # ── User Search ──────────────────────────────────────────
 
-@digest_bp.route('/api/digest/users/search', methods=['GET'])
+@chat_bp.route('/users/search', methods=['GET'])
 @login_required
 def search_users():
     q = request.args.get('q', '').strip()
@@ -161,7 +161,7 @@ def search_users():
 
 # ── Posts ────────────────────────────────────────────────
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>/posts', methods=['GET'])
+@chat_bp.route('/channels/<int:channel_id>/posts', methods=['GET'])
 @login_required
 def list_posts(channel_id):
     if not _svc.can_access_channel(channel_id, current_user.id):
@@ -173,7 +173,7 @@ def list_posts(channel_id):
     return jsonify({'success': True, 'data': posts})
 
 
-@digest_bp.route('/api/digest/posts/<int:post_id>', methods=['GET'])
+@chat_bp.route('/posts/<int:post_id>', methods=['GET'])
 @login_required
 def get_post(post_id):
     post = _svc.get_post(post_id)
@@ -182,7 +182,7 @@ def get_post(post_id):
     return jsonify({'success': True, 'data': post})
 
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>/posts', methods=['POST'])
+@chat_bp.route('/channels/<int:channel_id>/posts', methods=['POST'])
 @login_required
 def create_post(channel_id):
     if not _svc.can_access_channel(channel_id, current_user.id):
@@ -203,7 +203,7 @@ def create_post(channel_id):
     return jsonify({'success': True, 'data': post}), 201
 
 
-@digest_bp.route('/api/digest/posts/<int:post_id>', methods=['PUT'])
+@chat_bp.route('/posts/<int:post_id>', methods=['PUT'])
 @login_required
 def update_post(post_id):
     data = request.get_json()
@@ -215,7 +215,7 @@ def update_post(post_id):
     return jsonify({'success': True, 'data': post})
 
 
-@digest_bp.route('/api/digest/posts/<int:post_id>', methods=['DELETE'])
+@chat_bp.route('/posts/<int:post_id>', methods=['DELETE'])
 @login_required
 def delete_post(post_id):
     ok = _svc.delete_post(post_id, current_user.id)
@@ -224,7 +224,7 @@ def delete_post(post_id):
     return jsonify({'success': True})
 
 
-@digest_bp.route('/api/digest/posts/<int:post_id>/pin', methods=['POST'])
+@chat_bp.route('/posts/<int:post_id>/pin', methods=['POST'])
 @login_required
 def toggle_pin(post_id):
     post = _svc.toggle_pin(post_id)
@@ -235,7 +235,7 @@ def toggle_pin(post_id):
 
 # ── Reactions ────────────────────────────────────────────
 
-@digest_bp.route('/api/digest/posts/<int:post_id>/reactions', methods=['POST'])
+@chat_bp.route('/posts/<int:post_id>/reactions', methods=['POST'])
 @login_required
 def toggle_reaction(post_id):
     data = request.get_json()
@@ -247,7 +247,7 @@ def toggle_reaction(post_id):
 
 # ── Polls ────────────────────────────────────────────────
 
-@digest_bp.route('/api/digest/posts/<int:post_id>/poll', methods=['GET'])
+@chat_bp.route('/posts/<int:post_id>/poll', methods=['GET'])
 @login_required
 def get_poll(post_id):
     poll = _svc.get_poll(post_id, current_user.id)
@@ -256,7 +256,7 @@ def get_poll(post_id):
     return jsonify({'success': True, 'data': poll})
 
 
-@digest_bp.route('/api/digest/polls/<int:poll_id>/vote', methods=['POST'])
+@chat_bp.route('/polls/<int:poll_id>/vote', methods=['POST'])
 @login_required
 def vote(poll_id):
     data = request.get_json()
@@ -266,7 +266,7 @@ def vote(poll_id):
     return jsonify({'success': True, 'data': result})
 
 
-@digest_bp.route('/api/digest/polls/<int:poll_id>/unvote', methods=['POST'])
+@chat_bp.route('/polls/<int:poll_id>/unvote', methods=['POST'])
 @login_required
 def unvote(poll_id):
     data = request.get_json()
@@ -278,7 +278,7 @@ def unvote(poll_id):
 
 # ── Read Status ──────────────────────────────────────────
 
-@digest_bp.route('/api/digest/channels/<int:channel_id>/read', methods=['POST'])
+@chat_bp.route('/channels/<int:channel_id>/read', methods=['POST'])
 @login_required
 def mark_read(channel_id):
     data = request.get_json()
@@ -289,7 +289,7 @@ def mark_read(channel_id):
     return jsonify({'success': True})
 
 
-@digest_bp.route('/api/digest/unread', methods=['GET'])
+@chat_bp.route('/unread', methods=['GET'])
 @login_required
 def unread_counts():
     counts = _svc.get_unread_counts(current_user.id)
@@ -298,7 +298,7 @@ def unread_counts():
 
 # ── File Upload ──────────────────────────────────────────
 
-@digest_bp.route('/api/digest/upload', methods=['POST'])
+@chat_bp.route('/upload', methods=['POST'])
 @login_required
 def upload_image():
     if 'file' not in request.files:

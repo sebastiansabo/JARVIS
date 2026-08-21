@@ -245,8 +245,12 @@ def _register_blueprints(flask_app: Flask):
     from core.mobile import mobile_bp
     flask_app.register_blueprint(mobile_bp)
 
-    from digest import digest_bp
-    flask_app.register_blueprint(digest_bp)
+    from chat import chat_bp
+    flask_app.register_blueprint(chat_bp, url_prefix='/api/chat')
+    # Backward-compat alias: the shipped mobile app (≤ v2.0.59) still calls
+    # /api/digest/*. Serve the same routes under the old prefix until the mobile
+    # app is updated to /api/chat/*, then this can be retired.
+    flask_app.register_blueprint(chat_bp, url_prefix='/api/digest', name='chat_digest_compat')
 
     from carpark import carpark_bp
     flask_app.register_blueprint(carpark_bp)
