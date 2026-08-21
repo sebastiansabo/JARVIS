@@ -244,6 +244,9 @@ export interface FoiContract {
   general_observation?: string | null
   advisor_name: string
   signature_ai_generated: string
+  // Internal driving-log session (QuickSession) — no customer/signature. For
+  // these, `itinerary` carries the form's free-text "Comentariu" (not a route).
+  is_internal?: boolean
   // 'PLANNED' — draft session created ahead of time (Plan a Driving Session,
   // Phase 1 backend). Signature/GDPR/PDF are deferred; activated into
   // 'FILLED' when the client arrives (PUT /test-drive/{id}/activate).

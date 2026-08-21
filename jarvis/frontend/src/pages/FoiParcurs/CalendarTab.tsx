@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { foiParcursApi } from '@/api/foiParcurs'
 import type { FoiContract } from '@/types/foiParcurs'
-import { sessionStatus, carColor } from './sessionStatus'
+import { sessionStatus, carColor, internalComment } from './sessionStatus'
 import { naiveDate } from '@/lib/naiveDate'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
@@ -184,7 +184,9 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
           endMin: minsOfDay(c.return_datetime),
           color: carColor(c.vin), // colour by car
           groupKey: c.vin || undefined, // same-car overlap (interlaced) detection
-          title: c.client_name || carLabel(c.vin),
+          // Internal sessions have no client — surface their comment as the title
+          // (above the model) so it's visible on the calendar card.
+          title: internalComment(c) || c.client_name || carLabel(c.vin),
           subtitle: carLabel(c.vin),
           draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
         }]

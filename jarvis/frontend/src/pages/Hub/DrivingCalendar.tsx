@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Car } from 'lucide-react'
 import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
-import { sessionStatus, carColor } from '@/pages/FoiParcurs/sessionStatus'
+import { sessionStatus, carColor, internalComment } from '@/pages/FoiParcurs/sessionStatus'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
 import type { FoiContract, FpVehicle } from '@/types/foiParcurs'
@@ -192,7 +192,9 @@ export default function DrivingCalendar({ companyId, brand, carFilter = [], cons
           endMin: minsOfDay(c.return_datetime),
           color: carColor(c.vin), // colour by car
           groupKey: c.vin || undefined, // same-car overlap (interlaced) detection
-          title: c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—'),
+          // Internal sessions have no client — surface their comment here (where
+          // the client name/dash would sit, above the model) so it's visible.
+          title: internalComment(c) || c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—'),
           subtitle: vehicleName(c.vin ? vinVehicle.get(c.vin) : undefined, c.vin),
           meta: c.vin ? `VIN: ...${c.vin.slice(-6)}` : undefined, // last 6 of the VIN
           draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule

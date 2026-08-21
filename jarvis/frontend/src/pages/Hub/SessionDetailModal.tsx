@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { PlayCircle, RotateCcw, FileDown, Trash2, Clock, Pencil, Phone, Gauge, User2, CalendarDays } from 'lucide-react'
+import { PlayCircle, RotateCcw, FileDown, Trash2, Clock, Pencil, Phone, Gauge, User2, CalendarDays, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { foiParcursApi } from '@/api/foiParcurs'
-import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
+import { sessionStatus, internalComment } from '@/pages/FoiParcurs/sessionStatus'
 import ModifiedBadge from '@/pages/FoiParcurs/ModifiedBadge'
 import EventBadge from '@/pages/FoiParcurs/EventBadge'
 import CorrectSessionDialog, { type CorrectionPayload } from '@/pages/FoiParcurs/CorrectSessionDialog'
@@ -78,6 +78,7 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Prelungirea a eșuat'),
   })
 
+  const comment = internalComment(c)
   const tester = c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—')
   const vehicleName = vehicle
     ? [vehicle.mark, vehicle.model].filter(Boolean).join(' ') || vehicle.registration_number || c.vin
@@ -106,6 +107,16 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
             <div className="col-span-2">
               <Field label="Perioadă" value={`${fmtDateTime(c.departure_datetime)}${c.return_datetime ? ` – ${fmtDateTime(c.return_datetime)}` : ''}`} icon={<CalendarDays className="h-3 w-3" />} />
             </div>
+            {/* Free-text comment on an internal session (the "Comentariu" field) —
+                wraps rather than truncates so the full note is readable. */}
+            {comment && (
+              <div className="col-span-2 min-w-0">
+                <dt className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">
+                  <MessageSquare className="h-3 w-3" />Comentariu
+                </dt>
+                <dd className="mt-0.5 whitespace-pre-wrap break-words font-medium">{comment}</dd>
+              </div>
+            )}
           </dl>
 
           {/* Status-appropriate actions — primary (Începe/Retur) leads, then
