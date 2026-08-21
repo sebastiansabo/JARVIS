@@ -184,10 +184,11 @@ export function CalendarTab({ companyId, brand }: { companyId: number; brand: st
           endMin: minsOfDay(c.return_datetime),
           color: carColor(c.vin), // colour by car
           groupKey: c.vin || undefined, // same-car overlap (interlaced) detection
-          // Internal sessions have no client — surface their comment as the title
-          // (above the model) so it's visible on the calendar card.
-          title: internalComment(c) || c.client_name || carLabel(c.vin),
+          // Internal sessions have no client — the bold title is the driver
+          // (advisor_name), and their comment takes the secondary line below.
+          title: c.is_internal ? (c.advisor_name || carLabel(c.vin)) : (c.client_name || carLabel(c.vin)),
           subtitle: carLabel(c.vin),
+          meta: c.is_internal ? (internalComment(c) ?? undefined) : undefined,
           draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
         }]
       })
