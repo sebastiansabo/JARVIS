@@ -318,6 +318,22 @@ class FoiParcursRepository(BaseRepository):
             logger.warning('Could not clear overdue-return cooldown for %s', contract_id, exc_info=True)
         return self.get_contract_by_id(contract_id)
 
+    def revive_to_active_if_window_open(self, contract_id: int) -> dict:
+        """After an admin correction, revive a MISSED / late-PLANNED TD session to
+        FILLED ("În desfășurare") when its corrected window is currently active —
+        departure already passed and the return is still in the future. Clears the
+        missed stamp. Returns the fresh FILLED row if flipped, else None (window
+        not active, or the session isn't a revivable MISSED/PLANNED TD)."""
+        sql = (
+            "UPDATE foi_de_parcurs SET status = 'FILLED', missed_at = NULL, updated_at = NOW() "
+            "WHERE id = %s AND route_type = 'TD' AND status IN ('MISSED', 'PLANNED') "
+            f"AND departure_datetime <= {NOW_LOCAL_SQL} "
+            f"AND return_datetime IS NOT NULL AND return_datetime > {NOW_LOCAL_SQL} "
+            "RETURNING id"
+        )
+        row = self.execute(sql, (contract_id,), returning=True)
+        return self.get_contract_by_id(contract_id) if row and row.get('id') else None
+
     def get_sessions_pending_late_notify(self) -> list:
         """PLANNED TD rows whose start just passed (still in the 8h grace) and
         that haven't been late-notified yet."""
@@ -334,6 +350,16 @@ class FoiParcursRepository(BaseRepository):
 
     def mark_late_notified(self, contract_id: int) -> None:
         self.execute('UPDATE foi_de_parcurs SET late_notified_at = NOW() WHERE id = %s', (contract_id,))
+
+    def get_ids_to_miss(self) -> list:
+        """IDs of PLANNED TD rows past the 8h grace (about to be flipped to
+        MISSED) — fetched so the lifecycle cron can log each PLANNED→MISSED
+        status change before archive_missed_sessions() flips them in bulk."""
+        rows = self.query_all(
+            "SELECT id FROM foi_de_parcurs WHERE route_type = 'TD' AND status = 'PLANNED' "
+            f"AND departure_datetime + INTERVAL '{GRACE_HOURS} hours' < {NOW_LOCAL_SQL}"
+        )
+        return [r['id'] for r in (rows or [])]
 
     def archive_missed_sessions(self) -> int:
         """Flip PLANNED TD rows past the 8h grace to MISSED. Returns the count.

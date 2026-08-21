@@ -9,7 +9,7 @@ __all__ = [
     'logger',
     '_fp_repo', '_client_repo', '_vehicle_repo', '_inspection_repo', '_crm_client_repo',
     '_dealer_repo',
-    'open_session_block', 'is_privileged', '_actor', 'log_history',
+    'open_session_block', 'is_privileged', '_actor', 'log_history', 'log_status_change',
 ]
 
 import logging
@@ -51,6 +51,16 @@ def log_history(session_id, action):
         _fp_repo.log_session_event(session_id, action, _actor())
     except Exception:
         logger.warning('session-history log failed for %s (%s)', session_id, action, exc_info=True)
+
+
+def log_status_change(session_id, old_status, new_status):
+    """Append a status-transition row to a session's history (rendered by the
+    Istoric modal as "Status: <old> → <new>"). No-op when the status is
+    unchanged. Best-effort — reuses log_history's swallow-on-failure guard. The
+    `status:OLD:NEW` action code is decoded to localized labels in the UI."""
+    if (old_status or None) == (new_status or None):
+        return
+    log_history(session_id, f'status:{old_status or ""}:{new_status or ""}')
 
 
 def open_session_block(vin, exclude_id=None, allow_override=False, privileged=False):
