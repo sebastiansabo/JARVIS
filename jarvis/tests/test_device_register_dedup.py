@@ -20,7 +20,10 @@ def test_register_upserts_then_dedupes_same_device(monkeypatch):
     dedup = [(sql, p) for sql, p in calls
              if 'DELETE FROM mobile_devices' in sql and 'device_id' in sql and 'push_token' in sql]
     assert dedup, 'expected a dedup DELETE scoped to the same device_id + other tokens'
-    assert dedup[0][1] == ('dev-abc', 'NEWTOK')
+    # The DELETE MUST be scoped to the registering user — device_id is client-supplied,
+    # so an unscoped delete would let a crafted device_id wipe another user's device row.
+    assert 'user_id' in dedup[0][0], 'dedup DELETE must be scoped to user_id (no cross-user deletion)'
+    assert dedup[0][1] == ('dev-abc', 2, 'NEWTOK')
 
 
 def test_register_skips_dedup_when_device_id_blank(monkeypatch):
