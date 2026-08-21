@@ -55,6 +55,8 @@ def create_channel():
 @chat_bp.route('/channels/<int:channel_id>', methods=['PUT'])
 @login_required
 def update_channel(channel_id):
+    if not _svc.is_admin_or_moderator(channel_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
     data = request.get_json()
     if not data or not data.get('name'):
         return jsonify({'success': False, 'error': 'Name is required'}), 400
@@ -65,6 +67,8 @@ def update_channel(channel_id):
 @chat_bp.route('/channels/<int:channel_id>', methods=['DELETE'])
 @login_required
 def delete_channel(channel_id):
+    if not _svc.is_admin_or_moderator(channel_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
     _svc.delete_channel(channel_id)
     return jsonify({'success': True})
 
@@ -149,6 +153,8 @@ def list_members(channel_id):
 @chat_bp.route('/channels/<int:channel_id>/members', methods=['POST'])
 @login_required
 def add_member(channel_id):
+    if not _svc.is_admin_or_moderator(channel_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
     data = request.get_json()
     if not data or not data.get('user_id'):
         return jsonify({'success': False, 'error': 'user_id is required'}), 400
@@ -159,6 +165,8 @@ def add_member(channel_id):
 @chat_bp.route('/channels/<int:channel_id>/members/<int:user_id>', methods=['DELETE'])
 @login_required
 def remove_member(channel_id, user_id):
+    if not _svc.is_admin_or_moderator(channel_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
     _svc.remove_member(channel_id, user_id)
     return jsonify({'success': True})
 

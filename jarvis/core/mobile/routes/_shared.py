@@ -233,6 +233,7 @@ def _user_json(user) -> dict:
         'can_access_forms':      _mod('forms',      'can_access_forms'),
         'can_access_ai_agent':   _mod('ai_agent',   'can_access_ai_agent'),
         'can_access_digest':     _mod('digest',     'can_access_digest'),
+        'can_access_chat':       _mod('digest',     'can_access_digest'),
         'can_access_accounting': _mod('accounting', 'can_access_accounting'),
         'can_access_field_sales': _mod('field_sales', None),
         'can_access_vouchers':    _mod('vouchers', None),
