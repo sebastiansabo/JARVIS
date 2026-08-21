@@ -28,7 +28,13 @@ class DeviceRepository(BaseRepository):
         self.execute('DELETE FROM mobile_devices WHERE id = %s', (device_id,))
 
     def register(self, user_id, push_token, platform, device_id):
-        """Upsert a device registration."""
+        """Upsert a device registration, keeping ONE token per physical device.
+
+        FCM rotates the push token on reinstall/data-clear, so a device that
+        re-registers arrives with a new token; without cleanup the old row lingers
+        and the backend pushes to both → duplicate notifications on one phone. After
+        upserting the current token we drop any other tokens for the same device_id.
+        """
         self.execute('''
             INSERT INTO mobile_devices (user_id, push_token, platform, device_id, updated_at)
             VALUES (%s, %s, %s, %s, NOW())
@@ -36,6 +42,11 @@ class DeviceRepository(BaseRepository):
             SET user_id = EXCLUDED.user_id, platform = EXCLUDED.platform,
                 device_id = EXCLUDED.device_id, updated_at = NOW()
         ''', (user_id, push_token, platform, device_id))
+        if device_id:
+            self.execute(
+                'DELETE FROM mobile_devices WHERE device_id = %s AND push_token <> %s',
+                (device_id, push_token),
+            )
 
     def unregister(self, push_token, user_id):
         """Remove a device registration by push token and user."""
