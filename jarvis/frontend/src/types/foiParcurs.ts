@@ -387,6 +387,10 @@ export interface CrmClient {
   /** 'company' | 'person' — a company client never drives itself; the TD form
    *  gates submit/activate on a gate-valid contact person (see ClientContact). */
   client_type?: string | null
+  /** Driving license kept on the client for reuse (a duplicate suggestion hands
+   *  it back; the front-end checks expiry). */
+  driver_license_number?: string | null
+  driver_license_expiry?: string | null
 }
 
 export interface CreateCrmClientPayload {

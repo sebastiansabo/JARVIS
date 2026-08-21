@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { ImagePlus, X, Loader2, ScanLine } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { ImagePlus, X, Loader2, ScanLine, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,16 @@ const COUNTRIES = [
   'Austria',
   'Marea Britanie',
 ]
+
+/** License a duplicate-suggestion client can hand back: its number, and the
+ *  expiry only if it hasn't lapsed (an expired one must be re-captured). */
+function reusableLicense(c: CrmClient): { number: string; expiry: string } {
+  const number = (c.driver_license_number || '').trim()
+  const exp = (c.driver_license_expiry || '').trim()
+  const t = Date.parse(exp)
+  const valid = exp !== '' && !Number.isNaN(t) && new Date(t) >= new Date(new Date().toDateString())
+  return { number, expiry: valid ? exp : '' }
+}
 
 /** Required driving-license photo (stored on the contract) plus, when no client
  *  is selected yet, an OCR-assisted "create CRM client from the license" flow.
@@ -186,6 +196,23 @@ export function CreateClientPanel({
   })
 
   const { full: phoneFull, valid: phoneValid } = composePhone(dialCode, phone)
+
+  // Duplicate guard: debounce the local number, search CRM, and suggest existing
+  // matches so the consilier reuses a client instead of creating a duplicate.
+  const phoneDigits = phone.replace(/\D/g, '')
+  const [dupTerm, setDupTerm] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDupTerm(phoneDigits.length >= 6 ? phoneDigits : ''), 400)
+    return () => clearTimeout(t)
+  }, [phoneDigits])
+  const { data: dupData } = useQuery({
+    queryKey: ['crm-client-dup-search', dupTerm],
+    queryFn: () => foiParcursApi.searchCrmClients(dupTerm, 3),
+    enabled: dupTerm.length >= 6,
+    staleTime: 15_000,
+  })
+  const duplicates = (dupData?.clients ?? []).slice(0, 3)
+
   const emailValid = email.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
   const canCreate = name.trim() !== '' && phoneValid && emailValid && !create.isPending
 
@@ -355,6 +382,31 @@ export function CreateClientPanel({
           placeholder={county ? 'Caută orașul...' : 'Alege întâi județul (sau caută orașul)'}
         />
       </div>
+
+      {duplicates.length > 0 && (
+        <div className="space-y-1.5 rounded-md bg-amber-500/10 p-2.5">
+          <p className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+            <Users className="h-3.5 w-3.5" /> Există deja un client cu acest telefon:
+          </p>
+          {duplicates.map((c) => {
+            const lic = reusableLicense(c)
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onCreated(c, lic.number, lic.expiry)}
+                className="w-full flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-2 text-left hover:bg-accent transition-colors"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{c.display_name || c.name || `Client #${c.id}`}</span>
+                  {c.phone && <span className="block text-xs text-muted-foreground">{c.phone}</span>}
+                </span>
+                <span className="shrink-0 text-xs font-semibold text-primary">Folosește</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {error && <p className="text-xs text-destructive">{error}</p>}
 
