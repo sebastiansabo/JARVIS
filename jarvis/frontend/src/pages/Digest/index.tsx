@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Hash, Lock, Megaphone, Users, MessageCircle, Search, X, Building2, GitBranch } from 'lucide-react'
+import { Plus, Lock, Megaphone, Users, MessageCircle, Search, X, Building2, GitBranch, Pin, Archive, ArchiveRestore, BellOff, MoreVertical } from 'lucide-react'
 import { digestApi } from '@/api/digest'
 import { organizationApi } from '@/api/organization'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { DigestChannel } from '@/types/digest'
 import ChannelView from './ChannelView'
@@ -33,12 +34,27 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
   const [inviteSearch, setInviteSearch] = useState('')
   const [invitedUsers, setInvitedUsers] = useState<{ id: number; name: string; email: string }[]>([])
 
+  // Messenger conversation-list state
+  const [filter, setFilter] = useState<'all' | 'unread' | 'groups'>('all')
+  const [search, setSearch] = useState('')
+  const [showArchived, setShowArchived] = useState(false)
+
   const { data: channelsRes, isLoading } = useQuery({
-    queryKey: ['digest-channels'],
-    queryFn: () => digestApi.getChannels(),
+    queryKey: ['digest-channels', search, showArchived],
+    queryFn: () => digestApi.getChannels({ q: search || undefined, archived: showArchived }),
     refetchInterval: 30_000,
   })
-  const channels = channelsRes?.data ?? []
+  const channels = (channelsRes?.data ?? []).filter(ch =>
+    filter === 'unread' ? ch.unread_count > 0 : true,
+  )
+
+  const stateMutation = useMutation({
+    mutationFn: ({ ch, action }: { ch: DigestChannel; action: 'pin' | 'archive' | 'mute' }) =>
+      action === 'pin' ? digestApi.setChannelPinned(ch.id, !ch.pinned_at)
+        : action === 'archive' ? digestApi.setChannelArchived(ch.id, !ch.archived_at)
+          : digestApi.setChannelMuted(ch.id, !ch.muted),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['digest-channels'] }),
+  })
 
   // Org data for level picker
   const { data: companiesRes } = useQuery({
@@ -135,66 +151,144 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
     return false
   }
 
-  const channelIcon = (ch: DigestChannel) => {
-    if (ch.is_private) return <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
-    if (ch.type === 'announcement') return <Megaphone className="h-4 w-4 shrink-0 text-muted-foreground" />
-    return <Hash className="h-4 w-4 shrink-0 text-muted-foreground" />
+  const initials = (name: string) => name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+
+  const relativeTime = (iso: string | null) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    const now = new Date()
+    if (d.toDateString() === now.toDateString())
+      return d.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
+    const yst = new Date(now); yst.setDate(now.getDate() - 1)
+    if (d.toDateString() === yst.toDateString()) return 'Ieri'
+    if ((now.getTime() - d.getTime()) / 86400000 < 7)
+      return d.toLocaleDateString('ro-RO', { weekday: 'long' })
+    return d.toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })
   }
+
+  const lastMessagePreview = (ch: DigestChannel) => {
+    if (!ch.last_message_content && !ch.last_message_type) return ch.description || ''
+    const author = ch.last_message_author ? `${ch.last_message_author.split(' ')[0]}: ` : ''
+    if (ch.last_message_type === 'poll') return `${author}📊 Sondaj`
+    return `${author}${ch.last_message_content || ''}`
+  }
+
+  const rowIcon = (ch: DigestChannel) =>
+    ch.is_private ? <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      : ch.type === 'announcement' ? <Megaphone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        : <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 
   if (selectedChannel) {
     return <ChannelView channel={selectedChannel} onBack={() => setSelectedChannel(null)} />
   }
 
   return (
-    <div className="space-y-6">
-      {!readOnly && (
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Digest</h1>
-            <p className="text-sm text-muted-foreground">Communication channels for your organization</p>
-          </div>
-          <Button onClick={() => setShowCreate(true)} size="sm">
-            <Plus className="mr-1.5 h-4 w-4" /> New Channel
-          </Button>
+    <div className="flex flex-col">
+      {/* Header */}
+      <div className="mb-3 flex items-center justify-between">
+        <h1 className="text-2xl font-bold tracking-tight">{showArchived ? 'Arhivate' : 'Chat'}</h1>
+        <div className="flex items-center gap-1.5">
+          {showArchived ? (
+            <Button variant="ghost" size="sm" onClick={() => setShowArchived(false)}>Înapoi</Button>
+          ) : (
+            <Button variant="ghost" size="icon" title="Arhivate" onClick={() => setShowArchived(true)}>
+              <Archive className="h-4 w-4" />
+            </Button>
+          )}
+          {!readOnly && (
+            <Button onClick={() => setShowCreate(true)} size="sm"><Plus className="mr-1.5 h-4 w-4" /> Canal nou</Button>
+          )}
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-3">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Caută conversații..." className="pl-9" />
+      </div>
+
+      {/* Filters */}
+      {!showArchived && (
+        <div className="mb-3 flex gap-2">
+          {([['all', 'Toate'], ['unread', 'Necitite'], ['groups', 'Grupuri']] as const).map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setFilter(k)}
+              className={cn(
+                'rounded-full px-3 py-1 text-sm font-medium transition-colors',
+                filter === k ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent',
+              )}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       )}
 
+      {/* Conversation list */}
       {isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[1,2,3].map(i => <div key={i} className="h-28 animate-pulse rounded-lg bg-muted" />)}
-        </div>
+        <div className="space-y-2">{[1, 2, 3, 4].map(i => <div key={i} className="h-16 animate-pulse rounded-lg bg-muted" />)}</div>
       ) : channels.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <MessageCircle className="h-12 w-12 text-muted-foreground/40 mb-3" />
-          <p className="text-lg font-medium">No channels yet</p>
-          <p className="text-sm text-muted-foreground mt-1">Create the first channel to get started</p>
+          <MessageCircle className="mb-3 h-12 w-12 text-muted-foreground/40" />
+          <p className="text-lg font-medium">
+            {showArchived ? 'Nicio conversație arhivată' : search ? 'Niciun rezultat' : 'Nicio conversație'}
+          </p>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="divide-y rounded-lg border">
           {channels.map((ch) => (
-            <button
-              key={ch.id}
-              onClick={() => setSelectedChannel(ch)}
-              className={cn(
-                'flex flex-col gap-2 rounded-lg border p-4 text-left transition-colors hover:bg-accent',
-                ch.unread_count > 0 && 'border-primary/30 bg-primary/5',
-              )}
-            >
-              <div className="flex items-center gap-2">
-                {channelIcon(ch)}
-                <span className="font-medium truncate">{ch.name}</span>
-                {ch.unread_count > 0 && (
-                  <Badge variant="default" className="ml-auto text-xs">{ch.unread_count}</Badge>
-                )}
-              </div>
-              {ch.description && (
-                <p className="text-xs text-muted-foreground line-clamp-2">{ch.description}</p>
-              )}
-              <div className="flex items-center gap-3 text-xs text-muted-foreground mt-auto">
-                <span className="flex items-center gap-1"><Users className="h-3 w-3" /> {ch.member_count}</span>
-                <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3" /> {ch.post_count}</span>
-              </div>
-            </button>
+            <div key={ch.id} className="group flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-accent/50">
+              <button onClick={() => setSelectedChannel(ch)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                <div className="relative shrink-0">
+                  {ch.avatar_url ? (
+                    <img src={ch.avatar_url} alt="" className="h-11 w-11 rounded-full object-cover" />
+                  ) : (
+                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                      {initials(ch.name)}
+                    </div>
+                  )}
+                  {ch.pinned_at && (
+                    <Pin className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-background p-0.5 text-muted-foreground" fill="currentColor" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    {rowIcon(ch)}
+                    <span className={cn('truncate', ch.unread_count > 0 ? 'font-semibold' : 'font-medium')}>{ch.name}</span>
+                  </div>
+                  <p className="truncate text-xs text-muted-foreground">{lastMessagePreview(ch)}</p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <span className="text-[11px] text-muted-foreground">{relativeTime(ch.last_message_at)}</span>
+                  {ch.unread_count > 0 ? (
+                    <Badge className="h-5 min-w-5 justify-center rounded-full px-1.5 text-[11px]">{ch.unread_count}</Badge>
+                  ) : ch.muted ? (
+                    <BellOff className="h-3.5 w-3.5 text-muted-foreground" />
+                  ) : null}
+                </div>
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="rounded p-1 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100">
+                    <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => stateMutation.mutate({ ch, action: 'pin' })}>
+                    <Pin className="mr-2 h-4 w-4" /> {ch.pinned_at ? 'Anulează fixarea' : 'Fixează'}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => stateMutation.mutate({ ch, action: 'mute' })}>
+                    <BellOff className="mr-2 h-4 w-4" /> {ch.muted ? 'Activează notificările' : 'Silențios'}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => stateMutation.mutate({ ch, action: 'archive' })}>
+                    {ch.archived_at ? <ArchiveRestore className="mr-2 h-4 w-4" /> : <Archive className="mr-2 h-4 w-4" />}
+                    {ch.archived_at ? 'Dezarhivează' : 'Arhivează'}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           ))}
         </div>
       )}
