@@ -382,7 +382,26 @@ def api_activate_test_drive(id):
         # snapshotted onto the activated row (via driver_snapshot below) so the
         # FILLED session carries the actual driver, not the company placeholder.
         driver_snapshot = {}
+        client_update = {}
+        # The client (and its data) may be corrected at activation — the Client
+        # card allows "Schimbă"/"Editează" when a planned draft goes live. The
+        # activate payload carries the (possibly new) client_id; validate the
+        # driver contact against THAT client and persist the switch onto the
+        # session. Without this the gate below checks the contact against the
+        # STALE planned client_id and 400s ("Persoana de contact ... invalidă")
+        # for a contact that legitimately belongs to the newly-chosen client.
         _client_id = contract.get('client_id')
+        _payload_client_id = data.get('client_id')
+        if _payload_client_id is not None and int(_payload_client_id) != (_client_id or 0):
+            _client_id = int(_payload_client_id)
+            _new_client = _crm_client_repo.get_by_id(_client_id)
+            if not _new_client:
+                return jsonify({'success': False, 'error': 'Client inexistent'}), 400
+            client_update = {
+                'client_id': _client_id,
+                'client_name': _new_client.get('display_name'),
+                'client_phone': _new_client.get('phone'),
+            }
         if _client_id:
             _crm_client = _crm_client_repo.get_by_id(_client_id)
             if _is_company_client(_crm_client):
@@ -451,6 +470,8 @@ def api_activate_test_drive(id):
         # Persist the resolved driver snapshot (company clients only; empty for
         # person clients, which already carry their snapshot from draft creation).
         update.update(driver_snapshot)
+        # Persist a client switch/edit made at activation (empty when unchanged).
+        update.update(client_update)
 
         updated = _fp_repo.record_activation(id, update)
         # record_activation only matches PLANNED TD rows; a concurrent/duplicate

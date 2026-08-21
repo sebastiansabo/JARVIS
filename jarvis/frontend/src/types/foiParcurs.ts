@@ -498,6 +498,9 @@ export type PlanTestDrivePayload = Omit<TestDriveFormPayload, 'client_signature'
 // optional handover edit (unset fields keep the PLANNED row's existing
 // values). ──
 export interface ActivateTestDrivePayload {
+  /** The (possibly changed) client selected at activation — the backend
+   *  validates the driver contact against it and persists the switch. */
+  client_id?: number
   client_signature: string
   advisor_signature?: string
   gdpr_consent?: boolean

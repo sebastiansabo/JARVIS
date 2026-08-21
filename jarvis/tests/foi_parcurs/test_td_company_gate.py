@@ -345,6 +345,61 @@ def test_activate_person_without_phone_is_rejected(monkeypatch):
     assert c._fake_fp.activation is None
 
 
+class FakeCrmMulti:
+    """CRM repo returning DIFFERENT clients by id (client-changed-at-activation)."""
+    def __init__(self, clients):
+        self.clients = clients
+
+    def get_by_id(self, cid):
+        return self.clients.get(int(cid))
+
+    def execute(self, *a, **k):
+        return None
+
+
+def test_activate_persists_changed_client(monkeypatch):
+    """Client changed at activation ("Schimbă" on the Client card): the activate
+    payload carries the NEW client_id; the contact is validated against THAT
+    client (not the stale planned one) and the new client is persisted onto the
+    now-FILLED session. Reproduces the prod bug where a draft planned for client
+    A, activated after switching to company B + B's contact, 400'd because the
+    contact was checked against A."""
+    old_client = {'id': 5, 'display_name': 'Adrian Taruianu', 'phone': '070',
+                  'email': 'a@a.ro', 'client_type': 'company'}
+    new_client = {'id': 8, 'display_name': 'PIPE BUSINESS CONSULTING SRL', 'phone': '0725',
+                  'email': 'p@p.ro', 'client_type': 'company'}
+    contact_of_new = {**VALID_CONTACT, 'client_id': 8}
+
+    fake_fp = FakeFpActivate({**PLANNED_COMPANY_SESSION, 'client_id': 5})
+    monkeypatch.setattr(td_mod, '_fp_repo', fake_fp)
+    monkeypatch.setattr(td_mod, '_crm_client_repo', FakeCrmMulti({5: old_client, 8: new_client}))
+    monkeypatch.setattr(td_mod, '_contact_repo', FakeContacts(contact_of_new))
+    monkeypatch.setattr(td_mod._vehicle_repo, 'get_lock_by_vin', lambda vin: None, raising=False)
+    monkeypatch.setattr(td_mod, 'open_session_block', lambda *a, **k: None, raising=False)
+    monkeypatch.setattr(td_mod, 'is_privileged', lambda: False, raising=False)
+    monkeypatch.setattr(td_mod, '_autosend_contract', lambda *a, **k: None, raising=False)
+    import foi_parcurs.services.pdf_service as pdf
+    monkeypatch.setattr(pdf, 'generate_legal_pdf', lambda c: '/tmp/l.pdf')
+    monkeypatch.setattr(pdf, 'generate_custom_pdf', lambda c: '/tmp/c.pdf')
+    app = Flask(__name__)
+    app.register_blueprint(foi_parcurs_bp)
+    app.config['TESTING'] = True
+    app.config['LOGIN_DISABLED'] = True
+    tc = app.test_client()
+
+    r = tc.put('/api/foi-parcurs/test-drive/101/activate',
+               json={**ACTIVATE_BODY, 'client_id': 8, 'driver_contact_id': 7})
+    assert r.status_code == 200, r.get_json()
+    persisted = fake_fp.activation
+    # New client persisted onto the FILLED session.
+    assert persisted['client_id'] == 8
+    assert persisted['client_name'] == 'PIPE BUSINESS CONSULTING SRL'
+    assert persisted['client_phone'] == '0725'
+    # Contact validated against the NEW client → driver snapshot from it.
+    assert persisted['driver_contact_id'] == 7
+    assert persisted['driver_name'] == 'Ion'
+
+
 def test_is_company_client_name_heuristic():
     """A CRM client typed 'person' but carrying a RO legal form in its name must
     still be treated as a company (the NELAURA COMIMPEX SRL case)."""
