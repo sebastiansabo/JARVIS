@@ -227,6 +227,9 @@ export interface FoiContract {
   client_phone?: string
   company_id: number
   company_name?: string
+  // The client's OWN company (crm_clients.company_name) — distinct from
+  // company_name (the dealership/car owner). Shown on cards as the driver's company.
+  client_company?: string | null
   year?: number
   month?: number
   route_type: RouteType
