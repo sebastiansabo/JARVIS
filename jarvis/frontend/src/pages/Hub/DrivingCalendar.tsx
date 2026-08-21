@@ -176,16 +176,15 @@ export default function DrivingCalendar({ companyId, brand, carFilter = [], cons
           endMin: minsOfDay(c.return_datetime),
           color: carColor(c.vin), // colour by car
           groupKey: c.vin || undefined, // same-car overlap (interlaced) detection
-          // Internal sessions have no client — the bold title is the driver
-          // (advisor_name); their comment takes the third line in place of the
-          // VIN (which stays in the detail popup).
+          // Compact block: driver (person) · car · driver's company. The bold
+          // title is the driver — advisor for internal, else the contact who
+          // drove (driver_name) or the client. The company line is the client's
+          // OWN company (client_company), not the dealership.
           title: c.is_internal
             ? (c.advisor_name || '—')
-            : (c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—')),
+            : (c.driver_name || c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—')),
           subtitle: vehicleName(c.vin ? vinVehicle.get(c.vin) : undefined, c.vin),
-          meta: c.is_internal
-            ? (internalComment(c) ?? undefined)
-            : (c.vin ? `VIN: ...${c.vin.slice(-6)}` : undefined), // last 6 of the VIN
+          meta: c.is_internal ? (internalComment(c) ?? undefined) : (c.client_company || undefined),
           draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
         }]
       })
