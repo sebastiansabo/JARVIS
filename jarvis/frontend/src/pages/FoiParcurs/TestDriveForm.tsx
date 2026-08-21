@@ -722,6 +722,10 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     const damagePayload = toDamagePayload(departureDamage)
     const capacity = selectedVehicle.fuel_tank_capacity_liters ?? selectedVehicle.battery_capacity_kwh ?? undefined
     const payload: ActivateTestDrivePayload = {
+      // The client may have been changed/edited at activation ("Schimbă"/
+      // "Editează" on the Client card). Send the currently-selected client so
+      // the backend validates the contact against it and persists the switch.
+      client_id: Number(selectedClient.id),
       client_signature: clientSignature,
       ...(advisorSignature ? { advisor_signature: advisorSignature } : {}),
       gdpr_consent: gdprConsent,
@@ -1398,7 +1402,8 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       {/* ── Submit ── */}
       {(submitMutation.isError || planMutation.isError || activateMutation.isError) && !openBlock && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-          Eroare la trimitere. Vă rugăm încercați din nou.
+          {((activateMutation.error || submitMutation.error || planMutation.error) as { data?: { error?: string } } | null)?.data?.error
+            || 'Eroare la trimitere. Vă rugăm încercați din nou.'}
         </div>
       )}
       {isActivating ? (
