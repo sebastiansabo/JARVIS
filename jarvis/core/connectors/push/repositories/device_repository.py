@@ -33,7 +33,14 @@ class DeviceRepository(BaseRepository):
         FCM rotates the push token on reinstall/data-clear, so a device that
         re-registers arrives with a new token; without cleanup the old row lingers
         and the backend pushes to both → duplicate notifications on one phone. After
-        upserting the current token we drop any other tokens for the same device_id.
+        upserting the current token we drop the SAME user's other tokens for this
+        device_id.
+
+        The dedup is scoped to `user_id` on purpose: device_id is a client-supplied
+        value, so an unscoped delete would let a crafted/colliding device_id remove
+        ANOTHER user's device row (cross-user push-DoS). A stale row left behind by a
+        different user on the same physical phone is harmless — that old token is dead
+        after the reinstall and FCM prunes it on the next send.
         """
         self.execute('''
             INSERT INTO mobile_devices (user_id, push_token, platform, device_id, updated_at)
@@ -44,8 +51,8 @@ class DeviceRepository(BaseRepository):
         ''', (user_id, push_token, platform, device_id))
         if device_id:
             self.execute(
-                'DELETE FROM mobile_devices WHERE device_id = %s AND push_token <> %s',
-                (device_id, push_token),
+                'DELETE FROM mobile_devices WHERE device_id = %s AND user_id = %s AND push_token <> %s',
+                (device_id, user_id, push_token),
             )
 
     def unregister(self, push_token, user_id):
