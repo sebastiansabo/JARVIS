@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { PlayCircle, RotateCcw, FileDown, Trash2, Clock, Pencil, Phone, Gauge, User2, CalendarDays, MessageSquare } from 'lucide-react'
+import { PlayCircle, RotateCcw, FileDown, Trash2, Clock, Pencil, Phone, Gauge, User2, CalendarDays, MessageSquare, Building2, Route, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
@@ -99,11 +99,14 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[13px]">
             <Field label="Client" value={tester} />
+            {c.driver_name && <Field label="Șofer" value={c.driver_name} icon={<User2 className="h-3 w-3" />} />}
+            {c.client_company && <Field label="Companie" value={c.client_company} icon={<Building2 className="h-3 w-3" />} />}
             <Field label="Telefon" value={c.client_phone || '—'} icon={<Phone className="h-3 w-3" />} />
             <Field label="Consilier" value={c.advisor_name || '—'} icon={<User2 className="h-3 w-3" />} />
             <Field label="Vehicul" value={vehicleName} icon={<Gauge className="h-3 w-3" />} />
             <Field label="VIN" value={c.vin || '—'} mono />
             <Field label="Kilometraj" value={`${c.km_start ?? vehicle?.mileage_floor ?? '—'}${isDone && c.km_end != null ? ` → ${c.km_end}` : ''} km`} />
+            {c.distance_km != null && <Field label="Km estimat" value={`${c.distance_km} km`} icon={<Route className="h-3 w-3" />} />}
             <div className="col-span-2">
               <Field label="Perioadă" value={`${fmtDateTime(c.departure_datetime)}${c.return_datetime ? ` – ${fmtDateTime(c.return_datetime)}` : ''}`} icon={<CalendarDays className="h-3 w-3" />} />
             </div>
@@ -115,6 +118,14 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
                   <MessageSquare className="h-3 w-3" />Comentariu
                 </dt>
                 <dd className="mt-0.5 whitespace-pre-wrap break-words font-medium">{comment}</dd>
+              </div>
+            )}
+            {c.general_observation && (
+              <div className="col-span-2 min-w-0">
+                <dt className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">
+                  <FileText className="h-3 w-3" />Detalii
+                </dt>
+                <dd className="mt-0.5 whitespace-pre-wrap break-words font-medium">{c.general_observation}</dd>
               </div>
             )}
           </dl>

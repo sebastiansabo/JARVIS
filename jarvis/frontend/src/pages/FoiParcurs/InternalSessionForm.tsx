@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { foiParcursApi } from '@/api/foiParcurs'
@@ -54,6 +54,10 @@ export function quickSessionError(f: QuickSessionForm):
   return null
 }
 
+// Radix Select forbids an empty-string value, so "Toate companiile" (all
+// companies) uses this sentinel instead of ''.
+const ALL_COMPANIES = '__all__'
+
 const MESSAGES: Record<string, string> = {
   vehicle_required: 'Alege mașina.',
   driver_required: 'Alege șoferul.',
@@ -94,6 +98,12 @@ export default function InternalSessionForm({
   const seedDeparture = initialDeparture ?? searchParams.get('departure') ?? undefined
   const seedReturn = initialReturn ?? searchParams.get('return') ?? undefined
 
+  // Company filter — narrows the car picker. Seeded from the caller's company
+  // (e.g. the Hub panel's selected company) or, standalone, the logged-in user's
+  // own company; `null` = Toate companiile (every vehicle). Company is still
+  // derived from the chosen car at submit, so this is purely a picker filter.
+  const [companyId, setCompanyId] = useState<number | null>(initialCompanyId ?? null)
+  const companyDefaulted = useRef(initialCompanyId != null)
   const [vin, setVin] = useState('')
   const [driver, setDriver] = useState(user?.name ?? '')
   // Șofer is now a JARVIS-user search-and-select (all users): `driver` holds the
@@ -126,19 +136,40 @@ export default function InternalSessionForm({
   })
   const driverResults = driverSearchData?.data ?? []
 
+  const { data: companiesData } = useQuery({
+    queryKey: ['fp-companies'],
+    queryFn: () => foiParcursApi.getCompanies(),
+  })
+  const companies = companiesData?.companies ?? []
+
+  // Default the filter to the logged-in user's own company on first load (unless
+  // the caller already seeded one). Auth carries the company *name*; match it to
+  // an id — mirrors TestDriveForm's company auto-select.
+  useEffect(() => {
+    if (companyDefaulted.current || companyId != null || !user?.company || !companies.length) return
+    const target = user.company.trim().toLowerCase()
+    const match = companies.find((c) => c.company.trim().toLowerCase() === target)
+    if (match) { setCompanyId(match.id); companyDefaulted.current = true }
+  }, [companies, user?.company, companyId])
+
   const { data: vehiclesData } = useQuery({
     queryKey: ['fp-vehicles', 'all'],
     queryFn: () => foiParcursApi.getVehicles(false),
   })
   const allVehicles = vehiclesData?.vehicles ?? []
-  // Scope the picker to the calling context's company when one is provided
-  // (e.g. the Hub panel's currently-selected company); otherwise show every
-  // active/known vehicle, mirroring the mobile QuickSession picker.
+  // Narrow the picker to the selected company; `null` shows every active/known
+  // vehicle (Toate companiile), mirroring the mobile QuickSession picker.
   const vehicles = useMemo(
-    () => (initialCompanyId ? allVehicles.filter((v) => v.company_id === initialCompanyId) : allVehicles),
-    [allVehicles, initialCompanyId],
+    () => (companyId != null ? allVehicles.filter((v) => v.company_id === companyId) : allVehicles),
+    [allVehicles, companyId],
   )
   const selectedVehicle = useMemo(() => allVehicles.find((v) => v.vin === vin) ?? null, [allVehicles, vin])
+
+  // Drop a chosen car once it no longer belongs to the filtered company (e.g. the
+  // default company resolves after a car was picked, or the user switches company).
+  useEffect(() => {
+    if (vin && !vehicles.some((v) => v.vin === vin)) { setVin(''); setKmStart('') }
+  }, [vehicles, vin])
 
   const handleVehicleChange = (nextVin: string) => {
     setVin(nextVin)
@@ -253,6 +284,29 @@ export default function InternalSessionForm({
           <CardTitle className="text-base flex items-center gap-2"><Car className="h-4 w-4" />Detalii sesiune</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Companie</Label>
+            <Select
+              value={companyId != null ? String(companyId) : ALL_COMPANIES}
+              onValueChange={(v) => {
+                setCompanyId(v === ALL_COMPANIES ? null : Number(v))
+                companyDefaulted.current = true // an explicit pick locks out the user-company default
+                setVin('') // the current car may not belong to the new company
+                setKmStart('')
+              }}
+            >
+              <SelectTrigger data-testid="internal-company" className="w-full">
+                <SelectValue placeholder="Toate companiile" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_COMPANIES}>Toate companiile</SelectItem>
+                {companies.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs">Mașină *</Label>
             <Select value={vin} onValueChange={handleVehicleChange}>

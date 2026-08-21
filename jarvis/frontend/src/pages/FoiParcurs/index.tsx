@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -18,6 +19,7 @@ import {
   XIcon,
   SlidersHorizontal,
   Filter,
+  Columns3,
   Settings,
   Save,
   Sparkles,
@@ -103,6 +105,7 @@ import { toast } from 'sonner'
 import { naiveDate } from '@/lib/naiveDate'
 import { cn } from '@/lib/utils'
 import { CalendarTab } from './CalendarTab'
+import DriveTypeToggle from './DriveTypeToggle'
 import { formatRoPlate, isValidRoPlate } from './plateFormat'
 import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
 
@@ -138,6 +141,11 @@ export default function FoiParcurs() {
   const [companyId, setCompanyId] = usePersistentState<number>('fp.companyId', 0)
   const [brand, setBrand] = usePersistentState<string>('fp.brand', '')
   const [choosingSession, setChoosingSession] = useState(false)
+  // Shared portal target so a tab's toolbar (Calendar controls, Sesiuni filters)
+  // renders on the same row as the tabs instead of a separate line below.
+  const [tabToolbar, setTabToolbar] = useState<HTMLDivElement | null>(null)
+  // Client vs internal drive filter — applies to the Sesiuni table + Calendar.
+  const [driveType, setDriveType] = usePersistentState<'all' | 'client' | 'internal'>('fp.driveType', 'all')
 
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
@@ -168,16 +176,31 @@ export default function FoiParcurs() {
     }
   }, [brandsData, brand])
 
+  const activeTabLabel = ({ stock: 'Driving Park', parcurs: 'Sesiuni Driving', calendar: 'Calendar', contracts: 'Foi de Parcurs', settings: 'Settings' } as const)[activeTab]
+  // Third breadcrumb segment: the selected drive-type "section" (Client/Intern),
+  // only on the two tabs the filter applies to. Names the label-less toggle.
+  const driveTypeLabel = (activeTab === 'parcurs' || activeTab === 'calendar')
+    ? (driveType === 'client' ? 'Clients' : driveType === 'internal' ? 'Intern' : null)
+    : null
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Driving Hub</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Breadcrumb title — consistent "Driving Hub › <tab>" across all tabs. */}
+        <div className="flex items-center gap-1.5 text-xl sm:text-2xl font-semibold tracking-tight">
+          <span className="text-muted-foreground">Driving Hub</span>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground/50" />
+          <span className={cn(driveTypeLabel && 'text-muted-foreground')}>{activeTabLabel}</span>
+          {driveTypeLabel && (
+            <>
+              <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground/50" />
+              <span>{driveTypeLabel}</span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setChoosingSession(true)}>
-            <FileText className="mr-1.5 h-4 w-4" />
-            New Test Drive
+          <Button size="icon" title="Sesiune nouă" aria-label="Sesiune nouă" onClick={() => setChoosingSession(true)}>
+            <Plus className="h-4 w-4" />
           </Button>
           <Select value={String(companyId)} onValueChange={(v) => setCompanyId(Number(v))}>
             <SelectTrigger className="w-56">
@@ -215,39 +238,43 @@ export default function FoiParcurs() {
       />
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'calendar' | 'settings')}>
-        <TabsList>
-          <TabsTrigger value="stock">Driving Park</TabsTrigger>
-          <TabsTrigger value="parcurs">Sesiuni Driving</TabsTrigger>
-          <TabsTrigger value="calendar">Calendar</TabsTrigger>
-          <TabsTrigger value="contracts">Foi de Parcurs</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TabsList>
+            <TabsTrigger value="stock">Driving Park</TabsTrigger>
+            <TabsTrigger value="parcurs">Sesiuni Driving</TabsTrigger>
+            <TabsTrigger value="calendar">Calendar</TabsTrigger>
+            <TabsTrigger value="contracts">Foi de Parcurs</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+          </TabsList>
+          {/* The active tab renders its toolbar (Calendar controls or Sesiuni
+              filters) into this slot, so it shares the tabs' line. */}
+          <div ref={setTabToolbar} className="flex flex-wrap items-center gap-2" />
+        </div>
       </Tabs>
 
-      {activeTab === 'contracts' && <ContractsTab companyId={companyId} />}
-      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={brand} />}
-      {activeTab === 'stock' && <StockTab companyId={companyId} brand={brand} />}
-      {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={brand} />}
+      {activeTab === 'contracts' && <ContractsTab companyId={companyId} toolbarSlot={tabToolbar} />}
+      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} />}
+      {activeTab === 'stock' && <StockTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} />}
+      {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} />}
       {activeTab === 'settings' && <SettingsTab />}
     </div>
   )
 }
 
 // ── Contracts Tab — Form → Preview → Save Batch ──
-function ContractsTab({ companyId }: { companyId: number }) {
+function ContractsTab({ companyId, toolbarSlot }: { companyId: number; toolbarSlot?: HTMLElement | null }) {
   const [importOpen, setImportOpen] = useState(false)
+  const toolbar = (
+    <Button variant="outline" size="sm" className="h-8" onClick={() => setImportOpen(true)}>
+      <Download className="mr-1.5 h-4 w-4" /> Importă sesiuni
+    </Button>
+  )
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">Foi de Parcurs</h3>
-          <p className="text-sm text-muted-foreground">Sesiuni de rulare cumulate lunar, per mașină</p>
-        </div>
-        <Button variant="outline" onClick={() => setImportOpen(true)}>
-          <Download className="mr-1.5 h-4 w-4" /> Importă sesiuni
-        </Button>
-      </div>
-      <RouteSheetsTable companyId={companyId} />
+      {/* RouteSheetsTable renders first so its month/year filters land in the slot
+          before the Importă button (filters left, action right). */}
+      <RouteSheetsTable companyId={companyId} toolbarSlot={toolbarSlot} />
+      {toolbarSlot ? createPortal(toolbar, toolbarSlot) : <div className="flex justify-end">{toolbar}</div>}
       <SessionImportDialog companyId={companyId} open={importOpen} onOpenChange={setImportOpen} />
     </div>
   )
@@ -368,7 +395,7 @@ function withGaps(sessions: FoiContract[]): DetailRow[] {
 //    sessions for that vehicle that month), scoped to the header company.
 //    Month is a filter; each row expands to its individual sessions and can
 //    generate/store an AI-drafted legal Foaie de Parcurs (PDF) or Excel. ──
-function RouteSheetsTable({ companyId }: { companyId: number }) {
+function RouteSheetsTable({ companyId, toolbarSlot }: { companyId: number; toolbarSlot?: HTMLElement | null }) {
   const queryClient = useQueryClient()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [previewVin, setPreviewVin] = useState<string | null>(null)
@@ -476,12 +503,15 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
       {!isLoading && <span className="text-xs text-muted-foreground">{cars.length} mașini</span>}
     </div>
   )
+  // On the Foi de Parcurs tab this row rides the tabs line (via the portal slot);
+  // standalone it renders in place.
+  const toolbarNode = toolbarSlot ? createPortal(toolbar, toolbarSlot) : toolbar
 
-  if (isLoading) return <div className="space-y-3">{toolbar}<TableSkeleton rows={6} columns={10} /></div>
+  if (isLoading) return <div className="space-y-3">{toolbarNode}<TableSkeleton rows={6} columns={10} /></div>
 
   return (
     <div className="space-y-3">
-      {toolbar}
+      {toolbarNode}
       {!cars.length ? (
         <EmptyState
           icon={<FileText className="h-10 w-10" />}
@@ -491,7 +521,7 @@ function RouteSheetsTable({ companyId }: { companyId: number }) {
             : 'Generează prima foaie de parcurs cu butonul de mai sus.'}
         />
       ) : (
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden py-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -1452,7 +1482,22 @@ function ExportDialog({
   )
 }
 
-export function SessionsTab({ companyId, brand, onActivate, onReturn }: { companyId: number; brand: string; onActivate?: (id: number) => void; onReturn?: (id: number) => void }) {
+// Toggleable columns for the Sesiuni Driving table (show/hide via the Columns menu).
+const SESSION_COLUMNS = [
+  { key: 'date', label: 'Data' },
+  { key: 'status', label: 'Status' },
+  { key: 'company', label: 'Companie' },
+  { key: 'vehicle', label: 'Vehicul' },
+  { key: 'client', label: 'Client' },
+  { key: 'clientCompany', label: 'Companie client' },
+  { key: 'consilier', label: 'Consilier' },
+  { key: 'km', label: 'KM plecare-sosire' },
+  { key: 'kmDone', label: 'KM realizați' },
+  { key: 'return', label: 'Retur' },
+] as const
+type SessionColumnKey = (typeof SESSION_COLUMNS)[number]['key']
+
+export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlot, driveType = 'all', onDriveTypeChange }: { companyId: number; brand: string; onActivate?: (id: number) => void; onReturn?: (id: number) => void; toolbarSlot?: HTMLElement | null; driveType?: 'all' | 'client' | 'internal'; onDriveTypeChange?: (v: 'all' | 'client' | 'internal') => void }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
@@ -1481,6 +1526,20 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterMonth, setFilterMonth] = useState<string>('all')
   const [filterYear, setFilterYear] = useState<string>('all')
+  // Session view: Active (non-finalised, default) · Arhivate (finalised) · Toate (both).
+  const [sessionView, setSessionView] = useState<'active' | 'archived' | 'all'>('active')
+  const [showFilters, setShowFilters] = useState(false) // the Vehicle/Status/Month/Year filters live under a filter icon
+  // Persisted per-user column visibility (all shown by default). Mirrors StockTab.
+  const [visibleColKeys, setVisibleColKeys] = usePersistentState<SessionColumnKey[]>('fp.sessionCols.v5', SESSION_COLUMNS.map((c) => c.key))
+  const visibleCols = React.useMemo(() => new Set(visibleColKeys), [visibleColKeys])
+  const [showColMenu, setShowColMenu] = useState(false)
+  const colVisible = (k: SessionColumnKey) => visibleCols.has(k)
+  const visibleColCount = SESSION_COLUMNS.filter((c) => visibleCols.has(c.key)).length
+  const toggleSessionCol = (key: SessionColumnKey) =>
+    setVisibleColKeys((prev) => prev.includes(key)
+      ? prev.filter((k) => k !== key)
+      : SESSION_COLUMNS.map((c) => c.key).filter((k) => k === key || prev.includes(k)))
+  const resetSessionCols = () => setVisibleColKeys(SESSION_COLUMNS.map((c) => c.key))
   const [sortBy, setSortBy] = useState('departure_datetime')
   const [sortDir, setSortDir] = useState('DESC')
 
@@ -1533,6 +1592,12 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
   // Apply filters
   const filtered = allContracts.filter((c) => {
     if (c.route_type !== 'TD') return false
+    // Client vs internal drive filter (from the header toggle).
+    if (driveType === 'client' && c.is_internal) return false
+    if (driveType === 'internal' && !c.is_internal) return false
+    // Session view: Active = non-finalised only, Arhivate = finalised only, Toate = both.
+    if (sessionView === 'active' && sessionStatus(c).key === 'finalizat') return false
+    if (sessionView === 'archived' && sessionStatus(c).key !== 'finalizat') return false
     if (brand && vinBrand.get(c.vin) !== brand) return false
     if (filterVin !== 'all' && c.vin !== filterVin) return false
     if (filterStatus !== 'all' && sessionStatus(c).key !== filterStatus) return false
@@ -1549,6 +1614,8 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
   // Sort
   const sortVal = (c: FoiContract): string | number => {
     if (sortBy === 'departure_datetime') return c.departure_datetime || c.created_at || ''
+    // KM realizați is computed (end − start); only finalised rows have it.
+    if (sortBy === 'km_realizat') return sessionStatus(c).key === 'finalizat' && c.km_end != null && c.km_start != null ? c.km_end - c.km_start : -1
     return ((c as any)[sortBy] ?? '') as string | number
   }
   const sorted = [...filtered].sort((a, b) => {
@@ -1575,82 +1642,110 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
   // Unique VINs for filter
   const uniqueVins = [...new Set(allContracts.map((c) => c.vin))].sort()
 
+  const filtersActive = filterVin !== 'all' || filterStatus !== 'all' || filterMonth !== 'all' || filterYear !== 'all'
+  // Vehicle/Status/Month/Year live under a filter icon on the right (see below).
+  const filterControls = (
+    <>
+      <Select value={filterVin} onValueChange={setFilterVin}>
+        <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Toate mașinile</SelectItem>
+          {uniqueVins.map((vin) => {
+            const v = vinVehicle.get(vin)
+            const name = v ? [v.brand || v.mark, v.model].filter(Boolean).join(' ') : ''
+            return (
+              <SelectItem key={vin} value={vin}>
+                <div className="leading-tight">
+                  <div>{name || `${vin.slice(0, 12)}...`}</div>
+                  <div className="font-mono text-[10px] text-muted-foreground">...{vin.slice(-6)}</div>
+                </div>
+              </SelectItem>
+            )
+          })}
+        </SelectContent>
+      </Select>
+      <Select value={filterStatus} onValueChange={setFilterStatus}>
+        <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Toate stările</SelectItem>
+          <SelectItem value="planificat">Planificat</SelectItem>
+          <SelectItem value="finalizat">Finalizat</SelectItem>
+          <SelectItem value="driving">În desfășurare</SelectItem>
+          <SelectItem value="intarziat">Întârziat</SelectItem>
+          <SelectItem value="nealocat">Nealocat</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select value={filterMonth} onValueChange={setFilterMonth}>
+        <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Toate lunile</SelectItem>
+          {Array.from({ length: 12 }, (_, i) => (
+            <SelectItem key={i + 1} value={String(i + 1)}>
+              {new Date(2024, i).toLocaleString('ro-RO', { month: 'long' })}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select value={filterYear} onValueChange={setFilterYear}>
+        <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Toți anii</SelectItem>
+          {Array.from({ length: 5 }, (_, i) => {
+            const y = now.getFullYear() - 2 + i
+            return <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+          })}
+        </SelectContent>
+      </Select>
+    </>
+  )
+  const toolbar = (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Badge variant="outline">{filtered.length} sesiuni</Badge>
+        {planificatCount > 0 && <Badge className="bg-indigo-600">{planificatCount} planificate</Badge>}
+        {finalizatCount > 0 && <Badge className="bg-green-600">{finalizatCount} finalizate</Badge>}
+        {drivingCount > 0 && <Badge className="bg-blue-600">{drivingCount} în desfășurare</Badge>}
+        {intarziatCount > 0 && <Badge className="bg-red-600">{intarziatCount} întârziate</Badge>}
+        {nealocatCount > 0 && <Badge variant="outline">{nealocatCount} nealocate</Badge>}
+      </div>
+      {onDriveTypeChange && <DriveTypeToggle value={driveType} onChange={onDriveTypeChange} />}
+      <div className="flex h-8 shrink-0 gap-0.5 rounded-lg bg-muted p-0.5">
+        {([['active', 'Active'], ['archived', 'Arhivate'], ['all', 'Toate']] as const).map(([v, label]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setSessionView(v)}
+            className={cn('rounded-md px-3 text-xs font-medium transition-colors', sessionView === v ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground')}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="relative">
+        <Button size="sm" variant="outline" className="relative h-8 w-8 p-0" title="Filtre" aria-label="Filtre" onClick={() => setShowFilters(!showFilters)}>
+          <Filter className="h-4 w-4" />
+          {filtersActive && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary" />}
+        </Button>
+        {showFilters && (
+          <div className="absolute left-0 z-10 mt-1 w-56 space-y-2 rounded-md border bg-popover p-3 shadow-md">
+            {filterControls}
+            {filtersActive && (
+              <button type="button" className="w-full rounded px-1 py-1 text-left text-xs text-muted-foreground hover:bg-accent" onClick={() => { setFilterVin('all'); setFilterStatus('all'); setFilterMonth('all'); setFilterYear('all') }}>
+                Resetează filtrele
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="min-w-[180px] max-w-xs flex-1">
+        <SearchInput value={search} onChange={setSearch} placeholder="Caută VIN, client, traseu..." />
+      </div>
+    </div>
+  )
+
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[200px] max-w-sm">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search VIN, client, itinerary..." />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Vehicle</Label>
-          <Select value={filterVin} onValueChange={setFilterVin}>
-            <SelectTrigger className="h-8 min-w-[140px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Vehicles</SelectItem>
-              {uniqueVins.map((vin) => (
-                <SelectItem key={vin} value={vin}>{vin.slice(0, 12)}...</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Status</Label>
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="h-8 min-w-[120px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="planificat">Planificat</SelectItem>
-              <SelectItem value="finalizat">Finalizat</SelectItem>
-              <SelectItem value="driving">În desfășurare</SelectItem>
-              <SelectItem value="intarziat">Întârziat</SelectItem>
-              <SelectItem value="nealocat">Nealocat</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Month</Label>
-          <Select value={filterMonth} onValueChange={setFilterMonth}>
-            <SelectTrigger className="h-8 min-w-[110px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              {Array.from({ length: 12 }, (_, i) => (
-                <SelectItem key={i + 1} value={String(i + 1)}>
-                  {new Date(2024, i).toLocaleString('ro-RO', { month: 'long' })}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Year</Label>
-          <Select value={filterYear} onValueChange={setFilterYear}>
-            <SelectTrigger className="h-8 w-20 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              {Array.from({ length: 5 }, (_, i) => {
-                const y = now.getFullYear() - 2 + i
-                return <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-              })}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs opacity-0 select-none">Export</Label>
-          <Button size="sm" variant="outline" className="h-8" onClick={() => setExportOpen(true)}>
-            <Download className="mr-1.5 h-4 w-4" />
-            Export
-          </Button>
-        </div>
-      </div>
+      {toolbarSlot ? createPortal(toolbar, toolbarSlot) : toolbar}
 
       <ExportDialog
         open={exportOpen}
@@ -1666,16 +1761,6 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
         setVin={setExpVin}
       />
 
-      {/* Summary badges */}
-      <div className="flex gap-2 text-sm">
-        <Badge variant="outline">{filtered.length} sesiuni</Badge>
-        {planificatCount > 0 && <Badge className="bg-indigo-600">{planificatCount} planificate</Badge>}
-        {finalizatCount > 0 && <Badge className="bg-green-600">{finalizatCount} finalizate</Badge>}
-        {drivingCount > 0 && <Badge className="bg-blue-600">{drivingCount} în desfășurare</Badge>}
-        {intarziatCount > 0 && <Badge className="bg-red-600">{intarziatCount} întârziate</Badge>}
-        {nealocatCount > 0 && <Badge variant="outline">{nealocatCount} nealocate</Badge>}
-      </div>
-
       {/* Table */}
       {isLoading ? (
         <TableSkeleton rows={8} columns={9} />
@@ -1686,19 +1771,46 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
           description={allContracts.length ? 'Try adjusting your filters.' : 'Generate and save a batch from the Foi de Parcurs tab first.'}
         />
       ) : (
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden py-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <SortableHeader col="departure_datetime" label="Date" current={sortBy} dir={sortDir} toggle={toggleSort} />
-                <SortableHeader col="status" label="Status" current={sortBy} dir={sortDir} toggle={toggleSort} />
-                <TableHead>Company</TableHead>
-                <SortableHeader col="vin" label="Vehicle" current={sortBy} dir={sortDir} toggle={toggleSort} />
-                <TableHead>Client</TableHead>
-                <TableHead>Consilier</TableHead>
-                <TableHead>KM</TableHead>
-                <TableHead>Return</TableHead>
-                <TableHead>Actions</TableHead>
+                {colVisible('date') && <SortableHeader col="departure_datetime" label="Date" current={sortBy} dir={sortDir} toggle={toggleSort} />}
+                {colVisible('status') && <SortableHeader col="status" label="Status" current={sortBy} dir={sortDir} toggle={toggleSort} />}
+                {colVisible('company') && <TableHead>Company</TableHead>}
+                {colVisible('vehicle') && <SortableHeader col="vin" label="Vehicle" current={sortBy} dir={sortDir} toggle={toggleSort} />}
+                {colVisible('client') && <TableHead>Client</TableHead>}
+                {colVisible('clientCompany') && <TableHead>Companie client</TableHead>}
+                {colVisible('consilier') && <TableHead>Consilier</TableHead>}
+                {colVisible('km') && <SortableHeader col="km_start" label="KM plecare-sosire" current={sortBy} dir={sortDir} toggle={toggleSort} />}
+                {colVisible('kmDone') && <SortableHeader col="km_realizat" label="KM realizați" current={sortBy} dir={sortDir} toggle={toggleSort} />}
+                {colVisible('return') && <TableHead>Return</TableHead>}
+                <TableHead>
+                  <div className="flex items-center justify-between gap-2">
+                    <span>Actions</span>
+                    <div className="relative">
+                      <button type="button" title="Coloane vizibile" aria-label="Coloane vizibile" onClick={() => setShowColMenu(!showColMenu)} className="text-muted-foreground transition-colors hover:text-foreground">
+                        <Columns3 className="h-4 w-4" />
+                      </button>
+                      {showColMenu && (
+                        <div className="absolute right-0 top-full z-20 mt-1 w-48 rounded-md border bg-popover p-2 text-left font-normal normal-case shadow-md">
+                          <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Coloane vizibile</p>
+                          {SESSION_COLUMNS.map((c) => (
+                            <label key={c.key} className="flex cursor-pointer items-center gap-2 py-1 text-sm">
+                              <input type="checkbox" checked={visibleCols.has(c.key)} onChange={() => toggleSessionCol(c.key)} className="rounded" />
+                              {c.label}
+                            </label>
+                          ))}
+                          <div className="mt-1 border-t pt-1">
+                            <button type="button" className="w-full rounded px-1 py-1 text-left text-xs text-muted-foreground hover:bg-accent" onClick={resetSessionCols}>
+                              Resetează la implicit
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1713,19 +1825,19 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
                       className={`cursor-pointer hover:bg-muted/40 ${ss.rowClass}`}
                       onClick={() => setExpandedRow(isExpanded ? null : c.id)}
                     >
-                      <TableCell className="text-xs whitespace-nowrap">
+                      {colVisible('date') && <TableCell className="text-xs whitespace-nowrap">
                         {c.departure_datetime
                           ? naiveDate(c.departure_datetime)!.toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' })
                           : new Date(c.created_at).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' })}
-                      </TableCell>
-                      <TableCell>
+                      </TableCell>}
+                      {colVisible('status') && <TableCell>
                         <div className="flex items-center gap-1">
                           <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
                           <ModifiedBadge session={c} />
                         </div>
-                      </TableCell>
-                      <TableCell className="text-xs">{c.company_name || '—'}</TableCell>
-                      <TableCell className="text-xs">
+                      </TableCell>}
+                      {colVisible('company') && <TableCell className="text-xs">{c.company_name || '—'}</TableCell>}
+                      {colVisible('vehicle') && <TableCell className="text-xs">
                         {(() => {
                           const v = vinVehicle.get(c.vin)
                           const name = v ? [v.brand || v.mark, v.model].filter(Boolean).join(' ') : ''
@@ -1736,42 +1848,36 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
                             </div>
                           )
                         })()}
-                      </TableCell>
-                      <TableCell>
+                      </TableCell>}
+                      {colVisible('client') && <TableCell>
                         {c.client_name ? (
                           <span className="font-medium text-sm" title={c.client_name}>{truncName(c.client_name)}</span>
                         ) : (
                           <span className="text-muted-foreground text-xs">—</span>
                         )}
-                      </TableCell>
-                      <TableCell className="text-xs">{c.advisor_name || '—'}</TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">
+                      </TableCell>}
+                      {colVisible('clientCompany') && <TableCell className="text-xs">{c.client_company || '—'}</TableCell>}
+                      {colVisible('consilier') && <TableCell className="text-xs">{c.advisor_name || '—'}</TableCell>}
+                      {colVisible('km') && <TableCell className="text-xs whitespace-nowrap">
                         {(() => {
                           const v = vinVehicle.get(c.vin)
                           const floor = v?.mileage_floor ?? v?.odometer_km ?? null
                           // Planned sessions snapshot km_start at plan time; show the car's
-                          // live odometer floor instead so the number reflects reality
-                          // (activation applies the same max(entered, floor) refresh).
+                          // live odometer floor instead so the number reflects reality. Only a
+                          // finalised session has a genuine end odometer → "..." otherwise.
                           const startKm = c.status === 'PLANNED' && floor != null ? Math.max(c.km_start ?? 0, floor) : c.km_start
-                          // Only a finalised session carries a genuine return odometer —
-                          // never replicate km_start as the end for planned/driving/overdue
-                          // rows (which all still hold the km_start placeholder). Note
-                          // return_datetime is the expected arrival, set at plan time, so it
-                          // is NOT a "finished" signal.
                           const endKm = ss.key === 'finalizat' && c.km_end != null ? c.km_end : null
-                          return (
-                            <>
-                              {startKm ?? '—'}
-                              {endKm != null ? ` - ${endKm}` : ''}
-                            </>
-                          )
+                          return `${startKm ?? '—'} - ${endKm ?? '...'}`
                         })()}
-                      </TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">
+                      </TableCell>}
+                      {colVisible('kmDone') && <TableCell className="text-xs whitespace-nowrap">
+                        {ss.key === 'finalizat' && c.km_end != null && c.km_start != null ? `${c.km_end - c.km_start} km` : '...'}
+                      </TableCell>}
+                      {colVisible('return') && <TableCell className="text-xs whitespace-nowrap">
                         {c.return_datetime
                           ? naiveDate(c.return_datetime)!.toLocaleString('ro-RO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
                           : '—'}
-                      </TableCell>
+                      </TableCell>}
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1">
                           {c.status === 'PENDING' && (
@@ -1874,7 +1980,7 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn }: { compan
                     </TableRow>
                     {isExpanded && (
                       <TableRow className="bg-muted/30 border-l-4 border-l-primary/30">
-                        <TableCell colSpan={9} className="px-6 py-4">
+                        <TableCell colSpan={visibleColCount + 1} className="px-6 py-4">
                           <div className="space-y-3">
                             {/* Session — the priority info */}
                             <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs sm:max-w-2xl">
@@ -2453,7 +2559,7 @@ function VehicleFormFields({
   )
 }
 
-function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
+function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand: string; toolbarSlot?: HTMLElement | null }) {
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [expandedVehicleId, setExpandedVehicleId] = useState<number | string | null>(null)
@@ -2714,20 +2820,14 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
 
   const show = (key: StockColumnKey) => visibleCols.has(key)
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold flex items-center gap-2">
-          <Car className="h-5 w-5 text-muted-foreground" />
-          Driving Park
-        </h3>
-        <div className="flex items-center gap-2">
+  const toolbar = (
+    <div className="flex items-center gap-2">
           <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="rounded" />
             Arată arhivate
           </label>
           <div className="relative">
-            <Button size="sm" variant="outline" onClick={() => setShowColMenu(!showColMenu)}>
+            <Button size="sm" variant="outline" className="h-8" onClick={() => setShowColMenu(!showColMenu)}>
               <SlidersHorizontal className="mr-1.5 h-4 w-4" />
               Columns
             </Button>
@@ -2757,12 +2857,16 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
               </div>
             )}
           </div>
-          <Button size="sm" onClick={() => setShowAdd(!showAdd)}>
+          <Button size="sm" className="h-8" onClick={() => setShowAdd(!showAdd)}>
             <Plus className="mr-1.5 h-4 w-4" />
             Add Vehicle
           </Button>
-        </div>
-      </div>
+    </div>
+  )
+
+  return (
+    <div className="space-y-4">
+      {toolbarSlot ? createPortal(toolbar, toolbarSlot) : <div className="flex justify-end">{toolbar}</div>}
 
       {/* Inline Add Form */}
       {showAdd && (
@@ -2797,7 +2901,7 @@ function StockTab({ companyId, brand }: { companyId: number; brand: string }) {
           description="Add your first vehicle using the button above."
         />
       ) : (
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden py-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -3329,7 +3433,7 @@ function SettingsTab() {
             description="Add companies to configure route KM limits."
           />
         ) : (
-          <Card className="overflow-hidden">
+          <Card className="overflow-hidden py-0">
             <Table>
               <TableHeader>
                 <TableRow>
