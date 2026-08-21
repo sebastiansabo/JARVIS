@@ -89,6 +89,20 @@ export default function ChannelSettings({ channel, onBack }: Props) {
     return <Shield className="h-3.5 w-3.5 text-muted-foreground" />
   }
 
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const handleAvatarUpload = async (file: File) => {
+    setUploadingAvatar(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/chat/upload', { method: 'POST', body: fd, credentials: 'include' })
+      const json = await res.json()
+      if (json?.data?.url) updateSettings.mutate({ avatar_url: json.data.url })
+    } finally {
+      setUploadingAvatar(false)
+    }
+  }
+
   const admins = members.filter(m => m.role === 'admin')
   const moderators = members.filter(m => m.role === 'moderator')
   const regularMembers = members.filter(m => m.role === 'member')
@@ -100,7 +114,28 @@ export default function ChannelSettings({ channel, onBack }: Props) {
         <Button variant="ghost" size="icon" onClick={onBack}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h2 className="text-lg font-semibold">Channel Settings</h2>
+        <h2 className="text-lg font-semibold">Informații grup</h2>
+      </div>
+
+      {/* Avatar + name */}
+      <div className="flex items-center gap-4 rounded-lg border p-4">
+        {channel.avatar_url ? (
+          <img src={channel.avatar_url} alt="" className="h-16 w-16 rounded-full object-cover" />
+        ) : (
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-xl font-semibold text-primary">
+            {channel.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold">{channel.name}</p>
+          <label className="mt-1 inline-flex cursor-pointer text-sm text-primary hover:underline">
+            {uploadingAvatar ? 'Se încarcă…' : 'Schimbă poza'}
+            <input
+              type="file" accept="image/*" className="hidden" disabled={uploadingAvatar}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAvatarUpload(f); e.target.value = '' }}
+            />
+          </label>
+        </div>
       </div>
 
       {/* Permissions */}
