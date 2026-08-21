@@ -15,11 +15,22 @@ class ChatService:
 
     # ── Channels ─────────────────────────────────────────────
 
-    def get_channels(self, user_id):
-        return _repo.get_channels(user_id)
+    def get_channels(self, user_id, q=None, archived=False):
+        return _repo.get_channels(user_id, q=q, archived=archived)
 
     def get_channel(self, channel_id):
         return _repo.get_channel(channel_id)
+
+    # ── Per-user conversation state (pin / archive / mute) ───
+
+    def set_channel_pinned(self, channel_id, user_id, pinned):
+        _repo.set_channel_pinned(channel_id, user_id, pinned)
+
+    def set_channel_archived(self, channel_id, user_id, archived):
+        _repo.set_channel_archived(channel_id, user_id, archived)
+
+    def set_channel_muted(self, channel_id, user_id, muted):
+        _repo.set_channel_muted(channel_id, user_id, muted)
 
     def create_channel(self, name, description, channel_type, is_private, created_by, targets=None, notify_mode='all'):
         channel = _repo.create_channel(name, description, channel_type, is_private, created_by, notify_mode=notify_mode)

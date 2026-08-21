@@ -17,7 +17,9 @@ ALLOWED_IMAGE_EXT = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
 @chat_bp.route('/channels', methods=['GET'])
 @login_required
 def list_channels():
-    channels = _svc.get_channels(current_user.id)
+    q = request.args.get('q', '').strip() or None
+    archived = request.args.get('archived', '').lower() in ('1', 'true', 'yes')
+    channels = _svc.get_channels(current_user.id, q=q, archived=archived)
     return jsonify({'success': True, 'data': channels})
 
 
@@ -64,6 +66,32 @@ def update_channel(channel_id):
 @login_required
 def delete_channel(channel_id):
     _svc.delete_channel(channel_id)
+    return jsonify({'success': True})
+
+
+# ── Per-user conversation state (pin / archive / mute) ───
+
+@chat_bp.route('/channels/<int:channel_id>/pin', methods=['PUT'])
+@login_required
+def set_channel_pin(channel_id):
+    pinned = bool((request.get_json() or {}).get('pinned', True))
+    _svc.set_channel_pinned(channel_id, current_user.id, pinned)
+    return jsonify({'success': True})
+
+
+@chat_bp.route('/channels/<int:channel_id>/archive', methods=['PUT'])
+@login_required
+def set_channel_archive(channel_id):
+    archived = bool((request.get_json() or {}).get('archived', True))
+    _svc.set_channel_archived(channel_id, current_user.id, archived)
+    return jsonify({'success': True})
+
+
+@chat_bp.route('/channels/<int:channel_id>/mute', methods=['PUT'])
+@login_required
+def set_channel_mute(channel_id):
+    muted = bool((request.get_json() or {}).get('muted', True))
+    _svc.set_channel_muted(channel_id, current_user.id, muted)
     return jsonify({'success': True})
 
 
