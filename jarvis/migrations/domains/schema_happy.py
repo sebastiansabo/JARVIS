@@ -164,7 +164,63 @@ def create_schema_happy(conn, cursor):
 
     conn.commit()
 
+    _create_phase2(conn, cursor)
     _seed_permissions(conn, cursor)
+
+
+def _create_phase2(conn, cursor):
+    """Phase 2 — compliance depth: quiz comprehension, audit log, escalation state."""
+
+    # Comprehension quiz (§7.2). AGGREGATE stats only — quiz_question_stats never
+    # stores a user_id or a per-person answer.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.quiz_questions (
+            id            SERIAL PRIMARY KEY,
+            campaign_id   INTEGER NOT NULL REFERENCES happy.campaigns(id) ON DELETE CASCADE,
+            position      SMALLINT NOT NULL,
+            prompt        TEXT NOT NULL,
+            options       JSONB NOT NULL,          -- ["a","b","c"]
+            correct_index SMALLINT NOT NULL,
+            CHECK (position BETWEEN 1 AND 5),
+            UNIQUE (campaign_id, position)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_happy_quiz_campaign ON happy.quiz_questions(campaign_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.quiz_question_stats (
+            question_id   INTEGER PRIMARY KEY REFERENCES happy.quiz_questions(id) ON DELETE CASCADE,
+            attempts      INTEGER NOT NULL DEFAULT 0,
+            first_correct INTEGER NOT NULL DEFAULT 0
+        )
+    ''')
+
+    # Durable audit trail. Unlike campaign_events (30-day purge), audit rows survive:
+    # critical bypasses, cap overrides, escalation steps off default, compliance exports.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.audit_log (
+            id            BIGSERIAL PRIMARY KEY,
+            campaign_id   INTEGER REFERENCES happy.campaigns(id) ON DELETE SET NULL,
+            actor_user_id INTEGER REFERENCES public.users(id) ON DELETE SET NULL,
+            action        TEXT NOT NULL,           -- critical_bypass|cap_override|escalation_step|compliance_export|publish
+            detail        JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_happy_audit_campaign ON happy.audit_log(campaign_id, created_at DESC)')
+
+    # Per (campaign,user) escalation progress so a step never fires twice.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.escalation_state (
+            campaign_id   INTEGER NOT NULL REFERENCES happy.campaigns(id) ON DELETE CASCADE,
+            user_id       INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+            last_step     SMALLINT NOT NULL DEFAULT 0,   -- 0 none · 1 +48h push · 2 +5d email · 3 +7d mgr · 4 deadline · 5 +3d export
+            last_fired_at TIMESTAMPTZ,
+            PRIMARY KEY (campaign_id, user_id)
+        )
+    ''')
+
+    conn.commit()
 
 
 # §8.3 — permissions to seed in permissions_v2. (module_key, entity_key, entity_label,

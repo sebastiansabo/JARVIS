@@ -85,10 +85,16 @@ export function SpotlightProvider() {
     if (item.cta?.href) navigate(item.cta.href)
   }
 
-  const handleAck = () => {
-    happyApi.ack(item.id, item.impression_token, 'interstitial').catch(() => {})
+  // Close + refresh the surface once a campaign is acknowledged (no network here).
+  const handleAcknowledged = () => {
     close()
     queryClient.invalidateQueries({ queryKey: ['happy'] })
+  }
+
+  // Click-ack path: POST the ack, then run the shared post-ack lifecycle.
+  const handleAck = () => {
+    happyApi.ack(item.id, item.impression_token, 'interstitial').catch(() => {})
+    handleAcknowledged()
   }
 
   const handleSnooze = () => {
@@ -112,6 +118,7 @@ export function SpotlightProvider() {
       }}
       onCta={handleCta}
       onAck={handleAck}
+      onAcknowledged={handleAcknowledged}
       onSnooze={handleSnooze}
     />
   )

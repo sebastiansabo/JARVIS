@@ -3,10 +3,12 @@
 All reads the SurfaceResolver needs, plus impression/read/click/ack/snooze/dismiss
 writes and the daily frequency ledger. Raw SQL, %s params, no ORM.
 """
+import json
 import logging
 from datetime import datetime
 
 from core.base_repository import BaseRepository
+from happy.services.quiz import grade_quiz
 
 logger = logging.getLogger("jarvis.happy.surface_repository")
 
@@ -90,17 +92,53 @@ class SurfaceRepository(BaseRepository):
 
     # -- resolver / event writes ---------------------------------------------
 
+    def audit(self, action, campaign_id=None, actor_user_id=None, detail=None):
+        """Write a durable audit row (survives the 30-day campaign_events purge)."""
+        self.execute(
+            """INSERT INTO happy.audit_log (campaign_id, actor_user_id, action, detail)
+               VALUES (%s, %s, %s, %s::jsonb)""",
+            (campaign_id, actor_user_id, action, json.dumps(detail or {})),
+        )
+
     def record_cap_override(self, user_id, campaign_id, placement, now):
         """Audit a critical campaign that bypassed the daily cap (spec §5.2)."""
         logger.warning(
             "happy: critical cap-override user=%s campaign=%s placement=%s",
             user_id, campaign_id, placement,
         )
-        self.execute(
-            """INSERT INTO happy.campaign_events (campaign_id, user_id, surface, event_type, platform)
-               VALUES (%s, %s, %s, 'cap_override', 'web')""",
-            (campaign_id, user_id, placement),
+        self.audit("cap_override", campaign_id, user_id, {"placement": placement})
+
+    # -- quiz (§5.4) ----------------------------------------------------------
+
+    def get_quiz(self, campaign_id, include_answers=False):
+        cols = "id, position, prompt, options" + (", correct_index" if include_answers else "")
+        return self.query_all(
+            f"SELECT {cols} FROM happy.quiz_questions WHERE campaign_id = %s ORDER BY position",
+            (campaign_id,),
         )
+
+    def record_quiz_attempt(self, campaign_id, answers):
+        """Grade an attempt, update AGGREGATE per-question stats (no user_id, no
+        per-person answers), and return the grade result (with reveal for wrong)."""
+        questions = self.get_quiz(campaign_id, include_answers=True)
+        result = grade_quiz(questions, answers)
+        correct_by_pos = {r["position"]: r["correct"] for r in result["results"]}
+
+        def _work(cursor):
+            for q in questions:
+                inc = 1 if correct_by_pos.get(q["position"]) else 0
+                cursor.execute(
+                    """INSERT INTO happy.quiz_question_stats (question_id, attempts, first_correct)
+                       VALUES (%s, 1, %s)
+                       ON CONFLICT (question_id) DO UPDATE
+                         SET attempts = happy.quiz_question_stats.attempts + 1,
+                             first_correct = happy.quiz_question_stats.first_correct + %s""",
+                    (q["id"], inc, inc),
+                )
+            return True
+        if questions:
+            self.execute_many(_work)
+        return result
 
     def record_event(self, campaign_id, user_id, surface, event_type, dwell_ms=None, platform="web"):
         """Log a raw analytics event (30-day retention). Fire-and-forget."""

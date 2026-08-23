@@ -85,6 +85,33 @@ export interface HappyAckResponse {
   first_time: boolean
 }
 
+export interface HappyQuizQuestion {
+  id: number
+  position: number
+  prompt: string
+  options: string[]
+}
+
+export interface HappyQuizResponse {
+  questions: HappyQuizQuestion[]
+}
+
+export interface HappyQuizResult {
+  position: number
+  correct: boolean
+  /** Populated ONLY for wrong answers (reveal); null when the answer was correct. */
+  correct_index: number | null
+}
+
+export interface HappyAckQuizResponse {
+  acknowledged: boolean
+  first_time?: boolean
+  quiz: {
+    all_correct: boolean
+    results?: HappyQuizResult[]
+  }
+}
+
 export interface HappySnoozeResponse {
   snooze_count: number
   snooze_remaining: number
