@@ -203,6 +203,38 @@ export interface HappyMyPraise {
   received: HappyPraiseTrendPoint[]
 }
 
+// ── Pulse (anonymous surveys / eNPS) ──
+
+export type HappyPulseCadence = 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'adhoc'
+
+export type HappyPulseQType = 'likert5' | 'enps' | 'single' | 'open'
+
+export interface HappyPulse {
+  id: number
+  slug: string
+  title: string
+  cadence: HappyPulseCadence
+  closes_at: string | null
+}
+
+export interface HappyPulseQuestion {
+  position: number
+  prompt_ro: string
+  prompt_en: string | null
+  qtype: HappyPulseQType
+  driver: string | null
+}
+
+export interface HappyPulseCurrent {
+  pulse: HappyPulse | null
+  questions: HappyPulseQuestion[]
+  invited: boolean
+  responded: boolean
+  anonymity_notice: string
+}
+
+export type HappyPulseAnswers = Record<string, number | string>
+
 // ── Inbox ──
 
 export interface HappyInboxItem {

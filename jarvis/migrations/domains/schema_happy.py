@@ -166,6 +166,7 @@ def create_schema_happy(conn, cursor):
 
     _create_phase2(conn, cursor)
     _create_phase3(conn, cursor)
+    _create_phase4(conn, cursor)
     _seed_permissions(conn, cursor)
 
 
@@ -303,6 +304,71 @@ _VALUE_TAGS = [
     ("integrity",  "Integritate",             "Integrity",       "shield",    5),
     ("excellence", "Excelență",               "Excellence",      "award",     6),
 ]
+
+
+def _create_phase4(conn, cursor):
+    """Phase 4 — Pulse: anonymous surveys / eNPS (§7.5).
+
+    The anonymity architecture is the whole product: pulse_responses has NO
+    user_id and no FK that can reconstruct one; created_at is a DATE (no
+    time-of-day fingerprint); cohort_key is coarse and validated to have
+    >= min_group_size members before any row is written.
+    """
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.pulses (
+            id                   SERIAL PRIMARY KEY,
+            slug                 TEXT UNIQUE NOT NULL,
+            title                TEXT NOT NULL,
+            cadence              TEXT NOT NULL,      -- weekly|biweekly|monthly|quarterly|adhoc
+            question_count       SMALLINT NOT NULL DEFAULT 5,
+            min_group_size       SMALLINT NOT NULL DEFAULT 5,
+            min_comment_group    SMALLINT NOT NULL DEFAULT 10,
+            indirect_protection  BOOLEAN NOT NULL DEFAULT TRUE,
+            settings_locked_at   TIMESTAMPTZ,       -- locked once status leaves draft
+            status               TEXT NOT NULL DEFAULT 'draft',   -- draft|live|closed
+            opens_at             TIMESTAMPTZ,
+            closes_at            TIMESTAMPTZ,
+            created_by           INTEGER REFERENCES public.users(id) ON DELETE SET NULL,
+            created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.pulse_questions (
+            id        SERIAL PRIMARY KEY,
+            pulse_id  INTEGER NOT NULL REFERENCES happy.pulses(id) ON DELETE CASCADE,
+            position  SMALLINT NOT NULL,
+            prompt_ro TEXT NOT NULL,
+            prompt_en TEXT,
+            qtype     TEXT NOT NULL,     -- likert5|enps|single|open
+            driver    TEXT,              -- manager|recognition|growth|alignment|workload|wellbeing|ambassadorship
+            UNIQUE (pulse_id, position)
+        )
+    ''')
+
+    # Invite list: exists ONLY to send and remind. Deleted at pulse close.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.pulse_invites (
+            pulse_id  INTEGER NOT NULL REFERENCES happy.pulses(id) ON DELETE CASCADE,
+            user_id   INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+            responded BOOLEAN NOT NULL DEFAULT FALSE,   -- boolean only; never joined to responses
+            PRIMARY KEY (pulse_id, user_id)
+        )
+    ''')
+
+    # NO user_id. cohort_key is coarse and validated >= min_group_size before write.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.pulse_responses (
+            id         BIGSERIAL PRIMARY KEY,
+            pulse_id   INTEGER NOT NULL REFERENCES happy.pulses(id) ON DELETE CASCADE,
+            cohort_key TEXT NOT NULL,
+            answers    JSONB NOT NULL,     -- {"q1":4,"q2":9,"q3":"..."}
+            created_at DATE NOT NULL DEFAULT CURRENT_DATE
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_happy_pulse_resp ON happy.pulse_responses(pulse_id, cohort_key)')
+
+    conn.commit()
 
 
 def _seed_value_tags(conn, cursor):
