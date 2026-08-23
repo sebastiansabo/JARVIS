@@ -412,7 +412,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     : contacts
   const contactGateFields = (c: ClientContact | null) =>
     !!c && !!c.full_name && !!c.email && !!c.phone && !!c.driver_license_photo &&
-    !!c.driver_license_serie && !!c.driver_license_number
+    !!c.driver_license_number
   const contactGateOk = !isCompanyClient || contactGateFields(driverContact)
 
   // A contact selected for a previous client must never leak into a new
@@ -665,10 +665,9 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       ...(mktProject ? { mkt_project_id: Number(mktProject.id) } : {}),
       ...(vehicle.locked_out || vehicle.blocked_now ? { allow_locked: true } : {}),
       // Company-client driver gate (Task 11) — the gate-valid contact chosen
-      // above; driver_license_serie mirrors the contact's own (a person
-      // client has neither, so both are simply omitted for it).
+      // above (a person client has none). The license number now carries the
+      // full serie+number, sent via `licenseFor.number` above.
       ...(driverContact ? { driver_contact_id: driverContact.id } : {}),
-      ...(driverContact?.driver_license_serie ? { driver_license_serie: driverContact.driver_license_serie } : {}),
     }
   }
 
@@ -1621,8 +1620,7 @@ function AddContactForm({
   const [phone, setPhone] = useState('')
   const [photo, setPhoto] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [serie, setSerie] = useState('')
-  const [number, setNumber] = useState('')
+  const [license, setLicense] = useState('') // driving-license serie+number (one field)
   const [expiry, setExpiry] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -1651,8 +1649,7 @@ function AddContactForm({
         ...(email.trim() ? { email: email.trim() } : {}),
         ...(phone.trim() ? { phone: phone.trim() } : {}),
         ...(photo ? { driver_license_photo: photo } : {}),
-        ...(serie.trim() ? { driver_license_serie: serie.trim() } : {}),
-        ...(number.trim() ? { driver_license_number: number.trim() } : {}),
+        ...(license.trim() ? { driver_license_number: license.trim() } : {}),
         ...(expiry.trim() ? { driver_license_expiry: expiry.trim() } : {}),
       },
       {
@@ -1705,15 +1702,9 @@ function AddContactForm({
           </label>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <Label className="text-xs">Serie *</Label>
-          <Input value={serie} onChange={(e) => setSerie(e.target.value)} placeholder="Serie" />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Număr *</Label>
-          <Input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="Număr" />
-        </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Serie/nr permis *</Label>
+        <Input value={license} onChange={(e) => setLicense(e.target.value)} placeholder="Serie/număr" />
       </div>
       <div className="space-y-1">
         <Label className="text-xs">Valabilitate permis</Label>
