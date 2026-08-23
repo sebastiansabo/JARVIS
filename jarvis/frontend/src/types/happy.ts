@@ -121,6 +121,90 @@ export interface HappyDismissResponse {
   ok: true
 }
 
+// ── Praise (peer recognition) ──
+
+export interface HappyValueTag {
+  id: number
+  slug: string
+  label_ro: string
+  label_en: string
+  icon: string | null
+}
+
+export interface HappyValueTagsResponse {
+  value_tags: HappyValueTag[]
+}
+
+export interface HappyWallet {
+  giveable_balance: number
+  giveable_period: string
+  redeemable_balance: number
+  giveable_expires_at: string | null
+}
+
+export type HappyKudosVisibility = 'company' | 'department' | 'private'
+
+export interface HappySendKudosPayload {
+  to_user: number
+  value_tag_id: number
+  note: string
+  points?: number
+  visibility?: HappyKudosVisibility
+}
+
+export interface HappyKudos {
+  id: number
+  points: number
+  flagged: boolean
+  flags?: string[]
+}
+
+export interface HappySendKudosResponse {
+  kudos: HappyKudos
+}
+
+export type HappyKudosErrorCode =
+  | 'self_award'
+  | 'note_too_short'
+  | 'value_tag_required'
+  | 'invalid_points'
+  | 'invalid_visibility'
+  | 'duplicate_text'
+  | 'cap_exceeded'
+  | 'insufficient_giveable'
+
+export interface HappyKudosError {
+  error: string
+  code: HappyKudosErrorCode
+}
+
+export interface HappyReceivedKudos {
+  id: number
+  from_user: string | number
+  note: string
+  points: number
+  created_at: string
+  value_tag: string | null
+  value_label: string | null
+}
+
+export interface HappyReceivedResponse {
+  items: HappyReceivedKudos[]
+}
+
+export interface HappyPraiseTrendPoint {
+  wk: string
+  n: number
+}
+
+export interface HappyMyPraise {
+  streak_weeks: number
+  sent: HappyPraiseTrendPoint[]
+  received: HappyPraiseTrendPoint[]
+}
+
+// ── Inbox ──
+
 export interface HappyInboxItem {
   id: number
   slug: string

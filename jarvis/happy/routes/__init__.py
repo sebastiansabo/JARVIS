@@ -20,4 +20,4 @@ def jsonable(row):
 
 
 # Import route modules for their side effect of registering on happy_bp.
-from happy.routes import surface, admin  # noqa: E402,F401
+from happy.routes import surface, admin, praise  # noqa: E402,F401

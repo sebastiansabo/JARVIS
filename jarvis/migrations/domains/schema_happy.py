@@ -165,6 +165,7 @@ def create_schema_happy(conn, cursor):
     conn.commit()
 
     _create_phase2(conn, cursor)
+    _create_phase3(conn, cursor)
     _seed_permissions(conn, cursor)
 
 
@@ -220,6 +221,98 @@ def _create_phase2(conn, cursor):
         )
     ''')
 
+    conn.commit()
+
+
+def _create_phase3(conn, cursor):
+    """Phase 3 — Praise: two-currency recognition ledger with anti-gaming (§7.4)."""
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.value_tags (
+            id         SERIAL PRIMARY KEY,
+            slug       TEXT UNIQUE NOT NULL,
+            label_ro   TEXT NOT NULL,
+            label_en   TEXT NOT NULL,
+            icon       TEXT,
+            is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+            sort_order SMALLINT DEFAULT 0
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.wallets (
+            user_id            INTEGER PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
+            giveable_balance   INTEGER NOT NULL DEFAULT 0,   -- expires monthly, cannot be self-redeemed
+            giveable_period    CHAR(7) NOT NULL,             -- 'YYYY-MM'
+            redeemable_balance INTEGER NOT NULL DEFAULT 0,   -- earned, never expires
+            updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.kudos (
+            id           SERIAL PRIMARY KEY,
+            from_user    INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+            to_user      INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+            value_tag_id INTEGER REFERENCES happy.value_tags(id) ON DELETE SET NULL,
+            note         TEXT NOT NULL,                      -- CHECK length >= 40
+            points       INTEGER NOT NULL DEFAULT 0,
+            visibility   TEXT NOT NULL DEFAULT 'company',    -- company|department|private
+            period       CHAR(7) NOT NULL,
+            flagged      BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (from_user <> to_user),
+            CHECK (char_length(note) >= 40)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_happy_kudos_to ON happy.kudos(to_user, created_at DESC)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_happy_kudos_period ON happy.kudos(period, from_user)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.point_ledger (
+            id         BIGSERIAL PRIMARY KEY,
+            user_id    INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+            bucket     TEXT NOT NULL,          -- giveable|redeemable
+            delta      INTEGER NOT NULL,
+            reason     TEXT NOT NULL,          -- monthly_grant|expiry|kudos_sent|kudos_received|redemption|adjustment
+            kudos_id   INTEGER REFERENCES happy.kudos(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS happy.kudos_flags (
+            id         SERIAL PRIMARY KEY,
+            kudos_id   INTEGER NOT NULL REFERENCES happy.kudos(id) ON DELETE CASCADE,
+            rule       TEXT NOT NULL,           -- reciprocity|burst|duplicate_text|deadline_dump|cap_exceeded
+            detail     JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    ''')
+
+    conn.commit()
+    _seed_value_tags(conn, cursor)
+
+
+# Default company value tags (slug, label_ro, label_en, icon, sort_order).
+_VALUE_TAGS = [
+    ("teamwork",   "Spirit de echipă",        "Teamwork",        "users",     1),
+    ("ownership",  "Asumare",                 "Ownership",       "target",    2),
+    ("customer",   "Orientare către client",  "Customer focus",  "heart",     3),
+    ("innovation", "Inovație",                "Innovation",      "lightbulb", 4),
+    ("integrity",  "Integritate",             "Integrity",       "shield",    5),
+    ("excellence", "Excelență",               "Excellence",      "award",     6),
+]
+
+
+def _seed_value_tags(conn, cursor):
+    for slug, ro, en, icon, order in _VALUE_TAGS:
+        cursor.execute(
+            '''INSERT INTO happy.value_tags (slug, label_ro, label_en, icon, sort_order)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (slug) DO NOTHING''',
+            (slug, ro, en, icon, order),
+        )
     conn.commit()
 
 

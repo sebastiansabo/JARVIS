@@ -11,6 +11,12 @@ import type {
   HappySnoozeResponse,
   HappyDismissResponse,
   HappyInboxResponse,
+  HappyValueTagsResponse,
+  HappyWallet,
+  HappySendKudosPayload,
+  HappySendKudosResponse,
+  HappyReceivedResponse,
+  HappyMyPraise,
 } from '@/types/happy'
 
 /**
@@ -65,5 +71,43 @@ export function useHappySurface(placement: HappyPlacement, route: string, enable
     queryFn: () => happyApi.getSurface(placement, route),
     enabled,
     staleTime: 30_000,
+  })
+}
+
+/** Peer-recognition (Praise) client. Session-cookie auth via the shared `api` helper. */
+export const praiseApi = {
+  getValueTags: () => api.get<HappyValueTagsResponse>('/api/happy/praise/value-tags'),
+
+  getWallet: () => api.get<HappyWallet>('/api/happy/praise/wallet'),
+
+  sendKudos: (payload: HappySendKudosPayload) =>
+    api.post<HappySendKudosResponse>('/api/happy/praise/kudos', payload),
+
+  getReceived: (limit = 10, offset = 0) =>
+    api.get<HappyReceivedResponse>('/api/happy/praise/received', {
+      limit: String(limit),
+      offset: String(offset),
+    }),
+
+  getMyPraise: () => api.get<HappyMyPraise>('/api/happy/praise/me'),
+}
+
+/** Own giveable/redeemable balances + monthly expiry. */
+export function useWallet(enabled = true) {
+  return useQuery({
+    queryKey: ['happy', 'praise', 'wallet'],
+    queryFn: () => praiseApi.getWallet(),
+    enabled,
+    staleTime: 30_000,
+  })
+}
+
+/** Own recognition streak + 12-week sent/received trend. No peer comparison. */
+export function useMyPraise(enabled = true) {
+  return useQuery({
+    queryKey: ['happy', 'praise', 'me'],
+    queryFn: () => praiseApi.getMyPraise(),
+    enabled,
+    staleTime: 60_000,
   })
 }
