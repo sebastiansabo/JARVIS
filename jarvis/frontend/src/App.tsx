@@ -65,6 +65,7 @@ const InternalSessionForm = lazy(() => import('./pages/FoiParcurs/InternalSessio
 const TestDriveReturn = lazy(() => import('./pages/FoiParcurs/TestDriveReturn'))
 const ServiceCatalog = lazy(() => import('./pages/Service/Catalog'))
 const Hub = lazy(() => import('./pages/Hub'))
+const HappyBoard = lazy(() => import('./pages/HappyBoard'))
 
 function PageLoader() {
   return (
@@ -173,6 +174,9 @@ export default function App() {
         <Route path="dashboard" element={<DashboardOrRedirect />} />
         <Route path="profile" element={<SuspensePage><Profile /></SuspensePage>} />
         <Route path="hub" element={<SuspensePage><Hub /></SuspensePage>} />
+
+        {/* Happy Board — admin console, gated on settings access */}
+        <Route path="happy/board" element={<Guard flag="can_access_settings"><SuspensePage><HappyBoard /></SuspensePage></Guard>} />
 
         {/* Accounting — requires can_access_accounting */}
         <Route path="accounting" element={<Guard flag="can_access_accounting"><SuspensePage><Accounting /></SuspensePage></Guard>} />
