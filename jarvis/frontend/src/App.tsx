@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
+import { SpotlightProvider } from '@/components/happy/SpotlightProvider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/stores/authStore'
 import { useIsMobile } from '@/hooks/useMediaQuery'
@@ -167,7 +168,7 @@ export default function App() {
       {/* Public form — no auth, no layout */}
       <Route path="/f/:slug" element={<SuspensePage><PublicForm /></SuspensePage>} />
 
-      <Route path="/app" element={<Layout />}>
+      <Route path="/app" element={<><Layout /><SpotlightProvider /></>}>
         <Route index element={<DefaultRedirect />} />
         <Route path="dashboard" element={<DashboardOrRedirect />} />
         <Route path="profile" element={<SuspensePage><Profile /></SuspensePage>} />

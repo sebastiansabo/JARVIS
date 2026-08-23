@@ -1,6 +1,6 @@
 import {
   FileText, Users, ClipboardCheck, CreditCard,
-  CalendarDays, Megaphone, Bell,
+  CalendarDays, Megaphone, Bell, Sparkles,
 } from 'lucide-react'
 import type { User } from '@/types'
 
@@ -38,6 +38,14 @@ export interface DashboardPreferences {
 }
 
 export const WIDGET_CATALOG: WidgetDef[] = [
+  {
+    id: 'happy_marquee',
+    name: 'Happy',
+    icon: Sparkles,
+    defaultLayout: { w: 6, h: 3, minW: 3, minH: 2 },
+    defaultVisible: true,
+    statCards: [],
+  },
   {
     id: 'accounting_invoices',
     name: 'Recent Invoices',

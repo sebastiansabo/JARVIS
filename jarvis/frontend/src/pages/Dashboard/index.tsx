@@ -18,6 +18,7 @@ import type { WidgetLayout } from './types'
 import { useDashboardPrefs } from './useDashboardPrefs'
 import { useWidgetEmptyState } from './useWidgetEmptyState'
 import { CustomizeSheet } from './CustomizeSheet'
+import { MarqueeWidget } from '@/components/happy/MarqueeWidget'
 import {
   AccountingInvoicesWidget,
   StatementsSummaryWidget,
@@ -71,6 +72,7 @@ function repackLayouts(widgets: WidgetLayout[]): WidgetLayout[] {
 }
 
 const WIDGET_COMPONENTS: Record<string, React.ComponentType<{ enabled: boolean }>> = {
+  happy_marquee: ({ enabled }) => <MarqueeWidget enabled={enabled} placement="dash_banner" route="/app/dashboard" />,
   accounting_invoices: AccountingInvoicesWidget,
   statements_summary: StatementsSummaryWidget,
   hr_summary: HrSummaryWidget,
