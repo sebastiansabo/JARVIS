@@ -192,7 +192,7 @@ export default function ChannelView({ channel, onBack }: Props) {
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col">
+    <div className="flex h-[calc(100dvh-7rem)] flex-col sm:h-[calc(100vh-8rem)]">
       {/* Header */}
       <div className="flex items-center gap-3 border-b pb-3 mb-3">
         <Button variant="ghost" size="icon" onClick={onBack}>
@@ -294,7 +294,7 @@ export default function ChannelView({ channel, onBack }: Props) {
 
       {/* Composer */}
       {!showPollCreator && (
-        <div className="relative pt-3 border-t">
+        <div className="relative pt-3 border-t pb-[env(safe-area-inset-bottom)] sm:pb-0">
           {/* @mention suggestions */}
           {mentionState && mentionState.query.length >= 2 && (mentionResults?.data ?? []).length > 0 && (
             <div className="absolute bottom-full mb-1 left-0 right-0 z-10 rounded-lg border bg-popover p-1 shadow-md max-h-48 overflow-y-auto">
