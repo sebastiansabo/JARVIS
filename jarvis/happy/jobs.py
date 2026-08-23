@@ -111,6 +111,23 @@ def _fire_escalation_step(srepo, campaign, user_id, step):
     srepo.audit("escalation_step", campaign["id"], user_id, {"step": step})
 
 
+def grant_monthly_giveable(now=None):
+    """Grant the monthly giveable allowance to every active user and expire the
+    prior month's leftover (spec §7.4). Idempotent per month (period guard in
+    _ensure_wallet). Manager top-up is a later refinement. Returns users processed."""
+    from happy.repositories import PraiseRepository
+    now = now or datetime.now(timezone.utc)
+    repo = PraiseRepository()
+    users = repo.query_all("SELECT id FROM users WHERE is_active")
+    for u in users:
+        try:
+            repo.get_wallet(u["id"], now)   # ensures + grants/expires for this period
+        except Exception:
+            logger.exception("happy: monthly grant failed for user %s", u["id"])
+    logger.info("happy: monthly giveable granted to %s active users", len(users))
+    return len(users)
+
+
 def _direct_manager_ids(srepo, user_id):
     try:
         row = srepo.query_one(

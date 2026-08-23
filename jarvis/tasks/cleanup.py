@@ -33,7 +33,7 @@ from tasks.holidays import populate_holidays
 from tasks.telemetry import close_stale_sessions, cleanup_old_telemetry
 from tasks.foi_parcurs_sessions import run_session_lifecycle
 from tasks.hr_leave_trash import purge_old_trashed_leaves
-from happy.jobs import purge_happy_events, refresh_happy_targets, process_escalations as happy_process_escalations
+from happy.jobs import purge_happy_events, refresh_happy_targets, process_escalations as happy_process_escalations, grant_monthly_giveable as happy_grant_monthly_giveable
 
 logger = get_logger('jarvis.tasks')
 
@@ -642,6 +642,17 @@ def start_scheduler():
         id='happy_process_escalations',
         replace_existing=True,
         misfire_grace_time=600,
+        coalesce=True,
+    )
+
+    # Happy: monthly giveable grant + prior-month expiry (spec §7.4), 1st of month
+    scheduler.add_job(
+        happy_grant_monthly_giveable,
+        'cron',
+        day=1, hour=0, minute=15,
+        id='happy_grant_monthly_giveable',
+        replace_existing=True,
+        misfire_grace_time=3600,
         coalesce=True,
     )
 
