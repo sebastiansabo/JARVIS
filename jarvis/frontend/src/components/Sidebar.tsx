@@ -585,6 +585,24 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link
+                    to="/app/happy/board"
+                    className={cn(
+                      'flex items-center justify-center rounded-md p-2 transition-colors',
+                      location.pathname.startsWith('/app/happy')
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-accent',
+                    )}
+                  >
+                    <PartyPopper className="h-5 w-5 shrink-0" />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="right">Happy Board</TooltipContent>
+              </Tooltip>
+              )}
+              {user?.can_access_settings && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
                     to="/app/settings"
                     className={cn(
                       'flex items-center justify-center rounded-md p-2 transition-colors',
@@ -696,6 +714,20 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 <ClipboardCheck className="h-5 w-5 shrink-0" />
                 <span className="flex-1 text-sm font-medium">Approvals</span>
                 <ApprovalBadge />
+              </Link>
+              )}
+              {user?.can_access_settings && (
+              <Link
+                to="/app/happy/board"
+                className={cn(
+                  'flex items-center gap-3 rounded-md px-3 py-2 transition-colors',
+                  location.pathname.startsWith('/app/happy')
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-accent',
+                )}
+              >
+                <PartyPopper className="h-5 w-5 shrink-0" />
+                <span className="text-sm font-medium">Happy Board</span>
               </Link>
               )}
               {user?.can_access_settings && (

@@ -213,6 +213,53 @@ class CampaignRepository(BaseRepository):
 
     # -- compliance -----------------------------------------------------------
 
+    # -- Board analytics (§10) ------------------------------------------------
+
+    def get_stats(self, campaign_id):
+        """Rollups only — raw events are never exposed (spec §8.2). The funnel
+        sums per-day engagement (approximate uniques, since raw events purge at
+        30 days); acknowledged is exact from happy.acknowledgements."""
+        daily = self.query_all(
+            """SELECT day, cohort_key, targeted, reached, read_8s, clicked, acknowledged, dismissed
+                 FROM happy.campaign_daily_stats WHERE campaign_id = %s ORDER BY day""",
+            (campaign_id,),
+        )
+        funnel = self.query_one(
+            """SELECT COALESCE(MAX(targeted),0) targeted, COALESCE(SUM(reached),0) reached,
+                      COALESCE(SUM(read_8s),0) read_8s, COALESCE(SUM(clicked),0) clicked,
+                      COALESCE(SUM(dismissed),0) dismissed
+                 FROM happy.campaign_daily_stats WHERE campaign_id = %s""",
+            (campaign_id,),
+        ) or {}
+        ack = self.query_one("SELECT count(*) c FROM happy.acknowledgements WHERE campaign_id = %s", (campaign_id,))
+        funnel["acknowledged"] = ack["c"] if ack else 0
+        return {"daily": daily, "funnel": funnel}
+
+    def board_health(self):
+        """KPI summary for Happy Board (§2/§10). Aggregates only — no per-person data."""
+        live = self.query_one("SELECT count(*) c FROM happy.campaigns WHERE status = 'live'")
+        backlog = self.query_one(
+            """SELECT count(*) c, MIN(c.ack_deadline_at) oldest
+                 FROM happy.campaigns c
+                 JOIN happy.campaign_targets t ON t.campaign_id = c.id
+                 LEFT JOIN happy.acknowledgements a ON a.campaign_id = c.id AND a.user_id = t.user_id
+                WHERE c.status = 'live' AND c.ack_mode <> 'none' AND a.id IS NULL""")
+        kudos = self.query_one("SELECT count(*) c FROM happy.kudos WHERE created_at >= NOW() - INTERVAL '7 days'")
+        flagged = self.query_one("SELECT count(*) c FROM happy.kudos WHERE flagged")
+        pulse = self.query_one(
+            """SELECT p.id, p.title, p.status,
+                      (SELECT count(*) FROM happy.pulse_responses r WHERE r.pulse_id = p.id) responses,
+                      (SELECT count(*) FROM happy.pulse_invites i WHERE i.pulse_id = p.id) invited
+                 FROM happy.pulses p WHERE p.status IN ('live','closed')
+                ORDER BY p.created_at DESC LIMIT 1""")
+        return {
+            "live_campaigns": (live or {}).get("c", 0),
+            "open_ack_backlog": {"count": (backlog or {}).get("c", 0), "oldest_deadline": (backlog or {}).get("oldest")},
+            "kudos_last_7d": (kudos or {}).get("c", 0),
+            "flagged_kudos": (flagged or {}).get("c", 0),
+            "latest_pulse": pulse,
+        }
+
     def compliance_export(self, campaign_id):
         """The one legitimate per-person export (spec §8.2): the acknowledgement
         list for a campaign — targeted users and their ack state. Identified by

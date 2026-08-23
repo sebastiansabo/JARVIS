@@ -111,6 +111,34 @@ def _fire_escalation_step(srepo, campaign, user_id, step):
     srepo.audit("escalation_step", campaign["id"], user_id, {"step": step})
 
 
+def rollup_campaign_stats(now=None):
+    """Aggregate raw campaign_events into campaign_daily_stats (spec §10) so the
+    Board reads rollups, never raw events — and the funnel survives the 30-day
+    purge. Runs nightly BEFORE purge_happy_events. Returns rows written."""
+    now = now or datetime.now(timezone.utc)
+    repo = SurfaceRepository()
+    n = repo.execute(
+        """INSERT INTO happy.campaign_daily_stats
+               (campaign_id, day, cohort_key, targeted, reached, read_8s, clicked, acknowledged, dismissed)
+           SELECT e.campaign_id, e.created_at::date AS day, 'all',
+                  (SELECT count(*) FROM happy.campaign_targets t WHERE t.campaign_id = e.campaign_id),
+                  count(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'impression'),
+                  count(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'read'),
+                  count(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'click'),
+                  count(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'ack'),
+                  count(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'dismiss')
+             FROM happy.campaign_events e
+            WHERE e.created_at >= (%s::date - INTERVAL '1 day')
+            GROUP BY e.campaign_id, e.created_at::date
+           ON CONFLICT (campaign_id, day, cohort_key) DO UPDATE
+             SET targeted = EXCLUDED.targeted, reached = EXCLUDED.reached, read_8s = EXCLUDED.read_8s,
+                 clicked = EXCLUDED.clicked, acknowledged = EXCLUDED.acknowledged, dismissed = EXCLUDED.dismissed""",
+        (now,),
+    )
+    logger.info("happy: rolled up campaign stats (%s rows)", n)
+    return n
+
+
 def grant_monthly_giveable(now=None):
     """Grant the monthly giveable allowance to every active user and expire the
     prior month's leftover (spec §7.4). Idempotent per month (period guard in

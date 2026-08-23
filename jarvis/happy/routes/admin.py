@@ -121,6 +121,21 @@ def admin_publish_campaign(campaign_id):
     return jsonify({"campaign": jsonable(updated), "targeted": targeted})
 
 
+@happy_bp.route("/admin/campaigns/<int:campaign_id>/stats", methods=["GET"])
+@v2_permission_required("happy", "campaigns", "view")
+def admin_campaign_stats(campaign_id):
+    repo = CampaignRepository()
+    if not repo.get(campaign_id):
+        return jsonify({"error": "not found"}), 404
+    return jsonify(jsonable(repo.get_stats(campaign_id)))   # rollups only, never raw events
+
+
+@happy_bp.route("/admin/health", methods=["GET"])
+@v2_permission_required("happy", "admin", "manage")
+def admin_health():
+    return jsonify(jsonable(CampaignRepository().board_health()))
+
+
 @happy_bp.route("/admin/campaigns/<int:campaign_id>/compliance-export", methods=["GET"])
 @v2_permission_required("happy", "compliance", "export")
 def admin_compliance_export(campaign_id):
