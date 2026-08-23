@@ -192,8 +192,9 @@ def test_company_contact_mismatched_client_is_rejected(monkeypatch):
 
 
 def test_company_contact_missing_gate_field_is_rejected(monkeypatch):
-    """A contact missing one of the six gate-required fields must be rejected."""
-    incomplete_contact = {**VALID_CONTACT, 'driver_license_serie': None}
+    """A contact missing one of the gate-required fields must be rejected.
+    (The driving-license serie+number is one field now — driver_license_number.)"""
+    incomplete_contact = {**VALID_CONTACT, 'driver_license_number': None}
     c = make_app(monkeypatch, 'company', incomplete_contact)
     r = c.post('/api/foi-parcurs/test-drive',
                json={**BASE_PAYLOAD, 'driver_contact_id': 7})

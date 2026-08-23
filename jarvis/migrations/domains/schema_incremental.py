@@ -2645,4 +2645,27 @@ def _create_schema_incremental_continued(conn, cursor):
         END $$;
     ''')
 
+    # ── Driver license → single "Serie/Nr." field ──
+    # The Romanian driving-license serie+number is one continuous code, so the
+    # split driver_license_serie / driver_license_number is merged into
+    # driver_license_number ("serie number") and serie is cleared. The WHERE
+    # guard (serie non-empty) makes it re-run-safe: once merged serie is NULL so
+    # a later deploy no-ops instead of double-merging.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF to_regclass('public.crm_client_contacts') IS NOT NULL THEN
+                UPDATE crm_client_contacts
+                   SET driver_license_number = NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(driver_license_serie), ''), NULLIF(TRIM(driver_license_number), ''))), ''),
+                       driver_license_serie = NULL
+                 WHERE driver_license_serie IS NOT NULL AND TRIM(driver_license_serie) <> '';
+            END IF;
+            IF to_regclass('public.foi_de_parcurs') IS NOT NULL THEN
+                UPDATE foi_de_parcurs
+                   SET driver_license_number = NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(driver_license_serie), ''), NULLIF(TRIM(driver_license_number), ''))), ''),
+                       driver_license_serie = NULL
+                 WHERE driver_license_serie IS NOT NULL AND TRIM(driver_license_serie) <> '';
+            END IF;
+        END $$;
+    ''')
+
     conn.commit()

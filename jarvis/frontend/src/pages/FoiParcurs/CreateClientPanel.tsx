@@ -175,7 +175,6 @@ export function CreateClientPanel({
   const [isCompany, setIsCompany] = useState(false)
   const [companyName, setCompanyName] = useState('')
   const [cui, setCui] = useState('')
-  const [licenseSerie, setLicenseSerie] = useState('')
   const [licenseNumber, setLicenseNumber] = useState(prefill?.license_number ?? '')
   const [licenseExpiry, setLicenseExpiry] = useState(prefill?.expiry_date ?? '')
   const [address, setAddress] = useState(prefill?.address ?? '')
@@ -248,7 +247,6 @@ export function CreateClientPanel({
                 full_name: name.trim(),
                 email: email.trim() || null,
                 phone: phoneFull || null,
-                driver_license_serie: licenseSerie.trim() || null,
                 driver_license_number: licenseNumber.trim() || null,
                 driver_license_expiry: licenseExpiry.trim() || null,
                 is_primary: true,
@@ -327,15 +325,9 @@ export function CreateClientPanel({
           className={cn(email.trim() !== '' && !emailValid && 'ring-2 ring-destructive')}
         />
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <Label className="text-xs">Serie permis</Label>
-          <Input value={licenseSerie} onChange={(e) => setLicenseSerie(e.target.value.toUpperCase())} placeholder="ex. CJ" />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Număr permis</Label>
-          <Input value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} placeholder="ex. 123456" />
-        </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Serie/nr permis</Label>
+        <Input value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} placeholder="Serie/număr" />
       </div>
       <div className="space-y-1">
         <Label className="text-xs">Valabilitate permis (4b)</Label>
