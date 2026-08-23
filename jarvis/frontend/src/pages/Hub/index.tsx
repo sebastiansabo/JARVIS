@@ -330,7 +330,7 @@ export default function Hub() {
       {/* ── Active Module (inline content) ── */}
       {activeModule !== null ? (
         <HubHeaderSlotContext.Provider value={headerSlot}>
-        <div className="space-y-4 pb-20">
+        <div className={cn('space-y-4', activeModule === 'chat' ? 'pb-0' : 'pb-20')}>
           {/* Breadcrumb nav — shown for every module (Digest/Connecteams runs
               readOnly here, so it has no header of its own). For HR we append the
               open sub-section (read from `hrtab`) so it reads Hub › HR › Pontaje. */}
@@ -474,7 +474,7 @@ export default function Hub() {
       {/* ── Bottom Tab Bar (mobile only, Instagram floating pill) ──
           Suppressed while the Driving module is open: that panel renders its own
           bottom pill, and its Back returns to the Hub grid (restoring this bar). */}
-      {activeModule !== 'driving' && (
+      {activeModule !== 'driving' && activeModule !== 'chat' && (
       <div className="fixed bottom-0 inset-x-0 z-40 sm:hidden pb-[env(safe-area-inset-bottom)]">
         <div className="mx-4 mb-2 bg-zinc-900 dark:bg-zinc-800 rounded-[22px] shadow-lg">
           <div className="flex items-center justify-around h-[52px] px-1">
