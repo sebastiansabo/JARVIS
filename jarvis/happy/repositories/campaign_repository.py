@@ -180,3 +180,51 @@ class CampaignRepository(BaseRepository):
         n = self.execute_many(_work)
         logger.info("happy: refreshed targets campaign=%s prune=%s -> %s users", campaign_id, prune, n)
         return n
+
+    # -- quiz (admin) ---------------------------------------------------------
+
+    def get_quiz(self, campaign_id):
+        """Admin view — includes correct_index for editing."""
+        return self.query_all(
+            "SELECT id, position, prompt, options, correct_index "
+            "FROM happy.quiz_questions WHERE campaign_id = %s ORDER BY position",
+            (campaign_id,),
+        )
+
+    def replace_quiz(self, campaign_id, questions):
+        """Replace a campaign's quiz questions atomically. Validates shape."""
+        def _work(cursor):
+            cursor.execute("DELETE FROM happy.quiz_questions WHERE campaign_id = %s", (campaign_id,))
+            for i, q in enumerate(questions, start=1):
+                options = q.get("options")
+                if not q.get("prompt") or not isinstance(options, list) or len(options) < 2:
+                    raise ValueError(f"quiz question {i}: prompt + >=2 options required")
+                ci = q.get("correct_index")
+                if not isinstance(ci, int) or ci < 0 or ci >= len(options):
+                    raise ValueError(f"quiz question {i}: correct_index out of range")
+                position = q.get("position", i)
+                cursor.execute(
+                    """INSERT INTO happy.quiz_questions (campaign_id, position, prompt, options, correct_index)
+                       VALUES (%s, %s, %s, %s::jsonb, %s)""",
+                    (campaign_id, position, q["prompt"], json.dumps(options), ci),
+                )
+            return len(questions)
+        return self.execute_many(_work)
+
+    # -- compliance -----------------------------------------------------------
+
+    def compliance_export(self, campaign_id):
+        """The one legitimate per-person export (spec §8.2): the acknowledgement
+        list for a campaign — targeted users and their ack state. Identified by
+        user_id only; no engagement history."""
+        return self.query_all(
+            """SELECT t.user_id,
+                      (a.id IS NOT NULL) AS acknowledged,
+                      a.acknowledged_at, a.method
+                 FROM happy.campaign_targets t
+                 LEFT JOIN happy.acknowledgements a
+                        ON a.campaign_id = t.campaign_id AND a.user_id = t.user_id
+                WHERE t.campaign_id = %s
+                ORDER BY acknowledged, t.user_id""",
+            (campaign_id,),
+        )

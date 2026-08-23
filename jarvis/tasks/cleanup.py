@@ -33,7 +33,7 @@ from tasks.holidays import populate_holidays
 from tasks.telemetry import close_stale_sessions, cleanup_old_telemetry
 from tasks.foi_parcurs_sessions import run_session_lifecycle
 from tasks.hr_leave_trash import purge_old_trashed_leaves
-from happy.jobs import purge_happy_events, refresh_happy_targets
+from happy.jobs import purge_happy_events, refresh_happy_targets, process_escalations as happy_process_escalations
 
 logger = get_logger('jarvis.tasks')
 
@@ -631,6 +631,17 @@ def start_scheduler():
         id='happy_refresh_targets',
         replace_existing=True,
         misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    # Happy: escalation ladder for unacknowledged mandatory campaigns (spec §5.4)
+    scheduler.add_job(
+        happy_process_escalations,
+        'cron',
+        hour=8, minute=30,
+        id='happy_process_escalations',
+        replace_existing=True,
+        misfire_grace_time=600,
         coalesce=True,
     )
 

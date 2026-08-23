@@ -35,7 +35,7 @@ def _require_shown_item(body, campaign_id):
     return data
 
 
-def _serialize_item(c, user_id, placement, snooze_count):
+def _serialize_item(c, user_id, placement, snooze_count, route, now):
     media = None
     if c.get("media_key"):
         media = {"key": c["media_key"], "url": f"/api/media/{c['media_key']}", "alt": c.get("media_alt")}
@@ -43,14 +43,23 @@ def _serialize_item(c, user_id, placement, snooze_count):
     if c.get("cta_label"):
         cta = {"label": c["cta_label"], "href": c.get("cta_href"), "deeplink": c.get("cta_deeplink")}
     ack = None
-    if c.get("ack_mode") and c["ack_mode"] != "none":
+    has_ack = c.get("ack_mode") and c["ack_mode"] != "none"
+    if has_ack:
         ack = {"mode": c["ack_mode"], "deadline_at": iso(c.get("ack_deadline_at")), "state": "pending"}
+
+    # Past the ack deadline and still unacknowledged, a mandatory campaign becomes
+    # non-dismissible on /app/hub only (spec §5.2) — never on Dashboard/mobile.
+    dismissible = c.get("dismissible", True)
+    deadline = c.get("ack_deadline_at")
+    if has_ack and route == "/app/hub" and deadline and now > deadline:
+        dismissible = False
+
     return {
         "id": c["id"], "kind": c["kind"], "tier": c["tier"], "kicker": c.get("kicker"),
         "title": c["title"], "summary": c.get("summary"), "body_md": c.get("body_md"),
         "event_at": iso(c.get("event_at")),
         "media": media, "cta": cta, "ack": ack,
-        "dismissible": c.get("dismissible", True),
+        "dismissible": dismissible,
         "snooze_remaining": max(0, 3 - (snooze_count or 0)),
         "impression_token": mint_impression_token(c["id"], user_id, placement),
     }
@@ -65,12 +74,13 @@ def surface():
         return jsonify({"error": "invalid placement"}), 400
 
     user_id = current_user.id
+    now = datetime.now(timezone.utc)
     repo = SurfaceRepository()
-    result = SurfaceResolver(repo).resolve({"id": user_id}, placement, route, datetime.now(timezone.utc))
+    result = SurfaceResolver(repo).resolve({"id": user_id}, placement, route, now)
 
     states = repo.get_user_states(user_id)
     items = [
-        _serialize_item(c, user_id, placement, (states.get(c["id"]) or {}).get("snooze_count", 0))
+        _serialize_item(c, user_id, placement, (states.get(c["id"]) or {}).get("snooze_count", 0), route, now)
         for c in result["items"]
     ]
     meta = result["meta"]
@@ -104,7 +114,8 @@ def events():
 @login_required
 def acknowledge(campaign_id):
     body = request.get_json(silent=True) or {}
-    if body.get("method", "click") != "click":     # quiz mode is Phase 2
+    method = body.get("method", "click")
+    if method not in ("click", "quiz"):
         return jsonify({"error": "unsupported ack method"}), 400
     data = _require_shown_item(body, campaign_id)
     if not data:
@@ -114,8 +125,27 @@ def acknowledge(campaign_id):
     # materialized audience for this campaign, not merely holding a token.
     if not repo.is_targeted(campaign_id, current_user.id):
         return jsonify({"error": "not in campaign audience"}), 403
+
+    if method == "quiz":
+        result = repo.record_quiz_attempt(campaign_id, body.get("answers") or {})
+        if not result["all_correct"]:
+            # Not acknowledged: reveal only wrong answers for re-selection. No score.
+            return jsonify({"acknowledged": False, "quiz": result})
+        first = repo.record_ack(campaign_id, current_user.id, "quiz", data["surface"])
+        return jsonify({"acknowledged": True, "first_time": first, "quiz": {"all_correct": True}})
+
     first = repo.record_ack(campaign_id, current_user.id, "click", data["surface"])
     return jsonify({"acknowledged": True, "first_time": first})
+
+
+@happy_bp.route("/campaigns/<int:campaign_id>/quiz", methods=["GET"])
+@login_required
+def quiz(campaign_id):
+    repo = SurfaceRepository()
+    if not repo.is_targeted(campaign_id, current_user.id):
+        return jsonify({"error": "not in campaign audience"}), 403
+    # Employee view — never includes correct_index.
+    return jsonify({"questions": jsonable(repo.get_quiz(campaign_id, include_answers=False))})
 
 
 @happy_bp.route("/campaigns/<int:campaign_id>/snooze", methods=["POST"])

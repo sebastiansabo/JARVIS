@@ -10,7 +10,7 @@ from flask_login import current_user
 
 from core.roles.decorators import v2_permission_required
 from happy.routes import happy_bp, jsonable
-from happy.repositories import CampaignRepository
+from happy.repositories import CampaignRepository, SurfaceRepository
 
 
 def _validate_for_publish(c):
@@ -64,7 +64,11 @@ def admin_get_campaign(campaign_id):
     campaign = repo.get(campaign_id)
     if not campaign:
         return jsonify({"error": "not found"}), 404
-    return jsonify({"campaign": jsonable(campaign), "audience": jsonable(repo.get_audience(campaign_id))})
+    return jsonify({
+        "campaign": jsonable(campaign),
+        "audience": jsonable(repo.get_audience(campaign_id)),
+        "quiz": jsonable(repo.get_quiz(campaign_id)),
+    })
 
 
 @happy_bp.route("/admin/campaigns/<int:campaign_id>", methods=["PUT"])
@@ -75,11 +79,13 @@ def admin_update_campaign(campaign_id):
     if not repo.get(campaign_id):
         return jsonify({"error": "not found"}), 404
     campaign = repo.update(campaign_id, body)
-    if "audience" in body:
-        try:
+    try:
+        if "audience" in body:
             repo.replace_audience(campaign_id, body["audience"])
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+        if "quiz" in body:
+            repo.replace_quiz(campaign_id, body["quiz"])
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     return jsonify({"campaign": jsonable(campaign)})
 
 
@@ -105,11 +111,26 @@ def admin_publish_campaign(campaign_id):
     if not campaign:
         return jsonify({"error": "not found"}), 404
     errors = _validate_for_publish(campaign)
+    if campaign.get("ack_mode") == "quiz" and not repo.get_quiz(campaign_id):
+        errors.append("quiz ack_mode requires at least one quiz question")
     if errors:
         return jsonify({"error": "validation failed", "details": errors}), 400
     updated = repo.set_status(campaign_id, "live", current_user.id)
     targeted = repo.refresh_targets(campaign_id, prune=True)
+    SurfaceRepository().audit("publish", campaign_id, current_user.id, {"targeted": targeted})
     return jsonify({"campaign": jsonable(updated), "targeted": targeted})
+
+
+@happy_bp.route("/admin/campaigns/<int:campaign_id>/compliance-export", methods=["GET"])
+@v2_permission_required("happy", "compliance", "export")
+def admin_compliance_export(campaign_id):
+    repo = CampaignRepository()
+    if not repo.get(campaign_id):
+        return jsonify({"error": "not found"}), 404
+    rows = repo.compliance_export(campaign_id)
+    # The one legitimate per-person export — every call is audited (spec §9.4).
+    SurfaceRepository().audit("compliance_export", campaign_id, current_user.id, {"rows": len(rows)})
+    return jsonify({"campaign_id": campaign_id, "acknowledgements": jsonable(rows)})
 
 
 @happy_bp.route("/admin/campaigns/<int:campaign_id>/pause", methods=["POST"])

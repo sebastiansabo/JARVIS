@@ -6,6 +6,8 @@ import type {
   HappyEventPayload,
   HappyEventResponse,
   HappyAckResponse,
+  HappyQuizResponse,
+  HappyAckQuizResponse,
   HappySnoozeResponse,
   HappyDismissResponse,
   HappyInboxResponse,
@@ -27,6 +29,17 @@ export const happyApi = {
       impression_token: impressionToken,
       method: 'click',
       surface,
+    }),
+
+  getQuiz: (campaignId: number) =>
+    api.get<HappyQuizResponse>(`/api/happy/campaigns/${campaignId}/quiz`),
+
+  // Comprehension-check ack. `answers` maps question position → chosen option index.
+  ackQuiz: (campaignId: number, impressionToken: string, answers: Record<number, number>) =>
+    api.post<HappyAckQuizResponse>(`/api/happy/campaigns/${campaignId}/ack`, {
+      impression_token: impressionToken,
+      method: 'quiz',
+      answers,
     }),
 
   snooze: (campaignId: number, impressionToken: string) =>
