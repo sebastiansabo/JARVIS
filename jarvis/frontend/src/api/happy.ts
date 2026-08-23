@@ -17,6 +17,8 @@ import type {
   HappySendKudosResponse,
   HappyReceivedResponse,
   HappyMyPraise,
+  HappyPulseCurrent,
+  HappyPulseAnswers,
 } from '@/types/happy'
 
 /**
@@ -107,6 +109,24 @@ export function useMyPraise(enabled = true) {
   return useQuery({
     queryKey: ['happy', 'praise', 'me'],
     queryFn: () => praiseApi.getMyPraise(),
+    enabled,
+    staleTime: 60_000,
+  })
+}
+
+/** Anonymous Pulse (surveys / eNPS) client. No identity is ever sent or returned. */
+export const pulseApi = {
+  getCurrent: () => api.get<HappyPulseCurrent>('/api/happy/pulse/current'),
+
+  respond: (pulseId: number, answers: HappyPulseAnswers) =>
+    api.post<{ ok: true }>(`/api/happy/pulse/${pulseId}/respond`, { answers }),
+}
+
+/** The currently live pulse for this user (or `pulse: null` when none is open). */
+export function useCurrentPulse(enabled = true) {
+  return useQuery({
+    queryKey: ['happy', 'pulse', 'current'],
+    queryFn: () => pulseApi.getCurrent(),
     enabled,
     staleTime: 60_000,
   })
