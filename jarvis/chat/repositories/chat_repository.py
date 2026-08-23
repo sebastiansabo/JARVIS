@@ -341,13 +341,20 @@ class ChatRepository(BaseRepository):
         ''', (post_id,))
 
     def toggle_reaction(self, post_id, user_id, emoji):
-        """Toggle a reaction. Returns 'added' or 'removed'."""
-        existing = self.query_one('''
-            SELECT id FROM digest_reactions WHERE post_id = %s AND user_id = %s AND emoji = %s
-        ''', (post_id, user_id, emoji))
-        if existing:
-            self.execute('DELETE FROM digest_reactions WHERE id = %s', (existing['id'],))
-            return 'removed'
+        """Set the caller's single reaction on a post. A user may hold only ONE
+        reaction per post: tapping a new emoji replaces any previous one
+        (interchange), and tapping their current emoji clears it (toggle off).
+        Returns 'added' or 'removed'."""
+        current = self.query_one('''
+            SELECT emoji FROM digest_reactions WHERE post_id = %s AND user_id = %s LIMIT 1
+        ''', (post_id, user_id))
+        # Clear any existing reaction(s) by this user on this post (also normalises
+        # legacy rows from when multiple reactions per user were allowed).
+        self.execute(
+            'DELETE FROM digest_reactions WHERE post_id = %s AND user_id = %s',
+            (post_id, user_id))
+        if current and current['emoji'] == emoji:
+            return 'removed'  # tapped their current reaction → toggle off
         self.execute('''
             INSERT INTO digest_reactions (post_id, user_id, emoji) VALUES (%s, %s, %s)
         ''', (post_id, user_id, emoji))

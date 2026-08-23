@@ -80,6 +80,18 @@ class ChatService:
                 return True
         return False
 
+    def can_post(self, channel_id, user_id):
+        """Whether the user may create posts in a channel. Announcement channels
+        and channels with member posting disabled are admin/moderator-only;
+        every other channel is open to any member who can access it."""
+        channel = _repo.get_channel(channel_id)
+        if not channel:
+            return False
+        locked = channel.get('type') == 'announcement' or channel.get('allow_member_posts') is False
+        if not locked:
+            return True
+        return self.is_admin_or_moderator(channel_id, user_id)
+
     # ── Channel Targets ──────────────────────────────────────
 
     def get_channel_targets(self, channel_id):

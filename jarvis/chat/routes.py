@@ -223,6 +223,8 @@ def get_post(post_id):
 def create_post(channel_id):
     if not _svc.can_access_channel(channel_id, current_user.id):
         return jsonify({'success': False, 'error': 'Access denied'}), 403
+    if not _svc.can_post(channel_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Doar administratorii pot posta în acest canal'}), 403
     data = request.get_json()
     if not data or not data.get('content'):
         return jsonify({'success': False, 'error': 'Content is required'}), 400
