@@ -254,6 +254,8 @@ def _register_blueprints(flask_app: Flask):
 
     from happy.routes import happy_bp
     flask_app.register_blueprint(happy_bp, url_prefix='/api/happy')
+    from happy.routes.mobile import happy_mobile_bp
+    flask_app.register_blueprint(happy_mobile_bp, url_prefix='/api/mobile/happy')
 
     from carpark import carpark_bp
     flask_app.register_blueprint(carpark_bp)
