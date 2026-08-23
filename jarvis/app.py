@@ -252,6 +252,9 @@ def _register_blueprints(flask_app: Flask):
     # app is updated to /api/chat/*, then this can be retired.
     flask_app.register_blueprint(chat_bp, url_prefix='/api/digest', name='chat_digest_compat')
 
+    from happy.routes import happy_bp
+    flask_app.register_blueprint(happy_bp, url_prefix='/api/happy')
+
     from carpark import carpark_bp
     flask_app.register_blueprint(carpark_bp)
 

@@ -35,6 +35,8 @@ import {
   Loader2,
 } from 'lucide-react'
 import { SincronTimesheetView } from '@/components/shared/SincronTimesheetView'
+import { MarqueeWidget } from '@/components/happy/MarqueeWidget'
+import { OpenAcksCard } from '@/components/happy/OpenAcksCard'
 import { PunchCard } from '@/components/shared/PunchCard'
 import { InvoireForm } from '@/components/forms/InvoireForm'
 import { CancelLeaveDialog } from '@/pages/Hub/CancelLeaveDialog'
@@ -406,6 +408,8 @@ export default function Hub() {
 
           {/* Right 1/3 — Notifications + Punch Card */}
           <div className="space-y-6">
+            <MarqueeWidget enabled placement="hub_card" route="/app/hub" />
+            <OpenAcksCard />
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
