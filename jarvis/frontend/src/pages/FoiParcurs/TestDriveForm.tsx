@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { foiParcursApi } from '@/api/foiParcurs'
@@ -212,6 +212,14 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const [svcExtraKmEur, setSvcExtraKmEur] = useState('')
   const [svcGarantieEur, setSvcGarantieEur] = useState('')
   const [svcFransizaEur, setSvcFransizaEur] = useState('')
+  // Latches true once the draft-prefill effect below restores a saved pricing
+  // snapshot from an activated draft's contract (draftData.contract) — the
+  // advisor's quoted/frozen price at planning time. Prevents the auto-preview
+  // effect further down from silently clobbering that snapshot with a fresh
+  // recompute (see C1: activation must not overwrite a frozen/overridden
+  // rental price). Stays false — so the preview auto-applies as before — for
+  // a fresh (non-activation) create, or when the draft never had a snapshot.
+  const svcPrefilledFromDraftRef = useRef(false)
 
   // Advisor & signatures
   const [advisorName, setAdvisorName] = useState(user?.name ?? '')
@@ -348,6 +356,25 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     } else if (c.mkt_project_id) {
       setMktProject({ id: c.mkt_project_id, name: c.mkt_project_name ?? null })
     }
+    // C1 fix: restore the frozen/overridden Service rental-pricing snapshot
+    // from the draft itself. Without this, svc_* state starts blank and the
+    // auto-preview effect (below) fills it with a FRESH recompute, silently
+    // discarding whatever price the advisor quoted/overrode at planning time
+    // once activation persists it. Only restore when the draft actually
+    // carries a snapshot (older/blank drafts leave the fields blank, so the
+    // preview still auto-fills them as before).
+    const hasSvcSnapshot = c.svc_total_eur != null || c.svc_tariff_eur != null || c.svc_rate_basis != null
+    if (hasSvcSnapshot) {
+      setSvcRateBasis((c.svc_rate_basis as 'day' | 'month' | null) || '')
+      setSvcTariffEur(c.svc_tariff_eur != null ? String(c.svc_tariff_eur) : '')
+      setSvcUnits(c.svc_units != null ? String(c.svc_units) : '')
+      setSvcTotalEur(c.svc_total_eur != null ? String(c.svc_total_eur) : '')
+      setSvcKmIncludedDay(c.svc_km_included_day != null ? String(c.svc_km_included_day) : '')
+      setSvcExtraKmEur(c.svc_extra_km_eur != null ? String(c.svc_extra_km_eur) : '')
+      setSvcGarantieEur(c.svc_garantie_eur != null ? String(c.svc_garantie_eur) : '')
+      setSvcFransizaEur(c.svc_fransiza_eur != null ? String(c.svc_fransiza_eur) : '')
+      svcPrefilledFromDraftRef.current = true
+    }
   }, [draftData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -414,9 +441,17 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // arrives — i.e. whenever the vehicle or either date changes. The advisor's
   // edits stick until then, matching how the draft-prefill effect above
   // behaves on reload.
+  //
+  // C1 fix: when activating a PLANNED draft that already restored a frozen/
+  // overridden pricing snapshot (svcPrefilledFromDraftRef, set by the effect
+  // above), this auto-apply must NOT run — a fresh recompute here would
+  // silently discard the advisor's planning-time price. It only auto-applies
+  // on a genuinely fresh create, or when the draft never had a snapshot to
+  // restore in the first place.
   useEffect(() => {
     const p = svcPricingData?.pricing
     if (!p) return
+    if (svcPrefilledFromDraftRef.current) return
     setSvcRateBasis(p.svc_rate_basis)
     setSvcTariffEur(String(p.svc_tariff_eur))
     setSvcUnits(String(p.svc_units))

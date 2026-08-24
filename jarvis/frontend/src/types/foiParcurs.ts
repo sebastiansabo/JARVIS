@@ -288,6 +288,19 @@ export interface FoiContract {
   // Joined HR event name (Task 15) — LEFT JOIN hr.events he ON he.id =
   // fp.event_id in get_contracts; populates the "Eveniment" list/detail badge.
   event_name?: string | null
+  // Service (Mașini de curtoazie) rental-pricing snapshot columns (S6b) —
+  // present on `fp.*` for a Service-context contract; used to restore the
+  // frozen/overridden price when activating a PLANNED draft (see
+  // TestDriveForm's draft-prefill effect) instead of silently recomputing it.
+  document_type?: string | null
+  svc_rate_basis?: 'day' | 'month' | null
+  svc_tariff_eur?: number | null
+  svc_units?: number | null
+  svc_total_eur?: number | null
+  svc_km_included_day?: number | null
+  svc_extra_km_eur?: number | null
+  svc_garantie_eur?: number | null
+  svc_fransiza_eur?: number | null
 }
 
 // ── Marketing project (campaign/event) a Test Drive can optionally be tied to.
