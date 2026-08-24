@@ -49,6 +49,11 @@ class TestRentalDays:
         assert rental_days(departure, departure) == 1
         assert rental_days(departure, departure - timedelta(hours=2)) == 1
 
+    def test_mixed_aware_string_and_naive_datetime_does_not_crash(self):
+        # tz-aware ISO string departure + naive datetime return: normalized to
+        # naive wall-clock so the subtraction never raises. 2 days apart -> 2.
+        assert rental_days('2026-01-01T10:00:00Z', datetime(2026, 1, 3, 10, 0, 0)) == 2
+
 
 class TestResolvePolicy:
     def test_vehicle_value_wins(self):
@@ -124,6 +129,27 @@ class TestComputeServicePricing:
         assert result['svc_tariff_eur'] == 40
         assert result['svc_total_eur'] == 200
 
+    def test_29_days_stays_day_basis(self):
+        vehicle = self._policy_free_vehicle()
+        company_policy = {}
+        departure = datetime(2026, 1, 1, 8, 0)
+        return_dt = departure + timedelta(days=29)
+        result = compute_service_pricing(vehicle, company_policy, departure, return_dt)
+        assert result['svc_rate_basis'] == 'day'
+        assert result['svc_units'] == 29
+        assert result['svc_total_eur'] == 40 * 29
+
+    def test_reversed_span_bills_one_day_non_negative_total(self):
+        vehicle = self._policy_free_vehicle()
+        company_policy = {}
+        departure = datetime(2026, 1, 5, 8, 0)
+        return_dt = datetime(2026, 1, 1, 8, 0)  # return before departure
+        result = compute_service_pricing(vehicle, company_policy, departure, return_dt)
+        assert result['svc_rate_basis'] == 'day'
+        assert result['svc_units'] == 1
+        assert result['svc_total_eur'] == 40
+        assert result['svc_total_eur'] >= 0
+
     def test_month_basis_exactly_30_days(self):
         vehicle = self._policy_free_vehicle()
         company_policy = {}
@@ -168,7 +194,7 @@ class TestComputeServicePricing:
         return_dt = departure + timedelta(days=5)
         result = compute_service_pricing(vehicle, company_policy, departure, return_dt)
         assert result['svc_rate_basis'] == 'day'
-        assert result['svc_tariff_eur'] is None or result['svc_tariff_eur'] == 0
+        assert result['svc_tariff_eur'] == 0
         assert result['svc_total_eur'] == 0
 
     def test_none_monthly_rate_gives_total_zero_no_crash(self):

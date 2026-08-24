@@ -20,13 +20,20 @@ _POLICY_FIELDS = (
 
 def _as_datetime(value):
     """Accept a datetime as-is, or parse an ISO string (tolerating a
-    trailing 'Z', which datetime.fromisoformat rejects on its own)."""
+    trailing 'Z', which datetime.fromisoformat rejects on its own).
+    Normalize to naive wall-clock (drop tzinfo) so a tz-aware parsed string
+    and a naive datetime remain comparable — JARVIS TD datetimes are naive
+    wall-clock by convention."""
     if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
+        dt = value
+    elif isinstance(value, str):
         text = value[:-1] + '+00:00' if value.endswith('Z') else value
-        return datetime.fromisoformat(text)
-    raise TypeError(f'Expected datetime or ISO string, got {type(value)!r}')
+        dt = datetime.fromisoformat(text)
+    else:
+        raise TypeError(f'Expected datetime or ISO string, got {type(value)!r}')
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    return dt
 
 
 def rental_days(departure, return_dt) -> int:
@@ -62,8 +69,8 @@ def compute_service_pricing(vehicle: dict, company_policy: dict, departure, retu
     basis = 'month' if is_month else 'day'
     units = ceil(days / 30) if is_month else days
 
-    rate = vehicle.get('svc_tariff_eur_month') if is_month else vehicle.get('svc_tariff_eur_day')
-    total = round((rate or 0) * units, 2)
+    rate = (vehicle.get('svc_tariff_eur_month') if is_month else vehicle.get('svc_tariff_eur_day')) or 0
+    total = round(rate * units, 2)
 
     policy = resolve_policy(vehicle, company_policy)
 
