@@ -332,8 +332,10 @@ def api_submit_test_drive():
         # signature/GDPR/contract captured for those)
         if not is_draft and not is_internal:
             try:
-                from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
-                legal_path = generate_legal_pdf(contract)
+                from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf, generate_service_contract_pdf
+                legal_path = (generate_service_contract_pdf(contract)
+                              if contract.get('document_type') == 'service'
+                              else generate_legal_pdf(contract))
                 custom_path = generate_custom_pdf(contract)
                 _fp_repo.execute(
                     'UPDATE foi_de_parcurs SET pdf_legal_path = %s, pdf_custom_path = %s WHERE id = %s',
@@ -519,8 +521,10 @@ def api_activate_test_drive(id):
         log_status_change(id, contract.get('status'), 'FILLED')
 
         try:
-            from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
-            legal_path = generate_legal_pdf(updated)
+            from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf, generate_service_contract_pdf
+            legal_path = (generate_service_contract_pdf(updated)
+                          if updated.get('document_type') == 'service'
+                          else generate_legal_pdf(updated))
             custom_path = generate_custom_pdf(updated)
             _fp_repo.execute(
                 'UPDATE foi_de_parcurs SET pdf_legal_path = %s, pdf_custom_path = %s WHERE id = %s',
