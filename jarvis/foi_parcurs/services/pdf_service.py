@@ -162,9 +162,15 @@ def _parse_conditions(text: str) -> list:
     return blocks
 
 
-def _general_conditions_flowables(text: str, accepted_at) -> list:
+def _general_conditions_flowables(text: str, accepted_at, title: str = 'Condiții generale',
+                                   note: bool = True) -> list:
     """Reportlab flowables for the accepted general-conditions section. Empty
-    list when there is no text (old/unconfigured contracts)."""
+    list when there is no text (old/unconfigured contracts). `title` lets a
+    second call for a distinct tail block (e.g. the Service contract's
+    GDPR/consent text, rendered separately from its numbered T&C sections)
+    use its own heading instead of repeating 'Condiții generale'; `note=False`
+    skips the trailing 'client accepted' line for that same case, when it's
+    already been shown once for the block that precedes it."""
     if not (text or '').strip():
         return []
     styles = getSampleStyleSheet()
@@ -175,10 +181,10 @@ def _general_conditions_flowables(text: str, accepted_at) -> list:
     body = ParagraphStyle('GCBody', parent=styles['Normal'], fontSize=8.5,
                           leading=12, alignment=TA_JUSTIFY, spaceAfter=4)
     bullet = ParagraphStyle('GCBullet', parent=body, leftIndent=10, bulletIndent=2, spaceAfter=2)
-    note = ParagraphStyle('GCNote', parent=styles['Normal'], fontSize=8.5,
-                          leading=12, spaceBefore=6, fontName='Helvetica-Oblique')
+    gc_note_style = ParagraphStyle('GCNote', parent=styles['Normal'], fontSize=8.5,
+                                   leading=12, spaceBefore=6, fontName='Helvetica-Oblique')
 
-    fl = [Paragraph('Condiții generale', sec)]
+    fl = [Paragraph(title, sec)]
     for kind, payload in _parse_conditions(text):
         if kind == 'heading':
             fl.append(Paragraph(payload, head))
@@ -188,14 +194,120 @@ def _general_conditions_flowables(text: str, accepted_at) -> list:
         else:
             fl.append(Paragraph(payload, body))
 
-    when = ''
-    if accepted_at:
-        try:
-            when = datetime.fromisoformat(str(accepted_at).replace('Z', '')).strftime('%d.%m.%Y %H:%M')
-        except Exception:
-            when = str(accepted_at)
-    suffix = f' la data de {when}' if when else ''
-    fl.append(Paragraph(f'Clientul a citit și acceptat condițiile generale{suffix}.', note))
+    if note:
+        when = ''
+        if accepted_at:
+            try:
+                when = datetime.fromisoformat(str(accepted_at).replace('Z', '')).strftime('%d.%m.%Y %H:%M')
+            except Exception:
+                when = str(accepted_at)
+        suffix = f' la data de {when}' if when else ''
+        fl.append(Paragraph(f'Clientul a citit și acceptat condițiile generale{suffix}.', gc_note_style))
+    return fl
+
+
+# --- Service contract damage-price table (split out of `general_conditions`) --
+
+_DAMAGE_MARKER = '=== VALOAREA FACTURABILĂ A DAUNELOR ==='
+
+
+def _split_general_conditions(text: str):
+    """Split a Service `general_conditions` text at `_DAMAGE_MARKER` into
+    (before, damage_block, after).
+
+    `before` is the numbered T&C sections that precede the marker.
+    `damage_block` is the priced damage-cost list right after it — every line
+    up to and including the last one that looks like a priced row (contains
+    '|', per the template's `label | price` convention) or the trailing
+    '*'-prefixed disclaimer note. `after` is whatever remains (the GDPR and
+    consent paragraphs).
+
+    Returns (text, '', '') when the marker is absent so callers can fall back
+    to rendering the whole thing unchanged."""
+    if _DAMAGE_MARKER not in (text or ''):
+        return text or '', '', ''
+    before, _, remainder = text.partition(_DAMAGE_MARKER)
+    lines = remainder.splitlines()
+    last_priced = -1
+    for i, raw in enumerate(lines):
+        line = raw.strip()
+        if '|' in line or line.startswith('*'):
+            last_priced = i
+    if last_priced == -1:
+        return before, '', remainder
+    damage_block = '\n'.join(lines[:last_priced + 1])
+    after = '\n'.join(lines[last_priced + 1:])
+    return before, damage_block, after
+
+
+def _damage_table(damage_block_text: str) -> list:
+    """A 2-column ('Element' | 'Cost') ReportLab Table for the Service
+    contract's priced damage list, plus a small caption for the trailing
+    price-disclaimer note. Lines using the template's `label | price` format
+    become table rows; short lines without a price (e.g. 'Elemente vitrate',
+    'Roti', 'Interior') become bold category-header rows spanning both
+    columns. The line repeating the section title ('VALOAREA ... DAUNELOR')
+    is dropped — the caller already renders that as a `Paragraph` heading.
+    Returns [] when there are no priced rows to show (malformed/empty input),
+    so the caller never inserts an empty table."""
+    styles = getSampleStyleSheet()
+    hdr_style = ParagraphStyle('DmgHdr', parent=styles['Normal'], fontSize=9,
+                               fontName='Helvetica-Bold', textColor=colors.white)
+    cat_style = ParagraphStyle('DmgCat', parent=styles['Normal'], fontSize=8.5,
+                               fontName='Helvetica-Bold', textColor=colors.HexColor('#1a1a2e'))
+    label_style = ParagraphStyle('DmgLabel', parent=styles['Normal'], fontSize=8, leading=11)
+    price_style = ParagraphStyle('DmgPrice', parent=styles['Normal'], fontSize=8, leading=11)
+    note_style = ParagraphStyle('DmgNote', parent=styles['Normal'], fontSize=7.5, leading=10,
+                                fontName='Helvetica-Oblique', textColor=colors.HexColor('#666666'),
+                                spaceBefore=4)
+
+    rows = [[Paragraph('Element', hdr_style), Paragraph('Cost', hdr_style)]]
+    span_at = []
+    notes = []
+    priced_rows = 0
+
+    for raw in (damage_block_text or '').splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if 'DAUN' in line.upper() and '|' not in line:
+            # The repeated 'VALOAREA ... A DAUNELOR' title and the
+            # 'Cost Dauna Neasigurata*' caption — both already implied by the
+            # Paragraph heading + 'Cost' column header the caller renders.
+            continue
+        if line.startswith('*'):
+            notes.append(line.lstrip('*').strip())
+            continue
+        if '|' in line:
+            label, _, price = line.partition('|')
+            rows.append([Paragraph(label.strip(), label_style), Paragraph(price.strip(), price_style)])
+            priced_rows += 1
+        else:
+            span_at.append(len(rows))
+            rows.append([Paragraph(line, cat_style), ''])
+
+    if priced_rows == 0:
+        return []
+
+    W = A4[0] - 40 * mm
+    t = Table(rows, colWidths=[W * 0.72, W * 0.28])
+    style = [
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a1a2e')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#bbbbbb')),
+        ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#dddddd')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+    ]
+    for r in span_at:
+        style.append(('SPAN', (0, r), (-1, r)))
+        style.append(('BACKGROUND', (0, r), (-1, r), colors.HexColor('#f0f0f5')))
+    t.setStyle(TableStyle(style))
+
+    fl = [t]
+    if notes:
+        fl.append(Paragraph(' '.join(notes), note_style))
     return fl
 
 
@@ -690,7 +802,15 @@ def generate_service_contract_pdf(contract: dict) -> str:
         t.setStyle(_kv_style)
         return t
 
-    # ---- Company & Vehicle ----
+    # ---- Părțile (Prestator + Beneficiar, from the per-company templated face) ----
+    if (body_text or '').strip():
+        story.append(Paragraph('Părțile', section_style))
+        for para in body_text.splitlines():
+            if para.strip():
+                story.append(Paragraph(para.strip(), body_style))
+        story.append(Spacer(1, 6))
+
+    # ---- Autovehicul & perioadă: Company & Vehicle ----
     story.append(Paragraph('Date Companie și Vehicul', section_style))
     story.append(_kv_table([
         ('Companie', contract.get('company_name') or '—'),
@@ -747,19 +867,48 @@ def generate_service_contract_pdf(contract: dict) -> str:
     story.append(km_table)
     story.append(Spacer(1, 6))
 
-    # ---- Templated body (per-company contract text) ----
-    if (body_text or '').strip():
-        story.append(Paragraph('Contract', section_style))
-        for para in body_text.splitlines():
-            if para.strip():
-                story.append(Paragraph(para.strip(), body_style))
-        story.append(Spacer(1, 6))
+    # ---- Tarif și garanție (pricing snapshot frozen on the contract row) ----
+    story.append(Paragraph('Tarif și garanție', section_style))
 
-    # ---- Accepted general conditions (dealer-configured, per company/brand) ----
-    story.extend(_general_conditions_flowables(
-        conditions_text,
-        contract.get('general_conditions_accepted_at'),
-    ))
+    def _eur(v, suffix=' EUR'):
+        return f'{v}{suffix}' if v not in (None, '') else '—'
+
+    _tariff = contract.get('svc_tariff_eur')
+    _tariff_val = (f'{_tariff} EUR / {_svc_rate_basis}'
+                   if _tariff not in (None, '') and _svc_rate_basis else _eur(_tariff))
+    _units = contract.get('svc_units')
+    _km_incl = contract.get('svc_km_included_day')
+    story.append(_kv_table([
+        ('Tarif', _tariff_val),
+        ('Nr. (zile/luni)', _units if _units not in (None, '') else '—'),
+        ('Total', _eur(contract.get('svc_total_eur'))),
+        ('Garanție', _eur(contract.get('svc_garantie_eur'))),
+        ('Franșiză', _eur(contract.get('svc_fransiza_eur'))),
+        ('Km incluși/zi', _km_incl if _km_incl not in (None, '') else '—'),
+        ('Extra km', _eur(contract.get('svc_extra_km_eur'), ' EUR/km')),
+    ]))
+    story.append(Spacer(1, 6))
+
+    # ---- Condiții generale: numbered T&C, damage price table, GDPR + consent ----
+    _before_gc, _damage_block, _after_gc = _split_general_conditions(conditions_text)
+    if _damage_block.strip():
+        story.extend(_general_conditions_flowables(
+            _before_gc, contract.get('general_conditions_accepted_at'),
+        ))
+        _dmg_fl = _damage_table(_damage_block)
+        if _dmg_fl:
+            story.append(Paragraph('Valoarea facturabilă a daunelor', section_style))
+            story.extend(_dmg_fl)
+            story.append(Spacer(1, 6))
+        story.extend(_general_conditions_flowables(
+            _after_gc, None, title='Protecția datelor cu caracter personal', note=False,
+        ))
+    else:
+        # No damage-price marker found (older/custom template) — render the
+        # whole T&C block as before so nothing is silently dropped.
+        story.extend(_general_conditions_flowables(
+            conditions_text, contract.get('general_conditions_accepted_at'),
+        ))
 
     # ---- Signatures ----
     story.append(Paragraph('Semnături', section_style))
