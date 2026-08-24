@@ -164,12 +164,14 @@ export default function FoiParcurs() {
   // fleet/sessions at once). We no longer force-select the first company.
   const companies = companiesData?.companies ?? []
 
-  // Brands for the selected company — the sales catalog in Sales context, or
-  // the distinct brands actually present in the Service (courtesy) fleet pool
-  // when in Service context, so the dropdown always matches what's browsable.
+  // The header brand dropdown = the dealership's FRANCHISE brands (the company
+  // as an institution + the marques it's franchised for), ALWAYS from the
+  // company_brands catalog. The rental/courtesy stock can hold any car brand,
+  // independent of the franchise — so in the Service context this franchise
+  // filter is hidden (see below) and the rental list shows every brand.
   const { data: brandsData } = useQuery({
-    queryKey: ['fp-brands', companyId, docType],
-    queryFn: () => foiParcursApi.getBrands(companyId, docType === 'service' ? 'service' : undefined),
+    queryKey: ['fp-brands', companyId],
+    queryFn: () => foiParcursApi.getBrands(companyId),
     enabled: companyId > 0,
     staleTime: 60_000,
   })
@@ -236,7 +238,7 @@ export default function FoiParcurs() {
               ))}
             </SelectContent>
           </Select>
-          {brands.length > 0 && (
+          {docType !== 'service' && brands.length > 0 && (
             <Select value={brand} onValueChange={setBrand}>
               <SelectTrigger className="w-44">
                 <SelectValue placeholder="Selectează brandul" />
@@ -286,9 +288,11 @@ export default function FoiParcurs() {
       </Tabs>
 
       {activeTab === 'contracts' && <ContractsTab companyId={companyId} toolbarSlot={tabToolbar} />}
-      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
-      {activeTab === 'stock' && <StockTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} documentType={docType} />}
-      {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
+      {/* In the rental (Service) context the franchise brand filter doesn't apply —
+          the courtesy stock is multi-brand — so pass an empty brand to show it all. */}
+      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
+      {activeTab === 'stock' && <StockTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} documentType={docType} />}
+      {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
       {activeTab === 'settings' && <SettingsTab />}
     </div>
   )
