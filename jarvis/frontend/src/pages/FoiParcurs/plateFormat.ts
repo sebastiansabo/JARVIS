@@ -1,7 +1,11 @@
 // Romanian civilian plate helpers.
 // Canonical form: "<COUNTY> <digits> <letters>", single-space separated.
 // County is either "B" (Bucharest: 2–3 digits) or two letters (2 digits).
-// Provisional/temporary/special-series plates are out of scope for the mask.
+// Provisional plates (numere provizorii) are county + exactly 6 digits and NO
+// letters (e.g. "CJ 123456") — accepted alongside the canonical mask.
+
+// Digit count of a provisional plate's number group.
+const PROVISIONAL_DIGITS = 6
 
 function splitCounty(s: string): { county: string; rest: string } {
   // Bucharest only when the string is exactly "B" or "B" followed by a digit.
@@ -15,13 +19,24 @@ export function formatRoPlate(raw: string): string {
   const s = raw.toUpperCase().replace(/[^A-Z0-9]/g, '')
   if (!s) return ''
   const { county, rest } = splitCounty(s)
-  const maxDigits = county === 'B' ? 3 : 2
-  const digits = (rest.match(/^\d+/)?.[0] ?? '').slice(0, maxDigits)
-  const afterDigits = rest.slice((rest.match(/^\d+/)?.[0] ?? '').length)
+  const allDigits = rest.match(/^\d+/)?.[0] ?? ''
+  const afterDigits = rest.slice(allDigits.length)
   const letters = (afterDigits.match(/^[A-Z]+/)?.[0] ?? '').slice(0, 3)
+  // Standard plates carry trailing letters and cap the digit group at 2 (3 for
+  // Bucharest). A provisional plate is county + digits with no letters — allow
+  // its longer, fixed-length number group.
+  const maxDigits = county === 'B' ? 3 : 2
+  const digits = letters
+    ? allDigits.slice(0, maxDigits)
+    : allDigits.slice(0, PROVISIONAL_DIGITS)
   return [county, digits, letters].filter(Boolean).join(' ')
 }
 
 export function isValidRoPlate(v: string): boolean {
-  return /^(B \d{2,3}|[A-Z]{2} \d{2}) [A-Z]{3}$/.test(v.trim().toUpperCase())
+  const s = v.trim().toUpperCase()
+  // Standard civilian: county + 2 digits (3 for Bucharest) + 3 letters.
+  const standard = /^(B \d{2,3}|[A-Z]{2} \d{2}) [A-Z]{3}$/.test(s)
+  // Provisional (numere provizorii): county + exactly 6 digits, no letters.
+  const provisional = /^(B|[A-Z]{2}) \d{6}$/.test(s)
+  return standard || provisional
 }
