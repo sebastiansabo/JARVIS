@@ -149,21 +149,28 @@ export interface PulseCreatePayload {
   min_comment_group?: number
 }
 
-/** A cohort row in pulse results. When `suppressed`, its numbers must NOT be shown. */
-export interface PulseCohort {
-  key?: string
-  label?: string
-  n?: number
-  enps?: number
-  suppressed?: boolean
-  reason?: string
-  scores?: Record<string, number>
-}
+/** One question's aggregate within a results block (backend `agg()` output). */
+export type PulseQuestionScore =
+  | { type: 'enps'; n: number; nps: number }
+  | { type: 'likert5' | 'single'; n: number; avg: number; driver?: string | null }
+
+/**
+ * A results block — the overall roll-up or a single cohort. Mirrors the backend
+ * `PulseRepository.get_results` contract exactly: either a suppressed marker
+ * (below the anonymity threshold — numbers MUST stay hidden) or a map of
+ * question-key → typed score.
+ */
+export type PulseBlock =
+  | { suppressed: true; reason: string; n: number }
+  | { [questionKey: string]: PulseQuestionScore }
 
 export interface PulseResults {
-  participation: { responses: number; invited: number; rate: number }
-  overall: Record<string, number> | null
-  cohorts: PulseCohort[]
+  pulse_id?: number
+  min_group_size?: number
+  participation: { responses: number; invited: number; rate: number | null }
+  overall: PulseBlock
+  /** Keyed by opaque cohort_key: `node:<id>`, `company:<id>`, or `all`. */
+  cohorts: Record<string, PulseBlock>
 }
 
 // ── Praise / KPI ──
