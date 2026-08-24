@@ -126,6 +126,22 @@ def _pdf_text(path):
     return '\n'.join(page.extract_text() or '' for page in reader.pages)
 
 
+def _flowables_text(flowables):
+    """Plain text of a list of ReportLab flowables (Table cells + Paragraphs),
+    for asserting on `_damage_table` output without building a full PDF."""
+    from reportlab.platypus import Table
+    out = []
+    for fl in flowables:
+        if isinstance(fl, Table):
+            for row in fl._cellvalues:
+                for cell in row:
+                    if hasattr(cell, 'getPlainText'):
+                        out.append(cell.getPlainText())
+        elif hasattr(fl, 'getPlainText'):
+            out.append(fl.getPlainText())
+    return '\n'.join(out)
+
+
 class TestServiceContractPdf:
     """S7 — the Service contract PDF renders in the ordered, structured
     layout: Title -> Partile -> Autovehicul&perioada/Kilometraj -> Tarif si
@@ -225,8 +241,78 @@ class TestServiceContractPdf:
         fl = ps._damage_table(block)
         assert fl  # non-empty: at least the Table (+ note Paragraph)
 
-    def test_damage_table_empty_for_no_priced_rows(self):
+    def test_damage_table_empty_only_for_truly_empty_or_boilerplate(self):
         from foi_parcurs.services import pdf_service as ps
 
+        # Genuinely nothing to render.
         assert ps._damage_table('') == []
-        assert ps._damage_table('just some prose, no pipes here') == []
+        # The two known boilerplate caption lines carry no data of their own
+        # (the caller renders the heading + 'Cost' column header) -> [].
+        assert ps._damage_table('VALOAREA  FACTURABILA  A DAUNELOR\nCost Dauna Neasigurata*') == []
+
+    def test_damage_table_preserves_custom_category_header(self):
+        # A dealer's admin-editable general_conditions may add a custom
+        # category header whose text contains 'daune' (e.g. 'Daune caroserie').
+        # It must NOT be swallowed by the boilerplate-caption skip.
+        from foi_parcurs.services import pdf_service as ps
+
+        fl = ps._damage_table('Daune caroserie\nZgarietura noua | 90 Eur\n*Preturile includ TVA')
+        assert 'Daune caroserie' in _flowables_text(fl)      # header survives
+        assert 'Zgarietura noua' in _flowables_text(fl)       # priced row too
+        assert 'Preturile includ TVA' in _flowables_text(fl)  # note too
+
+    def test_damage_table_renders_disclaimer_only_segment(self):
+        # A marker-delimited segment with only a '*' disclaimer note and no
+        # priced rows must still surface the note (not vanish).
+        from foi_parcurs.services import pdf_service as ps
+
+        fl = ps._damage_table('*Preturile afisate includ TVA')
+        assert fl  # not dropped
+        assert 'Preturile afisate includ TVA' in _flowables_text(fl)
+
+    def test_damage_table_renders_header_plus_note_without_prices(self):
+        from foi_parcurs.services import pdf_service as ps
+
+        fl = ps._damage_table('Daune caroserie\n*nota disclaimer')
+        text = _flowables_text(fl)
+        assert 'Daune caroserie' in text
+        assert 'nota disclaimer' in text
+
+    def test_custom_damage_category_header_survives_in_pdf(self, monkeypatch, tmp_path):
+        # End-to-end: a custom 'Daune caroserie' header inside the damage
+        # segment reaches the rendered PDF text, and the disclaimer note is
+        # not lost either.
+        from foi_parcurs.repositories.contract_config_repository import ContractConfigRepository
+        from foi_parcurs.services import pdf_service as ps
+
+        custom_terms = (
+            '1. Termeni custom.\n'
+            '\n'
+            '=== VALOAREA FACTURABILĂ A DAUNELOR ===\n'
+            'VALOAREA FACTURABILA A DAUNELOR\n'
+            'Cost Dauna Neasigurata*\n'
+            '\n'
+            'Daune caroserie\n'
+            'Zgarietura noua | 90 Eur\n'
+            'Interior\n'
+            'Scaun fata | 240 Eur\n'
+            '*Preturile afisate includ TVA custom.\n'
+            '\n'
+            'Text GDPR custom aici.\n'
+        )
+        cfg = _fake_service_cfg()
+        cfg['general_conditions'] = custom_terms
+        monkeypatch.setattr(
+            ContractConfigRepository, 'get_active',
+            lambda self, company_id, brand_name, document_type='service': cfg,
+        )
+        monkeypatch.setattr(ps, '_PDF_DIR', str(tmp_path))
+
+        out_path = ps.generate_service_contract_pdf(_fake_service_contract(contract_id='FP-TEST-S7-CUSTOM'))
+        text = _pdf_text(out_path)
+
+        assert 'Daune caroserie' in text                # custom header preserved
+        assert 'Zgarietura noua' in text                # priced row
+        assert 'Interior' in text                       # second custom header
+        assert 'Preturile afisate includ TVA custom' in text   # disclaimer note kept
+        assert 'Text GDPR custom aici' in text          # GDPR tail after the table
