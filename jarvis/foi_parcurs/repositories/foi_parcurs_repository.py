@@ -27,7 +27,8 @@ _LIST_COLUMNS = (
     'fp.general_conditions_accepted_at, fp.pdf_legal_path, fp.pdf_custom_path, '
     'fp.corrected_at, fp.corrected_by, '
     'fp.is_internal, '
-    'fp.driver_name, fp.driver_contact_id, fp.event_id'
+    'fp.driver_name, fp.driver_contact_id, fp.event_id, '
+    'fp.document_type, fp.service_order_ref'
 )
 
 
@@ -53,7 +54,7 @@ class FoiParcursRepository(BaseRepository):
                       batch_id=None, page=1, per_page=25,
                       sort_by='created_at', sort_dir='DESC',
                       date_from=None, date_to=None, route_type=None,
-                      lean=False):
+                      document_type=None, lean=False):
         """Paginated list with optional filters. Returns (rows, total).
 
         date_from/date_to filter on the drive date (departure_datetime, falling
@@ -88,6 +89,9 @@ class FoiParcursRepository(BaseRepository):
         if route_type:
             where_clauses.append('fp.route_type = %s')
             params.append(route_type)
+        if document_type:
+            where_clauses.append('fp.document_type = %s')
+            params.append(document_type)
         if date_from:
             where_clauses.append('COALESCE(fp.departure_datetime, fp.created_at) >= %s')
             params.append(date_from)
