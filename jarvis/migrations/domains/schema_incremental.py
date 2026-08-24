@@ -2377,6 +2377,87 @@ def _create_schema_incremental_continued(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_contract_configs_lookup ON fp_contract_configs(company_id, brand_id, document_type, is_active)')
 
+    # ── Foi de Parcurs — Service courtesy-car rental pricing ──
+    # Per-car price + optional policy override (fp_vehicles); company default
+    # policy (fp_company_config); frozen session pricing snapshot (foi_de_parcurs).
+    # All nullable / Service-only — Sales rows and flows are unaffected.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='svc_tariff_eur_day') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN svc_tariff_eur_day NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='svc_tariff_eur_month') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN svc_tariff_eur_month NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='svc_km_included_day') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN svc_km_included_day INTEGER;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='svc_extra_km_eur') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN svc_extra_km_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='svc_deposit_eur') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN svc_deposit_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='svc_franchise_eur') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN svc_franchise_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_company_config' AND column_name='svc_km_included_day') THEN
+                ALTER TABLE fp_company_config ADD COLUMN svc_km_included_day INTEGER;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_company_config' AND column_name='svc_extra_km_eur') THEN
+                ALTER TABLE fp_company_config ADD COLUMN svc_extra_km_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_company_config' AND column_name='svc_deposit_eur') THEN
+                ALTER TABLE fp_company_config ADD COLUMN svc_deposit_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_company_config' AND column_name='svc_franchise_eur') THEN
+                ALTER TABLE fp_company_config ADD COLUMN svc_franchise_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_rate_basis') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_rate_basis VARCHAR(8);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_tariff_eur') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_tariff_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_units') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_units INTEGER;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_total_eur') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_total_eur NUMERIC(12,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_km_included_day') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_km_included_day INTEGER;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_extra_km_eur') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_extra_km_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_garantie_eur') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_garantie_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_fransiza_eur') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_fransiza_eur NUMERIC(10,2);
+            END IF;
+        END $$;
+    ''')
+
     # ── Foi de Parcurs — Test Drive RETURN fields ──
     cursor.execute('''
         DO $$ BEGIN
