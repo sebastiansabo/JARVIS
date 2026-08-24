@@ -135,11 +135,15 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const isActivating = activateId != null
 
   // Service context (Task 13) — the standalone route deep-links with
-  // `?context=service` (Task 12); anything else defaults to 'sales'. Not
-  // carried by the `?activate=` deep link, so an activation always reads
-  // 'sales' here — the PLANNED draft already carries its own document_type
-  // server-side (set at plan time), so nothing is lost.
-  const documentType: DocType = contextFromSearch(searchParams.toString() ? `?${searchParams.toString()}` : window.location.search)
+  // `?context=service` (Task 12); anything else defaults to 'sales'. The
+  // `?activate=` deep link (and the activateId prop) carry NO context param,
+  // so during activation the URL alone always reads 'sales'. But the PLANNED
+  // draft being activated already stores its own document_type server-side
+  // (frozen at plan time), so once the draft row loads we prefer THAT — this
+  // is what makes Service activations render the "Sumar închiriere" card,
+  // send the svc_* pricing snapshot, and relabel the form (Task 13). Falls
+  // back to the URL context on a fresh create or before the draft loads.
+  const urlDocumentType: DocType = contextFromSearch(searchParams.toString() ? `?${searchParams.toString()}` : window.location.search)
   const [serviceOrderRef, setServiceOrderRef] = useState('')
 
   // Company & vehicle
@@ -259,6 +263,27 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   }, [])
 
   // ── Queries ──
+  // Load the PLANNED draft being activated FIRST — its stored document_type
+  // drives `documentType` below (used by the vehicle/pricing queries right
+  // after), so it must resolve before them. Only depends on activateId.
+  const { data: draftData, isLoading: loadingDraft } = useQuery({
+    queryKey: ['fp-test-drive', activateId],
+    queryFn: () => foiParcursApi.getTestDrive(activateId!),
+    enabled: activateId != null,
+  })
+
+  // The effective document context. On a fresh create it's the URL context
+  // (Service route deep-links `?context=service`). On an activation the URL
+  // carries no context, so we prefer the loaded draft's own frozen
+  // document_type — this is what makes a Service activation render the rental
+  // card, send the svc_* pricing snapshot on activate, and relabel the form.
+  // Before the draft loads it falls back to the URL context ('sales'), then
+  // flips to 'service' once draftData arrives (the draft-prefill effect
+  // restores the frozen pricing snapshot at that same point).
+  const documentType: DocType = (isActivating && draftData?.contract?.document_type === 'service')
+    ? 'service'
+    : urlDocumentType
+
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
     queryFn: () => foiParcursApi.getCompanies(),
@@ -313,13 +338,8 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     return (slug?: string | null) => (slug ? (map[slug] ?? slug) : '')
   }, [lockoutReasonsData])
 
-  // ── Load + prefill the PLANNED draft being activated ──
-  const { data: draftData, isLoading: loadingDraft } = useQuery({
-    queryKey: ['fp-test-drive', activateId],
-    queryFn: () => foiParcursApi.getTestDrive(activateId!),
-    enabled: activateId != null,
-  })
-
+  // ── Prefill the PLANNED draft being activated (loaded above, before
+  //    documentType, since its document_type feeds that derivation) ──
   // GET /test-drive/{id} denormalizes client_name/client_phone onto the
   // contract but not client_type — needed to tell a company client (which
   // must gate on a driver contact, see below) from a person client while
