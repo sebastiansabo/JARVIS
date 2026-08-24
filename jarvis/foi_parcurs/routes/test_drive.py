@@ -390,13 +390,21 @@ def api_activate_test_drive(id):
         # General conditions (per company+brand) — required only when configured.
         # Mirrors the live-submit gate: a PLANNED draft defers this to activation.
         general_conditions_text = ''
+        _doc_type = _normalize_doctype(contract.get('document_type'))
         try:
             _veh = _vehicle_repo.get_by_vin(contract.get('vin'))
             _brand = (_veh or {}).get('brand') or ''
-            general_conditions_text = _dealer_repo.get_general_conditions(int(contract['company_id']), _brand) or ''
+            if _doc_type == 'service':
+                _cfg = _cc_repo.get_active(int(contract['company_id']), _brand, 'service')
+                general_conditions_text = ((_cfg or {}).get('general_conditions') or '')
+            else:
+                general_conditions_text = _dealer_repo.get_general_conditions(int(contract['company_id']), _brand) or ''
         except Exception:
             logger.warning('general-conditions lookup failed at activation', exc_info=True)
             general_conditions_text = ''
+        if _doc_type != 'sales' and not pools_match(_doc_type, (_veh or {}).get('document_type')):
+            return jsonify({'success': False,
+                            'error': 'Mașina selectată nu aparține parcului pentru acest tip de document.'}), 400
         if general_conditions_text.strip() and not data.get('general_conditions_accepted'):
             return jsonify({'success': False, 'error': 'General conditions acceptance is required'}), 400
 
