@@ -3,6 +3,7 @@
 import logging
 import re
 from core.base_repository import BaseRepository
+from ..document_types import normalize as _normalize_doctype
 
 logger = logging.getLogger('jarvis.foi_parcurs.vehicle_repository')
 
@@ -104,13 +105,23 @@ class FPVehicleRepository(BaseRepository):
         ') up ON TRUE'
     )
 
-    def get_all(self, active_only=True):
-        """Get all vehicles (lean — no document blobs), optionally active-only."""
+    def get_all(self, active_only=True, document_type=None):
+        """Get all vehicles (lean — no document blobs), optionally active-only
+        and/or filtered to a single document_type pool (sales/service).
+        document_type=None (default) returns all pools — back-compat for
+        management views that need the whole fleet."""
+        where_clauses = []
+        params = []
         if active_only:
-            return self.query_all(
-                f'{self._LIST_SELECT} WHERE v.is_active = TRUE ORDER BY v.mark, v.model, v.vin'
-            )
-        return self.query_all(f'{self._LIST_SELECT} ORDER BY v.mark, v.model, v.vin')
+            where_clauses.append('v.is_active = TRUE')
+        if document_type:
+            where_clauses.append('v.document_type = %s')
+            params.append(document_type)
+        where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ''
+        return self.query_all(
+            f'{self._LIST_SELECT}{where_sql} ORDER BY v.mark, v.model, v.vin',
+            tuple(params) if params else None,
+        )
 
     def get_by_vin(self, vin):
         """Get a single vehicle by VIN (full row, incl. documents)."""
@@ -126,10 +137,10 @@ class FPVehicleRepository(BaseRepository):
             '''INSERT INTO fp_vehicles
                (vin, registration_number, car_id, mark, brand, model, color,
                 fuel_type, fuel_tank_capacity_liters, battery_capacity_kwh, odometer_km,
-                norma_combustibil, norma_energie, category, company_id,
+                norma_combustibil, norma_energie, category, company_id, document_type,
                 vignette_valid_until, itp_valid_until, insurance_valid_until,
                 insurance_doc, talon_doc, civ_doc, registration_doc, offer_doc)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                        %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *''',
             (data['vin'], _normalize_plate(data.get('registration_number')), data.get('car_id'),
              data['mark'], data.get('brand'), data['model'], data.get('color'),
@@ -141,6 +152,7 @@ class FPVehicleRepository(BaseRepository):
              data.get('norma_energie'),
              data.get('category'),
              data.get('company_id'),
+             _normalize_doctype(data.get('document_type')),
              data.get('vignette_valid_until'), data.get('itp_valid_until'),
              data.get('insurance_valid_until'), data.get('insurance_doc'),
              data.get('talon_doc'), data.get('civ_doc'), data.get('registration_doc'),
@@ -155,11 +167,18 @@ class FPVehicleRepository(BaseRepository):
         for col in ('vin', 'registration_number', 'car_id', 'mark', 'brand', 'model', 'color',
                     'fuel_type', 'fuel_tank_capacity_liters', 'battery_capacity_kwh', 'odometer_km',
                     'norma_combustibil', 'norma_energie', 'category', 'company_id', 'is_active',
+                    'document_type',
                     'vignette_valid_until', 'itp_valid_until', 'insurance_valid_until',
                     'insurance_doc', 'talon_doc', 'civ_doc', 'registration_doc', 'offer_doc'):
             if col in data:
                 sets.append(f'{col} = %s')
-                params.append(_normalize_plate(data[col]) if col == 'registration_number' else data[col])
+                if col == 'registration_number':
+                    value = _normalize_plate(data[col])
+                elif col == 'document_type':
+                    value = _normalize_doctype(data[col])
+                else:
+                    value = data[col]
+                params.append(value)
         if not sets:
             return None
         sets.append('updated_at = NOW()')

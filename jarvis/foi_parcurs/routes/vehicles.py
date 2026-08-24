@@ -4,6 +4,7 @@ from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required,
     logger, _vehicle_repo, _fp_repo,
 )
+from ..document_types import normalize as _normalize_doctype
 
 
 def _to_int_or_none(value):
@@ -30,7 +31,8 @@ def _to_num_or_none(value):
 @login_required
 def api_list_vehicles():
     active_only = request.args.get('active_only', 'true').lower() == 'true'
-    vehicles = _vehicle_repo.get_all(active_only=active_only)
+    document_type = (request.args.get('document_type') or '').strip() or None
+    vehicles = _vehicle_repo.get_all(active_only=active_only, document_type=document_type)
     return jsonify({'success': True, 'vehicles': vehicles})
 
 
@@ -414,6 +416,7 @@ def api_create_vehicle():
             'norma_energie': _to_num_or_none(data.get('norma_energie')),
             'category': (data.get('category') or '').strip() or None,
             'company_id': company_id,
+            'document_type': _normalize_doctype(data.get('document_type')),
             'vignette_valid_until': (data.get('vignette_valid_until') or '').strip() or None,
             'itp_valid_until': (data.get('itp_valid_until') or '').strip() or None,
             'insurance_valid_until': (data.get('insurance_valid_until') or '').strip() or None,
