@@ -108,6 +108,7 @@ import { CalendarTab } from './CalendarTab'
 import DriveTypeToggle from './DriveTypeToggle'
 import { formatRoPlate, isValidRoPlate } from './plateFormat'
 import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
+import ContractConfigSection from './ContractConfigSection'
 
 /** Truncate a display name to `max` chars with an ellipsis; the full value stays
  *  available in the cell's title tooltip. */
@@ -3555,6 +3556,9 @@ function SettingsTab() {
 
       {/* Section 4: Archive reasons (Motive arhivare) */}
       <ArchiveReasonsSettings />
+
+      {/* Section 5: Service contract setup (per company+brand) */}
+      <ContractConfigSection />
     </div>
   )
 }
