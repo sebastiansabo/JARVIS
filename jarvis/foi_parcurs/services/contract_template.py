@@ -10,6 +10,15 @@ PLACEHOLDERS = (
     'km_start', 'km_end', 'distance_km',
     'departure_datetime', 'return_datetime',
     'service_order_ref', 'advisor_name', 'general_conditions',
+    # S4: client identity + company legal + Service pricing snapshot tokens
+    # used by service_contract_templates.py.
+    'client_ci_serie', 'client_company', 'client_cui', 'client_email',
+    'company_administrator', 'company_bank', 'company_city', 'company_county',
+    'company_email', 'company_iban', 'company_reg_no', 'company_street',
+    'company_vat', 'dealer_phone', 'vehicle_model',
+    'svc_extra_km_eur', 'svc_fransiza_eur', 'svc_garantie_eur',
+    'svc_limita_km_zi', 'svc_rate_basis', 'svc_tariff_eur', 'svc_total_eur',
+    'svc_units',
 )
 
 

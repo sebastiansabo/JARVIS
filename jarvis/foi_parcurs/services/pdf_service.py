@@ -570,24 +570,58 @@ def generate_service_contract_pdf(contract: dict) -> str:
     out_path = os.path.join(_PDF_DIR, f'{cid}-service.pdf')
 
     from .contract_template import render_contract_template
+    from ..dealer_config import get_dealer_config
+
+    try:
+        _dealer_phone = get_dealer_config(contract.get('company_name'), brand or '').get('phone', '')
+    except Exception:
+        _dealer_phone = ''
+
+    _rate_basis_raw = contract.get('svc_rate_basis')
+    _rate_basis_map = {'day': 'zi', 'month': 'lună'}
+    _svc_rate_basis = _rate_basis_map.get(_rate_basis_raw, _rate_basis_raw)
 
     context = {
         'client_name': contract.get('client_name'),
         'client_phone': contract.get('client_phone'),
         'client_address': contract.get('client_address'),
+        'client_email': contract.get('client_email'),
+        'client_company': contract.get('client_company'),
+        'client_cui': contract.get('client_cui'),
+        'client_ci_serie': contract.get('client_ci_serie'),
         'company_name': contract.get('company_name'),
+        'company_street': contract.get('company_street'),
+        'company_city': contract.get('company_city'),
+        'company_county': contract.get('company_county'),
+        'company_reg_no': contract.get('company_reg_no'),
+        'company_vat': contract.get('company_vat'),
+        'company_iban': contract.get('company_iban'),
+        'company_bank': contract.get('company_bank'),
+        'company_administrator': contract.get('company_administrator'),
+        'company_email': contract.get('company_email'),
+        'dealer_phone': _dealer_phone,
         'brand': brand,
+        'vehicle_model': contract.get('vehicle_model'),
         'vin': contract.get('vin'),
         'registration_number': contract.get('registration_number'),
-        'km_start': contract.get('km_start'),
-        'km_end': contract.get('km_end'),
+        'km_start': str(contract['km_start']) if contract.get('km_start') is not None else None,
+        'km_end': str(contract['km_end']) if contract.get('km_end') is not None else None,
         'distance_km': _odometer_distance_km(contract),
         'departure_datetime': _fmt_dt(contract.get('departure_datetime')),
         'return_datetime': _fmt_dt(contract.get('return_datetime')),
         'service_order_ref': contract.get('service_order_ref'),
         'advisor_name': contract.get('advisor_name'),
         'general_conditions': cfg.get('general_conditions'),
+        'svc_tariff_eur': contract.get('svc_tariff_eur'),
+        'svc_rate_basis': _svc_rate_basis,
+        'svc_units': contract.get('svc_units'),
+        'svc_total_eur': contract.get('svc_total_eur'),
+        'svc_limita_km_zi': contract.get('svc_km_included_day'),
+        'svc_extra_km_eur': contract.get('svc_extra_km_eur'),
+        'svc_garantie_eur': contract.get('svc_garantie_eur'),
+        'svc_fransiza_eur': contract.get('svc_fransiza_eur'),
     }
+    context = {k: ('' if v is None else v) for k, v in context.items()}
 
     title_text = render_contract_template(cfg.get('title'), context) or 'Contract Masina de Curtoazie'
     body_text = render_contract_template(cfg.get('body_template'), context)
