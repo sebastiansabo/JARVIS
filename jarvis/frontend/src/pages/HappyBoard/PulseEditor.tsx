@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Trash2, Play, Square } from 'lucide-react'
+import { Plus, Trash2, Play, Square, X } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ApiError } from '@/api/client'
+import { digestApi } from '@/api/digest'
 import {
   happyAdminApi,
   useAdminPulse,
@@ -37,10 +38,24 @@ export function PulseEditor({ pulseId, open, onOpenChange }: PulseEditorProps) {
   const { data, isLoading } = useAdminPulse(open ? pulseId : null)
   const { data: results } = usePulseResults(open ? pulseId : null)
   const [questions, setQuestions] = useState<AdminPulseQuestion[]>([])
+  const [audience, setAudience] = useState<{ id: number; name: string }[]>([])
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     if (data?.questions) setQuestions(data.questions)
   }, [data])
+
+  useEffect(() => {
+    setAudience([])
+    setSearch('')
+  }, [pulseId])
+
+  const { data: searchRes } = useQuery({
+    queryKey: ['happy', 'pulse-audience', search],
+    queryFn: () => digestApi.searchUsers(search),
+    enabled: search.trim().length >= 2,
+  })
+  const searchResults = searchRes?.data ?? []
 
   const pulse = data?.pulse
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['happy', 'admin', 'pulse', pulseId] })
@@ -55,7 +70,7 @@ export function PulseEditor({ pulseId, open, onOpenChange }: PulseEditorProps) {
   })
 
   const openPulse = useMutation({
-    mutationFn: () => happyAdminApi.openPulse(pulseId as number),
+    mutationFn: (ids: number[]) => happyAdminApi.openPulse(pulseId as number, ids.length ? ids : undefined),
     onSuccess: (r) => {
       toast.success(`Pulse deschis · ${r.invited} invitați.`)
       invalidate()
@@ -66,6 +81,23 @@ export function PulseEditor({ pulseId, open, onOpenChange }: PulseEditorProps) {
       toast.error(msg || 'Nu am putut deschide pulse-ul.')
     },
   })
+
+  const addRespondent = (u: { id: number; name: string }) => {
+    setAudience((prev) => (prev.some((x) => x.id === u.id) ? prev : [...prev, u]))
+    setSearch('')
+  }
+
+  const handleOpen = () => {
+    const ids = audience.map((u) => u.id)
+    if (
+      ids.length === 0 &&
+      !window.confirm(
+        'Deschizi acest Pulse pentru TOȚI angajații activi? Pentru un test, adaugă întâi persoane la „Audiență de test”.',
+      )
+    )
+      return
+    openPulse.mutate(ids)
+  }
 
   const closePulse = useMutation({
     mutationFn: () => happyAdminApi.closePulse(pulseId as number),
@@ -167,10 +199,68 @@ export function PulseEditor({ pulseId, open, onOpenChange }: PulseEditorProps) {
               </Button>
             </div>
 
+            {/* Test audience (optional) */}
+            <div className="space-y-2 border-t pt-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">
+                  Audiență de test <span className="font-normal text-muted-foreground">(opțional)</span>
+                </p>
+                {audience.length > 0 && <Badge variant="secondary">{audience.length} selectați</Badge>}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Fără selecție, „Deschide” trimite Pulse-ul <strong>tuturor</strong> angajaților. Adaugă persoane aici
+                ca să-l deschizi doar pentru un grup de test.
+              </p>
+              {audience.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {audience.map((u) => (
+                    <Badge key={u.id} variant="outline" className="gap-1 pr-1">
+                      {u.name}
+                      <button
+                        type="button"
+                        aria-label={`Elimină ${u.name}`}
+                        className="rounded-sm hover:bg-muted"
+                        onClick={() => setAudience((prev) => prev.filter((x) => x.id !== u.id))}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <div className="relative">
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Caută coleg după nume…"
+                />
+                {search.trim().length >= 2 && searchResults.length > 0 && (
+                  <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-md border bg-popover shadow-md">
+                    {searchResults.map((u) => (
+                      <button
+                        type="button"
+                        key={u.id}
+                        onClick={() => addRespondent({ id: u.id, name: u.name })}
+                        className="block w-full px-3 py-2 text-left text-sm hover:bg-accent"
+                      >
+                        <span className="font-medium">{u.name}</span>
+                        {(u.department || u.company) && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {[u.department, u.company].filter(Boolean).join(' · ')}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Lifecycle */}
             <div className="flex items-center gap-2 border-t pt-4">
-              <Button size="sm" variant="outline" onClick={() => openPulse.mutate()} disabled={openPulse.isPending}>
-                <Play className="h-3.5 w-3.5" /> Deschide
+              <Button size="sm" variant="outline" onClick={handleOpen} disabled={openPulse.isPending}>
+                <Play className="h-3.5 w-3.5" />{' '}
+                {audience.length ? `Deschide pt. test · ${audience.length}` : 'Deschide (tuturor)'}
               </Button>
               <Button size="sm" variant="outline" onClick={() => closePulse.mutate()} disabled={closePulse.isPending}>
                 <Square className="h-3.5 w-3.5" /> Închide

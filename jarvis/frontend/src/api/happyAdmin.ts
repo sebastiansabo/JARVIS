@@ -213,7 +213,11 @@ export const happyAdminApi = {
   createPulse: (body: PulseCreatePayload) => api.post<{ pulse: AdminPulse }>('/api/happy/admin/pulses', body),
   updateQuestions: (id: number, questions: AdminPulseQuestion[]) =>
     api.put<{ questions: AdminPulseQuestion[] }>(`/api/happy/admin/pulses/${id}/questions`, { questions }),
-  openPulse: (id: number) => api.post<{ status: string; invited: number }>(`/api/happy/admin/pulses/${id}/open`),
+  openPulse: (id: number, audienceUserIds?: number[]) =>
+    api.post<{ status: string; invited: number }>(
+      `/api/happy/admin/pulses/${id}/open`,
+      audienceUserIds && audienceUserIds.length ? { audience_user_ids: audienceUserIds } : undefined,
+    ),
   closePulse: (id: number) => api.post<{ status: string }>(`/api/happy/admin/pulses/${id}/close`),
   getResults: (id: number) => api.get<PulseResults>(`/api/happy/admin/pulses/${id}/results`),
 
