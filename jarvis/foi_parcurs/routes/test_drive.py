@@ -85,9 +85,14 @@ def _resolve_service_pricing(vehicle, company_id, departure, return_dt, payload)
     and let any advisor override present in `payload` win over the computed
     value. Returns only the svc_* keys to persist — empty when pricing can't
     be computed (e.g. missing dates) and no overrides were supplied. Never
-    raises: a pricing hiccup must not block session create/activate, so the
-    caller ends up persisting whatever was already in the payload."""
-    resolved = {}
+    raises: a pricing hiccup must not block session create/activate.
+
+    The override-merge is deliberately OUTSIDE the compute try/except: if the
+    computation raises (bad date string, DB blip on the policy lookup), the
+    advisor's EXPLICIT payload overrides (e.g. svc_total_eur=500) must STILL be
+    persisted — only the computed values are lost, honouring the per-key
+    override guarantee."""
+    computed = {}
     try:
         policy = {}
         if company_id:
@@ -96,17 +101,15 @@ def _resolve_service_pricing(vehicle, company_id, departure, return_dt, payload)
                 'FROM fp_company_config WHERE company_id = %s',
                 (int(company_id),),
             ) or {}
-        snapshot = {}
         if departure and return_dt:
-            snapshot = compute_service_pricing(vehicle or {}, policy, departure, return_dt)
-        for key in _SVC_SNAPSHOT_KEYS:
-            override = payload.get(key)
-            if override is not None:
-                resolved[key] = override
-            elif key in snapshot:
-                resolved[key] = snapshot[key]
+            computed = compute_service_pricing(vehicle or {}, policy, departure, return_dt) or {}
     except Exception:
-        logger.warning('Service pricing compute failed', exc_info=True)
+        logger.warning('Service pricing compute failed; using payload overrides only', exc_info=True)
+    resolved = dict(computed)
+    for key in _SVC_SNAPSHOT_KEYS:
+        override = payload.get(key)
+        if override is not None:
+            resolved[key] = override
     return resolved
 
 

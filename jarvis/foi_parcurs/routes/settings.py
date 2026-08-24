@@ -8,6 +8,17 @@ from ..services.rental_pricing import compute_service_pricing
 _repo = FoiParcursRepository()
 
 
+def _num_or_none(value, integer=False):
+    """Coerce a value to a number (int when `integer`), or None if empty/invalid.
+    NUMERIC/INTEGER columns reject '' — a blank from the UI clears the field."""
+    if value in (None, ''):
+        return None
+    try:
+        return int(value) if integer else float(value)
+    except (ValueError, TypeError):
+        return None
+
+
 # ════════════════════════════════════════════════════════════════
 # Service rental-pricing preview (used by the session form to auto-fill
 # before submit — computes but never persists)
@@ -205,10 +216,12 @@ def api_update_company_config(company_id):
         data.get('base_location', ''),
         data.get('td_radius_km', 50),
         data.get('comodat_avg_km', 150),
-        data.get('svc_km_included_day'),
-        data.get('svc_extra_km_eur'),
-        data.get('svc_deposit_eur'),
-        data.get('svc_franchise_eur'),
+        # NUMERIC/INTEGER Service default-policy columns reject '' — coerce blank
+        # to NULL so the S6b company-policy UI can clear a field without a 500.
+        _num_or_none(data.get('svc_km_included_day'), integer=True),
+        _num_or_none(data.get('svc_extra_km_eur')),
+        _num_or_none(data.get('svc_deposit_eur')),
+        _num_or_none(data.get('svc_franchise_eur')),
     ))
     return jsonify({'success': True})
 
