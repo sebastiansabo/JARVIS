@@ -109,6 +109,7 @@ import DriveTypeToggle from './DriveTypeToggle'
 import { formatRoPlate, isValidRoPlate } from './plateFormat'
 import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
 import ContractConfigSection from './ContractConfigSection'
+import RentalTariffsSection from './RentalTariffsSection'
 import { DOC_TYPE_LABELS, contextFromSearch, type DocType } from './documentType'
 import DocTypeToggle from './DocTypeToggle'
 
@@ -3708,6 +3709,9 @@ function SettingsTab() {
 
       {/* Section 5: Service contract setup (per company+brand) */}
       <ContractConfigSection />
+
+      {/* Section 6: Tarife — per-car courtesy rental price + policy (R3) */}
+      <RentalTariffsSection />
     </div>
   )
 }
