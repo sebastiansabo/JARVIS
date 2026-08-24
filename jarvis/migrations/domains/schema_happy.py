@@ -399,11 +399,12 @@ _HAPPY_PERMISSIONS = [
 
 
 def _seed_permissions(conn, cursor):
-    """Idempotently register Happy permissions and grant them to the Admin role.
+    """Idempotently register Happy permissions and grant them to the Admin and HR roles.
 
     Uses the repo's established idiom: an unconditional INSERT ... ON CONFLICT
     DO NOTHING per permission (re-runs safely on every init) plus a matching
-    role-grant for the Admin role.
+    role-grant. HR owns the module day-to-day (create/edit/publish campaigns,
+    pulses, praise moderation); Admins retain full access as superusers.
     """
     for idx, (entity_key, entity_label, action_key, action_label, description, scoped) in enumerate(_HAPPY_PERMISSIONS):
         cursor.execute(
@@ -419,7 +420,7 @@ def _seed_permissions(conn, cursor):
                SELECT r.id, p.id, 'all', TRUE
                  FROM roles r
                  CROSS JOIN permissions_v2 p
-                WHERE r.name = 'Admin'
+                WHERE r.name IN ('Admin', 'HR')
                   AND p.module_key = 'happy' AND p.entity_key = %s AND p.action_key = %s
                ON CONFLICT (role_id, permission_id) DO NOTHING''',
             (entity_key, action_key),

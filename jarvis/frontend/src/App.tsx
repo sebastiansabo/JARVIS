@@ -177,7 +177,7 @@ export default function App() {
         <Route path="hub" element={<SuspensePage><Hub /></SuspensePage>} />
 
         {/* Happy Board — admin console, gated on settings access */}
-        <Route path="happy/board" element={<Guard flag="can_access_settings"><SuspensePage><HappyBoard /></SuspensePage></Guard>} />
+        <Route path="happy/board" element={<V2Guard permKey="happy.campaigns.view"><SuspensePage><HappyBoard /></SuspensePage></V2Guard>} />
         {/* Happy transparency notice — login-gated, visible to every employee */}
         <Route path="happy/transparenta" element={<SuspensePage><HappyTransparency /></SuspensePage>} />
 

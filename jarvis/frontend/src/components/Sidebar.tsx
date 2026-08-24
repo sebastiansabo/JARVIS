@@ -581,7 +581,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 <TooltipContent side="right">Approvals</TooltipContent>
               </Tooltip>
               )}
-              {user?.can_access_settings && (
+              {user?.permissions?.['happy.campaigns.view'] && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link
@@ -716,7 +716,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 <ApprovalBadge />
               </Link>
               )}
-              {user?.can_access_settings && (
+              {user?.permissions?.['happy.campaigns.view'] && (
               <Link
                 to="/app/happy/board"
                 className={cn(
