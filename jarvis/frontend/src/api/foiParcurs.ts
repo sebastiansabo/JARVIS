@@ -219,9 +219,18 @@ export const foiParcursApi = {
   getCompanies: () =>
     api.get<{ companies: { id: number; company: string }[] }>(`${BASE}/companies`),
 
-  // ── Brands for a company (from the company_brands catalog, not dept structure) ──
-  getBrands: (companyId: number) =>
-    api.get<{ success: boolean; brands: string[] }>(`${BASE}/brands/${companyId}`),
+  // ── Brands for a company (from the company_brands catalog, not dept structure).
+  //    Pass documentType='service' to instead get the distinct brands present in
+  //    that company's Service (courtesy) fleet pool, not the sales catalog. ──
+  getBrands: (companyId: number, documentType?: string) =>
+    api.get<{ success: boolean; brands: string[] }>(
+      `${BASE}/brands/${companyId}${documentType ? `?document_type=${documentType}` : ''}`,
+    ),
+
+  // ── Every active brand across all companies (any-brand picker for courtesy
+  //    cars — e.g. a VW loaner sitting on an Audi dealer's fleet) ──
+  getAllBrands: () =>
+    api.get<{ success: boolean; brands: string[] }>(`${BASE}/all-brands`),
 
   // ── Per company+brand dealer config (review link + contact for the email) ──
   getDealerConfig: (companyId: number) =>
