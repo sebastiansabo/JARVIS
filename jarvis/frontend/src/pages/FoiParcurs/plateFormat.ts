@@ -1,11 +1,12 @@
 // Romanian civilian plate helpers.
 // Canonical form: "<COUNTY> <digits> <letters>", single-space separated.
 // County is either "B" (Bucharest: 2–3 digits) or two letters (2 digits).
-// Provisional plates (numere provizorii) are county + exactly 6 digits and NO
-// letters (e.g. "CJ 123456") — accepted alongside the canonical mask.
+// Provisional plates (numere provizorii) are county + 6–8 digits and NO
+// letters (e.g. "CJ 123456" / "CJ 0231879") — accepted alongside the mask.
 
-// Digit count of a provisional plate's number group.
-const PROVISIONAL_DIGITS = 6
+// Max digits kept in a provisional plate's number group (min enforced by the
+// validator).
+const MAX_PROVISIONAL_DIGITS = 8
 
 function splitCounty(s: string): { county: string; rest: string } {
   // Bucharest only when the string is exactly "B" or "B" followed by a digit.
@@ -28,7 +29,7 @@ export function formatRoPlate(raw: string): string {
   const maxDigits = county === 'B' ? 3 : 2
   const digits = letters
     ? allDigits.slice(0, maxDigits)
-    : allDigits.slice(0, PROVISIONAL_DIGITS)
+    : allDigits.slice(0, MAX_PROVISIONAL_DIGITS)
   return [county, digits, letters].filter(Boolean).join(' ')
 }
 
@@ -36,7 +37,7 @@ export function isValidRoPlate(v: string): boolean {
   const s = v.trim().toUpperCase()
   // Standard civilian: county + 2 digits (3 for Bucharest) + 3 letters.
   const standard = /^(B \d{2,3}|[A-Z]{2} \d{2}) [A-Z]{3}$/.test(s)
-  // Provisional (numere provizorii): county + exactly 6 digits, no letters.
-  const provisional = /^(B|[A-Z]{2}) \d{6}$/.test(s)
+  // Provisional (numere provizorii): county + 6–8 digits, no letters.
+  const provisional = /^(B|[A-Z]{2}) \d{6,8}$/.test(s)
   return standard || provisional
 }
