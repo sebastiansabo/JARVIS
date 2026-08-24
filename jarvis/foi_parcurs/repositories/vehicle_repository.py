@@ -51,6 +51,9 @@ class FPVehicleRepository(BaseRepository):
         'v.norma_combustibil, v.norma_energie, v.category, '
         'v.company_id, v.car_id, v.registration_number, v.is_active, '
         'v.document_type, '
+        # Service (Mașini de curtoazie) price so the Driving Park list can show
+        # a rate without a per-row fetch of the full vehicle document blobs.
+        'v.svc_tariff_eur_day, v.svc_tariff_eur_month, '
         # Lockout state so the Driving Park + session car pickers can show a car
         # as blocked (disabled) with its reason.
         'v.locked_out, v.lockout_category, v.lockout_note, v.lockout_until, '
@@ -150,9 +153,12 @@ class FPVehicleRepository(BaseRepository):
                 fuel_type, fuel_tank_capacity_liters, battery_capacity_kwh, odometer_km,
                 norma_combustibil, norma_energie, category, company_id, document_type,
                 vignette_valid_until, itp_valid_until, insurance_valid_until,
-                insurance_doc, talon_doc, civ_doc, registration_doc, offer_doc)
+                insurance_doc, talon_doc, civ_doc, registration_doc, offer_doc,
+                svc_tariff_eur_day, svc_tariff_eur_month, svc_km_included_day,
+                svc_extra_km_eur, svc_deposit_eur, svc_franchise_eur)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                       %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *''',
+                       %s, %s, %s, %s, %s, %s, %s, %s,
+                       %s, %s, %s, %s, %s, %s) RETURNING *''',
             (data['vin'], _normalize_plate(data.get('registration_number')), data.get('car_id'),
              data['mark'], data.get('brand'), data['model'], data.get('color'),
              data.get('fuel_type', 'Diesel'),
@@ -167,7 +173,10 @@ class FPVehicleRepository(BaseRepository):
              data.get('vignette_valid_until'), data.get('itp_valid_until'),
              data.get('insurance_valid_until'), data.get('insurance_doc'),
              data.get('talon_doc'), data.get('civ_doc'), data.get('registration_doc'),
-             data.get('offer_doc')),
+             data.get('offer_doc'),
+             data.get('svc_tariff_eur_day'), data.get('svc_tariff_eur_month'),
+             data.get('svc_km_included_day'), data.get('svc_extra_km_eur'),
+             data.get('svc_deposit_eur'), data.get('svc_franchise_eur')),
             returning=True,
         )
 
@@ -180,7 +189,9 @@ class FPVehicleRepository(BaseRepository):
                     'norma_combustibil', 'norma_energie', 'category', 'company_id', 'is_active',
                     'document_type',
                     'vignette_valid_until', 'itp_valid_until', 'insurance_valid_until',
-                    'insurance_doc', 'talon_doc', 'civ_doc', 'registration_doc', 'offer_doc'):
+                    'insurance_doc', 'talon_doc', 'civ_doc', 'registration_doc', 'offer_doc',
+                    'svc_tariff_eur_day', 'svc_tariff_eur_month', 'svc_km_included_day',
+                    'svc_extra_km_eur', 'svc_deposit_eur', 'svc_franchise_eur'):
             if col in data:
                 sets.append(f'{col} = %s')
                 if col == 'registration_number':

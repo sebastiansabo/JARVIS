@@ -417,6 +417,15 @@ def api_create_vehicle():
             'category': (data.get('category') or '').strip() or None,
             'company_id': company_id,
             'document_type': _normalize_doctype(data.get('document_type')),
+            # Service (Mașini de curtoazie) price + tariffs-policy override —
+            # NULL falls back to the company default (resolve_policy in
+            # rental_pricing.py). Harmless for Sales cars (never read).
+            'svc_tariff_eur_day': _to_num_or_none(data.get('svc_tariff_eur_day')),
+            'svc_tariff_eur_month': _to_num_or_none(data.get('svc_tariff_eur_month')),
+            'svc_km_included_day': _to_int_or_none(data.get('svc_km_included_day')),
+            'svc_extra_km_eur': _to_num_or_none(data.get('svc_extra_km_eur')),
+            'svc_deposit_eur': _to_num_or_none(data.get('svc_deposit_eur')),
+            'svc_franchise_eur': _to_num_or_none(data.get('svc_franchise_eur')),
             'vignette_valid_until': (data.get('vignette_valid_until') or '').strip() or None,
             'itp_valid_until': (data.get('itp_valid_until') or '').strip() or None,
             'insurance_valid_until': (data.get('insurance_valid_until') or '').strip() or None,
@@ -442,6 +451,14 @@ def api_update_vehicle(vehicle_id):
     for _col in ('vignette_valid_until', 'itp_valid_until', 'insurance_valid_until'):
         if _col in data and not (data[_col] or '').strip():
             data[_col] = None
+    # NUMERIC/INTEGER Service price+policy columns reject '' — coerce blank to
+    # NULL (falls back to the company default at pricing time).
+    for _col in ('svc_tariff_eur_day', 'svc_tariff_eur_month', 'svc_extra_km_eur',
+                 'svc_deposit_eur', 'svc_franchise_eur'):
+        if _col in data:
+            data[_col] = _to_num_or_none(data[_col])
+    if 'svc_km_included_day' in data:
+        data['svc_km_included_day'] = _to_int_or_none(data['svc_km_included_day'])
     try:
         vehicle = _vehicle_repo.update(vehicle_id, data)
         if not vehicle:

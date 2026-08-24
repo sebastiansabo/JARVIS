@@ -10,6 +10,7 @@ from ._shared import (
     _dealer_repo, open_session_block, is_privileged, log_history, log_status_change,
 )
 from ..services.fuel_service import parse_fuel_level
+from ..services.rental_pricing import compute_service_pricing
 from ..document_types import normalize as _normalize_doctype, pools_match
 from ..repositories.contract_config_repository import ContractConfigRepository
 from crm.repositories.contact_repository import ContactRepository, contact_gate_valid
@@ -71,6 +72,42 @@ def _company_gdpr_text(company_id) -> str:
 def _normalize_name(name: str) -> str:
     """Lowercase + collapse whitespace for crm_clients.name_normalized (trigram-indexed)."""
     return re.sub(r'\s+', ' ', (name or '').strip().lower())
+
+
+_SVC_SNAPSHOT_KEYS = (
+    'svc_rate_basis', 'svc_tariff_eur', 'svc_units', 'svc_total_eur',
+    'svc_km_included_day', 'svc_extra_km_eur', 'svc_garantie_eur', 'svc_fransiza_eur',
+)
+
+
+def _resolve_service_pricing(vehicle, company_id, departure, return_dt, payload) -> dict:
+    """Compute the Service rental-pricing snapshot (compute_service_pricing)
+    and let any advisor override present in `payload` win over the computed
+    value. Returns only the svc_* keys to persist — empty when pricing can't
+    be computed (e.g. missing dates) and no overrides were supplied. Never
+    raises: a pricing hiccup must not block session create/activate, so the
+    caller ends up persisting whatever was already in the payload."""
+    resolved = {}
+    try:
+        policy = {}
+        if company_id:
+            policy = _fp_repo.query_one(
+                'SELECT svc_km_included_day, svc_extra_km_eur, svc_deposit_eur, svc_franchise_eur '
+                'FROM fp_company_config WHERE company_id = %s',
+                (int(company_id),),
+            ) or {}
+        snapshot = {}
+        if departure and return_dt:
+            snapshot = compute_service_pricing(vehicle or {}, policy, departure, return_dt)
+        for key in _SVC_SNAPSHOT_KEYS:
+            override = payload.get(key)
+            if override is not None:
+                resolved[key] = override
+            elif key in snapshot:
+                resolved[key] = snapshot[key]
+    except Exception:
+        logger.warning('Service pricing compute failed', exc_info=True)
+    return resolved
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/test-drive', methods=['POST'])
@@ -291,6 +328,14 @@ def api_submit_test_drive():
             contract_data['general_conditions_accepted_at'] = datetime.now(timezone.utc)
             contract_data['general_conditions_text'] = general_conditions_text
 
+        # Service (Mașini de curtoazie) rental-pricing snapshot — frozen at
+        # create so a later car-price change never rewrites a signed contract.
+        # Gated to document_type='service'; Sales sessions never touch this.
+        if document_type == 'service':
+            contract_data.update(_resolve_service_pricing(
+                _veh, contract_data.get('company_id'),
+                data.get('departure_datetime'), data.get('return_datetime'), data))
+
         # HR-event -> marketing-project bridge: when the session is tagged with
         # an HR event, bridge it to a marketing 'event' project and point
         # mkt_project_id at that project (an event and a campaign are mutually
@@ -509,6 +554,17 @@ def api_activate_test_drive(id):
         update.update(driver_snapshot)
         # Persist a client switch/edit made at activation (empty when unchanged).
         update.update(client_update)
+
+        # Service (Mașini de curtoazie) rental-pricing snapshot — a PLANNED
+        # draft may not have had a return_datetime yet, so this is (re)computed
+        # at activation from whatever departure/return is now known. Frozen
+        # from here on; a later car-price change never rewrites this contract.
+        if _doc_type == 'service':
+            update.update(_resolve_service_pricing(
+                _veh, contract.get('company_id'),
+                update.get('departure_datetime') or contract.get('departure_datetime'),
+                update.get('return_datetime') or contract.get('return_datetime'),
+                data))
 
         updated = _fp_repo.record_activation(id, update)
         # record_activation only matches PLANNED TD rows; a concurrent/duplicate
