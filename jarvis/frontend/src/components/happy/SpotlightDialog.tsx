@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { CheckCircle2, Clock, Megaphone } from 'lucide-react'
@@ -259,6 +260,16 @@ function SpotlightContent({ item, TitleWrapper, onCta, onAck, onAcknowledged, on
             <Button onClick={onCta}>{item.cta?.label ?? 'Am înțeles'}</Button>
           )}
         </div>
+
+        {/* Footer meta — transparency link (spec §9.1) */}
+        <p className="pt-1 text-xs text-muted-foreground">
+          <Link
+            to="/app/happy/transparenta"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            Cum funcționează Happy
+          </Link>
+        </p>
       </div>
     </>
   )

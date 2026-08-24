@@ -66,6 +66,7 @@ const TestDriveReturn = lazy(() => import('./pages/FoiParcurs/TestDriveReturn'))
 const ServiceCatalog = lazy(() => import('./pages/Service/Catalog'))
 const Hub = lazy(() => import('./pages/Hub'))
 const HappyBoard = lazy(() => import('./pages/HappyBoard'))
+const HappyTransparency = lazy(() => import('./pages/Happy/Transparency'))
 
 function PageLoader() {
   return (
@@ -177,6 +178,8 @@ export default function App() {
 
         {/* Happy Board — admin console, gated on settings access */}
         <Route path="happy/board" element={<Guard flag="can_access_settings"><SuspensePage><HappyBoard /></SuspensePage></Guard>} />
+        {/* Happy transparency notice — login-gated, visible to every employee */}
+        <Route path="happy/transparenta" element={<SuspensePage><HappyTransparency /></SuspensePage>} />
 
         {/* Accounting — requires can_access_accounting */}
         <Route path="accounting" element={<Guard flag="can_access_accounting"><SuspensePage><Accounting /></SuspensePage></Guard>} />

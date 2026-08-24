@@ -414,6 +414,15 @@ export default function Hub() {
             <OpenAcksCard />
             <PraiseCard />
             <PulseCard />
+            <div className="px-1">
+              <button
+                type="button"
+                onClick={() => navigate('/app/happy/transparenta')}
+                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                Cum funcționează Happy
+              </button>
+            </div>
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
