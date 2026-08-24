@@ -25,15 +25,6 @@ type TariffFields = {
   svc_franchise_eur: string
 }
 
-const EMPTY_TARIFF: TariffFields = {
-  svc_tariff_eur_day: '',
-  svc_tariff_eur_month: '',
-  svc_km_included_day: '',
-  svc_extra_km_eur: '',
-  svc_deposit_eur: '',
-  svc_franchise_eur: '',
-}
-
 function toStr(v: number | null | undefined): string {
   return v === null || v === undefined ? '' : String(v)
 }
@@ -96,10 +87,9 @@ export default function RentalTariffsSection() {
         svc_deposit_eur: toNumOrNull(values.svc_deposit_eur),
         svc_franchise_eur: toNumOrNull(values.svc_franchise_eur),
       }),
-    onSuccess: (_data, vars) => {
+    onSuccess: () => {
       toast.success('Tarif salvat')
       qc.invalidateQueries({ queryKey: ['fp-vehicles', 'all', 'service'] })
-      qc.invalidateQueries({ queryKey: ['fp-vehicle', vars.id] })
     },
     onError: (err: any) => {
       toast.error(err?.status === 403 ? 'Nu ai permisiuni pentru a salva tariful.' : 'Salvarea tarifului a eșuat')
@@ -113,9 +103,9 @@ export default function RentalTariffsSection() {
         <h3 className="text-lg font-semibold">Tarife mașini de curtoazie</h3>
       </div>
       <p className="text-sm text-muted-foreground">
-        Tarif €/zi, Tarif €/lună și politica (km incluși, extra km, garanție, franșiză) per mașină
-        de curtoazie. Un câmp lăsat gol moștenește valoarea implicită a companiei, setată mai jos
-        la "Politică implicită mașini de curtoazie".
+        Tarif €/zi și Tarif €/lună per mașină de curtoazie (un tarif gol înseamnă 0 € — nu există
+        tarif implicit). Câmpurile de politică (km incluși, extra km, garanție, franșiză) lăsate goale
+        moștenesc valoarea implicită a companiei, setată mai sus la "Politică implicită mașini de curtoazie".
       </p>
 
       <div className="max-w-sm space-y-1.5">
@@ -153,39 +143,44 @@ export default function RentalTariffsSection() {
   )
 }
 
+function carToDraft(car: FpVehicle): TariffFields {
+  return {
+    svc_tariff_eur_day: toStr(car.svc_tariff_eur_day),
+    svc_tariff_eur_month: toStr(car.svc_tariff_eur_month),
+    svc_km_included_day: toStr(car.svc_km_included_day),
+    svc_extra_km_eur: toStr(car.svc_extra_km_eur),
+    svc_deposit_eur: toStr(car.svc_deposit_eur),
+    svc_franchise_eur: toStr(car.svc_franchise_eur),
+  }
+}
+
+function draftsEqual(a: TariffFields, b: TariffFields): boolean {
+  return (Object.keys(a) as (keyof TariffFields)[]).every((k) => a[k] === b[k])
+}
+
 function TariffRow({ car, defaults, onSave, isSaving }: {
   car: FpVehicle
   defaults: CompanyPolicyDefaults
   onSave: (values: TariffFields) => void
   isSaving: boolean
 }) {
-  // The Driving-Park lean list (getVehicles) only carries svc_tariff_eur_day/
-  // _month (see vehicle_repository._LIST_SELECT); the other 4 policy columns
-  // only come back on the full row. Fetch it per-row so a save that only
-  // touches the rate never silently nulls out an already-set policy value.
-  const { data: fullData } = useQuery({
-    queryKey: ['fp-vehicle', car.id],
-    queryFn: () => foiParcursApi.getVehicle(car.id),
-    staleTime: 30_000,
-  })
-  const full = fullData?.vehicle
+  // The lean list now carries all 6 svc_ fields (see vehicle_repository.
+  // _LIST_SELECT), so the draft initializes synchronously from `car` — no
+  // per-row getVehicle fetch (N+1) and no Save-before-load null race.
+  const [draft, setDraft] = useState<TariffFields>(() => carToDraft(car))
 
-  const [draft, setDraft] = useState<TariffFields>(EMPTY_TARIFF)
-
-  // Re-sync when the underlying data changes (initial load, full-row arrival,
-  // or after a successful save invalidates + refetches) — mirrors
-  // ContractConfigSection's ContractBrandRow.
+  // DIRTY GUARD: re-init from the refetched list ONLY when this row is clean
+  // (its draft still matches `car`'s persisted values). A sibling row's save
+  // invalidates + refetches the shared list, giving every row a fresh `car`;
+  // without this guard that would discard this row's unsaved edits. A row the
+  // user just saved is clean (draft == persisted) and re-inits harmlessly.
   useEffect(() => {
-    const source = full ?? car
-    setDraft({
-      svc_tariff_eur_day: toStr(source.svc_tariff_eur_day),
-      svc_tariff_eur_month: toStr(source.svc_tariff_eur_month),
-      svc_km_included_day: toStr(full?.svc_km_included_day),
-      svc_extra_km_eur: toStr(full?.svc_extra_km_eur),
-      svc_deposit_eur: toStr(full?.svc_deposit_eur),
-      svc_franchise_eur: toStr(full?.svc_franchise_eur),
-    })
-  }, [full, car])
+    const next = carToDraft(car)
+    setDraft((prev) => (draftsEqual(prev, next) ? next : prev))
+    // Only on refetched-car change; comparing against the live draft inside the
+    // functional update avoids a stale closure and keeps edits while dirty.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [car])
 
   const set = <K extends keyof TariffFields>(k: K, v: TariffFields[K]) => setDraft((p) => ({ ...p, [k]: v }))
 
@@ -205,9 +200,10 @@ function TariffRow({ car, defaults, onSave, isSaving }: {
           <Input
             type="number"
             step="0.01"
+            min="0"
             value={draft.svc_tariff_eur_day}
             onChange={(e) => set('svc_tariff_eur_day', e.target.value)}
-            placeholder="implicit"
+            placeholder="0.00"
           />
         </div>
         <div className="space-y-1.5">
@@ -215,9 +211,10 @@ function TariffRow({ car, defaults, onSave, isSaving }: {
           <Input
             type="number"
             step="0.01"
+            min="0"
             value={draft.svc_tariff_eur_month}
             onChange={(e) => set('svc_tariff_eur_month', e.target.value)}
-            placeholder="implicit"
+            placeholder="0.00"
           />
         </div>
         <div className="space-y-1.5">
@@ -225,6 +222,7 @@ function TariffRow({ car, defaults, onSave, isSaving }: {
           <Input
             type="number"
             step="1"
+            min="0"
             value={draft.svc_km_included_day}
             onChange={(e) => set('svc_km_included_day', e.target.value)}
             placeholder={defaults?.svc_km_included_day != null ? String(defaults.svc_km_included_day) : 'implicit companie'}
@@ -235,6 +233,7 @@ function TariffRow({ car, defaults, onSave, isSaving }: {
           <Input
             type="number"
             step="0.01"
+            min="0"
             value={draft.svc_extra_km_eur}
             onChange={(e) => set('svc_extra_km_eur', e.target.value)}
             placeholder={defaults?.svc_extra_km_eur != null ? String(defaults.svc_extra_km_eur) : 'implicit companie'}
@@ -245,6 +244,7 @@ function TariffRow({ car, defaults, onSave, isSaving }: {
           <Input
             type="number"
             step="0.01"
+            min="0"
             value={draft.svc_deposit_eur}
             onChange={(e) => set('svc_deposit_eur', e.target.value)}
             placeholder={defaults?.svc_deposit_eur != null ? String(defaults.svc_deposit_eur) : 'implicit companie'}
@@ -255,6 +255,7 @@ function TariffRow({ car, defaults, onSave, isSaving }: {
           <Input
             type="number"
             step="0.01"
+            min="0"
             value={draft.svc_franchise_eur}
             onChange={(e) => set('svc_franchise_eur', e.target.value)}
             placeholder={defaults?.svc_franchise_eur != null ? String(defaults.svc_franchise_eur) : 'implicit companie'}
