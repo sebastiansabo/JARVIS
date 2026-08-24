@@ -7,7 +7,7 @@ import html as _html
 from datetime import datetime
 from flask import send_file
 from ._shared import foi_parcurs_bp, jsonify, request, login_required, current_user, logger, _fp_repo, _vehicle_repo
-from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
+from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf, generate_service_contract_pdf
 from ..dealer_config import get_dealer_config
 
 _EMAIL_RE = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
@@ -178,7 +178,12 @@ def _ensure_pdf_path(contract, contract_id, pdf_type):
     path_field = f'pdf_{pdf_type}_path'
     pdf_path = contract.get(path_field)
     if not pdf_path or not os.path.exists(pdf_path):
-        pdf_path = generate_legal_pdf(contract) if pdf_type == 'legal' else generate_custom_pdf(contract)
+        if pdf_type == 'legal':
+            pdf_path = (generate_service_contract_pdf(contract)
+                        if contract.get('document_type') == 'service'
+                        else generate_legal_pdf(contract))
+        else:
+            pdf_path = generate_custom_pdf(contract)
         _fp_repo.execute(
             f'UPDATE foi_de_parcurs SET {path_field} = %s WHERE id = %s',
             (pdf_path, contract_id),
