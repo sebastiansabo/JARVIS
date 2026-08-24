@@ -10,6 +10,8 @@ from ._shared import (
     _dealer_repo, open_session_block, is_privileged, log_history, log_status_change,
 )
 from ..services.fuel_service import parse_fuel_level
+from ..document_types import normalize as _normalize_doctype, pools_match
+from ..repositories.contract_config_repository import ContractConfigRepository
 from crm.repositories.contact_repository import ContactRepository, contact_gate_valid
 from marketing.repositories.event_repo import ProjectEventRepository
 
@@ -19,6 +21,7 @@ _PHONE_RE = re.compile(r'^(\+\d{7,15}|07\d{8}|004\d{10})$')
 
 _contact_repo = ContactRepository()
 _event_bridge_repo = ProjectEventRepository()
+_cc_repo = ContractConfigRepository()
 
 # CRM data often stores companies as client_type 'person' with the legal form
 # only in the name (e.g. "NELAURA COMIMPEX SRL"), so the company->contact gate
@@ -77,6 +80,7 @@ def api_submit_test_drive():
     data = request.get_json(silent=True) or {}
     is_draft = data.get('status') == 'PLANNED'
     is_internal = bool(data.get('is_internal'))
+    document_type = _normalize_doctype(data.get('document_type'))
 
     # `itinerary` is intentionally NOT required — the mobile Test Drive form
     # dropped the Traseu/Itinerariu field. It's still stored when provided
@@ -120,16 +124,36 @@ def api_submit_test_drive():
         return jsonify({'success': False, 'error': 'GDPR consent is required'}), 400
 
     # General conditions (per company+brand) — required only when configured.
+    # Service sources its conditions from fp_contract_configs (Task 5); Sales
+    # keeps the existing fp_dealer_config path. Both branches reuse the single
+    # vehicle fetch below (needed for the brand — and, for Service, the pool
+    # check right after).
+    _veh = None
     general_conditions_text = ''
     try:
         _veh = _vehicle_repo.get_by_vin(data['vin'])
         _brand = (_veh or {}).get('brand') or ''
-        general_conditions_text = _dealer_repo.get_general_conditions(int(data['company_id']), _brand) or ''
+        if document_type == 'service':
+            _cfg = _cc_repo.get_active(int(data['company_id']), _brand, 'service')
+            general_conditions_text = ((_cfg or {}).get('general_conditions') or '')
+        else:
+            general_conditions_text = _dealer_repo.get_general_conditions(int(data['company_id']), _brand) or ''
     except Exception:
         logger.warning('general-conditions lookup failed at submit', exc_info=True)
         general_conditions_text = ''
     if not is_draft and not is_internal and general_conditions_text.strip() and not data.get('general_conditions_accepted'):
         return jsonify({'success': False, 'error': 'General conditions acceptance is required'}), 400
+
+    # Pool isolation: a non-Sales session (e.g. Service courtesy car) may only
+    # attach to a vehicle from the matching pool — never a Sales-only car, and
+    # vice versa. Applies to a PLANNED draft too (it already selects a car).
+    # Reuses `_veh` fetched above; re-fetched only if that lookup raised.
+    if document_type != 'sales':
+        if _veh is None:
+            _veh = _vehicle_repo.get_by_vin(data['vin'])
+        if not pools_match(document_type, (_veh or {}).get('document_type')):
+            return jsonify({'success': False,
+                            'error': 'Mașina selectată nu aparține parcului pentru acest tip de document.'}), 400
 
     contract_id = f"TD-{data['vin'][:8]}-{int(time.time())}-{uuid.uuid4().hex[:4]}"
 
@@ -259,6 +283,8 @@ def api_submit_test_drive():
             'source': 'td_form',
             'status': 'PLANNED' if is_draft else 'FILLED',
             'is_internal': is_internal,
+            'document_type': document_type,
+            'service_order_ref': (data.get('service_order_ref') or None),
         }
         if not is_draft and general_conditions_text.strip():
             contract_data['general_conditions_accepted'] = True
