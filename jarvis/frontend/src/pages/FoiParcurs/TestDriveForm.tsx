@@ -60,6 +60,7 @@ import {
   Megaphone,
   Pencil,
   Save,
+  Wallet,
 } from 'lucide-react'
 import { CreateClientPanel, DriverLicenseSection } from './CreateClientPanel'
 import {
@@ -197,6 +198,20 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const [estimatedKm, setEstimatedKm] = useState('')
   const [fuelGaugeStart, setFuelGaugeStart] = useState<FuelGaugeLevel | ''>('')
   const [generalObservation, setGeneralObservation] = useState('')
+
+  // Service (Mașini de curtoazie) rental-pricing snapshot (S6b) — auto-filled
+  // by the /service-pricing preview once a vehicle + both dates are chosen;
+  // the advisor may override any field before submit/plan. Strings so the
+  // inputs can be genuinely blank; re-synced (overwritten) whenever a fresh
+  // preview arrives for the current vehicle/dates (see the effect below).
+  const [svcRateBasis, setSvcRateBasis] = useState<'day' | 'month' | ''>('')
+  const [svcTariffEur, setSvcTariffEur] = useState('')
+  const [svcUnits, setSvcUnits] = useState('')
+  const [svcTotalEur, setSvcTotalEur] = useState('')
+  const [svcKmIncludedDay, setSvcKmIncludedDay] = useState('')
+  const [svcExtraKmEur, setSvcExtraKmEur] = useState('')
+  const [svcGarantieEur, setSvcGarantieEur] = useState('')
+  const [svcFransizaEur, setSvcFransizaEur] = useState('')
 
   // Advisor & signatures
   const [advisorName, setAdvisorName] = useState(user?.name ?? '')
@@ -381,6 +396,51 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   })
   const generalConditions = (gcData?.text ?? '').trim()
   const conditionsRequired = generalConditions.length > 0
+
+  // ── Service (Mașini de curtoazie) rental-pricing preview — Service context
+  // only. Debounced so the datetime-local inputs don't refetch on every
+  // keystroke; the fetched snapshot pre-fills the editable "Sumar închiriere"
+  // card below (see the effect right after this query). ──
+  const debouncedSvcDeparture = useDebounce(departureDatetime, 400)
+  const debouncedSvcReturn = useDebounce(returnDatetime, 400)
+  const svcPricingEnabled = documentType === 'service' && !!companyId && !!selectedVehicle?.vin
+    && !!debouncedSvcDeparture && !!debouncedSvcReturn
+  const { data: svcPricingData, isFetching: svcPricingLoading } = useQuery({
+    queryKey: ['fp-service-pricing', companyId, selectedVehicle?.vin, debouncedSvcDeparture, debouncedSvcReturn],
+    queryFn: () => foiParcursApi.getServicePricing(companyId!, selectedVehicle!.vin, debouncedSvcDeparture, debouncedSvcReturn),
+    enabled: svcPricingEnabled,
+  })
+  // Re-syncs (overwrites) the editable fields whenever a fresh preview
+  // arrives — i.e. whenever the vehicle or either date changes. The advisor's
+  // edits stick until then, matching how the draft-prefill effect above
+  // behaves on reload.
+  useEffect(() => {
+    const p = svcPricingData?.pricing
+    if (!p) return
+    setSvcRateBasis(p.svc_rate_basis)
+    setSvcTariffEur(String(p.svc_tariff_eur))
+    setSvcUnits(String(p.svc_units))
+    setSvcTotalEur(String(p.svc_total_eur))
+    setSvcKmIncludedDay(p.svc_km_included_day != null ? String(p.svc_km_included_day) : '')
+    setSvcExtraKmEur(p.svc_extra_km_eur != null ? String(p.svc_extra_km_eur) : '')
+    setSvcGarantieEur(p.svc_garantie_eur != null ? String(p.svc_garantie_eur) : '')
+    setSvcFransizaEur(p.svc_fransiza_eur != null ? String(p.svc_fransiza_eur) : '')
+  }, [svcPricingData])
+
+  // Only sent when documentType is 'service' — the (possibly advisor-
+  // overridden) rental snapshot, spread onto the submit/plan/activate
+  // payloads. Backend treats any non-null value here as an explicit
+  // per-key override of its own compute_service_pricing result.
+  const svcPricingPayload = documentType === 'service' ? {
+    ...(svcRateBasis ? { svc_rate_basis: svcRateBasis } : {}),
+    ...(svcTariffEur.trim() !== '' ? { svc_tariff_eur: Number(svcTariffEur) } : {}),
+    ...(svcUnits.trim() !== '' ? { svc_units: Number(svcUnits) } : {}),
+    ...(svcTotalEur.trim() !== '' ? { svc_total_eur: Number(svcTotalEur) } : {}),
+    ...(svcKmIncludedDay.trim() !== '' ? { svc_km_included_day: Number(svcKmIncludedDay) } : {}),
+    ...(svcExtraKmEur.trim() !== '' ? { svc_extra_km_eur: Number(svcExtraKmEur) } : {}),
+    ...(svcGarantieEur.trim() !== '' ? { svc_garantie_eur: Number(svcGarantieEur) } : {}),
+    ...(svcFransizaEur.trim() !== '' ? { svc_fransiza_eur: Number(svcFransizaEur) } : {}),
+  } : {}
 
   const { data: clientSearchData, isFetching: isSearching } = useQuery({
     queryKey: ['fp-crm-search', debouncedSearch],
@@ -659,6 +719,8 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       // actually been picked/created.
       event_id: isEvent ? (eventId ?? undefined) : undefined,
       ...(documentType === 'service' && serviceOrderRef.trim() ? { service_order_ref: serviceOrderRef.trim() } : {}),
+      // Service rental-pricing snapshot (S6b) — see svcPricingPayload above.
+      ...svcPricingPayload,
       ...(returnDatetime ? { return_datetime: returnDatetime } : {}),
       ...(capacity != null ? { fuel_tank_capacity_liters: capacity } : {}),
       ...(advisorSignature ? { advisor_signature: advisorSignature } : {}),
@@ -757,6 +819,8 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       // company client's activation (400s without it); the backend derives
       // driver_license_serie itself from the contact, so it isn't sent here.
       ...(driverContact ? { driver_contact_id: driverContact.id } : {}),
+      // Service rental-pricing snapshot (S6b) — see svcPricingPayload above.
+      ...svcPricingPayload,
     }
     withConflictCheck(selectedVehicle.vin, () => activateMutation.mutate(payload), activateId)
   }
@@ -1345,6 +1409,74 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Sumar închiriere (Service — Mașini de curtoazie only) ── */}
+      {documentType === 'service' && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Wallet className="h-4 w-4" />Sumar închiriere
+              {svcPricingLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!selectedVehicle || !departureDatetime || !returnDatetime ? (
+              <p className="text-sm text-muted-foreground">
+                Selectează mașina și datele de plecare/sosire pentru a calcula prețul.
+              </p>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Bază</Label>
+                    <div className="text-sm font-medium h-9 flex items-center">
+                      {svcRateBasis === 'month' ? 'Lunar' : svcRateBasis === 'day' ? 'Zilnic' : '—'}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Tarif (€)</Label>
+                    <Input type="number" min={0} step="0.01" value={svcTariffEur} onChange={(e) => setSvcTariffEur(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Nr. {svcRateBasis === 'month' ? 'luni' : 'zile'}</Label>
+                    <Input type="number" min={0} value={svcUnits} onChange={(e) => setSvcUnits(e.target.value)} />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/50 p-3">
+                  <Label className="text-sm font-medium shrink-0">Total</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      type="number" min={0} step="0.01"
+                      value={svcTotalEur}
+                      onChange={(e) => setSvcTotalEur(e.target.value)}
+                      className="w-32 text-right font-semibold"
+                    />
+                    <span className="text-sm text-muted-foreground">€</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Garanție (€)</Label>
+                    <Input type="number" min={0} step="0.01" value={svcGarantieEur} onChange={(e) => setSvcGarantieEur(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Franșiză (€)</Label>
+                    <Input type="number" min={0} step="0.01" value={svcFransizaEur} onChange={(e) => setSvcFransizaEur(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Km incluși/zi</Label>
+                    <Input type="number" min={0} value={svcKmIncludedDay} onChange={(e) => setSvcKmIncludedDay(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Extra km (€)</Label>
+                    <Input type="number" min={0} step="0.01" value={svcExtraKmEur} onChange={(e) => setSvcExtraKmEur(e.target.value)} />
+                  </div>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Raport Avarii (La Predare) — collapsible ── */}
       <Card>

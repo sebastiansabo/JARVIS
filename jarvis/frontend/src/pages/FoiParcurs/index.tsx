@@ -2305,6 +2305,15 @@ interface VehicleFormValue {
   category: string
   company_id: string
   document_type: 'sales' | 'service'
+  // Service (Mașini de curtoazie) per-car price + policy — blank inherits the
+  // company default (SettingsTab's "Politică implicită" section). Strings so
+  // the inputs can be genuinely empty (⇒ send null, not 0).
+  svc_tariff_eur_day: string
+  svc_tariff_eur_month: string
+  svc_km_included_day: string
+  svc_extra_km_eur: string
+  svc_deposit_eur: string
+  svc_franchise_eur: string
   vignette_valid_until: string
   itp_valid_until: string
   insurance_valid_until: string
@@ -2321,6 +2330,8 @@ function emptyVehicleForm(companyId?: number): VehicleFormValue {
     fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0,
     odometer_km: '', norma_combustibil: '', norma_energie: '', category: '', company_id: companyId ? String(companyId) : '',
     document_type: 'sales',
+    svc_tariff_eur_day: '', svc_tariff_eur_month: '', svc_km_included_day: '',
+    svc_extra_km_eur: '', svc_deposit_eur: '', svc_franchise_eur: '',
     vignette_valid_until: '', itp_valid_until: '', insurance_valid_until: '',
     insurance_doc: '', talon_doc: '', civ_doc: '', registration_doc: '', offer_doc: '',
   }
@@ -2343,6 +2354,12 @@ function vehicleToForm(v: FpVehicle): VehicleFormValue {
     category: v.category || '',
     company_id: v.company_id ? String(v.company_id) : '',
     document_type: (v.document_type as 'sales' | 'service') ?? 'sales',
+    svc_tariff_eur_day: v.svc_tariff_eur_day != null ? String(v.svc_tariff_eur_day) : '',
+    svc_tariff_eur_month: v.svc_tariff_eur_month != null ? String(v.svc_tariff_eur_month) : '',
+    svc_km_included_day: v.svc_km_included_day != null ? String(v.svc_km_included_day) : '',
+    svc_extra_km_eur: v.svc_extra_km_eur != null ? String(v.svc_extra_km_eur) : '',
+    svc_deposit_eur: v.svc_deposit_eur != null ? String(v.svc_deposit_eur) : '',
+    svc_franchise_eur: v.svc_franchise_eur != null ? String(v.svc_franchise_eur) : '',
     vignette_valid_until: v.vignette_valid_until ? String(v.vignette_valid_until).slice(0, 10) : '',
     itp_valid_until: v.itp_valid_until ? String(v.itp_valid_until).slice(0, 10) : '',
     insurance_valid_until: v.insurance_valid_until ? String(v.insurance_valid_until).slice(0, 10) : '',
@@ -2568,6 +2585,41 @@ function VehicleFormFields({
       </div>
     </div>
 
+    {value.document_type === 'service' && (
+      <div className="space-y-3 border-t pt-4">
+        <p className="text-sm font-semibold">Preț & politică (Mașini de curtoazie)</p>
+        <p className="text-xs text-muted-foreground">
+          Câmp gol = moștenește politica implicită a companiei (Settings → Politică implicită mașini de curtoazie).
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Tarif €/zi</Label>
+            <Input type="number" min={0} step="0.01" value={value.svc_tariff_eur_day} onChange={(e) => onChange({ svc_tariff_eur_day: e.target.value })} placeholder="implicit companie" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Tarif €/lună</Label>
+            <Input type="number" min={0} step="0.01" value={value.svc_tariff_eur_month} onChange={(e) => onChange({ svc_tariff_eur_month: e.target.value })} placeholder="implicit companie" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Km incluși/zi</Label>
+            <Input type="number" min={0} value={value.svc_km_included_day} onChange={(e) => onChange({ svc_km_included_day: e.target.value })} placeholder="implicit companie" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Extra km (€)</Label>
+            <Input type="number" min={0} step="0.01" value={value.svc_extra_km_eur} onChange={(e) => onChange({ svc_extra_km_eur: e.target.value })} placeholder="implicit companie" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Garanție (€)</Label>
+            <Input type="number" min={0} step="0.01" value={value.svc_deposit_eur} onChange={(e) => onChange({ svc_deposit_eur: e.target.value })} placeholder="implicit companie" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Franșiză (€)</Label>
+            <Input type="number" min={0} step="0.01" value={value.svc_franchise_eur} onChange={(e) => onChange({ svc_franchise_eur: e.target.value })} placeholder="implicit companie" />
+          </div>
+        </div>
+      </div>
+    )}
+
     <div className="space-y-3 border-t pt-4">
       <p className="text-sm font-semibold">Documente & Valabilități</p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -2702,6 +2754,12 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
         category: newVehicle.category.trim() || null,
         company_id: newVehicle.company_id ? Number(newVehicle.company_id) : undefined,
         document_type: newVehicle.document_type,
+        svc_tariff_eur_day: newVehicle.svc_tariff_eur_day.trim() === '' ? null : Number(newVehicle.svc_tariff_eur_day),
+        svc_tariff_eur_month: newVehicle.svc_tariff_eur_month.trim() === '' ? null : Number(newVehicle.svc_tariff_eur_month),
+        svc_km_included_day: newVehicle.svc_km_included_day.trim() === '' ? null : Number(newVehicle.svc_km_included_day),
+        svc_extra_km_eur: newVehicle.svc_extra_km_eur.trim() === '' ? null : Number(newVehicle.svc_extra_km_eur),
+        svc_deposit_eur: newVehicle.svc_deposit_eur.trim() === '' ? null : Number(newVehicle.svc_deposit_eur),
+        svc_franchise_eur: newVehicle.svc_franchise_eur.trim() === '' ? null : Number(newVehicle.svc_franchise_eur),
         vignette_valid_until: newVehicle.vignette_valid_until || undefined,
         itp_valid_until: newVehicle.itp_valid_until || undefined,
         insurance_valid_until: newVehicle.insurance_valid_until || undefined,
@@ -2833,6 +2891,12 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
         category: editForm.category.trim() || null,
         company_id: editForm.company_id ? Number(editForm.company_id) : null,
         document_type: editForm.document_type,
+        svc_tariff_eur_day: editForm.svc_tariff_eur_day.trim() === '' ? null : Number(editForm.svc_tariff_eur_day),
+        svc_tariff_eur_month: editForm.svc_tariff_eur_month.trim() === '' ? null : Number(editForm.svc_tariff_eur_month),
+        svc_km_included_day: editForm.svc_km_included_day.trim() === '' ? null : Number(editForm.svc_km_included_day),
+        svc_extra_km_eur: editForm.svc_extra_km_eur.trim() === '' ? null : Number(editForm.svc_extra_km_eur),
+        svc_deposit_eur: editForm.svc_deposit_eur.trim() === '' ? null : Number(editForm.svc_deposit_eur),
+        svc_franchise_eur: editForm.svc_franchise_eur.trim() === '' ? null : Number(editForm.svc_franchise_eur),
         vignette_valid_until: editForm.vignette_valid_until || null,
         itp_valid_until: editForm.itp_valid_until || null,
         insurance_valid_until: editForm.insurance_valid_until || null,
@@ -3830,8 +3894,14 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
   const [newComodatRoute, setNewComodatRoute] = useState('')
   const [newComodatKm, setNewComodatKm] = useState('')
 
-  // Company config (base location, td radius, comodat avg km)
-  const [configForm, setConfigForm] = useState({ base_location: '', td_radius_km: 50, comodat_avg_km: 150 })
+  // Company config (base location, td radius, comodat avg km) + Service
+  // (Mașini de curtoazie) default rental-pricing policy — the 4 svc_* fields
+  // are strings so the inputs can be genuinely blank (⇒ send null, meaning
+  // "no company default"; a per-car value on fp_vehicles still wins either way).
+  const [configForm, setConfigForm] = useState({
+    base_location: '', td_radius_km: 50, comodat_avg_km: 150,
+    svc_km_included_day: '', svc_extra_km_eur: '', svc_deposit_eur: '', svc_franchise_eur: '',
+  })
   const [configSaved, setConfigSaved] = useState(false)
 
   const companyId = selectedCompany ? Number(selectedCompany) : null
@@ -3851,6 +3921,10 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
         base_location: loadedConfig.base_location || '',
         td_radius_km: loadedConfig.td_radius_km || 50,
         comodat_avg_km: loadedConfig.comodat_avg_km || 150,
+        svc_km_included_day: loadedConfig.svc_km_included_day != null ? String(loadedConfig.svc_km_included_day) : '',
+        svc_extra_km_eur: loadedConfig.svc_extra_km_eur != null ? String(loadedConfig.svc_extra_km_eur) : '',
+        svc_deposit_eur: loadedConfig.svc_deposit_eur != null ? String(loadedConfig.svc_deposit_eur) : '',
+        svc_franchise_eur: loadedConfig.svc_franchise_eur != null ? String(loadedConfig.svc_franchise_eur) : '',
       })
     }
   }, [loadedConfig])
@@ -3865,7 +3939,15 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
   const comodatRoutes = routesData?.routes ?? []
 
   const configMutation = useMutation({
-    mutationFn: () => foiParcursApi.updateCompanyConfig(companyId!, configForm),
+    mutationFn: () => foiParcursApi.updateCompanyConfig(companyId!, {
+      base_location: configForm.base_location,
+      td_radius_km: configForm.td_radius_km,
+      comodat_avg_km: configForm.comodat_avg_km,
+      svc_km_included_day: configForm.svc_km_included_day.trim() === '' ? null : Number(configForm.svc_km_included_day),
+      svc_extra_km_eur: configForm.svc_extra_km_eur.trim() === '' ? null : Number(configForm.svc_extra_km_eur),
+      svc_deposit_eur: configForm.svc_deposit_eur.trim() === '' ? null : Number(configForm.svc_deposit_eur),
+      svc_franchise_eur: configForm.svc_franchise_eur.trim() === '' ? null : Number(configForm.svc_franchise_eur),
+    }),
     onSuccess: () => {
       setConfigSaved(true)
       setTimeout(() => setConfigSaved(false), 2000)
@@ -3986,6 +4068,78 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
                 realistic itineraries using real streets and landmarks around{' '}
                 {configForm.base_location || 'the city'}.
               </div>
+            </div>
+          </Card>
+
+          {/* Service (Mașini de curtoazie) default rental-pricing policy —
+              fallback for any per-car svc_* field left blank (S6). */}
+          <Card className="p-5 space-y-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Badge variant="secondary">Service</Badge>
+              Politică implicită mașini de curtoazie
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Valori implicite folosite când mașina nu are propriile setări (Stoc → Editare mașină).
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Km incluși/zi</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={configForm.svc_km_included_day}
+                  onChange={(e) => setConfigForm((p) => ({ ...p, svc_km_included_day: e.target.value }))}
+                  placeholder="ex. 100"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Extra km (€)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={configForm.svc_extra_km_eur}
+                  onChange={(e) => setConfigForm((p) => ({ ...p, svc_extra_km_eur: e.target.value }))}
+                  placeholder="ex. 0.5"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Garanție (€)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={configForm.svc_deposit_eur}
+                  onChange={(e) => setConfigForm((p) => ({ ...p, svc_deposit_eur: e.target.value }))}
+                  placeholder="ex. 500"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Franșiză (€)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={configForm.svc_franchise_eur}
+                  onChange={(e) => setConfigForm((p) => ({ ...p, svc_franchise_eur: e.target.value }))}
+                  placeholder="ex. 1000"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => configMutation.mutate()}
+                disabled={configMutation.isPending}
+              >
+                <Save className="mr-1.5 h-4 w-4" />
+                {configMutation.isPending ? 'Saving...' : 'Save'}
+              </Button>
+              {configSaved && (
+                <span className="text-sm text-green-600 flex items-center gap-1">
+                  <Check className="h-4 w-4" /> Saved
+                </span>
+              )}
             </div>
           </Card>
 
