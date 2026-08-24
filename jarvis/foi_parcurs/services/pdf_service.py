@@ -531,6 +531,242 @@ def generate_legal_pdf(contract: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Service contract PDF — per-company templated (Courtesy Car)
+# ---------------------------------------------------------------------------
+
+def generate_service_contract_pdf(contract: dict) -> str:
+    """Generate the Service (courtesy-car) contract PDF using the company's
+    active `fp_contract_configs` template for the vehicle's brand — the
+    templated title/body replace the hardcoded legal clauses, but the
+    surrounding layout (header, company/vehicle/client/km blocks, signatures)
+    reuses the same building blocks as `generate_legal_pdf`. Falls back to
+    `generate_legal_pdf` when the company has no active Service config, so a
+    misconfiguration never 500s the download."""
+    from ..repositories.contract_config_repository import ContractConfigRepository
+
+    cfg = ContractConfigRepository().get_active(
+        contract.get('company_id'), contract.get('vehicle_brand'), 'service',
+    )
+    if not cfg:
+        logger.warning(
+            'No active Service contract config for company_id=%s brand=%s — '
+            'falling back to legal PDF for contract %s',
+            contract.get('company_id'), contract.get('vehicle_brand'),
+            contract.get('contract_id', contract.get('id')),
+        )
+        return generate_legal_pdf(contract)
+
+    _ensure_dir()
+    cid = contract.get('contract_id', contract.get('id', 'unknown'))
+    out_path = os.path.join(_PDF_DIR, f'{cid}-service.pdf')
+
+    from .contract_template import render_contract_template
+
+    context = {
+        'client_name': contract.get('client_name'),
+        'client_phone': contract.get('client_phone'),
+        'client_address': contract.get('client_address'),
+        'company_name': contract.get('company_name'),
+        'brand': contract.get('vehicle_brand'),
+        'vin': contract.get('vin'),
+        'registration_number': contract.get('registration_number'),
+        'km_start': contract.get('km_start'),
+        'km_end': contract.get('km_end'),
+        'distance_km': _odometer_distance_km(contract),
+        'departure_datetime': _fmt_dt(contract.get('departure_datetime')),
+        'return_datetime': _fmt_dt(contract.get('return_datetime')),
+        'service_order_ref': contract.get('service_order_ref'),
+        'advisor_name': contract.get('advisor_name'),
+        'general_conditions': cfg.get('general_conditions'),
+    }
+
+    title_text = render_contract_template(cfg.get('title'), context) or 'Contract Masina de Curtoazie'
+    body_text = render_contract_template(cfg.get('body_template'), context)
+    conditions_text = render_contract_template(cfg.get('general_conditions') or '', context)
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'SVCTitle', parent=styles['Heading1'],
+        fontSize=16, alignment=TA_CENTER, spaceAfter=4,
+    )
+    sub_style = ParagraphStyle(
+        'SVCSub', parent=styles['Normal'],
+        fontSize=10, alignment=TA_CENTER, spaceAfter=2,
+    )
+    label_style = ParagraphStyle(
+        'SVCLabel', parent=styles['Normal'],
+        fontSize=9, textColor=colors.HexColor('#555555'),
+    )
+    value_style = ParagraphStyle(
+        'SVCValue', parent=styles['Normal'],
+        fontSize=10, leading=13,
+    )
+    section_style = ParagraphStyle(
+        'SVCSection', parent=styles['Heading3'],
+        fontSize=11, spaceBefore=8, spaceAfter=4,
+        textColor=colors.HexColor('#1a1a2e'),
+    )
+    body_style = ParagraphStyle(
+        'SVCBody', parent=styles['Normal'],
+        fontSize=9, leading=13, alignment=TA_JUSTIFY, spaceAfter=6,
+    )
+
+    doc = SimpleDocTemplate(
+        out_path,
+        pagesize=A4,
+        leftMargin=20 * mm, rightMargin=20 * mm,
+        topMargin=18 * mm, bottomMargin=18 * mm,
+    )
+
+    W = A4[0] - 40 * mm  # usable width
+
+    story = []
+
+    # ---- Header ----
+    try:
+        _dt = contract.get('departure_datetime')
+        _hdr_date = (datetime.fromisoformat(str(_dt).replace('Z', '')) if _dt else datetime.now()).strftime('%d.%m.%Y')
+    except Exception:
+        _hdr_date = datetime.now().strftime('%d.%m.%Y')
+    story.append(Paragraph(title_text, title_style))
+    story.append(Paragraph(f'Nr. {cid}  •  {_hdr_date}', sub_style))
+    story.append(HRFlowable(width='100%', thickness=1.5, color=colors.HexColor('#1a1a2e'), spaceAfter=8))
+
+    _kv_style = TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('LINEBELOW', (0, 0), (-1, -1), 0.25, colors.HexColor('#dddddd')),
+    ])
+
+    def _kv_table(rows):
+        if not rows:
+            rows = [('—', '—')]
+        t = Table([[Paragraph(l, label_style), Paragraph(str(v), value_style)] for l, v in rows],
+                  colWidths=[45 * mm, W - 45 * mm])
+        t.setStyle(_kv_style)
+        return t
+
+    # ---- Company & Vehicle ----
+    story.append(Paragraph('Date Companie și Vehicul', section_style))
+    story.append(_kv_table([
+        ('Companie', contract.get('company_name') or '—'),
+        ('VIN', contract.get('vin') or '—'),
+        ('Nr. înmatriculare', contract.get('registration_number') or '—'),
+    ]))
+    story.append(Spacer(1, 6))
+
+    # ---- Client ----
+    story.append(Paragraph('Date Client', section_style))
+    cl_rows = [(l, v) for l, v in (
+        ('Nume', contract.get('client_name')),
+        ('Telefon', contract.get('client_phone')),
+        ('Email', contract.get('client_email')),
+        ('Adresă', contract.get('client_address')),
+    ) if v not in (None, '', '—')]
+    story.append(_kv_table(cl_rows))
+    story.append(Spacer(1, 6))
+
+    # ---- Consilier / Comandă service ----
+    story.append(Paragraph('Consilier', section_style))
+    adv_rows = [(l, v) for l, v in (
+        ('Consilier', contract.get('advisor_name')),
+        ('Nr. comandă service', contract.get('service_order_ref')),
+    ) if v not in (None, '', '—')]
+    story.append(_kv_table(adv_rows))
+    story.append(Spacer(1, 6))
+
+    # ---- Route/dates ----
+    story.append(Paragraph('Perioadă', section_style))
+    story.append(_kv_table([
+        ('Predare', _fmt_dt(contract.get('departure_datetime'))),
+        ('Retur', _fmt_dt(contract.get('return_datetime'))),
+    ]))
+    story.append(Spacer(1, 6))
+
+    # ---- Odometer ----
+    story.append(Paragraph('Kilometraj', section_style))
+    _dist = _odometer_distance_km(contract)
+    km_data = [
+        [Paragraph('Km start', label_style), Paragraph(str(contract.get('km_start') or '—'), value_style),
+         Paragraph('Km final', label_style), Paragraph(str(contract.get('km_end') or '—'), value_style)],
+        [Paragraph('Distanță parcursă', label_style),
+         Paragraph((f"{_dist} km" if _dist is not None else '—'), value_style), '', ''],
+    ]
+    km_table = Table(km_data, colWidths=[38 * mm, 35 * mm, 38 * mm, W - 111 * mm])
+    km_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('SPAN', (1, 1), (3, 1)),
+        ('LINEBELOW', (0, 0), (-1, -1), 0.25, colors.HexColor('#dddddd')),
+    ]))
+    story.append(km_table)
+    story.append(Spacer(1, 6))
+
+    # ---- Templated body (per-company contract text) ----
+    if (body_text or '').strip():
+        story.append(Paragraph('Contract', section_style))
+        for para in body_text.splitlines():
+            if para.strip():
+                story.append(Paragraph(para.strip(), body_style))
+        story.append(Spacer(1, 6))
+
+    # ---- Accepted general conditions (dealer-configured, per company/brand) ----
+    story.extend(_general_conditions_flowables(
+        conditions_text,
+        contract.get('general_conditions_accepted_at'),
+    ))
+
+    # ---- Signatures ----
+    story.append(Paragraph('Semnături', section_style))
+
+    client_sig_img = _sig_image(contract.get('client_signature', ''))
+    advisor_sig_img = _sig_image(contract.get('signature_ai_generated', ''))
+
+    sig_box_style = TableStyle([
+        ('BOX', (0, 0), (-1, -1), 0.75, colors.HexColor('#999999')),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ])
+
+    col_w = W / 2 - 3 * mm
+
+    def _sig_cell(img, label):
+        inner = []
+        if img:
+            inner.append([img])
+        else:
+            inner.append([Paragraph('<i>Lipsă semnătură</i>', ParagraphStyle('x', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER, textColor=colors.grey))])
+        inner.append([Paragraph(label, ParagraphStyle('lbl', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER))])
+        t = Table(inner, colWidths=[col_w - 4 * mm])
+        t.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        return t
+
+    sig_row = [[_sig_cell(client_sig_img, 'Semnătură Client'), _sig_cell(advisor_sig_img, 'Semnătură Consilier')]]
+    sig_table = Table(sig_row, colWidths=[col_w, col_w], rowHeights=[35 * mm])
+    sig_table.setStyle(sig_box_style)
+    story.append(sig_table)
+
+    story.append(Spacer(1, 10))
+    story.append(HRFlowable(width='100%', thickness=0.5, color=colors.HexColor('#cccccc'), spaceAfter=4))
+    story.append(Paragraph(
+        f'Document generat automat • {datetime.now().strftime("%d.%m.%Y %H:%M")}',
+        ParagraphStyle('footer', parent=styles['Normal'], fontSize=7, alignment=TA_CENTER, textColor=colors.grey),
+    ))
+
+    doc.build(story)
+    logger.info('Service contract PDF generated: %s', out_path)
+    return out_path
+
+
+# ---------------------------------------------------------------------------
 # Custom PDF — branded Test Drive Summary
 # ---------------------------------------------------------------------------
 
