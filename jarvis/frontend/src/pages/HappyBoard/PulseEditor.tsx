@@ -19,6 +19,7 @@ import {
   type HappyPulseQType,
 } from '@/api/happyAdmin'
 import { PulseResultsView } from './PulseResultsView'
+import { StatusBadge } from './StatusBadge'
 
 const QTYPES: { value: HappyPulseQType; label: string }[] = [
   { value: 'likert5', label: 'Scală 1–5' },
@@ -36,7 +37,7 @@ export interface PulseEditorProps {
 export function PulseEditor({ pulseId, open, onOpenChange }: PulseEditorProps) {
   const queryClient = useQueryClient()
   const { data, isLoading } = useAdminPulse(open ? pulseId : null)
-  const { data: results } = usePulseResults(open ? pulseId : null)
+  const { data: results } = usePulseResults(open ? pulseId : null, data?.pulse?.status === 'live')
   const [questions, setQuestions] = useState<AdminPulseQuestion[]>([])
   const [audience, setAudience] = useState<{ id: number; name: string }[]>([])
   const [search, setSearch] = useState('')
@@ -130,7 +131,7 @@ export function PulseEditor({ pulseId, open, onOpenChange }: PulseEditorProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {pulse?.title ?? 'Pulse'}
-            {pulse && <Badge variant="outline">{pulse.status}</Badge>}
+            {pulse && <StatusBadge status={pulse.status} />}
           </DialogTitle>
         </DialogHeader>
 
@@ -256,15 +257,33 @@ export function PulseEditor({ pulseId, open, onOpenChange }: PulseEditorProps) {
               </div>
             </div>
 
-            {/* Lifecycle */}
+            {/* Lifecycle — a live pulse must NOT expose the broadcast button (one
+                click after a refresh, with an empty audience, would blast all staff). */}
             <div className="flex items-center gap-2 border-t pt-4">
-              <Button size="sm" variant="outline" onClick={handleOpen} disabled={openPulse.isPending}>
-                <Play className="h-3.5 w-3.5" />{' '}
-                {audience.length ? `Deschide pt. test · ${audience.length}` : 'Deschide (tuturor)'}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => closePulse.mutate()} disabled={closePulse.isPending}>
-                <Square className="h-3.5 w-3.5" /> Închide
-              </Button>
+              {pulse?.status === 'live' ? (
+                <>
+                  <span className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    Live · {results?.participation.invited ?? 0} invitați
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto"
+                    onClick={() => closePulse.mutate()}
+                    disabled={closePulse.isPending}
+                  >
+                    <Square className="h-3.5 w-3.5" /> Închide
+                  </Button>
+                </>
+              ) : pulse?.status === 'closed' ? (
+                <span className="text-sm text-muted-foreground">Pulse închis.</span>
+              ) : (
+                <Button size="sm" variant="outline" onClick={handleOpen} disabled={openPulse.isPending}>
+                  <Play className="h-3.5 w-3.5" />{' '}
+                  {audience.length ? `Deschide pt. test · ${audience.length}` : 'Deschide (tuturor)'}
+                </Button>
+              )}
             </div>
 
             {/* Results */}

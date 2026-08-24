@@ -275,11 +275,14 @@ export function useAdminPulse(id: number | null) {
   })
 }
 
-export function usePulseResults(id: number | null) {
+export function usePulseResults(id: number | null, live = false) {
   return useQuery({
     queryKey: ['happy', 'admin', 'pulse', id, 'results'],
     queryFn: () => happyAdminApi.getResults(id as number),
     enabled: id != null,
+    // While a pulse is live and its report is on screen, poll so responses climb
+    // without a manual refresh.
+    refetchInterval: live ? 10_000 : false,
   })
 }
 
