@@ -71,6 +71,7 @@ import {
 } from './testDriveDamage'
 import { ConflictDialog } from './ConflictDialog'
 import { isCompanyClientLike } from './companyClient'
+import { contextFromSearch, type DocType } from './documentType'
 
 const SignatureCanvas = lazy(() => import('@/components/shared/SignatureCanvas'))
 
@@ -131,6 +132,14 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const [searchParams] = useSearchParams()
   const activateId = activateIdProp ?? (searchParams.get('activate') ? Number(searchParams.get('activate')) : null)
   const isActivating = activateId != null
+
+  // Service context (Task 13) — the standalone route deep-links with
+  // `?context=service` (Task 12); anything else defaults to 'sales'. Not
+  // carried by the `?activate=` deep link, so an activation always reads
+  // 'sales' here — the PLANNED draft already carries its own document_type
+  // server-side (set at plan time), so nothing is lost.
+  const documentType: DocType = contextFromSearch(searchParams.toString() ? `?${searchParams.toString()}` : window.location.search)
+  const [serviceOrderRef, setServiceOrderRef] = useState('')
 
   // Company & vehicle
   const [companyId, setCompanyId] = useState<number | null>(null)
@@ -633,6 +642,10 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
         }
     return {
       company_id: companyId!,
+      // Service context (Task 13) — carried on both the submit and plan
+      // payloads (this builder feeds both); the courtesy-car order reference
+      // is Service-only.
+      document_type: documentType,
       vin: vehicle.vin,
       registration_number: vehicle.registration_number ?? '',
       client_id: Number(client.id),
@@ -645,6 +658,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       // only sent when the "Este eveniment" checkbox is on and an event has
       // actually been picked/created.
       event_id: isEvent ? (eventId ?? undefined) : undefined,
+      ...(documentType === 'service' && serviceOrderRef.trim() ? { service_order_ref: serviceOrderRef.trim() } : {}),
       ...(returnDatetime ? { return_datetime: returnDatetime } : {}),
       ...(capacity != null ? { fuel_tank_capacity_liters: capacity } : {}),
       ...(advisorSignature ? { advisor_signature: advisorSignature } : {}),
@@ -819,9 +833,15 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-lg font-semibold">{isActivating ? 'Activează Test Drive' : 'Test Drive Nou'}</h1>
+          <h1 className="text-lg font-semibold">
+            {isActivating
+              ? 'Activează Test Drive'
+              : documentType === 'service' ? 'Predare mașină de curtoazie' : 'Test Drive Nou'}
+          </h1>
           <p className="text-sm text-muted-foreground">
-            {isActivating ? 'Confirmă/ajustează datele și capturează semnătura clientului' : 'Completați datele pentru test drive'}
+            {isActivating
+              ? 'Confirmă/ajustează datele și capturează semnătura clientului'
+              : documentType === 'service' ? 'Completați datele pentru predarea mașinii de curtoazie' : 'Completați datele pentru test drive'}
           </p>
         </div>
       </div>
@@ -911,6 +931,16 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           <CardTitle className="text-base flex items-center gap-2"><Search className="h-4 w-4" />Client</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          {documentType === 'service' && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Nr. comandă service</Label>
+              <Input
+                placeholder="Nr. comandă service"
+                value={serviceOrderRef}
+                onChange={(e) => setServiceOrderRef(e.target.value)}
+              />
+            </div>
+          )}
           {selectedClient ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2 flex-wrap">
@@ -1422,7 +1452,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
             {planMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se salvează...</> : <><CalendarPlus className="h-4 w-4 mr-2" />Planifică (draft)</>}
           </Button>
           <Button className={cn('flex-1', attemptedAction === 'submit' && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleSubmit} disabled={submitMutation.isPending || planMutation.isPending || checking}>
-            {submitMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se trimite...</> : 'Trimite'}
+            {submitMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se trimite...</> : documentType === 'service' ? 'Predă mașina' : 'Trimite'}
           </Button>
         </div>
       )}
