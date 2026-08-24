@@ -391,6 +391,7 @@ def api_activate_test_drive(id):
         # Mirrors the live-submit gate: a PLANNED draft defers this to activation.
         general_conditions_text = ''
         _doc_type = _normalize_doctype(contract.get('document_type'))
+        _veh = None
         try:
             _veh = _vehicle_repo.get_by_vin(contract.get('vin'))
             _brand = (_veh or {}).get('brand') or ''
