@@ -544,14 +544,23 @@ def generate_service_contract_pdf(contract: dict) -> str:
     misconfiguration never 500s the download."""
     from ..repositories.contract_config_repository import ContractConfigRepository
 
+    # `vehicle_brand` is denormalized onto most contract reads, but the
+    # ZIP-export rows (`get_contracts`) don't join `fp_vehicles` — fall back
+    # to a vin lookup so an export-time cache miss doesn't silently downgrade
+    # a Service contract to the Sales PDF.
+    brand = contract.get('vehicle_brand')
+    if not brand and contract.get('vin'):
+        from ..repositories.vehicle_repository import FPVehicleRepository
+        brand = (FPVehicleRepository().get_by_vin(contract['vin']) or {}).get('brand')
+
     cfg = ContractConfigRepository().get_active(
-        contract.get('company_id'), contract.get('vehicle_brand'), 'service',
+        contract.get('company_id'), brand, 'service',
     )
     if not cfg:
         logger.warning(
             'No active Service contract config for company_id=%s brand=%s — '
             'falling back to legal PDF for contract %s',
-            contract.get('company_id'), contract.get('vehicle_brand'),
+            contract.get('company_id'), brand,
             contract.get('contract_id', contract.get('id')),
         )
         return generate_legal_pdf(contract)
@@ -567,7 +576,7 @@ def generate_service_contract_pdf(contract: dict) -> str:
         'client_phone': contract.get('client_phone'),
         'client_address': contract.get('client_address'),
         'company_name': contract.get('company_name'),
-        'brand': contract.get('vehicle_brand'),
+        'brand': brand,
         'vin': contract.get('vin'),
         'registration_number': contract.get('registration_number'),
         'km_start': contract.get('km_start'),

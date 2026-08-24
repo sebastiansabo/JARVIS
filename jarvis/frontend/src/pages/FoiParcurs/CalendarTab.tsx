@@ -63,7 +63,7 @@ export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', 
   const { data, isLoading } = useQuery({
     queryKey: ['foi-contracts-all', companyId, monthKey, documentType],
     queryFn: () =>
-      foiParcursApi.getContracts({ company_id: companyId || undefined, route_type: 'TD', date_from: rangeFrom, date_to: rangeTo, per_page: 2000, sort_by: 'created_at', sort_dir: 'DESC', document_type: documentType === 'sales' ? undefined : documentType }),
+      foiParcursApi.getContracts({ company_id: companyId || undefined, route_type: 'TD', date_from: rangeFrom, date_to: rangeTo, per_page: 2000, sort_by: 'created_at', sort_dir: 'DESC', document_type: documentType }),
     staleTime: 30_000,
   })
   const { data: vehiclesData } = useQuery({

@@ -144,16 +144,16 @@ def api_submit_test_drive():
     if not is_draft and not is_internal and general_conditions_text.strip() and not data.get('general_conditions_accepted'):
         return jsonify({'success': False, 'error': 'General conditions acceptance is required'}), 400
 
-    # Pool isolation: a non-Sales session (e.g. Service courtesy car) may only
-    # attach to a vehicle from the matching pool — never a Sales-only car, and
-    # vice versa. Applies to a PLANNED draft too (it already selects a car).
-    # Reuses `_veh` fetched above; re-fetched only if that lookup raised.
-    if document_type != 'sales':
-        if _veh is None:
-            _veh = _vehicle_repo.get_by_vin(data['vin'])
-        if not pools_match(document_type, (_veh or {}).get('document_type')):
-            return jsonify({'success': False,
-                            'error': 'Mașina selectată nu aparține parcului pentru acest tip de document.'}), 400
+    # Pool isolation: a session may only attach to a vehicle from its own pool
+    # — a Service (courtesy car) session never attaches to a Sales-only car,
+    # and vice versa. Applies to a PLANNED draft too (it already selects a
+    # car). Symmetric in both directions. Reuses `_veh` fetched above;
+    # re-fetched only if that lookup raised.
+    if _veh is None:
+        _veh = _vehicle_repo.get_by_vin(data['vin'])
+    if not pools_match(document_type, (_veh or {}).get('document_type')):
+        return jsonify({'success': False,
+                        'error': 'Mașina selectată nu aparține parcului pentru acest tip de document.'}), 400
 
     contract_id = f"TD-{data['vin'][:8]}-{int(time.time())}-{uuid.uuid4().hex[:4]}"
 
@@ -405,7 +405,7 @@ def api_activate_test_drive(id):
         except Exception:
             logger.warning('general-conditions lookup failed at activation', exc_info=True)
             general_conditions_text = ''
-        if _doc_type != 'sales' and not pools_match(_doc_type, (_veh or {}).get('document_type')):
+        if not pools_match(_doc_type, (_veh or {}).get('document_type')):
             return jsonify({'success': False,
                             'error': 'Mașina selectată nu aparține parcului pentru acest tip de document.'}), 400
         if general_conditions_text.strip() and not data.get('general_conditions_accepted'):

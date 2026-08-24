@@ -2,6 +2,7 @@
 
 from ._shared import foi_parcurs_bp, jsonify, request, login_required, logger, _dealer_repo, _vehicle_repo
 from ..repositories import FoiParcursRepository
+from ..repositories.contract_config_repository import ContractConfigRepository
 
 _repo = FoiParcursRepository()
 
@@ -39,10 +40,13 @@ def api_put_dealer_config(company_id, brand_id):
 def api_get_general_conditions():
     """Resolve the general-conditions text for the mobile Test Drive form.
     Brand is resolved from the vehicle (vin); a `brand` name param is accepted
-    as a fallback. Returns '' when nothing is configured."""
+    as a fallback. Branches on `document_type`: Service sources its conditions
+    from `fp_contract_configs` (mirrors the submit/activate gate), Sales keeps
+    the existing dealer-config path. Returns '' when nothing is configured."""
     company_id = request.args.get('company_id', type=int)
     vin = (request.args.get('vin') or '').strip()
     brand = (request.args.get('brand') or '').strip()
+    document_type = (request.args.get('document_type') or 'sales').strip()
     if vin and not brand:
         try:
             veh = _vehicle_repo.get_by_vin(vin)
@@ -52,7 +56,10 @@ def api_get_general_conditions():
             brand = ''
     text = ''
     if company_id and brand:
-        text = _dealer_repo.get_general_conditions(company_id, brand)
+        if document_type == 'service':
+            text = ((ContractConfigRepository().get_active(company_id, brand, 'service') or {}).get('general_conditions') or '')
+        else:
+            text = _dealer_repo.get_general_conditions(company_id, brand)
     return jsonify({'success': True, 'text': text, 'brand': brand})
 
 
