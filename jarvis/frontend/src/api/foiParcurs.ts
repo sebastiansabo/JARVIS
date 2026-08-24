@@ -122,6 +122,7 @@ export const foiParcursApi = {
     per_page?: number
     sort_by?: string
     sort_dir?: string
+    document_type?: string
   }) =>
     api.get<{ contracts: FoiContract[]; total: number; page: number; per_page: number }>(
       `${BASE}/contracts${qs(params ?? {})}`
@@ -152,8 +153,8 @@ export const foiParcursApi = {
     api.post<{ success: boolean; client: FoiClient }>(`${BASE}/clients`, data),
 
   // ── Vehicles (Stock) ──
-  getVehicles: (activeOnly = true) =>
-    api.get<{ vehicles: FpVehicle[] }>(`${BASE}/vehicles`, { active_only: String(activeOnly) }),
+  getVehicles: (activeOnly = true, documentType?: string) =>
+    api.get<{ vehicles: FpVehicle[] }>(`${BASE}/vehicles`, { active_only: String(activeOnly), ...(documentType ? { document_type: documentType } : {}) }),
 
   // Full vehicle incl. document blobs — the list is lean, so the edit form
   // fetches the docs here on demand.
@@ -230,6 +231,18 @@ export const foiParcursApi = {
 
   updateDealerConfig: (companyId: number, brandId: number, data: { review_url?: string; address?: string; phone?: string; email?: string; show_in_foi_parcurs?: boolean; general_conditions?: string }) =>
     api.put<{ success: boolean }>(`${BASE}/dealer-config/${companyId}/${brandId}`, data),
+
+  // ── Per company+brand contract configs (Service context: title/body/general
+  //    conditions template for the generated contract) ──
+  getContractConfigs: (companyId: number) =>
+    api.get<{ success: boolean; configs: Array<{ brand_id: number; brand_name: string; config_id: number | null; title: string | null; body_template: string | null; general_conditions: string | null; is_active: boolean }> }>(`${BASE}/contract-configs/${companyId}`),
+
+  putContractConfig: (companyId: number, brandId: number, payload: { title: string; body_template: string; general_conditions: string; is_active: boolean }) =>
+    api.put<{ success: boolean }>(`${BASE}/contract-configs/${companyId}/${brandId}`, payload),
+
+  // ── Service context enabled flags (which brands have Service unlocked) ──
+  getServiceEnabled: (companyId: number) =>
+    api.get<{ success: boolean; enabled: boolean; brands: number[] }>(`${BASE}/service-enabled`, { company_id: String(companyId) }),
 
   // ── KM Configs (Settings) ──
   getKmConfigs: () =>
