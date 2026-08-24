@@ -503,13 +503,31 @@ def api_list_companies():
 @foi_parcurs_bp.route('/api/foi-parcurs/brands/<int:company_id>', methods=['GET'])
 @login_required
 def api_list_brands(company_id):
-    """List the car brands a company carries (from the company_brands catalog).
+    """List the car brands relevant to a company for foi-parcurs.
 
     Deliberately reads the brand catalog rather than structure_nodes L1, because
     some companies use L1 for departments (e.g. Administrativ, Aftersales), not brands.
+
+    For document_type=service (courtesy/rental fleet), the sales brand catalog does
+    NOT apply — a dealer can rent out cars of any brand regardless of what it sells.
+    In that case, return the DISTINCT brands actually present in the company's
+    Service-pool vehicles instead of the company_brands catalog.
     """
     from core.base_repository import BaseRepository
     repo = BaseRepository()
+    document_type = (request.args.get('document_type') or '').strip().lower()
+    if document_type == 'service':
+        rows = repo.query_all(
+            '''SELECT DISTINCT brand
+               FROM fp_vehicles
+               WHERE company_id = %s AND document_type = 'service'
+                 AND is_active = TRUE AND brand IS NOT NULL AND TRIM(brand) <> ''
+               ORDER BY brand''',
+            (company_id,),
+        )
+        brands = [r['brand'] for r in (rows or [])]
+        return jsonify({'success': True, 'brands': brands})
+
     rows = repo.query_all(
         '''SELECT b.name
            FROM company_brands cb
@@ -520,6 +538,24 @@ def api_list_brands(company_id):
              AND COALESCE(dc.show_in_foi_parcurs, TRUE) = TRUE
            ORDER BY b.name''',
         (company_id,),
+    )
+    brands = [r['name'] for r in (rows or [])]
+    return jsonify({'success': True, 'brands': brands})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/all-brands', methods=['GET'])
+@login_required
+def api_list_all_brands():
+    """List every active brand in the global catalog.
+
+    Used by the vehicle add/edit form to offer ANY brand when the car's pool is
+    Service (e.g. a VW courtesy car on an Audi dealer), rather than being limited
+    to the dealer's sales catalog (see api_list_brands for that restricted view).
+    """
+    from core.base_repository import BaseRepository
+    repo = BaseRepository()
+    rows = repo.query_all(
+        '''SELECT name FROM brands WHERE is_active = TRUE ORDER BY name'''
     )
     brands = [r['name'] for r in (rows or [])]
     return jsonify({'success': True, 'brands': brands})
