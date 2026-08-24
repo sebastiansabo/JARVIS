@@ -109,7 +109,8 @@ import DriveTypeToggle from './DriveTypeToggle'
 import { formatRoPlate, isValidRoPlate } from './plateFormat'
 import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
 import ContractConfigSection from './ContractConfigSection'
-import { DOC_TYPE_LABELS, type DocType } from './documentType'
+import { DOC_TYPE_LABELS, contextFromSearch, type DocType } from './documentType'
+import DocTypeToggle from './DocTypeToggle'
 
 /** Truncate a display name to `max` chars with an ellipsis; the full value stays
  *  available in the cell's title tooltip. */
@@ -148,6 +149,10 @@ export default function FoiParcurs() {
   const [tabToolbar, setTabToolbar] = useState<HTMLDivElement | null>(null)
   // Client vs internal drive filter — applies to the Sesiuni table + Calendar.
   const [driveType, setDriveType] = usePersistentState<'all' | 'client' | 'internal'>('fp.driveType', 'all')
+  // Sales vs Service (Mașini de curtoazie) context — persisted, seeded from a
+  // `?context=service` deep link. Forced back to 'sales' when the selected
+  // company doesn't have Service enabled (see effect below).
+  const [docType, setDocType] = usePersistentState<DocType>('fp.docType', contextFromSearch(window.location.search))
 
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
@@ -177,6 +182,20 @@ export default function FoiParcurs() {
       setBrand(list[0])
     }
   }, [brandsData, brand])
+
+  // Service context is per-company (unlocked per brand); the standalone
+  // header toggle shows only when the selected company has it enabled.
+  const { data: serviceEnabledData } = useQuery({
+    queryKey: ['fp-service-enabled', companyId],
+    queryFn: () => foiParcursApi.getServiceEnabled(companyId),
+    enabled: companyId > 0,
+  })
+  const serviceEnabled = !!serviceEnabledData?.enabled
+  // Force back to Sales if the company changes to one without Service enabled
+  // (or on load for a non-enabled company) so tabs never query a locked pool.
+  useEffect(() => {
+    if (!serviceEnabled && docType !== 'sales') setDocType('sales')
+  }, [serviceEnabled, docType, setDocType])
 
   const activeTabLabel = ({ stock: 'Driving Park', parcurs: 'Sesiuni Driving', calendar: 'Calendar', contracts: 'Foi de Parcurs', settings: 'Settings' } as const)[activeTab]
   // Third breadcrumb segment: the selected drive-type "section" (Client/Intern),
@@ -227,6 +246,7 @@ export default function FoiParcurs() {
               </SelectContent>
             </Select>
           )}
+          {serviceEnabled && <DocTypeToggle value={docType} onChange={setDocType} />}
         </div>
       </div>
 
@@ -255,9 +275,9 @@ export default function FoiParcurs() {
       </Tabs>
 
       {activeTab === 'contracts' && <ContractsTab companyId={companyId} toolbarSlot={tabToolbar} />}
-      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} />}
-      {activeTab === 'stock' && <StockTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} />}
-      {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} />}
+      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
+      {activeTab === 'stock' && <StockTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} documentType={docType} />}
+      {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
       {activeTab === 'settings' && <SettingsTab />}
     </div>
   )
@@ -1499,7 +1519,7 @@ const SESSION_COLUMNS = [
 ] as const
 type SessionColumnKey = (typeof SESSION_COLUMNS)[number]['key']
 
-export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlot, driveType = 'all', onDriveTypeChange }: { companyId: number; brand: string; onActivate?: (id: number) => void; onReturn?: (id: number) => void; toolbarSlot?: HTMLElement | null; driveType?: 'all' | 'client' | 'internal'; onDriveTypeChange?: (v: 'all' | 'client' | 'internal') => void }) {
+export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlot, driveType = 'all', onDriveTypeChange, documentType = 'sales' }: { companyId: number; brand: string; onActivate?: (id: number) => void; onReturn?: (id: number) => void; toolbarSlot?: HTMLElement | null; driveType?: 'all' | 'client' | 'internal'; onDriveTypeChange?: (v: 'all' | 'client' | 'internal') => void; documentType?: DocType }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
@@ -1554,9 +1574,9 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
 
   const { data, isLoading } = useQuery({
-    queryKey: ['foi-contracts-all', companyId],
+    queryKey: ['foi-contracts-all', companyId, documentType],
     queryFn: () =>
-      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC' }),
+      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC', document_type: documentType === 'sales' ? undefined : documentType }),
     staleTime: 30_000,
   })
 
@@ -1581,8 +1601,8 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
 
   // Vehicles → vin→brand map, so contracts can be filtered by the selected brand
   const { data: vehiclesData } = useQuery({
-    queryKey: ['fp-vehicles'],
-    queryFn: () => foiParcursApi.getVehicles(),
+    queryKey: ['fp-vehicles', documentType],
+    queryFn: () => foiParcursApi.getVehicles(true, documentType),
     staleTime: 30_000,
   })
   const vehiclesList = vehiclesData?.vehicles ?? []
@@ -2574,7 +2594,7 @@ function VehicleFormFields({
   )
 }
 
-function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand: string; toolbarSlot?: HTMLElement | null }) {
+function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { companyId: number; brand: string; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [expandedVehicleId, setExpandedVehicleId] = useState<number | string | null>(null)
@@ -2610,9 +2630,9 @@ function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand:
   const [error, setError] = useState('')
 
   const { data: vehiclesData, isLoading } = useQuery({
-    queryKey: ['fp-vehicles', companyId, showArchived],
+    queryKey: ['fp-vehicles', companyId, showArchived, documentType],
     // active_only=false returns archived vehicles too (marked is_active=false).
-    queryFn: () => foiParcursApi.getVehicles(!showArchived),
+    queryFn: () => foiParcursApi.getVehicles(!showArchived, documentType),
     staleTime: 30_000,
   })
 

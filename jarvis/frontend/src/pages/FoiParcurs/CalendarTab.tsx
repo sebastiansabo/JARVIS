@@ -15,6 +15,7 @@ import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
 import SessionTypeChooser from './SessionTypeChooser'
 import MonthCalendar from './MonthCalendar'
 import DriveTypeToggle from './DriveTypeToggle'
+import type { DocType } from './documentType'
 
 type CalView = 'month' | 'week' | 'day'
 const VIEW_OPTIONS: readonly [CalView, string][] = [['day', 'Zi'], ['week', 'Săptămână'], ['month', 'Lună']]
@@ -37,7 +38,7 @@ function minsOfDay(iso?: string | null): number | null {
  *  grid space starts a new session prefilled at that slot. Data reuses the same
  *  ['foi-contracts-all', companyId, monthKey] query as SessionsTab (filtered
  *  client-side), so switching Sesiuni Driving ↔ Calendar doesn't refetch. */
-export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', onDriveTypeChange }: { companyId: number; brand: string; toolbarSlot?: HTMLElement | null; driveType?: 'all' | 'client' | 'internal'; onDriveTypeChange?: (v: 'all' | 'client' | 'internal') => void }) {
+export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', onDriveTypeChange, documentType = 'sales' }: { companyId: number; brand: string; toolbarSlot?: HTMLElement | null; driveType?: 'all' | 'client' | 'internal'; onDriveTypeChange?: (v: 'all' | 'client' | 'internal') => void; documentType?: DocType }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   // Persisted (survives navigating to the new-TD form and back) with Week default.
@@ -60,14 +61,14 @@ export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', 
   const monthKey = `${cursor.getFullYear()}-${cursor.getMonth()}`
 
   const { data, isLoading } = useQuery({
-    queryKey: ['foi-contracts-all', companyId, monthKey],
+    queryKey: ['foi-contracts-all', companyId, monthKey, documentType],
     queryFn: () =>
-      foiParcursApi.getContracts({ company_id: companyId || undefined, route_type: 'TD', date_from: rangeFrom, date_to: rangeTo, per_page: 2000, sort_by: 'created_at', sort_dir: 'DESC' }),
+      foiParcursApi.getContracts({ company_id: companyId || undefined, route_type: 'TD', date_from: rangeFrom, date_to: rangeTo, per_page: 2000, sort_by: 'created_at', sort_dir: 'DESC', document_type: documentType === 'sales' ? undefined : documentType }),
     staleTime: 30_000,
   })
   const { data: vehiclesData } = useQuery({
-    queryKey: ['fp-vehicles'],
-    queryFn: () => foiParcursApi.getVehicles(),
+    queryKey: ['fp-vehicles', documentType],
+    queryFn: () => foiParcursApi.getVehicles(true, documentType),
     staleTime: 30_000,
   })
   const vehiclesList = vehiclesData?.vehicles ?? []
@@ -81,7 +82,7 @@ export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', 
   // Drag-to-reschedule (PLANNED only) — optimistic on the visible month's cache,
   // rolled back on error; backend re-guards status + past-date.
   const [moveErr, setMoveErr] = useState<string | null>(null)
-  const contractsKey = ['foi-contracts-all', companyId, monthKey] as const
+  const contractsKey = ['foi-contracts-all', companyId, monthKey, documentType] as const
   const rescheduleMut = useMutation({
     mutationFn: ({ id, departure, ret }: { id: number; departure: string; ret: string }) =>
       foiParcursApi.rescheduleTestDrive(id, { departure_datetime: departure, return_datetime: ret }),
