@@ -161,7 +161,7 @@ export const foiParcursApi = {
   getVehicle: (id: number) =>
     api.get<{ success: boolean; vehicle: FpVehicle }>(`${BASE}/vehicles/${id}`),
 
-  createVehicle: (data: { vin: string; registration_number?: string; car_id?: string; mark: string; brand?: string; model: string; color?: string; fuel_type: string; fuel_tank_capacity_liters?: number | null; battery_capacity_kwh?: number | null; odometer_km?: number | null; norma_combustibil?: number | null; norma_energie?: number | null; category?: string | null; company_id?: number; document_type?: string; vignette_valid_until?: string; itp_valid_until?: string; insurance_valid_until?: string; insurance_doc?: string; talon_doc?: string; civ_doc?: string; registration_doc?: string; offer_doc?: string }) =>
+  createVehicle: (data: { vin: string; registration_number?: string; car_id?: string; mark: string; brand?: string; model: string; color?: string; fuel_type: string; fuel_tank_capacity_liters?: number | null; battery_capacity_kwh?: number | null; odometer_km?: number | null; norma_combustibil?: number | null; norma_energie?: number | null; category?: string | null; company_id?: number; document_type?: string; svc_tariff_eur_day?: number | null; svc_tariff_eur_month?: number | null; svc_km_included_day?: number | null; svc_extra_km_eur?: number | null; svc_deposit_eur?: number | null; svc_franchise_eur?: number | null; vignette_valid_until?: string; itp_valid_until?: string; insurance_valid_until?: string; insurance_doc?: string; talon_doc?: string; civ_doc?: string; registration_doc?: string; offer_doc?: string }) =>
     api.post<{ success: boolean; vehicle: FpVehicle }>(`${BASE}/vehicles`, data),
 
   updateVehicle: (id: number, data: Partial<FpVehicle>) =>
@@ -269,14 +269,36 @@ export const foiParcursApi = {
   generateItinerary: (companyId: number, routeType: 'TD' | 'Comodat', distanceKm: number) =>
     api.post<{ itinerary: string }>(`${BASE}/generate-itinerary`, { company_id: companyId, route_type: routeType, distance_km: distanceKm }),
 
-  // ── Company Location Config ──
+  // ── Company Location Config (+ Service default rental-pricing policy) ──
   getCompanyConfig: (companyId: number) =>
-    api.get<{ config: { company_id: number; base_location: string; td_radius_km: number; comodat_avg_km: number } }>(
-      `${BASE}/company-config/${companyId}`
-    ),
+    api.get<{ config: {
+      company_id: number; base_location: string; td_radius_km: number; comodat_avg_km: number
+      // Service (Mașini de curtoazie) default policy — fallback for any
+      // per-car svc_* field left NULL (see fp_vehicles / compute_service_pricing).
+      svc_km_included_day: number | null; svc_extra_km_eur: number | null
+      svc_deposit_eur: number | null; svc_franchise_eur: number | null
+    } }>(`${BASE}/company-config/${companyId}`),
 
-  updateCompanyConfig: (companyId: number, data: { base_location: string; td_radius_km: number; comodat_avg_km: number }) =>
+  updateCompanyConfig: (companyId: number, data: {
+    base_location: string; td_radius_km: number; comodat_avg_km: number
+    svc_km_included_day?: number | null; svc_extra_km_eur?: number | null
+    svc_deposit_eur?: number | null; svc_franchise_eur?: number | null
+  }) =>
     api.put<{ success: boolean }>(`${BASE}/company-config/${companyId}`, data),
+
+  // ── Service rental-pricing preview (session form auto-fill; pure preview,
+  //    never persists — see GET /api/foi-parcurs/service-pricing) ──
+  getServicePricing: (companyId: number, vin: string, departure: string, returnDt: string) =>
+    api.get<{ success: boolean; pricing: {
+      svc_rate_basis: 'day' | 'month'
+      svc_tariff_eur: number
+      svc_units: number
+      svc_total_eur: number
+      svc_km_included_day: number | null
+      svc_extra_km_eur: number | null
+      svc_garantie_eur: number | null
+      svc_fransiza_eur: number | null
+    } }>(`${BASE}/service-pricing`, { company_id: String(companyId), vin, departure, return_dt: returnDt }),
 
   // ── Test Drive Form ──
   submitTestDrive: (data: TestDriveFormPayload) =>
