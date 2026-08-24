@@ -95,6 +95,20 @@ def _seed_service_contract_configs(conn, cursor):
     circular import when called from database.init_db(). Any failure here
     (missing file, bad SQL, etc.) must never break schema init, so the whole
     thing is wrapped in try/except.
+
+    IMPORTANT: when create_schema() runs inside ONE shared transaction
+    (conn.autocommit is False, committed only at the very end), a bare
+    conn.rollback() here would discard ALL prior uncommitted schema-init work
+    in this run. So the INSERT is scoped inside a SAVEPOINT and only that
+    SAVEPOINT is rolled back on failure — the outer schema-creation
+    transaction is left intact, and NO mid-schema conn.commit() is introduced.
+
+    The SAVEPOINT is used only when there is an open transaction to scope it
+    to: database.init_db() gets its connection from get_db(), which sets
+    conn.autocommit = True, and SAVEPOINT is invalid outside a transaction
+    block (psycopg2 raises NoActiveSqlTransaction). In autocommit mode there
+    is no shared transaction to protect — each statement commits on its own
+    and a failed INSERT only rolls back itself — so the SAVEPOINT is skipped.
     """
     try:
         tpl_path = os.path.join(
@@ -106,21 +120,27 @@ def _seed_service_contract_configs(conn, cursor):
         spec.loader.exec_module(tpl)
         face, terms = tpl.SERVICE_CONTRACT_FACE, tpl.SERVICE_CONTRACT_TERMS
 
-        cursor.execute('''
-            INSERT INTO fp_contract_configs
-                (company_id, brand_id, document_type, title, body_template, general_conditions, is_active, updated_at)
-            SELECT cb.company_id, cb.brand_id, 'service', %s, %s, %s, TRUE, NOW()
-            FROM company_brands cb
-            JOIN brands b ON b.id = cb.brand_id
-            WHERE cb.is_active = TRUE AND b.is_active = TRUE
-            ON CONFLICT (company_id, brand_id, document_type) DO NOTHING
-        ''', ('Contract închiriere autovehicul – Mașini de curtoazie', face, terms))
+        use_savepoint = not getattr(conn, 'autocommit', False)
+        if use_savepoint:
+            cursor.execute('SAVEPOINT svc_contract_seed')
+        try:
+            cursor.execute('''
+                INSERT INTO fp_contract_configs
+                    (company_id, brand_id, document_type, title, body_template, general_conditions, is_active, updated_at)
+                SELECT cb.company_id, cb.brand_id, 'service', %s, %s, %s, TRUE, NOW()
+                FROM company_brands cb
+                JOIN brands b ON b.id = cb.brand_id
+                WHERE cb.is_active = TRUE AND b.is_active = TRUE
+                ON CONFLICT (company_id, brand_id, document_type) DO NOTHING
+            ''', ('Contract închiriere autovehicul – Mașini de curtoazie', face, terms))
+            if use_savepoint:
+                cursor.execute('RELEASE SAVEPOINT svc_contract_seed')
+        except Exception:
+            if use_savepoint:
+                cursor.execute('ROLLBACK TO SAVEPOINT svc_contract_seed')
+            raise
     except Exception:
         logger.exception('Failed to seed fp_contract_configs (service) — continuing schema init')
-        try:
-            conn.rollback()
-        except Exception:
-            pass
 
 
 def create_schema_incremental(conn, cursor):
