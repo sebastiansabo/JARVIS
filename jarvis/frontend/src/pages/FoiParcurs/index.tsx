@@ -2488,11 +2488,11 @@ function VehicleFormFields({
         <Input
           value={value.registration_number}
           onChange={(e) => onChange({ registration_number: formatRoPlate(e.target.value) })}
-          placeholder="ex. CJ 12 ABC"
+          placeholder="ex. CJ 12 ABC / CJ 0231879"
           className={cn(value.registration_number !== '' && !isValidRoPlate(value.registration_number) && 'ring-2 ring-destructive')}
         />
         {value.registration_number !== '' && !isValidRoPlate(value.registration_number) && (
-          <p className="text-xs text-destructive">Format placă invalid (ex. CJ 12 ABC / B 123 XYZ).</p>
+          <p className="text-xs text-destructive">Format placă invalid (ex. CJ 12 ABC / B 123 XYZ / CJ 0231879).</p>
         )}
       </div>
       <div className="space-y-1.5">

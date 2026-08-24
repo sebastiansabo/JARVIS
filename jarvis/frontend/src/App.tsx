@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
+import { SpotlightProvider } from '@/components/happy/SpotlightProvider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/stores/authStore'
 import { useIsMobile } from '@/hooks/useMediaQuery'
@@ -64,6 +65,8 @@ const InternalSessionForm = lazy(() => import('./pages/FoiParcurs/InternalSessio
 const TestDriveReturn = lazy(() => import('./pages/FoiParcurs/TestDriveReturn'))
 const ServiceCatalog = lazy(() => import('./pages/Service/Catalog'))
 const Hub = lazy(() => import('./pages/Hub'))
+const HappyBoard = lazy(() => import('./pages/HappyBoard'))
+const HappyTransparency = lazy(() => import('./pages/Happy/Transparency'))
 
 function PageLoader() {
   return (
@@ -167,11 +170,16 @@ export default function App() {
       {/* Public form — no auth, no layout */}
       <Route path="/f/:slug" element={<SuspensePage><PublicForm /></SuspensePage>} />
 
-      <Route path="/app" element={<Layout />}>
+      <Route path="/app" element={<><Layout /><SpotlightProvider /></>}>
         <Route index element={<DefaultRedirect />} />
         <Route path="dashboard" element={<DashboardOrRedirect />} />
         <Route path="profile" element={<SuspensePage><Profile /></SuspensePage>} />
         <Route path="hub" element={<SuspensePage><Hub /></SuspensePage>} />
+
+        {/* Happy Board — admin console, gated on settings access */}
+        <Route path="happy/board" element={<V2Guard permKey="happy.campaigns.view"><SuspensePage><HappyBoard /></SuspensePage></V2Guard>} />
+        {/* Happy transparency notice — login-gated, visible to every employee */}
+        <Route path="happy/transparenta" element={<SuspensePage><HappyTransparency /></SuspensePage>} />
 
         {/* Accounting — requires can_access_accounting */}
         <Route path="accounting" element={<Guard flag="can_access_accounting"><SuspensePage><Accounting /></SuspensePage></Guard>} />

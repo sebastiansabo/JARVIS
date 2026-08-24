@@ -9,7 +9,12 @@ logger = logging.getLogger('jarvis.foi_parcurs.vehicle_repository')
 
 
 def _normalize_plate(value):
-    """Uppercase + collapse separators to canonical spaced RO plate; pass through unknowns."""
+    """Uppercase + collapse separators to canonical spaced RO plate; pass through unknowns.
+
+    Standard civilian: county + 2 digits (3 for Bucharest) + 3 letters.
+    Provisional (numere provizorii): county + 6-8 digits and NO letters — the
+    digit run is kept intact (must mirror the frontend mask in plateFormat.ts).
+    """
     if not value:
         return value
     s = re.sub(r'[^A-Za-z0-9]', '', str(value)).upper()
@@ -22,9 +27,14 @@ def _normalize_plate(value):
     m = re.match(r'^(\d+)([A-Z]+)?$', rest)
     if not m:
         return value
-    max_d = 3 if county == 'B' else 2
-    digits = m.group(1)[:max_d]
     letters = (m.group(2) or '')[:3]
+    if letters:
+        # Standard plate — the digit group is bounded (2, or 3 for Bucharest).
+        max_d = 3 if county == 'B' else 2
+        digits = m.group(1)[:max_d]
+    else:
+        # Provisional plate — keep the full digit run (up to 8).
+        digits = m.group(1)[:8]
     return ' '.join(p for p in (county, digits, letters) if p)
 
 
