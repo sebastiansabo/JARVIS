@@ -109,6 +109,7 @@ import DriveTypeToggle from './DriveTypeToggle'
 import { formatRoPlate, isValidRoPlate } from './plateFormat'
 import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
 import ContractConfigSection from './ContractConfigSection'
+import { DOC_TYPE_LABELS, type DocType } from './documentType'
 
 /** Truncate a display name to `max` chars with an ellipsis; the full value stays
  *  available in the cell's title tooltip. */
@@ -2283,6 +2284,7 @@ interface VehicleFormValue {
   norma_energie: string
   category: string
   company_id: string
+  document_type: 'sales' | 'service'
   vignette_valid_until: string
   itp_valid_until: string
   insurance_valid_until: string
@@ -2298,6 +2300,7 @@ function emptyVehicleForm(companyId?: number): VehicleFormValue {
     car_id: '', vin: '', registration_number: '', mark: '', model: '', color: '',
     fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0,
     odometer_km: '', norma_combustibil: '', norma_energie: '', category: '', company_id: companyId ? String(companyId) : '',
+    document_type: 'sales',
     vignette_valid_until: '', itp_valid_until: '', insurance_valid_until: '',
     insurance_doc: '', talon_doc: '', civ_doc: '', registration_doc: '', offer_doc: '',
   }
@@ -2319,6 +2322,7 @@ function vehicleToForm(v: FpVehicle): VehicleFormValue {
     norma_energie: v.norma_energie != null ? String(v.norma_energie) : '',
     category: v.category || '',
     company_id: v.company_id ? String(v.company_id) : '',
+    document_type: (v.document_type as 'sales' | 'service') ?? 'sales',
     vignette_valid_until: v.vignette_valid_until ? String(v.vignette_valid_until).slice(0, 10) : '',
     itp_valid_until: v.itp_valid_until ? String(v.itp_valid_until).slice(0, 10) : '',
     insurance_valid_until: v.insurance_valid_until ? String(v.insurance_valid_until).slice(0, 10) : '',
@@ -2532,6 +2536,16 @@ function VehicleFormFields({
           </SelectContent>
         </Select>
       </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Parc / Tip document</Label>
+        <Select value={value.document_type} onValueChange={(v) => onChange({ document_type: v as DocType })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="sales">{DOC_TYPE_LABELS.sales}</SelectItem>
+            <SelectItem value="service">{DOC_TYPE_LABELS.service}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
     </div>
 
     <div className="space-y-3 border-t pt-4">
@@ -2667,6 +2681,7 @@ function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand:
         norma_energie: newVehicle.norma_energie.trim() === '' ? null : Number(newVehicle.norma_energie),
         category: newVehicle.category.trim() || null,
         company_id: newVehicle.company_id ? Number(newVehicle.company_id) : undefined,
+        document_type: newVehicle.document_type,
         vignette_valid_until: newVehicle.vignette_valid_until || undefined,
         itp_valid_until: newVehicle.itp_valid_until || undefined,
         insurance_valid_until: newVehicle.insurance_valid_until || undefined,
@@ -2797,6 +2812,7 @@ function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand:
         norma_energie: editForm.norma_energie.trim() === '' ? null : Number(editForm.norma_energie),
         category: editForm.category.trim() || null,
         company_id: editForm.company_id ? Number(editForm.company_id) : null,
+        document_type: editForm.document_type,
         vignette_valid_until: editForm.vignette_valid_until || null,
         itp_valid_until: editForm.itp_valid_until || null,
         insurance_valid_until: editForm.insurance_valid_until || null,
