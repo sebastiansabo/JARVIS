@@ -9,7 +9,9 @@ Called by:
   - init_schema.create_schema()  (fresh installs, ensures parity)
   - database.init_db()           (existing schemas on every startup)
 """
+import importlib.util
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,47 @@ def _recompute_bilant_formula_values(cursor):
                 )
     if updated:
         logger.info('Recomputed %d stale formula_rd values across %d generation(s)', updated, len(gen_ids))
+
+
+def _seed_service_contract_configs(conn, cursor):
+    """Seed the Service courtesy-car contract config for every active (company, brand).
+
+    Idempotent via ON CONFLICT DO NOTHING — existing rows (including any an
+    admin has already hand-edited) are left untouched; only missing
+    (company_id, brand_id, 'service') combos get inserted.
+
+    Templates are loaded by file path via importlib rather than
+    `import foi_parcurs...` because importing the foi_parcurs package triggers
+    foi_parcurs/__init__.py -> routes -> repositories -> database, which is a
+    circular import when called from database.init_db(). Any failure here
+    (missing file, bad SQL, etc.) must never break schema init, so the whole
+    thing is wrapped in try/except.
+    """
+    try:
+        tpl_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', 'foi_parcurs',
+            'services', 'service_contract_templates.py'
+        )
+        spec = importlib.util.spec_from_file_location('_svc_contract_tpl', tpl_path)
+        tpl = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tpl)
+        face, terms = tpl.SERVICE_CONTRACT_FACE, tpl.SERVICE_CONTRACT_TERMS
+
+        cursor.execute('''
+            INSERT INTO fp_contract_configs
+                (company_id, brand_id, document_type, title, body_template, general_conditions, is_active, updated_at)
+            SELECT cb.company_id, cb.brand_id, 'service', %s, %s, %s, TRUE, NOW()
+            FROM company_brands cb
+            JOIN brands b ON b.id = cb.brand_id
+            WHERE cb.is_active = TRUE AND b.is_active = TRUE
+            ON CONFLICT (company_id, brand_id, document_type) DO NOTHING
+        ''', ('Contract închiriere autovehicul – Mașini de curtoazie', face, terms))
+    except Exception:
+        logger.exception('Failed to seed fp_contract_configs (service) — continuing schema init')
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
 
 def create_schema_incremental(conn, cursor):
@@ -2376,6 +2419,9 @@ def _create_schema_incremental_continued(conn, cursor):
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_contract_configs_lookup ON fp_contract_configs(company_id, brand_id, document_type, is_active)')
+    # Idempotent seed — one 'service' row per active (company, brand); never
+    # overwrites rows an admin already edited (ON CONFLICT DO NOTHING).
+    _seed_service_contract_configs(conn, cursor)
 
     # ── Foi de Parcurs — Service courtesy-car rental pricing ──
     # Per-car price + optional policy override (fp_vehicles); company default
