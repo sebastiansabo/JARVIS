@@ -40,6 +40,7 @@ class FPVehicleRepository(BaseRepository):
         'v.fuel_tank_capacity_liters, v.battery_capacity_kwh, v.odometer_km, '
         'v.norma_combustibil, v.norma_energie, v.category, '
         'v.company_id, v.car_id, v.registration_number, v.is_active, '
+        'v.document_type, '
         # Lockout state so the Driving Park + session car pickers can show a car
         # as blocked (disabled) with its reason.
         'v.locked_out, v.lockout_category, v.lockout_note, v.lockout_until, '

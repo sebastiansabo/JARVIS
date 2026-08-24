@@ -41,6 +41,8 @@ export interface FpVehicle {
   registration_number?: string
   company_id?: number
   company_name?: string
+  /** Pool the car belongs to: 'sales' (Vânzări) or 'service' (Mașini de curtoazie). */
+  document_type?: 'sales' | 'service'
   // Documents + validity (rovinietă/vignette, ITP, RCA insurance). Docs are
   // base64 (image or PDF data-URL).
   vignette_valid_until?: string | null
