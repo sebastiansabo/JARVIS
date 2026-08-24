@@ -244,12 +244,18 @@ def _damage_table(damage_block_text: str) -> list:
     """A 2-column ('Element' | 'Cost') ReportLab Table for the Service
     contract's priced damage list, plus a small caption for the trailing
     price-disclaimer note. Lines using the template's `label | price` format
-    become table rows; short lines without a price (e.g. 'Elemente vitrate',
-    'Roti', 'Interior') become bold category-header rows spanning both
-    columns. The line repeating the section title ('VALOAREA ... DAUNELOR')
-    is dropped — the caller already renders that as a `Paragraph` heading.
-    Returns [] when there are no priced rows to show (malformed/empty input),
-    so the caller never inserts an empty table."""
+    become table rows; every OTHER non-priced line (e.g. 'Elemente vitrate',
+    'Roti', 'Interior', or a dealer's custom 'Daune caroserie' header) becomes
+    a bold category-header row spanning both columns — only the two known
+    boilerplate caption lines are dropped: the section-title echo (any line
+    containing 'VALOAREA FACTURABIL', already rendered by the caller as a
+    `Paragraph` heading) and the 'Cost Dauna Neasigurata' column caption
+    (already covered by the 'Cost' column header). `*`-prefixed lines are the
+    price-disclaimer note, rendered as an italic caption below the table.
+
+    When a segment has category headers and/or a disclaimer note but no
+    priced rows, those are returned as loose paragraphs (never silently
+    dropped); returns [] only when there is genuinely nothing to render."""
     styles = getSampleStyleSheet()
     hdr_style = ParagraphStyle('DmgHdr', parent=styles['Normal'], fontSize=9,
                                fontName='Helvetica-Bold', textColor=colors.white)
@@ -264,16 +270,19 @@ def _damage_table(damage_block_text: str) -> list:
     rows = [[Paragraph('Element', hdr_style), Paragraph('Cost', hdr_style)]]
     span_at = []
     notes = []
+    headers = []
     priced_rows = 0
 
     for raw in (damage_block_text or '').splitlines():
         line = raw.strip()
         if not line:
             continue
-        if 'DAUN' in line.upper() and '|' not in line:
-            # The repeated 'VALOAREA ... A DAUNELOR' title and the
-            # 'Cost Dauna Neasigurata*' caption — both already implied by the
-            # Paragraph heading + 'Cost' column header the caller renders.
+        # Skip ONLY the two known boilerplate caption lines (whitespace-
+        # normalized, case-insensitive) — never a blanket 'contains DAUN'
+        # match, which would swallow a legit custom header like 'Daune
+        # caroserie'.
+        _norm = ' '.join(line.upper().split())
+        if 'VALOAREA FACTURABIL' in _norm or 'COST DAUNA NEASIGURATA' in _norm:
             continue
         if line.startswith('*'):
             notes.append(line.lstrip('*').strip())
@@ -285,9 +294,15 @@ def _damage_table(damage_block_text: str) -> list:
         else:
             span_at.append(len(rows))
             rows.append([Paragraph(line, cat_style), ''])
+            headers.append(line)
 
     if priced_rows == 0:
-        return []
+        # No 'Element | Cost' data — but a category header and/or disclaimer
+        # note must still reach the document (never silently dropped).
+        loose = [Paragraph(h, cat_style) for h in headers]
+        if notes:
+            loose.append(Paragraph(' '.join(notes), note_style))
+        return loose
 
     W = A4[0] - 40 * mm
     t = Table(rows, colWidths=[W * 0.72, W * 0.28])
