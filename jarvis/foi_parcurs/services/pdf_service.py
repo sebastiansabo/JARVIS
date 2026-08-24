@@ -708,24 +708,73 @@ def generate_service_contract_pdf(contract: dict) -> str:
     _rate_basis_map = {'day': 'zi', 'month': 'lună'}
     _svc_rate_basis = _rate_basis_map.get(_rate_basis_raw, _rate_basis_raw)
 
+    # Company-legal + client CUI/CI fallback (C2). Same gap as the
+    # vehicle_brand fallback above: `get_contract_by_id` joins `companies`
+    # (reg_no/iban/bank/street/city/county/administrator/vat/alert_email) and
+    # `crm_client_contacts` (client_ci_serie) onto the contract row, but
+    # `get_contracts()` — used by the ZIP export and any other lean-row
+    # caller — does not. On a PDF-cache miss, that bare row reaches this
+    # generator directly and would otherwise render with a blank Prestator
+    # legal block and a blank client CUI/CI. Resolve them here so the PDF is
+    # self-sufficient for ANY caller (export, email, on-demand), not just
+    # get_contract_by_id. Best-effort: a lookup failure must never 500 the
+    # PDF — falls back to the pre-existing blank behavior.
+    _company_fallback = {}
+    if not contract.get('company_reg_no') and contract.get('company_id'):
+        try:
+            from core.organization.repositories.company_repository import CompanyRepository
+            _company_fallback = CompanyRepository().get(int(contract['company_id'])) or {}
+        except Exception:
+            logger.warning(
+                'Company-legal fallback lookup failed for contract %s',
+                contract.get('contract_id', contract.get('id')), exc_info=True,
+            )
+
+    _client_cui_fallback = ''
+    if not contract.get('client_cui') and contract.get('client_id'):
+        try:
+            from crm.repositories import ClientRepository as CrmClientRepository
+            _cl = CrmClientRepository().get_by_id(int(contract['client_id']))
+            _client_cui_fallback = (_cl or {}).get('cui') or ''
+        except Exception:
+            logger.warning(
+                'Client CUI fallback lookup failed for contract %s',
+                contract.get('contract_id', contract.get('id')), exc_info=True,
+            )
+
+    _client_ci_fallback = ''
+    if not contract.get('client_ci_serie') and contract.get('driver_contact_id'):
+        try:
+            from crm.repositories.contact_repository import ContactRepository
+            _contact = ContactRepository().get(int(contract['driver_contact_id']))
+            if _contact:
+                _client_ci_fallback = ' '.join(
+                    p for p in (_contact.get('driver_license_serie'), _contact.get('driver_license_number')) if p
+                ).strip()
+        except Exception:
+            logger.warning(
+                'Client CI fallback lookup failed for contract %s',
+                contract.get('contract_id', contract.get('id')), exc_info=True,
+            )
+
     context = {
         'client_name': contract.get('client_name'),
         'client_phone': contract.get('client_phone'),
         'client_address': contract.get('client_address'),
         'client_email': contract.get('client_email'),
         'client_company': contract.get('client_company'),
-        'client_cui': contract.get('client_cui'),
-        'client_ci_serie': contract.get('client_ci_serie'),
-        'company_name': contract.get('company_name'),
-        'company_street': contract.get('company_street'),
-        'company_city': contract.get('company_city'),
-        'company_county': contract.get('company_county'),
-        'company_reg_no': contract.get('company_reg_no'),
-        'company_vat': contract.get('company_vat'),
-        'company_iban': contract.get('company_iban'),
-        'company_bank': contract.get('company_bank'),
-        'company_administrator': contract.get('company_administrator'),
-        'company_email': contract.get('company_email'),
+        'client_cui': contract.get('client_cui') or _client_cui_fallback,
+        'client_ci_serie': contract.get('client_ci_serie') or _client_ci_fallback,
+        'company_name': contract.get('company_name') or _company_fallback.get('company'),
+        'company_street': contract.get('company_street') or _company_fallback.get('street'),
+        'company_city': contract.get('company_city') or _company_fallback.get('city'),
+        'company_county': contract.get('company_county') or _company_fallback.get('county'),
+        'company_reg_no': contract.get('company_reg_no') or _company_fallback.get('reg_no'),
+        'company_vat': contract.get('company_vat') or _company_fallback.get('vat'),
+        'company_iban': contract.get('company_iban') or _company_fallback.get('iban'),
+        'company_bank': contract.get('company_bank') or _company_fallback.get('bank'),
+        'company_administrator': contract.get('company_administrator') or _company_fallback.get('administrator'),
+        'company_email': contract.get('company_email') or _company_fallback.get('alert_email'),
         'dealer_phone': _dealer_phone,
         'brand': brand,
         'vehicle_model': contract.get('vehicle_model'),
