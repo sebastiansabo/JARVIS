@@ -475,6 +475,10 @@ export interface TestDriveFormPayload {
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
   allow_open_session?: boolean
+  /** Service context (Task 13): which flow this session belongs to
+   *  ('sales' | 'service'); service_order_ref is Service-only. */
+  document_type?: string
+  service_order_ref?: string
 }
 
 // ── Internal driving-log session — POST /test-drive with is_internal:true
