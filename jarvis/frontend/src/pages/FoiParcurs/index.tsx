@@ -164,10 +164,12 @@ export default function FoiParcurs() {
   // fleet/sessions at once). We no longer force-select the first company.
   const companies = companiesData?.companies ?? []
 
-  // Brands for the selected company (from the company_brands catalog)
+  // Brands for the selected company — the sales catalog in Sales context, or
+  // the distinct brands actually present in the Service (courtesy) fleet pool
+  // when in Service context, so the dropdown always matches what's browsable.
   const { data: brandsData } = useQuery({
-    queryKey: ['fp-brands', companyId],
-    queryFn: () => foiParcursApi.getBrands(companyId),
+    queryKey: ['fp-brands', companyId, docType],
+    queryFn: () => foiParcursApi.getBrands(companyId, docType === 'service' ? 'service' : undefined),
     enabled: companyId > 0,
     staleTime: 60_000,
   })
@@ -253,8 +255,17 @@ export default function FoiParcurs() {
       <SessionTypeChooser
         open={choosingSession}
         onOpenChange={setChoosingSession}
+        showRental={serviceEnabled}
         onPick={(type) => {
           setChoosingSession(false)
+          if (type === 'rental') {
+            // Rent-a-car reuses the client test-drive form, switched into Service
+            // context — same deep link the header's DocTypeToggle uses — so it
+            // runs the rental pricing + courtesy contract instead of a sale.
+            setDocType('service')
+            navigate('/app/foi-parcurs/test-drive?context=service')
+            return
+          }
           navigate(type === 'client' ? '/app/foi-parcurs/test-drive' : '/app/foi-parcurs/internal')
         }}
       />
@@ -2469,18 +2480,33 @@ function DocUpload({ label, value, onChange }: { label: string; value: string; o
 
 /** The full vehicle field grid, in the canonical column order. Shared by the
  *  Add card and the Edit modal. Brand is read-only (set from the header on Add,
- *  kept as-is on Edit). */
+ *  kept as-is on Edit) — UNLESS the caller passes `onBrandChange` (the Add
+ *  card only): then, once the "Parc / Tip document" is switched to Service,
+ *  Brand becomes an editable any-brand picker so a courtesy car can belong to
+ *  a brand different from whatever the header is currently filtered to. */
 function VehicleFormFields({
   value,
   onChange,
   brandLabel,
   companies,
+  brand,
+  onBrandChange,
 }: {
   value: VehicleFormValue
   onChange: (patch: Partial<VehicleFormValue>) => void
   brandLabel: string
   companies: { id: number; company: string }[]
+  brand?: string
+  onBrandChange?: (v: string) => void
 }) {
+  const allowAnyBrand = value.document_type === 'service' && !!onBrandChange
+  const { data: allBrandsData } = useQuery({
+    queryKey: ['fp-all-brands'],
+    queryFn: () => foiParcursApi.getAllBrands(),
+    enabled: allowAnyBrand,
+    staleTime: 60_000,
+  })
+  const allBrands = allBrandsData?.brands ?? []
   return (
     <div className="space-y-4">
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -2514,7 +2540,18 @@ function VehicleFormFields({
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs">Brand</Label>
-        <Input value={brandLabel} readOnly disabled />
+        {allowAnyBrand ? (
+          <Select value={brand || ''} onValueChange={onBrandChange}>
+            <SelectTrigger><SelectValue placeholder="Selectează brand..." /></SelectTrigger>
+            <SelectContent>
+              {allBrands.map((b) => (
+                <SelectItem key={b} value={b}>{b}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input value={brandLabel} readOnly disabled />
+        )}
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs">Color</Label>
@@ -2680,6 +2717,15 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
     })
   const [newVehicle, setNewVehicle] = useState<VehicleFormValue>(() => emptyVehicleForm(companyId))
   const [error, setError] = useState('')
+  // Brand of the vehicle being added — defaults to (and follows) the header's
+  // selected brand while the Add form's own "Parc / Tip document" stays on
+  // Sales, but becomes independently selectable (any active brand) once it's
+  // switched to Service, so a courtesy car can belong to a different brand
+  // than the dealer currently in view (e.g. a VW loaner on an Audi dealer).
+  const [newVehicleBrand, setNewVehicleBrand] = useState(brand)
+  useEffect(() => {
+    if (newVehicle.document_type === 'sales') setNewVehicleBrand(brand)
+  }, [brand, newVehicle.document_type])
 
   const { data: vehiclesData, isLoading } = useQuery({
     queryKey: ['fp-vehicles', companyId, showArchived, documentType],
@@ -2742,7 +2788,7 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
         registration_number: newVehicle.registration_number.trim() || undefined,
         car_id: newVehicle.car_id.trim() || undefined,
         mark: newVehicle.mark.trim(),
-        brand: brand || undefined,
+        brand: newVehicleBrand || undefined,
         model: newVehicle.model.trim(),
         color: newVehicle.color.trim() || undefined,
         fuel_type: newVehicle.fuel_type,
@@ -2773,6 +2819,7 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
       setError('')
       setShowAdd(false)
       setNewVehicle(emptyVehicleForm(companyId))
+      setNewVehicleBrand(brand)
       queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
     },
     onError: (err: any) => {
@@ -2976,8 +3023,10 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
             <VehicleFormFields
               value={newVehicle}
               onChange={(patch) => setNewVehicle((p) => ({ ...p, ...patch }))}
-              brandLabel={brand || '—'}
+              brandLabel={newVehicleBrand || '—'}
               companies={companiesData?.companies ?? []}
+              brand={newVehicleBrand}
+              onBrandChange={setNewVehicleBrand}
             />
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex gap-2">
