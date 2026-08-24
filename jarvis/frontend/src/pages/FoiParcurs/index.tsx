@@ -194,8 +194,8 @@ export default function FoiParcurs() {
   // Force back to Sales if the company changes to one without Service enabled
   // (or on load for a non-enabled company) so tabs never query a locked pool.
   useEffect(() => {
-    if (!serviceEnabled && docType !== 'sales') setDocType('sales')
-  }, [serviceEnabled, docType, setDocType])
+    if (serviceEnabledData !== undefined && !serviceEnabled && docType !== 'sales') setDocType('sales')
+  }, [serviceEnabledData, serviceEnabled, docType, setDocType])
 
   const activeTabLabel = ({ stock: 'Driving Park', parcurs: 'Sesiuni Driving', calendar: 'Calendar', contracts: 'Foi de Parcurs', settings: 'Settings' } as const)[activeTab]
   // Third breadcrumb segment: the selected drive-type "section" (Client/Intern),
