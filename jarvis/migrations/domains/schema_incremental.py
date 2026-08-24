@@ -2337,6 +2337,46 @@ def _create_schema_incremental_continued(conn, cursor):
     ''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fp_planned_departure ON foi_de_parcurs(departure_datetime) WHERE status = 'PLANNED'")
 
+    # ── Foi de Parcurs — Service context ("Mașini de curtoazie") ──
+    # Generic document-type discriminator (sales|service), orthogonal to
+    # route_type; a Service session is a courtesy-car handover.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='document_type') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN document_type VARCHAR(16) NOT NULL DEFAULT 'sales';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='service_order_ref') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN service_order_ref VARCHAR(64);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='document_type') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN document_type VARCHAR(16) NOT NULL DEFAULT 'sales';
+            END IF;
+        END $$;
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_doctype ON foi_de_parcurs(company_id, document_type)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_vehicles_doctype ON fp_vehicles(document_type)')
+    # Per company+brand contract template (registry, Service-first). Existence of
+    # an active document_type='service' row = Service enabled for that (company,brand).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_contract_configs (
+            id            BIGSERIAL PRIMARY KEY,
+            company_id    BIGINT NOT NULL,
+            brand_id      BIGINT NOT NULL,
+            document_type VARCHAR(16) NOT NULL DEFAULT 'service',
+            title         VARCHAR(255),
+            body_template TEXT,
+            general_conditions TEXT,
+            is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE (company_id, brand_id, document_type)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_contract_configs_lookup ON fp_contract_configs(company_id, brand_id, document_type, is_active)')
+
     # ── Foi de Parcurs — Test Drive RETURN fields ──
     cursor.execute('''
         DO $$ BEGIN
