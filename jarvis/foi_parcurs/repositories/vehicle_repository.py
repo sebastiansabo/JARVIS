@@ -51,9 +51,14 @@ class FPVehicleRepository(BaseRepository):
         'v.norma_combustibil, v.norma_energie, v.category, '
         'v.company_id, v.car_id, v.registration_number, v.is_active, '
         'v.document_type, '
-        # Service (Mașini de curtoazie) price so the Driving Park list can show
-        # a rate without a per-row fetch of the full vehicle document blobs.
+        # Service (Mașini de curtoazie) price + policy so the Driving Park list
+        # and the Tarife price-list can show/edit all 6 svc_ fields without a
+        # per-row fetch of the full vehicle document blobs (avoids an N+1 and a
+        # Save-before-load null race in the Tarife editor). Tiny numerics —
+        # harmless to other list consumers.
         'v.svc_tariff_eur_day, v.svc_tariff_eur_month, '
+        'v.svc_km_included_day, v.svc_extra_km_eur, '
+        'v.svc_deposit_eur, v.svc_franchise_eur, '
         # Lockout state so the Driving Park + session car pickers can show a car
         # as blocked (disabled) with its reason.
         'v.locked_out, v.lockout_category, v.lockout_note, v.lockout_until, '
