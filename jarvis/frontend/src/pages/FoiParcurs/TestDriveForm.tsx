@@ -427,6 +427,18 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     setSvcFransizaEur(p.svc_fransiza_eur != null ? String(p.svc_fransiza_eur) : '')
   }, [svcPricingData])
 
+  // Keep Total = Tarif × Nr. (units) consistent by default: recomputed live
+  // from the Tarif/Nr. onChange handlers so a forgotten Total can't silently
+  // desync the money-facing snapshot. Total stays editable — an explicit edit
+  // afterwards is a legitimate per-key override the backend honors. Non-numeric
+  // Tarif/Nr. → Total left as-is.
+  const recomputeSvcTotal = (tarifStr: string, unitsStr: string) => {
+    const tarif = Number(tarifStr)
+    const units = Number(unitsStr)
+    if (tarifStr.trim() === '' || unitsStr.trim() === '' || Number.isNaN(tarif) || Number.isNaN(units)) return
+    setSvcTotalEur(String(Math.round(tarif * units * 100) / 100))
+  }
+
   // Only sent when documentType is 'service' — the (possibly advisor-
   // overridden) rental snapshot, spread onto the submit/plan/activate
   // payloads. Backend treats any non-null value here as an explicit
@@ -1435,11 +1447,11 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Tarif (€)</Label>
-                    <Input type="number" min={0} step="0.01" value={svcTariffEur} onChange={(e) => setSvcTariffEur(e.target.value)} />
+                    <Input type="number" min={0} step="0.01" value={svcTariffEur} onChange={(e) => { setSvcTariffEur(e.target.value); recomputeSvcTotal(e.target.value, svcUnits) }} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Nr. {svcRateBasis === 'month' ? 'luni' : 'zile'}</Label>
-                    <Input type="number" min={0} value={svcUnits} onChange={(e) => setSvcUnits(e.target.value)} />
+                    <Input type="number" min={0} value={svcUnits} onChange={(e) => { setSvcUnits(e.target.value); recomputeSvcTotal(svcTariffEur, e.target.value) }} />
                   </div>
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/50 p-3">
