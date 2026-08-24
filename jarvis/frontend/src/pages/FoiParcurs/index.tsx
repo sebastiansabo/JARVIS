@@ -1576,7 +1576,7 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
   const { data, isLoading } = useQuery({
     queryKey: ['foi-contracts-all', companyId, documentType],
     queryFn: () =>
-      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC', document_type: documentType === 'sales' ? undefined : documentType }),
+      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC', document_type: documentType }),
     staleTime: 30_000,
   })
 

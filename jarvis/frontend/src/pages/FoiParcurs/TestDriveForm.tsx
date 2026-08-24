@@ -245,8 +245,8 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // Fetch ALL vehicles (incl. archived + blocked) under a distinct key so we
   // don't collide with the active-only ['fp-vehicles'] cache other views use.
   const { data: vehiclesData } = useQuery({
-    queryKey: ['fp-vehicles', 'all'],
-    queryFn: () => foiParcursApi.getVehicles(false),
+    queryKey: ['fp-vehicles', 'all', documentType],
+    queryFn: () => foiParcursApi.getVehicles(false, documentType),
   })
   const allVehicles = vehiclesData?.vehicles ?? []
   const vehiclesForCompany = useMemo(
@@ -374,8 +374,8 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   //    acceptance not shown/required). Required for live submit + activation,
   //    deferred for a PLANNED draft (mirrors the backend). ──
   const { data: gcData } = useQuery({
-    queryKey: ['fp-general-conditions', companyId, selectedVehicle?.vin],
-    queryFn: () => foiParcursApi.getGeneralConditions(companyId!, selectedVehicle!.vin),
+    queryKey: ['fp-general-conditions', companyId, selectedVehicle?.vin, documentType],
+    queryFn: () => foiParcursApi.getGeneralConditions(companyId!, selectedVehicle!.vin, documentType),
     enabled: !!companyId && !!selectedVehicle?.vin,
     staleTime: 60_000,
   })
