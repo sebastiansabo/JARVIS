@@ -13,6 +13,12 @@ import { NotificationBell } from './NotificationBell'
 import { settingsApi } from '@/api/settings'
 import { checkinApi } from '@/api/checkin'
 
+/** Warm the lazily-loaded Happy Board route chunk on hover/focus so the click renders
+ *  instantly instead of showing the Suspense spinner. Stays a separate chunk. */
+const prefetchHappyBoard = () => {
+  void import('../pages/HappyBoard')
+}
+
 interface NavItem {
   path: string
   label: string
@@ -586,6 +592,8 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                 <TooltipTrigger asChild>
                   <Link
                     to="/app/happy/board"
+                    onMouseEnter={prefetchHappyBoard}
+                    onFocus={prefetchHappyBoard}
                     className={cn(
                       'flex items-center justify-center rounded-md p-2 transition-colors',
                       location.pathname.startsWith('/app/happy')
@@ -719,6 +727,8 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
               {user?.permissions?.['happy.campaigns.view'] && (
               <Link
                 to="/app/happy/board"
+                onMouseEnter={prefetchHappyBoard}
+                onFocus={prefetchHappyBoard}
                 className={cn(
                   'flex items-center gap-3 rounded-md px-3 py-2 transition-colors',
                   location.pathname.startsWith('/app/happy')
