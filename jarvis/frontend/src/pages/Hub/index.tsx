@@ -120,7 +120,7 @@ export const appTiles: (AppTile & { shortLabel?: string })[] = [
   { key: 'approvals', label: 'Approvals', icon: FileCheck, bg: 'bg-orange-600', fg: 'text-white' },
   { key: 'hr', label: 'HR', icon: Activity, bg: 'bg-emerald-600', fg: 'text-white' },
   { key: 'vouchers', label: 'Vouchers', icon: Ticket, bg: 'bg-amber-500', fg: 'text-white' },
-  { key: 'chat', label: 'Connecteams', shortLabel: 'Chat', icon: MessageSquare, bg: 'bg-pink-600', fg: 'text-white' },
+  { key: 'chat', label: 'Chat', shortLabel: 'Chat', icon: MessageSquare, bg: 'bg-pink-600', fg: 'text-white' },
   { key: 'driving', label: 'Driving Sessions', shortLabel: 'Driving', icon: Car, bg: 'bg-teal-600', fg: 'text-white' },
   { key: 'field_sales', label: 'Field Sales', shortLabel: 'Teren', icon: MapPin, bg: 'bg-teal-600', fg: 'text-white' },
 ]
