@@ -35,6 +35,10 @@ import {
   Loader2,
 } from 'lucide-react'
 import { SincronTimesheetView } from '@/components/shared/SincronTimesheetView'
+import { MarqueeWidget } from '@/components/happy/MarqueeWidget'
+import { OpenAcksCard } from '@/components/happy/OpenAcksCard'
+import { PraiseCard } from '@/components/happy/PraiseCard'
+import { PulseCard } from '@/components/happy/PulseCard'
 import { PunchCard } from '@/components/shared/PunchCard'
 import { InvoireForm } from '@/components/forms/InvoireForm'
 import { CancelLeaveDialog } from '@/pages/Hub/CancelLeaveDialog'
@@ -116,7 +120,7 @@ export const appTiles: (AppTile & { shortLabel?: string })[] = [
   { key: 'approvals', label: 'Approvals', icon: FileCheck, bg: 'bg-orange-600', fg: 'text-white' },
   { key: 'hr', label: 'HR', icon: Activity, bg: 'bg-emerald-600', fg: 'text-white' },
   { key: 'vouchers', label: 'Vouchers', icon: Ticket, bg: 'bg-amber-500', fg: 'text-white' },
-  { key: 'chat', label: 'Connecteams', shortLabel: 'Chat', icon: MessageSquare, bg: 'bg-pink-600', fg: 'text-white' },
+  { key: 'chat', label: 'Chat', shortLabel: 'Chat', icon: MessageSquare, bg: 'bg-pink-600', fg: 'text-white' },
   { key: 'driving', label: 'Driving Sessions', shortLabel: 'Driving', icon: Car, bg: 'bg-teal-600', fg: 'text-white' },
   { key: 'field_sales', label: 'Field Sales', shortLabel: 'Teren', icon: MapPin, bg: 'bg-teal-600', fg: 'text-white' },
 ]
@@ -406,6 +410,19 @@ export default function Hub() {
 
           {/* Right 1/3 — Notifications + Punch Card */}
           <div className="space-y-6">
+            <MarqueeWidget enabled placement="hub_card" route="/app/hub" />
+            <OpenAcksCard />
+            <PraiseCard />
+            <PulseCard />
+            <div className="px-1">
+              <button
+                type="button"
+                onClick={() => navigate('/app/happy/transparenta')}
+                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                Cum funcționează Happy
+              </button>
+            </div>
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
