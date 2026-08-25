@@ -226,14 +226,19 @@ def _is_admin():
 @foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>', methods=['DELETE'])
 @login_required
 def api_delete_contract(id):
-    """Admin-only: permanently delete a registration (foi_de_parcurs row)."""
-    if not _is_admin():
-        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    """Permanently delete a registration (foi_de_parcurs row).
+
+    Admins may delete any registration. Non-admins may delete only INTERNAL
+    driving-log sessions (self-service cleanup of an internal QuickSession) —
+    never a client Test Drive or batch registration. Session-event history is
+    removed via the FK's ON DELETE CASCADE."""
     contract = _fp_repo.get_contract_by_id(id)
     if not contract:
         return jsonify({'success': False, 'error': 'Not found'}), 404
+    if not contract.get('is_internal') and not _is_admin():
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
     _fp_repo.delete_contract(id)
-    logger.info('foi-parcurs contract %s deleted by admin %s', id, getattr(current_user, 'email', '?'))
+    logger.info('foi-parcurs contract %s deleted by %s', id, getattr(current_user, 'email', '?'))
     return jsonify({'success': True})
 
 
