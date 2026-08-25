@@ -135,10 +135,42 @@ def test_company_recipients_falls_back_to_alert_email(monkeypatch):
     assert emails == ['fallback@aw.ro'] and ids == []
 
 
+class _FakeNotifRepo:
+    def __init__(self, settings): self._s = settings
+    def get_settings(self): return self._s
+
+
+def _patch_board_override(monkeypatch, settings):
+    # _board_recipient_override() imports NotificationRepository locally, so patch
+    # the class on its source module.
+    import core.notifications.repositories as _nrepo
+    monkeypatch.setattr(_nrepo, 'NotificationRepository', lambda: _FakeNotifRepo(settings))
+
+
 def test_board_recipients_by_role(monkeypatch):
+    _patch_board_override(monkeypatch, {})  # no explicit override → role-based resolution
     monkeypatch.setattr(dds, '_user_repo', _FakeUserRepo())
     emails, ids = dds._board_recipients()
     assert set(emails) == {'board1@aw.ro', 'board2@aw.ro'} and set(ids) == {2, 3}
+
+
+def test_board_recipients_override_takes_precedence(monkeypatch):
+    # An explicit `weekly_driving_digest_board_recipients` setting wins over the
+    # 'board' role and yields NO in-app recipients (addresses need not be users).
+    _patch_board_override(monkeypatch,
+                          {'weekly_driving_digest_board_recipients': 'board@autoworld.ro, ceo@autoworld.ro'})
+    monkeypatch.setattr(dds, '_user_repo', _FakeUserRepo())
+    emails, ids = dds._board_recipients()
+    assert emails == ['board@autoworld.ro', 'ceo@autoworld.ro']
+    assert ids == []
+
+
+def test_board_recipients_override_parses_semicolons_and_blanks(monkeypatch):
+    _patch_board_override(monkeypatch,
+                          {'weekly_driving_digest_board_recipients': ' board@autoworld.ro ;; , extra@aw.ro '})
+    monkeypatch.setattr(dds, '_user_repo', _FakeUserRepo())
+    emails, ids = dds._board_recipients()
+    assert emails == ['board@autoworld.ro', 'extra@aw.ro'] and ids == []
 
 
 # --- Task 7: gate + generate_and_send orchestration -------------------------
