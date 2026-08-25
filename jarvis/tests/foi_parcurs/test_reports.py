@@ -80,10 +80,11 @@ class FakeFp:
 
     def report_sessions(self, company_id=None, date_from=None, date_to=None,
                         document_type=None, advisor=None, vin=None, limit=200,
-                        status=None, drive_type=None):
+                        status=None, drive_type=None, client_type=None, brand=None, fuel_type=None):
         self.sessions_args = dict(company_id=company_id, date_from=date_from, date_to=date_to,
                                   document_type=document_type, advisor=advisor, vin=vin, limit=limit,
-                                  status=status, drive_type=drive_type)
+                                  status=status, drive_type=drive_type,
+                                  client_type=client_type, brand=brand, fuel_type=fuel_type)
         return list(SESSIONS)
 
 
@@ -263,3 +264,22 @@ def test_sessions_status_and_drive_type_passthrough(monkeypatch):
     assert r.status_code == 200
     assert c._fp.sessions_args['status'] == 'missed'
     assert c._fp.sessions_args['drive_type'] == 'client'
+
+
+def test_sessions_chart_dimension_filters_passthrough(monkeypatch):
+    """Chart detail modals drill by client_type / brand / fuel_type."""
+    c = make_client(monkeypatch, role='admin', company_id=16)
+    r = c.get('/api/foi-parcurs/reports/sessions?fuel_type=Benzina&brand=Audi&client_type=company')
+    assert r.status_code == 200
+    a = c._fp.sessions_args
+    assert a['fuel_type'] == 'Benzina'
+    assert a['brand'] == 'Audi'
+    assert a['client_type'] == 'company'
+
+
+def test_sessions_multi_status_cumulates(monkeypatch):
+    """Checkbox status filter sends a comma-separated set that reaches the repo."""
+    c = make_client(monkeypatch, role='admin', company_id=16)
+    r = c.get('/api/foi-parcurs/reports/sessions?vin=WVW1&status=complete,missed')
+    assert r.status_code == 200
+    assert c._fp.sessions_args['status'] == 'complete,missed'
