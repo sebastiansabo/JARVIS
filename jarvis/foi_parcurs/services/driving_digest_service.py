@@ -84,26 +84,20 @@ def _collect_board(date_from, date_to):
     return {'scope': 'group', **bundle, **fleet}
 
 
-def _model_name():
-    try:
-        from ai_agent.repositories import ModelConfigRepository
-        cfg = ModelConfigRepository().get_default()
-        if cfg and getattr(cfg, 'model_name', None):
-            return cfg.model_name
-    except Exception:
-        pass
-    return _DEFAULT_MODEL
-
-
 def _narrative(metrics, scope_label):
     """AI-written Romanian summary; falls back to a deterministic template on
-    any error or empty response (no API key on staging, provider hiccup, etc.)."""
+    any error or empty response (no API key on staging, provider hiccup, etc.).
+
+    The model is pinned to `claude-sonnet-4-6` (NOT the DB-driven
+    ModelConfigRepository default): the provider always sends `temperature`, and
+    a sonnet-5 model 400s on that parameter.
+    """
     if _llm_ask:
         try:
             txt = _llm_ask(
                 f"Generează rezumatul din aceste metrici:\n{json.dumps(metrics, default=str)}",
                 system=_SYSTEM.format(scope=scope_label),
-                model=_model_name(),
+                model=_DEFAULT_MODEL,
             )
             if txt and txt.strip():
                 return txt.strip()
