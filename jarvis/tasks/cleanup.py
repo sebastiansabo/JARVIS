@@ -24,6 +24,7 @@ from tasks.biostar import sync_biostar_events, sync_biostar_users, auto_adjust_b
 from tasks.sincron import sync_sincron_timesheets
 from tasks.verification import run_end_of_month_verification
 from tasks.hr_attendance import check_missing_punches, send_pontaje_digest, send_monthly_pontaje_summary, send_hr_weekly_digest
+from tasks.driving_digest import run_weekly_driving_digest
 from tasks.hr_courses import check_course_cert_expiry
 from tasks.foi_parcurs_expiry import check_vehicle_document_expiry
 from tasks.bnr_monitor import check_bnr_feed
@@ -412,6 +413,19 @@ def start_scheduler():
         hour=7,
         minute=0,
         id='hr_weekly_digest',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # Foi de Parcurs — weekly driving digest (Monday 05:00 UTC = 08:00 Romania summer)
+    scheduler.add_job(
+        run_weekly_driving_digest,
+        'cron',
+        day_of_week='mon',
+        hour=5,
+        minute=0,
+        id='weekly_driving_digest',
         replace_existing=True,
         misfire_grace_time=3600,
         coalesce=True,
