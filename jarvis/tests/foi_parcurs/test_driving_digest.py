@@ -200,3 +200,11 @@ def test_is_prod_false_for_staging_db(monkeypatch):
                        'postgresql://doadmin:x@mkt-staging-do-user-24639451-0.k.db.ondigitalocean.com:25060/defaultdb')
     monkeypatch.delenv('FLASK_ENV', raising=False)
     assert dds._is_prod() is False
+
+
+# --- Task 8: scheduler task wrapper -----------------------------------------
+
+def test_task_wrapper_swallows_errors(monkeypatch):
+    import tasks.driving_digest as td
+    monkeypatch.setattr(td, 'generate_and_send', lambda: (_ for _ in ()).throw(RuntimeError('x')))
+    td.run_weekly_driving_digest()  # must not raise
