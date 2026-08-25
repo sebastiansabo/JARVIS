@@ -143,22 +143,31 @@ def _render_email(sections, week_label):
 
 
 def _company_recipients(company_id):
-    """(emails, user_ids) for a company's managers — company_responsables,
-    falling back to companies.alert_email when no responsable is configured.
+    """(emails, user_ids) for a company's managers, falling back to
+    companies.alert_email when no responsable has an email on file.
 
-    NOTE: CompanyRepository exposes `get(company_id)`, not `get_by_id` — the
-    getattr fallback below supports both so a test double using either name
-    works, while the real repo (which only has `get`) also works.
+    `CompanyRepository.get_responsables(company_id)` returns rows shaped
+    `{user_id, user_name}` — no email — so the responsables' addresses are
+    resolved through the users table via an id → email map from
+    `_user_repo.get_all()`. Only responsables that have an email are kept.
     """
     resp = _company_repo.get_responsables(company_id) or []
-    emails = [r['email'] for r in resp if r.get('email')]
-    ids = [r['id'] for r in resp if r.get('id')]
-    if not emails:
-        getter = getattr(_company_repo, 'get_by_id', None) or _company_repo.get
-        c = getter(company_id) or {}
-        if c.get('alert_email'):
-            emails = [c['alert_email']]
-    return emails, ids
+    resp_ids = [r['user_id'] for r in resp if r.get('user_id')]
+    if resp_ids:
+        email_by_id = {u['id']: u.get('email') for u in (_user_repo.get_all() or [])}
+        emails, ids = [], []
+        for uid in resp_ids:
+            email = email_by_id.get(uid)
+            if email:
+                emails.append(email)
+                ids.append(uid)
+        if emails:
+            return emails, ids
+    # fallback: the company's alert_email (no in-app recipients then)
+    c = _company_repo.get(company_id) or {}
+    if c.get('alert_email'):
+        return [c['alert_email']], []
+    return [], []
 
 
 def _board_recipients():
