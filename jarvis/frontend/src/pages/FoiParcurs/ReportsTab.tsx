@@ -1,4 +1,4 @@
-import { Suspense } from 'react'
+import { Suspense, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { cn, usePersistedState } from '@/lib/utils'
@@ -138,25 +138,93 @@ function Bars({ rows, color, unit }: { rows: { label: string; value: number }[];
   )
 }
 
-function Leaderboard({ rows }: { rows: { name: string; sub?: string; value: number }[] }) {
+type LbRow = { name: string; sub?: string; value: number; id?: string }
+
+function Leaderboard({ rows, renderDetail }: { rows: LbRow[]; renderDetail?: (row: LbRow) => React.ReactNode }) {
+  const [open, setOpen] = useState<number | null>(null)
   if (!rows.length) return <div className="py-8 text-center text-sm text-muted-foreground">Fără date în interval</div>
   return (
     <div className="space-y-2">
-      {rows.map((r, i) => (
-        <div key={i} className={cn('grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-lg border p-2.5',
-          i === 0 ? 'border-primary/40 bg-primary/5' : 'bg-muted/40')}>
-          <span className={cn('grid h-6 w-6 place-items-center rounded-full text-xs font-bold tabular-nums',
-            i === 0 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>{i + 1}</span>
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold" title={r.name}>{r.name}</div>
-            {r.sub && <div className="truncate text-xs text-muted-foreground">{r.sub}</div>}
+      {rows.map((r, i) => {
+        const expandable = !!renderDetail
+        const isOpen = open === i
+        return (
+          <div key={i}>
+            <div
+              role={expandable ? 'button' : undefined}
+              tabIndex={expandable ? 0 : undefined}
+              aria-expanded={expandable ? isOpen : undefined}
+              onClick={expandable ? () => setOpen(isOpen ? null : i) : undefined}
+              onKeyDown={expandable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(isOpen ? null : i) } } : undefined}
+              className={cn('grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-lg border p-2.5',
+                i === 0 ? 'border-primary/40 bg-primary/5' : 'bg-muted/40',
+                expandable && 'cursor-pointer hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring')}>
+              <span className={cn('grid h-6 w-6 place-items-center rounded-full text-xs font-bold tabular-nums',
+                i === 0 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>{i + 1}</span>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold" title={r.name}>{r.name}</div>
+                {r.sub && <div className="truncate text-xs text-muted-foreground">{r.sub}</div>}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="text-right">
+                  <div className="text-lg font-bold tabular-nums leading-none">{nf.format(r.value)}</div>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">sesiuni</div>
+                </div>
+                {expandable && (
+                  <svg className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', isOpen && 'rotate-180')}
+                    viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                )}
+              </div>
+            </div>
+            {expandable && isOpen && <div className="mt-1.5">{renderDetail!(r)}</div>}
           </div>
-          <div className="text-right">
-            <div className="text-lg font-bold tabular-nums leading-none">{nf.format(r.value)}</div>
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">sesiuni</div>
-          </div>
-        </div>
-      ))}
+        )
+      })}
+    </div>
+  )
+}
+
+/** Expanded drill-down under a leaderboard row: the sessions for one advisor
+ *  (shows client + car) or one car (shows client + consilier). */
+function SessionDrill({ kind, id, companyId, from, to, docType }: {
+  kind: 'advisor' | 'car'; id: string; companyId: number; from: string; to: string; docType: string
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['fp-report-sessions', kind, id, companyId, from, to, docType],
+    queryFn: () => foiParcursApi.getReportSessions({
+      company_id: companyId || undefined, date_from: from, date_to: to, document_type: docType,
+      ...(kind === 'advisor' ? { advisor: id } : { vin: id }),
+    }),
+    staleTime: 30_000,
+  })
+  const rows = data?.sessions ?? []
+  if (isLoading) return <div className="px-2 py-3 text-xs text-muted-foreground">Se încarcă sesiunile…</div>
+  if (!rows.length) return <div className="px-2 py-3 text-xs text-muted-foreground">Fără sesiuni în interval</div>
+  const otherCol = kind === 'advisor' ? 'Mașină' : 'Consilier'
+  return (
+    <div className="overflow-x-auto rounded-lg border bg-background">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+            <th className="px-2 py-1.5 font-medium">Data</th>
+            <th className="px-2 py-1.5 font-medium">Client</th>
+            <th className="px-2 py-1.5 font-medium">{otherCol}</th>
+            <th className="px-2 py-1.5 font-medium">Status</th>
+            <th className="px-2 py-1.5 text-right font-medium">Km</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((s) => (
+            <tr key={s.id} className="border-b last:border-0">
+              <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">{s.date}</td>
+              <td className="px-2 py-1.5">{s.client}</td>
+              <td className="px-2 py-1.5 text-muted-foreground">{kind === 'advisor' ? s.model : (s.advisor || '—')}</td>
+              <td className="px-2 py-1.5">{STATUS_LABEL[s.td_status] ?? s.td_status}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{nf.format(s.km)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -177,11 +245,14 @@ function Seg<T extends string>({ value, onChange, options }: {
   )
 }
 
-export function ReportsTab({ companyId, toolbarSlot }: { companyId: number; toolbarSlot?: HTMLElement | null }) {
+export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: 'sales' | 'service' }) {
   const [preset, setPreset] = usePersistedState<'30d' | 'month' | 'year' | 'custom'>('fp.rep.preset', '30d')
   const [customFrom, setCustomFrom] = usePersistedState<string>('fp.rep.from', ymd(new Date(Date.now() - 29 * 864e5)))
   const [customTo, setCustomTo] = usePersistedState<string>('fp.rep.to', ymd(new Date()))
-  const [docType, setDocType] = usePersistedState<'sales' | 'service'>('fp.rep.docType', 'sales')
+  // Respect the page header's Sales/Service toggle when it exists (documentType
+  // prop); only fall back to an own toggle where the page provides none.
+  const [ownDocType, setOwnDocType] = usePersistedState<'sales' | 'service'>('fp.rep.docType', 'sales')
+  const docType = documentType ?? ownDocType
   const [odoOrder, setOdoOrder] = usePersistedState<'high' | 'low'>('fp.rep.odo', 'high')
 
   const { from, to } = rangeForPreset(preset, customFrom, customTo)
@@ -207,11 +278,16 @@ export function ReportsTab({ companyId, toolbarSlot }: { companyId: number; tool
             className="rounded-md border bg-background px-2 py-1" />
         </div>
       )}
-      <Seg value={docType} onChange={setDocType} options={[['sales', 'Vânzări'], ['service', 'Service']] as const} />
+      {documentType === undefined && (
+        <Seg value={ownDocType} onChange={setOwnDocType} options={[['sales', 'Vânzări'], ['service', 'Service']] as const} />
+      )}
     </div>
   )
 
-  const showGroup = !!data?.scope?.is_group && (data?.top_companies?.length ?? 0) > 1
+  // Show the per-company card whenever the scope spans >1 company (a single
+  // selected company collapses it to one row). Robust regardless of is_group —
+  // non-group users are backend-scoped to one company, so it stays hidden.
+  const showGroup = (data?.top_companies?.length ?? 0) > 1
 
   return (
     <div className="mt-4 space-y-4">
@@ -251,11 +327,17 @@ export function ReportsTab({ companyId, toolbarSlot }: { companyId: number; tool
                 <Leaderboard rows={data.top_companies.map((c) => ({ name: c.company, sub: `${nf.format(c.km)} km`, value: c.sessions }))} />
               </ChartCard>
             )}
-            <ChartCard title="Performanță consilieri" hint="după sesiuni">
-              <Leaderboard rows={data.top_advisors.map((a) => ({ name: a.advisor, sub: `${nf.format(a.km)} km · ${a.completion_rate}% finalizare`, value: a.sessions }))} />
+            <ChartCard title="Performanță consilieri" hint="după sesiuni · click pentru detalii">
+              <Leaderboard
+                rows={data.top_advisors.map((a) => ({ name: a.advisor, sub: `${nf.format(a.km)} km · ${a.completion_rate}% finalizare`, value: a.sessions, id: a.advisor }))}
+                renderDetail={(row) => <SessionDrill kind="advisor" id={row.id!} companyId={companyId} from={from} to={to} docType={docType} />}
+              />
             </ChartCard>
-            <ChartCard title="Performanță mașini" hint="după sesiuni">
-              <Leaderboard rows={data.utilization.map((u) => ({ name: u.model, sub: `${u.registration_number} · ${u.days_used}/30 zile`, value: u.sessions }))} />
+            <ChartCard title="Performanță mașini" hint="după sesiuni · click pentru detalii">
+              <Leaderboard
+                rows={data.utilization.map((u) => ({ name: u.model, sub: `${u.registration_number} · ${u.days_used}/30 zile`, value: u.sessions, id: u.vin }))}
+                renderDetail={(row) => <SessionDrill kind="car" id={row.id!} companyId={companyId} from={from} to={to} docType={docType} />}
+              />
             </ChartCard>
           </div>
 
