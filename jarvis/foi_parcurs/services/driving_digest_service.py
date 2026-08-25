@@ -7,6 +7,7 @@ emailed Monday morning for the previous Mon-Sun. Reuses the Rapoarte aggregates
 import json
 import logging
 from datetime import timedelta
+from html import escape
 
 from foi_parcurs.repositories import FoiParcursRepository, FPVehicleRepository
 
@@ -102,3 +103,27 @@ def _narrative_plain(metrics, scope_label):
     k = metrics.get('kpis') or {}
     return (f"{scope_label}: {k.get('total_sessions', 0)} sesiuni, "
             f"{k.get('total_km', 0)} km, rată finalizare {k.get('completion_rate', 0)}%.")
+
+
+def _render_section(title, metrics, narrative):
+    k = metrics.get('kpis') or {}
+    return (
+        f'<section style="margin:0 0 24px;padding:16px;border:1px solid #e1e0d9;border-radius:10px">'
+        f'<h2 style="margin:0 0 8px;font:600 16px system-ui">{escape(title)}</h2>'
+        f'<p style="margin:0 0 12px;color:#52514e;white-space:pre-line">{escape(narrative)}</p>'
+        f'<table style="border-collapse:collapse;font:13px system-ui">'
+        f'<tr><td style="padding:2px 12px 2px 0;color:#898781">Sesiuni</td><td><b>{k.get("total_sessions", 0)}</b></td></tr>'
+        f'<tr><td style="padding:2px 12px 2px 0;color:#898781">Km parcurși</td><td><b>{k.get("total_km", 0)}</b></td></tr>'
+        f'<tr><td style="padding:2px 12px 2px 0;color:#898781">Rată finalizare</td><td><b>{k.get("completion_rate", 0)}%</b></td></tr>'
+        f'</table></section>'
+    )
+
+
+def _render_email(sections, week_label):
+    body = ''.join(sections)
+    return (
+        f'<!doctype html><html><body style="margin:0;padding:16px;background:#f4f4f2">'
+        f'<h1 style="font:680 20px system-ui;margin:0 0 4px">Digest Driving săptămânal</h1>'
+        f'<p style="color:#898781;font:13px system-ui;margin:0 0 20px">Săptămâna {escape(week_label)}</p>'
+        f'{body}</body></html>'
+    )

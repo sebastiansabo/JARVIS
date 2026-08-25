@@ -85,3 +85,20 @@ def test_narrative_falls_back_when_llm_raises(monkeypatch):
     monkeypatch.setattr(dds, '_llm_ask', boom)
     txt = dds._narrative({'kpis': {'total_sessions': 5, 'total_km': 100}}, 'Grup')
     assert '5' in txt and 'sesiuni' in txt.lower()  # deterministic fallback mentions the figure
+
+
+# --- Task 5: HTML rendering -------------------------------------------------
+
+def test_render_section_contains_title_narrative_and_kpis():
+    html = dds._render_section('Autoworld PLUS · Mazda',
+                               {'kpis': {'total_sessions': 5, 'total_km': 100, 'completion_rate': 90}},
+                               'Rezumat text')
+    assert 'Autoworld PLUS · Mazda' in html
+    assert 'Rezumat text' in html
+    assert '5' in html and '100' in html
+
+
+def test_render_email_wraps_sections():
+    doc = dds._render_email(['<section>A</section>', '<section>B</section>'], '17.08–23.08')
+    assert doc.strip().lower().startswith('<!doctype html>') or '<html' in doc.lower()
+    assert '17.08–23.08' in doc and '<section>A</section>' in doc and '<section>B</section>' in doc
