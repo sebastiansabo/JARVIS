@@ -403,6 +403,9 @@ function RouteSheetsTable({ companyId, toolbarSlot }: { companyId: number; toolb
   const [correcting, setCorrecting] = useState<FoiContract | null>(null)
   const user = useAuthStore((s) => s.user)
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
+  // "Corectează" is gated by the role matrix (test_drive.contracts.correct); admins
+  // bypass. Default-deny to match the backend decorator — absent grant → hidden.
+  const canCorrect = isAdmin || !!user?.permissions?.['test_drive.contracts.correct']
   const correctMutation = useMutation({
     mutationFn: (vars: { id: number; data: CorrectionPayload }) =>
       foiParcursApi.correctSession(vars.id, vars.data),
@@ -675,7 +678,7 @@ function RouteSheetsTable({ companyId, toolbarSlot }: { companyId: number; toolb
                                       </TableCell>
                                       <TableCell className="text-right">
                                         <div className="flex justify-end gap-1">
-                                          {isAdmin && (
+                                          {canCorrect && (
                                             <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
                                               onClick={() => setCorrecting(c)} title="Corectează data/kilometrajul">
                                               Corectează
@@ -1550,6 +1553,9 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
   const [expVin, setExpVin] = useState('all')
 
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
+  // "Corectează" is gated by the role matrix (test_drive.contracts.correct); admins
+  // bypass. Default-deny to match the backend decorator — absent grant → hidden.
+  const canCorrect = isAdmin || !!user?.permissions?.['test_drive.contracts.correct']
 
   const { data, isLoading } = useQuery({
     queryKey: ['foi-contracts-all', companyId],
@@ -2024,7 +2030,7 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                               <History className="mr-1.5 h-3.5 w-3.5" />
                               Istoric
                             </Button>
-                            {isAdmin && (
+                            {canCorrect && (
                               <Button variant="outline" size="sm" onClick={() => setCorrecting(c)}
                                 title="Corectează data/kilometrajul">
                                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
