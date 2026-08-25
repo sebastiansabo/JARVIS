@@ -6,12 +6,16 @@ emailed Monday morning for the previous Mon-Sun. Reuses the Rapoarte aggregates
 """
 import json
 import logging
-from datetime import timedelta
+import os
+from datetime import datetime as _dt, timedelta
 from html import escape
+from zoneinfo import ZoneInfo
 
 from foi_parcurs.repositories import FoiParcursRepository, FPVehicleRepository
 from core.organization.repositories.company_repository import CompanyRepository
 from core.auth.repositories.user_repository import UserRepository
+from core.services.notification_service import send_email as _send_email, is_smtp_configured as _smtp_ok
+from core.notifications.notify import notify_users as _notify_users
 
 try:
     from ai_agent.services.llm_client import ask as _llm_ask
@@ -27,6 +31,7 @@ _user_repo = UserRepository()
 
 _TOP = 5
 _DEFAULT_MODEL = 'claude-sonnet-4-6'
+_TZ = ZoneInfo('Europe/Bucharest')
 
 _SYSTEM = (
     "Ești JARVIS, asistentul intern AUTOWORLD. Scrie un rezumat săptămânal concis "
@@ -38,7 +43,11 @@ _SYSTEM = (
 
 
 def _week_range(now):
-    """(date_from, date_to) 'YYYY-MM-DD' for the previous Mon..Sun (inclusive)."""
+    """(date_from, date_to) 'YYYY-MM-DD' for the previous Mon..Sun (inclusive).
+
+    `now` is expected to already be Europe/Bucharest local time (generate_and_send
+    supplies a tz-aware Bucharest `now` by default when the caller omits one).
+    """
     # Monday of the current week, then step back 7 days → previous Monday.
     this_monday = (now - timedelta(days=now.weekday())).date()
     last_monday = this_monday - timedelta(days=7)
@@ -158,3 +167,83 @@ def _board_recipients():
     users = _user_repo.get_all() or []
     board = [u for u in users if (u.get('role_name') or '').lower() == 'board']
     return [u['email'] for u in board if u.get('email')], [u['id'] for u in board if u.get('id')]
+
+
+def _all_companies():
+    return _company_repo.get_all_with_vat_and_brands() or []
+
+
+def _settings_enabled():
+    """Reads the `weekly_driving_digest_enabled` notification setting (default
+    false). Any error (missing table on a stale DB, etc.) is treated as disabled."""
+    try:
+        from core.notifications.repositories import NotificationRepository
+        s = NotificationRepository().get_settings() or {}
+        return str(s.get('weekly_driving_digest_enabled', 'false')).lower() == 'true'
+    except Exception:
+        return False
+
+
+def _is_prod():
+    try:
+        from core.config import is_production
+        return bool(is_production())
+    except Exception:
+        return os.environ.get('FLASK_ENV') == 'production'
+
+
+def _fmt_week(date_from, date_to):
+    return f"{date_from[8:10]}.{date_from[5:7]}–{date_to[8:10]}.{date_to[5:7]}"
+
+
+def generate_and_send(now=None):
+    """Build and send the weekly driving digest: one email per Company-Brand
+    to that company's managers, plus a cumulative report to the Board.
+
+    No-ops (returns {'sent': 0, 'skipped': reason}) unless the notification
+    setting is enabled AND the environment is production AND SMTP is
+    configured — in that exact gate order, so staging never emails.
+    """
+    if not _settings_enabled():
+        return {'sent': 0, 'skipped': 'disabled'}
+    if not _is_prod():
+        return {'sent': 0, 'skipped': 'not_prod'}
+    if not _smtp_ok():
+        return {'sent': 0, 'skipped': 'no_smtp'}
+
+    now = now or _dt.now(_TZ)
+    date_from, date_to = _week_range(now)
+    week_label = _fmt_week(date_from, date_to)
+    sent = 0
+
+    # per Company-Brand → company managers
+    for company_id, company_name, brand in _enumerate_company_brands(_all_companies()):
+        metrics = _collect(company_id, brand, date_from, date_to)
+        scope = f"{company_name} · {brand}"
+        html = _render_email([_render_section(scope, metrics, _narrative(metrics, scope))], week_label)
+        emails, user_ids = _company_recipients(company_id)
+        subject = f"Digest Driving — {scope} — săptămâna {week_label}"
+        for addr in emails:
+            ok, _ = _send_email(to_email=addr, subject=subject, html_body=html, skip_global_cc=True)
+            sent += 1 if ok else 0
+        if user_ids:
+            _notify_users(user_ids=user_ids, title='Digest Driving săptămânal',
+                          message=f'{scope}: raportul săptămânal este disponibil.',
+                          link='/app/foi-parcurs', type='info')
+
+    # cumulative → Board
+    board_metrics = _collect_board(date_from, date_to)
+    board_sections = [_render_section('Grup AUTOWORLD', board_metrics, _narrative(board_metrics, 'Grup AUTOWORLD'))]
+    board_html = _render_email(board_sections, week_label)
+    b_emails, b_ids = _board_recipients()
+    for addr in b_emails:
+        ok, _ = _send_email(to_email=addr, subject=f"Digest Driving — Grup AUTOWORLD — săptămâna {week_label}",
+                            html_body=board_html, skip_global_cc=True)
+        sent += 1 if ok else 0
+    if b_ids:
+        _notify_users(user_ids=b_ids, title='Digest Driving săptămânal (Grup)',
+                      message='Raportul săptămânal de grup este disponibil.',
+                      link='/app/foi-parcurs', type='info')
+
+    logger.info('weekly driving digest sent: %s emails (week %s)', sent, week_label)
+    return {'sent': sent, 'skipped': None}

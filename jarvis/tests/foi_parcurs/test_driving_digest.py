@@ -133,3 +133,48 @@ def test_board_recipients_by_role(monkeypatch):
     monkeypatch.setattr(dds, '_user_repo', _FakeUserRepo())
     emails, ids = dds._board_recipients()
     assert set(emails) == {'board1@aw.ro', 'board2@aw.ro'} and set(ids) == {2, 3}
+
+
+# --- Task 7: gate + generate_and_send orchestration -------------------------
+
+def _patch_send_infra(monkeypatch):
+    sent = []
+    monkeypatch.setattr(dds, '_send_email', lambda **kw: sent.append(kw) or (True, ''))
+    monkeypatch.setattr(dds, '_notify_users', lambda **kw: None)
+    monkeypatch.setattr(dds, '_smtp_ok', lambda: True)
+    # data stubs
+    monkeypatch.setattr(dds, '_enumerate_company_brands', lambda companies: [(9, 'Autoworld PLUS', 'Mazda')])
+    monkeypatch.setattr(dds, '_all_companies', lambda: [{'id': 9, 'company': 'Autoworld PLUS', 'brands_list': [{'brand': 'Mazda'}]}])
+    monkeypatch.setattr(dds, '_collect', lambda *a, **k: {'kpis': {'total_sessions': 3}})
+    monkeypatch.setattr(dds, '_collect_board', lambda *a, **k: {'kpis': {'total_sessions': 9}})
+    monkeypatch.setattr(dds, '_narrative', lambda *a, **k: 'txt')
+    monkeypatch.setattr(dds, '_company_recipients', lambda cid: (['mgr@aw.ro'], [1]))
+    monkeypatch.setattr(dds, '_board_recipients', lambda: (['board@aw.ro'], [2]))
+    return sent
+
+
+def test_skips_when_disabled(monkeypatch):
+    _patch_send_infra(monkeypatch)
+    monkeypatch.setattr(dds, '_settings_enabled', lambda: False)
+    monkeypatch.setattr(dds, '_is_prod', lambda: True)
+    out = dds.generate_and_send()
+    assert out['sent'] == 0 and out['skipped'] == 'disabled'
+
+
+def test_skips_when_not_prod(monkeypatch):
+    _patch_send_infra(monkeypatch)
+    monkeypatch.setattr(dds, '_settings_enabled', lambda: True)
+    monkeypatch.setattr(dds, '_is_prod', lambda: False)
+    out = dds.generate_and_send()
+    assert out['sent'] == 0 and out['skipped'] == 'not_prod'
+
+
+def test_sends_company_and_board_when_enabled_prod(monkeypatch):
+    sent = _patch_send_infra(monkeypatch)
+    monkeypatch.setattr(dds, '_settings_enabled', lambda: True)
+    monkeypatch.setattr(dds, '_is_prod', lambda: True)
+    out = dds.generate_and_send()
+    # one company-brand email + one board email
+    assert out['sent'] == 2
+    tos = [s['to_email'] for s in sent]
+    assert 'mgr@aw.ro' in tos and 'board@aw.ro' in tos
