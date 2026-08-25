@@ -168,10 +168,15 @@ class FoiParcursRepository(BaseRepository):
 
     @staticmethod
     def _status_clause(status):
-        """Map a Rapoarte status-filter value to a raw-status WHERE clause for the
-        performance leaderboards/drill-down. 'all' (or unknown) → no filter."""
-        raw = {'complete': 'COMPLETED', 'planned': 'PLANNED', 'missed': 'MISSED'}.get((status or '').lower())
-        return (['fp.status = %s'], [raw]) if raw else ([], [])
+        """Map a Rapoarte status-filter (single value OR comma-separated set of
+        complete|planned|missed — the checkboxes cumulate) to a raw-status IN
+        clause. Empty/unknown → no filter."""
+        m = {'complete': 'COMPLETED', 'planned': 'PLANNED', 'missed': 'MISSED'}
+        raws = [m[p.strip().lower()] for p in (status or '').split(',')
+                if p.strip().lower() in m]
+        if not raws:
+            return [], []
+        return ([f"fp.status IN ({', '.join(['%s'] * len(raws))})"], raws)
 
     def report_bundle(self, company_id=None, date_from=None, date_to=None,
                       document_type=None, top=5, perf_status=None, drive_type=None):
@@ -211,10 +216,15 @@ class FoiParcursRepository(BaseRepository):
             "ELSE 'test_drive' END AS type, COUNT(*)::int AS count "
             f'FROM foi_de_parcurs fp{where} GROUP BY 1 ORDER BY 2 DESC', bp)
 
-        client_vs_internal = self.query_all(
+        _cvi_rows = self.query_all(
             "SELECT CASE WHEN fp.is_internal THEN 'internal' ELSE 'client' END AS segment, "
             'COUNT(*)::int AS count '
-            f'FROM foi_de_parcurs fp{where} GROUP BY 1 ORDER BY 1', bp)
+            f'FROM foi_de_parcurs fp{where} GROUP BY 1', bp)
+        # always return BOTH segments (0-filled) so the client-vs-intern card is a
+        # real two-way comparison, never a lone bar that looks like the total
+        _cvi = {r['segment']: r['count'] for r in _cvi_rows}
+        client_vs_internal = [{'segment': 'client', 'count': _cvi.get('client', 0)},
+                              {'segment': 'internal', 'count': _cvi.get('internal', 0)}]
 
         by_brand = self.query_all(
             "SELECT COALESCE(NULLIF(TRIM(v.brand), ''), NULLIF(TRIM(v.mark), ''), 'Necunoscut') AS brand, "
@@ -289,12 +299,12 @@ class FoiParcursRepository(BaseRepository):
 
     def report_sessions(self, company_id=None, date_from=None, date_to=None,
                         document_type=None, advisor=None, vin=None, limit=200,
-                        status=None, drive_type=None):
+                        status=None, drive_type=None, client_type=None, brand=None, fuel_type=None):
         """Individual session rows behind a report drill-down — filtered to one
-        advisor OR one car. Same filter builder + scope as the aggregates; returns
-        client, advisor, car and derived td_status so the UI can show
-        advisor→(client+car) and car→(client+consilier). Honors the status +
-        drive_type filters so the drill matches the (filtered) leaderboard."""
+        advisor, car, client-type, brand or fuel-type (chart detail modals). Same
+        filter builder + scope as the aggregates; returns client, advisor, car and
+        derived td_status so the UI can show advisor→(client+car),
+        car→(client+consilier), and the chart modals → full session context."""
         clauses, params = self._rep_filters(company_id, date_from, date_to, document_type, drive_type=drive_type)
         sc, sp = self._status_clause(status)
         clauses += sc
@@ -305,6 +315,16 @@ class FoiParcursRepository(BaseRepository):
         if vin:
             clauses.append('fp.vin = %s')
             params.append(vin)
+        if client_type == 'company':
+            clauses.append("lower(COALESCE(cc.client_type, '')) IN ('company', 'legal')")
+        elif client_type == 'person':
+            clauses.append("lower(COALESCE(cc.client_type, '')) NOT IN ('company', 'legal')")
+        if brand:
+            clauses.append("COALESCE(NULLIF(TRIM(v.brand), ''), NULLIF(TRIM(v.mark), ''), 'Necunoscut') = %s")
+            params.append(brand)
+        if fuel_type:
+            clauses.append("COALESCE(NULLIF(TRIM(v.fuel_type), ''), 'Necunoscut') = %s")
+            params.append(fuel_type)
         where = self._rep_where(clauses)
         return self.query_all(
             'SELECT fp.id, fp.contract_id, '
