@@ -177,6 +177,7 @@ export const foiParcursApi = {
     odo_order?: string
     status?: string
     drive_type?: string
+    brand?: string
     top?: number
   }) => api.get<ReportsSummary>(`${BASE}/reports/summary${qs(params)}`),
 
