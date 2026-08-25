@@ -19,13 +19,29 @@ import { foiParcursApi } from '@/api/foiParcurs'
 
 // Tokens the Service contract generator substitutes at render time (see
 // docs/superpowers/specs/2026-08-24-foi-parcurs-service-courtesy-cars-design.md).
-// Kept as a static list here — purely informational for whoever edits the
-// templates below.
-const PLACEHOLDERS = [
-  '{client_name}', '{client_phone}', '{client_address}', '{company_name}', '{brand}',
-  '{vin}', '{registration_number}', '{km_start}', '{km_end}', '{distance_km}',
-  '{departure_datetime}', '{return_datetime}', '{service_order_ref}', '{advisor_name}',
-  '{general_conditions}',
+// Every placeholder the backend renderer substitutes. SOURCE OF TRUTH is
+// jarvis/foi_parcurs/services/contract_template.py PLACEHOLDERS — keep this in
+// sync when tokens are added there. Grouped purely for readability.
+const PLACEHOLDER_GROUPS: { label: string; tokens: string[] }[] = [
+  { label: 'Client', tokens: [
+    '{client_name}', '{client_phone}', '{client_address}', '{client_company}',
+    '{client_cui}', '{client_ci_serie}', '{client_email}',
+  ] },
+  { label: 'Vehicul & rută', tokens: [
+    '{brand}', '{vehicle_model}', '{vin}', '{registration_number}',
+    '{km_start}', '{km_end}', '{distance_km}',
+    '{departure_datetime}', '{return_datetime}', '{service_order_ref}', '{advisor_name}',
+  ] },
+  { label: 'Companie (date legale)', tokens: [
+    '{company_name}', '{company_reg_no}', '{company_vat}', '{company_iban}',
+    '{company_bank}', '{company_street}', '{company_city}', '{company_county}',
+    '{company_email}', '{company_administrator}', '{dealer_phone}',
+  ] },
+  { label: 'Preț închiriere (curtoazie)', tokens: [
+    '{svc_rate_basis}', '{svc_tariff_eur}', '{svc_units}', '{svc_total_eur}',
+    '{svc_garantie_eur}', '{svc_fransiza_eur}', '{svc_limita_km_zi}', '{svc_extra_km_eur}',
+  ] },
+  { label: 'General', tokens: ['{general_conditions}'] },
 ]
 
 type ContractConfigItem = Awaited<ReturnType<typeof foiParcursApi.getContractConfigs>>['configs'][number]
@@ -94,12 +110,19 @@ export default function ContractConfigSection() {
       </div>
 
       <Card className="p-3 bg-muted/30">
-        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Token-uri disponibile
         </p>
-        <div className="flex flex-wrap gap-1.5">
-          {PLACEHOLDERS.map((p) => (
-            <code key={p} className="rounded border bg-background px-1.5 py-0.5 text-xs">{p}</code>
+        <div className="space-y-2.5">
+          {PLACEHOLDER_GROUPS.map((group) => (
+            <div key={group.label}>
+              <p className="mb-1 text-[11px] font-medium text-muted-foreground">{group.label}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {group.tokens.map((p) => (
+                  <code key={p} className="rounded border bg-background px-1.5 py-0.5 text-xs">{p}</code>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </Card>
