@@ -1953,6 +1953,12 @@ def _create_schema_incremental_continued(conn, cursor):
     # an advisor extends its return. Drives the "Modificat" badge + who/when tooltip.
     cursor.execute('ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS corrected_at TIMESTAMP WITH TIME ZONE')
     cursor.execute('ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS corrected_by VARCHAR(255)')
+    # Rapoarte (analytics) filters/aggregates on the service-context pool columns
+    # (document_type + rental total) even where the full Service feature isn't
+    # deployed. Ensure they exist so the reports queries never 500 on a DB that
+    # hasn't received the Service migration (e.g. prod before JAR-1307).
+    cursor.execute("ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS document_type VARCHAR(16) NOT NULL DEFAULT 'sales'")
+    cursor.execute('ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS svc_total_eur NUMERIC(12,2)')
     # Migrate: drop FK on client_id if exists, make nullable, add new columns
     cursor.execute('''
         DO $$ BEGIN
@@ -2286,6 +2292,10 @@ def _create_schema_incremental_continued(conn, cursor):
         END $$;
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_vehicles_brand ON fp_vehicles(brand)')
+    # Rapoarte fleet queries filter by the vehicle document-type pool; ensure the
+    # column exists even on DBs without the full Service migration (see the
+    # matching foi_de_parcurs.document_type note above).
+    cursor.execute("ALTER TABLE fp_vehicles ADD COLUMN IF NOT EXISTS document_type VARCHAR(16) NOT NULL DEFAULT 'sales'")
     cursor.execute('''
         DO $$ BEGIN
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='foi_de_parcurs' AND column_name='registration_number') THEN
