@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const { correctSession, extendReturn, discardTestDrive } = vi.hoisted(() => ({
-  correctSession: vi.fn(), extendReturn: vi.fn(), discardTestDrive: vi.fn(),
+const { correctSession, extendReturn, discardTestDrive, deleteContract } = vi.hoisted(() => ({
+  correctSession: vi.fn(), extendReturn: vi.fn(), discardTestDrive: vi.fn(), deleteContract: vi.fn(),
 }))
 vi.mock('@/api/foiParcurs', () => ({
-  foiParcursApi: { correctSession, extendReturn, discardTestDrive, getContractPdfUrl: (id: number) => `/pdf/${id}` },
+  foiParcursApi: { correctSession, extendReturn, discardTestDrive, deleteContract, getContractPdfUrl: (id: number) => `/pdf/${id}` },
 }))
 
 // role read at render → flip auth.role between tests to exercise the admin gate.
@@ -77,5 +77,28 @@ describe('SessionDetailModal', () => {
   it('does not show a Comentariu row for a regular test drive', () => {
     wrap(<SessionDetailModal session={driving as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
     expect(screen.queryByText('Comentariu')).not.toBeInTheDocument()
+  })
+
+  it('shows Șterge on an internal session and deletes on confirm (any user)', async () => {
+    auth.role = 'user'
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    wrap(<SessionDetailModal session={internalWithComment as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Șterge/ }))
+    expect(confirmSpy).toHaveBeenCalled()
+    await waitFor(() => expect(deleteContract).toHaveBeenCalledWith(internalWithComment.id))
+    confirmSpy.mockRestore()
+  })
+
+  it('does not delete when the confirm is dismissed', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    wrap(<SessionDetailModal session={internalWithComment as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Șterge/ }))
+    expect(deleteContract).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
+
+  it('hides Șterge on a regular (non-internal) test drive', () => {
+    wrap(<SessionDetailModal session={driving as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /Șterge/ })).not.toBeInTheDocument()
   })
 })
