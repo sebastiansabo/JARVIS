@@ -124,6 +124,38 @@ class FPVehicleRepository(BaseRepository):
         ') up ON TRUE'
     )
 
+    def report_fleet(self, company_id=None, document_type=None, odo_order='high', top=5):
+        """Fleet composition for the Rapoarte tab: active-car count by fuel type,
+        and the top-N cars by known mileage. `odo_order` 'high' (default) lists
+        the most-driven cars, 'low' the least. Scoped to active cars of the given
+        company + document-type pool. Company scope is enforced by the route."""
+        clauses = ['v.is_active = TRUE']
+        params = []
+        if company_id:
+            clauses.append('v.company_id = %s')
+            params.append(company_id)
+        if document_type:
+            clauses.append('v.document_type = %s')
+            params.append(document_type)
+        where = ' WHERE ' + ' AND '.join(clauses)
+
+        fuel_composition = self.query_all(
+            "SELECT COALESCE(NULLIF(TRIM(v.fuel_type), ''), 'Necunoscut') AS fuel_type, "
+            'COUNT(*)::int AS count '
+            f'FROM fp_vehicles v{where} GROUP BY 1 ORDER BY 2 DESC', tuple(params))
+
+        # whitelisted direction — odo_order is validated to 'high'/'low' upstream
+        direction = 'ASC' if str(odo_order).lower() == 'low' else 'DESC'
+        top_odometer = self.query_all(
+            'SELECT v.vin, v.registration_number, '
+            "COALESCE(NULLIF(TRIM(v.mark || ' ' || v.model), ''), v.model, 'Necunoscut') AS model, "
+            'GREATEST(COALESCE(v.odometer_km, 0), COALESCE('
+            "(SELECT MAX(f.km_end) FROM foi_de_parcurs f WHERE f.vin = v.vin AND f.status <> 'PLANNED'), 0))::int AS odometer_km "
+            f'FROM fp_vehicles v{where} ORDER BY odometer_km {direction} LIMIT %s',
+            tuple(params) + (top,))
+
+        return {'fuel_composition': fuel_composition, 'top_odometer': top_odometer}
+
     def get_all(self, active_only=True, document_type=None):
         """Get all vehicles (lean — no document blobs), optionally active-only
         and/or filtered to a single document_type pool (sales/service).

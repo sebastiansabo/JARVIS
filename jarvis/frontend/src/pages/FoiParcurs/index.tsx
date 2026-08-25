@@ -105,6 +105,7 @@ import { toast } from 'sonner'
 import { naiveDate } from '@/lib/naiveDate'
 import { cn } from '@/lib/utils'
 import { CalendarTab } from './CalendarTab'
+import { ReportsTab } from './ReportsTab'
 import DriveTypeToggle from './DriveTypeToggle'
 import { formatRoPlate, isValidRoPlate } from './plateFormat'
 import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
@@ -140,7 +141,7 @@ function usePersistentState<T>(key: string, initial: T) {
 export default function FoiParcurs() {
   const navigate = useNavigate()
   // Persist the tab + company/brand filters so a refresh keeps your context.
-  const [activeTab, setActiveTab] = usePersistentState<'contracts' | 'parcurs' | 'stock' | 'calendar' | 'settings'>('fp.activeTab', 'stock')
+  const [activeTab, setActiveTab] = usePersistentState<'contracts' | 'parcurs' | 'stock' | 'calendar' | 'reports' | 'settings'>('fp.activeTab', 'stock')
   const [companyId, setCompanyId] = usePersistentState<number>('fp.companyId', 0)
   const [brand, setBrand] = usePersistentState<string>('fp.brand', '')
   const [choosingSession, setChoosingSession] = useState(false)
@@ -201,7 +202,7 @@ export default function FoiParcurs() {
     if (serviceEnabledData !== undefined && !serviceEnabled && docType !== 'sales') setDocType('sales')
   }, [serviceEnabledData, serviceEnabled, docType, setDocType])
 
-  const activeTabLabel = ({ stock: 'Driving Park', parcurs: 'Sesiuni Driving', calendar: 'Calendar', contracts: 'Foi de Parcurs', settings: 'Settings' } as const)[activeTab]
+  const activeTabLabel = ({ stock: 'Driving Park', parcurs: 'Sesiuni Driving', calendar: 'Calendar', contracts: 'Foi de Parcurs', reports: 'Rapoarte', settings: 'Settings' } as const)[activeTab]
   // Third breadcrumb segment: the selected drive-type "section" (Client/Intern),
   // only on the two tabs the filter applies to. Names the label-less toggle.
   const driveTypeLabel = (activeTab === 'parcurs' || activeTab === 'calendar')
@@ -272,13 +273,14 @@ export default function FoiParcurs() {
         }}
       />
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'calendar' | 'settings')}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'calendar' | 'reports' | 'settings')}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <TabsList>
             <TabsTrigger value="stock">Driving Park</TabsTrigger>
             <TabsTrigger value="parcurs">Sesiuni Driving</TabsTrigger>
             <TabsTrigger value="calendar">Calendar</TabsTrigger>
             <TabsTrigger value="contracts">Foi de Parcurs</TabsTrigger>
+            <TabsTrigger value="reports">Rapoarte</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
           {/* The active tab renders its toolbar (Calendar controls or Sesiuni
@@ -293,6 +295,7 @@ export default function FoiParcurs() {
       {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
       {activeTab === 'stock' && <StockTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} documentType={docType} />}
       {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
+      {activeTab === 'reports' && <ReportsTab companyId={companyId} toolbarSlot={tabToolbar} />}
       {activeTab === 'settings' && <SettingsTab documentType={docType} companyId={companyId} />}
     </div>
   )
