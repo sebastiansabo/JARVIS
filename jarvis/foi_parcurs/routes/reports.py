@@ -97,11 +97,15 @@ def api_reports_sessions():
     vin = (request.args.get('vin') or '').strip() or None
     status = (request.args.get('status') or '').strip() or None
     drive_type = (request.args.get('drive_type') or '').strip() or None
-    if not advisor and not vin:
+    client_type = (request.args.get('client_type') or '').strip() or None
+    brand = (request.args.get('brand') or '').strip() or None
+    fuel_type = (request.args.get('fuel_type') or '').strip() or None
+    if not any((advisor, vin, client_type, brand, fuel_type)):
         return jsonify({'success': True, 'sessions': []})
 
     sessions = _fp_repo.report_sessions(company_id=company_id, date_from=date_from,
                                         date_to=date_to, document_type=document_type,
                                         advisor=advisor, vin=vin, limit=_MAX_DRILL,
-                                        status=status, drive_type=drive_type)
+                                        status=status, drive_type=drive_type,
+                                        client_type=client_type, brand=brand, fuel_type=fuel_type)
     return jsonify({'success': True, 'sessions': sessions})
