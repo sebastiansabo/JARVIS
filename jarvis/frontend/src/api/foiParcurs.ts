@@ -97,6 +97,47 @@ function qs(params: Record<string, unknown>): string {
 
 const BASE = '/api/foi-parcurs'
 
+// ── Reports (Rapoarte tab) ──
+export interface ReportKpis {
+  total_sessions: number
+  total_km: number
+  cars_used: number
+  avg_km_per_session: number
+  completion_rate: number
+  test_drives: number
+}
+export interface ReportsSummary {
+  success: boolean
+  scope: { company_id: number | null; is_group: boolean; document_type: string }
+  kpis: ReportKpis
+  sessions_over_time: { bucket: string; count: number }[]
+  by_status: { status: string; count: number }[]
+  by_type: { type: string; count: number }[]
+  client_vs_internal: { segment: string; count: number }[]
+  by_brand: { brand: string; count: number }[]
+  client_types: { client_type: string; count: number }[]
+  top_clients: { client: string; client_type: string; sessions: number; km: number }[]
+  top_advisors: { advisor: string; sessions: number; km: number; completion_rate: number }[]
+  top_companies: { company_id: number; company: string; sessions: number; km: number }[]
+  utilization: { vin: string; registration_number: string; model: string; days_used: number; sessions: number; km: number }[]
+  distance_by_brand: { brand: string; km: number }[]
+  fuel_composition: { fuel_type: string; count: number }[]
+  top_odometer: { vin: string; registration_number: string; model: string; odometer_km: number }[]
+  rental: { total_eur: number; sessions: number; by_month: { bucket: string; eur: number }[] } | null
+}
+export interface ReportSession {
+  id: number
+  contract_id: string
+  date: string
+  client: string
+  advisor: string | null
+  vin: string
+  registration_number: string
+  model: string
+  td_status: string
+  km: number
+}
+
 export const foiParcursApi = {
   // ── Preview ──
   preview: (config: BatchConfig) =>
@@ -127,6 +168,33 @@ export const foiParcursApi = {
     api.get<{ contracts: FoiContract[]; total: number; page: number; per_page: number }>(
       `${BASE}/contracts${qs(params ?? {})}`
     ),
+
+  // ── Reports (Rapoarte tab) ──
+  getReports: (params: {
+    company_id?: number
+    date_from?: string
+    date_to?: string
+    document_type?: string
+    odo_order?: string
+    status?: string
+    drive_type?: string
+    brand?: string
+    top?: number
+  }) => api.get<ReportsSummary>(`${BASE}/reports/summary${qs(params)}`),
+
+  getReportSessions: (params: {
+    company_id?: number
+    date_from?: string
+    date_to?: string
+    document_type?: string
+    advisor?: string
+    vin?: string
+    status?: string
+    drive_type?: string
+    client_type?: string
+    brand?: string
+    fuel_type?: string
+  }) => api.get<{ success: boolean; sessions: ReportSession[] }>(`${BASE}/reports/sessions${qs(params)}`),
 
   allocateClient: (contractId: number, data: { client_id: number; itinerary: string; advisor_name: string; signature_svg?: string }) =>
     api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${contractId}/allocate`, data),

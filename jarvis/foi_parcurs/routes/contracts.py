@@ -8,6 +8,7 @@ from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required, current_user,
     logger, _fp_repo, _client_repo, _vehicle_repo, log_history, log_status_change,
 )
+from core.roles.decorators import v2_permission_required
 from ..services.fuel_service import calculate_fuel_distribution
 from ..services.route_service import calculate_route_assignments
 from ..services.signature_service import generate_ai_signature
@@ -268,13 +269,13 @@ def _parse_dt(v):
 
 @foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/correct', methods=['PUT'])
 @login_required
+@v2_permission_required('test_drive', 'contracts', 'correct')
 def api_correct_contract(id):
-    """Admin-only: correct a session's drive date(s) and/or odometer readings to
-    fix data-entry anomalies (date↔odometer inversions, overlapping km). Works on
-    any status; does NOT change the status. Validates km_end >= km_start and
-    return >= departure against the resulting (new-or-existing) values."""
-    if not _is_admin():
-        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    """Correct a session's drive date(s) and/or odometer readings to fix data-entry
+    anomalies (date↔odometer inversions, overlapping km). Gated by the role-matrix
+    permission test_drive.contracts.correct (admins bypass; granted to Admin + Viewer
+    by default). Works on any status; does NOT change the status. Validates
+    km_end >= km_start and return >= departure against the resulting values."""
     contract = _fp_repo.get_contract_by_id(id)
     if not contract:
         return jsonify({'success': False, 'error': 'Not found'}), 404

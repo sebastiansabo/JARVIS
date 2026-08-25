@@ -105,6 +105,7 @@ import { toast } from 'sonner'
 import { naiveDate } from '@/lib/naiveDate'
 import { cn } from '@/lib/utils'
 import { CalendarTab } from './CalendarTab'
+import { ReportsTab } from './ReportsTab'
 import DriveTypeToggle from './DriveTypeToggle'
 import { formatRoPlate, isValidRoPlate } from './plateFormat'
 import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
@@ -140,7 +141,7 @@ function usePersistentState<T>(key: string, initial: T) {
 export default function FoiParcurs() {
   const navigate = useNavigate()
   // Persist the tab + company/brand filters so a refresh keeps your context.
-  const [activeTab, setActiveTab] = usePersistentState<'contracts' | 'parcurs' | 'stock' | 'calendar' | 'settings'>('fp.activeTab', 'stock')
+  const [activeTab, setActiveTab] = usePersistentState<'contracts' | 'parcurs' | 'stock' | 'calendar' | 'reports' | 'settings'>('fp.activeTab', 'stock')
   const [companyId, setCompanyId] = usePersistentState<number>('fp.companyId', 0)
   const [brand, setBrand] = usePersistentState<string>('fp.brand', '')
   const [choosingSession, setChoosingSession] = useState(false)
@@ -205,7 +206,7 @@ export default function FoiParcurs() {
     }
   }, [documentTypesData, documentTypes, docType, setDocType])
 
-  const activeTabLabel = ({ stock: 'Driving Park', parcurs: 'Sesiuni Driving', calendar: 'Calendar', contracts: 'Foi de Parcurs', settings: 'Settings' } as const)[activeTab]
+  const activeTabLabel = ({ stock: 'Driving Park', parcurs: 'Sesiuni Driving', calendar: 'Calendar', contracts: 'Foi de Parcurs', reports: 'Rapoarte', settings: 'Settings' } as const)[activeTab]
   // Third breadcrumb segment: the selected drive-type "section" (Client/Intern),
   // only on the two tabs the filter applies to. Names the label-less toggle.
   const driveTypeLabel = (activeTab === 'parcurs' || activeTab === 'calendar')
@@ -275,13 +276,14 @@ export default function FoiParcurs() {
         }}
       />
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'calendar' | 'settings')}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'calendar' | 'reports' | 'settings')}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <TabsList>
             <TabsTrigger value="stock">Driving Park</TabsTrigger>
             <TabsTrigger value="parcurs">Sesiuni Driving</TabsTrigger>
             <TabsTrigger value="calendar">Calendar</TabsTrigger>
             <TabsTrigger value="contracts">Foi de Parcurs</TabsTrigger>
+            <TabsTrigger value="reports">Rapoarte</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
           {/* The active tab renders its toolbar (Calendar controls or Sesiuni
@@ -296,6 +298,7 @@ export default function FoiParcurs() {
       {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
       {activeTab === 'stock' && <StockTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} documentType={docType} />}
       {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
+      {activeTab === 'reports' && <ReportsTab companyId={companyId} toolbarSlot={tabToolbar} documentType={docType} brand={docType !== 'sales' ? '' : brand} />}
       {activeTab === 'settings' && <SettingsTab documentType={docType} companyId={companyId} />}
     </div>
   )
@@ -443,6 +446,9 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
   const [correcting, setCorrecting] = useState<FoiContract | null>(null)
   const user = useAuthStore((s) => s.user)
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
+  // "Corectează" is gated by the role matrix (test_drive.contracts.correct); admins
+  // bypass. Default-deny to match the backend decorator — absent grant → hidden.
+  const canCorrect = isAdmin || !!user?.permissions?.['test_drive.contracts.correct']
   const correctMutation = useMutation({
     mutationFn: (vars: { id: number; data: CorrectionPayload }) =>
       foiParcursApi.correctSession(vars.id, vars.data),
@@ -715,7 +721,7 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
                                       </TableCell>
                                       <TableCell className="text-right">
                                         <div className="flex justify-end gap-1">
-                                          {isAdmin && (
+                                          {canCorrect && (
                                             <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
                                               onClick={() => setCorrecting(c)} title="Corectează data/kilometrajul">
                                               Corectează
@@ -1590,6 +1596,9 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
   const [expVin, setExpVin] = useState('all')
 
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
+  // "Corectează" is gated by the role matrix (test_drive.contracts.correct); admins
+  // bypass. Default-deny to match the backend decorator — absent grant → hidden.
+  const canCorrect = isAdmin || !!user?.permissions?.['test_drive.contracts.correct']
 
   const { data, isLoading } = useQuery({
     queryKey: ['foi-contracts-all', companyId, documentType],
@@ -2064,7 +2073,7 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                               <History className="mr-1.5 h-3.5 w-3.5" />
                               Istoric
                             </Button>
-                            {isAdmin && (
+                            {canCorrect && (
                               <Button variant="outline" size="sm" onClick={() => setCorrecting(c)}
                                 title="Corectează data/kilometrajul">
                                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
