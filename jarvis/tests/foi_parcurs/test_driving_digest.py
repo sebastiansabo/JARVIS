@@ -40,3 +40,33 @@ def test_enumerate_company_brands_flattens_pairs():
     assert (9, 'Autoworld PLUS S.R.L.', 'MG Motor') in pairs
     assert (11, 'Autoworld PREMIUM S.R.L.', 'Volvo') in pairs
     assert all(cid != 99 for cid, _, _ in pairs)  # no-brand company skipped
+
+
+# --- Task 3: metrics collection ---------------------------------------------
+
+class _FakeFp:
+    def __init__(self): self.calls = []
+    def report_bundle(self, **kw): self.calls.append(kw); return {'kpis': {'total_sessions': 5, 'total_km': 100}, 'top_advisors': [], 'utilization': [], 'client_vs_internal': []}
+class _FakeVeh:
+    def __init__(self): self.calls = []
+    def report_fleet(self, **kw): self.calls.append(kw); return {'fuel_composition': [], 'top_odometer': []}
+
+
+def test_collect_calls_aggregates_scoped_to_company_and_brand(monkeypatch):
+    fp, veh = _FakeFp(), _FakeVeh()
+    monkeypatch.setattr(dds, '_fp_repo', fp)
+    monkeypatch.setattr(dds, '_vehicle_repo', veh)
+    m = dds._collect(9, 'Mazda', '2026-08-17', '2026-08-23')
+    assert fp.calls[0]['company_id'] == 9 and fp.calls[0]['brand'] == 'Mazda'
+    assert fp.calls[0]['document_type'] == 'sales'
+    assert veh.calls[0]['brand'] == 'Mazda'
+    assert m['kpis']['total_sessions'] == 5
+    assert 'fuel_composition' in m
+
+
+def test_collect_board_is_group_wide(monkeypatch):
+    fp, veh = _FakeFp(), _FakeVeh()
+    monkeypatch.setattr(dds, '_fp_repo', fp)
+    monkeypatch.setattr(dds, '_vehicle_repo', veh)
+    dds._collect_board('2026-08-17', '2026-08-23')
+    assert fp.calls[0]['company_id'] is None and fp.calls[0]['brand'] is None
