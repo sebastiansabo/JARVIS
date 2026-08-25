@@ -61,6 +61,11 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
   const isPlanned = ss.key === 'planificat'
   const isDone = ss.key === 'finalizat'
   const showRetur = ss.key === 'driving' || ss.key === 'intarziat'
+  // Delete is for internal driving logs only. Non-admins may remove one only
+  // within their own company (mirrors the backend's company-scope guard), so
+  // the button never appears when the delete would 403.
+  const canDeleteInternal = !!c.is_internal
+    && (isAdmin || (user?.company_id != null && c.company_id === user.company_id))
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
   const discardMutation = useMutation({
@@ -177,8 +182,9 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
               </Button>
             )}
             {/* Internal sessions only — delete the internal driving log (any
-                status, any user). Regular Test Drives are never deletable here. */}
-            {c.is_internal && (
+                status). Non-admins are limited to their own company; regular
+                Test Drives are never deletable here. */}
+            {canDeleteInternal && (
               <Button
                 variant="outline"
                 className="text-destructive ring-1 ring-destructive/30 hover:bg-destructive/10 hover:text-destructive"
