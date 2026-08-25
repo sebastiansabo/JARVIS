@@ -268,6 +268,36 @@ class FoiParcursRepository(BaseRepository):
             'distance_by_brand': distance_by_brand,
         }
 
+    def report_sessions(self, company_id=None, date_from=None, date_to=None,
+                        document_type=None, advisor=None, vin=None, limit=200):
+        """Individual session rows behind a report drill-down — filtered to one
+        advisor OR one car. Same filter builder + scope as the aggregates; returns
+        client, advisor, car and derived td_status so the UI can show
+        advisor→(client+car) and car→(client+consilier)."""
+        clauses, params = self._rep_filters(company_id, date_from, date_to, document_type)
+        if advisor:
+            clauses.append('TRIM(fp.advisor_name) = %s')
+            params.append(advisor)
+        if vin:
+            clauses.append('fp.vin = %s')
+            params.append(vin)
+        where = self._rep_where(clauses)
+        return self.query_all(
+            'SELECT fp.id, fp.contract_id, '
+            "to_char(COALESCE(fp.departure_datetime, fp.created_at), 'YYYY-MM-DD') AS date, "
+            "COALESCE(NULLIF(TRIM(fp.client_name), ''), cc.company_name, cc.display_name, c.name, '—') AS client, "
+            "NULLIF(TRIM(fp.advisor_name), '') AS advisor, "
+            'fp.vin, COALESCE(v.registration_number, fp.registration_number) AS registration_number, '
+            "COALESCE(NULLIF(TRIM(v.mark || ' ' || v.model), ''), v.model, '—') AS model, "
+            f'{_TD_STATUS_SQL}, '
+            'COALESCE(GREATEST(fp.km_end - fp.km_start, 0), 0)::int AS km '
+            'FROM foi_de_parcurs fp '
+            'LEFT JOIN crm_clients cc ON cc.id = fp.client_id '
+            'LEFT JOIN fp_clients c ON c.id = fp.client_id '
+            'LEFT JOIN fp_vehicles v ON v.vin = fp.vin'
+            f'{where} ORDER BY COALESCE(fp.departure_datetime, fp.created_at) DESC LIMIT %s',
+            tuple(params) + (limit,))
+
     def report_rental(self, company_id=None, date_from=None, date_to=None):
         """Rental-revenue block (Service pool only) — total €, session count and
         a per-month series. document_type is pinned to 'service' here."""
