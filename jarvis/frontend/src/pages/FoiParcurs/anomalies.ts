@@ -24,6 +24,13 @@ export function sessionAnomalies(sessions: FoiContract[]): Map<number, string> {
   let maxEnd: number | null = null
   let maxDate = ''
   for (const s of sorted) {
+    // A no-show ('MISSED') or not-yet-driven ('PLANNED'/'PENDING') session never
+    // moved the car: it holds its *planned* date at whatever odometer was current
+    // when it was scheduled. Letting it into the walk would flag every real,
+    // later-odometer drive that legitimately happened before that planned date
+    // (a frozen-odometer/future-date phantom). It can neither be nor cause a real
+    // odometer↔date contradiction, so skip it entirely.
+    if (s.status === 'MISSED' || s.status === 'PLANNED' || s.status === 'PENDING') continue
     const reasons: string[] = []
     const start = s.km_start ?? 0
     if (maxEnd != null && start < maxEnd) {
