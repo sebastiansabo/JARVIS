@@ -199,6 +199,23 @@ def _fmt_week(date_from, date_to):
     return f"{date_from[8:10]}.{date_from[5:7]}–{date_to[8:10]}.{date_to[5:7]}"
 
 
+def _send_report(subject, html, emails, user_ids, title, message):
+    """Email one report HTML to every address + fire an in-app note to user_ids.
+    Returns the count of emails that were actually accepted. A failed send is
+    logged (with the error string) rather than silently swallowed."""
+    sent = 0
+    for addr in emails:
+        ok, err = _send_email(to_email=addr, subject=subject, html_body=html, skip_global_cc=True)
+        if ok:
+            sent += 1
+        else:
+            logger.warning('driving digest email to %s failed: %s', addr, err)
+    if user_ids:
+        _notify_users(user_ids=user_ids, title=title, message=message,
+                      link='/app/foi-parcurs', type='info')
+    return sent
+
+
 def generate_and_send(now=None):
     """Build and send the weekly driving digest: one email per Company-Brand
     to that company's managers, plus a cumulative report to the Board.
@@ -219,34 +236,32 @@ def generate_and_send(now=None):
     week_label = _fmt_week(date_from, date_to)
     sent = 0
 
-    # per Company-Brand → company managers
+    # per Company-Brand → company managers. Each company is isolated: one
+    # company's failure (collect/render/send) must not abort the rest, nor the
+    # Board report that runs after this loop.
     for company_id, company_name, brand in _enumerate_company_brands(_all_companies()):
-        metrics = _collect(company_id, brand, date_from, date_to)
-        scope = f"{company_name} · {brand}"
-        html = _render_email([_render_section(scope, metrics, _narrative(metrics, scope))], week_label)
-        emails, user_ids = _company_recipients(company_id)
-        subject = f"Digest Driving — {scope} — săptămâna {week_label}"
-        for addr in emails:
-            ok, _ = _send_email(to_email=addr, subject=subject, html_body=html, skip_global_cc=True)
-            sent += 1 if ok else 0
-        if user_ids:
-            _notify_users(user_ids=user_ids, title='Digest Driving săptămânal',
-                          message=f'{scope}: raportul săptămânal este disponibil.',
-                          link='/app/foi-parcurs', type='info')
+        try:
+            metrics = _collect(company_id, brand, date_from, date_to)
+            scope = f"{company_name} · {brand}"
+            html = _render_email([_render_section(scope, metrics, _narrative(metrics, scope))], week_label)
+            emails, user_ids = _company_recipients(company_id)
+            sent += _send_report(
+                f"Digest Driving — {scope} — săptămâna {week_label}", html, emails, user_ids,
+                'Digest Driving săptămânal', f'{scope}: raportul săptămânal este disponibil.')
+        except Exception:
+            logger.warning('driving digest failed for company %s brand %s; skipping',
+                           company_id, brand, exc_info=True)
+            continue
 
     # cumulative → Board
     board_metrics = _collect_board(date_from, date_to)
-    board_sections = [_render_section('Grup AUTOWORLD', board_metrics, _narrative(board_metrics, 'Grup AUTOWORLD'))]
-    board_html = _render_email(board_sections, week_label)
+    board_html = _render_email(
+        [_render_section('Grup AUTOWORLD', board_metrics, _narrative(board_metrics, 'Grup AUTOWORLD'))],
+        week_label)
     b_emails, b_ids = _board_recipients()
-    for addr in b_emails:
-        ok, _ = _send_email(to_email=addr, subject=f"Digest Driving — Grup AUTOWORLD — săptămâna {week_label}",
-                            html_body=board_html, skip_global_cc=True)
-        sent += 1 if ok else 0
-    if b_ids:
-        _notify_users(user_ids=b_ids, title='Digest Driving săptămânal (Grup)',
-                      message='Raportul săptămânal de grup este disponibil.',
-                      link='/app/foi-parcurs', type='info')
+    sent += _send_report(
+        f"Digest Driving — Grup AUTOWORLD — săptămâna {week_label}", board_html, b_emails, b_ids,
+        'Digest Driving săptămânal (Grup)', 'Raportul săptămânal de grup este disponibil.')
 
     logger.info('weekly driving digest sent: %s emails (week %s)', sent, week_label)
     return {'sent': sent, 'skipped': None}
