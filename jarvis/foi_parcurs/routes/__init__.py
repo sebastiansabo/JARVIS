@@ -11,3 +11,4 @@ from . import pdf               # noqa: F401
 from . import export            # noqa: F401
 from . import route_sheet       # noqa: F401
 from . import session_import    # noqa: F401
+from . import reports           # noqa: F401

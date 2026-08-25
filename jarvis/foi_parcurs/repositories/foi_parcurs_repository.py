@@ -132,6 +132,162 @@ class FoiParcursRepository(BaseRepository):
 
         return rows, total
 
+    # ── Analytics / reports (Rapoarte tab) ──────────────────────────────────
+    # Aggregates over foi_de_parcurs. Same optional-WHERE builder as
+    # get_contracts (parameterised, date filter on COALESCE(departure, created));
+    # driven distance uses the actual odometer delta (km_end − km_start), never
+    # the entered estimate. Numeric results are cast to int/float so jsonify
+    # never sees a Decimal. Company scope is enforced by the route, not here.
+
+    def _rep_filters(self, company_id, date_from, date_to, document_type):
+        """Shared (clauses, params) for the report queries."""
+        clauses, params = [], []
+        if company_id:
+            clauses.append('fp.company_id = %s')
+            params.append(company_id)
+        if document_type:
+            clauses.append('fp.document_type = %s')
+            params.append(document_type)
+        if date_from:
+            clauses.append('COALESCE(fp.departure_datetime, fp.created_at) >= %s')
+            params.append(date_from)
+        if date_to:
+            clauses.append("COALESCE(fp.departure_datetime, fp.created_at) < (%s::date + INTERVAL '1 day')")
+            params.append(date_to)
+        return clauses, params
+
+    @staticmethod
+    def _rep_where(clauses):
+        return (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+
+    def report_bundle(self, company_id=None, date_from=None, date_to=None,
+                      document_type=None, top=5):
+        """All non-rental report blocks in one call (see routes/reports.py)."""
+        base, bparams = self._rep_filters(company_id, date_from, date_to, document_type)
+        where = self._rep_where(base)
+        bp = tuple(bparams)
+
+        kpis = self.query_one(
+            'SELECT COUNT(*) AS total_sessions, '
+            'COALESCE(SUM(GREATEST(fp.km_end - fp.km_start, 0)), 0)::int AS total_km, '
+            'COUNT(DISTINCT fp.vin) AS cars_used, '
+            'COALESCE(ROUND(AVG(NULLIF(GREATEST(fp.km_end - fp.km_start, 0), 0))), 0)::int AS avg_km_per_session, '
+            "COALESCE(ROUND(100.0 * SUM(CASE WHEN fp.status = 'COMPLETED' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)), 0)::int AS completion_rate, "
+            "COALESCE(SUM(CASE WHEN fp.route_type = 'TD' AND fp.is_internal = FALSE THEN 1 ELSE 0 END), 0)::int AS test_drives "
+            f'FROM foi_de_parcurs fp{where}', bp) or {}
+
+        sessions_over_time = self.query_all(
+            "SELECT to_char(date_trunc('day', COALESCE(fp.departure_datetime, fp.created_at)), 'YYYY-MM-DD') AS bucket, "
+            'COUNT(*)::int AS count '
+            f'FROM foi_de_parcurs fp{where} GROUP BY 1 ORDER BY 1', bp)
+
+        by_status = self.query_all(
+            f'SELECT sub.td_status AS status, COUNT(*)::int AS count '
+            f'FROM (SELECT {_TD_STATUS_SQL} FROM foi_de_parcurs fp{where}) sub '
+            f'GROUP BY 1 ORDER BY 2 DESC', bp)
+
+        by_type = self.query_all(
+            "SELECT CASE WHEN fp.is_internal THEN 'internal' "
+            "WHEN fp.route_type = 'Comodat' THEN 'comodat' "
+            "WHEN fp.document_type = 'service' THEN 'service' "
+            "ELSE 'test_drive' END AS type, COUNT(*)::int AS count "
+            f'FROM foi_de_parcurs fp{where} GROUP BY 1 ORDER BY 2 DESC', bp)
+
+        client_vs_internal = self.query_all(
+            "SELECT CASE WHEN fp.is_internal THEN 'internal' ELSE 'client' END AS segment, "
+            'COUNT(*)::int AS count '
+            f'FROM foi_de_parcurs fp{where} GROUP BY 1 ORDER BY 1', bp)
+
+        by_brand = self.query_all(
+            "SELECT COALESCE(NULLIF(TRIM(v.brand), ''), NULLIF(TRIM(v.mark), ''), 'Necunoscut') AS brand, "
+            'COUNT(*)::int AS count '
+            f'FROM foi_de_parcurs fp LEFT JOIN fp_vehicles v ON v.vin = fp.vin{where} '
+            'GROUP BY 1 ORDER BY 2 DESC LIMIT 12', bp)
+
+        # client-only blocks exclude internal driving (no customer)
+        client_clauses = base + ['fp.is_internal = FALSE']
+        client_where = self._rep_where(client_clauses)
+
+        client_types = self.query_all(
+            "SELECT CASE WHEN lower(COALESCE(cc.client_type, '')) IN ('company', 'legal') "
+            "THEN 'company' ELSE 'person' END AS client_type, COUNT(*)::int AS count "
+            f'FROM foi_de_parcurs fp LEFT JOIN crm_clients cc ON cc.id = fp.client_id{client_where} '
+            'GROUP BY 1 ORDER BY 2 DESC', bp)
+
+        top_clients = self.query_all(
+            "SELECT COALESCE(NULLIF(TRIM(fp.client_name), ''), cc.company_name, cc.display_name, c.name, 'Necunoscut') AS client, "
+            "CASE WHEN lower(COALESCE(cc.client_type, '')) IN ('company', 'legal') THEN 'company' ELSE 'person' END AS client_type, "
+            'COUNT(*)::int AS sessions, COALESCE(SUM(GREATEST(fp.km_end - fp.km_start, 0)), 0)::int AS km '
+            'FROM foi_de_parcurs fp '
+            'LEFT JOIN crm_clients cc ON cc.id = fp.client_id '
+            'LEFT JOIN fp_clients c ON c.id = fp.client_id'
+            f'{client_where} GROUP BY 1, 2 ORDER BY sessions DESC LIMIT %s', bp + (top,))
+
+        adv_where = self._rep_where(base + ["NULLIF(TRIM(fp.advisor_name), '') IS NOT NULL"])
+        top_advisors = self.query_all(
+            'SELECT TRIM(fp.advisor_name) AS advisor, COUNT(*)::int AS sessions, '
+            'COALESCE(SUM(GREATEST(fp.km_end - fp.km_start, 0)), 0)::int AS km, '
+            "COALESCE(ROUND(100.0 * SUM(CASE WHEN fp.status = 'COMPLETED' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)), 0)::int AS completion_rate "
+            f'FROM foi_de_parcurs fp{adv_where} GROUP BY 1 ORDER BY sessions DESC LIMIT %s', bp + (top,))
+
+        top_companies = self.query_all(
+            "SELECT fp.company_id, COALESCE(co.company, 'Companie ' || fp.company_id) AS company, "
+            'COUNT(*)::int AS sessions, COALESCE(SUM(GREATEST(fp.km_end - fp.km_start, 0)), 0)::int AS km '
+            f'FROM foi_de_parcurs fp LEFT JOIN companies co ON co.id = fp.company_id{where} '
+            'GROUP BY fp.company_id, co.company ORDER BY sessions DESC LIMIT %s', bp + (top,))
+
+        # utilization excludes never-returned batch comodat rows (both odometers
+        # set at creation → not a genuine "car out" event)
+        util_where = self._rep_where(base + ["fp.source IS DISTINCT FROM 'batch'"])
+        utilization = self.query_all(
+            'SELECT fp.vin, COALESCE(v.registration_number, fp.registration_number) AS registration_number, '
+            "COALESCE(NULLIF(TRIM(v.mark || ' ' || v.model), ''), v.model, 'Necunoscut') AS model, "
+            "COUNT(DISTINCT date_trunc('day', COALESCE(fp.departure_datetime, fp.created_at)))::int AS days_used, "
+            'COUNT(*)::int AS sessions, COALESCE(SUM(GREATEST(fp.km_end - fp.km_start, 0)), 0)::int AS km '
+            f'FROM foi_de_parcurs fp LEFT JOIN fp_vehicles v ON v.vin = fp.vin{util_where} '
+            'GROUP BY 1, 2, 3 ORDER BY sessions DESC LIMIT %s', bp + (top,))
+
+        distance_by_brand = self.query_all(
+            "SELECT COALESCE(NULLIF(TRIM(v.brand), ''), NULLIF(TRIM(v.mark), ''), 'Necunoscut') AS brand, "
+            'COALESCE(SUM(GREATEST(fp.km_end - fp.km_start, 0)), 0)::int AS km '
+            f'FROM foi_de_parcurs fp LEFT JOIN fp_vehicles v ON v.vin = fp.vin{where} '
+            'GROUP BY 1 ORDER BY 2 DESC LIMIT 12', bp)
+
+        return {
+            'kpis': kpis,
+            'sessions_over_time': sessions_over_time,
+            'by_status': by_status,
+            'by_type': by_type,
+            'client_vs_internal': client_vs_internal,
+            'by_brand': by_brand,
+            'client_types': client_types,
+            'top_clients': top_clients,
+            'top_advisors': top_advisors,
+            'top_companies': top_companies,
+            'utilization': utilization,
+            'distance_by_brand': distance_by_brand,
+        }
+
+    def report_rental(self, company_id=None, date_from=None, date_to=None):
+        """Rental-revenue block (Service pool only) — total €, session count and
+        a per-month series. document_type is pinned to 'service' here."""
+        base, params = self._rep_filters(company_id, date_from, date_to, 'service')
+        where = self._rep_where(base)
+        p = tuple(params)
+        totals = self.query_one(
+            'SELECT COALESCE(SUM(fp.svc_total_eur), 0)::float AS total_eur, '
+            'COUNT(*) FILTER (WHERE fp.svc_total_eur IS NOT NULL)::int AS sessions '
+            f'FROM foi_de_parcurs fp{where}', p) or {}
+        by_month = self.query_all(
+            "SELECT to_char(date_trunc('month', COALESCE(fp.departure_datetime, fp.created_at)), 'YYYY-MM') AS bucket, "
+            'COALESCE(SUM(fp.svc_total_eur), 0)::float AS eur '
+            f'FROM foi_de_parcurs fp{where} GROUP BY 1 ORDER BY 1', p)
+        return {
+            'total_eur': totals.get('total_eur', 0),
+            'sessions': totals.get('sessions', 0),
+            'by_month': by_month,
+        }
+
     def delete_contract(self, contract_id: int):
         """Permanently delete a foi_de_parcurs row (admin/test cleanup)."""
         self.execute('DELETE FROM foi_de_parcurs WHERE id = %s', (contract_id,))
