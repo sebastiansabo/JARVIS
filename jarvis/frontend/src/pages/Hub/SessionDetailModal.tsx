@@ -77,6 +77,14 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
     onSuccess: () => { invalidate(); setExtending(false); onClose() },
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Prelungirea a eșuat'),
   })
+  // Delete an internal driving-log session (any status, any user). Reuses the
+  // admin delete endpoint, which the backend opens to non-admins for internal
+  // sessions only. Hard delete — session-event history cascades away.
+  const deleteMutation = useMutation({
+    mutationFn: () => foiParcursApi.deleteContract(c.id),
+    onSuccess: () => { invalidate(); onClose() },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Ștergerea a eșuat'),
+  })
 
   const comment = internalComment(c)
   const tester = c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—')
@@ -166,6 +174,18 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
                 onClick={() => { if (confirm('Renunți la această sesiune planificată? Acțiunea nu poate fi anulată.')) discardMutation.mutate() }}
               >
                 <Trash2 className="mr-1.5 h-4 w-4" />Renunță
+              </Button>
+            )}
+            {/* Internal sessions only — delete the internal driving log (any
+                status, any user). Regular Test Drives are never deletable here. */}
+            {c.is_internal && (
+              <Button
+                variant="outline"
+                className="text-destructive ring-1 ring-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                disabled={deleteMutation.isPending}
+                onClick={() => { if (confirm('Ștergi definitiv această sesiune internă? Acțiunea nu poate fi anulată.')) deleteMutation.mutate() }}
+              >
+                <Trash2 className="mr-1.5 h-4 w-4" />Șterge
               </Button>
             )}
           </div>
