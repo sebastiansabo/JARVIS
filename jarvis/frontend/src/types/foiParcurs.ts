@@ -41,6 +41,17 @@ export interface FpVehicle {
   registration_number?: string
   company_id?: number
   company_name?: string
+  /** Pool the car belongs to: 'sales' (Vânzări) or 'service' (Mașini de curtoazie). */
+  document_type?: 'sales' | 'service'
+  // Service (Mașini de curtoazie) per-car price + policy (S6). Null falls back
+  // to the company default (fp_company_config.svc_*) — resolved server-side by
+  // compute_service_pricing (car value wins, else company default, else null).
+  svc_tariff_eur_day?: number | null
+  svc_tariff_eur_month?: number | null
+  svc_km_included_day?: number | null
+  svc_extra_km_eur?: number | null
+  svc_deposit_eur?: number | null
+  svc_franchise_eur?: number | null
   // Documents + validity (rovinietă/vignette, ITP, RCA insurance). Docs are
   // base64 (image or PDF data-URL).
   vignette_valid_until?: string | null
@@ -277,6 +288,19 @@ export interface FoiContract {
   // Joined HR event name (Task 15) — LEFT JOIN hr.events he ON he.id =
   // fp.event_id in get_contracts; populates the "Eveniment" list/detail badge.
   event_name?: string | null
+  // Service (Mașini de curtoazie) rental-pricing snapshot columns (S6b) —
+  // present on `fp.*` for a Service-context contract; used to restore the
+  // frozen/overridden price when activating a PLANNED draft (see
+  // TestDriveForm's draft-prefill effect) instead of silently recomputing it.
+  document_type?: string | null
+  svc_rate_basis?: 'day' | 'month' | null
+  svc_tariff_eur?: number | null
+  svc_units?: number | null
+  svc_total_eur?: number | null
+  svc_km_included_day?: number | null
+  svc_extra_km_eur?: number | null
+  svc_garantie_eur?: number | null
+  svc_fransiza_eur?: number | null
 }
 
 // ── Marketing project (campaign/event) a Test Drive can optionally be tied to.
@@ -473,6 +497,24 @@ export interface TestDriveFormPayload {
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
   allow_open_session?: boolean
+  /** Service context (Task 13): which flow this session belongs to
+   *  ('sales' | 'service'); service_order_ref is Service-only. */
+  document_type?: string
+  service_order_ref?: string
+  /** Service rental-pricing snapshot (S6b) — auto-computed by
+   *  GET .../service-pricing and shown in the session's "Sumar închiriere"
+   *  card; the advisor may edit before submit. Backend treats any non-null
+   *  value here as a per-key override of its own compute_service_pricing
+   *  result (see _resolve_service_pricing in routes/test_drive.py). Ignored
+   *  server-side unless document_type === 'service'. */
+  svc_rate_basis?: 'day' | 'month'
+  svc_tariff_eur?: number
+  svc_units?: number
+  svc_total_eur?: number
+  svc_km_included_day?: number
+  svc_extra_km_eur?: number
+  svc_garantie_eur?: number
+  svc_fransiza_eur?: number
 }
 
 // ── Internal driving-log session — POST /test-drive with is_internal:true
@@ -545,6 +587,17 @@ export interface ActivateTestDrivePayload {
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
   allow_open_session?: boolean
+  /** Service rental-pricing snapshot (S6b) — see TestDriveFormPayload. A
+   *  PLANNED draft may be activated once departure/return are both finally
+   *  known, so this is (re)computed at activation unless overridden here. */
+  svc_rate_basis?: 'day' | 'month'
+  svc_tariff_eur?: number
+  svc_units?: number
+  svc_total_eur?: number
+  svc_km_included_day?: number
+  svc_extra_km_eur?: number
+  svc_garantie_eur?: number
+  svc_fransiza_eur?: number
 }
 
 // ── Return (completion) Test Drive Payload — PUT /test-drive/:id/return.

@@ -2,8 +2,60 @@
 
 from ._shared import foi_parcurs_bp, jsonify, request, login_required, logger, _dealer_repo, _vehicle_repo
 from ..repositories import FoiParcursRepository
+from ..repositories.contract_config_repository import ContractConfigRepository
+from ..repositories.document_type_repository import DocumentTypeRepository
+from ..services.rental_pricing import compute_service_pricing
 
 _repo = FoiParcursRepository()
+
+
+def _num_or_none(value, integer=False):
+    """Coerce a value to a number (int when `integer`), or None if empty/invalid.
+    NUMERIC/INTEGER columns reject '' — a blank from the UI clears the field."""
+    if value in (None, ''):
+        return None
+    try:
+        return int(value) if integer else float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+# ════════════════════════════════════════════════════════════════
+# Service rental-pricing preview (used by the session form to auto-fill
+# before submit — computes but never persists)
+# ════════════════════════════════════════════════════════════════
+
+def _company_svc_policy(company_id: int) -> dict:
+    """The company's default Service tariffs policy (fallback for any per-car
+    svc_* field left NULL). Empty dict when unconfigured."""
+    return _repo.query_one(
+        'SELECT svc_km_included_day, svc_extra_km_eur, svc_deposit_eur, svc_franchise_eur '
+        'FROM fp_company_config WHERE company_id = %s',
+        (company_id,),
+    ) or {}
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/service-pricing', methods=['GET'])
+@login_required
+def api_service_pricing_preview():
+    """Preview the Service rental-pricing snapshot for a car + date range, so
+    the session form can auto-fill the rental summary before submit. Pure
+    preview — computes via compute_service_pricing, persists nothing."""
+    company_id = request.args.get('company_id', type=int)
+    vin = (request.args.get('vin') or '').strip()
+    departure = request.args.get('departure')
+    return_dt = request.args.get('return_dt')
+    if not company_id or not vin or not departure or not return_dt:
+        return jsonify({'success': False,
+                        'error': 'company_id, vin, departure and return_dt are required'}), 400
+    vehicle = _vehicle_repo.get_by_vin(vin)
+    if not vehicle:
+        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+    try:
+        pricing = compute_service_pricing(vehicle, _company_svc_policy(company_id), departure, return_dt)
+    except (TypeError, ValueError) as e:
+        return jsonify({'success': False, 'error': str(e)[:300]}), 400
+    return jsonify({'success': True, 'pricing': pricing})
 
 
 # ════════════════════════════════════════════════════════════════
@@ -39,10 +91,13 @@ def api_put_dealer_config(company_id, brand_id):
 def api_get_general_conditions():
     """Resolve the general-conditions text for the mobile Test Drive form.
     Brand is resolved from the vehicle (vin); a `brand` name param is accepted
-    as a fallback. Returns '' when nothing is configured."""
+    as a fallback. Branches on `document_type`: Service sources its conditions
+    from `fp_contract_configs` (mirrors the submit/activate gate), Sales keeps
+    the existing dealer-config path. Returns '' when nothing is configured."""
     company_id = request.args.get('company_id', type=int)
     vin = (request.args.get('vin') or '').strip()
     brand = (request.args.get('brand') or '').strip()
+    document_type = (request.args.get('document_type') or 'sales').strip()
     if vin and not brand:
         try:
             veh = _vehicle_repo.get_by_vin(vin)
@@ -51,8 +106,13 @@ def api_get_general_conditions():
             logger.warning('general-conditions: vehicle lookup failed for vin=%s', vin, exc_info=True)
             brand = ''
     text = ''
-    if company_id and brand:
-        text = _dealer_repo.get_general_conditions(company_id, brand)
+    if company_id:
+        if document_type != 'sales':
+            # Non-sales types source their T&C from the document-type registry
+            # (per company, tag-based — no brand needed).
+            text = ((DocumentTypeRepository().get(company_id, document_type) or {}).get('general_conditions') or '')
+        elif brand:
+            text = _dealer_repo.get_general_conditions(company_id, brand)
     return jsonify({'success': True, 'text': text, 'brand': brand})
 
 
@@ -126,7 +186,13 @@ def api_get_company_config(company_id):
         'SELECT * FROM fp_company_config WHERE company_id = %s', (company_id,)
     )
     if not row:
-        row = {'company_id': company_id, 'base_location': '', 'td_radius_km': 50, 'comodat_avg_km': 150}
+        row = {
+            'company_id': company_id, 'base_location': '', 'td_radius_km': 50, 'comodat_avg_km': 150,
+            # Service (Mașini de curtoazie) default tariffs policy — per-car
+            # values (fp_vehicles.svc_*) take precedence; these are the fallback.
+            'svc_km_included_day': None, 'svc_extra_km_eur': None,
+            'svc_deposit_eur': None, 'svc_franchise_eur': None,
+        }
     return jsonify({'config': row})
 
 
@@ -135,12 +201,17 @@ def api_get_company_config(company_id):
 def api_update_company_config(company_id):
     data = request.get_json(silent=True) or {}
     sql = '''
-        INSERT INTO fp_company_config (company_id, base_location, td_radius_km, comodat_avg_km)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO fp_company_config (company_id, base_location, td_radius_km, comodat_avg_km,
+            svc_km_included_day, svc_extra_km_eur, svc_deposit_eur, svc_franchise_eur)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (company_id) DO UPDATE SET
             base_location = EXCLUDED.base_location,
             td_radius_km = EXCLUDED.td_radius_km,
             comodat_avg_km = EXCLUDED.comodat_avg_km,
+            svc_km_included_day = EXCLUDED.svc_km_included_day,
+            svc_extra_km_eur = EXCLUDED.svc_extra_km_eur,
+            svc_deposit_eur = EXCLUDED.svc_deposit_eur,
+            svc_franchise_eur = EXCLUDED.svc_franchise_eur,
             updated_at = NOW()
     '''
     _repo.execute(sql, (
@@ -148,6 +219,12 @@ def api_update_company_config(company_id):
         data.get('base_location', ''),
         data.get('td_radius_km', 50),
         data.get('comodat_avg_km', 150),
+        # NUMERIC/INTEGER Service default-policy columns reject '' — coerce blank
+        # to NULL so the S6b company-policy UI can clear a field without a 500.
+        _num_or_none(data.get('svc_km_included_day'), integer=True),
+        _num_or_none(data.get('svc_extra_km_eur')),
+        _num_or_none(data.get('svc_deposit_eur')),
+        _num_or_none(data.get('svc_franchise_eur')),
     ))
     return jsonify({'success': True})
 

@@ -13,6 +13,7 @@ vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: {
 } }))
 
 import DrivingParkList from './DrivingParkList'
+import { foiParcursApi } from '@/api/foiParcurs'
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -20,7 +21,19 @@ function wrap(ui: React.ReactNode) {
 }
 
 describe('DrivingParkList (read-only Hub Driving Park)', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => { localStorage.clear(); vi.mocked(foiParcursApi.getVehicles).mockClear() })
+
+  it('scopes the fleet to service when documentType="service"', async () => {
+    wrap(<DrivingParkList companyId={11} brand="" carFilter={[]} documentType="service" />)
+    expect(await screen.findByText('Volvo XC40')).toBeInTheDocument()
+    expect(foiParcursApi.getVehicles).toHaveBeenCalledWith(false, 'service')
+  })
+
+  it('defaults to sales scope when documentType is omitted', async () => {
+    wrap(<DrivingParkList companyId={11} brand="" carFilter={[]} />)
+    expect(await screen.findByText('Volvo XC40')).toBeInTheDocument()
+    expect(foiParcursApi.getVehicles).toHaveBeenCalledWith(false, 'sales')
+  })
 
   it('lists active vehicles for the company with availability pills; hides archived + other companies', async () => {
     wrap(<DrivingParkList companyId={11} brand="" carFilter={[]} />)

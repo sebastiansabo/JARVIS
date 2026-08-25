@@ -10,6 +10,10 @@ from ._shared import (
     _dealer_repo, open_session_block, is_privileged, log_history, log_status_change,
 )
 from ..services.fuel_service import parse_fuel_level
+from ..services.rental_pricing import compute_service_pricing
+from ..document_types import normalize as _normalize_doctype, pools_match
+from ..repositories.contract_config_repository import ContractConfigRepository
+from ..repositories.document_type_repository import DocumentTypeRepository
 from crm.repositories.contact_repository import ContactRepository, contact_gate_valid
 from marketing.repositories.event_repo import ProjectEventRepository
 
@@ -19,6 +23,8 @@ _PHONE_RE = re.compile(r'^(\+\d{7,15}|07\d{8}|004\d{10})$')
 
 _contact_repo = ContactRepository()
 _event_bridge_repo = ProjectEventRepository()
+_cc_repo = ContractConfigRepository()
+_dt_repo = DocumentTypeRepository()
 
 # CRM data often stores companies as client_type 'person' with the legal form
 # only in the name (e.g. "NELAURA COMIMPEX SRL"), so the company->contact gate
@@ -70,6 +76,45 @@ def _normalize_name(name: str) -> str:
     return re.sub(r'\s+', ' ', (name or '').strip().lower())
 
 
+_SVC_SNAPSHOT_KEYS = (
+    'svc_rate_basis', 'svc_tariff_eur', 'svc_units', 'svc_total_eur',
+    'svc_km_included_day', 'svc_extra_km_eur', 'svc_garantie_eur', 'svc_fransiza_eur',
+)
+
+
+def _resolve_service_pricing(vehicle, company_id, departure, return_dt, payload) -> dict:
+    """Compute the Service rental-pricing snapshot (compute_service_pricing)
+    and let any advisor override present in `payload` win over the computed
+    value. Returns only the svc_* keys to persist — empty when pricing can't
+    be computed (e.g. missing dates) and no overrides were supplied. Never
+    raises: a pricing hiccup must not block session create/activate.
+
+    The override-merge is deliberately OUTSIDE the compute try/except: if the
+    computation raises (bad date string, DB blip on the policy lookup), the
+    advisor's EXPLICIT payload overrides (e.g. svc_total_eur=500) must STILL be
+    persisted — only the computed values are lost, honouring the per-key
+    override guarantee."""
+    computed = {}
+    try:
+        policy = {}
+        if company_id:
+            policy = _fp_repo.query_one(
+                'SELECT svc_km_included_day, svc_extra_km_eur, svc_deposit_eur, svc_franchise_eur '
+                'FROM fp_company_config WHERE company_id = %s',
+                (int(company_id),),
+            ) or {}
+        if departure and return_dt:
+            computed = compute_service_pricing(vehicle or {}, policy, departure, return_dt) or {}
+    except Exception:
+        logger.warning('Service pricing compute failed; using payload overrides only', exc_info=True)
+    resolved = dict(computed)
+    for key in _SVC_SNAPSHOT_KEYS:
+        override = payload.get(key)
+        if override is not None:
+            resolved[key] = override
+    return resolved
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/test-drive', methods=['POST'])
 @login_required
 def api_submit_test_drive():
@@ -77,6 +122,7 @@ def api_submit_test_drive():
     data = request.get_json(silent=True) or {}
     is_draft = data.get('status') == 'PLANNED'
     is_internal = bool(data.get('is_internal'))
+    document_type = _normalize_doctype(data.get('document_type'))
 
     # `itinerary` is intentionally NOT required — the mobile Test Drive form
     # dropped the Traseu/Itinerariu field. It's still stored when provided
@@ -125,16 +171,36 @@ def api_submit_test_drive():
         return jsonify({'success': False, 'error': 'GDPR consent is required'}), 400
 
     # General conditions (per company+brand) — required only when configured.
+    # Service sources its conditions from fp_contract_configs (Task 5); Sales
+    # keeps the existing fp_dealer_config path. Both branches reuse the single
+    # vehicle fetch below (needed for the brand — and, for Service, the pool
+    # check right after).
+    _veh = None
     general_conditions_text = ''
     try:
         _veh = _vehicle_repo.get_by_vin(data['vin'])
         _brand = (_veh or {}).get('brand') or ''
-        general_conditions_text = _dealer_repo.get_general_conditions(int(data['company_id']), _brand) or ''
+        if document_type != 'sales':
+            _cfg = _dt_repo.get(int(data['company_id']), document_type)
+            general_conditions_text = ((_cfg or {}).get('general_conditions') or '')
+        else:
+            general_conditions_text = _dealer_repo.get_general_conditions(int(data['company_id']), _brand) or ''
     except Exception:
         logger.warning('general-conditions lookup failed at submit', exc_info=True)
         general_conditions_text = ''
     if not is_draft and not is_internal and general_conditions_text.strip() and not data.get('general_conditions_accepted'):
         return jsonify({'success': False, 'error': 'General conditions acceptance is required'}), 400
+
+    # Pool isolation: a session may only attach to a vehicle from its own pool
+    # — a Service (courtesy car) session never attaches to a Sales-only car,
+    # and vice versa. Applies to a PLANNED draft too (it already selects a
+    # car). Symmetric in both directions. Reuses `_veh` fetched above;
+    # re-fetched only if that lookup raised.
+    if _veh is None:
+        _veh = _vehicle_repo.get_by_vin(data['vin'])
+    if not pools_match(document_type, (_veh or {}).get('document_type')):
+        return jsonify({'success': False,
+                        'error': 'Mașina selectată nu aparține parcului pentru acest tip de document.'}), 400
 
     contract_id = f"TD-{data['vin'][:8]}-{int(time.time())}-{uuid.uuid4().hex[:4]}"
 
@@ -264,11 +330,21 @@ def api_submit_test_drive():
             'source': 'td_form',
             'status': 'PLANNED' if is_draft else 'FILLED',
             'is_internal': is_internal,
+            'document_type': document_type,
+            'service_order_ref': (data.get('service_order_ref') or None),
         }
         if not is_draft and general_conditions_text.strip():
             contract_data['general_conditions_accepted'] = True
             contract_data['general_conditions_accepted_at'] = datetime.now(timezone.utc)
             contract_data['general_conditions_text'] = general_conditions_text
+
+        # Rental-pricing snapshot — frozen at create so a later car-price change
+        # never rewrites a signed contract. Only rental document types (is_rental)
+        # carry pricing; Sales and non-rental types never touch this.
+        if _dt_repo.is_rental(contract_data.get('company_id'), document_type):
+            contract_data.update(_resolve_service_pricing(
+                _veh, contract_data.get('company_id'),
+                data.get('departure_datetime'), data.get('return_datetime'), data))
 
         # HR-event -> marketing-project bridge: when the session is tagged with
         # an HR event, bridge it to a marketing 'event' project and point
@@ -311,8 +387,10 @@ def api_submit_test_drive():
         # signature/GDPR/contract captured for those)
         if not is_draft and not is_internal:
             try:
-                from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
-                legal_path = generate_legal_pdf(contract)
+                from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf, generate_service_contract_pdf
+                legal_path = (generate_service_contract_pdf(contract)
+                              if _normalize_doctype(contract.get('document_type')) != 'sales'
+                              else generate_legal_pdf(contract))
                 custom_path = generate_custom_pdf(contract)
                 _fp_repo.execute(
                     'UPDATE foi_de_parcurs SET pdf_legal_path = %s, pdf_custom_path = %s WHERE id = %s',
@@ -369,13 +447,22 @@ def api_activate_test_drive(id):
         # General conditions (per company+brand) — required only when configured.
         # Mirrors the live-submit gate: a PLANNED draft defers this to activation.
         general_conditions_text = ''
+        _doc_type = _normalize_doctype(contract.get('document_type'))
+        _veh = None
         try:
             _veh = _vehicle_repo.get_by_vin(contract.get('vin'))
             _brand = (_veh or {}).get('brand') or ''
-            general_conditions_text = _dealer_repo.get_general_conditions(int(contract['company_id']), _brand) or ''
+            if _doc_type != 'sales':
+                _cfg = _dt_repo.get(int(contract['company_id']), _doc_type)
+                general_conditions_text = ((_cfg or {}).get('general_conditions') or '')
+            else:
+                general_conditions_text = _dealer_repo.get_general_conditions(int(contract['company_id']), _brand) or ''
         except Exception:
             logger.warning('general-conditions lookup failed at activation', exc_info=True)
             general_conditions_text = ''
+        if not pools_match(_doc_type, (_veh or {}).get('document_type')):
+            return jsonify({'success': False,
+                            'error': 'Mașina selectată nu aparține parcului pentru acest tip de document.'}), 400
         if general_conditions_text.strip() and not data.get('general_conditions_accepted'):
             return jsonify({'success': False, 'error': 'General conditions acceptance is required'}), 400
 
@@ -478,6 +565,17 @@ def api_activate_test_drive(id):
         # Persist a client switch/edit made at activation (empty when unchanged).
         update.update(client_update)
 
+        # Rental-pricing snapshot — a PLANNED draft may not have had a
+        # return_datetime yet, so this is (re)computed at activation from
+        # whatever departure/return is now known. Frozen from here on. Only
+        # rental document types (is_rental) carry pricing.
+        if _dt_repo.is_rental(contract.get('company_id'), _doc_type):
+            update.update(_resolve_service_pricing(
+                _veh, contract.get('company_id'),
+                update.get('departure_datetime') or contract.get('departure_datetime'),
+                update.get('return_datetime') or contract.get('return_datetime'),
+                data))
+
         updated = _fp_repo.record_activation(id, update)
         # record_activation only matches PLANNED TD rows; a concurrent/duplicate
         # activation flips it to FILLED first, so a zero-row UPDATE returns falsy.
@@ -489,8 +587,10 @@ def api_activate_test_drive(id):
         log_status_change(id, contract.get('status'), 'FILLED')
 
         try:
-            from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf
-            legal_path = generate_legal_pdf(updated)
+            from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf, generate_service_contract_pdf
+            legal_path = (generate_service_contract_pdf(updated)
+                          if _normalize_doctype(updated.get('document_type')) != 'sales'
+                          else generate_legal_pdf(updated))
             custom_path = generate_custom_pdf(updated)
             _fp_repo.execute(
                 'UPDATE foi_de_parcurs SET pdf_legal_path = %s, pdf_custom_path = %s WHERE id = %s',

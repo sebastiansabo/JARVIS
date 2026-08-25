@@ -27,7 +27,8 @@ _LIST_COLUMNS = (
     'fp.general_conditions_accepted_at, fp.pdf_legal_path, fp.pdf_custom_path, '
     'fp.corrected_at, fp.corrected_by, '
     'fp.is_internal, '
-    'fp.driver_name, fp.driver_contact_id, fp.event_id'
+    'fp.driver_name, fp.driver_contact_id, fp.event_id, '
+    'fp.document_type, fp.service_order_ref'
 )
 
 
@@ -53,7 +54,7 @@ class FoiParcursRepository(BaseRepository):
                       batch_id=None, page=1, per_page=25,
                       sort_by='created_at', sort_dir='DESC',
                       date_from=None, date_to=None, route_type=None,
-                      lean=False):
+                      document_type=None, lean=False):
         """Paginated list with optional filters. Returns (rows, total).
 
         date_from/date_to filter on the drive date (departure_datetime, falling
@@ -88,6 +89,9 @@ class FoiParcursRepository(BaseRepository):
         if route_type:
             where_clauses.append('fp.route_type = %s')
             params.append(route_type)
+        if document_type:
+            where_clauses.append('fp.document_type = %s')
+            params.append(document_type)
         if date_from:
             where_clauses.append('COALESCE(fp.departure_datetime, fp.created_at) >= %s')
             params.append(date_from)
@@ -430,12 +434,18 @@ class FoiParcursRepository(BaseRepository):
             'COALESCE(cc.email, c.email) AS client_email, '
             "COALESCE(NULLIF(TRIM(CONCAT_WS(', ', cc.street, cc.city, cc.region)), ''), c.address) AS client_address, "
             'co.company AS company_name, '
+            'co.reg_no AS company_reg_no, co.iban AS company_iban, co.bank AS company_bank, '
+            'co.street AS company_street, co.city AS company_city, co.county AS company_county, '
+            'co.administrator AS company_administrator, co.vat AS company_vat, '
+            'co.alert_email AS company_email, '
             'cc.company_name AS client_company, '
+            'cc.cui AS client_cui, '
             'v.mark AS vehicle_mark, v.model AS vehicle_model, '
             'v.registration_number AS vehicle_registration_number, '
             'v.brand AS vehicle_brand, v.fuel_type AS vehicle_fuel_type, '
             'mp.name AS mkt_project_name, '
             'he.name AS event_name, '
+            "TRIM(CONCAT_WS(' ', dcc.driver_license_serie, dcc.driver_license_number)) AS client_ci_serie, "
             f'{_TD_STATUS_SQL} '
             'FROM foi_de_parcurs fp '
             'LEFT JOIN fp_clients c ON c.id = fp.client_id '
@@ -444,6 +454,7 @@ class FoiParcursRepository(BaseRepository):
             'LEFT JOIN fp_vehicles v ON v.vin = fp.vin '
             'LEFT JOIN mkt_projects mp ON mp.id = fp.mkt_project_id '
             'LEFT JOIN hr.events he ON he.id = fp.event_id '
+            'LEFT JOIN crm_client_contacts dcc ON dcc.id = fp.driver_contact_id '
             'WHERE fp.id = %s'
         )
         return self.query_one(sql, (contract_id,))

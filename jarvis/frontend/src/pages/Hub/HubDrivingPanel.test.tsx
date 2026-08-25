@@ -10,8 +10,8 @@ vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: {
   getVehicles: vi.fn().mockResolvedValue({ vehicles: [] }),
 } }))
 vi.mock('@/pages/Hub/DrivingSessionsList', () => ({
-  default: ({ companyId, onReturn }: { companyId: number; onReturn?: (id: number) => void }) => (
-    <div>sessions:{companyId}<button onClick={() => onReturn?.(11)}>mock-retur</button></div>
+  default: ({ companyId, onReturn, documentType, brand }: { companyId: number; onReturn?: (id: number) => void; documentType?: string; brand?: string }) => (
+    <div>sessions:{companyId}<span data-testid="sessions-doctype">{documentType ?? 'sales'}</span><span data-testid="sessions-brand">{brand ?? ''}</span><button onClick={() => onReturn?.(11)}>mock-retur</button></div>
   ),
 }))
 vi.mock('@/pages/Hub/DrivingCalendar', () => ({
@@ -20,8 +20,8 @@ vi.mock('@/pages/Hub/DrivingCalendar', () => ({
   ),
 }))
 vi.mock('@/pages/FoiParcurs/TestDriveForm', () => ({
-  default: ({ onDone, onCancel, initialDeparture }: { onDone?: (c: unknown) => void; onCancel: () => void; initialDeparture?: string }) => (
-    <div>form:{initialDeparture ?? ''}<button onClick={onCancel}>x</button><button onClick={() => onDone?.({ id: 1 })}>done</button></div>
+  default: ({ onDone, onCancel, initialDeparture, initialDocumentType }: { onDone?: (c: unknown) => void; onCancel: () => void; initialDeparture?: string; initialDocumentType?: string }) => (
+    <div>form:{initialDeparture ?? ''}<span data-testid="form-doctype">{initialDocumentType ?? 'sales'}</span><button onClick={onCancel}>x</button><button onClick={() => onDone?.({ id: 1 })}>done</button></div>
   ),
 }))
 vi.mock('@/pages/FoiParcurs/InternalSessionForm', () => ({
@@ -39,6 +39,7 @@ async function openClientForm() {
 }
 
 import HubDrivingPanel from './HubDrivingPanel'
+import { foiParcursApi } from '@/api/foiParcurs'
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -126,6 +127,12 @@ describe('HubDrivingPanel', () => {
     expect(await screen.findByText('return-overlay:11')).toBeInTheDocument()
   })
 
+  it('scopes the sessions list to sales by default', async () => {
+    wrap(<HubDrivingPanel />)
+    await screen.findByText(/sessions:11/)
+    expect(screen.getByTestId('sessions-doctype')).toHaveTextContent('sales')
+  })
+
   it('invalidates the sessions list and closes the overlay when the New form completes', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const spy = vi.spyOn(qc, 'invalidateQueries')
@@ -144,5 +151,48 @@ describe('HubDrivingPanel', () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ['foi-contracts-all'] })
     expect(spy).toHaveBeenCalledWith({ queryKey: ['odometer-history'] })
     expect(screen.queryByText(/^form:/)).not.toBeInTheDocument()
+  })
+})
+
+describe('HubDrivingPanel — Service (Mașini de curtoazie) mode', () => {
+  beforeEach(() => { localStorage.clear(); vi.mocked(foiParcursApi.getBrands).mockResolvedValue({ brands: ['Audi'] }) })
+
+  it('scopes the sessions list to service', async () => {
+    wrap(<HubDrivingPanel documentType="service" />)
+    await screen.findByText(/sessions:11/)
+    expect(screen.getByTestId('sessions-doctype')).toHaveTextContent('service')
+  })
+
+  it('passes an empty brand to children (courtesy stock is multi-brand)', async () => {
+    wrap(<HubDrivingPanel documentType="service" />)
+    await screen.findByText(/sessions:11/)
+    expect(screen.getByTestId('sessions-brand')).toHaveTextContent('')
+  })
+
+  it('the "+" chooser offers Rent-a-car + Internal but NOT the client card', async () => {
+    wrap(<HubDrivingPanel documentType="service" />)
+    await screen.findByText(/sessions:11/)
+    fireEvent.click(screen.getByRole('button', { name: /nou/i }))
+    expect(await screen.findByRole('button', { name: /rent-a-car/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /sesiune internă/i })).toBeInTheDocument()
+    expect(screen.queryByText(/sesiune cu client/i)).not.toBeInTheDocument()
+  })
+
+  it('picking Rent-a-car opens the form in service context', async () => {
+    wrap(<HubDrivingPanel documentType="service" />)
+    await screen.findByText(/sessions:11/)
+    fireEvent.click(screen.getByRole('button', { name: /nou/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /rent-a-car/i }))
+    expect(await screen.findByText(/^form:/)).toBeInTheDocument()
+    expect(screen.getByTestId('form-doctype')).toHaveTextContent('service')
+  })
+
+  it('hides the franchise brand dropdown in the Filtre modal', async () => {
+    wrap(<HubDrivingPanel documentType="service" />)
+    await screen.findByText(/sessions:11/)
+    fireEvent.click(screen.getByRole('button', { name: /filtre/i }))
+    // Company filter is always present; the "Marcă" (brand) filter is hidden in service.
+    expect(await screen.findByText(/companie/i)).toBeInTheDocument()
+    expect(screen.queryByText(/marcă/i)).not.toBeInTheDocument()
   })
 })

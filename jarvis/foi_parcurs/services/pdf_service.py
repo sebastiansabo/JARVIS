@@ -162,9 +162,15 @@ def _parse_conditions(text: str) -> list:
     return blocks
 
 
-def _general_conditions_flowables(text: str, accepted_at) -> list:
+def _general_conditions_flowables(text: str, accepted_at, title: str = 'Condiții generale',
+                                   note: bool = True) -> list:
     """Reportlab flowables for the accepted general-conditions section. Empty
-    list when there is no text (old/unconfigured contracts)."""
+    list when there is no text (old/unconfigured contracts). `title` lets a
+    second call for a distinct tail block (e.g. the Service contract's
+    GDPR/consent text, rendered separately from its numbered T&C sections)
+    use its own heading instead of repeating 'Condiții generale'; `note=False`
+    skips the trailing 'client accepted' line for that same case, when it's
+    already been shown once for the block that precedes it."""
     if not (text or '').strip():
         return []
     styles = getSampleStyleSheet()
@@ -175,10 +181,10 @@ def _general_conditions_flowables(text: str, accepted_at) -> list:
     body = ParagraphStyle('GCBody', parent=styles['Normal'], fontSize=8.5,
                           leading=12, alignment=TA_JUSTIFY, spaceAfter=4)
     bullet = ParagraphStyle('GCBullet', parent=body, leftIndent=10, bulletIndent=2, spaceAfter=2)
-    note = ParagraphStyle('GCNote', parent=styles['Normal'], fontSize=8.5,
-                          leading=12, spaceBefore=6, fontName='Helvetica-Oblique')
+    gc_note_style = ParagraphStyle('GCNote', parent=styles['Normal'], fontSize=8.5,
+                                   leading=12, spaceBefore=6, fontName='Helvetica-Oblique')
 
-    fl = [Paragraph('Condiții generale', sec)]
+    fl = [Paragraph(title, sec)]
     for kind, payload in _parse_conditions(text):
         if kind == 'heading':
             fl.append(Paragraph(payload, head))
@@ -188,14 +194,135 @@ def _general_conditions_flowables(text: str, accepted_at) -> list:
         else:
             fl.append(Paragraph(payload, body))
 
-    when = ''
-    if accepted_at:
-        try:
-            when = datetime.fromisoformat(str(accepted_at).replace('Z', '')).strftime('%d.%m.%Y %H:%M')
-        except Exception:
-            when = str(accepted_at)
-    suffix = f' la data de {when}' if when else ''
-    fl.append(Paragraph(f'Clientul a citit și acceptat condițiile generale{suffix}.', note))
+    if note:
+        when = ''
+        if accepted_at:
+            try:
+                when = datetime.fromisoformat(str(accepted_at).replace('Z', '')).strftime('%d.%m.%Y %H:%M')
+            except Exception:
+                when = str(accepted_at)
+        suffix = f' la data de {when}' if when else ''
+        fl.append(Paragraph(f'Clientul a citit și acceptat condițiile generale{suffix}.', gc_note_style))
+    return fl
+
+
+# --- Service contract damage-price table (split out of `general_conditions`) --
+
+_DAMAGE_MARKER = '=== VALOAREA FACTURABILĂ A DAUNELOR ==='
+
+
+def _split_general_conditions(text: str):
+    """Split a Service `general_conditions` text at `_DAMAGE_MARKER` into
+    (before, damage_block, after).
+
+    `before` is the numbered T&C sections that precede the marker.
+    `damage_block` is the priced damage-cost list right after it — every line
+    up to and including the last one that looks like a priced row (contains
+    '|', per the template's `label | price` convention) or the trailing
+    '*'-prefixed disclaimer note. `after` is whatever remains (the GDPR and
+    consent paragraphs).
+
+    Returns (text, '', '') when the marker is absent so callers can fall back
+    to rendering the whole thing unchanged."""
+    if _DAMAGE_MARKER not in (text or ''):
+        return text or '', '', ''
+    before, _, remainder = text.partition(_DAMAGE_MARKER)
+    lines = remainder.splitlines()
+    last_priced = -1
+    for i, raw in enumerate(lines):
+        line = raw.strip()
+        if '|' in line or line.startswith('*'):
+            last_priced = i
+    if last_priced == -1:
+        return before, '', remainder
+    damage_block = '\n'.join(lines[:last_priced + 1])
+    after = '\n'.join(lines[last_priced + 1:])
+    return before, damage_block, after
+
+
+def _damage_table(damage_block_text: str) -> list:
+    """A 2-column ('Element' | 'Cost') ReportLab Table for the Service
+    contract's priced damage list, plus a small caption for the trailing
+    price-disclaimer note. Lines using the template's `label | price` format
+    become table rows; every OTHER non-priced line (e.g. 'Elemente vitrate',
+    'Roti', 'Interior', or a dealer's custom 'Daune caroserie' header) becomes
+    a bold category-header row spanning both columns — only the two known
+    boilerplate caption lines are dropped: the section-title echo (any line
+    containing 'VALOAREA FACTURABIL', already rendered by the caller as a
+    `Paragraph` heading) and the 'Cost Dauna Neasigurata' column caption
+    (already covered by the 'Cost' column header). `*`-prefixed lines are the
+    price-disclaimer note, rendered as an italic caption below the table.
+
+    When a segment has category headers and/or a disclaimer note but no
+    priced rows, those are returned as loose paragraphs (never silently
+    dropped); returns [] only when there is genuinely nothing to render."""
+    styles = getSampleStyleSheet()
+    hdr_style = ParagraphStyle('DmgHdr', parent=styles['Normal'], fontSize=9,
+                               fontName='Helvetica-Bold', textColor=colors.white)
+    cat_style = ParagraphStyle('DmgCat', parent=styles['Normal'], fontSize=8.5,
+                               fontName='Helvetica-Bold', textColor=colors.HexColor('#1a1a2e'))
+    label_style = ParagraphStyle('DmgLabel', parent=styles['Normal'], fontSize=8, leading=11)
+    price_style = ParagraphStyle('DmgPrice', parent=styles['Normal'], fontSize=8, leading=11)
+    note_style = ParagraphStyle('DmgNote', parent=styles['Normal'], fontSize=7.5, leading=10,
+                                fontName='Helvetica-Oblique', textColor=colors.HexColor('#666666'),
+                                spaceBefore=4)
+
+    rows = [[Paragraph('Element', hdr_style), Paragraph('Cost', hdr_style)]]
+    span_at = []
+    notes = []
+    headers = []
+    priced_rows = 0
+
+    for raw in (damage_block_text or '').splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        # Skip ONLY the two known boilerplate caption lines (whitespace-
+        # normalized, case-insensitive) — never a blanket 'contains DAUN'
+        # match, which would swallow a legit custom header like 'Daune
+        # caroserie'.
+        _norm = ' '.join(line.upper().split())
+        if 'VALOAREA FACTURABIL' in _norm or 'COST DAUNA NEASIGURATA' in _norm:
+            continue
+        if line.startswith('*'):
+            notes.append(line.lstrip('*').strip())
+            continue
+        if '|' in line:
+            label, _, price = line.partition('|')
+            rows.append([Paragraph(label.strip(), label_style), Paragraph(price.strip(), price_style)])
+            priced_rows += 1
+        else:
+            span_at.append(len(rows))
+            rows.append([Paragraph(line, cat_style), ''])
+            headers.append(line)
+
+    if priced_rows == 0:
+        # No 'Element | Cost' data — but a category header and/or disclaimer
+        # note must still reach the document (never silently dropped).
+        loose = [Paragraph(h, cat_style) for h in headers]
+        if notes:
+            loose.append(Paragraph(' '.join(notes), note_style))
+        return loose
+
+    W = A4[0] - 40 * mm
+    t = Table(rows, colWidths=[W * 0.72, W * 0.28])
+    style = [
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a1a2e')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#bbbbbb')),
+        ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#dddddd')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+    ]
+    for r in span_at:
+        style.append(('SPAN', (0, r), (-1, r)))
+        style.append(('BACKGROUND', (0, r), (-1, r), colors.HexColor('#f0f0f5')))
+    t.setStyle(TableStyle(style))
+
+    fl = [t]
+    if notes:
+        fl.append(Paragraph(' '.join(notes), note_style))
     return fl
 
 
@@ -527,6 +654,370 @@ def generate_legal_pdf(contract: dict) -> str:
 
     doc.build(story)
     logger.info('Legal PDF generated: %s', out_path)
+    return out_path
+
+
+# ---------------------------------------------------------------------------
+# Service contract PDF — per-company templated (Courtesy Car)
+# ---------------------------------------------------------------------------
+
+def generate_service_contract_pdf(contract: dict) -> str:
+    """Generate a templated contract PDF for any non-sales document type using
+    the company's `fp_document_types` template (resolved by document_type key) —
+    the templated title/body replace the hardcoded legal clauses, but the
+    surrounding layout (header, company/vehicle/client/km blocks, signatures)
+    reuses the same building blocks as `generate_legal_pdf`. Falls back to
+    `generate_legal_pdf` when the type has no template, so a misconfiguration
+    never 500s the download."""
+    from ..repositories.document_type_repository import DocumentTypeRepository
+    from ..document_types import normalize as _normalize_doctype
+
+    # `vehicle_brand` is denormalized onto most contract reads, but the
+    # ZIP-export rows (`get_contracts`) don't join `fp_vehicles` — fall back
+    # to a vin lookup so an export-time cache miss doesn't lose the {brand} tag.
+    brand = contract.get('vehicle_brand')
+    if not brand and contract.get('vin'):
+        from ..repositories.vehicle_repository import FPVehicleRepository
+        brand = (FPVehicleRepository().get_by_vin(contract['vin']) or {}).get('brand')
+
+    doc_type = _normalize_doctype(contract.get('document_type'))
+    cfg = DocumentTypeRepository().get_template(contract.get('company_id'), doc_type)
+    if not cfg:
+        logger.warning(
+            'No template for document_type=%s company_id=%s — falling back to '
+            'legal PDF for contract %s',
+            doc_type, contract.get('company_id'),
+            contract.get('contract_id', contract.get('id')),
+        )
+        return generate_legal_pdf(contract)
+
+    _ensure_dir()
+    cid = contract.get('contract_id', contract.get('id', 'unknown'))
+    out_path = os.path.join(_PDF_DIR, f'{cid}-service.pdf')
+
+    from .contract_template import render_contract_template
+    from ..dealer_config import get_dealer_config
+
+    try:
+        _dealer_phone = get_dealer_config(contract.get('company_name'), brand or '').get('phone', '')
+    except Exception:
+        _dealer_phone = ''
+
+    _rate_basis_raw = contract.get('svc_rate_basis')
+    _rate_basis_map = {'day': 'zi', 'month': 'lună'}
+    _svc_rate_basis = _rate_basis_map.get(_rate_basis_raw, _rate_basis_raw)
+
+    # Company-legal + client CUI/CI fallback (C2). Same gap as the
+    # vehicle_brand fallback above: `get_contract_by_id` joins `companies`
+    # (reg_no/iban/bank/street/city/county/administrator/vat/alert_email) and
+    # `crm_client_contacts` (client_ci_serie) onto the contract row, but
+    # `get_contracts()` — used by the ZIP export and any other lean-row
+    # caller — does not. On a PDF-cache miss, that bare row reaches this
+    # generator directly and would otherwise render with a blank Prestator
+    # legal block and a blank client CUI/CI. Resolve them here so the PDF is
+    # self-sufficient for ANY caller (export, email, on-demand), not just
+    # get_contract_by_id. Best-effort: a lookup failure must never 500 the
+    # PDF — falls back to the pre-existing blank behavior.
+    _company_fallback = {}
+    if not contract.get('company_reg_no') and contract.get('company_id'):
+        try:
+            from core.organization.repositories.company_repository import CompanyRepository
+            _company_fallback = CompanyRepository().get(int(contract['company_id'])) or {}
+        except Exception:
+            logger.warning(
+                'Company-legal fallback lookup failed for contract %s',
+                contract.get('contract_id', contract.get('id')), exc_info=True,
+            )
+
+    _client_cui_fallback = ''
+    if not contract.get('client_cui') and contract.get('client_id'):
+        try:
+            from crm.repositories import ClientRepository as CrmClientRepository
+            _cl = CrmClientRepository().get_by_id(int(contract['client_id']))
+            _client_cui_fallback = (_cl or {}).get('cui') or ''
+        except Exception:
+            logger.warning(
+                'Client CUI fallback lookup failed for contract %s',
+                contract.get('contract_id', contract.get('id')), exc_info=True,
+            )
+
+    _client_ci_fallback = ''
+    if not contract.get('client_ci_serie') and contract.get('driver_contact_id'):
+        try:
+            from crm.repositories.contact_repository import ContactRepository
+            _contact = ContactRepository().get(int(contract['driver_contact_id']))
+            if _contact:
+                _client_ci_fallback = ' '.join(
+                    p for p in (_contact.get('driver_license_serie'), _contact.get('driver_license_number')) if p
+                ).strip()
+        except Exception:
+            logger.warning(
+                'Client CI fallback lookup failed for contract %s',
+                contract.get('contract_id', contract.get('id')), exc_info=True,
+            )
+
+    context = {
+        'client_name': contract.get('client_name'),
+        'client_phone': contract.get('client_phone'),
+        'client_address': contract.get('client_address'),
+        'client_email': contract.get('client_email'),
+        'client_company': contract.get('client_company'),
+        'client_cui': contract.get('client_cui') or _client_cui_fallback,
+        'client_ci_serie': contract.get('client_ci_serie') or _client_ci_fallback,
+        'company_name': contract.get('company_name') or _company_fallback.get('company'),
+        'company_street': contract.get('company_street') or _company_fallback.get('street'),
+        'company_city': contract.get('company_city') or _company_fallback.get('city'),
+        'company_county': contract.get('company_county') or _company_fallback.get('county'),
+        'company_reg_no': contract.get('company_reg_no') or _company_fallback.get('reg_no'),
+        'company_vat': contract.get('company_vat') or _company_fallback.get('vat'),
+        'company_iban': contract.get('company_iban') or _company_fallback.get('iban'),
+        'company_bank': contract.get('company_bank') or _company_fallback.get('bank'),
+        'company_administrator': contract.get('company_administrator') or _company_fallback.get('administrator'),
+        'company_email': contract.get('company_email') or _company_fallback.get('alert_email'),
+        'dealer_phone': _dealer_phone,
+        'brand': brand,
+        'vehicle_model': contract.get('vehicle_model'),
+        'vin': contract.get('vin'),
+        'registration_number': contract.get('registration_number'),
+        'km_start': str(contract['km_start']) if contract.get('km_start') is not None else None,
+        'km_end': str(contract['km_end']) if contract.get('km_end') is not None else None,
+        'distance_km': _odometer_distance_km(contract),
+        'departure_datetime': _fmt_dt(contract.get('departure_datetime')),
+        'return_datetime': _fmt_dt(contract.get('return_datetime')),
+        'service_order_ref': contract.get('service_order_ref'),
+        'advisor_name': contract.get('advisor_name'),
+        'general_conditions': cfg.get('general_conditions'),
+        'svc_tariff_eur': contract.get('svc_tariff_eur'),
+        'svc_rate_basis': _svc_rate_basis,
+        'svc_units': contract.get('svc_units'),
+        'svc_total_eur': contract.get('svc_total_eur'),
+        'svc_limita_km_zi': contract.get('svc_km_included_day'),
+        'svc_extra_km_eur': contract.get('svc_extra_km_eur'),
+        'svc_garantie_eur': contract.get('svc_garantie_eur'),
+        'svc_fransiza_eur': contract.get('svc_fransiza_eur'),
+    }
+    context = {k: ('' if v is None else v) for k, v in context.items()}
+
+    title_text = render_contract_template(cfg.get('title'), context) or 'Contract Masina de Curtoazie'
+    body_text = render_contract_template(cfg.get('body_template'), context)
+    conditions_text = render_contract_template(cfg.get('general_conditions') or '', context)
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'SVCTitle', parent=styles['Heading1'],
+        fontSize=16, alignment=TA_CENTER, spaceAfter=4,
+    )
+    sub_style = ParagraphStyle(
+        'SVCSub', parent=styles['Normal'],
+        fontSize=10, alignment=TA_CENTER, spaceAfter=2,
+    )
+    label_style = ParagraphStyle(
+        'SVCLabel', parent=styles['Normal'],
+        fontSize=9, textColor=colors.HexColor('#555555'),
+    )
+    value_style = ParagraphStyle(
+        'SVCValue', parent=styles['Normal'],
+        fontSize=10, leading=13,
+    )
+    section_style = ParagraphStyle(
+        'SVCSection', parent=styles['Heading3'],
+        fontSize=11, spaceBefore=8, spaceAfter=4,
+        textColor=colors.HexColor('#1a1a2e'),
+    )
+    body_style = ParagraphStyle(
+        'SVCBody', parent=styles['Normal'],
+        fontSize=9, leading=13, alignment=TA_JUSTIFY, spaceAfter=6,
+    )
+
+    doc = SimpleDocTemplate(
+        out_path,
+        pagesize=A4,
+        leftMargin=20 * mm, rightMargin=20 * mm,
+        topMargin=18 * mm, bottomMargin=18 * mm,
+    )
+
+    W = A4[0] - 40 * mm  # usable width
+
+    story = []
+
+    # ---- Header ----
+    try:
+        _dt = contract.get('departure_datetime')
+        _hdr_date = (datetime.fromisoformat(str(_dt).replace('Z', '')) if _dt else datetime.now()).strftime('%d.%m.%Y')
+    except Exception:
+        _hdr_date = datetime.now().strftime('%d.%m.%Y')
+    story.append(Paragraph(title_text, title_style))
+    story.append(Paragraph(f'Nr. {cid}  •  {_hdr_date}', sub_style))
+    story.append(HRFlowable(width='100%', thickness=1.5, color=colors.HexColor('#1a1a2e'), spaceAfter=8))
+
+    _kv_style = TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('LINEBELOW', (0, 0), (-1, -1), 0.25, colors.HexColor('#dddddd')),
+    ])
+
+    def _kv_table(rows):
+        if not rows:
+            rows = [('—', '—')]
+        t = Table([[Paragraph(l, label_style), Paragraph(str(v), value_style)] for l, v in rows],
+                  colWidths=[45 * mm, W - 45 * mm])
+        t.setStyle(_kv_style)
+        return t
+
+    # ---- Părțile (Prestator + Beneficiar, from the per-company templated face) ----
+    if (body_text or '').strip():
+        story.append(Paragraph('Părțile', section_style))
+        for para in body_text.splitlines():
+            if para.strip():
+                story.append(Paragraph(para.strip(), body_style))
+        story.append(Spacer(1, 6))
+
+    # ---- Autovehicul & perioadă: Company & Vehicle ----
+    story.append(Paragraph('Date Companie și Vehicul', section_style))
+    story.append(_kv_table([
+        ('Companie', contract.get('company_name') or '—'),
+        ('VIN', contract.get('vin') or '—'),
+        ('Nr. înmatriculare', contract.get('registration_number') or '—'),
+    ]))
+    story.append(Spacer(1, 6))
+
+    # ---- Client ----
+    story.append(Paragraph('Date Client', section_style))
+    cl_rows = [(l, v) for l, v in (
+        ('Nume', contract.get('client_name')),
+        ('Telefon', contract.get('client_phone')),
+        ('Email', contract.get('client_email')),
+        ('Adresă', contract.get('client_address')),
+    ) if v not in (None, '', '—')]
+    story.append(_kv_table(cl_rows))
+    story.append(Spacer(1, 6))
+
+    # ---- Consilier / Comandă service ----
+    story.append(Paragraph('Consilier', section_style))
+    adv_rows = [(l, v) for l, v in (
+        ('Consilier', contract.get('advisor_name')),
+        ('Nr. comandă service', contract.get('service_order_ref')),
+    ) if v not in (None, '', '—')]
+    story.append(_kv_table(adv_rows))
+    story.append(Spacer(1, 6))
+
+    # ---- Route/dates ----
+    story.append(Paragraph('Perioadă', section_style))
+    story.append(_kv_table([
+        ('Predare', _fmt_dt(contract.get('departure_datetime'))),
+        ('Retur', _fmt_dt(contract.get('return_datetime'))),
+    ]))
+    story.append(Spacer(1, 6))
+
+    # ---- Odometer ----
+    story.append(Paragraph('Kilometraj', section_style))
+    _dist = _odometer_distance_km(contract)
+    km_data = [
+        [Paragraph('Km start', label_style), Paragraph(str(contract.get('km_start') or '—'), value_style),
+         Paragraph('Km final', label_style), Paragraph(str(contract.get('km_end') or '—'), value_style)],
+        [Paragraph('Distanță parcursă', label_style),
+         Paragraph((f"{_dist} km" if _dist is not None else '—'), value_style), '', ''],
+    ]
+    km_table = Table(km_data, colWidths=[38 * mm, 35 * mm, 38 * mm, W - 111 * mm])
+    km_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('SPAN', (1, 1), (3, 1)),
+        ('LINEBELOW', (0, 0), (-1, -1), 0.25, colors.HexColor('#dddddd')),
+    ]))
+    story.append(km_table)
+    story.append(Spacer(1, 6))
+
+    # ---- Tarif și garanție (pricing snapshot frozen on the contract row) ----
+    story.append(Paragraph('Tarif și garanție', section_style))
+
+    def _eur(v, suffix=' EUR'):
+        return f'{v}{suffix}' if v not in (None, '') else '—'
+
+    _tariff = contract.get('svc_tariff_eur')
+    _tariff_val = (f'{_tariff} EUR / {_svc_rate_basis}'
+                   if _tariff not in (None, '') and _svc_rate_basis else _eur(_tariff))
+    _units = contract.get('svc_units')
+    _km_incl = contract.get('svc_km_included_day')
+    story.append(_kv_table([
+        ('Tarif', _tariff_val),
+        ('Nr. (zile/luni)', _units if _units not in (None, '') else '—'),
+        ('Total', _eur(contract.get('svc_total_eur'))),
+        ('Garanție', _eur(contract.get('svc_garantie_eur'))),
+        ('Franșiză', _eur(contract.get('svc_fransiza_eur'))),
+        ('Km incluși/zi', _km_incl if _km_incl not in (None, '') else '—'),
+        ('Extra km', _eur(contract.get('svc_extra_km_eur'), ' EUR/km')),
+    ]))
+    story.append(Spacer(1, 6))
+
+    # ---- Condiții generale: numbered T&C, damage price table, GDPR + consent ----
+    _before_gc, _damage_block, _after_gc = _split_general_conditions(conditions_text)
+    if _damage_block.strip():
+        story.extend(_general_conditions_flowables(
+            _before_gc, contract.get('general_conditions_accepted_at'),
+        ))
+        _dmg_fl = _damage_table(_damage_block)
+        if _dmg_fl:
+            story.append(Paragraph('Valoarea facturabilă a daunelor', section_style))
+            story.extend(_dmg_fl)
+            story.append(Spacer(1, 6))
+        story.extend(_general_conditions_flowables(
+            _after_gc, None, title='Protecția datelor cu caracter personal', note=False,
+        ))
+    else:
+        # No damage-price marker found (older/custom template) — render the
+        # whole T&C block as before so nothing is silently dropped.
+        story.extend(_general_conditions_flowables(
+            conditions_text, contract.get('general_conditions_accepted_at'),
+        ))
+
+    # ---- Signatures ----
+    story.append(Paragraph('Semnături', section_style))
+
+    client_sig_img = _sig_image(contract.get('client_signature', ''))
+    advisor_sig_img = _sig_image(contract.get('signature_ai_generated', ''))
+
+    sig_box_style = TableStyle([
+        ('BOX', (0, 0), (-1, -1), 0.75, colors.HexColor('#999999')),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ])
+
+    col_w = W / 2 - 3 * mm
+
+    def _sig_cell(img, label):
+        inner = []
+        if img:
+            inner.append([img])
+        else:
+            inner.append([Paragraph('<i>Lipsă semnătură</i>', ParagraphStyle('x', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER, textColor=colors.grey))])
+        inner.append([Paragraph(label, ParagraphStyle('lbl', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER))])
+        t = Table(inner, colWidths=[col_w - 4 * mm])
+        t.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        return t
+
+    sig_row = [[_sig_cell(client_sig_img, 'Semnătură Client'), _sig_cell(advisor_sig_img, 'Semnătură Consilier')]]
+    sig_table = Table(sig_row, colWidths=[col_w, col_w], rowHeights=[35 * mm])
+    sig_table.setStyle(sig_box_style)
+    story.append(sig_table)
+
+    story.append(Spacer(1, 10))
+    story.append(HRFlowable(width='100%', thickness=0.5, color=colors.HexColor('#cccccc'), spaceAfter=4))
+    story.append(Paragraph(
+        f'Document generat automat • {datetime.now().strftime("%d.%m.%Y %H:%M")}',
+        ParagraphStyle('footer', parent=styles['Normal'], fontSize=7, alignment=TA_CENTER, textColor=colors.grey),
+    ))
+
+    doc.build(story)
+    logger.info('Service contract PDF generated: %s', out_path)
     return out_path
 
 

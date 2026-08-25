@@ -4,6 +4,7 @@ from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required,
     logger, _vehicle_repo, _fp_repo,
 )
+from ..document_types import normalize as _normalize_doctype
 
 
 def _to_int_or_none(value):
@@ -30,7 +31,8 @@ def _to_num_or_none(value):
 @login_required
 def api_list_vehicles():
     active_only = request.args.get('active_only', 'true').lower() == 'true'
-    vehicles = _vehicle_repo.get_all(active_only=active_only)
+    document_type = (request.args.get('document_type') or '').strip() or None
+    vehicles = _vehicle_repo.get_all(active_only=active_only, document_type=document_type)
     return jsonify({'success': True, 'vehicles': vehicles})
 
 
@@ -414,6 +416,16 @@ def api_create_vehicle():
             'norma_energie': _to_num_or_none(data.get('norma_energie')),
             'category': (data.get('category') or '').strip() or None,
             'company_id': company_id,
+            'document_type': _normalize_doctype(data.get('document_type')),
+            # Service (Mașini de curtoazie) price + tariffs-policy override —
+            # NULL falls back to the company default (resolve_policy in
+            # rental_pricing.py). Harmless for Sales cars (never read).
+            'svc_tariff_eur_day': _to_num_or_none(data.get('svc_tariff_eur_day')),
+            'svc_tariff_eur_month': _to_num_or_none(data.get('svc_tariff_eur_month')),
+            'svc_km_included_day': _to_int_or_none(data.get('svc_km_included_day')),
+            'svc_extra_km_eur': _to_num_or_none(data.get('svc_extra_km_eur')),
+            'svc_deposit_eur': _to_num_or_none(data.get('svc_deposit_eur')),
+            'svc_franchise_eur': _to_num_or_none(data.get('svc_franchise_eur')),
             'vignette_valid_until': (data.get('vignette_valid_until') or '').strip() or None,
             'itp_valid_until': (data.get('itp_valid_until') or '').strip() or None,
             'insurance_valid_until': (data.get('insurance_valid_until') or '').strip() or None,
@@ -439,6 +451,14 @@ def api_update_vehicle(vehicle_id):
     for _col in ('vignette_valid_until', 'itp_valid_until', 'insurance_valid_until'):
         if _col in data and not (data[_col] or '').strip():
             data[_col] = None
+    # NUMERIC/INTEGER Service price+policy columns reject '' — coerce blank to
+    # NULL (falls back to the company default at pricing time).
+    for _col in ('svc_tariff_eur_day', 'svc_tariff_eur_month', 'svc_extra_km_eur',
+                 'svc_deposit_eur', 'svc_franchise_eur'):
+        if _col in data:
+            data[_col] = _to_num_or_none(data[_col])
+    if 'svc_km_included_day' in data:
+        data['svc_km_included_day'] = _to_int_or_none(data['svc_km_included_day'])
     try:
         vehicle = _vehicle_repo.update(vehicle_id, data)
         if not vehicle:
@@ -483,13 +503,31 @@ def api_list_companies():
 @foi_parcurs_bp.route('/api/foi-parcurs/brands/<int:company_id>', methods=['GET'])
 @login_required
 def api_list_brands(company_id):
-    """List the car brands a company carries (from the company_brands catalog).
+    """List the car brands relevant to a company for foi-parcurs.
 
     Deliberately reads the brand catalog rather than structure_nodes L1, because
     some companies use L1 for departments (e.g. Administrativ, Aftersales), not brands.
+
+    For document_type=service (courtesy/rental fleet), the sales brand catalog does
+    NOT apply — a dealer can rent out cars of any brand regardless of what it sells.
+    In that case, return the DISTINCT brands actually present in the company's
+    Service-pool vehicles instead of the company_brands catalog.
     """
     from core.base_repository import BaseRepository
     repo = BaseRepository()
+    document_type = (request.args.get('document_type') or '').strip().lower()
+    if document_type == 'service':
+        rows = repo.query_all(
+            '''SELECT DISTINCT brand
+               FROM fp_vehicles
+               WHERE company_id = %s AND document_type = 'service'
+                 AND is_active = TRUE AND brand IS NOT NULL AND TRIM(brand) <> ''
+               ORDER BY brand''',
+            (company_id,),
+        )
+        brands = [r['brand'] for r in (rows or [])]
+        return jsonify({'success': True, 'brands': brands})
+
     rows = repo.query_all(
         '''SELECT b.name
            FROM company_brands cb
@@ -500,6 +538,24 @@ def api_list_brands(company_id):
              AND COALESCE(dc.show_in_foi_parcurs, TRUE) = TRUE
            ORDER BY b.name''',
         (company_id,),
+    )
+    brands = [r['name'] for r in (rows or [])]
+    return jsonify({'success': True, 'brands': brands})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/all-brands', methods=['GET'])
+@login_required
+def api_list_all_brands():
+    """List every active brand in the global catalog.
+
+    Used by the vehicle add/edit form to offer ANY brand when the car's pool is
+    Service (e.g. a VW courtesy car on an Audi dealer), rather than being limited
+    to the dealer's sales catalog (see api_list_brands for that restricted view).
+    """
+    from core.base_repository import BaseRepository
+    repo = BaseRepository()
+    rows = repo.query_all(
+        '''SELECT name FROM brands WHERE is_active = TRUE ORDER BY name'''
     )
     brands = [r['name'] for r in (rows or [])]
     return jsonify({'success': True, 'brands': brands})
