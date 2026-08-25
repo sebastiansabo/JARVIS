@@ -245,9 +245,35 @@ def _company_recipients(company_id):
     return [], []
 
 
+def _board_recipient_override():
+    """Explicit Board addresses from the `weekly_driving_digest_board_recipients`
+    notification setting (comma/semicolon-separated), or [] when unset.
+
+    Lets the Board report be pointed at a fixed distribution address
+    (e.g. board@autoworld.ro) with no JARVIS user account or 'board' role. The
+    isinstance-str guard keeps a mocked/malformed settings value (non-string)
+    from being parsed into a bogus address."""
+    try:
+        from core.notifications.repositories import NotificationRepository
+        raw = (NotificationRepository().get_settings() or {}).get('weekly_driving_digest_board_recipients', '')
+    except Exception:
+        return []
+    if not isinstance(raw, str):
+        return []
+    return [e.strip() for e in raw.replace(';', ',').split(',') if e.strip()]
+
+
 def _board_recipients():
-    """(emails, user_ids) for users with role_name == 'board' (case-insensitive),
-    matching foi_parcurs/routes/reports.py's _GROUP_ROLES membership."""
+    """(emails, user_ids) for the Board report.
+
+    A `weekly_driving_digest_board_recipients` setting (comma/semicolon-separated
+    addresses) takes precedence when set — the report goes to those addresses with
+    no in-app recipients (they need not be JARVIS users). Otherwise falls back to
+    users whose role_name == 'board' (case-insensitive), matching
+    foi_parcurs/routes/reports.py's _GROUP_ROLES membership."""
+    override = _board_recipient_override()
+    if override:
+        return override, []
     users = _user_repo.get_all() or []
     board = [u for u in users if (u.get('role_name') or '').lower() == 'board']
     return [u['email'] for u in board if u.get('email')], [u['id'] for u in board if u.get('id')]
