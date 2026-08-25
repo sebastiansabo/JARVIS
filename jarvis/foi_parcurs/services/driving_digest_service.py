@@ -34,11 +34,15 @@ _DEFAULT_MODEL = 'claude-sonnet-4-6'
 _TZ = ZoneInfo('Europe/Bucharest')
 
 _SYSTEM = (
-    "Ești JARVIS, asistentul intern AUTOWORLD. Scrie un rezumat săptămânal concis "
-    "(max ~1200 caractere) despre activitatea de driving pentru {scope}. Acoperă: "
-    "performanță & clasament (consilieri/mașini), alerte & anomalii (retururi ratate, "
-    "mașini nefolosite), mix client vs. intern & firmă vs. persoană, ocupare & distanțe. "
-    "Ton profesional, la obiect, în limba română. Text simplu, fără markdown."
+    "Ești JARVIS, analistul intern AUTOWORLD. Pe baza metricilor JSON de mai jos, scrie un "
+    "rezumat săptămânal INTERPRETATIV (nu doar repeta cifrele) despre activitatea de driving "
+    "pentru {scope}, în limba română, ton profesional și concis. Numește consilieri și mașini "
+    "concrete. Structurează pe 4 rânduri, fiecare începând cu eticheta exactă urmată de ':' — "
+    "Performanță: (cei mai activi consilieri/mașini, tendințe); "
+    "Alerte: (retururi ratate/întârziate, mașini nefolosite, rată de finalizare scăzută — ce necesită acțiune); "
+    "Clienți & flotă: (mix client vs. intern, firmă vs. persoană, distribuție pe mărci/combustibil); "
+    "Ocupare & distanțe: (zile utilizate, total și medie km, mașini cele mai/puțin folosite). "
+    "Încheie cu un rând 'Recomandare:' cu 1-2 acțiuni concrete. Fără markdown, doar text simplu."
 )
 
 
@@ -112,18 +116,98 @@ def _narrative_plain(metrics, scope_label):
             f"{k.get('total_km', 0)} km, rată finalizare {k.get('completion_rate', 0)}%.")
 
 
+_STATUS_RO = {'complete': 'Finalizate', 'planned': 'Planificate', 'driving': 'În desfășurare',
+              'late': 'Întârziate', 'incomplete': 'Neîncheiate', 'missed': 'Ratate', 'pending': 'În așteptare'}
+_TYPE_RO = {'test_drive': 'Test drive', 'comodat': 'Comodat', 'service': 'Curtoazie', 'internal': 'Intern'}
+_SEG_RO = {'client': 'Cu client', 'internal': 'Intern'}
+_CT_RO = {'company': 'Firmă', 'person': 'Persoană fizică'}
+
+
+def _nf(n):
+    try:
+        return f"{int(round(float(n or 0))):,}".replace(',', '.')
+    except (TypeError, ValueError):
+        return str(n)
+
+
+def _kpi_grid(k):
+    tiles = [('Sesiuni', _nf(k.get('total_sessions', 0))), ('Km parcurși', _nf(k.get('total_km', 0))),
+             ('Mașini utilizate', _nf(k.get('cars_used', 0))), ('Km / sesiune', _nf(k.get('avg_km_per_session', 0))),
+             ('Test drive-uri', _nf(k.get('test_drives', 0))), ('Rată finalizare', f"{k.get('completion_rate', 0)}%")]
+    td = ('<td style="padding:8px 12px;border:1px solid #ecebe6;background:#fafafa;border-radius:8px;width:33%">'
+          '<div style="font:11px system-ui;color:#898781;text-transform:uppercase;letter-spacing:.03em">{l}</div>'
+          '<div style="font:700 18px system-ui;color:#0b0b0b">{v}</div></td>')
+    cells = [td.format(l=escape(l), v=v) for l, v in tiles]
+    r1, r2 = '<tr>' + ''.join(cells[:3]) + '</tr>', '<tr>' + ''.join(cells[3:]) + '</tr>'
+    return f'<table style="border-collapse:separate;border-spacing:6px;width:100%;margin:0 0 14px">{r1}{r2}</table>'
+
+
+def _mini_table(title, headers, rows):
+    if not rows:
+        return ''
+    th = ''.join(
+        f'<th style="text-align:{"right" if i else "left"};padding:4px 8px;font:600 11px system-ui;'
+        f'color:#898781;text-transform:uppercase;border-bottom:1px solid #e1e0d9">{escape(h)}</th>'
+        for i, h in enumerate(headers))
+    body = ''
+    for r in rows:
+        tds = ''.join(
+            f'<td style="text-align:{"right" if i else "left"};padding:5px 8px;font:13px system-ui;'
+            f'border-bottom:1px solid #f0efec">{escape(str(c))}</td>' for i, c in enumerate(r))
+        body += f'<tr>{tds}</tr>'
+    return (f'<div style="margin:0 0 12px"><div style="font:600 13px system-ui;margin:0 0 4px">{escape(title)}</div>'
+            f'<table style="border-collapse:collapse;width:100%"><tr>{th}</tr>{body}</table></div>')
+
+
+def _chips(title, items):
+    items = [(l, c) for l, c in items if c]
+    if not items:
+        return ''
+    chips = ' '.join(
+        f'<span style="display:inline-block;padding:2px 9px;margin:0 4px 4px 0;border-radius:999px;'
+        f'background:#eef2fb;font:12px system-ui;color:#33475b">{escape(str(l))}: <b>{_nf(c)}</b></span>'
+        for l, c in items)
+    return f'<div style="margin:0 0 12px"><span style="font:600 13px system-ui">{escape(title)}:</span> {chips}</div>'
+
+
 def _render_section(title, metrics, narrative):
+    """Rich per-scope section — surfaces ALL report blocks (KPIs, leaderboards,
+    status/type/mix, brand/fuel, top clients, and per-company for the group)."""
     k = metrics.get('kpis') or {}
-    return (
-        f'<section style="margin:0 0 24px;padding:16px;border:1px solid #e1e0d9;border-radius:10px">'
-        f'<h2 style="margin:0 0 8px;font:600 16px system-ui">{escape(title)}</h2>'
-        f'<p style="margin:0 0 12px;color:#52514e;white-space:pre-line">{escape(narrative)}</p>'
-        f'<table style="border-collapse:collapse;font:13px system-ui">'
-        f'<tr><td style="padding:2px 12px 2px 0;color:#898781">Sesiuni</td><td><b>{k.get("total_sessions", 0)}</b></td></tr>'
-        f'<tr><td style="padding:2px 12px 2px 0;color:#898781">Km parcurși</td><td><b>{k.get("total_km", 0)}</b></td></tr>'
-        f'<tr><td style="padding:2px 12px 2px 0;color:#898781">Rată finalizare</td><td><b>{k.get("completion_rate", 0)}%</b></td></tr>'
-        f'</table></section>'
-    )
+    body = [f'<h2 style="margin:0 0 10px;font:700 17px system-ui;color:#0b0b0b">{escape(title)}</h2>']
+    if narrative:
+        body.append(
+            f'<div style="margin:0 0 14px;padding:12px 14px;background:#f4f6fb;border-left:3px solid #2a78d6;'
+            f'border-radius:6px;font:14px/1.5 system-ui;color:#33475b;white-space:pre-line">{escape(narrative)}</div>')
+    body.append(_kpi_grid(k))
+    # per-company leaderboard (Board scope only)
+    body.append(_mini_table('Performanță pe companii', ['Companie', 'Sesiuni', 'Km'],
+                            [[c.get('company', '—'), _nf(c.get('sessions', 0)), _nf(c.get('km', 0))]
+                             for c in (metrics.get('top_companies') or [])[:8]]))
+    body.append(_mini_table('Top consilieri', ['Consilier', 'Sesiuni', 'Km', 'Finalizare'],
+                            [[a.get('advisor', '—'), _nf(a.get('sessions', 0)), _nf(a.get('km', 0)), f"{a.get('completion_rate', 0)}%"]
+                             for a in (metrics.get('top_advisors') or [])[:5]]))
+    body.append(_mini_table('Top mașini (după sesiuni)', ['Mașină', 'Sesiuni', 'Zile', 'Km'],
+                            [[f"{u.get('model', '—')} · {u.get('registration_number', '')}".strip(' ·'),
+                              _nf(u.get('sessions', 0)), _nf(u.get('days_used', 0)), _nf(u.get('km', 0))]
+                             for u in (metrics.get('utilization') or [])[:5]]))
+    body.append(_mini_table('Top mașini (după km bord)', ['Mașină', 'Km bord'],
+                            [[f"{v.get('model', '—')} · {v.get('registration_number', '')}".strip(' ·'), _nf(v.get('odometer_km', 0))]
+                             for v in (metrics.get('top_odometer') or [])[:5]]))
+    body.append(_mini_table('Top clienți', ['Client', 'Tip', 'Sesiuni', 'Km'],
+                            [[c.get('client', '—'), _CT_RO.get(c.get('client_type'), c.get('client_type', '')),
+                              _nf(c.get('sessions', 0)), _nf(c.get('km', 0))]
+                             for c in (metrics.get('top_clients') or [])[:5]]))
+    body.append(_chips('Status', [(_STATUS_RO.get(s.get('status'), s.get('status', '—')), s.get('count', 0)) for s in (metrics.get('by_status') or [])]))
+    body.append(_chips('Tip sesiune', [(_TYPE_RO.get(t.get('type'), t.get('type', '—')), t.get('count', 0)) for t in (metrics.get('by_type') or [])]))
+    body.append(_chips('Client vs. intern', [(_SEG_RO.get(s.get('segment'), s.get('segment', '—')), s.get('count', 0)) for s in (metrics.get('client_vs_internal') or [])]))
+    body.append(_chips('Tip client', [(_CT_RO.get(c.get('client_type'), c.get('client_type', '—')), c.get('count', 0)) for c in (metrics.get('client_types') or [])]))
+    body.append(_chips('Sesiuni pe marcă', [(b.get('brand', '—'), b.get('count', 0)) for b in (metrics.get('by_brand') or [])]))
+    body.append(_chips('Parc după combustibil', [(f.get('fuel_type', '—'), f.get('count', 0)) for f in (metrics.get('fuel_composition') or [])]))
+    body.append(_mini_table('Distanță pe marcă (km)', ['Marcă', 'Km'],
+                            [[d.get('brand', '—'), _nf(d.get('km', 0))] for d in (metrics.get('distance_by_brand') or [])[:8]]))
+    return (f'<section style="margin:0 0 26px;padding:18px;border:1px solid #e1e0d9;border-radius:12px;'
+            f'background:#fff">{"".join(body)}</section>')
 
 
 def _render_email(sections, week_label):
