@@ -10,6 +10,8 @@ from datetime import timedelta
 from html import escape
 
 from foi_parcurs.repositories import FoiParcursRepository, FPVehicleRepository
+from core.organization.repositories.company_repository import CompanyRepository
+from core.auth.repositories.user_repository import UserRepository
 
 try:
     from ai_agent.services.llm_client import ask as _llm_ask
@@ -20,6 +22,8 @@ logger = logging.getLogger('jarvis.foi_parcurs.driving_digest')
 
 _fp_repo = FoiParcursRepository()
 _vehicle_repo = FPVehicleRepository()
+_company_repo = CompanyRepository()
+_user_repo = UserRepository()
 
 _TOP = 5
 _DEFAULT_MODEL = 'claude-sonnet-4-6'
@@ -127,3 +131,30 @@ def _render_email(sections, week_label):
         f'<p style="color:#898781;font:13px system-ui;margin:0 0 20px">Săptămâna {escape(week_label)}</p>'
         f'{body}</body></html>'
     )
+
+
+def _company_recipients(company_id):
+    """(emails, user_ids) for a company's managers — company_responsables,
+    falling back to companies.alert_email when no responsable is configured.
+
+    NOTE: CompanyRepository exposes `get(company_id)`, not `get_by_id` — the
+    getattr fallback below supports both so a test double using either name
+    works, while the real repo (which only has `get`) also works.
+    """
+    resp = _company_repo.get_responsables(company_id) or []
+    emails = [r['email'] for r in resp if r.get('email')]
+    ids = [r['id'] for r in resp if r.get('id')]
+    if not emails:
+        getter = getattr(_company_repo, 'get_by_id', None) or _company_repo.get
+        c = getter(company_id) or {}
+        if c.get('alert_email'):
+            emails = [c['alert_email']]
+    return emails, ids
+
+
+def _board_recipients():
+    """(emails, user_ids) for users with role_name == 'board' (case-insensitive),
+    matching foi_parcurs/routes/reports.py's _GROUP_ROLES membership."""
+    users = _user_repo.get_all() or []
+    board = [u for u in users if (u.get('role_name') or '').lower() == 'board']
+    return [u['email'] for u in board if u.get('email')], [u['id'] for u in board if u.get('id')]
