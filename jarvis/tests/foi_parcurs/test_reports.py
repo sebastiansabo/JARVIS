@@ -67,9 +67,11 @@ class FakeFp:
         self.rental_args = None
         self.sessions_args = None
 
-    def report_bundle(self, company_id=None, date_from=None, date_to=None, document_type=None, top=5):
+    def report_bundle(self, company_id=None, date_from=None, date_to=None, document_type=None, top=5,
+                      perf_status=None, drive_type=None):
         self.bundle_args = dict(company_id=company_id, date_from=date_from, date_to=date_to,
-                                document_type=document_type, top=top)
+                                document_type=document_type, top=top,
+                                perf_status=perf_status, drive_type=drive_type)
         return dict(BUNDLE)
 
     def report_rental(self, company_id=None, date_from=None, date_to=None):
@@ -77,9 +79,11 @@ class FakeFp:
         return dict(RENTAL)
 
     def report_sessions(self, company_id=None, date_from=None, date_to=None,
-                        document_type=None, advisor=None, vin=None, limit=200):
+                        document_type=None, advisor=None, vin=None, limit=200,
+                        status=None, drive_type=None):
         self.sessions_args = dict(company_id=company_id, date_from=date_from, date_to=date_to,
-                                  document_type=document_type, advisor=advisor, vin=vin, limit=limit)
+                                  document_type=document_type, advisor=advisor, vin=vin, limit=limit,
+                                  status=status, drive_type=drive_type)
         return list(SESSIONS)
 
 
@@ -242,3 +246,20 @@ def test_sessions_non_admin_without_company_denied(monkeypatch):
     c = make_client(monkeypatch, role='user', company_id=None)
     r = c.get('/api/foi-parcurs/reports/sessions?advisor=Ion')
     assert r.status_code == 403
+
+
+def test_summary_status_and_drive_type_passthrough(monkeypatch):
+    """The performance status filter + general client/intern filter reach the repo."""
+    c = make_client(monkeypatch, role='admin', company_id=16)
+    r = c.get('/api/foi-parcurs/reports/summary?document_type=sales&status=complete&drive_type=internal')
+    assert r.status_code == 200
+    assert c._fp.bundle_args['perf_status'] == 'complete'
+    assert c._fp.bundle_args['drive_type'] == 'internal'
+
+
+def test_sessions_status_and_drive_type_passthrough(monkeypatch):
+    c = make_client(monkeypatch, role='admin', company_id=16)
+    r = c.get('/api/foi-parcurs/reports/sessions?advisor=Ion&status=missed&drive_type=client')
+    assert r.status_code == 200
+    assert c._fp.sessions_args['status'] == 'missed'
+    assert c._fp.sessions_args['drive_type'] == 'client'
