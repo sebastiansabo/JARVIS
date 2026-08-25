@@ -3334,9 +3334,10 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
         </Card>
       )}
 
-      {/* Edit Vehicle Modal */}
+      {/* Edit Vehicle Modal — needs the sm: max-width override or shadcn's
+          default sm:max-w-lg (512px) wins on desktop and the form is cramped. */}
       <Dialog open={!!editVehicle} onOpenChange={(open) => { if (!open) { setEditVehicle(null); setEditError('') } }}>
-        <DialogContent className="max-w-[min(95vw,1400px)] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-[1080px] sm:max-w-[1080px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Vehicle</DialogTitle>
           </DialogHeader>
