@@ -7,6 +7,11 @@ vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: {
   getCompanies: vi.fn().mockResolvedValue({ companies: [{ id: 11, company: 'PREMIUM' }] }),
   getVehicles: vi.fn().mockResolvedValue({ vehicles: [] }),
   getTestDrive: vi.fn(), getGeneralConditions: vi.fn().mockResolvedValue({ text: '', brand: '' }),
+  // 'service' is a rental type → the form shows the rental ("Predă mașina") UI.
+  getDocumentTypes: vi.fn().mockResolvedValue({ types: [
+    { key: 'sales', label: 'Vânzări', is_rental: false, is_default: true, is_active: true },
+    { key: 'service', label: 'Mașini de curtoazie', is_rental: true, is_default: false, is_active: true },
+  ] }),
 } }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: (sel: (s: unknown) => unknown) => sel({ user: { name: 'Test Advisor' } }) }))
 // SignatureCanvas is a lazy canvas widget backed by signature_pad, which
@@ -59,8 +64,9 @@ describe('TestDriveForm embedded mode', () => {
 
   it('runs in Service context via initialDocumentType (no URL ?context=, e.g. Hub overlay)', async () => {
     vi.mocked(foiParcursApi.getVehicles).mockClear()
-    wrap(<TestDriveForm embedded initialDocumentType="service" onCancel={vi.fn()} onDone={vi.fn()} />)
+    wrap(<TestDriveForm embedded initialCompanyId={11} initialDocumentType="service" onCancel={vi.fn()} onDone={vi.fn()} />)
     // Service heading confirms the whole doc-type flows from the prop, not the URL.
+    // (is_rental resolves from the company's document types → rental UI.)
     expect(await screen.findByText(/predare mașină de curtoazie/i)).toBeInTheDocument()
     // …and the vehicle pool query is scoped to service.
     expect(foiParcursApi.getVehicles).toHaveBeenCalledWith(false, 'service')

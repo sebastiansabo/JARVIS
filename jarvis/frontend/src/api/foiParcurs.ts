@@ -253,6 +253,17 @@ export const foiParcursApi = {
   getServiceEnabled: (companyId: number) =>
     api.get<{ success: boolean; enabled: boolean; brands: number[] }>(`${BASE}/service-enabled`, { company_id: String(companyId) }),
 
+  // ── Document types (user-defined per company; a type IS its contract) ──
+  getDocumentTypes: (companyId: number, includeInactive = false) =>
+    api.get<{ success: boolean; types: Array<{ key: string; label: string; title: string | null; body_template: string | null; general_conditions: string | null; is_rental: boolean; is_active: boolean; is_default: boolean; sort_order: number; has_template: boolean }> }>(
+      `${BASE}/document-types`,
+      { company_id: String(companyId), ...(includeInactive ? { include_inactive: '1' } : {}) },
+    ),
+  addDocumentType: (payload: { company_id: number; label: string; is_rental?: boolean }) =>
+    api.post<{ success: boolean; key: string }>(`${BASE}/document-types`, payload),
+  putDocumentType: (payload: { company_id: number; key: string; label: string; title: string; body_template: string; general_conditions: string; is_rental: boolean; is_active: boolean }) =>
+    api.put<{ success: boolean }>(`${BASE}/document-types`, payload),
+
   // ── KM Configs (Settings) ──
   getKmConfigs: () =>
     api.get<{ configs: { company_id: number; td_km_min: number; td_km_max: number; comodat_km_min: number; comodat_km_max: number; km_gap: number }[] }>(`${BASE}/km-configs`),

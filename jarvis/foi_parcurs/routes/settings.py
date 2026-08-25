@@ -3,6 +3,7 @@
 from ._shared import foi_parcurs_bp, jsonify, request, login_required, logger, _dealer_repo, _vehicle_repo
 from ..repositories import FoiParcursRepository
 from ..repositories.contract_config_repository import ContractConfigRepository
+from ..repositories.document_type_repository import DocumentTypeRepository
 from ..services.rental_pricing import compute_service_pricing
 
 _repo = FoiParcursRepository()
@@ -105,10 +106,12 @@ def api_get_general_conditions():
             logger.warning('general-conditions: vehicle lookup failed for vin=%s', vin, exc_info=True)
             brand = ''
     text = ''
-    if company_id and brand:
-        if document_type == 'service':
-            text = ((ContractConfigRepository().get_active(company_id, brand, 'service') or {}).get('general_conditions') or '')
-        else:
+    if company_id:
+        if document_type != 'sales':
+            # Non-sales types source their T&C from the document-type registry
+            # (per company, tag-based — no brand needed).
+            text = ((DocumentTypeRepository().get(company_id, document_type) or {}).get('general_conditions') or '')
+        elif brand:
             text = _dealer_repo.get_general_conditions(company_id, brand)
     return jsonify({'success': True, 'text': text, 'brand': brand})
 

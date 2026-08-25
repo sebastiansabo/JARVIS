@@ -110,7 +110,7 @@ import { formatRoPlate, isValidRoPlate } from './plateFormat'
 import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
 import ContractConfigSection from './ContractConfigSection'
 import { DOC_TYPE_LABELS, contextFromSearch, type DocType } from './documentType'
-import DocTypeToggle from './DocTypeToggle'
+import DocTypeSelect from './DocTypeSelect'
 
 /** Truncate a display name to `max` chars with an ellipsis; the full value stays
  *  available in the cell's title tooltip. */
@@ -187,19 +187,23 @@ export default function FoiParcurs() {
     }
   }, [brandsData, brand])
 
-  // Service context is per-company (unlocked per brand); the standalone
-  // header toggle shows only when the selected company has it enabled.
-  const { data: serviceEnabledData } = useQuery({
-    queryKey: ['fp-service-enabled', companyId],
-    queryFn: () => foiParcursApi.getServiceEnabled(companyId),
+  // Document types are per-company (user-defined); the standalone header type
+  // dropdown shows when the company has more than one active type.
+  const { data: documentTypesData } = useQuery({
+    queryKey: ['fp-document-types', companyId],
+    queryFn: () => foiParcursApi.getDocumentTypes(companyId),
     enabled: companyId > 0,
   })
-  const serviceEnabled = !!serviceEnabledData?.enabled
-  // Force back to Sales if the company changes to one without Service enabled
-  // (or on load for a non-enabled company) so tabs never query a locked pool.
+  const documentTypes = documentTypesData?.types ?? []
+  const selectedType = documentTypes.find((t) => t.key === docType)
+  const isRentalContext = !!selectedType?.is_rental
+  // Force back to Sales if the current type isn't among the company's active
+  // types (e.g. company change) so tabs never query a missing pool.
   useEffect(() => {
-    if (serviceEnabledData !== undefined && !serviceEnabled && docType !== 'sales') setDocType('sales')
-  }, [serviceEnabledData, serviceEnabled, docType, setDocType])
+    if (documentTypesData !== undefined && documentTypes.length && !documentTypes.some((t) => t.key === docType) && docType !== 'sales') {
+      setDocType('sales')
+    }
+  }, [documentTypesData, documentTypes, docType, setDocType])
 
   const activeTabLabel = ({ stock: 'Driving Park', parcurs: 'Sesiuni Driving', calendar: 'Calendar', contracts: 'Foi de Parcurs', settings: 'Settings' } as const)[activeTab]
   // Third breadcrumb segment: the selected drive-type "section" (Client/Intern),
@@ -238,7 +242,7 @@ export default function FoiParcurs() {
               ))}
             </SelectContent>
           </Select>
-          {docType !== 'service' && brands.length > 0 && (
+          {docType === 'sales' && brands.length > 0 && (
             <Select value={brand} onValueChange={setBrand}>
               <SelectTrigger className="w-44">
                 <SelectValue placeholder="Selectează brandul" />
@@ -250,22 +254,21 @@ export default function FoiParcurs() {
               </SelectContent>
             </Select>
           )}
-          {serviceEnabled && <DocTypeToggle value={docType} onChange={setDocType} />}
+          {documentTypes.length > 1 && <DocTypeSelect value={docType} types={documentTypes} onChange={setDocType} />}
         </div>
       </div>
 
       <SessionTypeChooser
         open={choosingSession}
         onOpenChange={setChoosingSession}
-        showRental={serviceEnabled}
+        showRental={isRentalContext}
         onPick={(type) => {
           setChoosingSession(false)
           if (type === 'rental') {
-            // Rent-a-car reuses the client test-drive form, switched into Service
-            // context — same deep link the header's DocTypeToggle uses — so it
-            // runs the rental pricing + courtesy contract instead of a sale.
-            setDocType('service')
-            navigate('/app/foi-parcurs/test-drive?context=service')
+            // Rent-a-car reuses the client test-drive form in the current
+            // (rental) document-type context — deep-linked via ?context=<key>
+            // so it runs the rental pricing + that type's contract.
+            navigate(`/app/foi-parcurs/test-drive?context=${encodeURIComponent(docType)}`)
             return
           }
           navigate(type === 'client' ? '/app/foi-parcurs/test-drive' : '/app/foi-parcurs/internal')
@@ -290,9 +293,9 @@ export default function FoiParcurs() {
       {activeTab === 'contracts' && <ContractsTab companyId={companyId} toolbarSlot={tabToolbar} documentType={docType} />}
       {/* In the rental (Service) context the franchise brand filter doesn't apply —
           the courtesy stock is multi-brand — so pass an empty brand to show it all. */}
-      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
-      {activeTab === 'stock' && <StockTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} documentType={docType} />}
-      {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
+      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
+      {activeTab === 'stock' && <StockTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} documentType={docType} />}
+      {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
       {activeTab === 'settings' && <SettingsTab documentType={docType} companyId={companyId} />}
     </div>
   )
@@ -2319,7 +2322,7 @@ interface VehicleFormValue {
   norma_energie: string
   category: string
   company_id: string
-  document_type: 'sales' | 'service'
+  document_type: DocType
   // Service (Mașini de curtoazie) per-car price + policy — blank inherits the
   // company default (SettingsTab's "Politică implicită" section). Strings so
   // the inputs can be genuinely empty (⇒ send null, not 0).
@@ -2368,7 +2371,7 @@ function vehicleToForm(v: FpVehicle): VehicleFormValue {
     norma_energie: v.norma_energie != null ? String(v.norma_energie) : '',
     category: v.category || '',
     company_id: v.company_id ? String(v.company_id) : '',
-    document_type: (v.document_type as 'sales' | 'service') ?? 'sales',
+    document_type: (v.document_type as DocType) ?? 'sales',
     svc_tariff_eur_day: v.svc_tariff_eur_day != null ? String(v.svc_tariff_eur_day) : '',
     svc_tariff_eur_month: v.svc_tariff_eur_month != null ? String(v.svc_tariff_eur_month) : '',
     svc_km_included_day: v.svc_km_included_day != null ? String(v.svc_km_included_day) : '',
@@ -2507,7 +2510,21 @@ export function VehicleFormFields({
    *  pool is dictated by the active gate (Vânzări vs Mașini de curtoazie). */
   lockDocType?: boolean
 }) {
-  const allowAnyBrand = value.document_type === 'service' && !!onBrandChange
+  // The company's document types drive the "Parc / Tip document" selector and
+  // whether the rental pricing block shows (is_rental).
+  const _companyId = Number(value.company_id) || 0
+  const { data: docTypesData } = useQuery({
+    queryKey: ['fp-document-types', _companyId],
+    queryFn: () => foiParcursApi.getDocumentTypes(_companyId),
+    enabled: _companyId > 0,
+    staleTime: 30_000,
+  })
+  const docTypes = docTypesData?.types ?? []
+  const selectedDocType = docTypes.find((t) => t.key === value.document_type)
+  const isRentalType = !!selectedDocType?.is_rental
+  // Non-sales pools are multi-brand (courtesy/rental fleet independent of the
+  // dealer franchise), so allow any brand there.
+  const allowAnyBrand = value.document_type !== 'sales' && !!onBrandChange
   const { data: allBrandsData } = useQuery({
     queryKey: ['fp-all-brands'],
     queryFn: () => foiParcursApi.getAllBrands(),
@@ -2623,19 +2640,26 @@ export function VehicleFormFields({
         <Select value={value.document_type} onValueChange={(v) => onChange({ document_type: v as DocType })} disabled={lockDocType}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="sales">{DOC_TYPE_LABELS.sales}</SelectItem>
-            <SelectItem value="service">{DOC_TYPE_LABELS.service}</SelectItem>
+            {(docTypes.length
+              ? docTypes.map((t) => ({ key: t.key, label: t.label }))
+              : [{ key: 'sales', label: DOC_TYPE_LABELS.sales }, { key: 'service', label: DOC_TYPE_LABELS.service }]
+            ).concat(
+              // keep the current value selectable even if it's inactive/missing
+              value.document_type && !docTypes.some((t) => t.key === value.document_type)
+                ? [{ key: value.document_type, label: DOC_TYPE_LABELS[value.document_type] || value.document_type }]
+                : [],
+            ).map((o) => <SelectItem key={o.key} value={o.key}>{o.label}</SelectItem>)}
           </SelectContent>
         </Select>
         {lockDocType && (
           <p className="text-[11px] text-muted-foreground">
-            Determinat de parcul curent ({DOC_TYPE_LABELS[value.document_type]}).
+            Determinat de parcul curent ({selectedDocType?.label || DOC_TYPE_LABELS[value.document_type] || value.document_type}).
           </p>
         )}
       </div>
     </div>
 
-    {value.document_type === 'service' && (
+    {isRentalType && (
       <div className="space-y-3 border-t pt-4">
         <p className="text-sm font-semibold">Preț & politică (Mașini de curtoazie)</p>
         <p className="text-xs text-muted-foreground">
@@ -3515,7 +3539,7 @@ function ItineraryField({
 }
 
 export function SettingsTab({ documentType = 'sales', companyId }: { documentType?: DocType; companyId?: number } = {}) {
-  const isService = documentType === 'service'
+  const isService = documentType !== 'sales'
   const queryClient = useQueryClient()
   const [editId, setEditId] = useState<number | null>(null)
   const [editData, setEditData] = useState<{ td_km_min: number; td_km_max: number; comodat_km_min: number; comodat_km_max: number; km_gap: number }>({ td_km_min: 5, td_km_max: 50, comodat_km_min: 10, comodat_km_max: 200, km_gap: 20 })
@@ -3965,7 +3989,7 @@ function ArchiveReasonRow({ reason, onSaved }: { reason: import('@/types/foiParc
 
 // ── Routes Settings — per-company itinerary list ──
 export function RoutesSettings({ companies, documentType = 'sales', headerCompanyId }: { companies: { id: number; company: string }[]; documentType?: DocType; headerCompanyId?: number }) {
-  const isService = documentType === 'service'
+  const isService = documentType !== 'sales'
   const queryClient = useQueryClient()
   const [selectedCompany, setSelectedCompany] = useState<string>('')
   const [newComodatRoute, setNewComodatRoute] = useState('')

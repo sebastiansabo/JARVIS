@@ -13,6 +13,7 @@ from ..services.fuel_service import parse_fuel_level
 from ..services.rental_pricing import compute_service_pricing
 from ..document_types import normalize as _normalize_doctype, pools_match
 from ..repositories.contract_config_repository import ContractConfigRepository
+from ..repositories.document_type_repository import DocumentTypeRepository
 from crm.repositories.contact_repository import ContactRepository, contact_gate_valid
 from marketing.repositories.event_repo import ProjectEventRepository
 
@@ -23,6 +24,7 @@ _PHONE_RE = re.compile(r'^(\+\d{7,15}|07\d{8}|004\d{10})$')
 _contact_repo = ContactRepository()
 _event_bridge_repo = ProjectEventRepository()
 _cc_repo = ContractConfigRepository()
+_dt_repo = DocumentTypeRepository()
 
 # CRM data often stores companies as client_type 'person' with the legal form
 # only in the name (e.g. "NELAURA COMIMPEX SRL"), so the company->contact gate
@@ -173,8 +175,8 @@ def api_submit_test_drive():
     try:
         _veh = _vehicle_repo.get_by_vin(data['vin'])
         _brand = (_veh or {}).get('brand') or ''
-        if document_type == 'service':
-            _cfg = _cc_repo.get_active(int(data['company_id']), _brand, 'service')
+        if document_type != 'sales':
+            _cfg = _dt_repo.get(int(data['company_id']), document_type)
             general_conditions_text = ((_cfg or {}).get('general_conditions') or '')
         else:
             general_conditions_text = _dealer_repo.get_general_conditions(int(data['company_id']), _brand) or ''
@@ -331,10 +333,10 @@ def api_submit_test_drive():
             contract_data['general_conditions_accepted_at'] = datetime.now(timezone.utc)
             contract_data['general_conditions_text'] = general_conditions_text
 
-        # Service (Mașini de curtoazie) rental-pricing snapshot — frozen at
-        # create so a later car-price change never rewrites a signed contract.
-        # Gated to document_type='service'; Sales sessions never touch this.
-        if document_type == 'service':
+        # Rental-pricing snapshot — frozen at create so a later car-price change
+        # never rewrites a signed contract. Only rental document types (is_rental)
+        # carry pricing; Sales and non-rental types never touch this.
+        if _dt_repo.is_rental(contract_data.get('company_id'), document_type):
             contract_data.update(_resolve_service_pricing(
                 _veh, contract_data.get('company_id'),
                 data.get('departure_datetime'), data.get('return_datetime'), data))
@@ -382,7 +384,7 @@ def api_submit_test_drive():
             try:
                 from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf, generate_service_contract_pdf
                 legal_path = (generate_service_contract_pdf(contract)
-                              if contract.get('document_type') == 'service'
+                              if _normalize_doctype(contract.get('document_type')) != 'sales'
                               else generate_legal_pdf(contract))
                 custom_path = generate_custom_pdf(contract)
                 _fp_repo.execute(
@@ -445,8 +447,8 @@ def api_activate_test_drive(id):
         try:
             _veh = _vehicle_repo.get_by_vin(contract.get('vin'))
             _brand = (_veh or {}).get('brand') or ''
-            if _doc_type == 'service':
-                _cfg = _cc_repo.get_active(int(contract['company_id']), _brand, 'service')
+            if _doc_type != 'sales':
+                _cfg = _dt_repo.get(int(contract['company_id']), _doc_type)
                 general_conditions_text = ((_cfg or {}).get('general_conditions') or '')
             else:
                 general_conditions_text = _dealer_repo.get_general_conditions(int(contract['company_id']), _brand) or ''
@@ -558,11 +560,11 @@ def api_activate_test_drive(id):
         # Persist a client switch/edit made at activation (empty when unchanged).
         update.update(client_update)
 
-        # Service (Mașini de curtoazie) rental-pricing snapshot — a PLANNED
-        # draft may not have had a return_datetime yet, so this is (re)computed
-        # at activation from whatever departure/return is now known. Frozen
-        # from here on; a later car-price change never rewrites this contract.
-        if _doc_type == 'service':
+        # Rental-pricing snapshot — a PLANNED draft may not have had a
+        # return_datetime yet, so this is (re)computed at activation from
+        # whatever departure/return is now known. Frozen from here on. Only
+        # rental document types (is_rental) carry pricing.
+        if _dt_repo.is_rental(contract.get('company_id'), _doc_type):
             update.update(_resolve_service_pricing(
                 _veh, contract.get('company_id'),
                 update.get('departure_datetime') or contract.get('departure_datetime'),
@@ -582,7 +584,7 @@ def api_activate_test_drive(id):
         try:
             from ..services.pdf_service import generate_legal_pdf, generate_custom_pdf, generate_service_contract_pdf
             legal_path = (generate_service_contract_pdf(updated)
-                          if updated.get('document_type') == 'service'
+                          if _normalize_doctype(updated.get('document_type')) != 'sales'
                           else generate_legal_pdf(updated))
             custom_path = generate_custom_pdf(updated)
             _fp_repo.execute(
