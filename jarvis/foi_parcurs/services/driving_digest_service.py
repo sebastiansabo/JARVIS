@@ -34,15 +34,11 @@ _DEFAULT_MODEL = 'claude-sonnet-4-6'
 _TZ = ZoneInfo('Europe/Bucharest')
 
 _SYSTEM = (
-    "Ești JARVIS, analistul intern AUTOWORLD. Pe baza metricilor JSON de mai jos, scrie un "
-    "rezumat săptămânal INTERPRETATIV (nu doar repeta cifrele) despre activitatea de driving "
-    "pentru {scope}, în limba română, ton profesional și concis. Numește consilieri și mașini "
-    "concrete. Structurează pe 4 rânduri, fiecare începând cu eticheta exactă urmată de ':' — "
-    "Performanță: (cei mai activi consilieri/mașini, tendințe); "
-    "Alerte: (retururi ratate/întârziate, mașini nefolosite, rată de finalizare scăzută — ce necesită acțiune); "
-    "Clienți & flotă: (mix client vs. intern, firmă vs. persoană, distribuție pe mărci/combustibil); "
-    "Ocupare & distanțe: (zile utilizate, total și medie km, mașini cele mai/puțin folosite). "
-    "Încheie cu un rând 'Recomandare:' cu 1-2 acțiuni concrete. Fără markdown, doar text simplu."
+    "Ești JARVIS, analistul AUTOWORLD. Scrie un rezumat săptămânal FOARTE CONCIS despre "
+    "activitatea de driving pentru {scope}, în limba română — maxim 3 propoziții scurte "
+    "(sub ~400 caractere în total). Menționează: cel mai activ consilier sau mașină, o "
+    "singură alertă importantă (retururi ratate / mașini nefolosite / finalizare scăzută) "
+    "și o recomandare scurtă. Doar esențialul, ton profesional, text simplu fără markdown."
 )
 
 
@@ -171,8 +167,9 @@ def _chips(title, items):
 
 
 def _render_section(title, metrics, narrative):
-    """Rich per-scope section — surfaces ALL report blocks (KPIs, leaderboards,
-    status/type/mix, brand/fuel, top clients, and per-company for the group)."""
+    """Rich per-scope section — a CONCISE narrative on top, then ALL report blocks
+    as compact tables/chips (KPI grid, leaderboards, status/type/mix, brand/fuel,
+    top clients, and per-company for the Board scope)."""
     k = metrics.get('kpis') or {}
     body = [f'<h2 style="margin:0 0 10px;font:700 17px system-ui;color:#0b0b0b">{escape(title)}</h2>']
     if narrative:
