@@ -99,6 +99,31 @@ class DocumentTypeRepository(BaseRepository):
         )
         return key
 
+    def delete(self, company_id, key):
+        """Hard-delete a document type. The default (sales) is protected, and a
+        type still referenced by vehicles/sessions is refused (deactivate it
+        instead) so no session/vehicle is left pointing at a missing type."""
+        if not company_id or not key:
+            raise ValueError('company_id and key required')
+        row = self.get(company_id, key)
+        if not row:
+            return  # already gone — no-op
+        if row.get('is_default'):
+            raise ValueError('The default document type cannot be deleted')
+        used = self.query_one(
+            '''SELECT
+                 (SELECT COUNT(*) FROM fp_vehicles     WHERE company_id = %s AND document_type = %s) AS veh,
+                 (SELECT COUNT(*) FROM foi_de_parcurs  WHERE company_id = %s AND document_type = %s) AS ses''',
+            (company_id, key, company_id, key),
+        ) or {}
+        n = int(used.get('veh') or 0) + int(used.get('ses') or 0)
+        if n:
+            raise ValueError(f'Tipul este folosit de {n} mașini/sesiuni — dezactivează-l în loc să-l ștergi.')
+        return self.execute(
+            'DELETE FROM fp_document_types WHERE company_id = %s AND key = %s',
+            (company_id, key),
+        )
+
     def upsert(self, company_id, key, label, title, body_template,
                general_conditions, is_rental=False, is_active=True):
         """Update an existing type's label/template/flags. The default (sales)

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FileText, ChevronDown, ChevronRight, Plus, KeyRound } from 'lucide-react'
+import { FileText, ChevronDown, ChevronRight, Plus, KeyRound, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -79,6 +79,16 @@ export default function ContractConfigSection({ companyId }: { companyId?: numbe
     onError: (err: any) => toast.error(err?.status === 403 ? 'Nu ai permisiuni de administrator pentru a salva.' : 'Salvarea a eșuat'),
   })
 
+  const deleteMut = useMutation({
+    mutationFn: (key: string) => foiParcursApi.deleteDocumentType({ company_id: companyId!, key }),
+    onSuccess: () => {
+      toast.success('Șters')
+      qc.invalidateQueries({ queryKey: ['fp-document-types', companyId, 'all'] })
+      qc.invalidateQueries({ queryKey: ['fp-document-types'] })
+    },
+    onError: (err: any) => toast.error(err?.data?.error || err?.message || 'Ștergerea a eșuat'),
+  })
+
   const toggle = (key: string) => setExpanded((s) => {
     const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n
   })
@@ -143,6 +153,7 @@ export default function ContractConfigSection({ companyId }: { companyId?: numbe
                   onToggle={() => toggle(t.key)}
                   isSaving={saveMut.isPending}
                   onSave={(values) => saveMut.mutate({ ...values, key: t.key })}
+                  onDelete={() => { if (window.confirm(`Ștergi tipul „${t.label}”? Această acțiune este definitivă.`)) deleteMut.mutate(t.key) }}
                 />
               ))}
             </div>
@@ -153,11 +164,12 @@ export default function ContractConfigSection({ companyId }: { companyId?: numbe
   )
 }
 
-function DocTypeRow({ type, open, onToggle, onSave, isSaving }: {
+function DocTypeRow({ type, open, onToggle, onSave, onDelete, isSaving }: {
   type: DtItem
   open: boolean
   onToggle: () => void
   onSave: (values: DtDraft) => void
+  onDelete: () => void
   isSaving: boolean
 }) {
   const [draft, setDraft] = useState<DtDraft>(() => fromType(type))
@@ -166,18 +178,31 @@ function DocTypeRow({ type, open, onToggle, onSave, isSaving }: {
 
   return (
     <Card className="overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-accent/40"
-      >
-        {open ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
-        <span className="text-sm font-medium">{type.label}</span>
-        {type.is_default && <Badge variant="secondary" className="text-[10px]">Implicit</Badge>}
-        {type.is_rental && <Badge variant="secondary" className="gap-1 text-[10px]"><KeyRound className="h-3 w-3" />Închiriere</Badge>}
-        {!type.is_active && <Badge variant="outline" className="text-[10px] text-muted-foreground">Inactiv</Badge>}
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground">{type.key}</span>
-      </button>
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex flex-1 items-center gap-2 px-4 py-3 text-left hover:bg-accent/40"
+        >
+          {open ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
+          <span className="text-sm font-medium">{type.label}</span>
+          {type.is_default && <Badge variant="secondary" className="text-[10px]">Implicit</Badge>}
+          {type.is_rental && <Badge variant="secondary" className="gap-1 text-[10px]"><KeyRound className="h-3 w-3" />Închiriere</Badge>}
+          {!type.is_active && <Badge variant="outline" className="text-[10px] text-muted-foreground">Inactiv</Badge>}
+          <span className="ml-auto font-mono text-[10px] text-muted-foreground">{type.key}</span>
+        </button>
+        {!type.is_default && (
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label={`Șterge ${type.label}`}
+            title="Șterge tip"
+            className="shrink-0 px-3 py-3 text-muted-foreground transition-colors hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
 
       {open && (
         <div className={cn('space-y-3 border-t px-4 py-3', type.is_default && 'opacity-90')}>
