@@ -188,11 +188,13 @@ def _settings_enabled():
 
 
 def _is_prod():
-    try:
-        from core.config import is_production
-        return bool(is_production())
-    except Exception:
-        return os.environ.get('FLASK_ENV') == 'production'
+    """True only on the production deployment. The DO services carry no
+    FLASK_ENV, so prod is detected by the prod DB host in DATABASE_URL
+    (`jarvis-main-do-user`); FLASK_ENV=='production' is kept as a secondary
+    signal for any environment that does set it. This is defense-in-depth — the
+    per-DB `weekly_driving_digest_enabled` flag is the primary send gate."""
+    db = os.environ.get('DATABASE_URL', '')
+    return 'jarvis-main-do-user' in db or os.environ.get('FLASK_ENV') == 'production'
 
 
 def _fmt_week(date_from, date_to):

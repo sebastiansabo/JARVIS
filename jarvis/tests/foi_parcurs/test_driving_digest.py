@@ -184,3 +184,19 @@ def test_sends_company_and_board_when_enabled_prod(monkeypatch):
     assert out['sent'] == 2
     tos = [s['to_email'] for s in sent]
     assert 'mgr@aw.ro' in tos and 'board@aw.ro' in tos
+
+
+def test_is_prod_true_for_prod_db(monkeypatch):
+    # prod DB host → prod, even without FLASK_ENV (DO services carry none)
+    monkeypatch.setenv('DATABASE_URL',
+                       'postgresql://doadmin:x@jarvis-main-do-user-24639451-0.k.db.ondigitalocean.com:25060/defaultdb')
+    monkeypatch.delenv('FLASK_ENV', raising=False)
+    assert dds._is_prod() is True
+
+
+def test_is_prod_false_for_staging_db(monkeypatch):
+    # staging DB host → NOT prod, so staging never emails
+    monkeypatch.setenv('DATABASE_URL',
+                       'postgresql://doadmin:x@mkt-staging-do-user-24639451-0.k.db.ondigitalocean.com:25060/defaultdb')
+    monkeypatch.delenv('FLASK_ENV', raising=False)
+    assert dds._is_prod() is False
