@@ -125,6 +125,18 @@ export interface ReportsSummary {
   top_odometer: { vin: string; registration_number: string; model: string; odometer_km: number }[]
   rental: { total_eur: number; sessions: number; by_month: { bucket: string; eur: number }[] } | null
 }
+export interface ReportSession {
+  id: number
+  contract_id: string
+  date: string
+  client: string
+  advisor: string | null
+  vin: string
+  registration_number: string
+  model: string
+  td_status: string
+  km: number
+}
 
 export const foiParcursApi = {
   // ── Preview ──
@@ -165,6 +177,15 @@ export const foiParcursApi = {
     odo_order?: string
     top?: number
   }) => api.get<ReportsSummary>(`${BASE}/reports/summary${qs(params)}`),
+
+  getReportSessions: (params: {
+    company_id?: number
+    date_from?: string
+    date_to?: string
+    document_type?: string
+    advisor?: string
+    vin?: string
+  }) => api.get<{ success: boolean; sessions: ReportSession[] }>(`${BASE}/reports/sessions${qs(params)}`),
 
   allocateClient: (contractId: number, data: { client_id: number; itinerary: string; advisor_name: string; signature_svg?: string }) =>
     api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${contractId}/allocate`, data),
