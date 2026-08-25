@@ -68,14 +68,14 @@ class FakeFp:
         self.sessions_args = None
 
     def report_bundle(self, company_id=None, date_from=None, date_to=None, document_type=None, top=5,
-                      perf_status=None, drive_type=None):
+                      perf_status=None, drive_type=None, brand=None):
         self.bundle_args = dict(company_id=company_id, date_from=date_from, date_to=date_to,
                                 document_type=document_type, top=top,
-                                perf_status=perf_status, drive_type=drive_type)
+                                perf_status=perf_status, drive_type=drive_type, brand=brand)
         return dict(BUNDLE)
 
-    def report_rental(self, company_id=None, date_from=None, date_to=None):
-        self.rental_args = dict(company_id=company_id, date_from=date_from, date_to=date_to)
+    def report_rental(self, company_id=None, date_from=None, date_to=None, brand=None):
+        self.rental_args = dict(company_id=company_id, date_from=date_from, date_to=date_to, brand=brand)
         return dict(RENTAL)
 
     def report_sessions(self, company_id=None, date_from=None, date_to=None,
@@ -92,9 +92,9 @@ class FakeVeh:
     def __init__(self):
         self.fleet_args = None
 
-    def report_fleet(self, company_id=None, document_type=None, odo_order='high', top=5):
+    def report_fleet(self, company_id=None, document_type=None, odo_order='high', top=5, brand=None):
         self.fleet_args = dict(company_id=company_id, document_type=document_type,
-                               odo_order=odo_order, top=top)
+                               odo_order=odo_order, top=top, brand=brand)
         return dict(FLEET)
 
 
@@ -256,6 +256,16 @@ def test_summary_status_and_drive_type_passthrough(monkeypatch):
     assert r.status_code == 200
     assert c._fp.bundle_args['perf_status'] == 'complete'
     assert c._fp.bundle_args['drive_type'] == 'internal'
+
+
+def test_summary_brand_isolates_whole_report(monkeypatch):
+    """The header brand selector isolates every block (bundle + fleet + rental)."""
+    c = make_client(monkeypatch, role='admin', company_id=16)
+    r = c.get('/api/foi-parcurs/reports/summary?document_type=service&brand=MG Motor')
+    assert r.status_code == 200
+    assert c._fp.bundle_args['brand'] == 'MG Motor'
+    assert c._veh.fleet_args['brand'] == 'MG Motor'
+    assert c._fp.rental_args['brand'] == 'MG Motor'
 
 
 def test_sessions_status_and_drive_type_passthrough(monkeypatch):

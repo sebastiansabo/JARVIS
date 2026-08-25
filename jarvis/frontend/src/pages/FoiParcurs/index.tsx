@@ -258,7 +258,7 @@ export default function FoiParcurs() {
       {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} />}
       {activeTab === 'stock' && <StockTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} />}
       {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} />}
-      {activeTab === 'reports' && <ReportsTab companyId={companyId} toolbarSlot={tabToolbar} />}
+      {activeTab === 'reports' && <ReportsTab companyId={companyId} toolbarSlot={tabToolbar} brand={brand} />}
       {activeTab === 'settings' && <SettingsTab />}
     </div>
   )

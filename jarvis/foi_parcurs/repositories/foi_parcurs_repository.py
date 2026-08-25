@@ -135,10 +135,11 @@ class FoiParcursRepository(BaseRepository):
     # the entered estimate. Numeric results are cast to int/float so jsonify
     # never sees a Decimal. Company scope is enforced by the route, not here.
 
-    def _rep_filters(self, company_id, date_from, date_to, document_type, drive_type=None):
+    def _rep_filters(self, company_id, date_from, date_to, document_type, drive_type=None, brand=None):
         """Shared (clauses, params) for the report queries. drive_type filters the
-        whole report to client ('client' → is_internal FALSE) or internal
-        ('internal' → is_internal TRUE) sessions; None/'all' = both."""
+        whole report to client/internal sessions; brand isolates the whole report
+        to one franchise brand (the header brand selector) via a vin subquery so
+        every block honors it without needing the fp_vehicles join."""
         clauses, params = [], []
         if company_id:
             clauses.append('fp.company_id = %s')
@@ -150,6 +151,10 @@ class FoiParcursRepository(BaseRepository):
             clauses.append('fp.is_internal = FALSE')
         elif drive_type == 'internal':
             clauses.append('fp.is_internal = TRUE')
+        if brand:
+            clauses.append("fp.vin IN (SELECT v2.vin FROM fp_vehicles v2 WHERE "
+                           "COALESCE(NULLIF(TRIM(v2.brand), ''), NULLIF(TRIM(v2.mark), ''), 'Necunoscut') = %s)")
+            params.append(brand)
         if date_from:
             clauses.append('COALESCE(fp.departure_datetime, fp.created_at) >= %s')
             params.append(date_from)
@@ -175,11 +180,13 @@ class FoiParcursRepository(BaseRepository):
         return ([f"fp.status IN ({', '.join(['%s'] * len(raws))})"], raws)
 
     def report_bundle(self, company_id=None, date_from=None, date_to=None,
-                      document_type=None, top=5, perf_status=None, drive_type=None):
+                      document_type=None, top=5, perf_status=None, drive_type=None, brand=None):
         """All non-rental report blocks in one call (see routes/reports.py).
-        drive_type filters the whole report (client/internal); perf_status filters
-        ONLY the performance leaderboards (companii/consilieri/mașini) by status."""
-        base, bparams = self._rep_filters(company_id, date_from, date_to, document_type, drive_type=drive_type)
+        drive_type + brand filter the whole report (client/internal, franchise
+        brand); perf_status filters ONLY the performance leaderboards
+        (companii/consilieri/mașini) by status."""
+        base, bparams = self._rep_filters(company_id, date_from, date_to, document_type,
+                                          drive_type=drive_type, brand=brand)
         where = self._rep_where(base)
         bp = tuple(bparams)
         # status filter — applied only to the performance leaderboards below
@@ -301,7 +308,8 @@ class FoiParcursRepository(BaseRepository):
         filter builder + scope as the aggregates; returns client, advisor, car and
         derived td_status so the UI can show advisor→(client+car),
         car→(client+consilier), and the chart modals → full session context."""
-        clauses, params = self._rep_filters(company_id, date_from, date_to, document_type, drive_type=drive_type)
+        clauses, params = self._rep_filters(company_id, date_from, date_to, document_type,
+                                            drive_type=drive_type, brand=brand)
         sc, sp = self._status_clause(status)
         clauses += sc
         params += sp
@@ -315,9 +323,6 @@ class FoiParcursRepository(BaseRepository):
             clauses.append("lower(COALESCE(cc.client_type, '')) IN ('company', 'legal')")
         elif client_type == 'person':
             clauses.append("lower(COALESCE(cc.client_type, '')) NOT IN ('company', 'legal')")
-        if brand:
-            clauses.append("COALESCE(NULLIF(TRIM(v.brand), ''), NULLIF(TRIM(v.mark), ''), 'Necunoscut') = %s")
-            params.append(brand)
         if fuel_type:
             clauses.append("COALESCE(NULLIF(TRIM(v.fuel_type), ''), 'Necunoscut') = %s")
             params.append(fuel_type)
@@ -338,10 +343,10 @@ class FoiParcursRepository(BaseRepository):
             f'{where} ORDER BY COALESCE(fp.departure_datetime, fp.created_at) DESC LIMIT %s',
             tuple(params) + (limit,))
 
-    def report_rental(self, company_id=None, date_from=None, date_to=None):
+    def report_rental(self, company_id=None, date_from=None, date_to=None, brand=None):
         """Rental-revenue block (Service pool only) — total €, session count and
         a per-month series. document_type is pinned to 'service' here."""
-        base, params = self._rep_filters(company_id, date_from, date_to, 'service')
+        base, params = self._rep_filters(company_id, date_from, date_to, 'service', brand=brand)
         where = self._rep_where(base)
         p = tuple(params)
         totals = self.query_one(
