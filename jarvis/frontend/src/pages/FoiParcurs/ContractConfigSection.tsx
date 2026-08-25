@@ -8,13 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { foiParcursApi } from '@/api/foiParcurs'
 
 // Tokens the Service contract generator substitutes at render time (see
@@ -52,17 +45,8 @@ type ContractDraft = { title: string; body_template: string; general_conditions:
  *  sessions. Configuring an active template here is what unlocks the Service
  *  context for that (company, brand) — mirrors DealerConfigSection but owns
  *  its own company selector since SettingsTab has none. */
-export default function ContractConfigSection() {
+export default function ContractConfigSection({ companyId }: { companyId?: number | null } = {}) {
   const qc = useQueryClient()
-  const [selectedCompany, setSelectedCompany] = useState<string>('')
-  const companyId = selectedCompany ? Number(selectedCompany) : null
-
-  const { data: companiesData } = useQuery({
-    queryKey: ['fp-companies'],
-    queryFn: () => foiParcursApi.getCompanies(),
-    staleTime: 60_000,
-  })
-  const companies = companiesData?.companies ?? []
 
   const { data, isLoading } = useQuery({
     queryKey: ['fp-contract-configs', companyId],
@@ -92,22 +76,8 @@ export default function ContractConfigSection() {
       </div>
       <p className="text-sm text-muted-foreground">
         Șablon de contract per brand pentru sesiunile Service (mașini de curtoazie). Un brand cu template activ
-        deblochează contextul Service pentru compania selectată.
+        deblochează contextul Service pentru compania selectată în antet.
       </p>
-
-      <div className="max-w-sm space-y-1.5">
-        <Label>Company</Label>
-        <Select value={selectedCompany} onValueChange={setSelectedCompany}>
-          <SelectTrigger>
-            <SelectValue placeholder="Selectează o companie..." />
-          </SelectTrigger>
-          <SelectContent>
-            {companies.map((c) => (
-              <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
 
       <Card className="p-3 bg-muted/30">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

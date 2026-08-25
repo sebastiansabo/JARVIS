@@ -293,7 +293,7 @@ export default function FoiParcurs() {
       {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
       {activeTab === 'stock' && <StockTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} documentType={docType} />}
       {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
-      {activeTab === 'settings' && <SettingsTab documentType={docType} />}
+      {activeTab === 'settings' && <SettingsTab documentType={docType} companyId={companyId} />}
     </div>
   )
 }
@@ -3514,7 +3514,7 @@ function ItineraryField({
   )
 }
 
-export function SettingsTab({ documentType = 'sales' }: { documentType?: DocType } = {}) {
+export function SettingsTab({ documentType = 'sales', companyId }: { documentType?: DocType; companyId?: number } = {}) {
   const isService = documentType === 'service'
   const queryClient = useQueryClient()
   const [editId, setEditId] = useState<number | null>(null)
@@ -3724,7 +3724,7 @@ export function SettingsTab({ documentType = 'sales' }: { documentType?: DocType
 
       {/* Section 2: Company config — shows sales cards (location/comodat) in
           Vânzări, the courtesy default-policy card in Mașini de curtoazie. */}
-      <RoutesSettings companies={companiesData?.companies ?? []} documentType={documentType} />
+      <RoutesSettings companies={companiesData?.companies ?? []} documentType={documentType} headerCompanyId={companyId} />
 
       {/* Section 3: Lockout reasons (Motive blocare) — Vânzări/general only */}
       {!isService && <LockoutReasonsSettings />}
@@ -3732,8 +3732,9 @@ export function SettingsTab({ documentType = 'sales' }: { documentType?: DocType
       {/* Section 4: Archive reasons (Motive arhivare) — Vânzări/general only */}
       {!isService && <ArchiveReasonsSettings />}
 
-      {/* Section 5: Service contract setup (per company+brand) — Mașini de curtoazie only */}
-      {isService && <ContractConfigSection />}
+      {/* Section 5: Service contract setup (per company+brand) — Mașini de curtoazie only.
+          Uses the header-selected company; no separate picker. */}
+      {isService && <ContractConfigSection companyId={companyId} />}
     </div>
   )
 }
@@ -3963,7 +3964,7 @@ function ArchiveReasonRow({ reason, onSaved }: { reason: import('@/types/foiParc
 }
 
 // ── Routes Settings — per-company itinerary list ──
-export function RoutesSettings({ companies, documentType = 'sales' }: { companies: { id: number; company: string }[]; documentType?: DocType }) {
+export function RoutesSettings({ companies, documentType = 'sales', headerCompanyId }: { companies: { id: number; company: string }[]; documentType?: DocType; headerCompanyId?: number }) {
   const isService = documentType === 'service'
   const queryClient = useQueryClient()
   const [selectedCompany, setSelectedCompany] = useState<string>('')
@@ -3980,7 +3981,9 @@ export function RoutesSettings({ companies, documentType = 'sales' }: { companie
   })
   const [configSaved, setConfigSaved] = useState(false)
 
-  const companyId = selectedCompany ? Number(selectedCompany) : null
+  // Service context is bound to the header-selected company (no separate picker);
+  // Sales keeps its own company selector (KM/itinerary is an all-companies admin view).
+  const companyId = isService ? (headerCompanyId ?? null) : (selectedCompany ? Number(selectedCompany) : null)
 
   const { data: configData } = useQuery({
     queryKey: ['fp-company-config', companyId],
@@ -4062,23 +4065,25 @@ export function RoutesSettings({ companies, documentType = 'sales' }: { companie
       </div>
       <p className="text-sm text-muted-foreground">
         {isService
-          ? 'Valori implicite de închiriere folosite când mașina de curtoazie nu are propriile setări. Alege compania mai jos.'
+          ? 'Valori implicite de închiriere folosite când mașina de curtoazie nu are propriile setări (pentru compania selectată în antet).'
           : 'Set the company base location for AI-generated TD routes (streets and landmarks within radius). Manually configure Comodat routes for longer inter-city trips.'}
       </p>
 
-      <div className="max-w-sm">
-        <Label>Company</Label>
-        <Select value={selectedCompany} onValueChange={setSelectedCompany}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select a company..." />
-          </SelectTrigger>
-          <SelectContent>
-            {companies.map((c) => (
-              <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {!isService && (
+        <div className="max-w-sm">
+          <Label>Company</Label>
+          <Select value={selectedCompany} onValueChange={setSelectedCompany}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select a company..." />
+            </SelectTrigger>
+            <SelectContent>
+              {companies.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {companyId && (
         <div className="space-y-4">
