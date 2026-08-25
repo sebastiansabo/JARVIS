@@ -28,4 +28,12 @@ describe('SessionTypeChooser', () => {
     fireEvent.click(await screen.findByRole('button', { name: /sesiune internă/i }))
     expect(onPick).toHaveBeenCalledWith('internal')
   })
+
+  it('hides the Client card when showClient={false} (courtesy panel)', async () => {
+    render(<SessionTypeChooser open showClient={false} showRental onOpenChange={vi.fn()} onPick={vi.fn()} />)
+    // Rent-a-car + Internal remain; the client test-drive card is gone.
+    expect(await screen.findByRole('button', { name: /rent-a-car/i })).toBeInTheDocument()
+    expect(screen.getByText(/sesiune internă/i)).toBeInTheDocument()
+    expect(screen.queryByText(/sesiune cu client/i)).not.toBeInTheDocument()
+  })
 })

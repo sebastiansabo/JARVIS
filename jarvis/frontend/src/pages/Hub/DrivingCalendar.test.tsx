@@ -169,3 +169,21 @@ describe('DrivingCalendar', () => {
     expect(onAdd).toHaveBeenCalledWith(`${todayKey}T09:00`, `${todayKey}T10:00`)
   })
 })
+
+describe('DrivingCalendar document_type scoping', () => {
+  beforeEach(() => { localStorage.clear(); getContracts.mockClear(); getVehicles.mockClear() })
+
+  it('scopes contracts + vehicles to service when documentType="service"', async () => {
+    wrap(<DrivingCalendar companyId={11} brand="" documentType="service" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
+    await waitFor(() => expect(getContracts).toHaveBeenCalled())
+    expect(getContracts).toHaveBeenCalledWith(expect.objectContaining({ document_type: 'service' }))
+    expect(getVehicles).toHaveBeenCalledWith(true, 'service')
+  })
+
+  it('defaults to sales when documentType is omitted', async () => {
+    wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
+    await waitFor(() => expect(getContracts).toHaveBeenCalled())
+    expect(getContracts).toHaveBeenCalledWith(expect.objectContaining({ document_type: 'sales' }))
+    expect(getVehicles).toHaveBeenCalledWith(true, 'sales')
+  })
+})

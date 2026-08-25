@@ -18,6 +18,7 @@ vi.mock('@/components/shared/SignatureCanvas', () => ({
 }))
 
 import TestDriveForm from './TestDriveForm'
+import { foiParcursApi } from '@/api/foiParcurs'
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -54,6 +55,15 @@ describe('TestDriveForm embedded mode', () => {
     expect(screen.getByPlaceholderText(/caut[aă] client/i).className).toContain('ring-2 ring-destructive')
     // …but KM estimat (activation-only) does NOT when only planning.
     expect(screen.getByPlaceholderText(/km estima/i).className).not.toContain('ring-2 ring-destructive')
+  })
+
+  it('runs in Service context via initialDocumentType (no URL ?context=, e.g. Hub overlay)', async () => {
+    vi.mocked(foiParcursApi.getVehicles).mockClear()
+    wrap(<TestDriveForm embedded initialDocumentType="service" onCancel={vi.fn()} onDone={vi.fn()} />)
+    // Service heading confirms the whole doc-type flows from the prop, not the URL.
+    expect(await screen.findByText(/predare mașină de curtoazie/i)).toBeInTheDocument()
+    // …and the vehicle pool query is scoped to service.
+    expect(foiParcursApi.getVehicles).toHaveBeenCalledWith(false, 'service')
   })
 
   it('seeds the departure datetime from a ?departure= search param (desktop calendar route)', async () => {

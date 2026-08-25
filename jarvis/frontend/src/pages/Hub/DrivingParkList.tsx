@@ -4,6 +4,7 @@ import { Car, Gauge, Search, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { foiParcursApi } from '@/api/foiParcurs'
 import type { FpVehicle } from '@/types/foiParcurs'
+import type { DocType } from '@/pages/FoiParcurs/documentType'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { vehicleHealth, type Gravity, type HealthTag } from './vehicleHealth'
 
@@ -12,6 +13,8 @@ interface Props {
   brand: string
   /** Selected car VINs (from the panel's Filtre modal); [] = all cars. */
   carFilter?: string[]
+  /** Which fleet/pool to show — 'sales' (default) or 'service' (courtesy). */
+  documentType?: DocType
 }
 
 function vehicleName(v: FpVehicle): string {
@@ -57,16 +60,16 @@ function parkStatus(v: FpVehicle): ParkStatus {
  * add/edit/lock/archive live only in the desktop foi-parcurs StockTab. Reuses
  * the ['fp-vehicles','all'] cache (active + archived) and filters client-side.
  */
-export default function DrivingParkList({ companyId, brand, carFilter = [] }: Props) {
+export default function DrivingParkList({ companyId, brand, carFilter = [], documentType = 'sales' }: Props) {
   const [showArchived, setShowArchived] = useState(false)
   const [search, setSearch] = useState('')
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [odoSort, setOdoSort] = useState<OdoSort>('default')
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['fp-vehicles', 'all'],
+    queryKey: ['fp-vehicles', 'all', documentType],
     // active_only=false returns archived vehicles too — we split via the toggle.
-    queryFn: () => foiParcursApi.getVehicles(false),
+    queryFn: () => foiParcursApi.getVehicles(false, documentType),
     staleTime: 30_000,
   })
 

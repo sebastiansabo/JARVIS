@@ -11,6 +11,7 @@ import SearchMultiSelect from '@/pages/Hub/SearchMultiSelect'
 import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
+import type { DocType } from '@/pages/FoiParcurs/documentType'
 import type { FpVehicle } from '@/types/foiParcurs'
 import DrivingSessionsList from '@/pages/Hub/DrivingSessionsList'
 import DrivingCalendar from '@/pages/Hub/DrivingCalendar'
@@ -106,10 +107,18 @@ function DrivingBottomBar({ tab, onTab, activeFilters, onFilters, onNew, onBack 
   )
 }
 
-export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
-  const [tab, setTab] = usePersistedState<PanelTab>('hub-driving-tab', 'sessions')
-  const [companyId, setCompanyId] = usePersistedState<number>('hub-driving-company', 0)
-  const [brand, setBrand] = usePersistedState<string>('hub-driving-brand', '')
+export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { onBack?: () => void; documentType?: DocType }) {
+  const isService = documentType === 'service'
+  // Persist Sales and Service panel state under distinct keys so the two zones
+  // keep independent tab/company/brand selections (and Sales keys stay exactly
+  // as they were — byte-unchanged for existing users).
+  const ns = isService ? 'hub-service' : 'hub-driving'
+  const [tab, setTab] = usePersistedState<PanelTab>(`${ns}-tab`, 'sessions')
+  const [companyId, setCompanyId] = usePersistedState<number>(`${ns}-company`, 0)
+  const [brand, setBrand] = usePersistedState<string>(`${ns}-brand`, '')
+  // Courtesy stock is multi-brand (independent of the dealership franchise), so
+  // the Service context never filters by brand — children always get ''.
+  const effBrand = isService ? '' : brand
   const [carFilter, setCarFilter] = useState<string[]>([])          // selected VINs; [] = all
   const [consultantFilter, setConsultantFilter] = useState<string[]>([]) // advisor names; [] = all
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -137,12 +146,12 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
   // Same query keys as the list/calendar → React Query serves them from one
   // shared cache (no extra network round-trip).
   const { data: contractsData } = useQuery({
-    queryKey: ['foi-contracts-all', companyId],
-    queryFn: () => foiParcursApi.getContracts({ company_id: companyId > 0 ? companyId : undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC' }),
+    queryKey: ['foi-contracts-all', companyId, documentType],
+    queryFn: () => foiParcursApi.getContracts({ company_id: companyId > 0 ? companyId : undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC', document_type: documentType }),
     enabled: hasCompany,
     staleTime: 30_000,
   })
-  const { data: vehiclesData } = useQuery({ queryKey: ['fp-vehicles'], queryFn: () => foiParcursApi.getVehicles(), staleTime: 30_000 })
+  const { data: vehiclesData } = useQuery({ queryKey: ['fp-vehicles', documentType], queryFn: () => foiParcursApi.getVehicles(true, documentType), staleTime: 30_000 })
   const vinVehicle = useMemo(() => new Map((vehiclesData?.vehicles ?? []).map((v) => [v.vin, v] as const)), [vehiclesData])
 
   // Distinct cars + consultants across the (brand-scoped) upcoming/live sessions.
@@ -222,9 +231,10 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
       {hasCompany && tab === 'sessions' && (
         <DrivingSessionsList
           companyId={companyId}
-          brand={brand}
+          brand={effBrand}
           carFilter={carFilter}
           consultantFilter={consultantFilter}
+          documentType={documentType}
           onActivate={(id) => setOverlay({ kind: 'activate', id })}
           onReturn={(id) => setOverlay({ kind: 'return', id })}
         />
@@ -232,16 +242,17 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
       {hasCompany && tab === 'calendar' && (
         <DrivingCalendar
           companyId={companyId}
-          brand={brand}
+          brand={effBrand}
           carFilter={carFilter}
           consultantFilter={consultantFilter}
+          documentType={documentType}
           onActivate={(id) => setOverlay({ kind: 'activate', id })}
           onReturn={(id) => setOverlay({ kind: 'return', id })}
           onAdd={(departure, ret) => setOverlay({ kind: 'choose', departure, ret })}
         />
       )}
       {hasCompany && tab === 'park' && (
-        <DrivingParkList companyId={companyId} brand={brand} carFilter={carFilter} />
+        <DrivingParkList companyId={companyId} brand={effBrand} carFilter={carFilter} documentType={documentType} />
       )}
 
       {/* Filtre modal — company / brand / cars / consultant, shared by all views. */}
@@ -259,7 +270,7 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
                 </SelectContent>
               </Select>
             </div>
-            {brands.length > 0 && (
+            {!isService && brands.length > 0 && (
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold text-muted-foreground">Marcă</p>
                 <Select value={brand || 'all'} onValueChange={(v) => setBrand(v === 'all' ? '' : v)}>
@@ -293,10 +304,17 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
       <SessionTypeChooser
         open={overlay?.kind === 'choose'}
         onOpenChange={(o) => { if (!o) closeOverlay() }}
+        // Service (courtesy) zone: Rent-a-car + Internal, no client test-drive.
+        // Sales zone: client + internal, unchanged.
+        showRental={isService}
+        showClient={!isService}
         onPick={(type) => {
           if (!overlay || overlay.kind !== 'choose') return
           const { departure, ret } = overlay
-          setOverlay(type === 'client' ? { kind: 'new', departure, ret } : { kind: 'new-internal', departure, ret })
+          // 'internal' → the slim internal log; 'client' and 'rental' both open
+          // the TestDriveForm ('rental' just runs it in service context via the
+          // panel's documentType, so the same overlay kind serves both).
+          setOverlay(type === 'internal' ? { kind: 'new-internal', departure, ret } : { kind: 'new', departure, ret })
         }}
       />
 
@@ -314,6 +332,7 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
                 initialCompanyId={companyId || undefined}
                 initialDeparture={overlay.departure}
                 initialReturn={overlay.ret}
+                initialDocumentType={documentType}
                 onDone={handleOverlayDone}
                 onCancel={closeOverlay}
               />
@@ -332,7 +351,7 @@ export default function HubDrivingPanel({ onBack }: { onBack?: () => void }) {
               />
             )}
             {overlay.kind === 'activate' && (
-              <TestDriveForm embedded activateId={overlay.id} onDone={handleOverlayDone} onCancel={closeOverlay} />
+              <TestDriveForm embedded activateId={overlay.id} initialDocumentType={documentType} onDone={handleOverlayDone} onCancel={closeOverlay} />
             )}
             {overlay.kind === 'return' && (
               <TestDriveReturn embedded id={overlay.id} onDone={handleOverlayDone} onCancel={closeOverlay} />
