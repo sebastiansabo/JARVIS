@@ -175,6 +175,8 @@ export const foiParcursApi = {
     date_to?: string
     document_type?: string
     odo_order?: string
+    status?: string
+    drive_type?: string
     top?: number
   }) => api.get<ReportsSummary>(`${BASE}/reports/summary${qs(params)}`),
 
@@ -185,6 +187,8 @@ export const foiParcursApi = {
     document_type?: string
     advisor?: string
     vin?: string
+    status?: string
+    drive_type?: string
   }) => api.get<{ success: boolean; sessions: ReportSession[] }>(`${BASE}/reports/sessions${qs(params)}`),
 
   allocateClient: (contractId: number, data: { client_id: number; itinerary: string; advisor_name: string; signature_svg?: string }) =>

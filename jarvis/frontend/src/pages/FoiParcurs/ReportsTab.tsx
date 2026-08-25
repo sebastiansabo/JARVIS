@@ -24,6 +24,8 @@ const TYPE_LABEL: Record<string, string> = {
 }
 const SEGMENT_LABEL: Record<string, string> = { client: 'Cu client', internal: 'Intern' }
 const CLIENT_TYPE_LABEL: Record<string, string> = { company: 'Firmă', person: 'Persoană fizică' }
+const STATUS_FILTER = [['all', 'Toate'], ['complete', 'Finalizate'], ['planned', 'Programate'], ['missed', 'Ratate']] as const
+const DRIVE_FILTER = [['all', 'Toate'], ['client', 'Client'], ['internal', 'Intern']] as const
 
 const nf = new Intl.NumberFormat('ro-RO')
 const eur = new Intl.NumberFormat('ro-RO', { maximumFractionDigits: 0 })
@@ -186,13 +188,15 @@ function Leaderboard({ rows, renderDetail }: { rows: LbRow[]; renderDetail?: (ro
 
 /** Expanded drill-down under a leaderboard row: the sessions for one advisor
  *  (shows client + car) or one car (shows client + consilier). */
-function SessionDrill({ kind, id, companyId, from, to, docType }: {
+function SessionDrill({ kind, id, companyId, from, to, docType, status, driveType }: {
   kind: 'advisor' | 'car'; id: string; companyId: number; from: string; to: string; docType: string
+  status?: string; driveType?: string
 }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['fp-report-sessions', kind, id, companyId, from, to, docType],
+    queryKey: ['fp-report-sessions', kind, id, companyId, from, to, docType, status, driveType],
     queryFn: () => foiParcursApi.getReportSessions({
       company_id: companyId || undefined, date_from: from, date_to: to, document_type: docType,
+      status, drive_type: driveType,
       ...(kind === 'advisor' ? { advisor: id } : { vin: id }),
     }),
     staleTime: 30_000,
@@ -229,6 +233,38 @@ function SessionDrill({ kind, id, companyId, from, to, docType }: {
   )
 }
 
+/** Expanded drill-down under a company row: that company's best consilieri.
+ *  Reuses the summary endpoint scoped to the one company (top_advisors). */
+function CompanyAdvisorsDrill({ companyId, from, to, docType, status, driveType }: {
+  companyId: number; from: string; to: string; docType: string; status?: string; driveType?: string
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['fp-report-company-advisors', companyId, from, to, docType, status, driveType],
+    queryFn: () => foiParcursApi.getReports({
+      company_id: companyId, date_from: from, date_to: to, document_type: docType, top: 6,
+      status, drive_type: driveType,
+    }),
+    staleTime: 30_000,
+  })
+  const rows = data?.top_advisors ?? []
+  if (isLoading) return <div className="px-2 py-3 text-xs text-muted-foreground">Se încarcă consilierii…</div>
+  if (!rows.length) return <div className="px-2 py-3 text-xs text-muted-foreground">Fără consilieri în interval</div>
+  return (
+    <div className="space-y-1.5 rounded-lg border bg-background p-2">
+      <div className="px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Cei mai buni consilieri</div>
+      {rows.map((a, i) => (
+        <div key={i} className="flex items-center justify-between gap-2 px-1 text-sm">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-bold tabular-nums text-muted-foreground">{i + 1}</span>
+            <span className="truncate">{a.advisor}</span>
+          </span>
+          <span className="shrink-0 font-semibold tabular-nums">{nf.format(a.sessions)} <span className="text-[10px] font-normal text-muted-foreground">ses.</span></span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function Seg<T extends string>({ value, onChange, options }: {
   value: T; onChange: (v: T) => void; options: readonly (readonly [T, string])[]
 }) {
@@ -254,14 +290,19 @@ export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId
   const [ownDocType, setOwnDocType] = usePersistedState<'sales' | 'service'>('fp.rep.docType', 'sales')
   const docType = documentType ?? ownDocType
   const [odoOrder, setOdoOrder] = usePersistedState<'high' | 'low'>('fp.rep.odo', 'high')
+  // status filter for the performance leaderboards; general client/intern filter
+  const [perfStatus, setPerfStatus] = usePersistedState<'all' | 'complete' | 'planned' | 'missed'>('fp.rep.perfStatus', 'all')
+  const [driveType, setDriveType] = usePersistedState<'all' | 'client' | 'internal'>('fp.rep.driveType', 'all')
 
   const { from, to } = rangeForPreset(preset, customFrom, customTo)
+  const stArg = perfStatus === 'all' ? undefined : perfStatus
+  const dtArg = driveType === 'all' ? undefined : driveType
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['fp-reports', companyId, from, to, docType, odoOrder],
+    queryKey: ['fp-reports', companyId, from, to, docType, odoOrder, perfStatus, driveType],
     queryFn: () => foiParcursApi.getReports({
       company_id: companyId || undefined, date_from: from, date_to: to,
-      document_type: docType, odo_order: odoOrder, top: 8,
+      document_type: docType, odo_order: odoOrder, top: 8, status: stArg, drive_type: dtArg,
     }),
     staleTime: 30_000,
   })
@@ -281,6 +322,7 @@ export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId
       {documentType === undefined && (
         <Seg value={ownDocType} onChange={setOwnDocType} options={[['sales', 'Vânzări'], ['service', 'Service']] as const} />
       )}
+      <Seg value={driveType} onChange={setDriveType} options={DRIVE_FILTER} />
     </div>
   )
 
@@ -323,20 +365,26 @@ export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId
           {/* performance leaderboards */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             {showGroup && (
-              <ChartCard title="Performanță pe companii" hint="grup · după sesiuni">
-                <Leaderboard rows={data.top_companies.map((c) => ({ name: c.company, sub: `${nf.format(c.km)} km`, value: c.sessions }))} />
+              <ChartCard title="Performanță pe companii" hint="grup · click pentru consilieri"
+                action={<Seg value={perfStatus} onChange={setPerfStatus} options={STATUS_FILTER} />}>
+                <Leaderboard
+                  rows={data.top_companies.map((c) => ({ name: c.company, sub: `${nf.format(c.km)} km`, value: c.sessions, id: String(c.company_id) }))}
+                  renderDetail={(row) => <CompanyAdvisorsDrill companyId={Number(row.id)} from={from} to={to} docType={docType} status={stArg} driveType={dtArg} />}
+                />
               </ChartCard>
             )}
-            <ChartCard title="Performanță consilieri" hint="după sesiuni · click pentru detalii">
+            <ChartCard title="Performanță consilieri" hint="click pentru detalii"
+              action={<Seg value={perfStatus} onChange={setPerfStatus} options={STATUS_FILTER} />}>
               <Leaderboard
                 rows={data.top_advisors.map((a) => ({ name: a.advisor, sub: `${nf.format(a.km)} km · ${a.completion_rate}% finalizare`, value: a.sessions, id: a.advisor }))}
-                renderDetail={(row) => <SessionDrill kind="advisor" id={row.id!} companyId={companyId} from={from} to={to} docType={docType} />}
+                renderDetail={(row) => <SessionDrill kind="advisor" id={row.id!} companyId={companyId} from={from} to={to} docType={docType} status={stArg} driveType={dtArg} />}
               />
             </ChartCard>
-            <ChartCard title="Performanță mașini" hint="după sesiuni · click pentru detalii">
+            <ChartCard title="Performanță mașini" hint="click pentru detalii"
+              action={<Seg value={perfStatus} onChange={setPerfStatus} options={STATUS_FILTER} />}>
               <Leaderboard
                 rows={data.utilization.map((u) => ({ name: u.model, sub: `${u.registration_number} · ${u.days_used}/30 zile`, value: u.sessions, id: u.vin }))}
-                renderDetail={(row) => <SessionDrill kind="car" id={row.id!} companyId={companyId} from={from} to={to} docType={docType} />}
+                renderDetail={(row) => <SessionDrill kind="car" id={row.id!} companyId={companyId} from={from} to={to} docType={docType} status={stArg} driveType={dtArg} />}
               />
             </ChartCard>
           </div>
