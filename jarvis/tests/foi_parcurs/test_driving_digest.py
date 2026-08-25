@@ -107,8 +107,10 @@ def test_render_email_wraps_sections():
 # --- Task 6: recipient resolution -------------------------------------------
 
 class _FakeCompanyRepo:
-    def get_responsables(self, cid): return [{'id': 1, 'email': 'mgr@aw.ro'}] if cid == 9 else []
-    def get_by_id(self, cid): return {'id': cid, 'alert_email': 'fallback@aw.ro'}
+    # get_responsables returns the REAL shape: {user_id, user_name} (no email).
+    def get_responsables(self, cid): return [{'user_id': 1, 'user_name': 'Mgr X'}] if cid == 9 else []
+    # The real class exposes get(company_id), not get_by_id.
+    def get(self, cid): return {'id': cid, 'alert_email': 'fallback@aw.ro'}
 class _FakeUserRepo:
     def get_all(self): return [
         {'id': 1, 'email': 'mgr@aw.ro', 'role_name': 'Manager'},
@@ -117,15 +119,19 @@ class _FakeUserRepo:
     ]
 
 
-def test_company_recipients_prefers_responsables(monkeypatch):
+def test_company_recipients_resolves_responsable_emails(monkeypatch):
+    # responsable user_id 1 → resolved to mgr@aw.ro via the users id→email map
     monkeypatch.setattr(dds, '_company_repo', _FakeCompanyRepo())
+    monkeypatch.setattr(dds, '_user_repo', _FakeUserRepo())
     emails, ids = dds._company_recipients(9)
     assert emails == ['mgr@aw.ro'] and ids == [1]
 
 
 def test_company_recipients_falls_back_to_alert_email(monkeypatch):
+    # no responsables → fall back to companies.alert_email, no in-app recipients
     monkeypatch.setattr(dds, '_company_repo', _FakeCompanyRepo())
-    emails, ids = dds._company_recipients(11)  # no responsables
+    monkeypatch.setattr(dds, '_user_repo', _FakeUserRepo())
+    emails, ids = dds._company_recipients(11)
     assert emails == ['fallback@aw.ro'] and ids == []
 
 
