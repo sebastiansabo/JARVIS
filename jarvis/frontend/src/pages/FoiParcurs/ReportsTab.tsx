@@ -16,7 +16,7 @@ const STATUS_COLORS: Record<string, string> = {
   late: '#d98a00', incomplete: '#eb6834', missed: '#d03b3b', pending: '#898781',
 }
 const STATUS_LABEL: Record<string, string> = {
-  complete: 'Finalizate', planned: 'Programate', driving: 'În desfășurare',
+  complete: 'Finalizate', planned: 'Planificate', driving: 'În desfășurare',
   late: 'Întârziate', incomplete: 'Neîncheiate', missed: 'Ratate', pending: 'În așteptare',
 }
 const TYPE_LABEL: Record<string, string> = {
@@ -24,7 +24,7 @@ const TYPE_LABEL: Record<string, string> = {
 }
 const SEGMENT_LABEL: Record<string, string> = { client: 'Cu client', internal: 'Intern' }
 const CLIENT_TYPE_LABEL: Record<string, string> = { company: 'Firmă', person: 'Persoană fizică' }
-const STATUS_FILTER = [['all', 'Toate'], ['complete', 'Finalizate'], ['planned', 'Programate'], ['missed', 'Ratate']] as const
+const STATUS_FILTER = [['all', 'Toate'], ['complete', 'Finalizate'], ['planned', 'Planificate'], ['missed', 'Ratate']] as const
 const DRIVE_FILTER = [['all', 'Toate'], ['client', 'Client'], ['internal', 'Intern']] as const
 
 const nf = new Intl.NumberFormat('ro-RO')
