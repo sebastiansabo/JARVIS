@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { cn, usePersistedState } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { foiParcursApi } from '@/api/foiParcurs'
 
 /* Validated categorical palette (CVD-safe order) + reserved status colors.
@@ -24,7 +25,7 @@ const TYPE_LABEL: Record<string, string> = {
 }
 const SEGMENT_LABEL: Record<string, string> = { client: 'Cu client', internal: 'Intern' }
 const CLIENT_TYPE_LABEL: Record<string, string> = { company: 'Firmă', person: 'Persoană fizică' }
-const STATUS_FILTER = [['all', 'Toate'], ['complete', 'Finalizate'], ['planned', 'Planificate'], ['missed', 'Ratate']] as const
+const STATUS_CHECKS = [['complete', 'Finalizate'], ['planned', 'Planificate'], ['missed', 'Ratate']] as const
 const DRIVE_FILTER = [['all', 'Toate'], ['client', 'Client'], ['internal', 'Intern']] as const
 
 const nf = new Intl.NumberFormat('ro-RO')
@@ -85,8 +86,9 @@ function AreaTrend({ data }: { data: { bucket: string; count: number }[] }) {
   )
 }
 
-function Donut({ rows, colors, centerCap }: {
-  rows: { label: string; value: number; color?: string }[]; colors: string[]; centerCap: string
+type DonutRow = { label: string; value: number; color?: string; key?: string }
+function Donut({ rows, colors, centerCap, onSlice }: {
+  rows: DonutRow[]; colors: string[]; centerCap: string; onSlice?: (row: DonutRow) => void
 }) {
   const { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } = LazyRecharts()
   const total = rows.reduce((s, r) => s + r.value, 0)
@@ -96,7 +98,9 @@ function Donut({ rows, colors, centerCap }: {
       <div className="relative shrink-0" style={{ width: 150, height: 150 }}>
         <ResponsiveContainer width={150} height={150}>
           <PieChart>
-            <Pie data={rows} dataKey="value" nameKey="label" innerRadius={44} outerRadius={68} paddingAngle={2} stroke="none">
+            <Pie data={rows} dataKey="value" nameKey="label" innerRadius={44} outerRadius={68} paddingAngle={2} stroke="none"
+              onClick={onSlice ? ((_: unknown, i: number) => onSlice(rows[i])) : undefined}
+              style={onSlice ? { cursor: 'pointer' } : undefined}>
               {rows.map((r, i) => <Cell key={i} fill={r.color || colors[i % colors.length]} />)}
             </Pie>
             <Tooltip {...TT} formatter={(v, n) => [nf.format(Number(v)), String(n)]} />
@@ -108,34 +112,57 @@ function Donut({ rows, colors, centerCap }: {
         </div>
       </div>
       <ul className="min-w-0 flex-1 space-y-1.5 text-sm">
-        {rows.map((r, i) => (
-          <li key={i} className="flex items-center justify-between gap-2">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: r.color || colors[i % colors.length] }} />
-              <span className="truncate text-muted-foreground">{r.label}</span>
-            </span>
-            <span className="font-semibold tabular-nums">{nf.format(r.value)}</span>
-          </li>
-        ))}
+        {rows.map((r, i) => {
+          const content = (
+            <>
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: r.color || colors[i % colors.length] }} />
+                <span className="truncate text-muted-foreground">{r.label}</span>
+              </span>
+              <span className="font-semibold tabular-nums">{nf.format(r.value)}</span>
+            </>
+          )
+          return onSlice ? (
+            <li key={i}>
+              <button type="button" onClick={() => onSlice(r)}
+                className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                {content}
+              </button>
+            </li>
+          ) : (
+            <li key={i} className="flex items-center justify-between gap-2">{content}</li>
+          )
+        })}
       </ul>
     </div>
   )
 }
 
-function Bars({ rows, color, unit }: { rows: { label: string; value: number }[]; color?: string; unit?: string }) {
+type BarRow = { label: string; value: number }
+function Bars({ rows, color, unit, onBar }: { rows: BarRow[]; color?: string; unit?: string; onBar?: (row: BarRow) => void }) {
   const max = Math.max(1, ...rows.map((r) => r.value))
   if (!rows.length) return <div className="py-8 text-center text-sm text-muted-foreground">Fără date în interval</div>
   return (
     <div className="space-y-2">
-      {rows.map((r, i) => (
-        <div key={i} className="grid grid-cols-[minmax(0,7rem)_1fr_auto] items-center gap-3">
-          <span className="truncate text-sm text-muted-foreground" title={r.label}>{r.label}</span>
-          <div className="h-4 overflow-hidden rounded bg-muted">
-            <div className="h-full rounded" style={{ width: `${(r.value / max) * 100}%`, background: color || ACCENT }} />
-          </div>
-          <span className="w-16 text-right text-sm font-semibold tabular-nums">{nf.format(r.value)}{unit ? ` ${unit}` : ''}</span>
-        </div>
-      ))}
+      {rows.map((r, i) => {
+        const inner = (
+          <>
+            <span className="truncate text-sm text-muted-foreground" title={r.label}>{r.label}</span>
+            <div className="h-4 overflow-hidden rounded bg-muted">
+              <div className="h-full rounded" style={{ width: `${(r.value / max) * 100}%`, background: color || ACCENT }} />
+            </div>
+            <span className="w-16 text-right text-sm font-semibold tabular-nums">{nf.format(r.value)}{unit ? ` ${unit}` : ''}</span>
+          </>
+        )
+        return onBar ? (
+          <button key={i} type="button" onClick={() => onBar(r)}
+            className="grid w-full grid-cols-[minmax(0,7rem)_1fr_auto] items-center gap-3 rounded px-1 py-0.5 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            {inner}
+          </button>
+        ) : (
+          <div key={i} className="grid grid-cols-[minmax(0,7rem)_1fr_auto] items-center gap-3">{inner}</div>
+        )
+      })}
     </div>
   )
 }
@@ -256,11 +283,91 @@ function CompanyAdvisorsDrill({ companyId, from, to, docType, status, driveType 
         <div key={i} className="flex items-center justify-between gap-2 px-1 text-sm">
           <span className="flex min-w-0 items-center gap-2">
             <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-bold tabular-nums text-muted-foreground">{i + 1}</span>
-            <span className="truncate">{a.advisor}</span>
+            <span className="min-w-0">
+              <span className="block truncate">{a.advisor}</span>
+              <span className="block text-[11px] tabular-nums text-muted-foreground">{nf.format(a.km)} km</span>
+            </span>
           </span>
           <span className="shrink-0 font-semibold tabular-nums">{nf.format(a.sessions)} <span className="text-[10px] font-normal text-muted-foreground">ses.</span></span>
         </div>
       ))}
+    </div>
+  )
+}
+
+/** Detail modal for a clicked chart item — the session list filtered by that
+ *  dimension (client-type / fuel / brand / drive-type). */
+function ChartDetailModal({ open, onClose, title, params }: {
+  open: boolean; onClose: () => void; title: string; params: Record<string, unknown>
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['fp-report-detail', params],
+    queryFn: () => foiParcursApi.getReportSessions(params as Parameters<typeof foiParcursApi.getReportSessions>[0]),
+    enabled: open,
+    staleTime: 30_000,
+  })
+  const rows = data?.sessions ?? []
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        {isLoading ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">Se încarcă sesiunile…</div>
+        ) : !rows.length ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">Fără sesiuni în interval</div>
+        ) : (
+          <div className="max-h-[60vh] overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-background">
+                <tr className="border-b text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th className="px-2 py-1.5 font-medium">Data</th>
+                  <th className="px-2 py-1.5 font-medium">Client</th>
+                  <th className="px-2 py-1.5 font-medium">Mașină</th>
+                  <th className="px-2 py-1.5 font-medium">Consilier</th>
+                  <th className="px-2 py-1.5 font-medium">Status</th>
+                  <th className="px-2 py-1.5 text-right font-medium">Km</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((s) => (
+                  <tr key={s.id} className="border-b last:border-0">
+                    <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">{s.date}</td>
+                    <td className="px-2 py-1.5">{s.client}</td>
+                    <td className="px-2 py-1.5 text-muted-foreground">{s.model}</td>
+                    <td className="px-2 py-1.5 text-muted-foreground">{s.advisor || '—'}</td>
+                    <td className="px-2 py-1.5">{STATUS_LABEL[s.td_status] ?? s.td_status}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{nf.format(s.km)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="mt-2 text-xs text-muted-foreground">{rows.length} sesiuni</div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function StatusChecks({ value, onChange, options }: {
+  value: string[]; onChange: (v: string[]) => void; options: readonly (readonly [string, string])[]
+}) {
+  const toggle = (k: string) => onChange(value.includes(k) ? value.filter((x) => x !== k) : [...value, k])
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {options.map(([k, label]) => {
+        const on = value.includes(k)
+        return (
+          <button key={k} type="button" onClick={() => toggle(k)} aria-pressed={on}
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+            <span className={cn('grid h-3.5 w-3.5 place-items-center rounded border',
+              on ? 'border-primary bg-primary text-primary-foreground' : 'border-input')}>
+              {on && <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><path d="M20 6L9 17l-5-5" /></svg>}
+            </span>
+            <span className={cn(on && 'text-foreground')}>{label}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -291,12 +398,19 @@ export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId
   const docType = documentType ?? ownDocType
   const [odoOrder, setOdoOrder] = usePersistedState<'high' | 'low'>('fp.rep.odo', 'high')
   // status filter for the performance leaderboards; general client/intern filter
-  const [perfStatus, setPerfStatus] = usePersistedState<'all' | 'complete' | 'planned' | 'missed'>('fp.rep.perfStatus', 'all')
+  // multi-select status checkboxes (cumulate); [] = all statuses
+  const [perfStatus, setPerfStatus] = usePersistedState<string[]>('fp.rep.status.v2', [])
   const [driveType, setDriveType] = usePersistedState<'all' | 'client' | 'internal'>('fp.rep.driveType', 'all')
 
   const { from, to } = rangeForPreset(preset, customFrom, customTo)
-  const stArg = perfStatus === 'all' ? undefined : perfStatus
+  const stArg = perfStatus.length ? perfStatus.join(',') : undefined
   const dtArg = driveType === 'all' ? undefined : driveType
+
+  // chart → detail modal (session list filtered by the clicked dimension)
+  const [detail, setDetail] = useState<{ title: string; params: Record<string, unknown> } | null>(null)
+  const openDetail = (title: string, extra: Record<string, unknown>) =>
+    setDetail({ title, params: { company_id: companyId || undefined, date_from: from, date_to: to,
+      document_type: docType, status: stArg, drive_type: dtArg, ...extra } })
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['fp-reports', companyId, from, to, docType, odoOrder, perfStatus, driveType],
@@ -335,6 +449,10 @@ export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId
     <div className="mt-4 space-y-4">
       {toolbarSlot && createPortal(toolbar, toolbarSlot)}
 
+      {detail && (
+        <ChartDetailModal open title={detail.title} params={detail.params} onClose={() => setDetail(null)} />
+      )}
+
       {data && !data.scope.is_group && (
         <p className="text-xs text-muted-foreground">
           Rapoarte limitate la compania dvs. — vizualizarea pe întreg grupul necesită rol de administrator sau board.
@@ -366,7 +484,7 @@ export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             {showGroup && (
               <ChartCard title="Performanță pe companii" hint="grup · click pentru consilieri"
-                action={<Seg value={perfStatus} onChange={setPerfStatus} options={STATUS_FILTER} />}>
+                action={<StatusChecks value={perfStatus} onChange={setPerfStatus} options={STATUS_CHECKS} />}>
                 <Leaderboard
                   rows={data.top_companies.map((c) => ({ name: c.company, sub: `${nf.format(c.km)} km`, value: c.sessions, id: String(c.company_id) }))}
                   renderDetail={(row) => <CompanyAdvisorsDrill companyId={Number(row.id)} from={from} to={to} docType={docType} status={stArg} driveType={dtArg} />}
@@ -374,14 +492,14 @@ export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId
               </ChartCard>
             )}
             <ChartCard title="Performanță consilieri" hint="click pentru detalii"
-              action={<Seg value={perfStatus} onChange={setPerfStatus} options={STATUS_FILTER} />}>
+              action={<StatusChecks value={perfStatus} onChange={setPerfStatus} options={STATUS_CHECKS} />}>
               <Leaderboard
                 rows={data.top_advisors.map((a) => ({ name: a.advisor, sub: `${nf.format(a.km)} km · ${a.completion_rate}% finalizare`, value: a.sessions, id: a.advisor }))}
                 renderDetail={(row) => <SessionDrill kind="advisor" id={row.id!} companyId={companyId} from={from} to={to} docType={docType} status={stArg} driveType={dtArg} />}
               />
             </ChartCard>
             <ChartCard title="Performanță mașini" hint="click pentru detalii"
-              action={<Seg value={perfStatus} onChange={setPerfStatus} options={STATUS_FILTER} />}>
+              action={<StatusChecks value={perfStatus} onChange={setPerfStatus} options={STATUS_CHECKS} />}>
               <Leaderboard
                 rows={data.utilization.map((u) => ({ name: u.model, sub: `${u.registration_number} · ${u.days_used}/30 zile`, value: u.sessions, id: u.vin }))}
                 renderDetail={(row) => <SessionDrill kind="car" id={row.id!} companyId={companyId} from={from} to={to} docType={docType} status={stArg} driveType={dtArg} />}
@@ -401,30 +519,38 @@ export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId
               </Suspense>
             </ChartCard>
 
-            <ChartCard title="Tip sesiune" hint="intern vs. client · pe tip document">
+            <ChartCard title="Tip sesiune" hint="pe tip document">
               <Bars rows={data.by_type.map((t) => ({ label: TYPE_LABEL[t.type] ?? t.type, value: t.count }))} />
             </ChartCard>
-            <ChartCard title="Client vs. intern">
-              <Bars color={AQUA} rows={data.client_vs_internal.map((s) => ({ label: SEGMENT_LABEL[s.segment] ?? s.segment, value: s.count }))} />
+            <ChartCard title="Client vs. intern" hint="sesiuni · click pentru detalii">
+              <Suspense fallback={<ChartSkeleton h={150} />}>
+                <Donut centerCap="sesiuni" colors={[ACCENT, AQUA]}
+                  rows={data.client_vs_internal.map((s) => ({ label: SEGMENT_LABEL[s.segment] ?? s.segment, value: s.count, key: s.segment }))}
+                  onSlice={(r) => openDetail(`Sesiuni: ${r.label}`, { drive_type: r.key })} />
+              </Suspense>
             </ChartCard>
-            <ChartCard title="Sesiuni după marcă" hint="număr sesiuni">
-              <Bars rows={data.by_brand.map((b) => ({ label: b.brand, value: b.count }))} />
+            <ChartCard title="Sesiuni după marcă" hint="click pentru detalii">
+              <Bars rows={data.by_brand.map((b) => ({ label: b.brand, value: b.count }))}
+                onBar={(r) => openDetail(`Marcă: ${r.label}`, { brand: r.label })} />
             </ChartCard>
 
-            <ChartCard title="Tip client" hint="sesiuni cu client">
+            <ChartCard title="Tip client" hint="click pentru detalii">
               <Suspense fallback={<ChartSkeleton h={150} />}>
                 <Donut centerCap="clienți" colors={[ACCENT, AQUA]}
-                  rows={data.client_types.map((c) => ({ label: CLIENT_TYPE_LABEL[c.client_type] ?? c.client_type, value: c.count }))} />
+                  rows={data.client_types.map((c) => ({ label: CLIENT_TYPE_LABEL[c.client_type] ?? c.client_type, value: c.count, key: c.client_type }))}
+                  onSlice={(r) => openDetail(`Tip client: ${r.label}`, { client_type: r.key })} />
               </Suspense>
             </ChartCard>
-            <ChartCard title="Parc după combustibil" hint="nr. mașini active">
+            <ChartCard title="Parc după combustibil" hint="click pentru detalii">
               <Suspense fallback={<ChartSkeleton h={150} />}>
                 <Donut centerCap="mașini" colors={SERIES}
-                  rows={data.fuel_composition.map((f) => ({ label: f.fuel_type, value: f.count }))} />
+                  rows={data.fuel_composition.map((f) => ({ label: f.fuel_type, value: f.count, key: f.fuel_type }))}
+                  onSlice={(r) => openDetail(`Combustibil: ${r.label}`, { fuel_type: r.key })} />
               </Suspense>
             </ChartCard>
-            <ChartCard title="Distanță pe marcă" hint="km parcurși">
-              <Bars unit="km" rows={data.distance_by_brand.map((d) => ({ label: d.brand, value: d.km }))} />
+            <ChartCard title="Distanță pe marcă" hint="km parcurși · click pentru detalii">
+              <Bars unit="km" rows={data.distance_by_brand.map((d) => ({ label: d.brand, value: d.km }))}
+                onBar={(r) => openDetail(`Marcă: ${r.label}`, { brand: r.label })} />
             </ChartCard>
           </div>
 
