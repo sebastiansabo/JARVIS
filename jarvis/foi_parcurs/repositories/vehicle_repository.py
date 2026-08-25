@@ -114,11 +114,12 @@ class FPVehicleRepository(BaseRepository):
         ') up ON TRUE'
     )
 
-    def report_fleet(self, company_id=None, document_type=None, odo_order='high', top=5):
+    def report_fleet(self, company_id=None, document_type=None, odo_order='high', top=5, brand=None):
         """Fleet composition for the Rapoarte tab: active-car count by fuel type,
         and the top-N cars by known mileage. `odo_order` 'high' (default) lists
         the most-driven cars, 'low' the least. Scoped to active cars of the given
-        company + document-type pool. Company scope is enforced by the route."""
+        company + document-type pool (+ franchise brand when set). Company scope is
+        enforced by the route."""
         clauses = ['v.is_active = TRUE']
         params = []
         if company_id:
@@ -127,6 +128,9 @@ class FPVehicleRepository(BaseRepository):
         if document_type:
             clauses.append('v.document_type = %s')
             params.append(document_type)
+        if brand:
+            clauses.append("COALESCE(NULLIF(TRIM(v.brand), ''), NULLIF(TRIM(v.mark), ''), 'Necunoscut') = %s")
+            params.append(brand)
         where = ' WHERE ' + ' AND '.join(clauses)
 
         fuel_composition = self.query_all(

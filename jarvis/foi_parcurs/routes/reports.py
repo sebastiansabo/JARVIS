@@ -60,15 +60,16 @@ def api_reports_summary():
     odo_order = 'low' if (request.args.get('odo_order') or 'high').strip().lower() == 'low' else 'high'
     perf_status = (request.args.get('status') or '').strip() or None
     drive_type = (request.args.get('drive_type') or '').strip() or None
+    brand = (request.args.get('brand') or '').strip() or None
     top = request.args.get('top', type=int) or 5
     top = max(1, min(top, _MAX_TOP))
 
     bundle = _fp_repo.report_bundle(company_id=company_id, date_from=date_from,
                                     date_to=date_to, document_type=document_type, top=top,
-                                    perf_status=perf_status, drive_type=drive_type)
+                                    perf_status=perf_status, drive_type=drive_type, brand=brand)
     fleet = _vehicle_repo.report_fleet(company_id=company_id, document_type=document_type,
-                                       odo_order=odo_order, top=top)
-    rental = (_fp_repo.report_rental(company_id=company_id, date_from=date_from, date_to=date_to)
+                                       odo_order=odo_order, top=top, brand=brand)
+    rental = (_fp_repo.report_rental(company_id=company_id, date_from=date_from, date_to=date_to, brand=brand)
               if document_type == 'service' else None)
 
     return jsonify({
