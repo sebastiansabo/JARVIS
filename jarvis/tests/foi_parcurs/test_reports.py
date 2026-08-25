@@ -56,10 +56,16 @@ FLEET = {
 RENTAL = {'total_eur': 6820, 'by_month': [{'bucket': '2026-08', 'eur': 6820}], 'sessions': 12}
 
 
+SESSIONS = [{'id': 1, 'date': '2026-08-10', 'client': 'ACME', 'advisor': 'Ion',
+             'vin': 'V1', 'registration_number': 'B 01 AAA', 'model': 'VW Passat',
+             'td_status': 'complete', 'km': 42}]
+
+
 class FakeFp:
     def __init__(self):
         self.bundle_args = None
         self.rental_args = None
+        self.sessions_args = None
 
     def report_bundle(self, company_id=None, date_from=None, date_to=None, document_type=None, top=5):
         self.bundle_args = dict(company_id=company_id, date_from=date_from, date_to=date_to,
@@ -69,6 +75,12 @@ class FakeFp:
     def report_rental(self, company_id=None, date_from=None, date_to=None):
         self.rental_args = dict(company_id=company_id, date_from=date_from, date_to=date_to)
         return dict(RENTAL)
+
+    def report_sessions(self, company_id=None, date_from=None, date_to=None,
+                        document_type=None, advisor=None, vin=None, limit=200):
+        self.sessions_args = dict(company_id=company_id, date_from=date_from, date_to=date_to,
+                                  document_type=document_type, advisor=advisor, vin=vin, limit=limit)
+        return list(SESSIONS)
 
 
 class FakeVeh:
@@ -191,3 +203,42 @@ def test_filters_passed_through(monkeypatch):
     assert a['top'] == 8
     assert c._veh.fleet_args['odo_order'] == 'low'
     assert c._veh.fleet_args['top'] == 8
+
+
+# ── drill-down: /reports/sessions ──────────────────────────────────────────
+
+def test_sessions_forced_to_own_company_for_non_admin(monkeypatch):
+    """The drill-down enforces the same hard company scope — a non-group user's
+    ?company_id is ignored in favour of their own company (no cross-tenant peek)."""
+    c = make_client(monkeypatch, role='user', company_id=11)
+    r = c.get('/api/foi-parcurs/reports/sessions?company_id=99&advisor=Ion&document_type=sales')
+    assert r.status_code == 200, r.get_json()
+    assert c._fp.sessions_args['company_id'] == 11
+    assert c._fp.sessions_args['advisor'] == 'Ion'
+
+
+def test_sessions_requires_advisor_or_vin(monkeypatch):
+    """With neither advisor nor vin there is nothing to drill into — return an
+    empty list without touching the repo."""
+    c = make_client(monkeypatch, role='admin', company_id=16)
+    r = c.get('/api/foi-parcurs/reports/sessions?document_type=sales')
+    assert r.status_code == 200
+    assert r.get_json()['sessions'] == []
+    assert c._fp.sessions_args is None
+
+
+def test_sessions_vin_and_filters_passthrough(monkeypatch):
+    c = make_client(monkeypatch, role='admin', company_id=16)
+    r = c.get('/api/foi-parcurs/reports/sessions?vin=WVW1&date_from=2026-08-01&document_type=service')
+    assert r.status_code == 200
+    a = c._fp.sessions_args
+    assert a['vin'] == 'WVW1'
+    assert a['document_type'] == 'service'
+    assert a['date_from'] == '2026-08-01'
+    assert r.get_json()['sessions'][0]['client'] == 'ACME'
+
+
+def test_sessions_non_admin_without_company_denied(monkeypatch):
+    c = make_client(monkeypatch, role='user', company_id=None)
+    r = c.get('/api/foi-parcurs/reports/sessions?advisor=Ion')
+    assert r.status_code == 403
