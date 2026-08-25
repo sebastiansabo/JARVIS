@@ -1,18 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const { correctSession, extendReturn, discardTestDrive } = vi.hoisted(() => ({
-  correctSession: vi.fn(), extendReturn: vi.fn(), discardTestDrive: vi.fn(),
+const { correctSession, extendReturn, discardTestDrive, deleteContract } = vi.hoisted(() => ({
+  correctSession: vi.fn(), extendReturn: vi.fn(), discardTestDrive: vi.fn(), deleteContract: vi.fn(),
 }))
 vi.mock('@/api/foiParcurs', () => ({
-  foiParcursApi: { correctSession, extendReturn, discardTestDrive, getContractPdfUrl: (id: number) => `/pdf/${id}` },
+  foiParcursApi: { correctSession, extendReturn, discardTestDrive, deleteContract, getContractPdfUrl: (id: number) => `/pdf/${id}` },
 }))
 
-// role read at render → flip auth.role between tests to exercise the admin gate.
-const auth = vi.hoisted(() => ({ role: 'user' }))
+// role + company read at render → flip between tests to exercise the admin
+// gate and the company-scope delete guard.
+const auth = vi.hoisted(() => ({ role: 'user', companyId: 5 as number | undefined }))
 vi.mock('@/stores/authStore', () => ({
-  useAuthStore: (sel: (s: unknown) => unknown) => sel({ user: { role_name: auth.role } }),
+  useAuthStore: (sel: (s: unknown) => unknown) => sel({ user: { role_name: auth.role, company_id: auth.companyId } }),
 }))
 
 import SessionDetailModal from './SessionDetailModal'
@@ -25,7 +26,7 @@ const planned = { ...base, status: 'PLANNED' }
 const driving = { ...base, status: 'FILLED', td_status: 'driving' }
 const internalWithComment = {
   ...base, client_name: null, status: 'FILLED', td_status: 'driving',
-  is_internal: true, itinerary: 'Deplasare SNN – pregatiri livrare',
+  is_internal: true, company_id: 5, itinerary: 'Deplasare SNN – pregatiri livrare',
 }
 
 function wrap(ui: React.ReactNode) {
@@ -34,7 +35,7 @@ function wrap(ui: React.ReactNode) {
 }
 
 describe('SessionDetailModal', () => {
-  beforeEach(() => { auth.role = 'user'; vi.clearAllMocks() })
+  beforeEach(() => { auth.role = 'user'; auth.companyId = 5; vi.clearAllMocks() })
 
   it('planned session shows Începe + Renunță (no Retur) and Începe calls onActivate', () => {
     const onActivate = vi.fn()
@@ -77,5 +78,40 @@ describe('SessionDetailModal', () => {
   it('does not show a Comentariu row for a regular test drive', () => {
     wrap(<SessionDetailModal session={driving as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
     expect(screen.queryByText('Comentariu')).not.toBeInTheDocument()
+  })
+
+  it('shows Șterge on an internal session and deletes on confirm (any user)', async () => {
+    auth.role = 'user'
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    wrap(<SessionDetailModal session={internalWithComment as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Șterge/ }))
+    expect(confirmSpy).toHaveBeenCalled()
+    await waitFor(() => expect(deleteContract).toHaveBeenCalledWith(internalWithComment.id))
+    confirmSpy.mockRestore()
+  })
+
+  it('does not delete when the confirm is dismissed', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    wrap(<SessionDetailModal session={internalWithComment as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Șterge/ }))
+    expect(deleteContract).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
+
+  it('hides Șterge on a regular (non-internal) test drive', () => {
+    wrap(<SessionDetailModal session={driving as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /Șterge/ })).not.toBeInTheDocument()
+  })
+
+  it('hides Șterge on an internal session from another company (non-admin)', () => {
+    auth.role = 'user'; auth.companyId = 99 // session is company 5
+    wrap(<SessionDetailModal session={internalWithComment as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /Șterge/ })).not.toBeInTheDocument()
+  })
+
+  it('shows Șterge to an admin on an internal session from any company', () => {
+    auth.role = 'admin'; auth.companyId = 99 // session is company 5
+    wrap(<SessionDetailModal session={internalWithComment as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /Șterge/ })).toBeInTheDocument()
   })
 })
