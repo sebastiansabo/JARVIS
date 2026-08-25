@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
+import type { DocType } from '@/pages/FoiParcurs/documentType'
 import ModifiedBadge from '@/pages/FoiParcurs/ModifiedBadge'
 import EventBadge from '@/pages/FoiParcurs/EventBadge'
 import CorrectSessionDialog, { type CorrectionPayload } from '@/pages/FoiParcurs/CorrectSessionDialog'
@@ -37,6 +38,8 @@ interface Props {
   consultantFilter?: string[]
   onActivate: (id: number) => void
   onReturn: (id: number) => void
+  /** Which fleet/pool to show — 'sales' (default) or 'service' (courtesy). */
+  documentType?: DocType
 }
 
 /**
@@ -47,7 +50,7 @@ interface Props {
  * action, with tap-to-expand details. Reuses the same data + status derivation;
  * actions call back into the panel's overlay openers.
  */
-export default function DrivingSessionsList({ companyId, brand, carFilter = [], consultantFilter = [], onActivate, onReturn }: Props) {
+export default function DrivingSessionsList({ companyId, brand, carFilter = [], consultantFilter = [], onActivate, onReturn, documentType = 'sales' }: Props) {
   const queryClient = useQueryClient()
   const [showArchived, setShowArchived] = useState(false)
   const [search, setSearch] = useState('')
@@ -58,11 +61,11 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['foi-contracts-all', companyId],
-    queryFn: () => foiParcursApi.getContracts({ company_id: companyId > 0 ? companyId : undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC' }),
+    queryKey: ['foi-contracts-all', companyId, documentType],
+    queryFn: () => foiParcursApi.getContracts({ company_id: companyId > 0 ? companyId : undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC', document_type: documentType }),
     staleTime: 30_000,
   })
-  const { data: vehiclesData } = useQuery({ queryKey: ['fp-vehicles'], queryFn: () => foiParcursApi.getVehicles(), staleTime: 30_000 })
+  const { data: vehiclesData } = useQuery({ queryKey: ['fp-vehicles', documentType], queryFn: () => foiParcursApi.getVehicles(true, documentType), staleTime: 30_000 })
 
   const vinVehicle = useMemo(
     () => new Map((vehiclesData?.vehicles ?? []).map((v) => [v.vin, v] as const)),

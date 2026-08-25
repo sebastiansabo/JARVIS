@@ -11,6 +11,9 @@ interface SessionTypeChooserProps {
   /** Show the "Rent-a-car" card — only offered when the selected company has
    *  Service (Mașini de curtoazie) enabled, so it never opens onto a locked pool. */
   showRental?: boolean
+  /** Show the client test-drive card (default). The dedicated courtesy Hub
+   *  panel hides it — that zone only handles Rent-a-car + internal moves. */
+  showClient?: boolean
 }
 
 /** First step of "+ Sesiune nouă" — lets the advisor pick between a
@@ -19,14 +22,18 @@ interface SessionTypeChooserProps {
  *  Service enabled — a Rent-a-car courtesy session (client test-drive form
  *  running the rental pricing + courtesy contract). Reused by the Hub Driving
  *  panel, the standalone Foi de Parcurs page and the Calendar's slot-add. */
-export default function SessionTypeChooser({ open, onOpenChange, onPick, showRental }: SessionTypeChooserProps) {
+export default function SessionTypeChooser({ open, onOpenChange, onPick, showRental, showClient = true }: SessionTypeChooserProps) {
+  // Column count tracks the number of visible cards so the grid stays balanced
+  // whichever cards are shown (client / internal / rental).
+  const cols = (showClient ? 1 : 0) + 1 + (showRental ? 1 : 0)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Sesiune nouă</DialogTitle>
         </DialogHeader>
-        <div className={cn('grid gap-3', showRental ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
+        <div className={cn('grid gap-3', cols >= 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
+          {showClient && (
           <button
             type="button"
             onClick={() => onPick('client')}
@@ -38,6 +45,7 @@ export default function SessionTypeChooser({ open, onOpenChange, onPick, showRen
             <span className="text-sm font-semibold">Sesiune cu client</span>
             <span className="text-xs text-muted-foreground">Test drive cu contract și semnături</span>
           </button>
+          )}
           <button
             type="button"
             onClick={() => onPick('internal')}

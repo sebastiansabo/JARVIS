@@ -119,10 +119,15 @@ interface TestDriveFormProps {
   initialReturn?: string
   onDone?: (contract: FoiContract) => void
   onCancel?: () => void
+  /** Seed the document context when the form is mounted without a URL to carry
+   *  `?context=service` (e.g. the Hub courtesy overlay). The standalone route
+   *  keeps using `?context=`; this prop is the equivalent for inline mounts.
+   *  Activation still prefers the loaded draft's own frozen document_type. */
+  initialDocumentType?: DocType
 }
 
 // ── Component ──
-export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, initialDeparture, initialReturn, onDone, onCancel }: TestDriveFormProps = {}) {
+export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, initialDeparture, initialReturn, onDone, onCancel, initialDocumentType }: TestDriveFormProps = {}) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
@@ -143,7 +148,9 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // is what makes Service activations render the "Sumar închiriere" card,
   // send the svc_* pricing snapshot, and relabel the form (Task 13). Falls
   // back to the URL context on a fresh create or before the draft loads.
-  const urlDocumentType: DocType = contextFromSearch(searchParams.toString() ? `?${searchParams.toString()}` : window.location.search)
+  // Base (pre-activation) context: an explicit prop wins (inline mounts like the
+  // Hub courtesy overlay that can't carry a URL param), else the URL `?context=`.
+  const urlDocumentType: DocType = initialDocumentType ?? contextFromSearch(searchParams.toString() ? `?${searchParams.toString()}` : window.location.search)
   const [serviceOrderRef, setServiceOrderRef] = useState('')
 
   // Company & vehicle
