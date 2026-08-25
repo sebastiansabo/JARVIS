@@ -300,7 +300,7 @@ export function ReportsTab({ companyId, toolbarSlot }: { companyId: number; tool
 
           {/* fleet + rental */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <ChartCard title="Ocupare flotă" hint="zile utilizate / 30 · cele mai folosite" className="lg:col-span-2">
+            <ChartCard title="Ocupare flotă" hint="zile utilizate / 30 · cele mai folosite" className={docType === 'service' ? 'lg:col-span-2' : 'lg:col-span-3'}>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -309,7 +309,8 @@ export function ReportsTab({ companyId, toolbarSlot }: { companyId: number; tool
                       <th className="py-2 pr-3 font-medium">Model</th>
                       <th className="py-2 pr-3 text-right font-medium">Zile/30</th>
                       <th className="py-2 pr-3 text-right font-medium">Sesiuni</th>
-                      <th className="py-2 text-right font-medium">Km</th>
+                      <th className="py-2 pr-3 text-right font-medium">Km</th>
+                      <th className="py-2 text-right font-medium">Km/ses.</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -326,10 +327,11 @@ export function ReportsTab({ companyId, toolbarSlot }: { companyId: number; tool
                           </span>
                         </td>
                         <td className="py-2 pr-3 text-right tabular-nums">{u.sessions}</td>
-                        <td className="py-2 text-right tabular-nums">{nf.format(u.km)}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">{nf.format(u.km)}</td>
+                        <td className="py-2 text-right tabular-nums">{u.sessions ? nf.format(Math.round(u.km / u.sessions)) : '—'}</td>
                       </tr>
                     ))}
-                    {!data.utilization.length && <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">Fără date în interval</td></tr>}
+                    {!data.utilization.length && <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">Fără date în interval</td></tr>}
                   </tbody>
                 </table>
               </div>
