@@ -108,6 +108,31 @@ describe('InternalSessionForm embedded mode', () => {
     expect(await screen.findByTestId('internal-km')).toHaveValue(12000)
   })
 
+  it('planning mode hides KM, sends status PLANNED and omits odometer_start', async () => {
+    submitInternalSession.mockClear()  // shared hoisted mock — isolate this test's call history
+    submitInternalSession.mockResolvedValue({ success: true, contract: { id: 9, contract_id: 'INT-P', status: 'PLANNED' } })
+    const onDone = vi.fn()
+    wrap(<InternalSessionForm embedded onCancel={vi.fn()} onDone={onDone} />)
+    await screen.findByTestId('internal-vehicle')
+
+    // Switch to plan-for-later mode.
+    fireEvent.click(screen.getByTestId('internal-mode-plan'))
+
+    fireEvent.click(screen.getByTestId('internal-vehicle'))
+    fireEvent.click(await screen.findByText(/Renault Clio/))
+    // KM plecare field is gone while planning (deferred to start).
+    expect(screen.queryByTestId('internal-km')).toBeNull()
+
+    fireEvent.change(screen.getByTestId('internal-departure'), { target: { value: '2026-09-28T11:55' } })
+    fireEvent.change(screen.getByTestId('internal-return'), { target: { value: '2026-10-07T12:55' } })
+    fireEvent.click(screen.getByRole('button', { name: /planifică sesiunea/i }))
+
+    await waitFor(() => expect(submitInternalSession).toHaveBeenCalledTimes(1))
+    const payload = submitInternalSession.mock.calls[0][0]
+    expect(payload).toMatchObject({ is_internal: true, vin: 'VF1BBB', status: 'PLANNED', departure_datetime: '2026-09-28T11:55' })
+    expect(payload).not.toHaveProperty('odometer_start')
+  })
+
   it('surfaces a backend 409 (locked_out) error inline', async () => {
     const { ApiError } = await import('@/api/client')
     submitInternalSession.mockRejectedValue(new ApiError(409, { error: 'Mașină blocată în parcul auto', locked_out: true }))
