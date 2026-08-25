@@ -2339,12 +2339,12 @@ interface VehicleFormValue {
   offer_doc: string
 }
 
-function emptyVehicleForm(companyId?: number): VehicleFormValue {
+function emptyVehicleForm(companyId?: number, documentType: DocType = 'sales'): VehicleFormValue {
   return {
     car_id: '', vin: '', registration_number: '', mark: '', model: '', color: '',
     fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0,
     odometer_km: '', norma_combustibil: '', norma_energie: '', category: '', company_id: companyId ? String(companyId) : '',
-    document_type: 'sales',
+    document_type: documentType,
     svc_tariff_eur_day: '', svc_tariff_eur_month: '', svc_km_included_day: '',
     svc_extra_km_eur: '', svc_deposit_eur: '', svc_franchise_eur: '',
     vignette_valid_until: '', itp_valid_until: '', insurance_valid_until: '',
@@ -2488,13 +2488,14 @@ function DocUpload({ label, value, onChange }: { label: string; value: string; o
  *  card only): then, once the "Parc / Tip document" is switched to Service,
  *  Brand becomes an editable any-brand picker so a courtesy car can belong to
  *  a brand different from whatever the header is currently filtered to. */
-function VehicleFormFields({
+export function VehicleFormFields({
   value,
   onChange,
   brandLabel,
   companies,
   brand,
   onBrandChange,
+  lockDocType = false,
 }: {
   value: VehicleFormValue
   onChange: (patch: Partial<VehicleFormValue>) => void
@@ -2502,6 +2503,9 @@ function VehicleFormFields({
   companies: { id: number; company: string }[]
   brand?: string
   onBrandChange?: (v: string) => void
+  /** Lock the "Parc / Tip document" selector — used when adding a car, where the
+   *  pool is dictated by the active gate (Vânzări vs Mașini de curtoazie). */
+  lockDocType?: boolean
 }) {
   const allowAnyBrand = value.document_type === 'service' && !!onBrandChange
   const { data: allBrandsData } = useQuery({
@@ -2616,13 +2620,18 @@ function VehicleFormFields({
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs">Parc / Tip document</Label>
-        <Select value={value.document_type} onValueChange={(v) => onChange({ document_type: v as DocType })}>
+        <Select value={value.document_type} onValueChange={(v) => onChange({ document_type: v as DocType })} disabled={lockDocType}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="sales">{DOC_TYPE_LABELS.sales}</SelectItem>
             <SelectItem value="service">{DOC_TYPE_LABELS.service}</SelectItem>
           </SelectContent>
         </Select>
+        {lockDocType && (
+          <p className="text-[11px] text-muted-foreground">
+            Determinat de parcul curent ({DOC_TYPE_LABELS[value.document_type]}).
+          </p>
+        )}
       </div>
     </div>
 
@@ -2719,8 +2728,14 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
       else next.add(ft)
       return next
     })
-  const [newVehicle, setNewVehicle] = useState<VehicleFormValue>(() => emptyVehicleForm(companyId))
+  const [newVehicle, setNewVehicle] = useState<VehicleFormValue>(() => emptyVehicleForm(companyId, documentType))
   const [error, setError] = useState('')
+  // The "Parc / Tip document" of a new car is dictated by the active gate
+  // (Vânzări vs Mașini de curtoazie) and locked — you add cars into the park
+  // you're viewing. Keep it in sync if the gate switches while the form is open.
+  useEffect(() => {
+    setNewVehicle((v) => (v.document_type === documentType ? v : { ...v, document_type: documentType }))
+  }, [documentType])
   // Brand of the vehicle being added — defaults to (and follows) the header's
   // selected brand while the Add form's own "Parc / Tip document" stays on
   // Sales, but becomes independently selectable (any active brand) once it's
@@ -2822,7 +2837,7 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
     onSuccess: () => {
       setError('')
       setShowAdd(false)
-      setNewVehicle(emptyVehicleForm(companyId))
+      setNewVehicle(emptyVehicleForm(companyId, documentType))
       setNewVehicleBrand(brand)
       queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
     },
@@ -3031,6 +3046,7 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
               companies={companiesData?.companies ?? []}
               brand={newVehicleBrand}
               onBrandChange={setNewVehicleBrand}
+              lockDocType
             />
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex gap-2">
