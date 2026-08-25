@@ -61,6 +61,11 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
   const isPlanned = ss.key === 'planificat'
   const isDone = ss.key === 'finalizat'
   const showRetur = ss.key === 'driving' || ss.key === 'intarziat'
+  // Delete is for internal driving logs only. Non-admins may remove one only
+  // within their own company (mirrors the backend's company-scope guard), so
+  // the button never appears when the delete would 403.
+  const canDeleteInternal = !!c.is_internal
+    && (isAdmin || (user?.company_id != null && c.company_id === user.company_id))
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
   const discardMutation = useMutation({
@@ -76,6 +81,14 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
     mutationFn: (return_datetime: string) => foiParcursApi.extendReturn(c.id, { return_datetime }),
     onSuccess: () => { invalidate(); setExtending(false); onClose() },
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Prelungirea a eșuat'),
+  })
+  // Delete an internal driving-log session (any status, any user). Reuses the
+  // admin delete endpoint, which the backend opens to non-admins for internal
+  // sessions only. Hard delete — session-event history cascades away.
+  const deleteMutation = useMutation({
+    mutationFn: () => foiParcursApi.deleteContract(c.id),
+    onSuccess: () => { invalidate(); onClose() },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Ștergerea a eșuat'),
   })
 
   const comment = internalComment(c)
@@ -166,6 +179,19 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
                 onClick={() => { if (confirm('Renunți la această sesiune planificată? Acțiunea nu poate fi anulată.')) discardMutation.mutate() }}
               >
                 <Trash2 className="mr-1.5 h-4 w-4" />Renunță
+              </Button>
+            )}
+            {/* Internal sessions only — delete the internal driving log (any
+                status). Non-admins are limited to their own company; regular
+                Test Drives are never deletable here. */}
+            {canDeleteInternal && (
+              <Button
+                variant="outline"
+                className="text-destructive ring-1 ring-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                disabled={deleteMutation.isPending}
+                onClick={() => { if (confirm('Ștergi definitiv această sesiune internă? Acțiunea nu poate fi anulată.')) deleteMutation.mutate() }}
+              >
+                <Trash2 className="mr-1.5 h-4 w-4" />Șterge
               </Button>
             )}
           </div>
