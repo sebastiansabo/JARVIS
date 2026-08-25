@@ -10,6 +10,7 @@ import type {
   FpVehicleInspection,
   TestDriveFormPayload,
   InternalSessionPayload,
+  StartInternalSessionPayload,
   PlanTestDrivePayload,
   ActivateTestDrivePayload,
   ReturnTestDrivePayload,
@@ -341,6 +342,10 @@ export const foiParcursApi = {
   //    endpoint as submitTestDrive, tagged is_internal:true; no PDFs/signature ──
   submitInternalSession: (data: InternalSessionPayload) =>
     api.post<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive`, data),
+
+  // ── Start a PLANNED internal draft → FILLED (no client/signature/PDF) ──
+  startInternalSession: (id: number, data: StartInternalSessionPayload) =>
+    api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/start`, data),
 
   // ── Per company+vehicle-brand general-conditions text ('' when unset) ──
   getGeneralConditions: (companyId: number, vin: string) =>

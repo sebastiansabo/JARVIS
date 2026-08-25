@@ -81,7 +81,12 @@ def api_submit_test_drive():
     # `itinerary` is intentionally NOT required — the mobile Test Drive form
     # dropped the Traseu/Itinerariu field. It's still stored when provided
     # (e.g. by the web form) via data.get('itinerary', '') below.
-    if is_internal:
+    if is_internal and is_draft:
+        # Planned internal draft — car, driver and date only. Odometer/km are
+        # deferred to start (the car's live reading a month out is meaningless),
+        # mirroring how a customer draft defers signature/fuel to activation.
+        required = ['company_id', 'vin', 'departure_datetime', 'advisor_name']
+    elif is_internal:
         # Internal driving log (QuickSession) — no customer, no signature, no
         # fuel/estimate. Just the car, the driver, the times and the start km.
         required = ['company_id', 'vin', 'departure_datetime',
@@ -506,6 +511,58 @@ def api_activate_test_drive(id):
         return jsonify({'success': True, 'contract': updated})
     except Exception as e:
         logger.exception('Failed to activate planned test drive %s', id)
+        return jsonify({'success': False, 'error': str(e)[:300]}), 500
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/test-drive/<int:id>/start', methods=['PUT'])
+@login_required
+def api_start_internal_session(id):
+    """Start a PLANNED *internal* session → FILLED. The internal counterpart to
+    /activate: no client, signature, GDPR or PDF — just capture the real km
+    plecare (the draft deferred it) and flip the status. The lock + single-open-
+    session guards still apply, mirroring activation."""
+    data = request.get_json(silent=True) or {}
+    try:
+        contract = _fp_repo.get_contract_by_id(id)
+        if not contract:
+            return jsonify({'success': False, 'error': 'Not found'}), 404
+        if (not contract.get('is_internal') or contract.get('route_type') != 'TD'
+                or contract.get('status') != 'PLANNED'):
+            return jsonify({'success': False, 'error': 'Nu este o sesiune internă planificată'}), 400
+        # Block starting a car locked out of the park — unless overridden.
+        if not data.get('allow_locked'):
+            _lock = _vehicle_repo.get_lock_by_vin(contract.get('vin'))
+            if _lock and _lock.get('locked_out'):
+                _cat, _note = _lock.get('lockout_category'), _lock.get('lockout_note')
+                msg = 'Mașină blocată în parcul auto' + (f' ({_cat})' if _cat else '') + (f': {_note}' if _note else '')
+                return jsonify({'success': False, 'error': msg, 'locked_out': True}), 409
+        # Single-open-session rule: don't start while the car is out on another
+        # live session (unless an admin overrides).
+        _priv = is_privileged()
+        _osb = open_session_block(contract.get('vin'), exclude_id=id,
+                                  allow_override=data.get('allow_open_session'), privileged=_priv)
+        if _osb:
+            return jsonify(_osb[0]), _osb[1]
+        # Real km plecare at start: the draft deferred it, so take the reading
+        # provided now, but never below the car's known mileage floor.
+        _floor = _fp_repo.get_mileage_floor(contract.get('vin'), exclude_id=id)
+        _provided = data.get('odometer_start')
+        _base = int(_provided) if _provided is not None else (contract.get('km_start') or 0)
+        update = {'km_start': max(_base, _floor)}
+        if data.get('departure_datetime'):
+            update['departure_datetime'] = data['departure_datetime']
+        if data.get('return_datetime'):
+            update['return_datetime'] = data['return_datetime']
+        updated = _fp_repo.record_activation(id, update)
+        # record_activation only matches PLANNED TD rows; a concurrent start
+        # flips it first, so a zero-row UPDATE returns falsy.
+        if not (updated and updated.get('id')):
+            return jsonify({'success': False, 'error': 'Contract is no longer a PLANNED draft'}), 409
+        log_history(id, 'start')
+        log_status_change(id, contract.get('status'), 'FILLED')
+        return jsonify({'success': True, 'contract': updated})
+    except Exception as e:
+        logger.exception('Failed to start internal session %s', id)
         return jsonify({'success': False, 'error': str(e)[:300]}), 500
 
 
