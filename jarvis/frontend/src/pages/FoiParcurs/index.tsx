@@ -287,19 +287,19 @@ export default function FoiParcurs() {
         </div>
       </Tabs>
 
-      {activeTab === 'contracts' && <ContractsTab companyId={companyId} toolbarSlot={tabToolbar} />}
+      {activeTab === 'contracts' && <ContractsTab companyId={companyId} toolbarSlot={tabToolbar} documentType={docType} />}
       {/* In the rental (Service) context the franchise brand filter doesn't apply —
           the courtesy stock is multi-brand — so pass an empty brand to show it all. */}
       {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
       {activeTab === 'stock' && <StockTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} documentType={docType} />}
       {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={docType === 'service' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
-      {activeTab === 'settings' && <SettingsTab />}
+      {activeTab === 'settings' && <SettingsTab documentType={docType} />}
     </div>
   )
 }
 
 // ── Contracts Tab — Form → Preview → Save Batch ──
-function ContractsTab({ companyId, toolbarSlot }: { companyId: number; toolbarSlot?: HTMLElement | null }) {
+export function ContractsTab({ companyId, toolbarSlot, documentType = 'sales' }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
   const [importOpen, setImportOpen] = useState(false)
   const toolbar = (
     <Button variant="outline" size="sm" className="h-8" onClick={() => setImportOpen(true)}>
@@ -310,7 +310,7 @@ function ContractsTab({ companyId, toolbarSlot }: { companyId: number; toolbarSl
     <div className="space-y-4">
       {/* RouteSheetsTable renders first so its month/year filters land in the slot
           before the Importă button (filters left, action right). */}
-      <RouteSheetsTable companyId={companyId} toolbarSlot={toolbarSlot} />
+      <RouteSheetsTable companyId={companyId} toolbarSlot={toolbarSlot} documentType={documentType} />
       {toolbarSlot ? createPortal(toolbar, toolbarSlot) : <div className="flex justify-end">{toolbar}</div>}
       <SessionImportDialog companyId={companyId} open={importOpen} onOpenChange={setImportOpen} />
     </div>
@@ -432,7 +432,7 @@ function withGaps(sessions: FoiContract[]): DetailRow[] {
 //    sessions for that vehicle that month), scoped to the header company.
 //    Month is a filter; each row expands to its individual sessions and can
 //    generate/store an AI-drafted legal Foaie de Parcurs (PDF) or Excel. ──
-function RouteSheetsTable({ companyId, toolbarSlot }: { companyId: number; toolbarSlot?: HTMLElement | null }) {
+function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
   const queryClient = useQueryClient()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [previewVin, setPreviewVin] = useState<string | null>(null)
@@ -456,16 +456,16 @@ function RouteSheetsTable({ companyId, toolbarSlot }: { companyId: number; toolb
   const monthChosen = filterMonth !== 0 // a Foaie de parcurs is monthly — needs a specific month
 
   const { data, isLoading } = useQuery({
-    queryKey: ['foi-contracts-all', 'recent', companyId],
+    queryKey: ['foi-contracts-all', 'recent', companyId, documentType],
     queryFn: () =>
-      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 500, sort_by: 'created_at', sort_dir: 'DESC' }),
+      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 500, sort_by: 'created_at', sort_dir: 'DESC', document_type: documentType }),
     staleTime: 30_000,
   })
 
   // Vehicle catalog → Make/Model for each VIN (contracts only carry the VIN).
   const { data: vehData } = useQuery({
-    queryKey: ['fp-vehicles'],
-    queryFn: () => foiParcursApi.getVehicles(false),
+    queryKey: ['fp-vehicles', documentType],
+    queryFn: () => foiParcursApi.getVehicles(false, documentType),
     staleTime: 60_000,
   })
   const vinMap = React.useMemo(
@@ -3497,7 +3497,8 @@ function ItineraryField({
   )
 }
 
-function SettingsTab() {
+export function SettingsTab({ documentType = 'sales' }: { documentType?: DocType } = {}) {
+  const isService = documentType === 'service'
   const queryClient = useQueryClient()
   const [editId, setEditId] = useState<number | null>(null)
   const [editData, setEditData] = useState<{ td_km_min: number; td_km_max: number; comodat_km_min: number; comodat_km_max: number; km_gap: number }>({ td_km_min: 5, td_km_max: 50, comodat_km_min: 10, comodat_km_max: 200, km_gap: 20 })
@@ -3568,7 +3569,8 @@ function SettingsTab() {
 
   return (
     <div className="space-y-8">
-      {/* Section 1: KM Limits */}
+      {/* Section 1: KM Limits — Vânzări/general context only */}
+      {!isService && (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
           <Settings className="h-5 w-5 text-muted-foreground" />
@@ -3701,17 +3703,20 @@ function SettingsTab() {
         )}
       </div>
 
-      {/* Section 2: Itinerary Routes per Company */}
-      <RoutesSettings companies={companiesData?.companies ?? []} />
+      )}
 
-      {/* Section 3: Lockout reasons (Motive blocare) */}
-      <LockoutReasonsSettings />
+      {/* Section 2: Company config — shows sales cards (location/comodat) in
+          Vânzări, the courtesy default-policy card in Mașini de curtoazie. */}
+      <RoutesSettings companies={companiesData?.companies ?? []} documentType={documentType} />
 
-      {/* Section 4: Archive reasons (Motive arhivare) */}
-      <ArchiveReasonsSettings />
+      {/* Section 3: Lockout reasons (Motive blocare) — Vânzări/general only */}
+      {!isService && <LockoutReasonsSettings />}
 
-      {/* Section 5: Service contract setup (per company+brand) */}
-      <ContractConfigSection />
+      {/* Section 4: Archive reasons (Motive arhivare) — Vânzări/general only */}
+      {!isService && <ArchiveReasonsSettings />}
+
+      {/* Section 5: Service contract setup (per company+brand) — Mașini de curtoazie only */}
+      {isService && <ContractConfigSection />}
     </div>
   )
 }
@@ -3941,7 +3946,8 @@ function ArchiveReasonRow({ reason, onSaved }: { reason: import('@/types/foiParc
 }
 
 // ── Routes Settings — per-company itinerary list ──
-function RoutesSettings({ companies }: { companies: { id: number; company: string }[] }) {
+export function RoutesSettings({ companies, documentType = 'sales' }: { companies: { id: number; company: string }[]; documentType?: DocType }) {
+  const isService = documentType === 'service'
   const queryClient = useQueryClient()
   const [selectedCompany, setSelectedCompany] = useState<string>('')
   const [newComodatRoute, setNewComodatRoute] = useState('')
@@ -4033,11 +4039,14 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <MapPin className="h-5 w-5 text-muted-foreground" />
-        <h3 className="text-lg font-semibold">Itinerary Routes per Company</h3>
+        <h3 className="text-lg font-semibold">
+          {isService ? 'Mașini de curtoazie — politică companie' : 'Itinerary Routes per Company'}
+        </h3>
       </div>
       <p className="text-sm text-muted-foreground">
-        Set the company base location for AI-generated TD routes (streets and landmarks within radius).
-        Manually configure Comodat routes for longer inter-city trips.
+        {isService
+          ? 'Valori implicite de închiriere folosite când mașina de curtoazie nu are propriile setări. Alege compania mai jos.'
+          : 'Set the company base location for AI-generated TD routes (streets and landmarks within radius). Manually configure Comodat routes for longer inter-city trips.'}
       </p>
 
       <div className="max-w-sm">
@@ -4056,7 +4065,8 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
 
       {companyId && (
         <div className="space-y-4">
-          {/* Company Location Config */}
+          {/* Company Location Config — Sales/general context only */}
+          {!isService && (
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2 text-sm font-medium">
               <MapPin className="h-4 w-4 text-muted-foreground" />
@@ -4123,9 +4133,11 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
               </div>
             </div>
           </Card>
+          )}
 
           {/* Service (Mașini de curtoazie) default rental-pricing policy —
-              fallback for any per-car svc_* field left blank (S6). */}
+              fallback for any per-car svc_* field left blank (S6). Service context only. */}
+          {isService && (
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Badge variant="secondary">Service</Badge>
@@ -4196,7 +4208,10 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
             </div>
           </Card>
 
-          {/* Comodat Routes (manual) */}
+          )}
+
+          {/* Comodat Routes (manual) — Sales/general context only */}
+          {!isService && (
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Badge variant="secondary">Comodat</Badge>
@@ -4269,6 +4284,7 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
               </div>
             )}
           </Card>
+          )}
         </div>
       )}
     </div>
