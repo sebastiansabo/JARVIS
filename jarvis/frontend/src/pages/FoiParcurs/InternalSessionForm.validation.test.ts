@@ -49,3 +49,20 @@ describe('quickSessionError (ported verbatim from mobile QuickSession)', () => {
     expect(quickSessionError({ vin: 'X', driver: 'Y', departure: '2026-08-19T09:00', ret: '', kmStart: '' })).toBe('km_required')
   })
 })
+
+describe('quickSessionError in planning mode (km deferred to start)', () => {
+  it('does NOT require km when planning', () => {
+    expect(quickSessionError({ ...valid, kmStart: '' }, { planning: true })).toBeNull()
+  })
+
+  it('still requires vehicle, driver and departure when planning', () => {
+    expect(quickSessionError({ ...valid, vin: '', kmStart: '' }, { planning: true })).toBe('vehicle_required')
+    expect(quickSessionError({ ...valid, driver: '', kmStart: '' }, { planning: true })).toBe('driver_required')
+    expect(quickSessionError({ ...valid, departure: '', kmStart: '' }, { planning: true })).toBe('departure_required')
+  })
+
+  it('still rejects a return before departure when planning', () => {
+    expect(quickSessionError({ ...valid, departure: '2026-08-19T09:00', ret: '2026-08-19T08:00', kmStart: '' }, { planning: true }))
+      .toBe('return_before_departure')
+  })
+})

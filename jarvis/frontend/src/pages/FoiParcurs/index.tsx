@@ -98,6 +98,7 @@ import { sessionActualKm, sessionEstimatedKm, carSpanKm } from './distance'
 import { sessionAnomalies, driveDate } from './anomalies'
 import CorrectSessionDialog, { type CorrectionPayload } from './CorrectSessionDialog'
 import ExtendSessionDialog from './ExtendSessionDialog'
+import InternalStartDialog from './InternalStartDialog'
 import SessionHistoryModal from './SessionHistoryModal'
 import { fmtDuration } from './duration'
 import ModifiedBadge from './ModifiedBadge'
@@ -1626,6 +1627,18 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }),
   })
 
+  // Start a PLANNED *internal* draft → FILLED (no signature/PDF — the internal
+  // counterpart to the customer activate form). The km plecare is captured now.
+  const [startingInternal, setStartingInternal] = useState<FoiContract | null>(null)
+  const startInternalMutation = useMutation({
+    mutationFn: ({ id, odometer_start }: { id: number; odometer_start: number }) =>
+      foiParcursApi.startInternalSession(id, { odometer_start }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      setStartingInternal(null)
+    },
+  })
+
   // Vehicles → vin→brand map, so contracts can be filtered by the selected brand
   const { data: vehiclesData } = useQuery({
     queryKey: ['fp-vehicles', documentType],
@@ -1937,7 +1950,13 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                           )}
                           {c.status === 'PLANNED' && (
                             <>
-                              <Button variant="outline" size="sm" onClick={() => onActivate ? onActivate(c.id) : navigate(`/app/foi-parcurs/test-drive?activate=${c.id}`)}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => c.is_internal
+                                  ? setStartingInternal(c)
+                                  : (onActivate ? onActivate(c.id) : navigate(`/app/foi-parcurs/test-drive?activate=${c.id}`))}
+                              >
                                 <PlayCircle className="mr-1 h-3.5 w-3.5" />
                                 Începe sesiunea
                               </Button>
@@ -2135,6 +2154,19 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
       {historySession && (
         <SessionHistoryModal session={historySession} onClose={() => setHistorySession(null)} />
       )}
+      {startingInternal && (() => {
+        const v = vinVehicle.get(startingInternal.vin)
+        return (
+          <InternalStartDialog
+            session={startingInternal}
+            vehicleName={v ? [v.brand || v.mark, v.model].filter(Boolean).join(' ') : undefined}
+            defaultKm={v?.mileage_floor ?? v?.odometer_km ?? null}
+            submitting={startInternalMutation.isPending}
+            onClose={() => setStartingInternal(null)}
+            onSubmit={(odometer_start) => startInternalMutation.mutate({ id: startingInternal.id, odometer_start })}
+          />
+        )
+      })()}
       {correcting && (
         <CorrectSessionDialog
           session={correcting}

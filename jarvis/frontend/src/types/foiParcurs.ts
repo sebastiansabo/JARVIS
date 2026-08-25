@@ -528,9 +528,23 @@ export interface InternalSessionPayload {
   advisor_name: string
   departure_datetime: string
   return_datetime?: string
-  odometer_start: number
+  /** Deferred (omitted) when planning for later — captured at start instead. */
+  odometer_start?: number
   itinerary?: string
+  /** 'PLANNED' plans a draft internal session (started later via /start);
+   *  omitted creates a live FILLED session immediately (start-now). */
+  status?: 'PLANNED'
   /** Override the driving-park lockout block, set after the user confirms. */
+  allow_locked?: boolean
+  allow_open_session?: boolean
+}
+
+// ── Start a PLANNED internal draft — PUT /test-drive/{id}/start. The internal
+// counterpart to activate: no client/signature, just the real km plecare. ──
+export interface StartInternalSessionPayload {
+  odometer_start?: number
+  departure_datetime?: string
+  return_datetime?: string
   allow_locked?: boolean
   allow_open_session?: boolean
 }
