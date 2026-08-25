@@ -70,3 +70,18 @@ def test_collect_board_is_group_wide(monkeypatch):
     monkeypatch.setattr(dds, '_vehicle_repo', veh)
     dds._collect_board('2026-08-17', '2026-08-23')
     assert fp.calls[0]['company_id'] is None and fp.calls[0]['brand'] is None
+
+
+# --- Task 4: AI narrative + templated fallback ------------------------------
+
+def test_narrative_uses_llm(monkeypatch):
+    monkeypatch.setattr(dds, '_llm_ask', lambda prompt, system='', model=None: 'REZUMAT AI')
+    txt = dds._narrative({'kpis': {'total_sessions': 5, 'total_km': 100}}, 'Autoworld PLUS · Mazda')
+    assert txt == 'REZUMAT AI'
+
+
+def test_narrative_falls_back_when_llm_raises(monkeypatch):
+    def boom(*a, **k): raise RuntimeError('no key')
+    monkeypatch.setattr(dds, '_llm_ask', boom)
+    txt = dds._narrative({'kpis': {'total_sessions': 5, 'total_km': 100}}, 'Grup')
+    assert '5' in txt and 'sesiuni' in txt.lower()  # deterministic fallback mentions the figure
