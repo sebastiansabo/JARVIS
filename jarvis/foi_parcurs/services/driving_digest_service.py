@@ -4,10 +4,16 @@ One report per Company-Brand (to company managers) + a cumulative Board report,
 emailed Monday morning for the previous Mon-Sun. Reuses the Rapoarte aggregates
 (report_bundle/report_fleet); LLM narrative via ai_agent; no new report SQL.
 """
+import json
 import logging
 from datetime import timedelta
 
 from foi_parcurs.repositories import FoiParcursRepository, FPVehicleRepository
+
+try:
+    from ai_agent.services.llm_client import ask as _llm_ask
+except Exception:  # pragma: no cover - llm optional at import time
+    _llm_ask = None
 
 logger = logging.getLogger('jarvis.foi_parcurs.driving_digest')
 
@@ -15,6 +21,15 @@ _fp_repo = FoiParcursRepository()
 _vehicle_repo = FPVehicleRepository()
 
 _TOP = 5
+_DEFAULT_MODEL = 'claude-sonnet-4-6'
+
+_SYSTEM = (
+    "Ești JARVIS, asistentul intern AUTOWORLD. Scrie un rezumat săptămânal concis "
+    "(max ~1200 caractere) despre activitatea de driving pentru {scope}. Acoperă: "
+    "performanță & clasament (consilieri/mașini), alerte & anomalii (retururi ratate, "
+    "mașini nefolosite), mix client vs. intern & firmă vs. persoană, ocupare & distanțe. "
+    "Ton profesional, la obiect, în limba română. Text simplu, fără markdown."
+)
 
 
 def _week_range(now):
@@ -53,3 +68,37 @@ def _collect_board(date_from, date_to):
     fleet = _vehicle_repo.report_fleet(company_id=None, document_type='sales',
                                        odo_order='high', top=_TOP, brand=None)
     return {'scope': 'group', **bundle, **fleet}
+
+
+def _model_name():
+    try:
+        from ai_agent.repositories import ModelConfigRepository
+        cfg = ModelConfigRepository().get_default()
+        if cfg and getattr(cfg, 'model_name', None):
+            return cfg.model_name
+    except Exception:
+        pass
+    return _DEFAULT_MODEL
+
+
+def _narrative(metrics, scope_label):
+    """AI-written Romanian summary; falls back to a deterministic template on
+    any error or empty response (no API key on staging, provider hiccup, etc.)."""
+    if _llm_ask:
+        try:
+            txt = _llm_ask(
+                f"Generează rezumatul din aceste metrici:\n{json.dumps(metrics, default=str)}",
+                system=_SYSTEM.format(scope=scope_label),
+                model=_model_name(),
+            )
+            if txt and txt.strip():
+                return txt.strip()
+        except Exception:
+            logger.warning('driving digest LLM failed for %s; using fallback', scope_label, exc_info=True)
+    return _narrative_plain(metrics, scope_label)
+
+
+def _narrative_plain(metrics, scope_label):
+    k = metrics.get('kpis') or {}
+    return (f"{scope_label}: {k.get('total_sessions', 0)} sesiuni, "
+            f"{k.get('total_km', 0)} km, rată finalizare {k.get('completion_rate', 0)}%.")
