@@ -189,6 +189,9 @@ export const foiParcursApi = {
     vin?: string
     status?: string
     drive_type?: string
+    client_type?: string
+    brand?: string
+    fuel_type?: string
   }) => api.get<{ success: boolean; sessions: ReportSession[] }>(`${BASE}/reports/sessions${qs(params)}`),
 
   allocateClient: (contractId: number, data: { client_id: number; itinerary: string; advisor_name: string; signature_svg?: string }) =>
