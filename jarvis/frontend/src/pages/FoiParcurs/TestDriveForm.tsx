@@ -287,9 +287,21 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // Before the draft loads it falls back to the URL context ('sales'), then
   // flips to 'service' once draftData arrives (the draft-prefill effect
   // restores the frozen pricing snapshot at that same point).
-  const documentType: DocType = (isActivating && draftData?.contract?.document_type === 'service')
-    ? 'service'
+  const _draftDocType = draftData?.contract?.document_type as DocType | undefined
+  const documentType: DocType = (isActivating && _draftDocType && _draftDocType !== 'sales')
+    ? _draftDocType
     : urlDocumentType
+
+  // Whether the current document type is a rental (rent-a-car) type — drives the
+  // pricing preview, svc_* payload and the "Predă mașina" labels. Non-rental and
+  // sales types show the plain test-drive UI.
+  const { data: _docTypesData } = useQuery({
+    queryKey: ['fp-document-types', companyId],
+    queryFn: () => foiParcursApi.getDocumentTypes(companyId!),
+    enabled: !!companyId,
+    staleTime: 30_000,
+  })
+  const isRental = !!_docTypesData?.types.find((t) => t.key === documentType)?.is_rental
 
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
@@ -457,7 +469,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // card below (see the effect right after this query). ──
   const debouncedSvcDeparture = useDebounce(departureDatetime, 400)
   const debouncedSvcReturn = useDebounce(returnDatetime, 400)
-  const svcPricingEnabled = documentType === 'service' && !!companyId && !!selectedVehicle?.vin
+  const svcPricingEnabled = isRental && !!companyId && !!selectedVehicle?.vin
     && !!debouncedSvcDeparture && !!debouncedSvcReturn
   const { data: svcPricingData, isFetching: svcPricingLoading } = useQuery({
     queryKey: ['fp-service-pricing', companyId, selectedVehicle?.vin, debouncedSvcDeparture, debouncedSvcReturn],
@@ -505,7 +517,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // overridden) rental snapshot, spread onto the submit/plan/activate
   // payloads. Backend treats any non-null value here as an explicit
   // per-key override of its own compute_service_pricing result.
-  const svcPricingPayload = documentType === 'service' ? {
+  const svcPricingPayload = isRental ? {
     ...(svcRateBasis ? { svc_rate_basis: svcRateBasis } : {}),
     ...(svcTariffEur.trim() !== '' ? { svc_tariff_eur: Number(svcTariffEur) } : {}),
     ...(svcUnits.trim() !== '' ? { svc_units: Number(svcUnits) } : {}),
@@ -792,7 +804,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       // only sent when the "Este eveniment" checkbox is on and an event has
       // actually been picked/created.
       event_id: isEvent ? (eventId ?? undefined) : undefined,
-      ...(documentType === 'service' && serviceOrderRef.trim() ? { service_order_ref: serviceOrderRef.trim() } : {}),
+      ...(isRental && serviceOrderRef.trim() ? { service_order_ref: serviceOrderRef.trim() } : {}),
       // Service rental-pricing snapshot (S6b) — see svcPricingPayload above.
       ...svcPricingPayload,
       ...(returnDatetime ? { return_datetime: returnDatetime } : {}),
@@ -974,12 +986,12 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           <h1 className="text-lg font-semibold">
             {isActivating
               ? 'Activează Test Drive'
-              : documentType === 'service' ? 'Predare mașină de curtoazie' : 'Test Drive Nou'}
+              : isRental ? 'Predare mașină de curtoazie' : 'Test Drive Nou'}
           </h1>
           <p className="text-sm text-muted-foreground">
             {isActivating
               ? 'Confirmă/ajustează datele și capturează semnătura clientului'
-              : documentType === 'service' ? 'Completați datele pentru predarea mașinii de curtoazie' : 'Completați datele pentru test drive'}
+              : isRental ? 'Completați datele pentru predarea mașinii de curtoazie' : 'Completați datele pentru test drive'}
           </p>
         </div>
       </div>
@@ -1069,7 +1081,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
           <CardTitle className="text-base flex items-center gap-2"><Search className="h-4 w-4" />Client</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {documentType === 'service' && (
+          {isRental && (
             <div className="space-y-1.5">
               <Label className="text-xs">Nr. comandă service</Label>
               <Input
@@ -1485,7 +1497,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
       </Card>
 
       {/* ── Sumar închiriere (Service — Mașini de curtoazie only) ── */}
-      {documentType === 'service' && (
+      {isRental && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
@@ -1658,7 +1670,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
             {planMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se salvează...</> : <><CalendarPlus className="h-4 w-4 mr-2" />Planifică (draft)</>}
           </Button>
           <Button className={cn('flex-1', attemptedAction === 'submit' && !formValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleSubmit} disabled={submitMutation.isPending || planMutation.isPending || checking}>
-            {submitMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se trimite...</> : documentType === 'service' ? 'Predă mașina' : 'Trimite'}
+            {submitMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se trimite...</> : isRental ? 'Predă mașina' : 'Trimite'}
           </Button>
         </div>
       )}

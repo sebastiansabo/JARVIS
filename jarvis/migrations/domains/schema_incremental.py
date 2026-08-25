@@ -143,6 +143,57 @@ def _seed_service_contract_configs(conn, cursor):
         logger.exception('Failed to seed fp_contract_configs (service) — continuing schema init')
 
 
+def _seed_document_types(conn, cursor):
+    """Seed the user-defined document-type registry (fp_document_types).
+
+    Two idempotent inserts, both ON CONFLICT (company_id, key) DO NOTHING so
+    re-runs and admin edits are preserved:
+      1. A fixed 'sales' default row per company (label 'Vânzări', not rental,
+         no template — Sales uses the legacy legal PDF).
+      2. One 'service' row per company, collapsing the per-(company, brand)
+         fp_contract_configs 'service' rows (templates are identical/tag-based —
+         take the lowest-id active one) into a single rental type.
+
+    Same SAVEPOINT discipline as _seed_service_contract_configs: only the seed is
+    rolled back on failure, never the outer schema-init transaction.
+    """
+    try:
+        use_savepoint = not getattr(conn, 'autocommit', False)
+        if use_savepoint:
+            cursor.execute('SAVEPOINT doctype_seed')
+        try:
+            # 1. Fixed sales default per company.
+            cursor.execute('''
+                INSERT INTO fp_document_types
+                    (company_id, key, label, is_rental, is_active, is_default, sort_order, updated_at)
+                SELECT c.id, 'sales', 'Vânzări', FALSE, TRUE, TRUE, 0, NOW()
+                FROM companies c
+                ON CONFLICT (company_id, key) DO NOTHING
+            ''')
+            # 2. Collapse existing per-brand service templates into one rental type.
+            cursor.execute('''
+                INSERT INTO fp_document_types
+                    (company_id, key, label, title, body_template, general_conditions,
+                     is_rental, is_active, is_default, sort_order, updated_at)
+                SELECT DISTINCT ON (cc.company_id)
+                       cc.company_id, 'service', 'Mașini de curtoazie',
+                       cc.title, cc.body_template, cc.general_conditions,
+                       TRUE, TRUE, FALSE, 1, NOW()
+                FROM fp_contract_configs cc
+                WHERE cc.document_type = 'service' AND cc.is_active = TRUE
+                ORDER BY cc.company_id, cc.id
+                ON CONFLICT (company_id, key) DO NOTHING
+            ''')
+            if use_savepoint:
+                cursor.execute('RELEASE SAVEPOINT doctype_seed')
+        except Exception:
+            if use_savepoint:
+                cursor.execute('ROLLBACK TO SAVEPOINT doctype_seed')
+            raise
+    except Exception:
+        logger.exception('Failed to seed fp_document_types — continuing schema init')
+
+
 def create_schema_incremental(conn, cursor):
     """Run all incremental column/index/table migrations.
 
@@ -2442,6 +2493,33 @@ def _create_schema_incremental_continued(conn, cursor):
     # Idempotent seed — one 'service' row per active (company, brand); never
     # overwrites rows an admin already edited (ON CONFLICT DO NOTHING).
     _seed_service_contract_configs(conn, cursor)
+
+    # ── Foi de Parcurs — user-defined document-type registry ──
+    # Supersedes the per-(company, brand) fp_contract_configs read-path: a
+    # document type IS its contract (per company). 'sales' is the fixed default
+    # (no template, not rental); 'service' + custom types carry a template and an
+    # is_rental flag (rental types expose the car pricing fields). The
+    # document_type key is stored on fp_vehicles/foi_de_parcurs as before.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_document_types (
+            id            BIGSERIAL PRIMARY KEY,
+            company_id    BIGINT NOT NULL,
+            key           VARCHAR(48) NOT NULL,
+            label         VARCHAR(128) NOT NULL,
+            title         VARCHAR(255),
+            body_template TEXT,
+            general_conditions TEXT,
+            is_rental     BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+            is_default    BOOLEAN NOT NULL DEFAULT FALSE,
+            sort_order    INTEGER NOT NULL DEFAULT 0,
+            created_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE (company_id, key)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_document_types_lookup ON fp_document_types(company_id, is_active)')
+    _seed_document_types(conn, cursor)
 
     # ── Foi de Parcurs — Service courtesy-car rental pricing ──
     # Per-car price + optional policy override (fp_vehicles); company default

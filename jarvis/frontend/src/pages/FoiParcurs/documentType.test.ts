@@ -6,11 +6,11 @@ describe('documentType helpers', () => {
     expect(DOC_TYPE_LABELS.sales).toBe('Vânzări')
     expect(DOC_TYPE_LABELS.service).toBe('Mașini de curtoazie')
   })
-  it('reads ?context=service from the query string', () => {
+  it('reads the ?context= key verbatim (types are now user-defined)', () => {
     expect(contextFromSearch('?context=service')).toBe('service')
+    expect(contextFromSearch('?context=comodat')).toBe('comodat')
   })
-  it('defaults to sales for anything else', () => {
+  it('defaults to sales when there is no context param', () => {
     expect(contextFromSearch('')).toBe('sales')
-    expect(contextFromSearch('?context=bogus')).toBe('sales')
   })
 })

@@ -662,32 +662,31 @@ def generate_legal_pdf(contract: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def generate_service_contract_pdf(contract: dict) -> str:
-    """Generate the Service (courtesy-car) contract PDF using the company's
-    active `fp_contract_configs` template for the vehicle's brand — the
-    templated title/body replace the hardcoded legal clauses, but the
+    """Generate a templated contract PDF for any non-sales document type using
+    the company's `fp_document_types` template (resolved by document_type key) —
+    the templated title/body replace the hardcoded legal clauses, but the
     surrounding layout (header, company/vehicle/client/km blocks, signatures)
     reuses the same building blocks as `generate_legal_pdf`. Falls back to
-    `generate_legal_pdf` when the company has no active Service config, so a
-    misconfiguration never 500s the download."""
-    from ..repositories.contract_config_repository import ContractConfigRepository
+    `generate_legal_pdf` when the type has no template, so a misconfiguration
+    never 500s the download."""
+    from ..repositories.document_type_repository import DocumentTypeRepository
+    from ..document_types import normalize as _normalize_doctype
 
     # `vehicle_brand` is denormalized onto most contract reads, but the
     # ZIP-export rows (`get_contracts`) don't join `fp_vehicles` — fall back
-    # to a vin lookup so an export-time cache miss doesn't silently downgrade
-    # a Service contract to the Sales PDF.
+    # to a vin lookup so an export-time cache miss doesn't lose the {brand} tag.
     brand = contract.get('vehicle_brand')
     if not brand and contract.get('vin'):
         from ..repositories.vehicle_repository import FPVehicleRepository
         brand = (FPVehicleRepository().get_by_vin(contract['vin']) or {}).get('brand')
 
-    cfg = ContractConfigRepository().get_active(
-        contract.get('company_id'), brand, 'service',
-    )
+    doc_type = _normalize_doctype(contract.get('document_type'))
+    cfg = DocumentTypeRepository().get_template(contract.get('company_id'), doc_type)
     if not cfg:
         logger.warning(
-            'No active Service contract config for company_id=%s brand=%s — '
-            'falling back to legal PDF for contract %s',
-            contract.get('company_id'), brand,
+            'No template for document_type=%s company_id=%s — falling back to '
+            'legal PDF for contract %s',
+            doc_type, contract.get('company_id'),
             contract.get('contract_id', contract.get('id')),
         )
         return generate_legal_pdf(contract)

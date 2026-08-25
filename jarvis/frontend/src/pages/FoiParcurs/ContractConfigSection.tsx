@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FileText } from 'lucide-react'
+import { FileText, ChevronDown, ChevronRight, Plus, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,13 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 import { foiParcursApi } from '@/api/foiParcurs'
 
-// Tokens the Service contract generator substitutes at render time (see
-// docs/superpowers/specs/2026-08-24-foi-parcurs-service-courtesy-cars-design.md).
 // Every placeholder the backend renderer substitutes. SOURCE OF TRUTH is
-// jarvis/foi_parcurs/services/contract_template.py PLACEHOLDERS — keep this in
-// sync when tokens are added there. Grouped purely for readability.
+// jarvis/foi_parcurs/services/contract_template.py PLACEHOLDERS — keep in sync
+// when tokens are added there. Grouped purely for readability.
 const PLACEHOLDER_GROUPS: { label: string; tokens: string[] }[] = [
   { label: 'Client', tokens: [
     '{client_name}', '{client_phone}', '{client_address}', '{client_company}',
@@ -37,46 +37,61 @@ const PLACEHOLDER_GROUPS: { label: string; tokens: string[] }[] = [
   { label: 'General', tokens: ['{general_conditions}'] },
 ]
 
-type ContractConfigItem = Awaited<ReturnType<typeof foiParcursApi.getContractConfigs>>['configs'][number]
-type ContractDraft = { title: string; body_template: string; general_conditions: string; is_active: boolean }
+type DtItem = Awaited<ReturnType<typeof foiParcursApi.getDocumentTypes>>['types'][number]
+type DtDraft = { label: string; title: string; body_template: string; general_conditions: string; is_rental: boolean; is_active: boolean }
 
-/** Per-company+brand Service contract template setup — the source of the
- *  "Mașini de curtoazie" (courtesy car) contract generated for Service
- *  sessions. Configuring an active template here is what unlocks the Service
- *  context for that (company, brand) — mirrors DealerConfigSection but owns
- *  its own company selector since SettingsTab has none. */
+/** Per-company document-type registry — each type IS its contract (title/body/
+ *  T&C). 'sales' is the fixed default (no template). Rental types (is_rental)
+ *  expose the car pricing fields. Uses the header-selected company. */
 export default function ContractConfigSection({ companyId }: { companyId?: number | null } = {}) {
   const qc = useQueryClient()
+  const [newLabel, setNewLabel] = useState('')
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const { data, isLoading } = useQuery({
-    queryKey: ['fp-contract-configs', companyId],
-    queryFn: () => foiParcursApi.getContractConfigs(companyId!),
+    queryKey: ['fp-document-types', companyId, 'all'],
+    queryFn: () => foiParcursApi.getDocumentTypes(companyId!, true),
     enabled: !!companyId,
     staleTime: 30_000,
   })
-  const configs = data?.configs ?? []
+  const types = data?.types ?? []
+
+  const addMut = useMutation({
+    mutationFn: (label: string) => foiParcursApi.addDocumentType({ company_id: companyId!, label }),
+    onSuccess: (res) => {
+      setNewLabel('')
+      setExpanded((s) => new Set(s).add(res.key))
+      qc.invalidateQueries({ queryKey: ['fp-document-types', companyId, 'all'] })
+      // Selectors elsewhere (header, car form) also need the fresh list.
+      qc.invalidateQueries({ queryKey: ['fp-document-types'] })
+    },
+    onError: (err: any) => toast.error(err?.status === 403 ? 'Doar administratorii pot adăuga tipuri.' : (err?.message || 'Adăugarea a eșuat')),
+  })
 
   const saveMut = useMutation({
-    mutationFn: ({ brandId, values }: { brandId: number; values: ContractDraft }) =>
-      foiParcursApi.putContractConfig(companyId!, brandId, values),
+    mutationFn: (values: DtDraft & { key: string }) =>
+      foiParcursApi.putDocumentType({ company_id: companyId!, ...values }),
     onSuccess: () => {
       toast.success('Salvat')
-      qc.invalidateQueries({ queryKey: ['fp-contract-configs', companyId] })
+      qc.invalidateQueries({ queryKey: ['fp-document-types', companyId, 'all'] })
+      qc.invalidateQueries({ queryKey: ['fp-document-types'] })
     },
-    onError: (err: any) => {
-      toast.error(err?.status === 403 ? 'Nu ai permisiuni de administrator pentru a salva.' : 'Salvarea a eșuat')
-    },
+    onError: (err: any) => toast.error(err?.status === 403 ? 'Nu ai permisiuni de administrator pentru a salva.' : 'Salvarea a eșuat'),
+  })
+
+  const toggle = (key: string) => setExpanded((s) => {
+    const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n
   })
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <FileText className="h-5 w-5 text-muted-foreground" />
-        <h3 className="text-lg font-semibold">Contract Mașini de curtoazie</h3>
+        <h3 className="text-lg font-semibold">Tipuri de document &amp; contracte</h3>
       </div>
       <p className="text-sm text-muted-foreground">
-        Șablon de contract per brand pentru sesiunile Service (mașini de curtoazie). Un brand cu template activ
-        deblochează contextul Service pentru compania selectată în antet.
+        Tipurile de document (ex. Vânzări, Mașini de curtoazie) pentru compania selectată în antet. Fiecare tip
+        are propriul contract (titlu + conținut + condiții). Un tip „Închiriere” afișează prețul pe mașină.
       </p>
 
       <Card className="p-3 bg-muted/30">
@@ -97,93 +112,142 @@ export default function ContractConfigSection({ companyId }: { companyId?: numbe
         </div>
       </Card>
 
-      {!companyId ? null : isLoading ? (
-        <p className="py-4 text-sm text-muted-foreground">Se încarcă…</p>
-      ) : !configs.length ? (
-        <p className="py-4 text-sm text-muted-foreground">Niciun brand găsit pentru această companie.</p>
-      ) : (
-        <div className="space-y-4">
-          {configs.map((c) => (
-            <ContractBrandRow
-              key={c.brand_id}
-              config={c}
-              isSaving={saveMut.isPending}
-              onSave={(values) => saveMut.mutate({ brandId: c.brand_id, values })}
-            />
-          ))}
-        </div>
+      {!companyId ? null : (
+        <>
+          <div className="flex items-end gap-2">
+            <div className="flex-1 space-y-1.5">
+              <Label className="text-xs">Adaugă tip document</Label>
+              <Input
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                placeholder="Ex: Comodat, Contract vânzare…"
+                onKeyDown={(e) => { if (e.key === 'Enter' && newLabel.trim()) addMut.mutate(newLabel.trim()) }}
+              />
+            </div>
+            <Button size="sm" className="h-10" disabled={!newLabel.trim() || addMut.isPending} onClick={() => addMut.mutate(newLabel.trim())}>
+              <Plus className="mr-1.5 h-4 w-4" />{addMut.isPending ? 'Se adaugă…' : 'Adaugă'}
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <p className="py-4 text-sm text-muted-foreground">Se încarcă…</p>
+          ) : !types.length ? (
+            <p className="py-4 text-sm text-muted-foreground">Niciun tip de document.</p>
+          ) : (
+            <div className="space-y-2">
+              {types.map((t) => (
+                <DocTypeRow
+                  key={t.key}
+                  type={t}
+                  open={expanded.has(t.key)}
+                  onToggle={() => toggle(t.key)}
+                  isSaving={saveMut.isPending}
+                  onSave={(values) => saveMut.mutate({ ...values, key: t.key })}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
 }
 
-function ContractBrandRow({ config, onSave, isSaving }: {
-  config: ContractConfigItem
-  onSave: (values: ContractDraft) => void
+function DocTypeRow({ type, open, onToggle, onSave, isSaving }: {
+  type: DtItem
+  open: boolean
+  onToggle: () => void
+  onSave: (values: DtDraft) => void
   isSaving: boolean
 }) {
-  const [draft, setDraft] = useState<ContractDraft>({
-    title: config.title ?? '',
-    body_template: config.body_template ?? '',
-    general_conditions: config.general_conditions ?? '',
-    is_active: config.is_active,
-  })
-
-  // Re-sync when the underlying query data changes (e.g. after a successful
-  // save invalidates + refetches).
-  useEffect(() => {
-    setDraft({
-      title: config.title ?? '',
-      body_template: config.body_template ?? '',
-      general_conditions: config.general_conditions ?? '',
-      is_active: config.is_active,
-    })
-  }, [config])
-
-  const set = <K extends keyof ContractDraft>(k: K, v: ContractDraft[K]) => setDraft((p) => ({ ...p, [k]: v }))
+  const [draft, setDraft] = useState<DtDraft>(() => fromType(type))
+  useEffect(() => { setDraft(fromType(type)) }, [type])
+  const set = <K extends keyof DtDraft>(k: K, v: DtDraft[K]) => setDraft((p) => ({ ...p, [k]: v }))
 
   return (
-    <Card className="space-y-3 p-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-medium">{config.brand_name}</div>
-        <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground">Activ</Label>
-          <Switch checked={draft.is_active} onCheckedChange={(v) => set('is_active', v)} />
+    <Card className="overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-accent/40"
+      >
+        {open ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
+        <span className="text-sm font-medium">{type.label}</span>
+        {type.is_default && <Badge variant="secondary" className="text-[10px]">Implicit</Badge>}
+        {type.is_rental && <Badge variant="secondary" className="gap-1 text-[10px]"><KeyRound className="h-3 w-3" />Închiriere</Badge>}
+        {!type.is_active && <Badge variant="outline" className="text-[10px] text-muted-foreground">Inactiv</Badge>}
+        <span className="ml-auto font-mono text-[10px] text-muted-foreground">{type.key}</span>
+      </button>
+
+      {open && (
+        <div className={cn('space-y-3 border-t px-4 py-3', type.is_default && 'opacity-90')}>
+          {type.is_default ? (
+            <p className="text-sm text-muted-foreground">
+              Tipul implicit „Vânzări” folosește contractul legal standard — nu are șablon editabil și nu poate fi
+              dezactivat.
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Denumire</Label>
+                  <Input value={draft.label} onChange={(e) => set('label', e.target.value)} placeholder="Denumire tip document" />
+                </div>
+                <div className="flex items-center gap-6 pt-6">
+                  <label className="flex items-center gap-2 text-xs">
+                    <Switch checked={draft.is_rental} onCheckedChange={(v) => set('is_rental', v)} />
+                    Închiriere (rent-a-car) — preț pe mașină
+                  </label>
+                  <label className="flex items-center gap-2 text-xs">
+                    <Switch checked={draft.is_active} onCheckedChange={(v) => set('is_active', v)} />
+                    Activ
+                  </label>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Titlu contract</Label>
+                <Input value={draft.title} onChange={(e) => set('title', e.target.value)} placeholder="Ex: Contract închiriere autovehicul" />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Conținut contract</Label>
+                <Textarea
+                  className="min-h-[160px] font-mono text-xs"
+                  value={draft.body_template}
+                  onChange={(e) => set('body_template', e.target.value)}
+                  placeholder="Textul contractului, folosind token-urile de mai sus…"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Condiții generale</Label>
+                <Textarea
+                  className="min-h-[120px] font-mono text-xs"
+                  value={draft.general_conditions}
+                  onChange={(e) => set('general_conditions', e.target.value)}
+                  placeholder="Condiții generale ale contractului…"
+                />
+              </div>
+
+              <Button size="sm" onClick={() => onSave(draft)} disabled={isSaving || !draft.label.trim()}>
+                {isSaving ? 'Se salvează…' : 'Salvează'}
+              </Button>
+            </>
+          )}
         </div>
-      </div>
-
-      <div className="space-y-1.5">
-        <Label className="text-xs">Titlu contract</Label>
-        <Input
-          value={draft.title}
-          onChange={(e) => set('title', e.target.value)}
-          placeholder="Ex: Contract de comodat - mașină de curtoazie"
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label className="text-xs">Conținut contract</Label>
-        <Textarea
-          className="min-h-[160px] font-mono text-xs"
-          value={draft.body_template}
-          onChange={(e) => set('body_template', e.target.value)}
-          placeholder="Textul contractului, folosind token-urile de mai sus..."
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label className="text-xs">Condiții generale</Label>
-        <Textarea
-          className="min-h-[120px] font-mono text-xs"
-          value={draft.general_conditions}
-          onChange={(e) => set('general_conditions', e.target.value)}
-          placeholder="Condiții generale ale contractului..."
-        />
-      </div>
-
-      <Button size="sm" onClick={() => onSave(draft)} disabled={isSaving}>
-        {isSaving ? 'Se salvează...' : `Salvează ${config.brand_name}`}
-      </Button>
+      )}
     </Card>
   )
+}
+
+function fromType(t: DtItem): DtDraft {
+  return {
+    label: t.label ?? '',
+    title: t.title ?? '',
+    body_template: t.body_template ?? '',
+    general_conditions: t.general_conditions ?? '',
+    is_rental: !!t.is_rental,
+    is_active: !!t.is_active,
+  }
 }
