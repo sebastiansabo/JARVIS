@@ -33,6 +33,7 @@ from tasks.holidays import populate_holidays
 from tasks.telemetry import close_stale_sessions, cleanup_old_telemetry
 from tasks.foi_parcurs_sessions import run_session_lifecycle
 from tasks.hr_leave_trash import purge_old_trashed_leaves
+from tasks.driving_digest import run_weekly_driving_digest
 from happy.jobs import purge_happy_events, refresh_happy_targets, process_escalations as happy_process_escalations, grant_monthly_giveable as happy_grant_monthly_giveable, rollup_campaign_stats as happy_rollup_campaign_stats
 
 logger = get_logger('jarvis.tasks')
@@ -412,6 +413,19 @@ def start_scheduler():
         hour=7,
         minute=0,
         id='hr_weekly_digest',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # Foi de Parcurs — weekly driving digest (Monday 05:00 UTC = 08:00 Romania summer)
+    scheduler.add_job(
+        run_weekly_driving_digest,
+        'cron',
+        day_of_week='mon',
+        hour=5,
+        minute=0,
+        id='weekly_driving_digest',
         replace_existing=True,
         misfire_grace_time=3600,
         coalesce=True,
