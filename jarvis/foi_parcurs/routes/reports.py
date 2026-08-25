@@ -58,11 +58,14 @@ def api_reports_summary():
     date_from = (request.args.get('date_from') or '').strip() or None
     date_to = (request.args.get('date_to') or '').strip() or None
     odo_order = 'low' if (request.args.get('odo_order') or 'high').strip().lower() == 'low' else 'high'
+    perf_status = (request.args.get('status') or '').strip() or None
+    drive_type = (request.args.get('drive_type') or '').strip() or None
     top = request.args.get('top', type=int) or 5
     top = max(1, min(top, _MAX_TOP))
 
     bundle = _fp_repo.report_bundle(company_id=company_id, date_from=date_from,
-                                    date_to=date_to, document_type=document_type, top=top)
+                                    date_to=date_to, document_type=document_type, top=top,
+                                    perf_status=perf_status, drive_type=drive_type)
     fleet = _vehicle_repo.report_fleet(company_id=company_id, document_type=document_type,
                                        odo_order=odo_order, top=top)
     rental = (_fp_repo.report_rental(company_id=company_id, date_from=date_from, date_to=date_to)
@@ -92,10 +95,13 @@ def api_reports_sessions():
     date_to = (request.args.get('date_to') or '').strip() or None
     advisor = (request.args.get('advisor') or '').strip() or None
     vin = (request.args.get('vin') or '').strip() or None
+    status = (request.args.get('status') or '').strip() or None
+    drive_type = (request.args.get('drive_type') or '').strip() or None
     if not advisor and not vin:
         return jsonify({'success': True, 'sessions': []})
 
     sessions = _fp_repo.report_sessions(company_id=company_id, date_from=date_from,
                                         date_to=date_to, document_type=document_type,
-                                        advisor=advisor, vin=vin, limit=_MAX_DRILL)
+                                        advisor=advisor, vin=vin, limit=_MAX_DRILL,
+                                        status=status, drive_type=drive_type)
     return jsonify({'success': True, 'sessions': sessions})

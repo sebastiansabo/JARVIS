@@ -135,8 +135,10 @@ class FoiParcursRepository(BaseRepository):
     # the entered estimate. Numeric results are cast to int/float so jsonify
     # never sees a Decimal. Company scope is enforced by the route, not here.
 
-    def _rep_filters(self, company_id, date_from, date_to, document_type):
-        """Shared (clauses, params) for the report queries."""
+    def _rep_filters(self, company_id, date_from, date_to, document_type, drive_type=None):
+        """Shared (clauses, params) for the report queries. drive_type filters the
+        whole report to client ('client' → is_internal FALSE) or internal
+        ('internal' → is_internal TRUE) sessions; None/'all' = both."""
         clauses, params = [], []
         if company_id:
             clauses.append('fp.company_id = %s')
@@ -144,6 +146,10 @@ class FoiParcursRepository(BaseRepository):
         if document_type:
             clauses.append('fp.document_type = %s')
             params.append(document_type)
+        if drive_type == 'client':
+            clauses.append('fp.is_internal = FALSE')
+        elif drive_type == 'internal':
+            clauses.append('fp.is_internal = TRUE')
         if date_from:
             clauses.append('COALESCE(fp.departure_datetime, fp.created_at) >= %s')
             params.append(date_from)
@@ -156,12 +162,24 @@ class FoiParcursRepository(BaseRepository):
     def _rep_where(clauses):
         return (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
 
+    @staticmethod
+    def _status_clause(status):
+        """Map a Rapoarte status-filter value to a raw-status WHERE clause for the
+        performance leaderboards/drill-down. 'all' (or unknown) → no filter."""
+        raw = {'complete': 'COMPLETED', 'planned': 'PLANNED', 'missed': 'MISSED'}.get((status or '').lower())
+        return (['fp.status = %s'], [raw]) if raw else ([], [])
+
     def report_bundle(self, company_id=None, date_from=None, date_to=None,
-                      document_type=None, top=5):
-        """All non-rental report blocks in one call (see routes/reports.py)."""
-        base, bparams = self._rep_filters(company_id, date_from, date_to, document_type)
+                      document_type=None, top=5, perf_status=None, drive_type=None):
+        """All non-rental report blocks in one call (see routes/reports.py).
+        drive_type filters the whole report (client/internal); perf_status filters
+        ONLY the performance leaderboards (companii/consilieri/mașini) by status."""
+        base, bparams = self._rep_filters(company_id, date_from, date_to, document_type, drive_type=drive_type)
         where = self._rep_where(base)
         bp = tuple(bparams)
+        # status filter — applied only to the performance leaderboards below
+        sc, sp = self._status_clause(perf_status)
+        spt = tuple(sp)
 
         kpis = self.query_one(
             'SELECT COUNT(*) AS total_sessions, '
@@ -219,29 +237,30 @@ class FoiParcursRepository(BaseRepository):
             'LEFT JOIN fp_clients c ON c.id = fp.client_id'
             f'{client_where} GROUP BY 1, 2 ORDER BY sessions DESC LIMIT %s', bp + (top,))
 
-        adv_where = self._rep_where(base + ["NULLIF(TRIM(fp.advisor_name), '') IS NOT NULL"])
+        adv_where = self._rep_where(base + ["NULLIF(TRIM(fp.advisor_name), '') IS NOT NULL"] + sc)
         top_advisors = self.query_all(
             'SELECT TRIM(fp.advisor_name) AS advisor, COUNT(*)::int AS sessions, '
             'COALESCE(SUM(GREATEST(fp.km_end - fp.km_start, 0)), 0)::int AS km, '
             "COALESCE(ROUND(100.0 * SUM(CASE WHEN fp.status = 'COMPLETED' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)), 0)::int AS completion_rate "
-            f'FROM foi_de_parcurs fp{adv_where} GROUP BY 1 ORDER BY sessions DESC LIMIT %s', bp + (top,))
+            f'FROM foi_de_parcurs fp{adv_where} GROUP BY 1 ORDER BY sessions DESC LIMIT %s', bp + spt + (top,))
 
+        comp_where = self._rep_where(base + sc)
         top_companies = self.query_all(
             "SELECT fp.company_id, COALESCE(co.company, 'Companie ' || fp.company_id) AS company, "
             'COUNT(*)::int AS sessions, COALESCE(SUM(GREATEST(fp.km_end - fp.km_start, 0)), 0)::int AS km '
-            f'FROM foi_de_parcurs fp LEFT JOIN companies co ON co.id = fp.company_id{where} '
-            'GROUP BY fp.company_id, co.company ORDER BY sessions DESC LIMIT %s', bp + (top,))
+            f'FROM foi_de_parcurs fp LEFT JOIN companies co ON co.id = fp.company_id{comp_where} '
+            'GROUP BY fp.company_id, co.company ORDER BY sessions DESC LIMIT %s', bp + spt + (top,))
 
         # utilization excludes never-returned batch comodat rows (both odometers
         # set at creation → not a genuine "car out" event)
-        util_where = self._rep_where(base + ["fp.source IS DISTINCT FROM 'batch'"])
+        util_where = self._rep_where(base + ["fp.source IS DISTINCT FROM 'batch'"] + sc)
         utilization = self.query_all(
             'SELECT fp.vin, COALESCE(v.registration_number, fp.registration_number) AS registration_number, '
             "COALESCE(NULLIF(TRIM(v.mark || ' ' || v.model), ''), v.model, 'Necunoscut') AS model, "
             "COUNT(DISTINCT date_trunc('day', COALESCE(fp.departure_datetime, fp.created_at)))::int AS days_used, "
             'COUNT(*)::int AS sessions, COALESCE(SUM(GREATEST(fp.km_end - fp.km_start, 0)), 0)::int AS km '
             f'FROM foi_de_parcurs fp LEFT JOIN fp_vehicles v ON v.vin = fp.vin{util_where} '
-            'GROUP BY 1, 2, 3 ORDER BY sessions DESC LIMIT %s', bp + (top,))
+            'GROUP BY 1, 2, 3 ORDER BY sessions DESC LIMIT %s', bp + spt + (top,))
 
         distance_by_brand = self.query_all(
             "SELECT COALESCE(NULLIF(TRIM(v.brand), ''), NULLIF(TRIM(v.mark), ''), 'Necunoscut') AS brand, "
@@ -265,12 +284,17 @@ class FoiParcursRepository(BaseRepository):
         }
 
     def report_sessions(self, company_id=None, date_from=None, date_to=None,
-                        document_type=None, advisor=None, vin=None, limit=200):
+                        document_type=None, advisor=None, vin=None, limit=200,
+                        status=None, drive_type=None):
         """Individual session rows behind a report drill-down — filtered to one
         advisor OR one car. Same filter builder + scope as the aggregates; returns
         client, advisor, car and derived td_status so the UI can show
-        advisor→(client+car) and car→(client+consilier)."""
-        clauses, params = self._rep_filters(company_id, date_from, date_to, document_type)
+        advisor→(client+car) and car→(client+consilier). Honors the status +
+        drive_type filters so the drill matches the (filtered) leaderboard."""
+        clauses, params = self._rep_filters(company_id, date_from, date_to, document_type, drive_type=drive_type)
+        sc, sp = self._status_clause(status)
+        clauses += sc
+        params += sp
         if advisor:
             clauses.append('TRIM(fp.advisor_name) = %s')
             params.append(advisor)
