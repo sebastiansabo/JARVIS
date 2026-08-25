@@ -1,6 +1,7 @@
 """Analytics / reports for Foi de Parcurs (driving sessions).
 
-Read-only aggregates over foi_de_parcurs + fp_vehicles for the "Rapoarte" tab.
+Read-only aggregates over foi_de_parcurs + fp_vehicles for the "Rapoarte" tab,
+plus a drill-down that returns the individual sessions behind a leaderboard row.
 
 Company scope is a HARD boundary here — unlike the group-wide session lists,
 aggregated business metrics (utilization, revenue, per-company performance) must
@@ -19,14 +20,29 @@ from ._shared import (
     _fp_repo, _vehicle_repo,
 )
 
-# Roles that may pick any company / see the whole group. Board is included per
-# the role-scoped design; everyone else is pinned to their own company.
+# Roles that may pick any company / see the whole group.
 _GROUP_ROLES = ('admin', 'superadmin', 'board')
 _MAX_TOP = 50
+_MAX_DRILL = 200
 
 
 def _is_group_viewer():
     return (getattr(current_user, 'role_name', '') or '').lower() in _GROUP_ROLES
+
+
+def _scoped_company():
+    """Resolve the company scope for the current user.
+
+    Returns (company_id, is_group, error). Group viewers may pass any company_id
+    (or None for the whole group); everyone else is pinned to their own company
+    and gets a ready 403 tuple if they have none."""
+    if _is_group_viewer():
+        return request.args.get('company_id', type=int), True, None
+    cid = getattr(current_user, 'company_id', None)
+    if cid is None:
+        return None, False, (jsonify({'success': False,
+                                      'error': 'Nu aveți o companie asociată pentru rapoarte.'}), 403)
+    return cid, False, None
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/reports/summary', methods=['GET'])
@@ -34,14 +50,9 @@ def _is_group_viewer():
 def api_reports_summary():
     """One-shot analytics payload for the Rapoarte tab (all blocks in a single
     round-trip), scoped and filtered by the query string."""
-    is_group = _is_group_viewer()
-    if is_group:
-        company_id = request.args.get('company_id', type=int)  # may be None → whole group
-    else:
-        company_id = getattr(current_user, 'company_id', None)
-        if company_id is None:
-            return jsonify({'success': False,
-                            'error': 'Nu aveți o companie asociată pentru rapoarte.'}), 403
+    company_id, is_group, err = _scoped_company()
+    if err:
+        return err
 
     document_type = (request.args.get('document_type') or 'sales').strip() or 'sales'
     date_from = (request.args.get('date_from') or '').strip() or None
@@ -64,3 +75,27 @@ def api_reports_summary():
         **fleet,
         'rental': rental,
     })
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/reports/sessions', methods=['GET'])
+@login_required
+def api_reports_sessions():
+    """Drill-down behind a leaderboard row: the individual sessions for ONE
+    advisor (?advisor=) or ONE car (?vin=), same date/company/document scope as
+    the summary. Powers the expandable Performanță consilieri / mașini cards."""
+    company_id, _is_group, err = _scoped_company()
+    if err:
+        return err
+
+    document_type = (request.args.get('document_type') or 'sales').strip() or 'sales'
+    date_from = (request.args.get('date_from') or '').strip() or None
+    date_to = (request.args.get('date_to') or '').strip() or None
+    advisor = (request.args.get('advisor') or '').strip() or None
+    vin = (request.args.get('vin') or '').strip() or None
+    if not advisor and not vin:
+        return jsonify({'success': True, 'sessions': []})
+
+    sessions = _fp_repo.report_sessions(company_id=company_id, date_from=date_from,
+                                        date_to=date_to, document_type=document_type,
+                                        advisor=advisor, vin=vin, limit=_MAX_DRILL)
+    return jsonify({'success': True, 'sessions': sessions})
