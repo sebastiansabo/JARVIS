@@ -17,3 +17,14 @@ def _week_range(now):
     last_monday = this_monday - timedelta(days=7)
     last_sunday = last_monday + timedelta(days=6)
     return last_monday.isoformat(), last_sunday.isoformat()
+
+
+def _enumerate_company_brands(companies):
+    """Flatten companies → (company_id, company_name, brand) per active brand."""
+    pairs = []
+    for c in companies:
+        for b in (c.get('brands_list') or []):
+            brand = (b.get('brand') or '').strip()
+            if brand:
+                pairs.append((c['id'], c.get('company') or f"Companie {c['id']}", brand))
+    return pairs
