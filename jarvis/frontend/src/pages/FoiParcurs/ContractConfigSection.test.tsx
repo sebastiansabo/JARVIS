@@ -2,14 +2,15 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const { getDocumentTypes, addDocumentType } = vi.hoisted(() => ({
+const { getDocumentTypes, addDocumentType, deleteDocumentType } = vi.hoisted(() => ({
   getDocumentTypes: vi.fn().mockResolvedValue({ types: [
     { key: 'sales', label: 'Vânzări', title: null, body_template: null, general_conditions: null, is_rental: false, is_active: true, is_default: true, sort_order: 0, has_template: false },
     { key: 'service', label: 'Mașini de curtoazie', title: 'Contract', body_template: 'B', general_conditions: 'C', is_rental: true, is_active: true, is_default: false, sort_order: 1, has_template: true },
   ] }),
   addDocumentType: vi.fn().mockResolvedValue({ success: true, key: 'comodat' }),
+  deleteDocumentType: vi.fn().mockResolvedValue({ success: true }),
 }))
-vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { getDocumentTypes, addDocumentType, putDocumentType: vi.fn() } }))
+vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { getDocumentTypes, addDocumentType, deleteDocumentType, putDocumentType: vi.fn() } }))
 
 import ContractConfigSection from './ContractConfigSection'
 
@@ -61,5 +62,21 @@ describe('ContractConfigSection — document types', () => {
     fireEvent.change(input, { target: { value: 'Comodat' } })
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => expect(addDocumentType).toHaveBeenCalledWith({ company_id: 11, label: 'Comodat' }))
+  })
+
+  it('shows a delete button on non-default types but not on sales', async () => {
+    wrap(<ContractConfigSection companyId={11} />)
+    await screen.findByText('Vânzări')
+    expect(screen.getByRole('button', { name: /șterge mașini de curtoazie/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /șterge vânzări/i })).not.toBeInTheDocument()
+  })
+
+  it('deletes a type after confirm', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    wrap(<ContractConfigSection companyId={11} />)
+    await screen.findByText('Mașini de curtoazie')
+    fireEvent.click(screen.getByRole('button', { name: /șterge mașini de curtoazie/i }))
+    await waitFor(() => expect(deleteDocumentType).toHaveBeenCalledWith({ company_id: 11, key: 'service' }))
+    confirmSpy.mockRestore()
   })
 })

@@ -67,3 +67,20 @@ def api_put_document_type():
     logger.info('document-type upserted company=%s key=%s by %s',
                 company_id, key, getattr(current_user, 'email', '?'))
     return jsonify({'success': True})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/document-types', methods=['DELETE'])
+@login_required
+def api_delete_document_type():
+    """Delete a document type. Admin only; the default (sales) and in-use types
+    are refused (400 with a message)."""
+    if not _is_admin():
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    data = request.get_json(silent=True) or {}
+    try:
+        _dt_repo.delete(data.get('company_id'), data.get('key'))
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    logger.info('document-type deleted company=%s key=%s by %s',
+                data.get('company_id'), data.get('key'), getattr(current_user, 'email', '?'))
+    return jsonify({'success': True})

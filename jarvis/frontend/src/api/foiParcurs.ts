@@ -263,6 +263,8 @@ export const foiParcursApi = {
     api.post<{ success: boolean; key: string }>(`${BASE}/document-types`, payload),
   putDocumentType: (payload: { company_id: number; key: string; label: string; title: string; body_template: string; general_conditions: string; is_rental: boolean; is_active: boolean }) =>
     api.put<{ success: boolean }>(`${BASE}/document-types`, payload),
+  deleteDocumentType: (payload: { company_id: number; key: string }) =>
+    api.delete<{ success: boolean }>(`${BASE}/document-types`, payload),
 
   // ── KM Configs (Settings) ──
   getKmConfigs: () =>

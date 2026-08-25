@@ -75,3 +75,38 @@ class TestUpsert:
         params = repo.execute.call_args[0][1]
         assert params[1] == 'service' and params[2] == 'Mașini de curtoazie'
         assert params[6] is True  # is_rental
+
+
+class TestDelete:
+    def test_default_cannot_be_deleted(self):
+        repo = DocumentTypeRepository()
+        repo.get = MagicMock(return_value={'key': 'sales', 'is_default': True})
+        repo.execute = MagicMock()
+        with pytest.raises(ValueError):
+            repo.delete(11, 'sales')
+        repo.execute.assert_not_called()
+
+    def test_in_use_type_cannot_be_deleted(self):
+        repo = DocumentTypeRepository()
+        repo.get = MagicMock(return_value={'key': 'service', 'is_default': False})
+        repo.query_one = MagicMock(return_value={'veh': 3, 'ses': 0})
+        repo.execute = MagicMock()
+        with pytest.raises(ValueError):
+            repo.delete(11, 'service')
+        repo.execute.assert_not_called()
+
+    def test_deletes_unused_non_default(self):
+        repo = DocumentTypeRepository()
+        repo.get = MagicMock(return_value={'key': 'comodat', 'is_default': False})
+        repo.query_one = MagicMock(return_value={'veh': 0, 'ses': 0})
+        repo.execute = MagicMock()
+        repo.delete(11, 'comodat')
+        repo.execute.assert_called_once()
+        assert 'DELETE' in repo.execute.call_args[0][0]
+
+    def test_missing_type_is_noop(self):
+        repo = DocumentTypeRepository()
+        repo.get = MagicMock(return_value=None)
+        repo.execute = MagicMock()
+        repo.delete(11, 'ghost')  # no raise
+        repo.execute.assert_not_called()
