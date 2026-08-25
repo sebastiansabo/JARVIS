@@ -663,8 +663,12 @@ def create_schema_roles(conn, cursor):
 
     # Migration: Add Test Drive module permission (mobile Sales / Test Drive tile).
     # Admin-only by default; admins allocate it to other roles in the matrix later.
+    # The 'contracts.correct' action gates the Foi de Parcurs "Corectează" button
+    # (edit a session's drive date/odometer). Added to the SAME module so the
+    # Admin + Viewer grant blocks below cover it automatically (Viewer = consilieri).
     test_drive_perms = [
         ('test_drive', 'Test Drive', 'bi-car-front', 'module', 'Module', 'access', 'Access', 'Access the Sales / Test Drive section', False, 1),
+        ('test_drive', 'Test Drive', 'bi-car-front', 'contracts', 'Registrations', 'correct', 'Correct date / odometer', "Correct a session's drive date & odometer readings (Foaie de Parcurs)", False, 2),
     ]
     for p in test_drive_perms:
         cursor.execute('''
