@@ -215,15 +215,15 @@ function Leaderboard({ rows, renderDetail }: { rows: LbRow[]; renderDetail?: (ro
 
 /** Expanded drill-down under a leaderboard row: the sessions for one advisor
  *  (shows client + car) or one car (shows client + consilier). */
-function SessionDrill({ kind, id, companyId, from, to, docType, status, driveType }: {
+function SessionDrill({ kind, id, companyId, from, to, docType, status, driveType, brand }: {
   kind: 'advisor' | 'car'; id: string; companyId: number; from: string; to: string; docType: string
-  status?: string; driveType?: string
+  status?: string; driveType?: string; brand?: string
 }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['fp-report-sessions', kind, id, companyId, from, to, docType, status, driveType],
+    queryKey: ['fp-report-sessions', kind, id, companyId, from, to, docType, status, driveType, brand],
     queryFn: () => foiParcursApi.getReportSessions({
       company_id: companyId || undefined, date_from: from, date_to: to, document_type: docType,
-      status, drive_type: driveType,
+      status, drive_type: driveType, brand,
       ...(kind === 'advisor' ? { advisor: id } : { vin: id }),
     }),
     staleTime: 30_000,
@@ -262,14 +262,14 @@ function SessionDrill({ kind, id, companyId, from, to, docType, status, driveTyp
 
 /** Expanded drill-down under a company row: that company's best consilieri.
  *  Reuses the summary endpoint scoped to the one company (top_advisors). */
-function CompanyAdvisorsDrill({ companyId, from, to, docType, status, driveType }: {
-  companyId: number; from: string; to: string; docType: string; status?: string; driveType?: string
+function CompanyAdvisorsDrill({ companyId, from, to, docType, status, driveType, brand }: {
+  companyId: number; from: string; to: string; docType: string; status?: string; driveType?: string; brand?: string
 }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['fp-report-company-advisors', companyId, from, to, docType, status, driveType],
+    queryKey: ['fp-report-company-advisors', companyId, from, to, docType, status, driveType, brand],
     queryFn: () => foiParcursApi.getReports({
       company_id: companyId, date_from: from, date_to: to, document_type: docType, top: 6,
-      status, drive_type: driveType,
+      status, drive_type: driveType, brand,
     }),
     staleTime: 30_000,
   })
@@ -353,17 +353,24 @@ function StatusChecks({ value, onChange, options }: {
   value: string[]; onChange: (v: string[]) => void; options: readonly (readonly [string, string])[]
 }) {
   const toggle = (k: string) => onChange(value.includes(k) ? value.filter((x) => x !== k) : [...value, k])
+  const btn = 'flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground'
+  const check = (on: boolean) => (
+    <span className={cn('grid h-3.5 w-3.5 place-items-center rounded border',
+      on ? 'border-primary bg-primary text-primary-foreground' : 'border-input')}>
+      {on && <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><path d="M20 6L9 17l-5-5" /></svg>}
+    </span>
+  )
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <button type="button" onClick={() => onChange([])} aria-pressed={value.length === 0} className={btn}>
+        {check(value.length === 0)}
+        <span className={cn(value.length === 0 && 'text-foreground')}>Toate</span>
+      </button>
       {options.map(([k, label]) => {
         const on = value.includes(k)
         return (
-          <button key={k} type="button" onClick={() => toggle(k)} aria-pressed={on}
-            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
-            <span className={cn('grid h-3.5 w-3.5 place-items-center rounded border',
-              on ? 'border-primary bg-primary text-primary-foreground' : 'border-input')}>
-              {on && <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><path d="M20 6L9 17l-5-5" /></svg>}
-            </span>
+          <button key={k} type="button" onClick={() => toggle(k)} aria-pressed={on} className={btn}>
+            {check(on)}
             <span className={cn(on && 'text-foreground')}>{label}</span>
           </button>
         )
@@ -388,7 +395,7 @@ function Seg<T extends string>({ value, onChange, options }: {
   )
 }
 
-export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: 'sales' | 'service' }) {
+export function ReportsTab({ companyId, toolbarSlot, documentType, brand }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: 'sales' | 'service'; brand?: string }) {
   const [preset, setPreset] = usePersistedState<'30d' | 'month' | 'year' | 'custom'>('fp.rep.preset', '30d')
   const [customFrom, setCustomFrom] = usePersistedState<string>('fp.rep.from', ymd(new Date(Date.now() - 29 * 864e5)))
   const [customTo, setCustomTo] = usePersistedState<string>('fp.rep.to', ymd(new Date()))
@@ -405,18 +412,19 @@ export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId
   const { from, to } = rangeForPreset(preset, customFrom, customTo)
   const stArg = perfStatus.length ? perfStatus.join(',') : undefined
   const dtArg = driveType === 'all' ? undefined : driveType
+  const brandArg = brand || undefined  // header franchise-brand filter (isolates the whole report)
 
   // chart → detail modal (session list filtered by the clicked dimension)
   const [detail, setDetail] = useState<{ title: string; params: Record<string, unknown> } | null>(null)
   const openDetail = (title: string, extra: Record<string, unknown>) =>
     setDetail({ title, params: { company_id: companyId || undefined, date_from: from, date_to: to,
-      document_type: docType, status: stArg, drive_type: dtArg, ...extra } })
+      document_type: docType, status: stArg, drive_type: dtArg, brand: brandArg, ...extra } })
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['fp-reports', companyId, from, to, docType, odoOrder, perfStatus, driveType],
+    queryKey: ['fp-reports', companyId, from, to, docType, odoOrder, perfStatus, driveType, brandArg],
     queryFn: () => foiParcursApi.getReports({
       company_id: companyId || undefined, date_from: from, date_to: to,
-      document_type: docType, odo_order: odoOrder, top: 8, status: stArg, drive_type: dtArg,
+      document_type: docType, odo_order: odoOrder, top: 8, status: stArg, drive_type: dtArg, brand: brandArg,
     }),
     staleTime: 30_000,
   })
@@ -481,13 +489,13 @@ export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId
           </div>
 
           {/* performance leaderboards */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className={cn('grid grid-cols-1 gap-4', showGroup ? 'lg:grid-cols-3' : 'lg:grid-cols-2')}>
             {showGroup && (
               <ChartCard title="Performanță pe companii" hint="grup · click pentru consilieri"
                 action={<StatusChecks value={perfStatus} onChange={setPerfStatus} options={STATUS_CHECKS} />}>
                 <Leaderboard
                   rows={data.top_companies.map((c) => ({ name: c.company, sub: `${nf.format(c.km)} km`, value: c.sessions, id: String(c.company_id) }))}
-                  renderDetail={(row) => <CompanyAdvisorsDrill companyId={Number(row.id)} from={from} to={to} docType={docType} status={stArg} driveType={dtArg} />}
+                  renderDetail={(row) => <CompanyAdvisorsDrill companyId={Number(row.id)} from={from} to={to} docType={docType} status={stArg} driveType={dtArg} brand={brandArg} />}
                 />
               </ChartCard>
             )}
@@ -495,14 +503,14 @@ export function ReportsTab({ companyId, toolbarSlot, documentType }: { companyId
               action={<StatusChecks value={perfStatus} onChange={setPerfStatus} options={STATUS_CHECKS} />}>
               <Leaderboard
                 rows={data.top_advisors.map((a) => ({ name: a.advisor, sub: `${nf.format(a.km)} km · ${a.completion_rate}% finalizare`, value: a.sessions, id: a.advisor }))}
-                renderDetail={(row) => <SessionDrill kind="advisor" id={row.id!} companyId={companyId} from={from} to={to} docType={docType} status={stArg} driveType={dtArg} />}
+                renderDetail={(row) => <SessionDrill kind="advisor" id={row.id!} companyId={companyId} from={from} to={to} docType={docType} status={stArg} driveType={dtArg} brand={brandArg} />}
               />
             </ChartCard>
             <ChartCard title="Performanță mașini" hint="click pentru detalii"
               action={<StatusChecks value={perfStatus} onChange={setPerfStatus} options={STATUS_CHECKS} />}>
               <Leaderboard
                 rows={data.utilization.map((u) => ({ name: u.model, sub: `${u.registration_number} · ${u.days_used}/30 zile`, value: u.sessions, id: u.vin }))}
-                renderDetail={(row) => <SessionDrill kind="car" id={row.id!} companyId={companyId} from={from} to={to} docType={docType} status={stArg} driveType={dtArg} />}
+                renderDetail={(row) => <SessionDrill kind="car" id={row.id!} companyId={companyId} from={from} to={to} docType={docType} status={stArg} driveType={dtArg} brand={brandArg} />}
               />
             </ChartCard>
           </div>
