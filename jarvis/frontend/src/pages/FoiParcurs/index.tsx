@@ -110,6 +110,9 @@ import { ReportsTab } from './ReportsTab'
 import DriveTypeToggle from './DriveTypeToggle'
 import { formatRoPlate, isValidRoPlate } from './plateFormat'
 import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
+import ContractConfigSection from './ContractConfigSection'
+import { DOC_TYPE_LABELS, contextFromSearch, type DocType } from './documentType'
+import DocTypeSelect from './DocTypeSelect'
 
 /** Truncate a display name to `max` chars with an ellipsis; the full value stays
  *  available in the cell's title tooltip. */
@@ -148,6 +151,10 @@ export default function FoiParcurs() {
   const [tabToolbar, setTabToolbar] = useState<HTMLDivElement | null>(null)
   // Client vs internal drive filter — applies to the Sesiuni table + Calendar.
   const [driveType, setDriveType] = usePersistentState<'all' | 'client' | 'internal'>('fp.driveType', 'all')
+  // Sales vs Service (Mașini de curtoazie) context — persisted, seeded from a
+  // `?context=service` deep link. Forced back to 'sales' when the selected
+  // company doesn't have Service enabled (see effect below).
+  const [docType, setDocType] = usePersistentState<DocType>('fp.docType', contextFromSearch(window.location.search))
 
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
@@ -159,7 +166,11 @@ export default function FoiParcurs() {
   // fleet/sessions at once). We no longer force-select the first company.
   const companies = companiesData?.companies ?? []
 
-  // Brands for the selected company (from the company_brands catalog)
+  // The header brand dropdown = the dealership's FRANCHISE brands (the company
+  // as an institution + the marques it's franchised for), ALWAYS from the
+  // company_brands catalog. The rental/courtesy stock can hold any car brand,
+  // independent of the franchise — so in the Service context this franchise
+  // filter is hidden (see below) and the rental list shows every brand.
   const { data: brandsData } = useQuery({
     queryKey: ['fp-brands', companyId],
     queryFn: () => foiParcursApi.getBrands(companyId),
@@ -177,6 +188,24 @@ export default function FoiParcurs() {
       setBrand(list[0])
     }
   }, [brandsData, brand])
+
+  // Document types are per-company (user-defined); the standalone header type
+  // dropdown shows when the company has more than one active type.
+  const { data: documentTypesData } = useQuery({
+    queryKey: ['fp-document-types', companyId],
+    queryFn: () => foiParcursApi.getDocumentTypes(companyId),
+    enabled: companyId > 0,
+  })
+  const documentTypes = documentTypesData?.types ?? []
+  const selectedType = documentTypes.find((t) => t.key === docType)
+  const isRentalContext = !!selectedType?.is_rental
+  // Force back to Sales if the current type isn't among the company's active
+  // types (e.g. company change) so tabs never query a missing pool.
+  useEffect(() => {
+    if (documentTypesData !== undefined && documentTypes.length && !documentTypes.some((t) => t.key === docType) && docType !== 'sales') {
+      setDocType('sales')
+    }
+  }, [documentTypesData, documentTypes, docType, setDocType])
 
   const activeTabLabel = ({ stock: 'Driving Park', parcurs: 'Sesiuni Driving', calendar: 'Calendar', contracts: 'Foi de Parcurs', reports: 'Rapoarte', settings: 'Settings' } as const)[activeTab]
   // Third breadcrumb segment: the selected drive-type "section" (Client/Intern),
@@ -215,7 +244,7 @@ export default function FoiParcurs() {
               ))}
             </SelectContent>
           </Select>
-          {brands.length > 0 && (
+          {docType === 'sales' && brands.length > 0 && (
             <Select value={brand} onValueChange={setBrand}>
               <SelectTrigger className="w-44">
                 <SelectValue placeholder="Selectează brandul" />
@@ -227,14 +256,23 @@ export default function FoiParcurs() {
               </SelectContent>
             </Select>
           )}
+          {documentTypes.length > 1 && <DocTypeSelect value={docType} types={documentTypes} onChange={setDocType} />}
         </div>
       </div>
 
       <SessionTypeChooser
         open={choosingSession}
         onOpenChange={setChoosingSession}
+        showRental={isRentalContext}
         onPick={(type) => {
           setChoosingSession(false)
+          if (type === 'rental') {
+            // Rent-a-car reuses the client test-drive form in the current
+            // (rental) document-type context — deep-linked via ?context=<key>
+            // so it runs the rental pricing + that type's contract.
+            navigate(`/app/foi-parcurs/test-drive?context=${encodeURIComponent(docType)}`)
+            return
+          }
           navigate(type === 'client' ? '/app/foi-parcurs/test-drive' : '/app/foi-parcurs/internal')
         }}
       />
@@ -255,18 +293,20 @@ export default function FoiParcurs() {
         </div>
       </Tabs>
 
-      {activeTab === 'contracts' && <ContractsTab companyId={companyId} toolbarSlot={tabToolbar} />}
-      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} />}
-      {activeTab === 'stock' && <StockTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} />}
-      {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} />}
-      {activeTab === 'reports' && <ReportsTab companyId={companyId} toolbarSlot={tabToolbar} brand={brand} />}
-      {activeTab === 'settings' && <SettingsTab />}
+      {activeTab === 'contracts' && <ContractsTab companyId={companyId} toolbarSlot={tabToolbar} documentType={docType} />}
+      {/* In the rental (Service) context the franchise brand filter doesn't apply —
+          the courtesy stock is multi-brand — so pass an empty brand to show it all. */}
+      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
+      {activeTab === 'stock' && <StockTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} documentType={docType} />}
+      {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
+      {activeTab === 'reports' && <ReportsTab companyId={companyId} toolbarSlot={tabToolbar} documentType={docType} brand={docType !== 'sales' ? '' : brand} />}
+      {activeTab === 'settings' && <SettingsTab documentType={docType} companyId={companyId} />}
     </div>
   )
 }
 
 // ── Contracts Tab — Form → Preview → Save Batch ──
-function ContractsTab({ companyId, toolbarSlot }: { companyId: number; toolbarSlot?: HTMLElement | null }) {
+export function ContractsTab({ companyId, toolbarSlot, documentType = 'sales' }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
   const [importOpen, setImportOpen] = useState(false)
   const toolbar = (
     <Button variant="outline" size="sm" className="h-8" onClick={() => setImportOpen(true)}>
@@ -277,7 +317,7 @@ function ContractsTab({ companyId, toolbarSlot }: { companyId: number; toolbarSl
     <div className="space-y-4">
       {/* RouteSheetsTable renders first so its month/year filters land in the slot
           before the Importă button (filters left, action right). */}
-      <RouteSheetsTable companyId={companyId} toolbarSlot={toolbarSlot} />
+      <RouteSheetsTable companyId={companyId} toolbarSlot={toolbarSlot} documentType={documentType} />
       {toolbarSlot ? createPortal(toolbar, toolbarSlot) : <div className="flex justify-end">{toolbar}</div>}
       <SessionImportDialog companyId={companyId} open={importOpen} onOpenChange={setImportOpen} />
     </div>
@@ -399,7 +439,7 @@ function withGaps(sessions: FoiContract[]): DetailRow[] {
 //    sessions for that vehicle that month), scoped to the header company.
 //    Month is a filter; each row expands to its individual sessions and can
 //    generate/store an AI-drafted legal Foaie de Parcurs (PDF) or Excel. ──
-function RouteSheetsTable({ companyId, toolbarSlot }: { companyId: number; toolbarSlot?: HTMLElement | null }) {
+function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
   const queryClient = useQueryClient()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [previewVin, setPreviewVin] = useState<string | null>(null)
@@ -426,16 +466,16 @@ function RouteSheetsTable({ companyId, toolbarSlot }: { companyId: number; toolb
   const monthChosen = filterMonth !== 0 // a Foaie de parcurs is monthly — needs a specific month
 
   const { data, isLoading } = useQuery({
-    queryKey: ['foi-contracts-all', 'recent', companyId],
+    queryKey: ['foi-contracts-all', 'recent', companyId, documentType],
     queryFn: () =>
-      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 500, sort_by: 'created_at', sort_dir: 'DESC' }),
+      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 500, sort_by: 'created_at', sort_dir: 'DESC', document_type: documentType }),
     staleTime: 30_000,
   })
 
   // Vehicle catalog → Make/Model for each VIN (contracts only carry the VIN).
   const { data: vehData } = useQuery({
-    queryKey: ['fp-vehicles'],
-    queryFn: () => foiParcursApi.getVehicles(false),
+    queryKey: ['fp-vehicles', documentType],
+    queryFn: () => foiParcursApi.getVehicles(false, documentType),
     staleTime: 60_000,
   })
   const vinMap = React.useMemo(
@@ -1504,7 +1544,7 @@ const SESSION_COLUMNS = [
 ] as const
 type SessionColumnKey = (typeof SESSION_COLUMNS)[number]['key']
 
-export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlot, driveType = 'all', onDriveTypeChange }: { companyId: number; brand: string; onActivate?: (id: number) => void; onReturn?: (id: number) => void; toolbarSlot?: HTMLElement | null; driveType?: 'all' | 'client' | 'internal'; onDriveTypeChange?: (v: 'all' | 'client' | 'internal') => void }) {
+export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlot, driveType = 'all', onDriveTypeChange, documentType = 'sales' }: { companyId: number; brand: string; onActivate?: (id: number) => void; onReturn?: (id: number) => void; toolbarSlot?: HTMLElement | null; driveType?: 'all' | 'client' | 'internal'; onDriveTypeChange?: (v: 'all' | 'client' | 'internal') => void; documentType?: DocType }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
@@ -1562,9 +1602,9 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
   const canCorrect = isAdmin || !!user?.permissions?.['test_drive.contracts.correct']
 
   const { data, isLoading } = useQuery({
-    queryKey: ['foi-contracts-all', companyId],
+    queryKey: ['foi-contracts-all', companyId, documentType],
     queryFn: () =>
-      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC' }),
+      foiParcursApi.getContracts({ company_id: companyId || undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC', document_type: documentType }),
     staleTime: 30_000,
   })
 
@@ -1601,8 +1641,8 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
 
   // Vehicles → vin→brand map, so contracts can be filtered by the selected brand
   const { data: vehiclesData } = useQuery({
-    queryKey: ['fp-vehicles'],
-    queryFn: () => foiParcursApi.getVehicles(),
+    queryKey: ['fp-vehicles', documentType],
+    queryFn: () => foiParcursApi.getVehicles(true, documentType),
     staleTime: 30_000,
   })
   const vehiclesList = vehiclesData?.vehicles ?? []
@@ -2323,6 +2363,16 @@ interface VehicleFormValue {
   norma_energie: string
   category: string
   company_id: string
+  document_type: DocType
+  // Service (Mașini de curtoazie) per-car price + policy — blank inherits the
+  // company default (SettingsTab's "Politică implicită" section). Strings so
+  // the inputs can be genuinely empty (⇒ send null, not 0).
+  svc_tariff_eur_day: string
+  svc_tariff_eur_month: string
+  svc_km_included_day: string
+  svc_extra_km_eur: string
+  svc_deposit_eur: string
+  svc_franchise_eur: string
   vignette_valid_until: string
   itp_valid_until: string
   insurance_valid_until: string
@@ -2333,11 +2383,14 @@ interface VehicleFormValue {
   offer_doc: string
 }
 
-function emptyVehicleForm(companyId?: number): VehicleFormValue {
+function emptyVehicleForm(companyId?: number, documentType: DocType = 'sales'): VehicleFormValue {
   return {
     car_id: '', vin: '', registration_number: '', mark: '', model: '', color: '',
     fuel_type: 'Diesel', fuel_tank_capacity_liters: 50, battery_capacity_kwh: 0,
     odometer_km: '', norma_combustibil: '', norma_energie: '', category: '', company_id: companyId ? String(companyId) : '',
+    document_type: documentType,
+    svc_tariff_eur_day: '', svc_tariff_eur_month: '', svc_km_included_day: '',
+    svc_extra_km_eur: '', svc_deposit_eur: '', svc_franchise_eur: '',
     vignette_valid_until: '', itp_valid_until: '', insurance_valid_until: '',
     insurance_doc: '', talon_doc: '', civ_doc: '', registration_doc: '', offer_doc: '',
   }
@@ -2359,6 +2412,13 @@ function vehicleToForm(v: FpVehicle): VehicleFormValue {
     norma_energie: v.norma_energie != null ? String(v.norma_energie) : '',
     category: v.category || '',
     company_id: v.company_id ? String(v.company_id) : '',
+    document_type: (v.document_type as DocType) ?? 'sales',
+    svc_tariff_eur_day: v.svc_tariff_eur_day != null ? String(v.svc_tariff_eur_day) : '',
+    svc_tariff_eur_month: v.svc_tariff_eur_month != null ? String(v.svc_tariff_eur_month) : '',
+    svc_km_included_day: v.svc_km_included_day != null ? String(v.svc_km_included_day) : '',
+    svc_extra_km_eur: v.svc_extra_km_eur != null ? String(v.svc_extra_km_eur) : '',
+    svc_deposit_eur: v.svc_deposit_eur != null ? String(v.svc_deposit_eur) : '',
+    svc_franchise_eur: v.svc_franchise_eur != null ? String(v.svc_franchise_eur) : '',
     vignette_valid_until: v.vignette_valid_until ? String(v.vignette_valid_until).slice(0, 10) : '',
     itp_valid_until: v.itp_valid_until ? String(v.itp_valid_until).slice(0, 10) : '',
     insurance_valid_until: v.insurance_valid_until ? String(v.insurance_valid_until).slice(0, 10) : '',
@@ -2468,18 +2528,51 @@ function DocUpload({ label, value, onChange }: { label: string; value: string; o
 
 /** The full vehicle field grid, in the canonical column order. Shared by the
  *  Add card and the Edit modal. Brand is read-only (set from the header on Add,
- *  kept as-is on Edit). */
-function VehicleFormFields({
+ *  kept as-is on Edit) — UNLESS the caller passes `onBrandChange` (the Add
+ *  card only): then, once the "Parc / Tip document" is switched to Service,
+ *  Brand becomes an editable any-brand picker so a courtesy car can belong to
+ *  a brand different from whatever the header is currently filtered to. */
+export function VehicleFormFields({
   value,
   onChange,
   brandLabel,
   companies,
+  brand,
+  onBrandChange,
+  lockDocType = false,
 }: {
   value: VehicleFormValue
   onChange: (patch: Partial<VehicleFormValue>) => void
   brandLabel: string
   companies: { id: number; company: string }[]
+  brand?: string
+  onBrandChange?: (v: string) => void
+  /** Lock the "Parc / Tip document" selector — used when adding a car, where the
+   *  pool is dictated by the active gate (Vânzări vs Mașini de curtoazie). */
+  lockDocType?: boolean
 }) {
+  // The company's document types drive the "Parc / Tip document" selector and
+  // whether the rental pricing block shows (is_rental).
+  const _companyId = Number(value.company_id) || 0
+  const { data: docTypesData } = useQuery({
+    queryKey: ['fp-document-types', _companyId],
+    queryFn: () => foiParcursApi.getDocumentTypes(_companyId),
+    enabled: _companyId > 0,
+    staleTime: 30_000,
+  })
+  const docTypes = docTypesData?.types ?? []
+  const selectedDocType = docTypes.find((t) => t.key === value.document_type)
+  const isRentalType = !!selectedDocType?.is_rental
+  // Non-sales pools are multi-brand (courtesy/rental fleet independent of the
+  // dealer franchise), so allow any brand there.
+  const allowAnyBrand = value.document_type !== 'sales' && !!onBrandChange
+  const { data: allBrandsData } = useQuery({
+    queryKey: ['fp-all-brands'],
+    queryFn: () => foiParcursApi.getAllBrands(),
+    enabled: allowAnyBrand,
+    staleTime: 60_000,
+  })
+  const allBrands = allBrandsData?.brands ?? []
   return (
     <div className="space-y-4">
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -2513,7 +2606,18 @@ function VehicleFormFields({
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs">Brand</Label>
-        <Input value={brandLabel} readOnly disabled />
+        {allowAnyBrand ? (
+          <Select value={brand || ''} onValueChange={onBrandChange}>
+            <SelectTrigger><SelectValue placeholder="Selectează brand..." /></SelectTrigger>
+            <SelectContent>
+              {allBrands.map((b) => (
+                <SelectItem key={b} value={b}>{b}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input value={brandLabel} readOnly disabled />
+        )}
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs">Color</Label>
@@ -2572,7 +2676,64 @@ function VehicleFormFields({
           </SelectContent>
         </Select>
       </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Parc / Tip document</Label>
+        <Select value={value.document_type} onValueChange={(v) => onChange({ document_type: v as DocType })} disabled={lockDocType}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {(docTypes.length
+              ? docTypes.map((t) => ({ key: t.key, label: t.label }))
+              : [{ key: 'sales', label: DOC_TYPE_LABELS.sales }, { key: 'service', label: DOC_TYPE_LABELS.service }]
+            ).concat(
+              // keep the current value selectable even if it's inactive/missing
+              value.document_type && !docTypes.some((t) => t.key === value.document_type)
+                ? [{ key: value.document_type, label: DOC_TYPE_LABELS[value.document_type] || value.document_type }]
+                : [],
+            ).map((o) => <SelectItem key={o.key} value={o.key}>{o.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {lockDocType && (
+          <p className="text-[11px] text-muted-foreground">
+            Determinat de parcul curent ({selectedDocType?.label || DOC_TYPE_LABELS[value.document_type] || value.document_type}).
+          </p>
+        )}
+      </div>
     </div>
+
+    {isRentalType && (
+      <div className="space-y-3 border-t pt-4">
+        <p className="text-sm font-semibold">Preț & politică (Mașini de curtoazie)</p>
+        <p className="text-xs text-muted-foreground">
+          Câmp gol = moștenește politica implicită a companiei (Settings → Politică implicită mașini de curtoazie).
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Tarif €/zi</Label>
+            <Input type="number" min={0} step="0.01" value={value.svc_tariff_eur_day} onChange={(e) => onChange({ svc_tariff_eur_day: e.target.value })} placeholder="implicit companie" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Tarif €/lună</Label>
+            <Input type="number" min={0} step="0.01" value={value.svc_tariff_eur_month} onChange={(e) => onChange({ svc_tariff_eur_month: e.target.value })} placeholder="implicit companie" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Km incluși/zi</Label>
+            <Input type="number" min={0} value={value.svc_km_included_day} onChange={(e) => onChange({ svc_km_included_day: e.target.value })} placeholder="implicit companie" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Extra km (€)</Label>
+            <Input type="number" min={0} step="0.01" value={value.svc_extra_km_eur} onChange={(e) => onChange({ svc_extra_km_eur: e.target.value })} placeholder="implicit companie" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Garanție (€)</Label>
+            <Input type="number" min={0} step="0.01" value={value.svc_deposit_eur} onChange={(e) => onChange({ svc_deposit_eur: e.target.value })} placeholder="implicit companie" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Franșiză (€)</Label>
+            <Input type="number" min={0} step="0.01" value={value.svc_franchise_eur} onChange={(e) => onChange({ svc_franchise_eur: e.target.value })} placeholder="implicit companie" />
+          </div>
+        </div>
+      </div>
+    )}
 
     <div className="space-y-3 border-t pt-4">
       <p className="text-sm font-semibold">Documente & Valabilități</p>
@@ -2600,7 +2761,7 @@ function VehicleFormFields({
   )
 }
 
-function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand: string; toolbarSlot?: HTMLElement | null }) {
+function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { companyId: number; brand: string; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [expandedVehicleId, setExpandedVehicleId] = useState<number | string | null>(null)
@@ -2632,13 +2793,28 @@ function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand:
       else next.add(ft)
       return next
     })
-  const [newVehicle, setNewVehicle] = useState<VehicleFormValue>(() => emptyVehicleForm(companyId))
+  const [newVehicle, setNewVehicle] = useState<VehicleFormValue>(() => emptyVehicleForm(companyId, documentType))
   const [error, setError] = useState('')
+  // The "Parc / Tip document" of a new car is dictated by the active gate
+  // (Vânzări vs Mașini de curtoazie) and locked — you add cars into the park
+  // you're viewing. Keep it in sync if the gate switches while the form is open.
+  useEffect(() => {
+    setNewVehicle((v) => (v.document_type === documentType ? v : { ...v, document_type: documentType }))
+  }, [documentType])
+  // Brand of the vehicle being added — defaults to (and follows) the header's
+  // selected brand while the Add form's own "Parc / Tip document" stays on
+  // Sales, but becomes independently selectable (any active brand) once it's
+  // switched to Service, so a courtesy car can belong to a different brand
+  // than the dealer currently in view (e.g. a VW loaner on an Audi dealer).
+  const [newVehicleBrand, setNewVehicleBrand] = useState(brand)
+  useEffect(() => {
+    if (newVehicle.document_type === 'sales') setNewVehicleBrand(brand)
+  }, [brand, newVehicle.document_type])
 
   const { data: vehiclesData, isLoading } = useQuery({
-    queryKey: ['fp-vehicles', companyId, showArchived],
+    queryKey: ['fp-vehicles', companyId, showArchived, documentType],
     // active_only=false returns archived vehicles too (marked is_active=false).
-    queryFn: () => foiParcursApi.getVehicles(!showArchived),
+    queryFn: () => foiParcursApi.getVehicles(!showArchived, documentType),
     staleTime: 30_000,
   })
 
@@ -2696,7 +2872,7 @@ function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand:
         registration_number: newVehicle.registration_number.trim() || undefined,
         car_id: newVehicle.car_id.trim() || undefined,
         mark: newVehicle.mark.trim(),
-        brand: brand || undefined,
+        brand: newVehicleBrand || undefined,
         model: newVehicle.model.trim(),
         color: newVehicle.color.trim() || undefined,
         fuel_type: newVehicle.fuel_type,
@@ -2707,6 +2883,13 @@ function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand:
         norma_energie: newVehicle.norma_energie.trim() === '' ? null : Number(newVehicle.norma_energie),
         category: newVehicle.category.trim() || null,
         company_id: newVehicle.company_id ? Number(newVehicle.company_id) : undefined,
+        document_type: newVehicle.document_type,
+        svc_tariff_eur_day: newVehicle.svc_tariff_eur_day.trim() === '' ? null : Number(newVehicle.svc_tariff_eur_day),
+        svc_tariff_eur_month: newVehicle.svc_tariff_eur_month.trim() === '' ? null : Number(newVehicle.svc_tariff_eur_month),
+        svc_km_included_day: newVehicle.svc_km_included_day.trim() === '' ? null : Number(newVehicle.svc_km_included_day),
+        svc_extra_km_eur: newVehicle.svc_extra_km_eur.trim() === '' ? null : Number(newVehicle.svc_extra_km_eur),
+        svc_deposit_eur: newVehicle.svc_deposit_eur.trim() === '' ? null : Number(newVehicle.svc_deposit_eur),
+        svc_franchise_eur: newVehicle.svc_franchise_eur.trim() === '' ? null : Number(newVehicle.svc_franchise_eur),
         vignette_valid_until: newVehicle.vignette_valid_until || undefined,
         itp_valid_until: newVehicle.itp_valid_until || undefined,
         insurance_valid_until: newVehicle.insurance_valid_until || undefined,
@@ -2719,7 +2902,8 @@ function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand:
     onSuccess: () => {
       setError('')
       setShowAdd(false)
-      setNewVehicle(emptyVehicleForm(companyId))
+      setNewVehicle(emptyVehicleForm(companyId, documentType))
+      setNewVehicleBrand(brand)
       queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
     },
     onError: (err: any) => {
@@ -2837,6 +3021,13 @@ function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand:
         norma_energie: editForm.norma_energie.trim() === '' ? null : Number(editForm.norma_energie),
         category: editForm.category.trim() || null,
         company_id: editForm.company_id ? Number(editForm.company_id) : null,
+        document_type: editForm.document_type,
+        svc_tariff_eur_day: editForm.svc_tariff_eur_day.trim() === '' ? null : Number(editForm.svc_tariff_eur_day),
+        svc_tariff_eur_month: editForm.svc_tariff_eur_month.trim() === '' ? null : Number(editForm.svc_tariff_eur_month),
+        svc_km_included_day: editForm.svc_km_included_day.trim() === '' ? null : Number(editForm.svc_km_included_day),
+        svc_extra_km_eur: editForm.svc_extra_km_eur.trim() === '' ? null : Number(editForm.svc_extra_km_eur),
+        svc_deposit_eur: editForm.svc_deposit_eur.trim() === '' ? null : Number(editForm.svc_deposit_eur),
+        svc_franchise_eur: editForm.svc_franchise_eur.trim() === '' ? null : Number(editForm.svc_franchise_eur),
         vignette_valid_until: editForm.vignette_valid_until || null,
         itp_valid_until: editForm.itp_valid_until || null,
         insurance_valid_until: editForm.insurance_valid_until || null,
@@ -2916,8 +3107,11 @@ function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand:
             <VehicleFormFields
               value={newVehicle}
               onChange={(patch) => setNewVehicle((p) => ({ ...p, ...patch }))}
-              brandLabel={brand || '—'}
+              brandLabel={newVehicleBrand || '—'}
               companies={companiesData?.companies ?? []}
+              brand={newVehicleBrand}
+              onBrandChange={setNewVehicleBrand}
+              lockDocType
             />
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex gap-2">
@@ -3221,9 +3415,10 @@ function StockTab({ companyId, brand, toolbarSlot }: { companyId: number; brand:
         </Card>
       )}
 
-      {/* Edit Vehicle Modal */}
+      {/* Edit Vehicle Modal — needs the sm: max-width override or shadcn's
+          default sm:max-w-lg (512px) wins on desktop and the form is cramped. */}
       <Dialog open={!!editVehicle} onOpenChange={(open) => { if (!open) { setEditVehicle(null); setEditError('') } }}>
-        <DialogContent className="max-w-[min(95vw,1400px)] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-[1080px] sm:max-w-[1080px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Vehicle</DialogTitle>
           </DialogHeader>
@@ -3384,7 +3579,8 @@ function ItineraryField({
   )
 }
 
-function SettingsTab() {
+export function SettingsTab({ documentType = 'sales', companyId }: { documentType?: DocType; companyId?: number } = {}) {
+  const isService = documentType !== 'sales'
   const queryClient = useQueryClient()
   const [editId, setEditId] = useState<number | null>(null)
   const [editData, setEditData] = useState<{ td_km_min: number; td_km_max: number; comodat_km_min: number; comodat_km_max: number; km_gap: number }>({ td_km_min: 5, td_km_max: 50, comodat_km_min: 10, comodat_km_max: 200, km_gap: 20 })
@@ -3455,7 +3651,8 @@ function SettingsTab() {
 
   return (
     <div className="space-y-8">
-      {/* Section 1: KM Limits */}
+      {/* Section 1: KM Limits — Vânzări/general context only */}
+      {!isService && (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
           <Settings className="h-5 w-5 text-muted-foreground" />
@@ -3588,14 +3785,21 @@ function SettingsTab() {
         )}
       </div>
 
-      {/* Section 2: Itinerary Routes per Company */}
-      <RoutesSettings companies={companiesData?.companies ?? []} />
+      )}
 
-      {/* Section 3: Lockout reasons (Motive blocare) */}
-      <LockoutReasonsSettings />
+      {/* Section 2: Company config — shows sales cards (location/comodat) in
+          Vânzări, the courtesy default-policy card in Mașini de curtoazie. */}
+      <RoutesSettings companies={companiesData?.companies ?? []} documentType={documentType} headerCompanyId={companyId} />
 
-      {/* Section 4: Archive reasons (Motive arhivare) */}
-      <ArchiveReasonsSettings />
+      {/* Section 3: Lockout reasons (Motive blocare) — Vânzări/general only */}
+      {!isService && <LockoutReasonsSettings />}
+
+      {/* Section 4: Archive reasons (Motive arhivare) — Vânzări/general only */}
+      {!isService && <ArchiveReasonsSettings />}
+
+      {/* Section 5: Service contract setup (per company+brand) — Mașini de curtoazie only.
+          Uses the header-selected company; no separate picker. */}
+      {isService && <ContractConfigSection companyId={companyId} />}
     </div>
   )
 }
@@ -3825,17 +4029,26 @@ function ArchiveReasonRow({ reason, onSaved }: { reason: import('@/types/foiParc
 }
 
 // ── Routes Settings — per-company itinerary list ──
-function RoutesSettings({ companies }: { companies: { id: number; company: string }[] }) {
+export function RoutesSettings({ companies, documentType = 'sales', headerCompanyId }: { companies: { id: number; company: string }[]; documentType?: DocType; headerCompanyId?: number }) {
+  const isService = documentType !== 'sales'
   const queryClient = useQueryClient()
   const [selectedCompany, setSelectedCompany] = useState<string>('')
   const [newComodatRoute, setNewComodatRoute] = useState('')
   const [newComodatKm, setNewComodatKm] = useState('')
 
-  // Company config (base location, td radius, comodat avg km)
-  const [configForm, setConfigForm] = useState({ base_location: '', td_radius_km: 50, comodat_avg_km: 150 })
+  // Company config (base location, td radius, comodat avg km) + Service
+  // (Mașini de curtoazie) default rental-pricing policy — the 4 svc_* fields
+  // are strings so the inputs can be genuinely blank (⇒ send null, meaning
+  // "no company default"; a per-car value on fp_vehicles still wins either way).
+  const [configForm, setConfigForm] = useState({
+    base_location: '', td_radius_km: 50, comodat_avg_km: 150,
+    svc_km_included_day: '', svc_extra_km_eur: '', svc_deposit_eur: '', svc_franchise_eur: '',
+  })
   const [configSaved, setConfigSaved] = useState(false)
 
-  const companyId = selectedCompany ? Number(selectedCompany) : null
+  // Service context is bound to the header-selected company (no separate picker);
+  // Sales keeps its own company selector (KM/itinerary is an all-companies admin view).
+  const companyId = isService ? (headerCompanyId ?? null) : (selectedCompany ? Number(selectedCompany) : null)
 
   const { data: configData } = useQuery({
     queryKey: ['fp-company-config', companyId],
@@ -3852,6 +4065,10 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
         base_location: loadedConfig.base_location || '',
         td_radius_km: loadedConfig.td_radius_km || 50,
         comodat_avg_km: loadedConfig.comodat_avg_km || 150,
+        svc_km_included_day: loadedConfig.svc_km_included_day != null ? String(loadedConfig.svc_km_included_day) : '',
+        svc_extra_km_eur: loadedConfig.svc_extra_km_eur != null ? String(loadedConfig.svc_extra_km_eur) : '',
+        svc_deposit_eur: loadedConfig.svc_deposit_eur != null ? String(loadedConfig.svc_deposit_eur) : '',
+        svc_franchise_eur: loadedConfig.svc_franchise_eur != null ? String(loadedConfig.svc_franchise_eur) : '',
       })
     }
   }, [loadedConfig])
@@ -3866,7 +4083,15 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
   const comodatRoutes = routesData?.routes ?? []
 
   const configMutation = useMutation({
-    mutationFn: () => foiParcursApi.updateCompanyConfig(companyId!, configForm),
+    mutationFn: () => foiParcursApi.updateCompanyConfig(companyId!, {
+      base_location: configForm.base_location,
+      td_radius_km: configForm.td_radius_km,
+      comodat_avg_km: configForm.comodat_avg_km,
+      svc_km_included_day: configForm.svc_km_included_day.trim() === '' ? null : Number(configForm.svc_km_included_day),
+      svc_extra_km_eur: configForm.svc_extra_km_eur.trim() === '' ? null : Number(configForm.svc_extra_km_eur),
+      svc_deposit_eur: configForm.svc_deposit_eur.trim() === '' ? null : Number(configForm.svc_deposit_eur),
+      svc_franchise_eur: configForm.svc_franchise_eur.trim() === '' ? null : Number(configForm.svc_franchise_eur),
+    }),
     onSuccess: () => {
       setConfigSaved(true)
       setTimeout(() => setConfigSaved(false), 2000)
@@ -3899,30 +4124,36 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <MapPin className="h-5 w-5 text-muted-foreground" />
-        <h3 className="text-lg font-semibold">Itinerary Routes per Company</h3>
+        <h3 className="text-lg font-semibold">
+          {isService ? 'Mașini de curtoazie — politică companie' : 'Itinerary Routes per Company'}
+        </h3>
       </div>
       <p className="text-sm text-muted-foreground">
-        Set the company base location for AI-generated TD routes (streets and landmarks within radius).
-        Manually configure Comodat routes for longer inter-city trips.
+        {isService
+          ? 'Valori implicite de închiriere folosite când mașina de curtoazie nu are propriile setări (pentru compania selectată în antet).'
+          : 'Set the company base location for AI-generated TD routes (streets and landmarks within radius). Manually configure Comodat routes for longer inter-city trips.'}
       </p>
 
-      <div className="max-w-sm">
-        <Label>Company</Label>
-        <Select value={selectedCompany} onValueChange={setSelectedCompany}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select a company..." />
-          </SelectTrigger>
-          <SelectContent>
-            {companies.map((c) => (
-              <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {!isService && (
+        <div className="max-w-sm">
+          <Label>Company</Label>
+          <Select value={selectedCompany} onValueChange={setSelectedCompany}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select a company..." />
+            </SelectTrigger>
+            <SelectContent>
+              {companies.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {companyId && (
         <div className="space-y-4">
-          {/* Company Location Config */}
+          {/* Company Location Config — Sales/general context only */}
+          {!isService && (
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2 text-sm font-medium">
               <MapPin className="h-4 w-4 text-muted-foreground" />
@@ -3989,8 +4220,85 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
               </div>
             </div>
           </Card>
+          )}
 
-          {/* Comodat Routes (manual) */}
+          {/* Service (Mașini de curtoazie) default rental-pricing policy —
+              fallback for any per-car svc_* field left blank (S6). Service context only. */}
+          {isService && (
+          <Card className="p-5 space-y-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Badge variant="secondary">Service</Badge>
+              Politică implicită mașini de curtoazie
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Valori implicite folosite când mașina nu are propriile setări (Stoc → Editare mașină).
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Km incluși/zi</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={configForm.svc_km_included_day}
+                  onChange={(e) => setConfigForm((p) => ({ ...p, svc_km_included_day: e.target.value }))}
+                  placeholder="ex. 100"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Extra km (€)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={configForm.svc_extra_km_eur}
+                  onChange={(e) => setConfigForm((p) => ({ ...p, svc_extra_km_eur: e.target.value }))}
+                  placeholder="ex. 0.5"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Garanție (€)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={configForm.svc_deposit_eur}
+                  onChange={(e) => setConfigForm((p) => ({ ...p, svc_deposit_eur: e.target.value }))}
+                  placeholder="ex. 500"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Franșiză (€)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={configForm.svc_franchise_eur}
+                  onChange={(e) => setConfigForm((p) => ({ ...p, svc_franchise_eur: e.target.value }))}
+                  placeholder="ex. 1000"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => configMutation.mutate()}
+                disabled={configMutation.isPending}
+              >
+                <Save className="mr-1.5 h-4 w-4" />
+                {configMutation.isPending ? 'Saving...' : 'Save'}
+              </Button>
+              {configSaved && (
+                <span className="text-sm text-green-600 flex items-center gap-1">
+                  <Check className="h-4 w-4" /> Saved
+                </span>
+              )}
+            </div>
+          </Card>
+
+          )}
+
+          {/* Comodat Routes (manual) — Sales/general context only */}
+          {!isService && (
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Badge variant="secondary">Comodat</Badge>
@@ -4063,6 +4371,7 @@ function RoutesSettings({ companies }: { companies: { id: number; company: strin
               </div>
             )}
           </Card>
+          )}
         </div>
       )}
     </div>

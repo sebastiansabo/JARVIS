@@ -63,6 +63,20 @@ describe('DrivingSessionsList', () => {
     fireEvent.click(name)
     expect(screen.getByText('VF1')).toBeInTheDocument()
   })
+
+  it('scopes contracts + vehicles to document_type when documentType="service"', async () => {
+    wrap(<DrivingSessionsList companyId={11} brand="" documentType="service" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    await screen.findByText('Ion Pop')
+    expect(getContracts).toHaveBeenCalledWith(expect.objectContaining({ document_type: 'service' }))
+    expect(getVehicles).toHaveBeenCalledWith(true, 'service')
+  })
+
+  it('defaults to sales scope when documentType is omitted', async () => {
+    wrap(<DrivingSessionsList companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    await screen.findByText('Ion Pop')
+    expect(getContracts).toHaveBeenCalledWith(expect.objectContaining({ document_type: 'sales' }))
+    expect(getVehicles).toHaveBeenCalledWith(true, 'sales')
+  })
 })
 
 describe('DrivingSessionsList brand matching', () => {

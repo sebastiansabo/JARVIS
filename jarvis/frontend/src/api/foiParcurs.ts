@@ -164,6 +164,7 @@ export const foiParcursApi = {
     per_page?: number
     sort_by?: string
     sort_dir?: string
+    document_type?: string
   }) =>
     api.get<{ contracts: FoiContract[]; total: number; page: number; per_page: number }>(
       `${BASE}/contracts${qs(params ?? {})}`
@@ -221,15 +222,15 @@ export const foiParcursApi = {
     api.post<{ success: boolean; client: FoiClient }>(`${BASE}/clients`, data),
 
   // ── Vehicles (Stock) ──
-  getVehicles: (activeOnly = true) =>
-    api.get<{ vehicles: FpVehicle[] }>(`${BASE}/vehicles`, { active_only: String(activeOnly) }),
+  getVehicles: (activeOnly = true, documentType?: string) =>
+    api.get<{ vehicles: FpVehicle[] }>(`${BASE}/vehicles`, { active_only: String(activeOnly), ...(documentType ? { document_type: documentType } : {}) }),
 
   // Full vehicle incl. document blobs — the list is lean, so the edit form
   // fetches the docs here on demand.
   getVehicle: (id: number) =>
     api.get<{ success: boolean; vehicle: FpVehicle }>(`${BASE}/vehicles/${id}`),
 
-  createVehicle: (data: { vin: string; registration_number?: string; car_id?: string; mark: string; brand?: string; model: string; color?: string; fuel_type: string; fuel_tank_capacity_liters?: number | null; battery_capacity_kwh?: number | null; odometer_km?: number | null; norma_combustibil?: number | null; norma_energie?: number | null; category?: string | null; company_id?: number; vignette_valid_until?: string; itp_valid_until?: string; insurance_valid_until?: string; insurance_doc?: string; talon_doc?: string; civ_doc?: string; registration_doc?: string; offer_doc?: string }) =>
+  createVehicle: (data: { vin: string; registration_number?: string; car_id?: string; mark: string; brand?: string; model: string; color?: string; fuel_type: string; fuel_tank_capacity_liters?: number | null; battery_capacity_kwh?: number | null; odometer_km?: number | null; norma_combustibil?: number | null; norma_energie?: number | null; category?: string | null; company_id?: number; document_type?: string; svc_tariff_eur_day?: number | null; svc_tariff_eur_month?: number | null; svc_km_included_day?: number | null; svc_extra_km_eur?: number | null; svc_deposit_eur?: number | null; svc_franchise_eur?: number | null; vignette_valid_until?: string; itp_valid_until?: string; insurance_valid_until?: string; insurance_doc?: string; talon_doc?: string; civ_doc?: string; registration_doc?: string; offer_doc?: string }) =>
     api.post<{ success: boolean; vehicle: FpVehicle }>(`${BASE}/vehicles`, data),
 
   updateVehicle: (id: number, data: Partial<FpVehicle>) =>
@@ -287,9 +288,18 @@ export const foiParcursApi = {
   getCompanies: () =>
     api.get<{ companies: { id: number; company: string }[] }>(`${BASE}/companies`),
 
-  // ── Brands for a company (from the company_brands catalog, not dept structure) ──
-  getBrands: (companyId: number) =>
-    api.get<{ success: boolean; brands: string[] }>(`${BASE}/brands/${companyId}`),
+  // ── Brands for a company (from the company_brands catalog, not dept structure).
+  //    Pass documentType='service' to instead get the distinct brands present in
+  //    that company's Service (courtesy) fleet pool, not the sales catalog. ──
+  getBrands: (companyId: number, documentType?: string) =>
+    api.get<{ success: boolean; brands: string[] }>(
+      `${BASE}/brands/${companyId}${documentType ? `?document_type=${documentType}` : ''}`,
+    ),
+
+  // ── Every active brand across all companies (any-brand picker for courtesy
+  //    cars — e.g. a VW loaner sitting on an Audi dealer's fleet) ──
+  getAllBrands: () =>
+    api.get<{ success: boolean; brands: string[] }>(`${BASE}/all-brands`),
 
   // ── Per company+brand dealer config (review link + contact for the email) ──
   getDealerConfig: (companyId: number) =>
@@ -299,6 +309,31 @@ export const foiParcursApi = {
 
   updateDealerConfig: (companyId: number, brandId: number, data: { review_url?: string; address?: string; phone?: string; email?: string; show_in_foi_parcurs?: boolean; general_conditions?: string }) =>
     api.put<{ success: boolean }>(`${BASE}/dealer-config/${companyId}/${brandId}`, data),
+
+  // ── Per company+brand contract configs (Service context: title/body/general
+  //    conditions template for the generated contract) ──
+  getContractConfigs: (companyId: number) =>
+    api.get<{ success: boolean; configs: Array<{ brand_id: number; brand_name: string; config_id: number | null; title: string | null; body_template: string | null; general_conditions: string | null; is_active: boolean }> }>(`${BASE}/contract-configs/${companyId}`),
+
+  putContractConfig: (companyId: number, brandId: number, payload: { title: string; body_template: string; general_conditions: string; is_active: boolean }) =>
+    api.put<{ success: boolean }>(`${BASE}/contract-configs/${companyId}/${brandId}`, payload),
+
+  // ── Service context enabled flags (which brands have Service unlocked) ──
+  getServiceEnabled: (companyId: number) =>
+    api.get<{ success: boolean; enabled: boolean; brands: number[] }>(`${BASE}/service-enabled`, { company_id: String(companyId) }),
+
+  // ── Document types (user-defined per company; a type IS its contract) ──
+  getDocumentTypes: (companyId: number, includeInactive = false) =>
+    api.get<{ success: boolean; types: Array<{ key: string; label: string; title: string | null; body_template: string | null; general_conditions: string | null; is_rental: boolean; is_active: boolean; is_default: boolean; sort_order: number; has_template: boolean }> }>(
+      `${BASE}/document-types`,
+      { company_id: String(companyId), ...(includeInactive ? { include_inactive: '1' } : {}) },
+    ),
+  addDocumentType: (payload: { company_id: number; label: string; is_rental?: boolean }) =>
+    api.post<{ success: boolean; key: string }>(`${BASE}/document-types`, payload),
+  putDocumentType: (payload: { company_id: number; key: string; label: string; title: string; body_template: string; general_conditions: string; is_rental: boolean; is_active: boolean }) =>
+    api.put<{ success: boolean }>(`${BASE}/document-types`, payload),
+  deleteDocumentType: (payload: { company_id: number; key: string }) =>
+    api.delete<{ success: boolean }>(`${BASE}/document-types`, payload),
 
   // ── KM Configs (Settings) ──
   getKmConfigs: () =>
@@ -325,14 +360,36 @@ export const foiParcursApi = {
   generateItinerary: (companyId: number, routeType: 'TD' | 'Comodat', distanceKm: number) =>
     api.post<{ itinerary: string }>(`${BASE}/generate-itinerary`, { company_id: companyId, route_type: routeType, distance_km: distanceKm }),
 
-  // ── Company Location Config ──
+  // ── Company Location Config (+ Service default rental-pricing policy) ──
   getCompanyConfig: (companyId: number) =>
-    api.get<{ config: { company_id: number; base_location: string; td_radius_km: number; comodat_avg_km: number } }>(
-      `${BASE}/company-config/${companyId}`
-    ),
+    api.get<{ config: {
+      company_id: number; base_location: string; td_radius_km: number; comodat_avg_km: number
+      // Service (Mașini de curtoazie) default policy — fallback for any
+      // per-car svc_* field left NULL (see fp_vehicles / compute_service_pricing).
+      svc_km_included_day: number | null; svc_extra_km_eur: number | null
+      svc_deposit_eur: number | null; svc_franchise_eur: number | null
+    } }>(`${BASE}/company-config/${companyId}`),
 
-  updateCompanyConfig: (companyId: number, data: { base_location: string; td_radius_km: number; comodat_avg_km: number }) =>
+  updateCompanyConfig: (companyId: number, data: {
+    base_location: string; td_radius_km: number; comodat_avg_km: number
+    svc_km_included_day?: number | null; svc_extra_km_eur?: number | null
+    svc_deposit_eur?: number | null; svc_franchise_eur?: number | null
+  }) =>
     api.put<{ success: boolean }>(`${BASE}/company-config/${companyId}`, data),
+
+  // ── Service rental-pricing preview (session form auto-fill; pure preview,
+  //    never persists — see GET /api/foi-parcurs/service-pricing) ──
+  getServicePricing: (companyId: number, vin: string, departure: string, returnDt: string) =>
+    api.get<{ success: boolean; pricing: {
+      svc_rate_basis: 'day' | 'month'
+      svc_tariff_eur: number
+      svc_units: number
+      svc_total_eur: number
+      svc_km_included_day: number | null
+      svc_extra_km_eur: number | null
+      svc_garantie_eur: number | null
+      svc_fransiza_eur: number | null
+    } }>(`${BASE}/service-pricing`, { company_id: String(companyId), vin, departure, return_dt: returnDt }),
 
   // ── Test Drive Form ──
   submitTestDrive: (data: TestDriveFormPayload) =>
@@ -348,9 +405,9 @@ export const foiParcursApi = {
     api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/start`, data),
 
   // ── Per company+vehicle-brand general-conditions text ('' when unset) ──
-  getGeneralConditions: (companyId: number, vin: string) =>
+  getGeneralConditions: (companyId: number, vin: string, documentType?: string) =>
     api.get<{ success: boolean; text: string; brand: string }>(
-      `${BASE}/general-conditions?company_id=${companyId}&vin=${encodeURIComponent(vin)}`,
+      `${BASE}/general-conditions?company_id=${companyId}&vin=${encodeURIComponent(vin)}&document_type=${documentType ?? 'sales'}`,
     ),
 
   // ── Plan a draft TD (status: 'PLANNED') — same endpoint, signature/GDPR/PDF

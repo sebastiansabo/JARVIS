@@ -5,6 +5,7 @@ import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus, carColor, internalComment } from '@/pages/FoiParcurs/sessionStatus'
+import type { DocType } from '@/pages/FoiParcurs/documentType'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
 import MonthCalendar from '@/pages/FoiParcurs/MonthCalendar'
@@ -42,6 +43,8 @@ interface Props {
   /** Create a session for a dragged calendar range — full "YYYY-MM-DDTHH:MM"
    *  departure/return strings (return may be a later day for multi-day sessions). */
   onAdd: (departure: string, ret: string) => void
+  /** Which fleet/pool to show — 'sales' (default) or 'service' (courtesy). */
+  documentType?: DocType
 }
 
 /**
@@ -56,7 +59,7 @@ interface Props {
  * space proposes a new session at that slot via `onAdd`. Month keeps the
  * dot-grid + selected-day agenda list.
  */
-export default function DrivingCalendar({ companyId, brand, carFilter = [], consultantFilter = [], onActivate, onReturn, onAdd }: Props) {
+export default function DrivingCalendar({ companyId, brand, carFilter = [], consultantFilter = [], onActivate, onReturn, onAdd, documentType = 'sales' }: Props) {
   // Persisted so abandoning a new-session overlay (or any remount) doesn't
   // reset the calendar to a different view; Week is the default.
   const [view, setView] = usePersistedState<CalView>('hub-driving-cal-view', 'week')
@@ -66,11 +69,11 @@ export default function DrivingCalendar({ companyId, brand, carFilter = [], cons
   const [weekOffset, setWeekOffset] = useState(0)
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['foi-contracts-all', companyId],
-    queryFn: () => foiParcursApi.getContracts({ company_id: companyId > 0 ? companyId : undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC' }),
+    queryKey: ['foi-contracts-all', companyId, documentType],
+    queryFn: () => foiParcursApi.getContracts({ company_id: companyId > 0 ? companyId : undefined, per_page: 1000, sort_by: 'created_at', sort_dir: 'DESC', document_type: documentType }),
     staleTime: 30_000,
   })
-  const { data: vehiclesData } = useQuery({ queryKey: ['fp-vehicles'], queryFn: () => foiParcursApi.getVehicles(), staleTime: 30_000 })
+  const { data: vehiclesData } = useQuery({ queryKey: ['fp-vehicles', documentType], queryFn: () => foiParcursApi.getVehicles(true, documentType), staleTime: 30_000 })
   const vinVehicle = useMemo(() => new Map((vehiclesData?.vehicles ?? []).map((v) => [v.vin, v] as const)), [vehiclesData])
 
   // planned/driving/late sessions for the selected company + brand, by day.

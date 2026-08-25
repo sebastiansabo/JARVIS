@@ -33,6 +33,7 @@ import {
   FileSpreadsheet,
   MapPin,
   Loader2,
+  KeyRound,
 } from 'lucide-react'
 import { SincronTimesheetView } from '@/components/shared/SincronTimesheetView'
 import { MarqueeWidget } from '@/components/happy/MarqueeWidget'
@@ -93,7 +94,7 @@ const VOUCHER_FORM_SLUG = 'voucher-issuance'
 
 // ─── Types ──────────────────────────────────────────────
 
-type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals' | 'driving' | 'field_sales'
+type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals' | 'driving' | 'courtesy' | 'field_sales'
 type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits' | 'sincron'
 
 // Labels for the HR sub-sections — used both by the tile grid and the breadcrumb.
@@ -122,6 +123,7 @@ export const appTiles: (AppTile & { shortLabel?: string })[] = [
   { key: 'vouchers', label: 'Vouchers', icon: Ticket, bg: 'bg-amber-500', fg: 'text-white' },
   { key: 'chat', label: 'Chat', shortLabel: 'Chat', icon: MessageSquare, bg: 'bg-pink-600', fg: 'text-white' },
   { key: 'driving', label: 'Driving Sessions', shortLabel: 'Driving', icon: Car, bg: 'bg-teal-600', fg: 'text-white' },
+  { key: 'courtesy', label: 'Mașini de curtoazie', shortLabel: 'Curtoazie', icon: KeyRound, bg: 'bg-indigo-600', fg: 'text-white' },
   { key: 'field_sales', label: 'Field Sales', shortLabel: 'Teren', icon: MapPin, bg: 'bg-teal-600', fg: 'text-white' },
 ]
 
@@ -238,6 +240,7 @@ export default function Hub() {
     vouchers: Array.isArray(vouchersData) ? vouchersData.length : -1,
     forms: (formsCountData?.forms ?? []).length || -1,
     driving: -1, // always show when allowed
+    courtesy: -1, // always show when allowed (same gate as driving)
     field_sales: -1, // always show when allowed
   }
 
@@ -246,6 +249,7 @@ export default function Hub() {
     return appTiles.filter((t) => {
       if (t.key === 'vouchers' && !hasVouchersPerm) return false
       if (t.key === 'driving' && !authUser?.can_access_carpark) return false
+      if (t.key === 'courtesy' && !authUser?.can_access_carpark) return false
       if (t.key === 'field_sales' && !authUser?.can_access_field_sales) return false
       // Vouchers stays visible even at 0 (permission-gated above) — like approvals;
       // other tiles auto-hide when empty.
@@ -389,6 +393,11 @@ export default function Hub() {
               <HubDrivingPanel onBack={() => setActiveModule(null)} />
             </Suspense>
           )}
+          {activeModule === 'courtesy' && (
+            <Suspense fallback={<div className="py-8 text-center text-muted-foreground text-sm">Loading...</div>}>
+              <HubDrivingPanel documentType="service" onBack={() => setActiveModule(null)} />
+            </Suspense>
+          )}
           {activeModule === 'field_sales' && (
             <Suspense fallback={<div className="py-8 text-center text-muted-foreground text-sm">Loading...</div>}>
               <HubFieldSalesPanel />
@@ -491,7 +500,7 @@ export default function Hub() {
       {/* ── Bottom Tab Bar (mobile only, Instagram floating pill) ──
           Suppressed while the Driving module is open: that panel renders its own
           bottom pill, and its Back returns to the Hub grid (restoring this bar). */}
-      {activeModule !== 'driving' && activeModule !== 'chat' && (
+      {activeModule !== 'driving' && activeModule !== 'courtesy' && activeModule !== 'chat' && (
       <div className="fixed bottom-0 inset-x-0 z-40 sm:hidden pb-[env(safe-area-inset-bottom)]">
         <div className="mx-4 mb-2 bg-zinc-900 dark:bg-zinc-800 rounded-[22px] shadow-lg">
           <div className="flex items-center justify-around h-[52px] px-1">

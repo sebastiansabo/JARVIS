@@ -9,7 +9,9 @@ Called by:
   - init_schema.create_schema()  (fresh installs, ensures parity)
   - database.init_db()           (existing schemas on every startup)
 """
+import importlib.util
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,118 @@ def _recompute_bilant_formula_values(cursor):
                 )
     if updated:
         logger.info('Recomputed %d stale formula_rd values across %d generation(s)', updated, len(gen_ids))
+
+
+def _seed_service_contract_configs(conn, cursor):
+    """Seed the Service courtesy-car contract config for every active (company, brand).
+
+    Idempotent via ON CONFLICT DO NOTHING — existing rows (including any an
+    admin has already hand-edited) are left untouched; only missing
+    (company_id, brand_id, 'service') combos get inserted.
+
+    Templates are loaded by file path via importlib rather than
+    `import foi_parcurs...` because importing the foi_parcurs package triggers
+    foi_parcurs/__init__.py -> routes -> repositories -> database, which is a
+    circular import when called from database.init_db(). Any failure here
+    (missing file, bad SQL, etc.) must never break schema init, so the whole
+    thing is wrapped in try/except.
+
+    IMPORTANT: when create_schema() runs inside ONE shared transaction
+    (conn.autocommit is False, committed only at the very end), a bare
+    conn.rollback() here would discard ALL prior uncommitted schema-init work
+    in this run. So the INSERT is scoped inside a SAVEPOINT and only that
+    SAVEPOINT is rolled back on failure — the outer schema-creation
+    transaction is left intact, and NO mid-schema conn.commit() is introduced.
+
+    The SAVEPOINT is used only when there is an open transaction to scope it
+    to: database.init_db() gets its connection from get_db(), which sets
+    conn.autocommit = True, and SAVEPOINT is invalid outside a transaction
+    block (psycopg2 raises NoActiveSqlTransaction). In autocommit mode there
+    is no shared transaction to protect — each statement commits on its own
+    and a failed INSERT only rolls back itself — so the SAVEPOINT is skipped.
+    """
+    try:
+        tpl_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', 'foi_parcurs',
+            'services', 'service_contract_templates.py'
+        )
+        spec = importlib.util.spec_from_file_location('_svc_contract_tpl', tpl_path)
+        tpl = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tpl)
+        face, terms = tpl.SERVICE_CONTRACT_FACE, tpl.SERVICE_CONTRACT_TERMS
+
+        use_savepoint = not getattr(conn, 'autocommit', False)
+        if use_savepoint:
+            cursor.execute('SAVEPOINT svc_contract_seed')
+        try:
+            cursor.execute('''
+                INSERT INTO fp_contract_configs
+                    (company_id, brand_id, document_type, title, body_template, general_conditions, is_active, updated_at)
+                SELECT cb.company_id, cb.brand_id, 'service', %s, %s, %s, TRUE, NOW()
+                FROM company_brands cb
+                JOIN brands b ON b.id = cb.brand_id
+                WHERE cb.is_active = TRUE AND b.is_active = TRUE
+                ON CONFLICT (company_id, brand_id, document_type) DO NOTHING
+            ''', ('Contract închiriere autovehicul – Mașini de curtoazie', face, terms))
+            if use_savepoint:
+                cursor.execute('RELEASE SAVEPOINT svc_contract_seed')
+        except Exception:
+            if use_savepoint:
+                cursor.execute('ROLLBACK TO SAVEPOINT svc_contract_seed')
+            raise
+    except Exception:
+        logger.exception('Failed to seed fp_contract_configs (service) — continuing schema init')
+
+
+def _seed_document_types(conn, cursor):
+    """Seed the user-defined document-type registry (fp_document_types).
+
+    Two idempotent inserts, both ON CONFLICT (company_id, key) DO NOTHING so
+    re-runs and admin edits are preserved:
+      1. A fixed 'sales' default row per company (label 'Vânzări', not rental,
+         no template — Sales uses the legacy legal PDF).
+      2. One 'service' row per company, collapsing the per-(company, brand)
+         fp_contract_configs 'service' rows (templates are identical/tag-based —
+         take the lowest-id active one) into a single rental type.
+
+    Same SAVEPOINT discipline as _seed_service_contract_configs: only the seed is
+    rolled back on failure, never the outer schema-init transaction.
+    """
+    try:
+        use_savepoint = not getattr(conn, 'autocommit', False)
+        if use_savepoint:
+            cursor.execute('SAVEPOINT doctype_seed')
+        try:
+            # 1. Fixed sales default per company.
+            cursor.execute('''
+                INSERT INTO fp_document_types
+                    (company_id, key, label, is_rental, is_active, is_default, sort_order, updated_at)
+                SELECT c.id, 'sales', 'Vânzări', FALSE, TRUE, TRUE, 0, NOW()
+                FROM companies c
+                ON CONFLICT (company_id, key) DO NOTHING
+            ''')
+            # 2. Collapse existing per-brand service templates into one rental type.
+            cursor.execute('''
+                INSERT INTO fp_document_types
+                    (company_id, key, label, title, body_template, general_conditions,
+                     is_rental, is_active, is_default, sort_order, updated_at)
+                SELECT DISTINCT ON (cc.company_id)
+                       cc.company_id, 'service', 'Mașini de curtoazie',
+                       cc.title, cc.body_template, cc.general_conditions,
+                       TRUE, TRUE, FALSE, 1, NOW()
+                FROM fp_contract_configs cc
+                WHERE cc.document_type = 'service' AND cc.is_active = TRUE
+                ORDER BY cc.company_id, cc.id
+                ON CONFLICT (company_id, key) DO NOTHING
+            ''')
+            if use_savepoint:
+                cursor.execute('RELEASE SAVEPOINT doctype_seed')
+        except Exception:
+            if use_savepoint:
+                cursor.execute('ROLLBACK TO SAVEPOINT doctype_seed')
+            raise
+    except Exception:
+        logger.exception('Failed to seed fp_document_types — continuing schema init')
 
 
 def create_schema_incremental(conn, cursor):
@@ -2346,6 +2460,157 @@ def _create_schema_incremental_continued(conn, cursor):
         END $$;
     ''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fp_planned_departure ON foi_de_parcurs(departure_datetime) WHERE status = 'PLANNED'")
+
+    # ── Foi de Parcurs — Service context ("Mașini de curtoazie") ──
+    # Generic document-type discriminator (sales|service), orthogonal to
+    # route_type; a Service session is a courtesy-car handover.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='document_type') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN document_type VARCHAR(16) NOT NULL DEFAULT 'sales';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='service_order_ref') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN service_order_ref VARCHAR(64);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='document_type') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN document_type VARCHAR(16) NOT NULL DEFAULT 'sales';
+            END IF;
+        END $$;
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_foi_parcurs_doctype ON foi_de_parcurs(company_id, document_type)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_vehicles_doctype ON fp_vehicles(document_type)')
+    # Per company+brand contract template (registry, Service-first). Existence of
+    # an active document_type='service' row = Service enabled for that (company,brand).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_contract_configs (
+            id            BIGSERIAL PRIMARY KEY,
+            company_id    BIGINT NOT NULL,
+            brand_id      BIGINT NOT NULL,
+            document_type VARCHAR(16) NOT NULL DEFAULT 'service',
+            title         VARCHAR(255),
+            body_template TEXT,
+            general_conditions TEXT,
+            is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE (company_id, brand_id, document_type)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_contract_configs_lookup ON fp_contract_configs(company_id, brand_id, document_type, is_active)')
+    # Idempotent seed — one 'service' row per active (company, brand); never
+    # overwrites rows an admin already edited (ON CONFLICT DO NOTHING).
+    _seed_service_contract_configs(conn, cursor)
+
+    # ── Foi de Parcurs — user-defined document-type registry ──
+    # Supersedes the per-(company, brand) fp_contract_configs read-path: a
+    # document type IS its contract (per company). 'sales' is the fixed default
+    # (no template, not rental); 'service' + custom types carry a template and an
+    # is_rental flag (rental types expose the car pricing fields). The
+    # document_type key is stored on fp_vehicles/foi_de_parcurs as before.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_document_types (
+            id            BIGSERIAL PRIMARY KEY,
+            company_id    BIGINT NOT NULL,
+            key           VARCHAR(48) NOT NULL,
+            label         VARCHAR(128) NOT NULL,
+            title         VARCHAR(255),
+            body_template TEXT,
+            general_conditions TEXT,
+            is_rental     BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+            is_default    BOOLEAN NOT NULL DEFAULT FALSE,
+            sort_order    INTEGER NOT NULL DEFAULT 0,
+            created_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE (company_id, key)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_document_types_lookup ON fp_document_types(company_id, is_active)')
+    _seed_document_types(conn, cursor)
+
+    # ── Foi de Parcurs — Service courtesy-car rental pricing ──
+    # Per-car price + optional policy override (fp_vehicles); company default
+    # policy (fp_company_config); frozen session pricing snapshot (foi_de_parcurs).
+    # All nullable / Service-only — Sales rows and flows are unaffected.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='svc_tariff_eur_day') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN svc_tariff_eur_day NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='svc_tariff_eur_month') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN svc_tariff_eur_month NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='svc_km_included_day') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN svc_km_included_day INTEGER;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='svc_extra_km_eur') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN svc_extra_km_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='svc_deposit_eur') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN svc_deposit_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='svc_franchise_eur') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN svc_franchise_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_company_config' AND column_name='svc_km_included_day') THEN
+                ALTER TABLE fp_company_config ADD COLUMN svc_km_included_day INTEGER;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_company_config' AND column_name='svc_extra_km_eur') THEN
+                ALTER TABLE fp_company_config ADD COLUMN svc_extra_km_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_company_config' AND column_name='svc_deposit_eur') THEN
+                ALTER TABLE fp_company_config ADD COLUMN svc_deposit_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_company_config' AND column_name='svc_franchise_eur') THEN
+                ALTER TABLE fp_company_config ADD COLUMN svc_franchise_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_rate_basis') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_rate_basis VARCHAR(8);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_tariff_eur') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_tariff_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_units') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_units INTEGER;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_total_eur') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_total_eur NUMERIC(12,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_km_included_day') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_km_included_day INTEGER;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_extra_km_eur') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_extra_km_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_garantie_eur') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_garantie_eur NUMERIC(10,2);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='foi_de_parcurs' AND column_name='svc_fransiza_eur') THEN
+                ALTER TABLE foi_de_parcurs ADD COLUMN svc_fransiza_eur NUMERIC(10,2);
+            END IF;
+        END $$;
+    ''')
 
     # ── Foi de Parcurs — Test Drive RETURN fields ──
     cursor.execute('''

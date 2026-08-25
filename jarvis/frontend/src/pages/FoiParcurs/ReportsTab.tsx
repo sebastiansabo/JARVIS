@@ -395,7 +395,7 @@ function Seg<T extends string>({ value, onChange, options }: {
   )
 }
 
-export function ReportsTab({ companyId, toolbarSlot, documentType, brand }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: 'sales' | 'service'; brand?: string }) {
+export function ReportsTab({ companyId, toolbarSlot, documentType, brand }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: string; brand?: string }) {
   const [preset, setPreset] = usePersistedState<'30d' | 'month' | 'year' | 'custom'>('fp.rep.preset', '30d')
   const [customFrom, setCustomFrom] = usePersistedState<string>('fp.rep.from', ymd(new Date(Date.now() - 29 * 864e5)))
   const [customTo, setCustomTo] = usePersistedState<string>('fp.rep.to', ymd(new Date()))
