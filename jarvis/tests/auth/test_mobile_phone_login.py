@@ -49,6 +49,7 @@ def test_admin_phone_rejected(client, monkeypatch):
     _patch(monkeypatch, 'Admin')
     r = client.post('/api/auth/token', json={'identifier': '0723574040', 'password': 'x'})
     assert r.status_code == 403
+    assert 'viewer' in r.get_json()['error'].lower()
 
 
 def test_admin_email_otp_challenge(client, monkeypatch):

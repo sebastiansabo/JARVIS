@@ -159,6 +159,12 @@ def create_schema_roles(conn, cursor):
     # ── Phone-number login support (Viewer single-factor) ──
     # Canonical Romanian form 40XXXXXXXXX. IMMUTABLE so it can back a
     # STORED generated column. Mirrors crm.parsers.utils.normalize_phone.
+    # WARNING: users.phone_normalized is a STORED generated column backed by
+    # fn_normalize_phone. Postgres does NOT recompute existing rows when this
+    # function is changed via CREATE OR REPLACE. If you ever change the
+    # normalization rules, you MUST backfill existing rows to avoid stored
+    # values silently diverging from get_by_phone()'s live-normalized lookups,
+    # e.g.:  UPDATE users SET phone = phone;   (retriggers the generated column)
     cursor.execute('''
         CREATE OR REPLACE FUNCTION fn_normalize_phone(raw text)
         RETURNS text AS $fn$

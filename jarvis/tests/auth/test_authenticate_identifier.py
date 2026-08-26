@@ -57,3 +57,13 @@ def test_wrong_password_returns_none(repo, monkeypatch):
 def test_inactive_user_returns_none(repo, monkeypatch):
     monkeypatch.setattr(repo, 'get_by_email', lambda e: _user(is_active=False))
     assert repo.authenticate_identifier('v@example.com', 'secretpass1') is None
+
+
+def test_get_by_phone_returns_none_on_zero_and_ambiguous(repo, monkeypatch):
+    row = {'id': 1, 'role_name': 'Viewer'}
+    monkeypatch.setattr(repo, 'query_all', lambda *a, **k: [])
+    assert repo.get_by_phone('0723574040') is None          # 0 matches
+    monkeypatch.setattr(repo, 'query_all', lambda *a, **k: [row])
+    assert repo.get_by_phone('0723574040') == row           # exactly 1
+    monkeypatch.setattr(repo, 'query_all', lambda *a, **k: [row, row])
+    assert repo.get_by_phone('0723574040') is None          # ambiguous >1
