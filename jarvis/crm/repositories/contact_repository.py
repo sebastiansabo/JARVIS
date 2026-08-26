@@ -29,6 +29,18 @@ class ContactRepository(BaseRepository):
     def get(self, contact_id):
         return self.query_one('SELECT * FROM crm_client_contacts WHERE id = %s', (contact_id,))
 
+    def active_session_count(self, contact_id):
+        """How many active (PLANNED/FILLED) foi_de_parcurs sessions have this
+        contact as their driver. Guards deletion — a contact still assigned to a
+        live or upcoming session must not be removed (it would orphan the driver
+        snapshot). Completed/missed sessions keep the historical snapshot and
+        don't block."""
+        row = self.query_one(
+            "SELECT COUNT(*)::int AS n FROM foi_de_parcurs "
+            "WHERE driver_contact_id = %s AND status IN ('PLANNED', 'FILLED')",
+            (contact_id,))
+        return (row or {}).get('n', 0)
+
     def delete(self, contact_id):
         return self.execute('DELETE FROM crm_client_contacts WHERE id = %s', (contact_id,))
 

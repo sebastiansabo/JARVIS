@@ -50,7 +50,7 @@ export function ObserverPicker({
     return activeUsers.filter(
       (u) =>
         u.name.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q),
+        (u.email || '').toLowerCase().includes(q),
     )
   }, [activeUsers, search])
 

@@ -26,6 +26,7 @@ type Overlay = null
   | { kind: 'new'; departure?: string; ret?: string }
   | { kind: 'new-internal'; departure?: string; ret?: string }
   | { kind: 'activate'; id: number }
+  | { kind: 'edit-plan'; id: number }
   | { kind: 'return'; id: number }
 type PanelTab = 'sessions' | 'calendar' | 'park'
 
@@ -237,6 +238,7 @@ export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { on
           documentType={documentType}
           onActivate={(id) => setOverlay({ kind: 'activate', id })}
           onReturn={(id) => setOverlay({ kind: 'return', id })}
+          onEditPlan={(id) => setOverlay({ kind: 'edit-plan', id })}
         />
       )}
       {hasCompany && tab === 'calendar' && (
@@ -352,6 +354,9 @@ export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { on
             )}
             {overlay.kind === 'activate' && (
               <TestDriveForm embedded activateId={overlay.id} initialDocumentType={documentType} onDone={handleOverlayDone} onCancel={closeOverlay} />
+            )}
+            {overlay.kind === 'edit-plan' && (
+              <TestDriveForm embedded editId={overlay.id} initialDocumentType={documentType} onDone={handleOverlayDone} onCancel={closeOverlay} />
             )}
             {overlay.kind === 'return' && (
               <TestDriveReturn embedded id={overlay.id} onDone={handleOverlayDone} onCancel={closeOverlay} />

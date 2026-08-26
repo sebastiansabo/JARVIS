@@ -7,13 +7,19 @@ const st = (o: Partial<{ departure: string; ret: string; kmStart: string; kmEnd:
 
 describe('correctionErrors', () => {
   it('blank KM start is invalid — never coerces to 0', () => {
-    expect(correctionErrors(st({ kmStart: '' })).km).toMatch(/obligatorii/)
+    expect(correctionErrors(st({ kmStart: '' })).km).toMatch(/obligatoriu/)
   })
-  it('blank KM final is invalid', () => {
-    expect(correctionErrors(st({ kmEnd: '' })).km).toMatch(/obligatorii/)
+  it('blank KM final is invalid when required (finalized session)', () => {
+    expect(correctionErrors(st({ kmEnd: '' }), true).km).toMatch(/obligatoriu/)
   })
-  it('KM final below KM start is invalid', () => {
-    expect(correctionErrors(st({ kmStart: '1200', kmEnd: '1000' })).km).toMatch(/mai mic/)
+  it('blank KM final is allowed when NOT required (in-progress session)', () => {
+    expect(correctionErrors(st({ kmEnd: '' }), false).km).toBeNull()
+  })
+  it('KM final below KM start is invalid even when km_end is optional', () => {
+    expect(correctionErrors(st({ kmStart: '1200', kmEnd: '1000' }), false).km).toMatch(/mai mic/)
+  })
+  it('non-numeric KM is invalid', () => {
+    expect(correctionErrors(st({ kmEnd: 'abc' })).km).toMatch(/numere/)
   })
   it('valid KM pair passes', () => {
     expect(correctionErrors(st()).km).toBeNull()
