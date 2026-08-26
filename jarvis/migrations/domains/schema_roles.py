@@ -156,6 +156,61 @@ def create_schema_roles(conn, cursor):
         END $$;
     ''')
 
+    # ── Phone-number login support (Viewer single-factor) ──
+    # Canonical Romanian form 40XXXXXXXXX. IMMUTABLE so it can back a
+    # STORED generated column. Mirrors crm.parsers.utils.normalize_phone.
+    cursor.execute('''
+        CREATE OR REPLACE FUNCTION fn_normalize_phone(raw text)
+        RETURNS text AS $fn$
+        DECLARE d text;
+        BEGIN
+            IF raw IS NULL THEN RETURN NULL; END IF;
+            d := regexp_replace(raw, '\\D', '', 'g');
+            IF d = '' THEN RETURN NULL; END IF;
+            IF left(d, 1) = '0' AND length(d) = 10 THEN
+                d := '40' || substring(d from 2);
+            ELSIF left(d, 1) = '4' AND length(d) = 11 THEN
+                d := d;
+            ELSIF left(d, 2) = '40' AND length(d) = 12 THEN
+                d := d;
+            ELSIF length(d) >= 9 AND left(d, 2) <> '40' THEN
+                d := '40' || d;
+            END IF;
+            IF length(d) < 10 OR length(d) > 12 THEN RETURN NULL; END IF;
+            RETURN d;
+        END;
+        $fn$ LANGUAGE plpgsql IMMUTABLE;
+    ''')
+
+    # Generated column — auto-computes for every existing and future row.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'users' AND column_name = 'phone_normalized') THEN
+                ALTER TABLE users
+                    ADD COLUMN phone_normalized TEXT
+                    GENERATED ALWAYS AS (fn_normalize_phone(phone)) STORED;
+            END IF;
+        END $$;
+    ''')
+
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_phone_normalized ON users(phone_normalized)')
+
+    # Unique index is defense-in-depth. Skip (with a notice) if duplicates
+    # already exist so the migration never hard-fails; resolve dupes then re-run.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            BEGIN
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_normalized_uniq
+                    ON users(phone_normalized) WHERE phone_normalized IS NOT NULL;
+            EXCEPTION WHEN unique_violation THEN
+                RAISE NOTICE 'users.phone_normalized has duplicates; unique index skipped.';
+            END;
+        END $$;
+    ''')
+
     conn.commit()
 
     # Add can_edit_invoices column to roles table if it doesn't exist (migration)
