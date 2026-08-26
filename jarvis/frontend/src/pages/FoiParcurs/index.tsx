@@ -110,6 +110,7 @@ import DriveTypeToggle from './DriveTypeToggle'
 import { formatRoPlate, isValidRoPlate } from './plateFormat'
 import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
 import ContractConfigSection from './ContractConfigSection'
+import RentalTariffsSection from './RentalTariffsSection'
 import { DOC_TYPE_LABELS, contextFromSearch, type DocType } from './documentType'
 import DocTypeSelect from './DocTypeSelect'
 
@@ -3798,6 +3799,7 @@ export function SettingsTab({ documentType = 'sales', companyId }: { documentTyp
       {/* Section 5: Service contract setup (per company+brand) — Mașini de curtoazie only.
           Uses the header-selected company; no separate picker. */}
       {isService && <ContractConfigSection companyId={companyId} />}
+      {isService && <RentalTariffsSection companyId={companyId} />}
     </div>
   )
 }
