@@ -2341,6 +2341,7 @@ interface VehicleFormValue {
   svc_extra_km_eur: string
   svc_deposit_eur: string
   svc_franchise_eur: string
+  rental_category_id: string
   vignette_valid_until: string
   itp_valid_until: string
   insurance_valid_until: string
@@ -2359,6 +2360,7 @@ function emptyVehicleForm(companyId?: number, documentType: DocType = 'sales'): 
     document_type: documentType,
     svc_tariff_eur_day: '', svc_tariff_eur_month: '', svc_km_included_day: '',
     svc_extra_km_eur: '', svc_deposit_eur: '', svc_franchise_eur: '',
+    rental_category_id: '',
     vignette_valid_until: '', itp_valid_until: '', insurance_valid_until: '',
     insurance_doc: '', talon_doc: '', civ_doc: '', registration_doc: '', offer_doc: '',
   }
@@ -2387,6 +2389,7 @@ function vehicleToForm(v: FpVehicle): VehicleFormValue {
     svc_extra_km_eur: v.svc_extra_km_eur != null ? String(v.svc_extra_km_eur) : '',
     svc_deposit_eur: v.svc_deposit_eur != null ? String(v.svc_deposit_eur) : '',
     svc_franchise_eur: v.svc_franchise_eur != null ? String(v.svc_franchise_eur) : '',
+    rental_category_id: v.rental_category_id != null ? String(v.rental_category_id) : '',
     vignette_valid_until: v.vignette_valid_until ? String(v.vignette_valid_until).slice(0, 10) : '',
     itp_valid_until: v.itp_valid_until ? String(v.itp_valid_until).slice(0, 10) : '',
     insurance_valid_until: v.insurance_valid_until ? String(v.insurance_valid_until).slice(0, 10) : '',
@@ -2531,6 +2534,13 @@ export function VehicleFormFields({
   const docTypes = docTypesData?.types ?? []
   const selectedDocType = docTypes.find((t) => t.key === value.document_type)
   const isRentalType = !!selectedDocType?.is_rental
+  const { data: rentalCatsData } = useQuery({
+    queryKey: ['fp-rental-categories', _companyId],
+    queryFn: () => foiParcursApi.getRentalCategories(_companyId, true),
+    enabled: _companyId > 0 && isRentalType,
+    staleTime: 30_000,
+  })
+  const rentalCategories = rentalCatsData?.categories ?? []
   // Non-sales pools are multi-brand (courtesy/rental fleet independent of the
   // dealer franchise), so allow any brand there.
   const allowAnyBrand = value.document_type !== 'sales' && !!onBrandChange
@@ -2670,6 +2680,24 @@ export function VehicleFormFields({
 
     {isRentalType && (
       <div className="space-y-3 border-t pt-4">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Categorie tarifară</Label>
+          <Select
+            value={value.rental_category_id || 'none'}
+            onValueChange={(v) => onChange({ rental_category_id: v === 'none' ? '' : v })}
+          >
+            <SelectTrigger><SelectValue placeholder="Fără categorie" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Fără categorie (tarif per mașină)</SelectItem>
+              {rentalCategories.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Prețul se ia din categoria selectată (Settings → Tarife închiriere). Câmpurile de mai jos se folosesc doar când nu e selectată o categorie.
+          </p>
+        </div>
         <p className="text-sm font-semibold">Preț & politică (Mașini de curtoazie)</p>
         <p className="text-xs text-muted-foreground">
           Câmp gol = moștenește politica implicită a companiei (Settings → Politică implicită mașini de curtoazie).
@@ -2858,6 +2886,7 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
         svc_extra_km_eur: newVehicle.svc_extra_km_eur.trim() === '' ? null : Number(newVehicle.svc_extra_km_eur),
         svc_deposit_eur: newVehicle.svc_deposit_eur.trim() === '' ? null : Number(newVehicle.svc_deposit_eur),
         svc_franchise_eur: newVehicle.svc_franchise_eur.trim() === '' ? null : Number(newVehicle.svc_franchise_eur),
+        rental_category_id: newVehicle.rental_category_id.trim() === '' ? null : Number(newVehicle.rental_category_id),
         vignette_valid_until: newVehicle.vignette_valid_until || undefined,
         itp_valid_until: newVehicle.itp_valid_until || undefined,
         insurance_valid_until: newVehicle.insurance_valid_until || undefined,
@@ -2996,6 +3025,7 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
         svc_extra_km_eur: editForm.svc_extra_km_eur.trim() === '' ? null : Number(editForm.svc_extra_km_eur),
         svc_deposit_eur: editForm.svc_deposit_eur.trim() === '' ? null : Number(editForm.svc_deposit_eur),
         svc_franchise_eur: editForm.svc_franchise_eur.trim() === '' ? null : Number(editForm.svc_franchise_eur),
+        rental_category_id: editForm.rental_category_id.trim() === '' ? null : Number(editForm.rental_category_id),
         vignette_valid_until: editForm.vignette_valid_until || null,
         itp_valid_until: editForm.itp_valid_until || null,
         insurance_valid_until: editForm.insurance_valid_until || null,
