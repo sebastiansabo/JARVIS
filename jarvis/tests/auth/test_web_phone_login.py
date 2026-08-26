@@ -17,6 +17,11 @@ def client(monkeypatch):
     # login page (which references many app endpoints/static assets).
     monkeypatch.setattr(auth_routes, 'render_template', lambda *a, **k: 'LOGIN_PAGE')
 
+    # Stub the audit-log helper: it hits _event_repo → the suite-wide mocked
+    # psycopg2 cursor, whose unconfigured fetchone() breaks RETURNING id.
+    # Audit logging is orthogonal to the login-routing behavior under test.
+    monkeypatch.setattr(auth_routes, '_log_event', lambda *a, **k: None)
+
     app = Flask(__name__)
     app.secret_key = 'test-secret'
     app.config['WTF_CSRF_ENABLED'] = False
