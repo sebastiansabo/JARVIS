@@ -5,6 +5,7 @@ import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus, carColor, internalComment } from '@/pages/FoiParcurs/sessionStatus'
+import { clientCell } from '@/pages/FoiParcurs/sessionParty'
 import type { DocType } from '@/pages/FoiParcurs/documentType'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
@@ -179,15 +180,13 @@ export default function DrivingCalendar({ companyId, brand, carFilter = [], cons
           endMin: minsOfDay(c.return_datetime),
           color: carColor(c.vin), // colour by car
           groupKey: c.vin || undefined, // same-car overlap (interlaced) detection
-          // Compact block: driver (person) · car · driver's company. The bold
-          // title is the driver — advisor for internal, else the contact who
-          // drove (driver_name) or the client. The company line is the client's
-          // OWN company (client_company), not the dealership.
-          title: c.is_internal
-            ? (c.advisor_name || '—')
-            : (c.driver_name || c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—')),
+          // Compact block: driver (person) · car · company. The bold title is
+          // the person who drives (Client = Driver — advisor for internal, else
+          // the driver contact / client). The company line is the booking's
+          // company (the company client itself, else the person's own company).
+          title: clientCell(c).primary,
           subtitle: vehicleName(c.vin ? vinVehicle.get(c.vin) : undefined, c.vin),
-          meta: c.is_internal ? (internalComment(c) ?? undefined) : (c.client_company || undefined),
+          meta: c.is_internal ? (internalComment(c) ?? undefined) : (clientCell(c).secondary ?? c.client_company ?? undefined),
           draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
         }]
       })

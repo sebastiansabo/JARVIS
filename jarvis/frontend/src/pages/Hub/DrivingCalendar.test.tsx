@@ -69,6 +69,18 @@ describe('DrivingCalendar', () => {
     expect(await screen.findByTestId('tg-block-13')).toHaveTextContent('Deplasare SNN – pregatiri livrare')
   })
 
+  it('shows the company on a company booking’s block (driver as title, company as meta)', async () => {
+    getContracts.mockResolvedValueOnce({
+      contracts: [
+        { id: 14, status: 'FILLED', td_status: 'driving', vin: 'VF9', client_name: 'VINUM PARTIUM SRL',
+          driver_name: 'Calin Gonta', departure_datetime: todayIso, km_start: 5 },
+      ], total: 1, page: 1, per_page: 1000,
+    })
+    wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
+    expect(await screen.findByTestId('tg-title-14')).toHaveTextContent('Calin Gonta')       // Client = Driver
+    expect(await screen.findByTestId('tg-block-14')).toHaveTextContent('VINUM PARTIUM SRL')  // company on the card
+  })
+
   it('switches to Month view (weekday grid)', async () => {
     wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
     await screen.findByTestId('tg-block-11')
