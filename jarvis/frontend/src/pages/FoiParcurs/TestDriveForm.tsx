@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { crmApi, type ClientContact } from '@/api/crm'
+import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
 import { fileToCompressedDataUrl } from '@/lib/imageCompress'
@@ -51,6 +52,7 @@ import {
   Loader2,
   X,
   UserPlus,
+  Trash2,
   ImagePlus,
   ChevronDown,
   FileText,
@@ -109,6 +111,9 @@ function clientAddress(c: CrmClient | null): string {
 interface TestDriveFormProps {
   embedded?: boolean
   activateId?: number
+  /** Edit a PLANNED draft in place (Corectează on a not-started session) —
+   *  loads + prefills like activation but saves via PUT /plan without starting. */
+  editId?: number
   initialCompanyId?: number
   /** Seed the departure datetime ("YYYY-MM-DDTHH:MM"), e.g. from a calendar
    *  slot the user dragged/clicked. Return defaults to +1h. Ignored in
@@ -127,7 +132,7 @@ interface TestDriveFormProps {
 }
 
 // ── Component ──
-export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, initialDeparture, initialReturn, onDone, onCancel, initialDocumentType }: TestDriveFormProps = {}) {
+export default function TestDriveForm({ embedded, activateId: activateIdProp, editId: editIdProp, initialCompanyId, initialDeparture, initialReturn, onDone, onCancel, initialDocumentType }: TestDriveFormProps = {}) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
@@ -138,6 +143,12 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const [searchParams] = useSearchParams()
   const activateId = activateIdProp ?? (searchParams.get('activate') ? Number(searchParams.get('activate')) : null)
   const isActivating = activateId != null
+  // ── Edit mode — reopens this form pre-filled from a PLANNED draft, saving in
+  //    place (PUT /plan) without starting it. Loads/prefills exactly like
+  //    activation (via draftLoadId); only the save action + button differ. ──
+  const editId = editIdProp ?? (searchParams.get('edit') ? Number(searchParams.get('edit')) : null)
+  const isEditing = editId != null
+  const draftLoadId = activateId ?? editId
 
   // Service context (Task 13) — the standalone route deep-links with
   // `?context=service` (Task 12); anything else defaults to 'sales'. The
@@ -274,9 +285,9 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // drives `documentType` below (used by the vehicle/pricing queries right
   // after), so it must resolve before them. Only depends on activateId.
   const { data: draftData, isLoading: loadingDraft } = useQuery({
-    queryKey: ['fp-test-drive', activateId],
-    queryFn: () => foiParcursApi.getTestDrive(activateId!),
-    enabled: activateId != null,
+    queryKey: ['fp-test-drive', draftLoadId],
+    queryFn: () => foiParcursApi.getTestDrive(draftLoadId!),
+    enabled: draftLoadId != null,
   })
 
   // The effective document context. On a fresh create it's the URL context
@@ -288,7 +299,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // flips to 'service' once draftData arrives (the draft-prefill effect
   // restores the frozen pricing snapshot at that same point).
   const _draftDocType = draftData?.contract?.document_type as DocType | undefined
-  const documentType: DocType = (isActivating && _draftDocType && _draftDocType !== 'sales')
+  const documentType: DocType = ((isActivating || isEditing) && _draftDocType && _draftDocType !== 'sales')
     ? _draftDocType
     : urlDocumentType
 
@@ -367,7 +378,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const { data: draftClientData } = useQuery({
     queryKey: ['fp-draft-client', draftClientId],
     queryFn: () => crmApi.getClient(draftClientId!),
-    enabled: isActivating && draftClientId != null,
+    enabled: (isActivating || isEditing) && draftClientId != null,
   })
 
   useEffect(() => {
@@ -558,6 +569,25 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const contacts = contactsData?.contacts ?? []
   const contactsForbidden = (contactsErr as any)?.status === 403
   const contactsErrored = !!contactsErr
+  // Delete a contact person. The backend blocks (409) a contact who is the
+  // driver on an active session; that message is surfaced via toast.
+  const deleteContactMutation = useMutation({
+    mutationFn: (contactId: number) => crmApi.deleteClientContact(Number(selectedClient!.id), contactId),
+    onSuccess: (_r, contactId) => {
+      queryClient.invalidateQueries({ queryKey: ['client-contacts', selectedClient?.id] })
+      if (driverContact?.id === contactId) setDriverContact(null)
+      toast.success('Persoană de contact ștearsă')
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Ștergerea a eșuat'),
+  })
+  // Edit mode: prefill the current driver contact from the draft so the picker
+  // shows who's already assigned (activation leaves this choice to the advisor).
+  useEffect(() => {
+    if (!isEditing) return
+    const dcid = draftData?.contract?.driver_contact_id
+    if (!dcid || !contacts.length) return
+    setDriverContact((prev) => prev ?? contacts.find((x) => x.id === dcid) ?? null)
+  }, [isEditing, draftData, contacts])
   // Keep the currently-selected contact in the option list even if the query
   // cache hasn't caught up yet (e.g. a just-created contact whose invalidation
   // refetch is still in flight) — otherwise the Select trigger has no matching
@@ -911,6 +941,28 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     withConflictCheck(selectedVehicle.vin, () => activateMutation.mutate(payload), activateId)
   }
 
+  // Edit a PLANNED draft in place (Corectează on a not-started session) — saves
+  // the full form via PUT /plan without starting it; status stays PLANNED.
+  const updatePlanMutation = useMutation({
+    mutationFn: (payload: Partial<TestDriveFormPayload>) => foiParcursApi.updatePlan(editId!, payload),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      if (embedded) onDone?.(data.contract); else setSubmittedContract(data.contract)
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Salvarea a eșuat'),
+  })
+
+  function handleEditPlan() {
+    if (updatePlanMutation.isPending || checking || editId == null) return
+    // Same minimal validity as planning: car + client (name) + departure.
+    if (!draftValid || !selectedVehicle?.vin || !selectedClient) {
+      setAttemptedAction('plan')
+      return
+    }
+    const payload: Partial<TestDriveFormPayload> = buildBasePayload(selectedVehicle, selectedClient)
+    withConflictCheck(selectedVehicle.vin, () => updatePlanMutation.mutate(payload), editId)
+  }
+
   // Back/cancel out of the form — routes to the parent's onCancel callback
   // when embedded (e.g. the Hub panel), else the standalone route's nav.
   const handleBack = () => { if (embedded) onCancel?.(); else navigate('/app/foi-parcurs') }
@@ -984,12 +1036,16 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
         </Button>
         <div>
           <h1 className="text-lg font-semibold">
-            {isActivating
+            {isEditing
+              ? 'Corectează sesiunea planificată'
+              : isActivating
               ? 'Activează Test Drive'
               : isRental ? 'Predare mașină de curtoazie' : 'Test Drive Nou'}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {isActivating
+            {isEditing
+              ? 'Modifică datele sesiunii — se salvează fără a o porni'
+              : isActivating
               ? 'Confirmă/ajustează datele și capturează semnătura clientului'
               : isRental ? 'Completați datele pentru predarea mașinii de curtoazie' : 'Completați datele pentru test drive'}
           </p>
@@ -1208,6 +1264,20 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                               <p className="text-muted-foreground">Valabilitate: {driverContact.driver_license_expiry}</p>
                             )}
                           </div>
+                          <button
+                            type="button"
+                            aria-label="Șterge persoana de contact"
+                            title="Șterge persoana de contact"
+                            disabled={deleteContactMutation.isPending}
+                            onClick={() => {
+                              if (confirm(`Ștergi persoana de contact „${driverContact.full_name}”?`)) {
+                                deleteContactMutation.mutate(Number(driverContact.id))
+                              }
+                            }}
+                            className="ml-auto shrink-0 rounded-md p-1.5 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       )}
                     </>
@@ -1653,7 +1723,11 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
             || 'Eroare la trimitere. Vă rugăm încercați din nou.'}
         </div>
       )}
-      {isActivating ? (
+      {isEditing ? (
+        <Button className={cn('w-full', attemptedAction === 'plan' && !draftValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleEditPlan} disabled={updatePlanMutation.isPending || checking || loadingDraft}>
+          {updatePlanMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se salvează...</> : <><Save className="h-4 w-4 mr-2" />Salvează modificările</>}
+        </Button>
+      ) : isActivating ? (
         <Button className={cn('w-full', attemptedAction === 'activate' && !activateValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleActivate} disabled={activateMutation.isPending || checking || loadingDraft}>
           {activateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se activează...</> : <><PlayCircle className="h-4 w-4 mr-2" />Începe sesiunea</>}
         </Button>

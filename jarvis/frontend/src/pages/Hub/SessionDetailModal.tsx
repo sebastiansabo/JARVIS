@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { PlayCircle, RotateCcw, FileDown, Trash2, Clock, Pencil, Phone, Gauge, User2, CalendarDays, MessageSquare, Building2, Route, FileText } from 'lucide-react'
 import { toast } from 'sonner'
@@ -9,6 +10,8 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus, internalComment } from '@/pages/FoiParcurs/sessionStatus'
+import { sessionParty, clientCell } from '@/pages/FoiParcurs/sessionParty'
+import { useUsersDirectory } from '@/pages/FoiParcurs/useUsersDirectory'
 import ModifiedBadge from '@/pages/FoiParcurs/ModifiedBadge'
 import EventBadge from '@/pages/FoiParcurs/EventBadge'
 import CorrectSessionDialog, { type CorrectionPayload } from '@/pages/FoiParcurs/CorrectSessionDialog'
@@ -52,6 +55,7 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
   onReturn: () => void
 }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
   const [correcting, setCorrecting] = useState(false)
@@ -92,7 +96,9 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
   })
 
   const comment = internalComment(c)
-  const tester = c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—')
+  const { phoneByName } = useUsersDirectory()
+  const party = sessionParty(c, phoneByName)
+  const cc = clientCell(c)
   const vehicleName = vehicle
     ? [vehicle.mark, vehicle.model].filter(Boolean).join(' ') || vehicle.registration_number || c.vin
     : c.vin || '—'
@@ -105,17 +111,23 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
             <DialogTitle className="flex flex-wrap items-center gap-2">
               Detalii sesiune
               <Badge className={cn('text-xs', ss.badgeClass)}>{ss.label}</Badge>
+              {party.isInternal && <Badge variant="outline" className="text-xs">Intern</Badge>}
               <ModifiedBadge session={c} />
               <EventBadge session={c} />
             </DialogTitle>
           </DialogHeader>
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[13px]">
-            <Field label="Client" value={tester} />
-            {c.driver_name && <Field label="Șofer" value={c.driver_name} icon={<User2 className="h-3 w-3" />} />}
-            {c.client_company && <Field label="Companie" value={c.client_company} icon={<Building2 className="h-3 w-3" />} />}
-            <Field label="Telefon" value={c.client_phone || '—'} icon={<Phone className="h-3 w-3" />} />
-            <Field label="Consilier" value={c.advisor_name || '—'} icon={<User2 className="h-3 w-3" />} />
+            <div className="min-w-0">
+              <dt className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">
+                {party.isInternal && <User2 className="h-3 w-3" />}{party.label}
+              </dt>
+              <dd className="mt-0.5 truncate font-medium">{cc.primary}</dd>
+              {cc.secondary && <dd className="truncate text-[11px] text-muted-foreground" title={cc.secondary}>{cc.secondary}</dd>}
+            </div>
+            {!party.isInternal && c.client_company && <Field label="Companie" value={c.client_company} icon={<Building2 className="h-3 w-3" />} />}
+            <Field label="Telefon" value={party.phone} icon={<Phone className="h-3 w-3" />} />
+            {!party.isInternal && <Field label="Consilier" value={c.advisor_name || '—'} icon={<User2 className="h-3 w-3" />} />}
             <Field label="Vehicul" value={vehicleName} icon={<Gauge className="h-3 w-3" />} />
             <Field label="VIN" value={c.vin || '—'} mono />
             <Field label="Kilometraj" value={`${c.km_start ?? vehicle?.mileage_floor ?? '—'}${isDone && c.km_end != null ? ` → ${c.km_end}` : ''} km`} />
@@ -167,7 +179,12 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
               </Button>
             )}
             {isAdmin && (
-              <Button variant="outline" onClick={() => setCorrecting(true)}>
+              <Button variant="outline" onClick={() => {
+                // Not-started → full edit (route to the pre-filled TD form); a
+                // started/finished session gets the light date/KM/consilier fix.
+                if (isPlanned) { navigate(`/app/foi-parcurs/test-drive?edit=${c.id}`); onClose() }
+                else setCorrecting(true)
+              }}>
                 <Pencil className="mr-1.5 h-4 w-4" />Corectează
               </Button>
             )}

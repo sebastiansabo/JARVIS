@@ -534,7 +534,7 @@ class FoiParcursRepository(BaseRepository):
         corrected_at/corrected_by (the "Modificat" audit marker). Returns the
         fresh row. Validation (km_end >= km_start, return >= departure, admin
         gate) lives in the route — this is the persistence primitive."""
-        allowed = ('departure_datetime', 'return_datetime', 'km_start', 'km_end')
+        allowed = ('departure_datetime', 'return_datetime', 'km_start', 'km_end', 'advisor_name')
         sets = {k: fields[k] for k in allowed if k in fields}
         if not sets:
             return self.get_contract_by_id(contract_id)
