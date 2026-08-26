@@ -719,6 +719,26 @@ def api_update_plan(id):
             update['departure_damage'] = data['departure_damage']
         if 'mkt_project_id' in data:
             update['mkt_project_id'] = int(data['mkt_project_id']) if data.get('mkt_project_id') else None
+        if 'event_id' in data:
+            update['event_id'] = int(data['event_id']) if data.get('event_id') else None
+        # Full-edit fields (Corectează on a not-started session). The driver
+        # contact is snapshotted onto the row (name/phone/email/license), mirroring
+        # activation, so the draft carries the actual driver, not just an id.
+        if data.get('driver_contact_id') is not None:
+            dcid = int(data['driver_contact_id'])
+            dc = _contact_repo.get(dcid) or {}
+            update['driver_contact_id'] = dcid
+            update['driver_name'] = dc.get('full_name')
+            update['driver_email'] = dc.get('email')
+            update['driver_phone'] = dc.get('phone')
+            update['driver_license_serie'] = dc.get('driver_license_serie')
+            update['driver_license_photo'] = dc.get('driver_license_photo')
+            update['driver_license_number'] = dc.get('driver_license_number')
+            update['driver_license_expiry'] = dc.get('driver_license_expiry')
+        if 'itinerary' in data:
+            update['itinerary'] = (data.get('itinerary') or '').strip() or None
+        if 'general_observation' in data:
+            update['general_observation'] = (data.get('general_observation') or '').strip() or None
 
         if not update:
             return jsonify({'success': False, 'error': 'No editable fields provided'}), 400

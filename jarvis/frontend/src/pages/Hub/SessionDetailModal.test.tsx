@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 
 const { correctSession, extendReturn, discardTestDrive, deleteContract } = vi.hoisted(() => ({
   correctSession: vi.fn(), extendReturn: vi.fn(), discardTestDrive: vi.fn(), deleteContract: vi.fn(),
@@ -15,6 +16,11 @@ const auth = vi.hoisted(() => ({ role: 'user', companyId: 5 as number | undefine
 vi.mock('@/stores/authStore', () => ({
   useAuthStore: (sel: (s: unknown) => unknown) => sel({ user: { role_name: auth.role, company_id: auth.companyId } }),
 }))
+
+// Users directory — feeds an internal session's driver-phone lookup (advisor
+// name → users.phone). Default returns the "Ana" advisor with a phone on file.
+const { getUsers } = vi.hoisted(() => ({ getUsers: vi.fn() }))
+vi.mock('@/api/users', () => ({ usersApi: { getUsers } }))
 
 import SessionDetailModal from './SessionDetailModal'
 
@@ -31,11 +37,23 @@ const internalWithComment = {
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
+  return render(<QueryClientProvider client={qc}><MemoryRouter>{ui}</MemoryRouter></QueryClientProvider>)
 }
 
 describe('SessionDetailModal', () => {
-  beforeEach(() => { auth.role = 'user'; auth.companyId = 5; vi.clearAllMocks() })
+  beforeEach(() => {
+    auth.role = 'user'; auth.companyId = 5; vi.clearAllMocks()
+    getUsers.mockResolvedValue([{ name: 'Ana', phone: '0755000111' }])
+  })
+
+  it('internal session: shows an Intern tag, the driving user as Șofer, and their profile phone', async () => {
+    wrap(<SessionDetailModal session={internalWithComment as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(screen.getByText('Intern')).toBeInTheDocument()
+    expect(screen.getByText('Șofer')).toBeInTheDocument()          // party label, not "Client"
+    expect(screen.queryByText('Client')).not.toBeInTheDocument()
+    expect(screen.getByText('Ana')).toBeInTheDocument()            // driver = advisor
+    expect(await screen.findByText('0755000111')).toBeInTheDocument() // phone from Users profile
+  })
 
   it('planned session shows Începe + Renunță (no Retur) and Începe calls onActivate', () => {
     const onActivate = vi.fn()

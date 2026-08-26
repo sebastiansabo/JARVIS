@@ -292,6 +292,13 @@ def api_correct_contract(id):
         if k in data:
             fields[k] = data[k] or None
 
+    # Consilier change (light-correction). Non-empty only — a blank advisor must
+    # never wipe the existing one.
+    if 'advisor_name' in data:
+        advisor = (data.get('advisor_name') or '').strip()
+        if advisor:
+            fields['advisor_name'] = advisor
+
     if not fields:
         return jsonify({'success': False, 'error': 'No fields to correct'}), 400
 
