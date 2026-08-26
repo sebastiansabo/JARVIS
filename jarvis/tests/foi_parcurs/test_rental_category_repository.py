@@ -63,3 +63,11 @@ def test_add_category_rejects_blank_name():
     repo = _repo()
     with pytest.raises(ValueError):
         repo.add_category(11, '   ')
+
+
+def test_add_category_rejects_duplicate_name():
+    repo = _repo()
+    repo.query_one = MagicMock(return_value={'n': 5})   # next sort_order lookup
+    repo.execute = MagicMock(return_value=None)          # ON CONFLICT DO NOTHING -> no row
+    with pytest.raises(ValueError):
+        repo.add_category(11, 'SUV+')
