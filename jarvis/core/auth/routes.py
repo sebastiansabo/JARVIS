@@ -45,22 +45,17 @@ def _log_event(event_type, description=None, entity_type=None, entity_id=None, d
     ip_address = request.remote_addr if request else None
     user_agent = request.headers.get('User-Agent', '')[:500] if request else None
 
-    try:
-        _event_repo.log_event(
-            event_type=event_type,
-            event_description=description,
-            user_id=user_id,
-            user_email=user_email,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            details=details
-        )
-    except Exception:
-        # Audit logging is best-effort — a failure here must never break
-        # the auth flow (login/logout/password reset) that triggered it.
-        current_app.logger.exception('Failed to write audit event %s', event_type)
+    _event_repo.log_event(
+        event_type=event_type,
+        event_description=description,
+        user_id=user_id,
+        user_email=user_email,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        details=details
+    )
 
 
 # ============== AUTHENTICATION ROUTES ==============
