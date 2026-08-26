@@ -122,15 +122,23 @@ const truncName = (s: string, max = 20) => (s.length > max ? s.slice(0, max) + '
 // Client column: leads with the person who drives (Client = Driver). For a
 // company booking that's the driver contact, with the company on a secondary
 // line; internal logs show the driving user. See clientCell().
-function ClientCellContent({ c }: { c: Parameters<typeof clientCell>[0] }) {
+function ClientCellContent({ c, hideCompany }: { c: Parameters<typeof clientCell>[0]; hideCompany?: boolean }) {
   const cc = clientCell(c)
   if (cc.primary === '—') return <span className="text-muted-foreground text-xs">—</span>
   return (
     <div className="leading-tight">
       <span className="font-medium text-sm" title={cc.primary}>{truncName(cc.primary)}</span>
-      {cc.secondary && <div className="text-muted-foreground text-[11px]" title={cc.secondary}>{truncName(cc.secondary)}</div>}
+      {/* Company sub-line — suppressed where a dedicated "Companie client" column
+          already carries it (avoids showing the company twice). */}
+      {!hideCompany && cc.secondary && <div className="text-muted-foreground text-[11px]" title={cc.secondary}>{truncName(cc.secondary)}</div>}
     </div>
   )
+}
+
+// The company behind a booking, for the "Companie client" column: the company
+// client itself (clientCell.secondary), else the person's employer field.
+function clientCompanyCell(c: Parameters<typeof clientCell>[0]): string {
+  return clientCell(c).secondary || c.client_company || '—'
 }
 
 /** useState backed by localStorage — survives a page refresh. */
@@ -1921,8 +1929,8 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                           )
                         })()}
                       </TableCell>}
-                      {colVisible('client') && <TableCell><ClientCellContent c={c} /></TableCell>}
-                      {colVisible('clientCompany') && <TableCell className="text-xs">{c.client_company || '—'}</TableCell>}
+                      {colVisible('client') && <TableCell><ClientCellContent c={c} hideCompany /></TableCell>}
+                      {colVisible('clientCompany') && <TableCell className="text-xs">{clientCompanyCell(c)}</TableCell>}
                       {colVisible('consilier') && <TableCell className="text-xs">{c.advisor_name || '—'}</TableCell>}
                       {colVisible('km') && <TableCell className="text-xs whitespace-nowrap">
                         {(() => {
