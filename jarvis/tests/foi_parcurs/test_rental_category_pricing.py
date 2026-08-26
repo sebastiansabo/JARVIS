@@ -1,7 +1,6 @@
 import os
 os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')
 
-from unittest.mock import MagicMock
 import foi_parcurs.routes.test_drive as td
 
 
@@ -32,4 +31,14 @@ def test_falls_back_to_legacy_when_no_category(monkeypatch):
     out = td._resolve_service_pricing(
         veh, 11, '2026-02-01T09:00:00', '2026-02-03T09:00:00', {})
     assert out['svc_tariff_eur'] == 40          # legacy per-car path
+    assert out['svc_rate_basis'] == 'day'
+
+
+def test_category_price_for_raises_falls_back_to_legacy(monkeypatch):
+    monkeypatch.setattr(td._fp_repo, 'query_one', lambda *a, **k: {'svc_km_included_day': 300})
+    monkeypatch.setattr(td._rc_repo, 'price_for',
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError('db blip')))
+    veh = {'rental_category_id': 7, 'svc_tariff_eur_day': 40}
+    out = td._resolve_service_pricing(veh, 11, '2026-02-01T09:00:00', '2026-02-03T09:00:00', {})
+    assert out['svc_tariff_eur'] == 40          # legacy per-car path reached despite the raise
     assert out['svc_rate_basis'] == 'day'

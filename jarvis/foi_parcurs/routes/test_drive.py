@@ -110,14 +110,18 @@ def _resolve_service_pricing(vehicle, company_id, departure, return_dt, payload)
         if cat_id and company_id and departure and return_dt:
             # Category-based pricing: resolve €/day for the interval matching the
             # rental day-count. Deposit stays from company policy (no per-category
-            # deposit in the tariff scheme).
-            days = rental_days(departure, return_dt)
-            price = _rc_repo.price_for(int(company_id), int(cat_id), days)
-            if price and price.get('eur_per_day') is not None:
-                computed = compute_category_pricing(
-                    days, price['eur_per_day'], price['franchise_eur'],
-                    price['extra_km_eur'], policy.get('svc_km_included_day'))
-                computed['svc_garantie_eur'] = policy.get('svc_deposit_eur')
+            # deposit in the tariff scheme). Isolated try/except so a lookup blip
+            # here still leaves the legacy per-car fallback below reachable.
+            try:
+                days = rental_days(departure, return_dt)
+                price = _rc_repo.price_for(int(company_id), int(cat_id), days)
+                if price and price.get('eur_per_day') is not None:
+                    computed = compute_category_pricing(
+                        days, price['eur_per_day'], price['franchise_eur'],
+                        price['extra_km_eur'], policy.get('svc_km_included_day'))
+                    computed['svc_garantie_eur'] = policy.get('svc_deposit_eur')
+            except Exception:
+                logger.warning('Category pricing failed; falling back to legacy per-car pricing', exc_info=True)
         if not computed and departure and return_dt:
             # Legacy per-car fallback (no category, or category has no price).
             computed = compute_service_pricing(vehicle or {}, policy, departure, return_dt) or {}
