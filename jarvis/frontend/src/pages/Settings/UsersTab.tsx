@@ -129,7 +129,7 @@ export default function UsersTab() {
     (u) =>
       !search ||
       u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase()),
+      (u.email || '').toLowerCase().includes(search.toLowerCase()),
   )
 
   const toggleSelect = (id: number) =>
@@ -140,7 +140,7 @@ export default function UsersTab() {
 
   const userMobileFields: MobileCardField<UserDetail>[] = [
     { key: 'name', label: 'Name', isPrimary: true, render: (u) => u.name },
-    { key: 'email', label: 'Email', isSecondary: true, render: (u) => u.email },
+    { key: 'email', label: 'Email', isSecondary: true, render: (u) => u.email || '—' },
     { key: 'role', label: 'Role', isSecondary: true, render: (u) => u.role_name },
     { key: 'status', label: 'Status', render: (u) => <StatusBadge status={u.contract_status === 'active' ? 'active' : u.contract_status === 'suspended' ? 'pending' : 'archived'} /> },
     { key: 'phone', label: 'Phone', expandOnly: true, render: (u) => u.phone || '-' },
@@ -249,7 +249,7 @@ export default function UsersTab() {
                       />
                     </TableCell>
                     <TableCell className="font-medium">{user.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                    <TableCell className="text-muted-foreground">{user.email || '—'}</TableCell>
                     <TableCell>
                       <Select
                         value={String(user.role_id ?? '')}
@@ -364,7 +364,7 @@ function UserFormDialog({
       user
         ? {
             name: user.name,
-            email: user.email,
+            email: user.email || '',
             phone: user.phone || '',
             role_id: String(user.role_id),
             is_active: user.is_active,
@@ -432,6 +432,11 @@ function UserFormDialog({
     }
   }, [connectors]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Viewer accounts may log in by phone, so email is optional for them (they
+  // then need a phone). Every other role still requires an email.
+  const selectedRole = roles.find((r) => String(r.id) === String(form.role_id))
+  const isViewer = (selectedRole?.name || '').trim().toLowerCase() === 'viewer'
+
   return (
     <Dialog
       open={open}
@@ -450,7 +455,7 @@ function UserFormDialog({
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div className="grid gap-2">
-            <Label>Email</Label>
+            <Label>Email{isViewer && <span className="text-xs text-muted-foreground font-normal ml-1">(opțional pentru Viewer)</span>}</Label>
             <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
           <div className="grid gap-2">
@@ -654,7 +659,12 @@ function UserFormDialog({
             Cancel
           </Button>
           <Button
-            disabled={isPending || !form.name || !form.email}
+            disabled={
+              isPending ||
+              !form.name ||
+              (!form.email.trim() && !isViewer) ||
+              (isViewer && !form.email.trim() && !form.phone.trim())
+            }
             onClick={() =>
               onSave({
                 ...form,

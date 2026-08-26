@@ -74,7 +74,7 @@ export default function RoutePlanner() {
     const q = kamSearch.trim().toLowerCase()
     if (!q) return activeUsers
     return activeUsers.filter(u =>
-      u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q),
+      u.name.toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q),
     )
   }, [activeUsers, kamSearch])
 

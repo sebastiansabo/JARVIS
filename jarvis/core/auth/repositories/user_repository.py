@@ -308,7 +308,9 @@ class UserRepository(BaseRepository):
             params.append(name)
         if email is not None:
             updates.append('email = %s')
-            params.append(email)
+            # Empty/whitespace email → NULL (email-less Viewer accounts). Storing
+            # '' would collide on the UNIQUE index for a second email-less user.
+            params.append(email.strip() or None if isinstance(email, str) else email)
         if phone is not None:
             updates.append('phone = %s')
             params.append(phone)
