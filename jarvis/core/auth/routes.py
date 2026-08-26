@@ -45,17 +45,22 @@ def _log_event(event_type, description=None, entity_type=None, entity_id=None, d
     ip_address = request.remote_addr if request else None
     user_agent = request.headers.get('User-Agent', '')[:500] if request else None
 
-    _event_repo.log_event(
-        event_type=event_type,
-        event_description=description,
-        user_id=user_id,
-        user_email=user_email,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        ip_address=ip_address,
-        user_agent=user_agent,
-        details=details
-    )
+    try:
+        _event_repo.log_event(
+            event_type=event_type,
+            event_description=description,
+            user_id=user_id,
+            user_email=user_email,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            details=details
+        )
+    except Exception:
+        # Audit logging is best-effort — a failure here must never break
+        # the auth flow (login/logout/password reset) that triggered it.
+        current_app.logger.exception('Failed to write audit event %s', event_type)
 
 
 # ============== AUTHENTICATION ROUTES ==============
@@ -73,22 +78,41 @@ def login():
             flash(f'Too many login attempts. Try again in {retry_after} seconds.', 'error')
             return render_template('core/login.html')
 
-        email = request.form.get('email', '').strip()
+        identifier = request.form.get('email', '').strip()
         password = request.form.get('password', '')
 
-        if not email or not password:
-            flash('Please enter both email and password.', 'error')
+        if not identifier or not password:
+            flash('Please enter both your email/phone and password.', 'error')
             return render_template('core/login.html')
 
-        user_data = _user_repo.authenticate(email, password)
+        via_phone = '@' not in identifier
+
+        user_data = _user_repo.authenticate_identifier(identifier, password)
         if user_data:
             user = User(user_data)
+            is_viewer = (user.role_name or '').strip().lower() == 'viewer'
+
+            # Phone sign-in is restricted to Viewer accounts.
+            if via_phone and not is_viewer:
+                _log_event('login_failed',
+                           f'Phone login rejected for non-viewer {identifier}')
+                flash('Phone sign-in is only available for viewer accounts. '
+                      'Please use your email address.', 'error')
+                return render_template('core/login.html')
+
             remember = request.form.get('remember') == 'on'
             next_page = request.args.get('next')
             if next_page and (not next_page.startswith('/') or next_page.startswith('//')):
                 next_page = None
 
-            # Check trusted device cookie
+            # Viewers are single-factor — skip OTP entirely.
+            if is_viewer:
+                login_user(user, remember=remember)
+                _user_repo.update_last_login(user.id)
+                _log_event('login', f'Viewer {user.email} logged in (single-factor)')
+                return redirect(next_page or url_for('index'))
+
+            # Non-viewers: existing trusted-device + OTP 2FA flow.
             auth_svc = _get_auth_service()
             cookie = request.cookies.get(auth_svc.TRUSTED_COOKIE_NAME)
             if auth_svc.validate_trusted_device_cookie(
@@ -97,20 +121,17 @@ def login():
                 request.remote_addr,
                 current_app.secret_key
             ):
-                # Trusted device — skip OTP
                 login_user(user, remember=remember)
                 _user_repo.update_last_login(user.id)
-                _log_event('login', f'User {email} logged in (trusted device)')
+                _log_event('login', f'User {user.email} logged in (trusted device)')
                 return redirect(next_page or url_for('index'))
 
-            # Per-user OTP rate limit — 3 attempts per 10 minutes
             otp_allowed, otp_retry = _auth_limiter.is_allowed(
                 f'otp:{user.id}', max_requests=3, window_seconds=600)
             if not otp_allowed:
                 flash(f'Too many verification attempts. Try again in {otp_retry} seconds.', 'error')
                 return render_template('core/login.html')
 
-            # Not trusted — generate and send OTP
             otp_id, email_sent, error = auth_svc.generate_and_send_otp(
                 user.id, user.email, user.name, current_app.secret_key)
 
@@ -118,7 +139,6 @@ def login():
                 flash('An error occurred. Please try again.', 'error')
                 return render_template('core/login.html')
 
-            # Store pending OTP state in session
             session['otp_pending'] = {
                 'user_id': user.id,
                 'otp_id': otp_id,
@@ -132,8 +152,8 @@ def login():
 
             return redirect(url_for('auth.verify_otp'))
         else:
-            _log_event('login_failed', f'Failed login attempt for {email}')
-            flash('Invalid email or password.', 'error')
+            _log_event('login_failed', f'Failed login attempt for {identifier}')
+            flash('Invalid credentials.', 'error')
 
     return render_template('core/login.html')
 
