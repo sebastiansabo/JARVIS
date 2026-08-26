@@ -56,7 +56,7 @@ class FPVehicleRepository(BaseRepository):
         # per-row fetch of the full vehicle document blobs (avoids an N+1 and a
         # Save-before-load null race in the Tarife editor). Tiny numerics —
         # harmless to other list consumers.
-        'v.svc_tariff_eur_day, v.svc_tariff_eur_month, '
+        'v.svc_tariff_eur_day, v.svc_tariff_eur_month, v.rental_category_id, '
         'v.svc_km_included_day, v.svc_extra_km_eur, '
         'v.svc_deposit_eur, v.svc_franchise_eur, '
         # Lockout state so the Driving Park + session car pickers can show a car
@@ -196,10 +196,10 @@ class FPVehicleRepository(BaseRepository):
                 vignette_valid_until, itp_valid_until, insurance_valid_until,
                 insurance_doc, talon_doc, civ_doc, registration_doc, offer_doc,
                 svc_tariff_eur_day, svc_tariff_eur_month, svc_km_included_day,
-                svc_extra_km_eur, svc_deposit_eur, svc_franchise_eur)
+                svc_extra_km_eur, svc_deposit_eur, svc_franchise_eur, rental_category_id)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                        %s, %s, %s, %s, %s, %s, %s, %s,
-                       %s, %s, %s, %s, %s, %s) RETURNING *''',
+                       %s, %s, %s, %s, %s, %s, %s) RETURNING *''',
             (data['vin'], _normalize_plate(data.get('registration_number')), data.get('car_id'),
              data['mark'], data.get('brand'), data['model'], data.get('color'),
              data.get('fuel_type', 'Diesel'),
@@ -217,7 +217,8 @@ class FPVehicleRepository(BaseRepository):
              data.get('offer_doc'),
              data.get('svc_tariff_eur_day'), data.get('svc_tariff_eur_month'),
              data.get('svc_km_included_day'), data.get('svc_extra_km_eur'),
-             data.get('svc_deposit_eur'), data.get('svc_franchise_eur')),
+             data.get('svc_deposit_eur'), data.get('svc_franchise_eur'),
+             data.get('rental_category_id')),
             returning=True,
         )
 
@@ -232,7 +233,8 @@ class FPVehicleRepository(BaseRepository):
                     'vignette_valid_until', 'itp_valid_until', 'insurance_valid_until',
                     'insurance_doc', 'talon_doc', 'civ_doc', 'registration_doc', 'offer_doc',
                     'svc_tariff_eur_day', 'svc_tariff_eur_month', 'svc_km_included_day',
-                    'svc_extra_km_eur', 'svc_deposit_eur', 'svc_franchise_eur'):
+                    'svc_extra_km_eur', 'svc_deposit_eur', 'svc_franchise_eur',
+                    'rental_category_id'):
             if col in data:
                 sets.append(f'{col} = %s')
                 if col == 'registration_number':
