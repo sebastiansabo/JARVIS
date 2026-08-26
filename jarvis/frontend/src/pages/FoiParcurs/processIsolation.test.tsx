@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 
 // Broad foiParcursApi mock — every mount-time getter returns a benign shape so
 // the tabs render without network. Call args are asserted where relevant.
@@ -39,7 +40,7 @@ const vehicleForm = (documentType: 'sales' | 'service') => ({
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
+  return render(<QueryClientProvider client={qc}><MemoryRouter>{ui}</MemoryRouter></QueryClientProvider>)
 }
 
 describe('ContractsTab (Foi de Parcurs) — document_type gating', () => {

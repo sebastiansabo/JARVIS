@@ -94,6 +94,7 @@ import {
 import { VehicleOdometerHistory } from './VehicleOdometerHistory'
 import SessionTypeChooser from './SessionTypeChooser'
 import { sessionStatus, type SessionStatusKey } from './sessionStatus'
+import { clientCell } from './sessionParty'
 import { sessionActualKm, sessionEstimatedKm, carSpanKm } from './distance'
 import { sessionAnomalies, driveDate } from './anomalies'
 import CorrectSessionDialog, { type CorrectionPayload } from './CorrectSessionDialog'
@@ -117,6 +118,20 @@ import DocTypeSelect from './DocTypeSelect'
 /** Truncate a display name to `max` chars with an ellipsis; the full value stays
  *  available in the cell's title tooltip. */
 const truncName = (s: string, max = 20) => (s.length > max ? s.slice(0, max) + '…' : s)
+
+// Client column: leads with the person who drives (Client = Driver). For a
+// company booking that's the driver contact, with the company on a secondary
+// line; internal logs show the driving user. See clientCell().
+function ClientCellContent({ c }: { c: Parameters<typeof clientCell>[0] }) {
+  const cc = clientCell(c)
+  if (cc.primary === '—') return <span className="text-muted-foreground text-xs">—</span>
+  return (
+    <div className="leading-tight">
+      <span className="font-medium text-sm" title={cc.primary}>{truncName(cc.primary)}</span>
+      {cc.secondary && <div className="text-muted-foreground text-[11px]" title={cc.secondary}>{truncName(cc.secondary)}</div>}
+    </div>
+  )
+}
 
 /** useState backed by localStorage — survives a page refresh. */
 function usePersistentState<T>(key: string, initial: T) {
@@ -441,6 +456,7 @@ function withGaps(sessions: FoiContract[]): DetailRow[] {
 //    generate/store an AI-drafted legal Foaie de Parcurs (PDF) or Excel. ──
 function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [previewVin, setPreviewVin] = useState<string | null>(null)
   const [redistribute, setRedistribute] = useState<{ vin: string; gap: GapRow; sessions: WinSession[] } | null>(null)
@@ -701,13 +717,7 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
                                           </span>
                                         )}
                                       </TableCell>
-                                      <TableCell>
-                                        {c.client_name ? (
-                                          <span className="font-medium text-sm" title={c.client_name}>{truncName(c.client_name)}</span>
-                                        ) : (
-                                          <span className="text-muted-foreground text-xs">—</span>
-                                        )}
-                                      </TableCell>
+                                      <TableCell><ClientCellContent c={c} /></TableCell>
                                       <TableCell className="max-w-[220px] truncate text-sm">{c.itinerary || '—'}</TableCell>
                                       <TableCell className="text-sm whitespace-nowrap">
                                         {sessionActualKm(c) != null ? `${sessionActualKm(c)} km` : '—'}
@@ -724,7 +734,7 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
                                         <div className="flex justify-end gap-1">
                                           {canCorrect && (
                                             <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
-                                              onClick={() => setCorrecting(c)} title="Corectează data/kilometrajul">
+                                              onClick={() => sessionStatus(c).key === 'planificat' ? navigate(`/app/foi-parcurs/test-drive?edit=${c.id}`) : setCorrecting(c)} title="Corectează">
                                               Corectează
                                             </Button>
                                           )}
@@ -1911,13 +1921,7 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                           )
                         })()}
                       </TableCell>}
-                      {colVisible('client') && <TableCell>
-                        {c.client_name ? (
-                          <span className="font-medium text-sm" title={c.client_name}>{truncName(c.client_name)}</span>
-                        ) : (
-                          <span className="text-muted-foreground text-xs">—</span>
-                        )}
-                      </TableCell>}
+                      {colVisible('client') && <TableCell><ClientCellContent c={c} /></TableCell>}
                       {colVisible('clientCompany') && <TableCell className="text-xs">{c.client_company || '—'}</TableCell>}
                       {colVisible('consilier') && <TableCell className="text-xs">{c.advisor_name || '—'}</TableCell>}
                       {colVisible('km') && <TableCell className="text-xs whitespace-nowrap">
@@ -2093,8 +2097,9 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                               Istoric
                             </Button>
                             {canCorrect && (
-                              <Button variant="outline" size="sm" onClick={() => setCorrecting(c)}
-                                title="Corectează data/kilometrajul">
+                              <Button variant="outline" size="sm"
+                                onClick={() => sessionStatus(c).key === 'planificat' ? navigate(`/app/foi-parcurs/test-drive?edit=${c.id}`) : setCorrecting(c)}
+                                title="Corectează">
                                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
                                 Corectează
                               </Button>
