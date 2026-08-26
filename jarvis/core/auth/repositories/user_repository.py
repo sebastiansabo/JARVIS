@@ -104,6 +104,53 @@ class UserRepository(BaseRepository):
             return None
         return user
 
+    def get_by_phone(self, raw_phone: str) -> Optional[Dict[str, Any]]:
+        """Get a single ACTIVE user by phone (any format) with role info.
+
+        Normalizes the raw input through the same SQL function that backs
+        users.phone_normalized, so storage and lookup can never diverge.
+        Returns None if the number is invalid, matches nobody, or is
+        ambiguous (>1 active account shares it).
+        """
+        rows = self.query_all('''
+            SELECT u.*, r.name as role_name, r.description as role_description,
+                   r.can_add_invoices, r.can_edit_invoices, r.can_delete_invoices, r.can_view_invoices,
+                   r.can_access_accounting, r.can_access_settings, r.can_access_connectors,
+                   r.can_access_templates, r.can_access_hr, r.is_hr_manager,
+                   r.can_access_crm, r.can_access_marketing,
+                   r.can_edit_crm, r.can_delete_crm, r.can_export_crm,
+                   r.can_view_original_punches, r.can_view_adjusted_punches,
+                   r.can_adjust_punches,
+                   r.can_access_carpark, r.can_edit_carpark, r.can_delete_carpark,
+                   r.can_access_carpark_mobile, r.can_view_carpark_finance,
+                   c.id as company_id
+            FROM users u
+            LEFT JOIN roles r ON u.role_id = r.id
+            LEFT JOIN companies c ON c.id = u.company_id
+            WHERE u.phone_normalized = fn_normalize_phone(%s)
+              AND fn_normalize_phone(%s) IS NOT NULL
+              AND u.is_active = TRUE
+        ''', (raw_phone, raw_phone))
+        if len(rows) != 1:
+            return None
+        return rows[0]
+
+    def authenticate_identifier(self, identifier: str, password: str) -> Optional[Dict[str, Any]]:
+        """Authenticate by email OR phone. '@' in the identifier selects the
+        email path; otherwise it is treated as a phone number."""
+        identifier = (identifier or '').strip()
+        if not identifier:
+            return None
+        if '@' in identifier:
+            user = self.get_by_email(identifier)
+        else:
+            user = self.get_by_phone(identifier)
+        if not user or not user.get('is_active', False) or not user.get('password_hash'):
+            return None
+        if not check_password_hash(user['password_hash'], password):
+            return None
+        return user
+
     def get_online_count(self, minutes: int = 5) -> dict:
         """Get online users count with user list."""
         users = self.get_online_users(minutes)
@@ -261,7 +308,9 @@ class UserRepository(BaseRepository):
             params.append(name)
         if email is not None:
             updates.append('email = %s')
-            params.append(email)
+            # Empty/whitespace email → NULL (email-less Viewer accounts). Storing
+            # '' would collide on the UNIQUE index for a second email-less user.
+            params.append(email.strip() or None if isinstance(email, str) else email)
         if phone is not None:
             updates.append('phone = %s')
             params.append(phone)

@@ -94,10 +94,12 @@ import {
 import { VehicleOdometerHistory } from './VehicleOdometerHistory'
 import SessionTypeChooser from './SessionTypeChooser'
 import { sessionStatus, type SessionStatusKey } from './sessionStatus'
+import { clientCell } from './sessionParty'
 import { sessionActualKm, sessionEstimatedKm, carSpanKm } from './distance'
 import { sessionAnomalies, driveDate } from './anomalies'
 import CorrectSessionDialog, { type CorrectionPayload } from './CorrectSessionDialog'
 import ExtendSessionDialog from './ExtendSessionDialog'
+import InternalStartDialog from './InternalStartDialog'
 import SessionHistoryModal from './SessionHistoryModal'
 import { fmtDuration } from './duration'
 import ModifiedBadge from './ModifiedBadge'
@@ -117,6 +119,28 @@ import DocTypeSelect from './DocTypeSelect'
 /** Truncate a display name to `max` chars with an ellipsis; the full value stays
  *  available in the cell's title tooltip. */
 const truncName = (s: string, max = 20) => (s.length > max ? s.slice(0, max) + '…' : s)
+
+// Client column: leads with the person who drives (Client = Driver). For a
+// company booking that's the driver contact, with the company on a secondary
+// line; internal logs show the driving user. See clientCell().
+function ClientCellContent({ c, hideCompany }: { c: Parameters<typeof clientCell>[0]; hideCompany?: boolean }) {
+  const cc = clientCell(c)
+  if (cc.primary === '—') return <span className="text-muted-foreground text-xs">—</span>
+  return (
+    <div className="leading-tight">
+      <span className="font-medium text-sm" title={cc.primary}>{truncName(cc.primary)}</span>
+      {/* Company sub-line — suppressed where a dedicated "Companie client" column
+          already carries it (avoids showing the company twice). */}
+      {!hideCompany && cc.secondary && <div className="text-muted-foreground text-[11px]" title={cc.secondary}>{truncName(cc.secondary)}</div>}
+    </div>
+  )
+}
+
+// The company behind a booking, for the "Companie client" column: the company
+// client itself (clientCell.secondary), else the person's employer field.
+function clientCompanyCell(c: Parameters<typeof clientCell>[0]): string {
+  return clientCell(c).secondary || c.client_company || '—'
+}
 
 /** useState backed by localStorage — survives a page refresh. */
 function usePersistentState<T>(key: string, initial: T) {
@@ -441,6 +465,7 @@ function withGaps(sessions: FoiContract[]): DetailRow[] {
 //    generate/store an AI-drafted legal Foaie de Parcurs (PDF) or Excel. ──
 function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [previewVin, setPreviewVin] = useState<string | null>(null)
   const [redistribute, setRedistribute] = useState<{ vin: string; gap: GapRow; sessions: WinSession[] } | null>(null)
@@ -701,13 +726,7 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
                                           </span>
                                         )}
                                       </TableCell>
-                                      <TableCell>
-                                        {c.client_name ? (
-                                          <span className="font-medium text-sm" title={c.client_name}>{truncName(c.client_name)}</span>
-                                        ) : (
-                                          <span className="text-muted-foreground text-xs">—</span>
-                                        )}
-                                      </TableCell>
+                                      <TableCell><ClientCellContent c={c} /></TableCell>
                                       <TableCell className="max-w-[220px] truncate text-sm">{c.itinerary || '—'}</TableCell>
                                       <TableCell className="text-sm whitespace-nowrap">
                                         {sessionActualKm(c) != null ? `${sessionActualKm(c)} km` : '—'}
@@ -724,7 +743,7 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
                                         <div className="flex justify-end gap-1">
                                           {canCorrect && (
                                             <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
-                                              onClick={() => setCorrecting(c)} title="Corectează data/kilometrajul">
+                                              onClick={() => sessionStatus(c).key === 'planificat' ? navigate(`/app/foi-parcurs/test-drive?edit=${c.id}`) : setCorrecting(c)} title="Corectează">
                                               Corectează
                                             </Button>
                                           )}
@@ -1627,6 +1646,18 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }),
   })
 
+  // Start a PLANNED *internal* draft → FILLED (no signature/PDF — the internal
+  // counterpart to the customer activate form). The km plecare is captured now.
+  const [startingInternal, setStartingInternal] = useState<FoiContract | null>(null)
+  const startInternalMutation = useMutation({
+    mutationFn: ({ id, odometer_start }: { id: number; odometer_start: number }) =>
+      foiParcursApi.startInternalSession(id, { odometer_start }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      setStartingInternal(null)
+    },
+  })
+
   // Vehicles → vin→brand map, so contracts can be filtered by the selected brand
   const { data: vehiclesData } = useQuery({
     queryKey: ['fp-vehicles', documentType],
@@ -1899,14 +1930,8 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                           )
                         })()}
                       </TableCell>}
-                      {colVisible('client') && <TableCell>
-                        {c.client_name ? (
-                          <span className="font-medium text-sm" title={c.client_name}>{truncName(c.client_name)}</span>
-                        ) : (
-                          <span className="text-muted-foreground text-xs">—</span>
-                        )}
-                      </TableCell>}
-                      {colVisible('clientCompany') && <TableCell className="text-xs">{c.client_company || '—'}</TableCell>}
+                      {colVisible('client') && <TableCell><ClientCellContent c={c} hideCompany /></TableCell>}
+                      {colVisible('clientCompany') && <TableCell className="text-xs">{clientCompanyCell(c)}</TableCell>}
                       {colVisible('consilier') && <TableCell className="text-xs">{c.advisor_name || '—'}</TableCell>}
                       {colVisible('km') && <TableCell className="text-xs whitespace-nowrap">
                         {(() => {
@@ -1938,7 +1963,13 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                           )}
                           {c.status === 'PLANNED' && (
                             <>
-                              <Button variant="outline" size="sm" onClick={() => onActivate ? onActivate(c.id) : navigate(`/app/foi-parcurs/test-drive?activate=${c.id}`)}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => c.is_internal
+                                  ? setStartingInternal(c)
+                                  : (onActivate ? onActivate(c.id) : navigate(`/app/foi-parcurs/test-drive?activate=${c.id}`))}
+                              >
                                 <PlayCircle className="mr-1 h-3.5 w-3.5" />
                                 Începe sesiunea
                               </Button>
@@ -2075,8 +2106,9 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                               Istoric
                             </Button>
                             {canCorrect && (
-                              <Button variant="outline" size="sm" onClick={() => setCorrecting(c)}
-                                title="Corectează data/kilometrajul">
+                              <Button variant="outline" size="sm"
+                                onClick={() => sessionStatus(c).key === 'planificat' ? navigate(`/app/foi-parcurs/test-drive?edit=${c.id}`) : setCorrecting(c)}
+                                title="Corectează">
                                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
                                 Corectează
                               </Button>
@@ -2136,6 +2168,19 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
       {historySession && (
         <SessionHistoryModal session={historySession} onClose={() => setHistorySession(null)} />
       )}
+      {startingInternal && (() => {
+        const v = vinVehicle.get(startingInternal.vin)
+        return (
+          <InternalStartDialog
+            session={startingInternal}
+            vehicleName={v ? [v.brand || v.mark, v.model].filter(Boolean).join(' ') : undefined}
+            defaultKm={v?.mileage_floor ?? v?.odometer_km ?? null}
+            submitting={startInternalMutation.isPending}
+            onClose={() => setStartingInternal(null)}
+            onSubmit={(odometer_start) => startInternalMutation.mutate({ id: startingInternal.id, odometer_start })}
+          />
+        )
+      })()}
       {correcting && (
         <CorrectSessionDialog
           session={correcting}

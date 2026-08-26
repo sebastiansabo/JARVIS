@@ -44,12 +44,14 @@ export interface QuickSessionForm {
  *  QuickSession.tsx). Vehicle + driver + departure + km start are required;
  *  the return (when set) can't precede departure. Exported so it's
  *  unit-testable independently of the component. */
-export function quickSessionError(f: QuickSessionForm):
+export function quickSessionError(f: QuickSessionForm, opts?: { planning?: boolean }):
   'vehicle_required' | 'driver_required' | 'departure_required' | 'km_required' | 'return_before_departure' | null {
   if (!f.vin) return 'vehicle_required'
   if (!f.driver) return 'driver_required'
   if (!f.departure) return 'departure_required'
-  if (!f.kmStart) return 'km_required'
+  // Planning a session for later defers the odometer to start — the car's live
+  // reading now is meaningless a month out (mirrors the customer draft flow).
+  if (!opts?.planning && !f.kmStart) return 'km_required'
   if (f.ret && f.ret < f.departure) return 'return_before_departure'
   return null
 }
@@ -119,6 +121,9 @@ export default function InternalSessionForm({
   })
   const [kmStart, setKmStart] = useState('')
   const [comment, setComment] = useState('')
+  // Start-now (live FILLED) vs plan-for-later (PLANNED draft, km deferred to
+  // start). Mirrors the customer draft→activate model for internal sessions.
+  const [planning, setPlanning] = useState(false)
   const [attempted, setAttempted] = useState(false)
   const [noCompanyError, setNoCompanyError] = useState(false)
   const [submittedContract, setSubmittedContract] = useState<FoiContract | null>(null)
@@ -181,7 +186,7 @@ export default function InternalSessionForm({
     if (v?.odometer_km != null) setKmStart(String(v.odometer_km))
   }
 
-  const validationError = quickSessionError({ vin, driver, departure, ret, kmStart })
+  const validationError = quickSessionError({ vin, driver, departure, ret, kmStart }, { planning })
   const fieldErr = (key: string) => attempted && validationError === key
 
   const submitMutation = useMutation({
@@ -213,7 +218,8 @@ export default function InternalSessionForm({
       advisor_name: driver.trim(),
       departure_datetime: departure,
       ...(ret ? { return_datetime: ret } : {}),
-      odometer_start: Number(kmStart),
+      // Planning defers the odometer to start; start-now captures it live.
+      ...(planning ? { status: 'PLANNED' as const } : { odometer_start: Number(kmStart) }),
       ...(comment.trim() ? { itinerary: comment.trim() } : {}),
     })
   }
@@ -228,6 +234,7 @@ export default function InternalSessionForm({
     setRet(localDatetimeValue(new Date(Date.now() + 60 * 60 * 1000)))
     setKmStart('')
     setComment('')
+    setPlanning(false)
     setAttempted(false)
     setNoCompanyError(false)
     setSubmittedContract(null)
@@ -251,7 +258,9 @@ export default function InternalSessionForm({
         <Card>
           <CardContent className="pt-6 text-center space-y-4">
             <CheckCircle2 className="mx-auto h-16 w-16 text-green-500" />
-            <h2 className="text-xl font-semibold">Sesiune Internă Înregistrată</h2>
+            <h2 className="text-xl font-semibold">
+              {submittedContract.status === 'PLANNED' ? 'Sesiune Internă Planificată' : 'Sesiune Internă Înregistrată'}
+            </h2>
             <div className="text-sm text-muted-foreground space-y-1">
               <p>Contract: <span className="font-medium text-foreground">{submittedContract.contract_id}</span></p>
               {submittedContract.vin && <p>VIN: <span className="font-medium text-foreground">{submittedContract.vin}</span></p>}
@@ -284,6 +293,27 @@ export default function InternalSessionForm({
           <CardTitle className="text-base flex items-center gap-2"><Car className="h-4 w-4" />Detalii sesiune</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex gap-0.5 rounded-lg bg-muted p-0.5" role="group" aria-label="Mod sesiune">
+            {[
+              { v: false, label: 'Începe acum' },
+              { v: true, label: 'Planifică' },
+            ].map(({ v, label }) => (
+              <button
+                key={String(v)}
+                type="button"
+                data-testid={v ? 'internal-mode-plan' : 'internal-mode-now'}
+                aria-pressed={planning === v}
+                onClick={() => setPlanning(v)}
+                className={cn(
+                  'flex-1 rounded-md py-1.5 text-xs font-medium transition-colors',
+                  planning === v ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs">Companie</Label>
             <Select
@@ -396,17 +426,24 @@ export default function InternalSessionForm({
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs">KM plecare *</Label>
-            <Input
-              data-testid="internal-km"
-              type="number"
-              inputMode="numeric"
-              className={cn(fieldErr('km_required') && 'ring-2 ring-destructive')}
-              value={kmStart}
-              onChange={(e) => setKmStart(e.target.value)}
-            />
-          </div>
+          {planning ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs">KM plecare</Label>
+              <p className="text-xs text-muted-foreground">Se preia la pornirea sesiunii.</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label className="text-xs">KM plecare *</Label>
+              <Input
+                data-testid="internal-km"
+                type="number"
+                inputMode="numeric"
+                className={cn(fieldErr('km_required') && 'ring-2 ring-destructive')}
+                value={kmStart}
+                onChange={(e) => setKmStart(e.target.value)}
+              />
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label className="text-xs">Comentariu</Label>
@@ -432,7 +469,7 @@ export default function InternalSessionForm({
       <Button className="w-full" size="lg" onClick={handleSubmit} disabled={submitMutation.isPending}>
         {submitMutation.isPending
           ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se creează...</>
-          : <><CalendarPlus className="h-4 w-4 mr-2" />Creează sesiunea</>}
+          : <><CalendarPlus className="h-4 w-4 mr-2" />{planning ? 'Planifică sesiunea' : 'Creează sesiunea'}</>}
       </Button>
     </div>
   )
