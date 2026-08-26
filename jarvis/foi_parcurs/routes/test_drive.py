@@ -14,6 +14,8 @@ from ..services.rental_pricing import compute_service_pricing
 from ..document_types import normalize as _normalize_doctype, pools_match
 from ..repositories.contract_config_repository import ContractConfigRepository
 from ..repositories.document_type_repository import DocumentTypeRepository
+from ..repositories.rental_category_repository import RentalCategoryRepository
+from ..services.rental_pricing import rental_days, compute_category_pricing
 from crm.repositories.contact_repository import ContactRepository, contact_gate_valid
 from marketing.repositories.event_repo import ProjectEventRepository
 
@@ -25,6 +27,7 @@ _contact_repo = ContactRepository()
 _event_bridge_repo = ProjectEventRepository()
 _cc_repo = ContractConfigRepository()
 _dt_repo = DocumentTypeRepository()
+_rc_repo = RentalCategoryRepository()
 
 # CRM data often stores companies as client_type 'person' with the legal form
 # only in the name (e.g. "NELAURA COMIMPEX SRL"), so the company->contact gate
@@ -103,7 +106,20 @@ def _resolve_service_pricing(vehicle, company_id, departure, return_dt, payload)
                 'FROM fp_company_config WHERE company_id = %s',
                 (int(company_id),),
             ) or {}
-        if departure and return_dt:
+        cat_id = (vehicle or {}).get('rental_category_id')
+        if cat_id and company_id and departure and return_dt:
+            # Category-based pricing: resolve €/day for the interval matching the
+            # rental day-count. Deposit stays from company policy (no per-category
+            # deposit in the tariff scheme).
+            days = rental_days(departure, return_dt)
+            price = _rc_repo.price_for(int(company_id), int(cat_id), days)
+            if price and price.get('eur_per_day') is not None:
+                computed = compute_category_pricing(
+                    days, price['eur_per_day'], price['franchise_eur'],
+                    price['extra_km_eur'], policy.get('svc_km_included_day'))
+                computed['svc_garantie_eur'] = policy.get('svc_deposit_eur')
+        if not computed and departure and return_dt:
+            # Legacy per-car fallback (no category, or category has no price).
             computed = compute_service_pricing(vehicle or {}, policy, departure, return_dt) or {}
     except Exception:
         logger.warning('Service pricing compute failed; using payload overrides only', exc_info=True)
