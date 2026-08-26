@@ -68,7 +68,7 @@ def _user_row(user_id=1, email='user@example.com', name='Test User'):
 
 
 def test_trusted_device_returns_tokens_no_otp(client, monkeypatch):
-    monkeypatch.setattr(auth_mod._user_repo, 'authenticate', lambda e, p: _user_row())
+    monkeypatch.setattr(auth_mod._user_repo, 'authenticate_identifier', lambda e, p: _user_row())
     last_login_calls = []
     monkeypatch.setattr(
         auth_mod._user_repo, 'update_last_login',
@@ -110,7 +110,7 @@ def test_trusted_device_returns_tokens_no_otp(client, monkeypatch):
 def test_untrusted_device_with_push_sends_push_otp(client, monkeypatch):
     """Device that HAS a registered push token for its own device_id gets
     the OTP via push."""
-    monkeypatch.setattr(auth_mod._user_repo, 'authenticate', lambda e, p: _user_row())
+    monkeypatch.setattr(auth_mod._user_repo, 'authenticate_identifier', lambda e, p: _user_row())
     last_login_calls = []
     monkeypatch.setattr(
         auth_mod._user_repo, 'update_last_login',
@@ -172,7 +172,7 @@ def test_untrusted_device_without_push_sends_email_otp(client, monkeypatch):
     """A brand-new device_id with no registered push token falls back to
     email — even though the user has SOME OTHER device with a token
     registered. The channel decision must be per-device, not per-user."""
-    monkeypatch.setattr(auth_mod._user_repo, 'authenticate', lambda e, p: _user_row())
+    monkeypatch.setattr(auth_mod._user_repo, 'authenticate_identifier', lambda e, p: _user_row())
     last_login_calls = []
     monkeypatch.setattr(
         auth_mod._user_repo, 'update_last_login',
@@ -220,7 +220,7 @@ def test_untrusted_device_without_push_sends_email_otp(client, monkeypatch):
 def test_untrusted_login_with_no_device_id_sends_email_otp(client, monkeypatch):
     """No device_id supplied at all (e.g. web client) must never attempt a
     push lookup and always falls back to email."""
-    monkeypatch.setattr(auth_mod._user_repo, 'authenticate', lambda e, p: _user_row())
+    monkeypatch.setattr(auth_mod._user_repo, 'authenticate_identifier', lambda e, p: _user_row())
     last_login_calls = []
     monkeypatch.setattr(
         auth_mod._user_repo, 'update_last_login',
@@ -259,7 +259,7 @@ def test_untrusted_login_with_no_device_id_sends_email_otp(client, monkeypatch):
 def test_untrusted_device_email_send_failure_returns_error(client, monkeypatch):
     """If the OTP row is created but the email fails to send, the endpoint
     must surface an error instead of falsely reporting otp_required."""
-    monkeypatch.setattr(auth_mod._user_repo, 'authenticate', lambda e, p: _user_row())
+    monkeypatch.setattr(auth_mod._user_repo, 'authenticate_identifier', lambda e, p: _user_row())
     last_login_calls = []
     monkeypatch.setattr(
         auth_mod._user_repo, 'update_last_login',
