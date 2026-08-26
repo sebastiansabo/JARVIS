@@ -335,6 +335,26 @@ export const foiParcursApi = {
   deleteDocumentType: (payload: { company_id: number; key: string }) =>
     api.delete<{ success: boolean }>(`${BASE}/document-types`, payload),
 
+  // ── Rental tariffs (courtesy-car category pricing) ──
+  getRentalIntervals: (companyId: number) =>
+    api.get<{ success: boolean; intervals: Array<{ id: number; label: string; min_days: number; max_days: number | null; sort_order: number }> }>(
+      `${BASE}/rental-tariffs/intervals`, { company_id: String(companyId) }),
+  putRentalInterval: (payload: { company_id: number; id?: number; label: string; min_days: number; max_days: number | null; sort_order?: number }) =>
+    api.put<{ success: boolean; id: number }>(`${BASE}/rental-tariffs/intervals`, payload),
+  deleteRentalInterval: (payload: { company_id: number; id: number }) =>
+    api.delete<{ success: boolean }>(`${BASE}/rental-tariffs/intervals`, payload),
+  getRentalCategories: (companyId: number, active = false) =>
+    api.get<{ success: boolean; categories: Array<{ id: number; name: string; models_note: string | null; franchise_eur: number | null; extra_km_eur: number | null; sort_order: number; is_active: boolean; prices: Record<number, number> }> }>(
+      `${BASE}/rental-tariffs/categories`, { company_id: String(companyId), ...(active ? { active: '1' } : {}) }),
+  addRentalCategory: (payload: { company_id: number; name: string }) =>
+    api.post<{ success: boolean; id: number }>(`${BASE}/rental-tariffs/categories`, payload),
+  putRentalCategory: (payload: { company_id: number; id: number; name: string; models_note: string | null; franchise_eur: number | null; extra_km_eur: number | null; sort_order?: number; is_active: boolean }) =>
+    api.put<{ success: boolean }>(`${BASE}/rental-tariffs/categories`, payload),
+  deleteRentalCategory: (payload: { company_id: number; id: number }) =>
+    api.delete<{ success: boolean }>(`${BASE}/rental-tariffs/categories`, payload),
+  setRentalPrice: (payload: { company_id: number; category_id: number; interval_id: number; eur_per_day: number | null }) =>
+    api.put<{ success: boolean }>(`${BASE}/rental-tariffs/prices`, payload),
+
   // ── KM Configs (Settings) ──
   getKmConfigs: () =>
     api.get<{ configs: { company_id: number; td_km_min: number; td_km_max: number; comodat_km_min: number; comodat_km_max: number; km_gap: number }[] }>(`${BASE}/km-configs`),
