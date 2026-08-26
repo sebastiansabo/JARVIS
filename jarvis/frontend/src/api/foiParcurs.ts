@@ -419,6 +419,11 @@ export const foiParcursApi = {
   activateTestDrive: (id: number, data: ActivateTestDrivePayload) =>
     api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/activate`, data),
 
+  // ── Edit a PLANNED draft in place (Corectează on a not-started session):
+  //    full-form edit without starting it; PLANNED-only server-side ──
+  updatePlan: (id: number, data: Partial<TestDriveFormPayload>) =>
+    api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/plan`, data),
+
   // ── Reschedule a PLANNED/MISSED session to a new time (drag-to-move in the
   //    calendar); backend guards to those statuses + rejects past dates ──
   rescheduleTestDrive: (id: number, data: { departure_datetime: string; return_datetime?: string }) =>
@@ -431,8 +436,9 @@ export const foiParcursApi = {
     data: {
       departure_datetime?: string | null
       return_datetime?: string | null
-      km_start?: number
-      km_end?: number
+      km_start?: number | null
+      km_end?: number | null
+      advisor_name?: string
     },
   ) => api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${id}/correct`, data),
 
