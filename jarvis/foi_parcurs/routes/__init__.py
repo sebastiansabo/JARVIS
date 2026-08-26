@@ -3,6 +3,7 @@ from .. import foi_parcurs_bp  # noqa: F401 — re-exported for import-integrity
 from . import contracts         # noqa: F401
 from . import contract_configs  # noqa: F401
 from . import document_types     # noqa: F401
+from . import rental_tariffs   # noqa: F401
 from . import clients           # noqa: F401
 from . import vehicles          # noqa: F401
 from . import settings          # noqa: F401
