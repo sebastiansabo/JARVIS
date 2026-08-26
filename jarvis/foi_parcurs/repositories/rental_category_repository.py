@@ -93,7 +93,7 @@ class RentalCategoryRepository(BaseRepository):
             'FROM fp_rental_categories WHERE company_id=%s',
             (company_id,),
         ) or {}
-        return self.execute(
+        result = self.execute(
             '''INSERT INTO fp_rental_categories
                    (company_id, name, sort_order, is_active)
                VALUES (%s, %s, %s, TRUE)
@@ -102,6 +102,9 @@ class RentalCategoryRepository(BaseRepository):
             (company_id, name, int(next_order.get('n') or 0)),
             returning=True,
         )
+        if not result:
+            raise ValueError('O categorie cu acest nume există deja')
+        return result
 
     def upsert_category(self, company_id, category_id, name, models_note,
                         franchise_eur, extra_km_eur, sort_order, is_active):
