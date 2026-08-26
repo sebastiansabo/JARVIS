@@ -52,6 +52,7 @@ export interface FpVehicle {
   svc_extra_km_eur?: number | null
   svc_deposit_eur?: number | null
   svc_franchise_eur?: number | null
+  rental_category_id?: number | null
   // Documents + validity (rovinietă/vignette, ITP, RCA insurance). Docs are
   // base64 (image or PDF data-URL).
   vignette_valid_until?: string | null
