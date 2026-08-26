@@ -18,13 +18,25 @@ _user_repo = UserRepository()
 _event_repo = EventRepository()
 _auth_limiter = RateLimiter()
 
+from core.roles.repositories.role_repository import RoleRepository
+_role_repo = RoleRepository()
+
+
+def _role_is_viewer(role_id) -> bool:
+    """True if role_id belongs to the 'Viewer' role. Viewers may lack an email
+    (they log in by phone), so email is optional only for them."""
+    if not role_id:
+        return False
+    role = _role_repo.get(role_id)
+    return bool(role and (role.get('name') or '').strip().lower() == 'viewer')
+
 SUPERADMIN_EMAIL = os.environ.get('SUPERADMIN_EMAIL', 'sebastian.sabo@autoworld.ro')
 
 
 def _is_superadmin(user_id: int) -> bool:
     """Return True if user_id belongs to the protected superadmin account."""
     user = _user_repo.get_by_id(user_id)
-    return bool(user and user.get('email', '').lower() == SUPERADMIN_EMAIL)
+    return bool(user and (user.get('email') or '').lower() == SUPERADMIN_EMAIL)
 
 # Lazy-initialized password reset service
 _auth_service = None
@@ -503,16 +515,22 @@ def api_create_user():
     email = data.get('email', '').strip() if data.get('email') else ''
     phone = data.get('phone', '').strip() if data.get('phone') else ''
     password = data.get('password', '').strip() if data.get('password') else ''
+    role_id = data.get('role_id')
+    is_viewer = _role_is_viewer(role_id)
 
-    if not name or not email:
-        return error_response('Name and email are required')
+    if not name:
+        return error_response('Name is required')
+    if not email and not is_viewer:
+        return error_response('Email is required')
+    if is_viewer and not email and not phone:
+        return error_response('A viewer needs an email or a phone number')
 
     try:
         user_id = _user_repo.save(
             name=name,
-            email=email,
+            email=email or None,
             phone=phone if phone else None,
-            role_id=data.get('role_id'),
+            role_id=role_id,
             is_active=data.get('is_active', True)
         )
         if password:
@@ -532,6 +550,26 @@ def api_update_user(user_id):
     if _is_superadmin(user_id):
         data.pop('role_id', None)
         data['is_active'] = True
+
+    # Email is optional only for Viewer accounts (who then need a phone). Enforce
+    # against the effective role/email/phone (payload value, else existing).
+    existing = _user_repo.get_by_id(user_id)
+    if not existing:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    def _eff(key):
+        if key in data:
+            v = data[key]
+            return v.strip() if isinstance(v, str) else v
+        return existing.get(key)
+
+    is_viewer = _role_is_viewer(data.get('role_id', existing.get('role_id')))
+    eff_email, eff_phone = _eff('email'), _eff('phone')
+    if not eff_email and not is_viewer:
+        return jsonify({'success': False, 'error': 'Email is required'}), 400
+    if is_viewer and not eff_email and not eff_phone:
+        return jsonify({'success': False, 'error': 'A viewer needs an email or a phone number'}), 400
+
     try:
         updated = _user_repo.update(
             user_id=user_id,
