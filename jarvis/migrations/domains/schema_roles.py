@@ -77,6 +77,21 @@ def create_schema_roles(conn, cursor):
         END $$;
     ''')
 
+    # Viewer accounts may have no email (they log in by phone) — drop the
+    # NOT NULL constraint on email. UNIQUE stays: Postgres allows multiple NULLs,
+    # so any number of email-less viewers can coexist. Email remains required
+    # for non-Viewer roles, enforced at the application layer.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'users' AND column_name = 'email'
+                         AND is_nullable = 'NO') THEN
+                ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+            END IF;
+        END $$;
+    ''')
+
     # Add organizational fields to users table (migrate from responsables)
     cursor.execute('''
         DO $$
