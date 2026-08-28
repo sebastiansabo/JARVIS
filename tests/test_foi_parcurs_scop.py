@@ -72,3 +72,26 @@ def test_null_is_internal_defaults_to_client(monkeypatch):
     data = _run(monkeypatch, [_session(is_internal=None)])
     assert data['trips'][0]['traseu'].startswith('Test Drive')
     assert data['trips'][0]['is_td'] is True
+
+
+def test_missed_sessions_excluded_from_route_sheet(monkeypatch):
+    # Ratate (td_status='missed') never drove — kept out of the sheet entirely.
+    rows = [
+        _session(id=1, td_status='complete'),
+        _session(id=2, td_status='missed', km_start=2000, km_end=2050),
+    ]
+    data = _run(monkeypatch, rows)
+    assert len(data['trips']) == 1  # the missed row is dropped
+
+
+def test_non_missed_statuses_are_kept(monkeypatch):
+    # Everything that isn't 'missed' stays (driving/complete/late/planned…).
+    rows = [_session(id=1, td_status='driving'), _session(id=2, td_status='complete')]
+    data = _run(monkeypatch, rows)
+    assert len(data['trips']) == 2
+
+
+def test_grace_hours_is_six():
+    # No-shows are archived 6h after departure (was 8).
+    from foi_parcurs.session_lifecycle import GRACE_HOURS
+    assert GRACE_HOURS == 6

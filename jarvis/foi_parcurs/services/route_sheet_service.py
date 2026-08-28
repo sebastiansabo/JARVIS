@@ -76,7 +76,11 @@ def _iso_date(v) -> str:
 def aggregate_month(vin: str, year: int, month: int) -> dict:
     """Collect the locked-facts view of one car's month of driving sessions."""
     rows, _ = _fp_repo.get_contracts(vin=vin, per_page=2000, lean=True)
-    sessions = [c for c in rows if _period(c) == (year, month)]
+    # Ratate (no-show) sessions never drove — exclude them from the route sheet
+    # entirely (they're archived, not documented). `td_status='missed'` covers
+    # both an explicit MISSED and a PLANNED past its grace window.
+    sessions = [c for c in rows
+                if _period(c) == (year, month) and (c.get('td_status') or '') != 'missed']
     # chronological by drive date (departure, else created)
     sessions.sort(key=lambda c: str(c.get('departure_datetime') or c.get('created_at') or ''))
 
