@@ -28,6 +28,7 @@ vi.mock('@/api/foiParcurs', () => {
     getVehicles: vi.fn().mockResolvedValue({ vehicles: VEHICLES }),
     listRouteSheets: vi.fn().mockResolvedValue({ sheets: [] }),
     getRouteSheetXlsxUrl: (vin: string) => `/xlsx/${vin}`,
+    getRouteSheetContractsZipUrl: (vin: string) => `/zip/${vin}`,
     getSessionImportTemplateUrl: (id: number) => `/template/${id}`,
     correctSession: vi.fn(),
   } }
