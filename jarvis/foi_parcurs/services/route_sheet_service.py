@@ -101,17 +101,11 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
         except Exception:
             logger.warning('Prestator lookup failed for company_id=%s', company_id, exc_info=True)
 
-    # Traseu rule inputs from the Settings tab: TD max distance (Route KM Limits)
-    # + the manually-configured Comodat routes (Itinerary Routes).
-    td_max = 50
+    # Traseu rule input from the Settings tab: the manually-configured Comodat
+    # routes (Itinerary Routes) that label internal trips. The client/internal
+    # split now drives the scop (see below), so TD max distance no longer does.
     comodat_routes = []
     if company_id:
-        try:
-            km_cfg = _fp_repo.query_one('SELECT td_km_max FROM fp_km_configs WHERE company_id=%s', (company_id,))
-            if km_cfg and km_cfg.get('td_km_max'):
-                td_max = int(km_cfg['td_km_max'])
-        except Exception:
-            logger.warning('td_km_max lookup failed', exc_info=True)
         try:
             rr = _fp_repo.query_all(
                 "SELECT itinerary FROM fp_routes WHERE company_id=%s AND route_type='Comodat' ORDER BY id",
@@ -135,7 +129,11 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
     trips = []
     for i, c in enumerate(sessions):
         dist = c.get('distance_km') or 0
-        is_td = dist <= td_max
+        # Scop reflects the SESSION TYPE, not the distance. A client session is a
+        # Test Drive regardless of km — redistributing a gap can grow it past
+        # td_max — and only an internal session reads "Deplasare în interes de
+        # serviciu". (Internal fillers are never created by gap redistribution.)
+        is_td = not bool(c.get('is_internal'))
         project = project_by_id.get(c.get('id'), '')
         if is_td:
             traseu = f'Test Drive {model_label}'

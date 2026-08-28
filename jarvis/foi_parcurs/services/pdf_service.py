@@ -645,13 +645,6 @@ def generate_legal_pdf(contract: dict) -> str:
         except Exception:
             logger.warning('Could not embed driver-license photo in PDF', exc_info=True)
 
-    story.append(Spacer(1, 10))
-    story.append(HRFlowable(width='100%', thickness=0.5, color=colors.HexColor('#cccccc'), spaceAfter=4))
-    story.append(Paragraph(
-        f'Document generat automat • {datetime.now().strftime("%d.%m.%Y %H:%M")}',
-        ParagraphStyle('footer', parent=styles['Normal'], fontSize=7, alignment=TA_CENTER, textColor=colors.grey),
-    ))
-
     doc.build(story)
     logger.info('Legal PDF generated: %s', out_path)
     return out_path
@@ -1008,13 +1001,6 @@ def generate_service_contract_pdf(contract: dict) -> str:
     sig_table = Table(sig_row, colWidths=[col_w, col_w], rowHeights=[35 * mm])
     sig_table.setStyle(sig_box_style)
     story.append(sig_table)
-
-    story.append(Spacer(1, 10))
-    story.append(HRFlowable(width='100%', thickness=0.5, color=colors.HexColor('#cccccc'), spaceAfter=4))
-    story.append(Paragraph(
-        f'Document generat automat • {datetime.now().strftime("%d.%m.%Y %H:%M")}',
-        ParagraphStyle('footer', parent=styles['Normal'], fontSize=7, alignment=TA_CENTER, textColor=colors.grey),
-    ))
 
     doc.build(story)
     logger.info('Service contract PDF generated: %s', out_path)
