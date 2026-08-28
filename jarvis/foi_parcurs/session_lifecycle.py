@@ -7,7 +7,9 @@ and as a pure Python helper (derive_planned_substatus) for the sweeper job.
 """
 from datetime import timedelta
 
-GRACE_HOURS = 8
+# A no-show is archived (PLANNED→MISSED) once this grace window elapses after the
+# scheduled departure. Drives TD_STATUS_SQL, the archive sweeper, and conflicts.
+GRACE_HOURS = 6
 
 # TD datetimes are naive Bucharest wall-clock (stored as digits, displayed
 # as-is) even though the columns are timestamptz. Production's DB session runs

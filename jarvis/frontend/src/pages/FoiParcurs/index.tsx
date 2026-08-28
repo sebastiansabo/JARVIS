@@ -541,6 +541,9 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
       const p = period(c)
       if (p.year !== filterYear) continue
       if (filterMonth !== 0 && p.month !== filterMonth) continue
+      // Ratate (no-show) sessions never drove — keep them out of the route sheet
+      // (they're archived). Covers explicit MISSED + PLANNED past its grace window.
+      if (c.td_status === 'missed') continue
       // Make filter (header dropdown): keep only cars whose catalog brand matches
       // the selected make. Brand is read from the full vehicle catalog
       // (getVehicles(false)), so archived/blocked cars of that make stay visible.
@@ -1710,9 +1713,12 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
     // Client vs internal drive filter (from the header toggle).
     if (driveType === 'client' && c.is_internal) return false
     if (driveType === 'internal' && !c.is_internal) return false
-    // Session view: Active = non-finalised only, Arhivate = finalised only, Toate = both.
-    if (sessionView === 'active' && sessionStatus(c).key === 'finalizat') return false
-    if (sessionView === 'archived' && sessionStatus(c).key !== 'finalizat') return false
+    // Session view: Active = live sessions; Arhivate = finalised + Ratate (no-shows,
+    // which are archived once past their grace window); Toate = both.
+    const _skey = sessionStatus(c).key
+    const _isArchived = _skey === 'finalizat' || _skey === 'ratat'
+    if (sessionView === 'active' && _isArchived) return false
+    if (sessionView === 'archived' && !_isArchived) return false
     if (brand && vinBrand.get(c.vin) !== brand) return false
     if (filterVin !== 'all' && c.vin !== filterVin) return false
     if (filterStatus !== 'all' && sessionStatus(c).key !== filterStatus) return false
