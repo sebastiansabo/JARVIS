@@ -568,6 +568,11 @@ export const foiParcursApi = {
   getRouteSheetXlsxUrl: (vin: string, year: number, month: number) =>
     `${BASE}/route-sheet/xlsx${qs({ vin, year, month })}`,
 
+  // ZIP of this car's per-session contract PDFs for the selected period — exactly
+  // the sessions the Foi de Parcurs row aggregates. month=0 → the whole year.
+  getRouteSheetContractsZipUrl: (vin: string, year: number, month: number, companyId?: number, documentType?: string) =>
+    `${BASE}/route-sheet/contracts-zip${qs({ vin, year, month: month || undefined, company_id: companyId || undefined, document_type: documentType })}`,
+
   // Stored sheets for the period — badge + modal prefill (norma/alimentari).
   listRouteSheets: (companyId: number, year: number, month: number) =>
     api.get<{ success: boolean; sheets: StoredRouteSheet[] }>(

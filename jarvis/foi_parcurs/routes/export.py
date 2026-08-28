@@ -6,7 +6,7 @@ from datetime import datetime
 from flask import Response
 from ._shared import foi_parcurs_bp, jsonify, request, login_required, logger, _fp_repo
 from .pdf import _ensure_pdf_path
-from foi_parcurs.services.route_sheet_service import session_actual_km
+from foi_parcurs.services.route_sheet_service import session_actual_km, _period
 
 _MAX_ROWS = 100000
 
@@ -155,6 +155,60 @@ def api_export_contracts_zip():
         return jsonify({'success': False, 'error': 'Niciun contract de exportat în perioada selectată.'}), 404
 
     filename = f'contracte_{_period_label(filters)}.zip'
+    return Response(
+        buf.getvalue(),
+        mimetype='application/zip',
+        headers={'Content-Disposition': f'attachment; filename={filename}'},
+    )
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/contracts-zip', methods=['GET'])
+@login_required
+def api_route_sheet_contracts_zip():
+    """Per-car ZIP of the legal contract PDFs for one month — exactly the sessions
+    a Foi de Parcurs row aggregates. Grouped by the SAME (year, month) rule the
+    route sheet uses (`_period`: explicit year/month columns, else the drive date),
+    so the download can't drift from the row at month boundaries. month omitted/0 =
+    the whole year. Only FILLED/COMPLETED sessions (those with a contract) go in."""
+    vin = (request.args.get('vin') or '').strip()
+    company_id = request.args.get('company_id', type=int)
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int) or 0
+    document_type = (request.args.get('document_type') or '').strip() or None
+    if not vin or not year:
+        return jsonify({'success': False, 'error': 'vin și year sunt necesare.'}), 400
+
+    rows, _ = _fp_repo.get_contracts(
+        vin=vin, company_id=company_id, document_type=document_type,
+        page=1, per_page=_MAX_ROWS, sort_by='created_at', sort_dir='ASC',
+    )
+
+    buf = io.BytesIO()
+    included = 0
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for r in (rows or []):
+            if r.get('status') not in ('FILLED', 'COMPLETED'):
+                continue
+            py, pm = _period(r)
+            if py != year or (month and pm != month):
+                continue
+            try:
+                pdf_path = _ensure_pdf_path(r, r['id'], 'legal')
+                with open(pdf_path, 'rb') as f:
+                    pdf_bytes = f.read()
+            except Exception:
+                logger.warning('Skipping contract %s in per-car zip (PDF failed)', r.get('id'), exc_info=True)
+                continue
+            safe = re.sub(r'[^A-Za-z0-9._-]+', '_', str(r.get('contract_id') or r.get('id')))
+            zf.writestr(f'foaie-parcurs-{safe}.pdf', pdf_bytes)
+            included += 1
+
+    if included == 0:
+        return jsonify({'success': False, 'error': 'Niciun contract de exportat pentru această mașină în perioada selectată.'}), 404
+
+    vin_safe = re.sub(r'[^A-Za-z0-9._-]+', '_', vin)
+    period = f'{year}-{month:02d}' if month else str(year)
+    filename = f'contracte_{vin_safe}_{period}.zip'
     return Response(
         buf.getvalue(),
         mimetype='application/zip',
