@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Download,
   FileSpreadsheet,
+  FileArchive,
   PlayCircle,
   Loader2,
   AlertTriangle,
@@ -317,7 +318,7 @@ export default function FoiParcurs() {
         </div>
       </Tabs>
 
-      {activeTab === 'contracts' && <ContractsTab companyId={companyId} toolbarSlot={tabToolbar} documentType={docType} />}
+      {activeTab === 'contracts' && <ContractsTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} documentType={docType} />}
       {/* In the rental (Service) context the franchise brand filter doesn't apply —
           the courtesy stock is multi-brand — so pass an empty brand to show it all. */}
       {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
@@ -330,7 +331,7 @@ export default function FoiParcurs() {
 }
 
 // ── Contracts Tab — Form → Preview → Save Batch ──
-export function ContractsTab({ companyId, toolbarSlot, documentType = 'sales' }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
+export function ContractsTab({ companyId, brand = '', toolbarSlot, documentType = 'sales' }: { companyId: number; brand?: string; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
   const [importOpen, setImportOpen] = useState(false)
   const toolbar = (
     <Button variant="outline" size="sm" className="h-8" onClick={() => setImportOpen(true)}>
@@ -341,7 +342,7 @@ export function ContractsTab({ companyId, toolbarSlot, documentType = 'sales' }:
     <div className="space-y-4">
       {/* RouteSheetsTable renders first so its month/year filters land in the slot
           before the Importă button (filters left, action right). */}
-      <RouteSheetsTable companyId={companyId} toolbarSlot={toolbarSlot} documentType={documentType} />
+      <RouteSheetsTable companyId={companyId} brand={brand} toolbarSlot={toolbarSlot} documentType={documentType} />
       {toolbarSlot ? createPortal(toolbar, toolbarSlot) : <div className="flex justify-end">{toolbar}</div>}
       <SessionImportDialog companyId={companyId} open={importOpen} onOpenChange={setImportOpen} />
     </div>
@@ -463,7 +464,7 @@ function withGaps(sessions: FoiContract[]): DetailRow[] {
 //    sessions for that vehicle that month), scoped to the header company.
 //    Month is a filter; each row expands to its individual sessions and can
 //    generate/store an AI-drafted legal Foaie de Parcurs (PDF) or Excel. ──
-function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
+function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = 'sales' }: { companyId: number; brand?: string; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -540,11 +541,16 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
       const p = period(c)
       if (p.year !== filterYear) continue
       if (filterMonth !== 0 && p.month !== filterMonth) continue
+      // Make filter (header dropdown): keep only cars whose catalog brand matches
+      // the selected make. Brand is read from the full vehicle catalog
+      // (getVehicles(false)), so archived/blocked cars of that make stay visible.
+      // Empty brand (Service/rental context) shows every make.
+      if (brand && vinMap.get(c.vin)?.brand !== brand) continue
       if (!map.has(c.vin)) map.set(c.vin, { vin: c.vin, sessions: [] })
       map.get(c.vin)!.sessions.push(c)
     }
     return [...map.values()].sort((a, b) => a.vin.localeCompare(b.vin))
-  }, [contracts, filterYear, filterMonth])
+  }, [contracts, filterYear, filterMonth, brand, vinMap])
 
   const toggle = (key: string) =>
     setExpanded((prev) => {
@@ -627,7 +633,24 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
                         {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       </TableCell>
                       <TableCell className="text-sm">{veh?.mark || <span className="text-muted-foreground">—</span>}</TableCell>
-                      <TableCell className="text-sm font-medium">{veh?.model || <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="text-sm font-medium">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{veh?.model || <span className="text-muted-foreground">—</span>}</span>
+                          {/* Archived / blocked cars still show here (they had trips this
+                              month); badge them so they're distinguishable from active stock. */}
+                          {veh && !veh.is_active && (
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Arhivat</span>
+                          )}
+                          {veh?.is_active && (veh.locked_out || veh.blocked_now) && (
+                            <span
+                              className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                              title={veh.lockout_note || undefined}
+                            >
+                              🔒 {(veh.locked_out ? veh.lockout_category : veh.active_block_category) || 'Blocat'}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">{sheet.vin}</TableCell>
                       <TableCell className="text-sm whitespace-nowrap">{kmStart.toLocaleString('ro-RO')}</TableCell>
                       <TableCell className="text-sm whitespace-nowrap">{kmEnd.toLocaleString('ro-RO')}</TableCell>
@@ -642,6 +665,17 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
                               Salvat
                             </Badge>
                           )}
+                          {/* Download this car's per-session contract PDFs for the
+                              period as a ZIP — exactly the sessions in this row. */}
+                          <Button asChild variant="outline" size="sm" className="h-7 w-7 p-0"
+                            title="Descarcă contractele lunii (ZIP)">
+                            <a
+                              href={foiParcursApi.getRouteSheetContractsZipUrl(sheet.vin, filterYear, filterMonth, companyId, documentType)}
+                              download
+                            >
+                              <FileArchive className="h-3.5 w-3.5" />
+                            </a>
+                          </Button>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="outline" size="sm" className="h-7 gap-1" disabled={!monthChosen}
