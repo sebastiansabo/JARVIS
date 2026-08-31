@@ -2249,6 +2249,41 @@ def _create_schema_incremental_continued(conn, cursor):
     # Widen lockout_category so custom reason slugs (up to 40 chars) fit.
     cursor.execute("ALTER TABLE fp_vehicles ALTER COLUMN lockout_category TYPE VARCHAR(40)")
 
+    # ── Foi de Parcurs — vehicle lock/unlock audit trail ──────────────────────
+    # One row per manual block OR unblock of a car, so the lock modal can show a
+    # full history ("cine a blocat/deblocat, când, de ce"). This survives an
+    # unlock — fp_vehicles.locked_by/locked_at hold only the CURRENT lock and are
+    # NULLed on unblock. actor_name is snapshotted so the log stays correct even
+    # if the acting user is later renamed or removed.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_vehicle_lock_events (
+            id BIGSERIAL PRIMARY KEY,
+            vehicle_id BIGINT NOT NULL,
+            action VARCHAR(10) NOT NULL,          -- 'lock' | 'unlock'
+            category VARCHAR(40),                 -- reason slug at the time
+            note TEXT,
+            until DATE,                           -- lockout_until for a lock event
+            actor_id BIGINT,                      -- users.id who performed it
+            actor_name TEXT,                      -- snapshot of the actor's name
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_vehicle_lock_events_vehicle '
+                   'ON fp_vehicle_lock_events(vehicle_id, created_at DESC, id DESC)')
+    # One-time backfill: seed a 'lock' event for every car currently locked, so
+    # the history isn't empty for cars blocked before this shipped. Idempotent —
+    # only seeds cars that have no events yet.
+    cursor.execute('''
+        INSERT INTO fp_vehicle_lock_events
+            (vehicle_id, action, category, note, until, actor_id, actor_name, created_at)
+        SELECT v.id, 'lock', v.lockout_category, v.lockout_note, v.lockout_until,
+               v.locked_by, u.name, COALESCE(v.locked_at, NOW())
+        FROM fp_vehicles v
+        LEFT JOIN users u ON u.id = v.locked_by
+        WHERE v.locked_out = TRUE
+          AND NOT EXISTS (SELECT 1 FROM fp_vehicle_lock_events e WHERE e.vehicle_id = v.id)
+    ''')
+
     # ── Foi de Parcurs — scheduled vehicle blocks (to-do #3) ──
     # One row per scheduled block window for a car. Enforcement is dynamic: a car
     # is "blocked now" if CURRENT_DATE falls inside an active window (see
