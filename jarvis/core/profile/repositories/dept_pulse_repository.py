@@ -7,9 +7,20 @@ Routes hold NO SQL (arch validator).
 from typing import Optional
 
 from core.base_repository import BaseRepository
+from core.organization.ghost import ghost_exclude_clause
 
 # A user's eligible-node set is: their own member/responsable nodes, plus every
 # descendant of any node where they are a responsable (manager-sees-down).
+#
+# Ghost-user note (task 8): this CTE is always parameterized by the CALLING
+# user's own id (mapped_jarvis_user_id = %s below) — it resolves "which
+# departments can I, the caller, see", not another user's cohort membership.
+# It must NOT filter on is_ghost: a ghost keeps full self-access to their own
+# department-pulse (ghost.py: "remain visible to themselves"). Cohort-level
+# ghost exclusion (a ghost's vote must not inflate the anonymous voter count
+# or skew the average other members see) is applied downstream, in
+# get_voter_count()/get_aggregate() below, which read hr_dept_pulse_votes —
+# the actual cohort — via ghost_exclude_clause('voter_user_id', viewer_id=None).
 _ELIGIBLE_SQL = """
     WITH RECURSIVE my_nodes AS (
         SELECT som.node_id, som.role
@@ -88,26 +99,38 @@ class DeptPulseRepository(BaseRepository):
     # ── Aggregate (anonymous) ──
 
     def get_voter_count(self, node_id: int) -> int:
+        """Distinct-voter count for the anonymous cohort. A ghost must not be
+        counted here (would inflate the count non-ghost members see and could
+        push a cohort over the MIN_VOTERS floor on the strength of a hidden
+        vote) — always excluded regardless of who is viewing, so
+        viewer_id=None (no self-bypass; see ghost.ghost_exclude_clause)."""
+        gfrag, gargs = ghost_exclude_clause('voter_user_id', viewer_id=None)
         row = self.query_one(
-            "SELECT COUNT(DISTINCT voter_user_id) AS n FROM hr_dept_pulse_votes WHERE department_node_id = %s",
-            (node_id,),
+            f"SELECT COUNT(DISTINCT voter_user_id) AS n FROM hr_dept_pulse_votes "
+            f"WHERE department_node_id = %s{gfrag}",
+            (node_id, *gargs),
         )
         return int(row['n']) if row else 0
 
     def get_aggregate(self, node_id: int) -> list[dict]:
         """Anonymous per-perspective × competency average + distinct voter count.
         voter_user_id never leaves the server. avg comes back as float via
-        dict_from_row's Decimal coercion."""
+        dict_from_row's Decimal coercion.
+
+        A ghost's vote must not skew the average or voter count the cohort
+        sees — excluded unconditionally (viewer_id=None), same rationale as
+        get_voter_count()."""
+        gfrag, gargs = ghost_exclude_clause('voter_user_id', viewer_id=None)
         return self.query_all(
-            """
+            f"""
             SELECT perspective, competency_key,
                    ROUND(AVG(rating)::numeric, 2) AS avg,
                    COUNT(DISTINCT voter_user_id)  AS voters
             FROM hr_dept_pulse_votes
-            WHERE department_node_id = %s
+            WHERE department_node_id = %s{gfrag}
             GROUP BY perspective, competency_key
             """,
-            (node_id,),
+            (node_id, *gargs),
         )
 
     # ── Caller's own votes ──
