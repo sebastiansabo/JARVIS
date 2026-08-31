@@ -337,6 +337,10 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
         query += scope_sql
         params.extend(scope_params)
 
+        gfrag, gargs = ghost_exclude_clause('b.user_id')
+        query += gfrag
+        params += gargs
+
         query += ' ORDER BY b.year DESC, b.month DESC, u.name'
 
         cursor.execute(query, params)
@@ -642,11 +646,16 @@ def get_event_bonuses_summary(year=None):
                 SUM(b.hours_free) as total_hours,
                 SUM(b.bonus_days) as total_days
             FROM hr.event_bonuses b
+            WHERE 1=1
         '''
         params = []
         if year:
-            query += ' WHERE b.year = %s'
+            query += ' AND b.year = %s'
             params.append(year)
+
+        gfrag, gargs = ghost_exclude_clause('b.user_id')
+        query += gfrag
+        params += gargs
 
         cursor.execute(query, params)
         row = cursor.fetchone()
@@ -664,15 +673,21 @@ def get_bonuses_by_month(year):
     conn = get_db()
     try:
         cursor = get_cursor(conn)
-        cursor.execute('''
+
+        gfrag, gargs = ghost_exclude_clause('vd.user_id')
+        query = '''
             SELECT vd.month AS month,
                    COUNT(DISTINCT vd.bonus_id) as count,
                    SUM(vd.day_net) as total
             FROM hr.v_event_bonus_days vd
             WHERE vd.year = %s
+        ''' + gfrag + '''
             GROUP BY vd.month
             ORDER BY vd.month
-        ''', (year,))
+        '''
+        params = [year] + gargs
+
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         return [dict_from_row(row) for row in rows]
 
@@ -705,6 +720,10 @@ def get_bonuses_by_employee(year=None, month=None):
         if month:
             query += ' AND vd.month = %s'
             params.append(month)
+
+        gfrag, gargs = ghost_exclude_clause('vd.user_id')
+        query += gfrag
+        params += gargs
 
         query += ' GROUP BY u.id, u.name, u.department, co.company, u.company, u.brand ORDER BY total_bonus DESC'
 
@@ -741,6 +760,10 @@ def get_bonuses_by_event(year=None, month=None):
         if month:
             query += ' AND vd.month = %s'
             params.append(month)
+
+        gfrag, gargs = ghost_exclude_clause('vd.user_id')
+        query += gfrag
+        params += gargs
 
         query += ' GROUP BY e.id, e.name, e.start_date, e.end_date, e.company, e.brand, vd.year, vd.month ORDER BY vd.year DESC, vd.month DESC, total_bonus DESC'
 
