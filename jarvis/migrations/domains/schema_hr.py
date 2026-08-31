@@ -24,6 +24,33 @@ def create_event_bonus_days(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonus_days_bonus ON hr.event_bonus_days(bonus_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_bonus_days_day ON hr.event_bonus_days(day)')
+    # Optional per-day worked interval (whole hours). NULL = no interval set for
+    # that day; a participant's "Event Hours" = SUM(end_hour - start_hour). This
+    # is independent of hours_free (the Time-Bank perk). Idempotent.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_schema = 'hr' AND table_name = 'event_bonus_days'
+                          AND column_name = 'start_hour') THEN
+                ALTER TABLE hr.event_bonus_days ADD COLUMN start_hour SMALLINT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_schema = 'hr' AND table_name = 'event_bonus_days'
+                          AND column_name = 'end_hour') THEN
+                ALTER TABLE hr.event_bonus_days ADD COLUMN end_hour SMALLINT;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                          WHERE table_schema = 'hr' AND table_name = 'event_bonus_days'
+                          AND constraint_name = 'event_bonus_days_hours_chk') THEN
+                ALTER TABLE hr.event_bonus_days ADD CONSTRAINT event_bonus_days_hours_chk CHECK (
+                    (start_hour IS NULL OR (start_hour >= 0 AND start_hour <= 24))
+                    AND (end_hour IS NULL OR (end_hour >= 0 AND end_hour <= 24))
+                    AND (start_hour IS NULL OR end_hour IS NULL OR end_hour > start_hour)
+                );
+            END IF;
+        END $$
+    ''')
     cursor.execute('''
         CREATE OR REPLACE VIEW hr.v_event_bonus_days AS
         SELECT
@@ -38,7 +65,10 @@ def create_event_bonus_days(conn, cursor):
             eb.hours_free,
             -- hours_free is NOT split by month (credited once); attribute it to
             -- the bonus's earliest day so month rollups count it exactly once.
-            (d.day = MIN(d.day) OVER (PARTITION BY d.bonus_id)) AS is_primary_day
+            (d.day = MIN(d.day) OVER (PARTITION BY d.bonus_id)) AS is_primary_day,
+            -- Worked hours for THIS day (whole hours); unlike hours_free these are
+            -- inherently per-day, so month rollups sum them directly.
+            COALESCE(d.end_hour - d.start_hour, 0) AS day_event_hours
         FROM hr.event_bonus_days d
         JOIN hr.event_bonuses eb ON eb.id = d.bonus_id
     ''')
