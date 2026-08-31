@@ -1896,6 +1896,12 @@ def api_generate_eurofib(invoice_id):
 
             ri_full = _anexa_inv_by_id.get(ri["id"], ri)
             for car in lines:
+                # Only reverse cars this advance actually covered. Without this,
+                # a single-car advance fans out across every car of a multi-car
+                # storno (prod 9104148: 10 advances × 9 cars = 90 rows instead of
+                # 18), over-reversing the client account ~8×.
+                if car["id"] not in ri_line_ids:
+                    continue
                 selling = float(car["selling_price_eur"])
                 # Reverse the residual the advance actually booked (43462, not 43463).
                 ri_priors = _prior_car_fractions(
@@ -2214,6 +2220,12 @@ def _build_eurofib_batch(inv_row):
 
             ri_full = _anexa_inv_by_id.get(ri["id"], ri)
             for car in lines:
+                # Only reverse cars this advance actually covered. Without this,
+                # a single-car advance fans out across every car of a multi-car
+                # storno (prod 9104148: 10 advances × 9 cars = 90 rows instead of
+                # 18), over-reversing the client account ~8×.
+                if car["id"] not in ri_line_ids:
+                    continue
                 selling = float(car["selling_price_eur"])
                 # Reverse the residual the advance actually booked (43462, not 43463).
                 ri_priors = _prior_car_fractions(
