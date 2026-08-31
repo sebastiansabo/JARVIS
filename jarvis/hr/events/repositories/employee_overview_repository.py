@@ -1,5 +1,6 @@
 """Repository for Employee 360 overview — read-only aggregation queries."""
 from core.base_repository import BaseRepository
+from core.organization.ghost import ghost_exclude_clause
 
 # Subquery for leave codes — resolved from DB instead of hardcoded list
 _LEAVE_CODES_SUB = '(SELECT short_code FROM sincron_activity_codes WHERE is_leave = TRUE)'
@@ -325,6 +326,7 @@ class EmployeeOverviewRepository(BaseRepository):
         user_id, status ('present','on_leave','absent','holiday','unknown'),
         leave_code, first_punch (time), last_punch (time)
         """
+        gfrag, gargs = ghost_exclude_clause('u.id')
         return self.query_all(f'''
             WITH punched AS (
                 SELECT DISTINCT be.mapped_jarvis_user_id AS user_id
@@ -409,8 +411,9 @@ class EmployeeOverviewRepository(BaseRepository):
             LEFT JOIN adj_times at ON at.user_id = u.id
             WHERE u.is_active = TRUE
               AND COALESCE(u.contract_status, 'active') = 'active'
+              {gfrag}
         ''', (check_date, check_date, check_date, check_date, check_date,
-              check_date, check_date, check_date, check_date))
+              check_date, check_date, check_date, check_date) + tuple(gargs))
 
     def get_daily_sincron_codes(self, sincron_employee_id, company_name, year, month):
         """Return list of {day, short_code, unit, value} rows for timeline."""
