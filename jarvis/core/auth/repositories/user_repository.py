@@ -8,6 +8,7 @@ from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from core.base_repository import BaseRepository
+from core.organization.ghost import ghost_exclude_clause
 from database import dict_from_row
 
 
@@ -88,14 +89,21 @@ class UserRepository(BaseRepository):
         return True
 
     def get_online_users(self, minutes: int = 5) -> List[Dict[str, Any]]:
-        """Get users who have been active in the last N minutes."""
-        rows = self.query_all('''
+        """Get users who have been active in the last N minutes.
+
+        Ghost exclusion uses the DEFAULT (request-context) viewer: this is a
+        read/presence surface, so super-admins on the ghost-visible allowlist
+        still see ghosts online, everyone else doesn't (leadership privacy).
+        """
+        gfrag, gargs = ghost_exclude_clause('id')
+        rows = self.query_all(f'''
             SELECT id, name, email, last_seen
             FROM users
             WHERE last_seen IS NOT NULL
               AND last_seen > CURRENT_TIMESTAMP - INTERVAL '%s minutes'
+              {gfrag}
             ORDER BY last_seen DESC
-        ''', (minutes,))
+        ''', (minutes,) + tuple(gargs))
         return [{'id': row['id'], 'name': row['name'], 'email': row['email']} for row in rows]
 
     # --- Authentication Methods ---
@@ -110,7 +118,12 @@ class UserRepository(BaseRepository):
         return user
 
     def get_online_count(self, minutes: int = 5) -> dict:
-        """Get online users count with user list."""
+        """Get online users count with user list.
+
+        Delegates to get_online_users(), whose SQL already excludes ghosts
+        (see ghost_exclude_clause() there) — so this count is in-SQL
+        filtered, not a post-filter of an already-fetched list.
+        """
         users = self.get_online_users(minutes)
         return {'count': len(users), 'users': users}
 

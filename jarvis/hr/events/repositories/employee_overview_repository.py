@@ -269,10 +269,14 @@ class EmployeeOverviewRepository(BaseRepository):
 
         Ghosts are excluded here (not just at the notification-fanout level) so a ghost is
         never a "missing punch" subject in the first place — nobody (manager/HR/L0) is ever
-        notified about them. Default viewer resolution: in the cron there's no request
-        context, so `_resolve_viewer()` returns None → hide all ghosts.
+        notified about them. This is scheduler-suppression (spec §7.3): always force-hide,
+        explicitly, regardless of any request-context viewer — the sole caller is the cron
+        (which has no request context anyway, so `_resolve_viewer()` would return None here
+        too), but passing viewer_id=None makes that guarantee explicit/defense-in-depth
+        instead of relying on the default-viewer resolution accidentally doing the right
+        thing if this method is ever called from a request context in the future.
         """
-        ghost_frag, ghost_args = ghost_exclude_clause('u.id')
+        ghost_frag, ghost_args = ghost_exclude_clause('u.id', viewer_id=None)
         return self.query_all(f'''
             SELECT DISTINCT ON (be.mapped_jarvis_user_id)
                    be.mapped_jarvis_user_id AS user_id, u.name AS user_name,
