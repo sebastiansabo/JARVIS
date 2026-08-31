@@ -54,6 +54,15 @@ function fmtCurrency(v: number | string | null) {
   return Number(v).toLocaleString('ro-RO', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' RON'
 }
 
+/** Multi-line breakdown of per-day worked intervals for the Event Hours tooltip. */
+function dayHoursTooltip(map: Record<string, { start: number; end: number }> | null): string | undefined {
+  if (!map) return undefined
+  const lines = Object.entries(map)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([iso, iv]) => `${iso}: ${iv.start}–${iv.end}`)
+  return lines.length ? lines.join('\n') : undefined
+}
+
 /* ──── Expanded row: participants ──── */
 
 function EventParticipants({
@@ -98,6 +107,7 @@ function EventParticipants({
                 <TableHead>Zile prezență</TableHead>
                 <TableHead className="text-right">Days</TableHead>
                 <TableHead className="text-right">Free Hours</TableHead>
+                <TableHead className="text-right">Event Hours</TableHead>
                 <TableHead className="text-right">Bonus (RON)</TableHead>
                 <TableHead>Details</TableHead>
               </TableRow>
@@ -129,6 +139,12 @@ function EventParticipants({
                   </TableCell>
                   <TableCell className="text-sm text-right tabular-nums">{p.bonus_days ?? '—'}</TableCell>
                   <TableCell className="text-sm text-right tabular-nums">{p.hours_free ?? '—'}</TableCell>
+                  <TableCell
+                    className="text-sm text-right tabular-nums"
+                    title={dayHoursTooltip(p.presence_day_hours)}
+                  >
+                    {p.event_hours ? p.event_hours : '—'}
+                  </TableCell>
                   <TableCell className="text-sm text-right tabular-nums">
                     {p.bonus_net != null && Number(p.bonus_net) > 0 ? (
                       <span className="flex items-center justify-end gap-1">

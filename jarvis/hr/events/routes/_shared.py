@@ -40,6 +40,7 @@ __all__ = [
     'hr_required', 'hr_manager_required', 'hr_permission_required',
     'MONTH_NAMES',
     '_compute_bonus_net', 'resolve_presence_days', 'check_presence_months_editable',
+    'resolve_day_hours',
 ]
 
 from datetime import date
@@ -210,6 +211,15 @@ def resolve_presence_days(data):
     if not event:
         raise ValueError('Event not found')
     return normalize_presence_days(raw, event['start_date'], event['end_date'])
+
+
+def resolve_day_hours(data, presence_days):
+    """Validate optional per-day worked intervals (``data['day_hours']``) against
+    the attended days. Returns the normalised ``{iso_day: {start, end}}`` map
+    (empty when none supplied). Raises ``ValueError`` on any invalid interval.
+    """
+    from ..presence import validate_day_hours
+    return validate_day_hours(data.get('day_hours'), presence_days or [])
 
 
 def check_presence_months_editable(presence_days, user_role):
