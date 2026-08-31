@@ -122,10 +122,19 @@ def api_lock_vehicle(vehicle_id):
 @login_required
 def api_unlock_vehicle(vehicle_id):
     """Clear a car's lockout, making it available in the driving park again."""
-    row = _vehicle_repo.unlock_vehicle(vehicle_id)
+    from flask_login import current_user
+    row = _vehicle_repo.unlock_vehicle(vehicle_id, getattr(current_user, 'id', None))
     if not row:
         return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
     return jsonify({'success': True})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/vehicles/<int:vehicle_id>/lock-events', methods=['GET'])
+@login_required
+def api_vehicle_lock_events(vehicle_id):
+    """A car's block/unblock audit trail (newest first) — powers the 'Istoric
+    blocări' section of the lock modal."""
+    return jsonify({'events': _vehicle_repo.get_lock_events(vehicle_id)})
 
 
 # ── Scheduled blocks (to-do #3): future date-windows that auto-block a car ──
