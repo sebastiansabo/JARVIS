@@ -97,7 +97,7 @@ import { VehicleLockHistory } from './VehicleLockHistory'
 import SessionTypeChooser from './SessionTypeChooser'
 import { sessionStatus, type SessionStatusKey } from './sessionStatus'
 import { clientCell } from './sessionParty'
-import { sessionActualKm, sessionEstimatedKm, carSpanKm } from './distance'
+import { sessionActualKm, sessionEstimatedKm } from './distance'
 import { sessionAnomalies, driveDate } from './anomalies'
 import CorrectSessionDialog, { type CorrectionPayload } from './CorrectSessionDialog'
 import ExtendSessionDialog from './ExtendSessionDialog'
@@ -434,17 +434,31 @@ type DetailRow =
   | { gap: false; session: FoiContract }
   | ({ gap: true } & GapRow)
 
-function withGaps(sessions: FoiContract[]): DetailRow[] {
+// `kmMin`/`kmMax` are the month's full odometer span (including internal drives
+// that aren't listed as trips). When a client trip doesn't reach that edge, the
+// leftover KM (an internal drive at the month boundary) shows as a leading or
+// trailing gap — attributed to the adjacent client so it can be redistributed.
+function withGaps(sessions: FoiContract[], kmMin?: number, kmMax?: number): DetailRow[] {
   const sorted = [...sessions].sort(
     (a, b) => (a.km_start ?? 0) - (b.km_start ?? 0) || (a.km_end ?? 0) - (b.km_end ?? 0),
   )
   const rows: DetailRow[] = []
-  let prevEnd: number | null = null
-  let prevSession: FoiContract | null = null
   const neighbor = (s: FoiContract): GapNeighbor => ({
     id: s.id, client: s.client_name || s.advisor_name || '—',
     kmStart: s.km_start ?? 0, kmEnd: s.km_end ?? 0,
   })
+  const first = sorted[0]
+  if (first && kmMin != null && Number.isFinite(kmMin) && (first.km_start ?? 0) > kmMin) {
+    const n = neighbor(first)
+    rows.push({
+      gap: true, id: `gap-lead-${first.id}`, date: first.created_at,
+      dateFrom: first.created_at, dateTo: first.created_at,
+      kmStart: kmMin, kmEnd: first.km_start ?? 0, distance: (first.km_start ?? 0) - kmMin,
+      before: n, after: n,
+    })
+  }
+  let prevEnd: number | null = null
+  let prevSession: FoiContract | null = null
   for (const c of sorted) {
     const start = c.km_start ?? 0
     if (prevEnd != null && start > prevEnd && prevSession) {
@@ -457,6 +471,15 @@ function withGaps(sessions: FoiContract[]): DetailRow[] {
     }
     rows.push({ gap: false, session: c })
     if (prevEnd == null || (c.km_end ?? 0) > prevEnd) { prevEnd = c.km_end ?? 0; prevSession = c }
+  }
+  if (prevSession && prevEnd != null && kmMax != null && Number.isFinite(kmMax) && kmMax > prevEnd) {
+    const n = neighbor(prevSession)
+    rows.push({
+      gap: true, id: `gap-trail-${prevSession.id}`, date: prevSession.created_at,
+      dateFrom: prevSession.created_at, dateTo: prevSession.created_at,
+      kmStart: prevEnd, kmEnd: kmMax, distance: kmMax - prevEnd,
+      before: n, after: n,
+    })
   }
   return rows
 }
@@ -524,9 +547,11 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
   }, [storedData])
 
   const contracts = data?.contracts ?? []
+  // Group by the actual drive START date (departure), not created_at: a session
+  // created in July but driven on Aug 1 belongs to August's foaie, not July's.
   const period = (c: (typeof contracts)[number]) => {
-    const d = new Date(c.created_at)
-    return { year: c.year ?? d.getFullYear(), month: c.month ?? d.getMonth() + 1 }
+    const d = (c.departure_datetime ? naiveDate(c.departure_datetime) : null) ?? new Date(c.created_at)
+    return { year: d.getFullYear(), month: d.getMonth() + 1 }
   }
 
   const years = React.useMemo(() => {
@@ -537,27 +562,33 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
 
   // One row per car (VIN), cumulating the sessions that match the period filter.
   const cars = React.useMemo(() => {
-    const map = new Map<string, { vin: string; sessions: typeof contracts }>()
+    const map = new Map<string, { vin: string; sessions: typeof contracts; kmMin: number; kmMax: number }>()
     for (const c of contracts) {
       const p = period(c)
       if (p.year !== filterYear) continue
       if (filterMonth !== 0 && p.month !== filterMonth) continue
-      // Ratate (no-show) sessions never drove — keep them out of the route sheet
-      // (they're archived). Covers explicit MISSED + PLANNED past its grace window.
+      // Ratate (no-show) sessions never drove — excluded from the sheet entirely.
+      // Covers explicit MISSED + PLANNED past its grace window.
       if (c.td_status === 'missed') continue
-      // Internal (company) drives aren't listed on the client Foaie de Parcurs.
-      // Dropping them leaves an odometer jump between the surrounding client
-      // drives, which `withGaps()` surfaces as a gap the user can redistribute.
-      if (c.is_internal) continue
       // Make filter (header dropdown): keep only cars whose catalog brand matches
       // the selected make. Brand is read from the full vehicle catalog
       // (getVehicles(false)), so archived/blocked cars of that make stay visible.
-      // Empty brand (Service/rental context) shows every make.
       if (brand && vinMap.get(c.vin)?.brand !== brand) continue
-      if (!map.has(c.vin)) map.set(c.vin, { vin: c.vin, sessions: [] })
-      map.get(c.vin)!.sessions.push(c)
+      let e = map.get(c.vin)
+      if (!e) { e = { vin: c.vin, sessions: [], kmMin: Infinity, kmMax: -Infinity }; map.set(c.vin, e) }
+      // Odometer span over ALL of this car's in-month drives INCLUDING internal:
+      // an internal drive at the month edge still contributes its KM as a boundary
+      // gap and keeps Total KM correct, even though it isn't listed as a trip.
+      if (c.km_start != null) e.kmMin = Math.min(e.kmMin, c.km_start)
+      if (c.km_end != null) e.kmMax = Math.max(e.kmMax, c.km_end)
+      // Internal (company) drives aren't listed as trips — their KM shows as a gap
+      // (between-drive jump, or a leading/trailing gap at the month boundary).
+      if (c.is_internal) continue
+      e.sessions.push(c)
     }
-    return [...map.values()].sort((a, b) => a.vin.localeCompare(b.vin))
+    // A car needs at least one client drive this month to get a foaie.
+    return [...map.values()].filter((e) => e.sessions.length)
+      .sort((a, b) => a.vin.localeCompare(b.vin))
   }, [contracts, filterYear, filterMonth, brand, vinMap])
 
   const toggle = (key: string) =>
@@ -627,9 +658,11 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
               {cars.map((sheet) => {
                 const isOpen = expanded.has(sheet.vin)
                 const veh = vinMap.get(sheet.vin)
-                const kmStart = Math.min(...sheet.sessions.map((c) => c.km_start ?? 0))
-                const kmEnd = Math.max(...sheet.sessions.map((c) => c.km_end ?? 0))
-                const totalKm = carSpanKm(sheet.sessions)
+                // Odometer range + Total over the month's full span (incl. internal
+                // drives that show as boundary gaps), so edge KM isn't dropped.
+                const kmStart = Number.isFinite(sheet.kmMin) ? sheet.kmMin : Math.min(...sheet.sessions.map((c) => c.km_start ?? 0))
+                const kmEnd = Number.isFinite(sheet.kmMax) ? sheet.kmMax : Math.max(...sheet.sessions.map((c) => c.km_end ?? 0))
+                const totalKm = Math.max(0, kmEnd - kmStart)
                 const anomalies = sessionAnomalies(sheet.sessions)
                 const clientCount = new Set(sheet.sessions.map((c) => c.client_name).filter(Boolean)).size
                 const stored = storedByVin.get(sheet.vin)
@@ -725,7 +758,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {withGaps(sheet.sessions).slice().reverse().map((row) => {
+                                {withGaps(sheet.sessions, sheet.kmMin, sheet.kmMax).slice().reverse().map((row) => {
                                   if (row.gap) {
                                     return (
                                       <TableRow key={row.id} className="bg-amber-500/10">
@@ -1959,6 +1992,11 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                       {colVisible('status') && <TableCell>
                         <div className="flex items-center gap-1">
                           <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
+                          {c.is_internal && (
+                            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Intern
+                            </span>
+                          )}
                           <ModifiedBadge session={c} />
                         </div>
                       </TableCell>}
