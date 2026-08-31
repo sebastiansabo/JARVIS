@@ -384,6 +384,95 @@ class DecimalAdvanceFakeRepo(FakeRepo):
         return []
 
 
+# ── Mixed-advance multi-car storno (prod: 9 Polo, contract 142, anexa 23) ──────
+# A multi-car storno reverses a whole-anexa proportional advance (covers ALL
+# cars) PLUS one single-car 90% advance per car. Each single-car advance must
+# reverse ONLY its own car. The export instead looped every reversed advance
+# across every storno car, fanning each single-car 90% advance onto all cars
+# (prod: 10 advances × 9 cars = 90 rows instead of 18, over-reversing ~8×).
+# Simplified here to 2 cars: a 10% whole-anexa advance + one 90% advance each.
+MIX_CAR_1 = {
+    "id": 601, "anexa_id": 5, "line_number": 1, "nr_comanda": "601",
+    "model": "Polo Prime 1.0 TSI DSG", "culoare": "", "list_price_eur": 0,
+    "selling_price_eur": 10000, "qty": 1,
+}
+MIX_CAR_2 = {
+    "id": 602, "anexa_id": 5, "line_number": 2, "nr_comanda": "602",
+    "model": "Polo Prime 1.0 TSI DSG", "culoare": "", "list_price_eur": 0,
+    "selling_price_eur": 10000, "qty": 1,
+}
+ADV_MIX_BIG = {  # 10% whole-anexa advance covering BOTH cars
+    "id": 950, "invoice_type": "INVOICE", "invoice_number": 700, "anexa_id": 5,
+    "total_amount_eur": 2000, "split_mode": "proportional", "kurs_applied": 5.0961,
+    "issued_date": "2026-02-02", "line_ids": [601, 602],
+}
+ADV_MIX_CAR_1 = {  # 90% advance covering ONLY car 601
+    "id": 951, "invoice_type": "INVOICE", "invoice_number": 701, "anexa_id": 5,
+    "total_amount_eur": 9000, "split_mode": "proportional", "kurs_applied": 5.2435,
+    "issued_date": "2026-08-14", "line_ids": [601],
+}
+ADV_MIX_CAR_2 = {  # 90% advance covering ONLY car 602
+    "id": 952, "invoice_type": "INVOICE", "invoice_number": 702, "anexa_id": 5,
+    "total_amount_eur": 9000, "split_mode": "proportional", "kurs_applied": 5.2435,
+    "issued_date": "2026-08-14", "line_ids": [602],
+}
+STORNO_MIXED = {
+    "id": 600, "invoice_type": "STORNO", "invoice_number": 9104148, "anexa_id": 5,
+    "total_amount_eur": -20000, "split_mode": "equal", "kurs_applied": 5.2025,
+    "issued_date": "2026-08-28", "line_ids": [601, 602],
+}
+
+
+class MixedAdvanceFakeRepo(FakeRepo):
+    """2-car storno reversing a whole-anexa advance + one single-car advance each."""
+
+    def get_anexa_by_id(self, anexa_id):
+        return {"id": 5, "contract_id": 1, "anexa_number": 23}
+
+    def get_lines_by_anexa(self, anexa_id):
+        return [dict(MIX_CAR_1), dict(MIX_CAR_2)]
+
+    def get_invoices_by_anexa(self, anexa_id):
+        return [dict(ADV_MIX_BIG), dict(ADV_MIX_CAR_1), dict(ADV_MIX_CAR_2),
+                dict(STORNO_MIXED)]
+
+    def get_document_number_map(self, invoice_id):
+        return {601: 9104148, 602: 9104148}
+
+    def query_all(self, sql, params=None):
+        if "facturare_invoice_links" in sql:
+            return [{"source_invoice_id": 950}, {"source_invoice_id": 951},
+                    {"source_invoice_id": 952}]
+        if "invoice_type = 'STORNO'" in sql:
+            return [dict(STORNO_MIXED)]
+        if "id IN" in sql:                              # reversed advances for storno
+            return [dict(ADV_MIX_BIG), dict(ADV_MIX_CAR_1), dict(ADV_MIX_CAR_2)]
+        if "invoice_type = 'INVOICE'" in sql:
+            return [dict(ADV_MIX_BIG), dict(ADV_MIX_CAR_1), dict(ADV_MIX_CAR_2)]
+        return []
+
+
+def test_multi_car_storno_reverses_only_covered_cars(monkeypatch):
+    """Each single-car advance must reverse ONLY its own car — no cross-car fan-out.
+
+    2 cars, 3 reversed advances (1 whole-anexa + 2 single-car). Correct output is
+    4 rows (each car: whole-anexa share + its own advance), not 3 × 2 = 6, and the
+    storno must reverse exactly its own total (-20000), not over-reverse.
+    """
+    monkeypatch.setattr(routes_orders, "_repo", MixedAdvanceFakeRepo())
+    _cfg, order_lines = routes_orders._build_eurofib_batch(STORNO_MIXED)
+
+    assert len(order_lines) == 4, (
+        f"expected 4 rows (no cross-car fan-out), got {len(order_lines)}"
+    )
+    assert sum(ol.advance for ol in order_lines) == -20000
+
+    per_car = {}
+    for ol in order_lines:
+        per_car[ol.comanda] = per_car.get(ol.comanda, 0) + ol.advance
+    assert per_car == {601: -10000, 602: -10000}
+
+
 def _full_betrag(ws, row):
     """Full-precision betrag (Excel evaluates =M*AG with no 2-decimal rounding)."""
     return (ws.cell(row=row, column=COL_FWBETRAG).value
