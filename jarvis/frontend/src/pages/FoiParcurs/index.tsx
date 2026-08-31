@@ -33,6 +33,7 @@ import {
   AlertTriangle,
   Clock,
   History,
+  ArrowLeftRight,
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -1524,6 +1525,16 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }); setCorrecting(null) },
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Corectarea a eșuat'),
   })
+  // Admin-only cleaning: flip a session between internal (company) and external
+  // (client) to fix a mis-marked row. Flag-only, so a mis-click is one flip back.
+  const driveTypeMutation = useMutation({
+    mutationFn: (vars: { id: number; isInternal: boolean }) => foiParcursApi.setDriveType(vars.id, vars.isInternal),
+    onSuccess: (_res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      toast.success(vars.isInternal ? 'Sesiune marcată ca internă' : 'Sesiune marcată ca externă')
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Schimbarea tipului a eșuat'),
+  })
   const [search, setSearch] = useState('')
   const [filterVin, setFilterVin] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
@@ -2032,6 +2043,21 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                                 title="Corectează data/kilometrajul">
                                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
                                 Corectează
+                              </Button>
+                            )}
+                            {isAdmin && c.route_type === 'TD' && (
+                              <Button variant="outline" size="sm"
+                                disabled={driveTypeMutation.isPending}
+                                onClick={() => {
+                                  const toInternal = !c.is_internal
+                                  const msg = toInternal
+                                    ? 'Marchezi această sesiune ca INTERNĂ? Datele clientului rămân salvate, dar ascunse din vizualizarea internă (poți reveni oricând).'
+                                    : 'Marchezi această sesiune ca EXTERNĂ (client)?'
+                                  if (confirm(msg)) driveTypeMutation.mutate({ id: c.id, isInternal: toInternal })
+                                }}
+                                title={c.is_internal ? 'Marchează sesiunea ca externă (client)' : 'Marchează sesiunea ca internă (condusă intern)'}>
+                                <ArrowLeftRight className="mr-1.5 h-3.5 w-3.5" />
+                                {c.is_internal ? 'Marchează ca extern' : 'Marchează ca intern'}
                               </Button>
                             )}
                             {c.status !== 'PENDING' && c.status !== 'PLANNED' && (
