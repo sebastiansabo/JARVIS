@@ -2,12 +2,33 @@
 import hashlib
 import logging
 
+from core.organization.ghost import hidden_ghost_ids
+
 logger = logging.getLogger('jarvis.tasks.hr_attendance')
 
 
 def _stable_hash(key: str) -> int:
     """Deterministic hash that survives process restarts (unlike Python's hash())."""
     return int(hashlib.md5(key.encode()).hexdigest(), 16) % 2147483647
+
+
+def _drop_ghost_employees(employee_map: dict, hidden: set) -> dict:
+    """Remove hidden ghost user ids from a jarvis_user_id-keyed employee map.
+
+    Used by the pontaje digest builders so a ghost never appears by name in
+    an emailed report body (digest recipients are arbitrary setting emails,
+    not necessarily super-admins).
+    """
+    if not hidden:
+        return employee_map
+    return {jid: emp for jid, emp in employee_map.items() if jid not in hidden}
+
+
+def _drop_ghost_rows(rows: list, hidden: set, key: str = 'user_id') -> list:
+    """Remove list rows whose `key` field is a hidden ghost user id."""
+    if not hidden:
+        return rows
+    return [r for r in rows if r.get(key) not in hidden]
 
 
 def check_missing_punches():
@@ -300,6 +321,10 @@ def send_pontaje_digest():
                 'bio_ids': [bio_id],
             }
 
+        # Ghosts never appear in the emailed digest body — recipients are
+        # arbitrary setting emails, not necessarily super-admins.
+        employee_map = _drop_ghost_employees(employee_map, hidden_ghost_ids(None))
+
         # Build CSV: one row per employee
         output = io.StringIO()
         writer = csv.writer(output, quoting=csv.QUOTE_ALL)
@@ -526,6 +551,10 @@ def send_monthly_pontaje_summary():
                 'jarvis_user_id': jid,
                 'bio_ids': [bio_id],
             }
+
+        # Ghosts never appear in the emailed digest body — recipients are
+        # arbitrary setting emails, not necessarily super-admins.
+        employee_map = _drop_ghost_employees(employee_map, hidden_ghost_ids(None))
 
         # Fetch Sincron day codes for the month
         sincron_repo = SincronRepository()
@@ -810,8 +839,17 @@ def compute_hr_weekly_report_data(reference_date=None, period=None):
             'avg': round(days / hc, 1) if hc else 0,
         })
 
+    # Ghosts vanish from every people-aggregation in the weekly report:
+    # the named CO roster (top_10_co / all_co_rows), the per-user CO totals
+    # (co_by_user → dept_stats used/remaining), AND the department headcount
+    # (built from a separate users query below). Digest recipients are
+    # arbitrary setting emails, not necessarily super-admins, so this is the
+    # unconditional full-hide (viewer=None). Computed once, reused everywhere.
+    _hidden_ghosts = hidden_ghost_ids(None)
+
     # ── Section 3: Top 10 CO remaining (per company) ──
     all_co = co_repo.get_all_for_year(year)
+    all_co = _drop_ghost_rows(all_co, _hidden_ghosts, key='user_id')
     used_by_company = co_repo.get_used_ytd_by_user_company(year)
 
     # Build set of (user_id, norm_company) where count_for_leave = TRUE
@@ -871,9 +909,12 @@ def compute_hr_weekly_report_data(reference_date=None, period=None):
         FROM users u
         WHERE u.is_active = TRUE AND u.department IS NOT NULL AND u.department != ''
     ''')
-    # Build user_id -> department map
+    # Build user_id -> department map — drop ghosts so department headcount
+    # stays consistent with the ghost-free CO used/remaining totals above.
     user_dept_map = {}
     for dr in dept_rows:
+        if dr['id'] in _hidden_ghosts:
+            continue
         user_dept_map[dr['id']] = dr['department']
 
     # Build CO data keyed by user_id — aggregate from co_rows (already filtered)
