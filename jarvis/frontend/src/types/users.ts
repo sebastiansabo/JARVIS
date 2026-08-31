@@ -18,6 +18,7 @@ export interface UserDetail {
   birthdate: string | null
   position: string | null
   contract_work_date: string | null
+  is_ghost?: boolean
 }
 
 export interface CreateUserInput {

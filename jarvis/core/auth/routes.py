@@ -488,7 +488,12 @@ def api_online_users():
 @login_required
 def api_get_users():
     """Get all users with role information."""
+    from core.organization.ghost import can_see_ghosts
     users = _user_repo.get_all()
+    if not can_see_ghosts(current_user.id):
+        # Non-ghost-admins must never see who is flagged is_ghost (spec §8).
+        for u in users:
+            u.pop('is_ghost', None)
     return jsonify(users)
 
 
@@ -610,6 +615,28 @@ def api_delete_user(user_id):
     if _user_repo.delete(user_id):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'User not found'}), 404
+
+
+@auth_bp.route('/api/users/can-manage-ghosts', methods=['GET'])
+@login_required
+def api_can_manage_ghosts():
+    """Whether the current user is a ghost-visibility super-admin."""
+    from core.organization.ghost import can_see_ghosts
+    return jsonify({'can_manage_ghosts': can_see_ghosts(current_user.id)})
+
+
+@auth_bp.route('/api/users/<int:user_id>/ghost', methods=['PUT'])
+@login_required
+def api_set_user_ghost(user_id):
+    """Toggle a user's ghost (leadership-privacy) flag. Ghost-admin only."""
+    from core.organization.ghost import can_see_ghosts, invalidate_ghost_cache
+    if not can_see_ghosts(current_user.id):
+        return jsonify({'error': 'forbidden'}), 403
+    data = request.get_json(silent=True) or {}
+    is_ghost = bool(data.get('is_ghost'))
+    _user_repo.set_ghost(user_id, is_ghost)
+    invalidate_ghost_cache()
+    return jsonify({'success': True, 'is_ghost': is_ghost})
 
 
 @auth_bp.route('/api/users/bulk-delete', methods=['POST'])
