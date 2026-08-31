@@ -534,6 +534,18 @@ class FoiParcursRepository(BaseRepository):
         row = self.execute(sql, tuple(params), returning=True)
         return self.get_contract_by_id(row['id']) if row and row.get('id') else None
 
+    def set_internal_flag(self, contract_id: int, is_internal: bool, modified_by=None) -> dict:
+        """Reclassify a session as internal (True) or external/client (False),
+        fixing a row a colleague mis-marked. Flips ONLY the `is_internal` flag —
+        client identity columns (client_id/name/phone/signature/GDPR) are left
+        intact so the change is fully reversible — and stamps corrected_at/
+        corrected_by so the "Modificat" marker reflects the edit. The route owns
+        the admin gate; this is the persistence primitive. Returns the fresh row."""
+        sql = ('UPDATE foi_de_parcurs SET is_internal = %s, corrected_at = NOW(), '
+               'corrected_by = %s, updated_at = NOW() WHERE id = %s RETURNING id')
+        row = self.execute(sql, (bool(is_internal), modified_by, contract_id), returning=True)
+        return self.get_contract_by_id(row['id']) if row and row.get('id') else None
+
     def extend_return(self, contract_id: int, return_datetime, modified_by=None) -> dict:
         """Advisor extends/changes the return time of an OPEN (FILLED) TD session.
         Stamps corrected_at/corrected_by and clears the overdue-return alert
