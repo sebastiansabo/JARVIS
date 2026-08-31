@@ -466,6 +466,12 @@ export const foiParcursApi = {
     },
   ) => api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${id}/correct`, data),
 
+  // Admin-only cleaning tool: reclassify a session as internal (company driving)
+  // or external (client), fixing rows a colleague mis-marked. Flag-only — client
+  // data is preserved so the change is reversible with one more flip.
+  setDriveType: (id: number, isInternal: boolean) =>
+    api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${id}/drive-type`, { is_internal: isInternal }),
+
   // Advisor extends an OPEN test drive's return time (any logged-in user).
   extendReturn: (id: number, data: { return_datetime: string }) =>
     api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/extend`, data),
