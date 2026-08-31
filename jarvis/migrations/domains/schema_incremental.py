@@ -1991,6 +1991,23 @@ def _create_schema_incremental_continued(conn, cursor):
         END $$;
     ''')
 
+    # ── is_ghost (leadership privacy) toggle on users ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'is_ghost') THEN
+                ALTER TABLE users ADD COLUMN is_ghost BOOLEAN DEFAULT FALSE;
+            END IF;
+        END $$;
+    ''')
+
+    # ── seed the ghost super-admin list (empty by default; edit via Settings) ──
+    cursor.execute('''
+        INSERT INTO notification_settings (setting_key, setting_value)
+        VALUES ('ghost_visible_admin_ids', '')
+        ON CONFLICT (setting_key) DO NOTHING;
+    ''')
+
     # ── company_id on biostar_employees — maps BioStar group → JARVIS company ──
     cursor.execute('''
         DO $$ BEGIN

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from happy.repositories import SurfaceRepository, CampaignRepository
 from happy.services.escalation import due_step
+from core.organization.ghost import ghost_exclude_clause
 
 logger = logging.getLogger("jarvis.happy.jobs")
 
@@ -146,7 +147,10 @@ def grant_monthly_giveable(now=None):
     from happy.repositories import PraiseRepository
     now = now or datetime.now(timezone.utc)
     repo = PraiseRepository()
-    users = repo.query_all("SELECT id FROM users WHERE is_active")
+    # Scheduled job (no request-context viewer) enrolling every active user
+    # into the monthly wallet grant — always force-hide ghosts (task 9).
+    gfrag, gargs = ghost_exclude_clause('id', viewer_id=None)
+    users = repo.query_all(f"SELECT id FROM users WHERE is_active{gfrag}", gargs)
     for u in users:
         try:
             repo.get_wallet(u["id"], now)   # ensures + grants/expires for this period

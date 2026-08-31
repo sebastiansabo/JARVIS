@@ -2,6 +2,7 @@
 
 import json
 from core.base_repository import BaseRepository
+from core.organization.ghost import ghost_exclude_clause
 
 
 class BioStarRepository(BaseRepository):
@@ -21,12 +22,21 @@ class BioStarRepository(BaseRepository):
             LEFT JOIN companies bco ON bco.id = be.company_id
             LEFT JOIN companies co ON co.id = u.company_id
         '''
+        args = []
+        gfrag, gargs = ghost_exclude_clause('be.mapped_jarvis_user_id')
+        ghost_filter = ''
+        if gfrag:
+            ghost_filter = ' AND (be.mapped_jarvis_user_id IS NULL OR' + gfrag[4:] + ')'
+            args += gargs
         if active_only:
             sql += """ WHERE be.status = 'active'
               AND (be.user_group_name IS NULL OR (be.user_group_name NOT ILIKE '%%plecati%%' AND be.user_group_name NOT ILIKE '%%contracte inchise%%'))
               AND (be.mapped_jarvis_user_id IS NULL OR COALESCE((SELECT contract_status FROM users WHERE id = be.mapped_jarvis_user_id), 'active') != 'closed')"""
+            sql += ghost_filter
+        elif ghost_filter:
+            sql += ' WHERE' + ghost_filter[4:]
         sql += ' ORDER BY be.name'
-        return self.query_all(sql)
+        return self.query_all(sql, args or None)
 
     def get_employee_by_biostar_id(self, biostar_user_id):
         """Get a single employee by BioStar user ID."""
@@ -404,9 +414,22 @@ class BioStarRepository(BaseRepository):
         if jarvis_user_ids:
             extra_where = ' AND be2.mapped_jarvis_user_id = ANY(%s)'
             params.append(jarvis_user_ids)
-        # date_str used for the adjustment JOIN and UNION
+        # date_str used for the adjustment JOIN
         params.append(date_str)
+        # ghost filter for the first (punches) branch — unmapped punch rows stay visible
+        gfrag_p, gargs_p = ghost_exclude_clause('p.mapped_jarvis_user_id')
+        ghost_filter_p = ''
+        if gfrag_p:
+            ghost_filter_p = ' AND (p.mapped_jarvis_user_id IS NULL OR' + gfrag_p[4:] + ')'
+            params += gargs_p
+        # date_str used again for the UNION (adjustment-only) branch
         params.append(date_str)
+        # ghost filter for the second (adjustment-only) branch
+        gfrag_be3, gargs_be3 = ghost_exclude_clause('be3.mapped_jarvis_user_id')
+        ghost_filter_be3 = ''
+        if gfrag_be3:
+            ghost_filter_be3 = ' AND (be3.mapped_jarvis_user_id IS NULL OR' + gfrag_be3[4:] + ')'
+            params += gargs_be3
         return self.query_all(f'''
             WITH deduped AS (
                 -- Collapse same-minute punches from the same user (BioStar zone
@@ -461,7 +484,7 @@ class BioStarRepository(BaseRepository):
                    OR p.total_punches > 0)
               AND (p.user_group_name IS NULL
                    OR (p.user_group_name NOT ILIKE '%%plecati%%' AND p.user_group_name NOT ILIKE '%%contracte inchise%%')
-                   OR p.total_punches > 0)
+                   OR p.total_punches > 0){ghost_filter_p}
 
             UNION ALL
 
@@ -499,7 +522,7 @@ class BioStarRepository(BaseRepository):
                   SELECT 1 FROM punches p2 WHERE p2.biostar_user_id = adj2.biostar_user_id
               )
               -- Exclude dismissed/closed JARVIS users and departed BioStar groups
-              AND (be3.mapped_jarvis_user_id IS NULL OR u3.is_active = TRUE)
+              AND (be3.mapped_jarvis_user_id IS NULL OR u3.is_active = TRUE){ghost_filter_be3}
               AND (be3.user_group_name IS NULL OR (be3.user_group_name NOT ILIKE '%%plecati%%' AND be3.user_group_name NOT ILIKE '%%contracte inchise%%'))
 
             ORDER BY jarvis_company NULLS LAST, name
@@ -512,6 +535,10 @@ class BioStarRepository(BaseRepository):
         if jarvis_user_ids:
             extra_where = ' AND be.mapped_jarvis_user_id = ANY(%s)'
             params.append(jarvis_user_ids)
+        gfrag, gargs = ghost_exclude_clause('be.mapped_jarvis_user_id')
+        if gfrag:
+            extra_where += ' AND (be.mapped_jarvis_user_id IS NULL OR' + gfrag[4:] + ')'
+            params += gargs
         return self.query_all(f'''
             WITH deduped AS (
                 SELECT DISTINCT ON (pl.biostar_user_id, date_trunc('minute', pl.event_datetime))
@@ -586,6 +613,10 @@ class BioStarRepository(BaseRepository):
         if jarvis_user_ids:
             user_filter = ' AND be.mapped_jarvis_user_id = ANY(%s)'
             args.append(jarvis_user_ids)        # scope ANY
+        gfrag, gargs = ghost_exclude_clause('be.mapped_jarvis_user_id')
+        if gfrag:
+            user_filter += ' AND (be.mapped_jarvis_user_id IS NULL OR' + gfrag[4:] + ')'
+            args += gargs                        # ghost param — same position as {user_filter}
         args += [start_date, end_date]          # deduped BETWEEN
         return self.query_all(f'''
             WITH days AS (
@@ -930,6 +961,12 @@ class BioStarRepository(BaseRepository):
         if jarvis_user_ids:
             user_filter = ' AND u.id = ANY(%s)'
             params.append(jarvis_user_ids)
+        # active_employees is per-JARVIS-user (INNER JOIN to biostar_employees), so
+        # there are no unmapped rows here — plain exclusion on u.id is sufficient.
+        gfrag, gargs = ghost_exclude_clause('u.id')
+        if gfrag:
+            user_filter += gfrag
+            params += gargs
         # date_str for deduped, adjustment JOIN, sincron schedule LATERAL, and leave-code LATERAL
         params.extend([date_str, date_str, date_str, date_str])
         return self.query_all(f'''
@@ -1042,12 +1079,18 @@ class BioStarRepository(BaseRepository):
         Returns each employee with days_present, days_absent, total_hours, etc.
         The 7-day window ends at end_date_str (inclusive) and goes back 6 days.
         """
-        params = [end_date_str]
+        params = []
         user_filter = ''
         if jarvis_user_ids:
             user_filter = ' AND u.id = ANY(%s)'
             params.append(jarvis_user_ids)
-        # end_date_str used again for punch window
+        # active_employees is per-JARVIS-user (INNER JOIN to biostar_employees), so
+        # there are no unmapped rows here — plain exclusion on u.id is sufficient.
+        gfrag, gargs = ghost_exclude_clause('u.id')
+        if gfrag:
+            user_filter += gfrag
+            params += gargs
+        # end_date_str used for the punch window
         params.extend([end_date_str, end_date_str])
         return self.query_all(f'''
             WITH active_employees AS (
