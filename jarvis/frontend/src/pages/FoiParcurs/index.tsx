@@ -93,6 +93,7 @@ import {
   type FpVehicle,
 } from '@/types/foiParcurs'
 import { VehicleOdometerHistory } from './VehicleOdometerHistory'
+import { VehicleLockHistory } from './VehicleLockHistory'
 import SessionTypeChooser from './SessionTypeChooser'
 import { sessionStatus, type SessionStatusKey } from './sessionStatus'
 import { clientCell } from './sessionParty'
@@ -3492,6 +3493,9 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
                   <TableRow className="bg-muted/30 border-l-4 border-l-primary/30 hover:bg-muted/30">
                     <TableCell colSpan={12} className="p-0">
                       <VehicleOdometerHistory vin={v.vin} />
+                      <div className="border-t border-border px-4 py-3">
+                        <VehicleLockHistory vehicleId={v.id} />
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}
