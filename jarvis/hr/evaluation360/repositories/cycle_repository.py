@@ -2,6 +2,7 @@
 import json
 
 from core.base_repository import BaseRepository
+from core.organization.ghost import ghost_exclude_clause
 
 
 class CycleRepository(BaseRepository):
@@ -105,13 +106,17 @@ class CycleRepository(BaseRepository):
         if exclude_ids:
             extra = ' AND u.id <> ALL(%s)'
             params.append(list(exclude_ids))
+        # `u` is the driving table (FROM users u) — u.id is never NULL here, so
+        # the plain ghost clause is safe (no LEFT-JOIN NULL <> ALL trap).
+        ghost_frag, ghost_params = ghost_exclude_clause('u.id')
+        params.extend(ghost_params)
         sql = (
             '''SELECT u.id, u.name FROM users u
                WHERE u.is_active = TRUE
                  AND u.id <> %s
                  AND u.department IS NOT NULL
                  AND u.department = (SELECT department FROM users WHERE id = %s)'''
-            + extra + ' ORDER BY u.name')
+            + extra + ghost_frag + ' ORDER BY u.name')
         if limit:
             sql += ' LIMIT %s'
             params.append(limit)
@@ -127,6 +132,10 @@ class CycleRepository(BaseRepository):
         if exclude_ids:
             extra = ' AND u.id <> ALL(%s)'
             params.append(list(exclude_ids))
+        # `users u` is INNER-joined to se.mapped_jarvis_user_id — u.id can't be
+        # NULL for a surviving row, so the plain ghost clause is safe.
+        ghost_frag, ghost_params = ghost_exclude_clause('u.id')
+        params.extend(ghost_params)
         order = 'RANDOM()' if randomized else 'name'
         sql = (
             '''WITH subj_emp AS (
@@ -146,7 +155,7 @@ class CycleRepository(BaseRepository):
                    JOIN sincron_employees se ON se.sincron_employee_id = m.sincron_employee_id
                                             AND se.company_name = m.company_name
                    JOIN users u ON u.id = se.mapped_jarvis_user_id
-                   WHERE u.is_active = TRUE AND u.id <> %s''' + extra
+                   WHERE u.is_active = TRUE AND u.id <> %s''' + extra + ghost_frag
             + f'''
                ) x ORDER BY {order}''')
         if limit:
@@ -165,11 +174,15 @@ class CycleRepository(BaseRepository):
         if department:
             clauses.append('u.department = %s')
             params.append(department)
+        # `u` is the driving table (FROM users u) — plain clause is safe.
+        ghost_frag, ghost_params = ghost_exclude_clause('u.id')
+        where = ' AND '.join(clauses) + ghost_frag
+        params.extend(ghost_params)
         params.append(limit)
         return self.query_all(
             f'''SELECT u.id, u.name, u.department, u.company_id
                 FROM users u
-                WHERE {" AND ".join(clauses)}
+                WHERE {where}
                 ORDER BY u.department NULLS LAST, u.name
                 LIMIT %s''',
             tuple(params))
@@ -179,6 +192,12 @@ class CycleRepository(BaseRepository):
         """The Sincron org tree (nodes across companies). ``member_count`` is the
         distinct count of active JARVIS users under the node *and its descendants*
         — i.e. exactly how many participants selecting the node would add."""
+        # Filter inside the `elig` CTE (member-count source), not on the outer
+        # LEFT JOIN's e.uid: `users u` is INNER-joined to se.mapped_jarvis_user_id
+        # *inside* elig, so the column is never NULL there and the plain clause
+        # is safe. Filtering the outer e.uid instead would hit the NULL <> ALL
+        # trap for nodes with zero members (LEFT JOIN elig produces NULL rows).
+        ghost_frag, ghost_params = ghost_exclude_clause('se.mapped_jarvis_user_id')
         return self.query_all(
             '''WITH RECURSIVE node_anc AS (
                    -- map every node to itself and each of its ancestors
@@ -195,7 +214,7 @@ class CycleRepository(BaseRepository):
                      ON se.sincron_employee_id = m.sincron_employee_id
                     AND se.company_name = m.company_name
                    JOIN users u ON u.id = se.mapped_jarvis_user_id
-                   WHERE u.is_active = TRUE
+                   WHERE u.is_active = TRUE''' + ghost_frag + '''
                )
                SELECT n.id, n.company_id, c.company AS company_name, n.parent_id,
                       n.name, n.node_type, n.level, n.display_order,
@@ -206,7 +225,8 @@ class CycleRepository(BaseRepository):
                LEFT JOIN elig e ON e.node_id = na.node_id
                GROUP BY n.id, n.company_id, c.company, n.parent_id,
                         n.name, n.node_type, n.level, n.display_order
-               ORDER BY c.company, n.level, n.display_order, n.name''')
+               ORDER BY c.company, n.level, n.display_order, n.name''',
+            tuple(ghost_params))
 
     def sincron_org_node_members(self, node_id):
         """Active JARVIS users under a node *and its descendants*, resolved via
