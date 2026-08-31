@@ -29,6 +29,16 @@ export default function LockVehicleDialog({ vehicle, onClose, onSubmit, submitti
     staleTime: 60_000,
   })
   const reasons = reasonsData?.reasons ?? []
+
+  // Block/unblock audit trail — who blocked/unblocked this car, when, and why.
+  // Refetched each time the modal opens (default staleTime) so it reflects an
+  // action just taken from the same dialog.
+  const { data: lockEventsData, isLoading: historyLoading } = useQuery({
+    queryKey: ['fp-lock-events', vehicle.id],
+    queryFn: () => foiParcursApi.getLockEvents(vehicle.id),
+  })
+  const lockEvents = lockEventsData?.events ?? []
+
   const [category, setCategory] = useState('')
   const [note, setNote] = useState('')
   const [until, setUntil] = useState('')
@@ -103,6 +113,36 @@ export default function LockVehicleDialog({ vehicle, onClose, onSubmit, submitti
                 </div>
               </>
             )}
+
+            {/* Istoric blocări — who blocked/unblocked, when, and why. Shown for
+                both locked and available cars; survives an unlock. */}
+            <div className="mt-1 border-t border-border pt-3">
+              <p className="mb-1.5 text-xs font-medium text-muted-foreground">Istoric blocări</p>
+              {historyLoading ? (
+                <p className="py-1 text-sm text-muted-foreground">Se încarcă…</p>
+              ) : lockEvents.length === 0 ? (
+                <p className="py-1 text-sm text-muted-foreground">Fără istoric înregistrat.</p>
+              ) : (
+                <ul className="max-h-44 space-y-2 overflow-y-auto pr-1">
+                  {lockEvents.map((ev) => (
+                    <li key={ev.id} className="flex items-baseline justify-between gap-3 text-sm">
+                      <span className="flex items-baseline gap-1.5">
+                        <span aria-hidden>{ev.action === 'lock' ? '🔒' : '🔓'}</span>
+                        <span className="font-medium">{ev.action === 'lock' ? 'Blocat' : 'Deblocat'}</span>
+                        {ev.action === 'lock' && (
+                          <span className="text-muted-foreground">
+                            · {reasonLabel(ev.category)}{ev.note ? ` · ${ev.note}` : ''}
+                          </span>
+                        )}
+                      </span>
+                      <span className="whitespace-nowrap text-right text-xs text-muted-foreground">
+                        {ev.actor_name || 'Sistem'} · {new Date(ev.created_at).toLocaleString('ro-RO')}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </TabsContent>
 
           {/* Scheduled future block windows */}
