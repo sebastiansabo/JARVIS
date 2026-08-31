@@ -461,7 +461,12 @@ def api_online_users():
 @login_required
 def api_get_users():
     """Get all users with role information."""
+    from core.organization.ghost import can_see_ghosts
     users = _user_repo.get_all()
+    if not can_see_ghosts(current_user.id):
+        # Non-ghost-admins must never see who is flagged is_ghost (spec §8).
+        for u in users:
+            u.pop('is_ghost', None)
     return jsonify(users)
 
 

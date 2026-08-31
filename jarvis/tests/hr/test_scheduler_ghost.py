@@ -51,11 +51,17 @@ def test_missing_punches_excludes_ghosts(monkeypatch):
     assert [999] in cap['args']
 
 
-def test_missing_punches_no_filter_for_super_admin_viewer(monkeypatch):
-    """Default viewer resolution: if this query is ever reused from a request
-    context by a viewer on the ghost-visible admin list, no exclusion clause
-    is added (super-admin bypass) — the cron path itself has no request
-    context so `_resolve_viewer()` naturally returns None (hide all)."""
+def test_missing_punches_force_hidden_even_for_super_admin_viewer(monkeypatch):
+    """Final-review FIX 4: this call site is explicit scheduler-suppression
+    (ghost_exclude_clause('u.id', viewer_id=None)), NOT the default-viewer
+    read-surface behavior — so the exclusion clause is present regardless of
+    what `_resolve_viewer()` would resolve to (even a ghost-visible
+    super-admin id), since `viewer_id=None` is passed explicitly and
+    `_resolve_viewer()` is never even consulted. A ghost must never be a
+    "missing punch" subject, full stop; nobody (including L0) gets notified
+    about it via this path. (Previously this relied on the default viewer
+    resolution happening to return None because the cron has no request
+    context — now it's explicit/defense-in-depth.)"""
     import hr.events.repositories.employee_overview_repository as eo
 
     repo = eo.EmployeeOverviewRepository()
@@ -72,7 +78,8 @@ def test_missing_punches_no_filter_for_super_admin_viewer(monkeypatch):
 
     repo.get_all_missing_punches_for_date('2026-08-20')
 
-    assert '<> ALL(%s)' not in cap['sql']
+    assert 'u.id <> ALL(%s)' in cap['sql']
+    assert [999] in cap['args']
 
 
 # ── Python row-drop helpers used by the pontaje digest builders ─────────────
