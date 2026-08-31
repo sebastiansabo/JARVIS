@@ -65,6 +65,12 @@ export default function UsersTab() {
     staleTime: 10 * 60_000,
   })
 
+  const { data: ghostPerm } = useQuery({
+    queryKey: ['can-manage-ghosts'],
+    queryFn: () => usersApi.canManageGhosts(),
+    staleTime: 10 * 60_000,
+  })
+
   const createMutation = useMutation({
     mutationFn: (data: CreateUserInput) => usersApi.createUser(data),
     onSuccess: () => {
@@ -123,6 +129,15 @@ export default function UsersTab() {
       queryClient.invalidateQueries({ queryKey: ['settings', 'users'] })
     },
     onError: () => toast.error('Failed to update role'),
+  })
+
+  const ghostMutation = useMutation({
+    mutationFn: ({ id, is_ghost }: { id: number; is_ghost: boolean }) =>
+      usersApi.setGhost(id, is_ghost),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'users'] })
+    },
+    onError: () => toast.error('Failed to update ghost mode'),
   })
 
   const filtered = users.filter(
@@ -236,6 +251,7 @@ export default function UsersTab() {
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
+                  {ghostPerm?.can_manage_ghosts && <TableHead>Ghost</TableHead>}
                   <TableHead className="w-20">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -270,6 +286,14 @@ export default function UsersTab() {
                     <TableCell>
                       <StatusBadge status={user.contract_status === 'active' ? 'active' : user.contract_status === 'suspended' ? 'pending' : 'archived'} />
                     </TableCell>
+                    {ghostPerm?.can_manage_ghosts && (
+                      <TableCell>
+                        <Switch
+                          checked={!!user.is_ghost}
+                          onCheckedChange={(v) => ghostMutation.mutate({ id: user.id, is_ghost: v })}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="sm" onClick={() => setEditUser(user)}>

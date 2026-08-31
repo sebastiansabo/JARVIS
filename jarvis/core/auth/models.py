@@ -25,6 +25,7 @@ class User(UserMixin):
         self.subdepartment = user_data.get('subdepartment')
         self.org_unit_id = user_data.get('org_unit_id')
         self.notify_on_allocation = user_data.get('notify_on_allocation', True)
+        self.is_ghost = user_data.get('is_ghost', False)
 
         # Personal details
         self.cnp = user_data.get('cnp')

@@ -4,6 +4,7 @@ Lives in core/ so that core.organization.hr_utils can import without
 crossing the core→hr layer boundary.
 """
 from database import get_db, get_cursor, release_db
+from core.organization.ghost import hidden_ghost_ids
 
 
 def _node_in_scope(cursor, manager_user_id, node_id):
@@ -65,7 +66,9 @@ def get_managed_employee_ids(manager_user_id, node_id=None):
                 WHERE se.mapped_jarvis_user_id IS NOT NULL AND se.is_active = TRUE
                   AND se.mapped_jarvis_user_id <> %s
             """, (node_id, manager_user_id))
-            return [r['user_id'] for r in cursor.fetchall()]
+            rows = [r['user_id'] for r in cursor.fetchall()]
+            hidden = hidden_ghost_ids(manager_user_id)
+            return [uid for uid in rows if uid not in hidden] if hidden else rows
 
         # 1) L0 (unchanged): whole company
         l0_ids = []
@@ -104,7 +107,11 @@ def get_managed_employee_ids(manager_user_id, node_id=None):
         """, (manager_user_id, manager_user_id))
         tree_ids = [r['user_id'] for r in cursor.fetchall()]
 
-        return list(set(l0_ids + tree_ids))
+        result = list(set(l0_ids + tree_ids))
+        hidden = hidden_ghost_ids(manager_user_id)
+        if hidden:
+            result = [uid for uid in result if uid not in hidden]
+        return result
     finally:
         release_db(conn)
 

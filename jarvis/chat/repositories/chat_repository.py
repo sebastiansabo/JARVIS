@@ -5,6 +5,7 @@ deferred to a dedicated migration); only the code layer is renamed to Chat.
 """
 
 from core.base_repository import BaseRepository
+from core.organization.ghost import ghost_exclude_clause
 
 
 class ChatRepository(BaseRepository):
@@ -140,12 +141,14 @@ class ChatRepository(BaseRepository):
         return row is not None
 
     def add_all_active_users(self, channel_id):
-        """Add all active users as members of a channel."""
-        return self.execute('''
+        """Add all active users as members of a channel (ghosts force-hidden —
+        bulk enrollment, not a self-directed action)."""
+        gfrag, gargs = ghost_exclude_clause('id', viewer_id=None)
+        return self.execute(f'''
             INSERT INTO digest_channel_members (channel_id, user_id, role)
-            SELECT %s, id, 'member' FROM users WHERE is_active = TRUE
+            SELECT %s, id, 'member' FROM users WHERE is_active = TRUE{gfrag}
             ON CONFLICT (channel_id, user_id) DO NOTHING
-        ''', (channel_id,))
+        ''', (channel_id, *gargs))
 
     def set_member_role(self, channel_id, user_id, role):
         return self.execute('''
@@ -154,14 +157,17 @@ class ChatRepository(BaseRepository):
         ''', (role, channel_id, user_id))
 
     def search_users(self, query, limit=20):
-        """Search active users by name or email for invite."""
+        """Search active users by name or email for invite/@mention (directory
+        read surface — context viewer; a ghost-visible super-admin still finds
+        ghosts here)."""
         like = f'%{query}%'
-        return self.query_all('''
+        gfrag, gargs = ghost_exclude_clause('id')
+        return self.query_all(f'''
             SELECT id, name, email, department, company
             FROM users WHERE is_active = TRUE
-              AND (name ILIKE %s OR email ILIKE %s)
+              AND (name ILIKE %s OR email ILIKE %s){gfrag}
             ORDER BY name LIMIT %s
-        ''', (like, like, limit))
+        ''', (like, like, *gargs, limit))
 
     # ── Channel Targets (Level-based audience) ────────────
 
@@ -195,25 +201,31 @@ class ChatRepository(BaseRepository):
         if not targets:
             return
 
+        # Enrollment / target-materialization body — force-hide ghosts
+        # regardless of who triggered the sync (viewer_id=None), for every
+        # target-resolution branch (all/company/node all auto-add users).
         user_ids = set()
         for t in targets:
             if t['target_type'] == 'all':
                 # All active users
-                rows = self.query_all('SELECT id FROM users WHERE is_active = TRUE')
+                gfrag, gargs = ghost_exclude_clause('id', viewer_id=None)
+                rows = self.query_all(f'SELECT id FROM users WHERE is_active = TRUE{gfrag}', tuple(gargs))
                 user_ids.update(r['id'] for r in rows)
             elif t['target_type'] == 'company':
                 # L0: company responsables + all structure node members under this company
-                rows = self.query_all('''
-                    SELECT user_id FROM company_responsables WHERE company_id = %s
+                gfrag, gargs = ghost_exclude_clause('user_id', viewer_id=None)
+                rows = self.query_all(f'''
+                    SELECT user_id FROM company_responsables WHERE company_id = %s{gfrag}
                     UNION
                     SELECT snm.user_id FROM structure_node_members snm
                     JOIN structure_nodes sn ON sn.id = snm.node_id
-                    WHERE sn.company_id = %s
-                ''', (t['company_id'], t['company_id']))
+                    WHERE sn.company_id = %s{gfrag}
+                ''', (t['company_id'], *gargs, t['company_id'], *gargs))
                 user_ids.update(r['user_id'] for r in rows)
             elif t['target_type'] == 'node':
                 # All members of this node + all descendant nodes
-                rows = self.query_all('''
+                gfrag, gargs = ghost_exclude_clause('snm.user_id', viewer_id=None)
+                rows = self.query_all(f'''
                     WITH RECURSIVE descendants AS (
                         SELECT id FROM structure_nodes WHERE id = %s
                         UNION ALL
@@ -223,7 +235,8 @@ class ChatRepository(BaseRepository):
                     SELECT DISTINCT snm.user_id
                     FROM descendants d
                     JOIN structure_node_members snm ON snm.node_id = d.id
-                ''', (t['node_id'],))
+                    WHERE TRUE{gfrag}
+                ''', (t['node_id'], *gargs))
                 user_ids.update(r['user_id'] for r in rows)
 
         if not user_ids:

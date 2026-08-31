@@ -10,6 +10,7 @@ import json
 import logging
 
 from core.base_repository import BaseRepository
+from core.organization.ghost import ghost_exclude_clause
 
 logger = logging.getLogger("jarvis.happy.campaign_repository")
 
@@ -123,7 +124,12 @@ class CampaignRepository(BaseRepository):
         return self.execute_many(_work)
 
     def _audience_where(self, rules):
-        """Build a safe (sql, params) predicate over active users from audience rules."""
+        """Build a safe (sql, params) predicate over active users from audience rules.
+
+        Shared by preview_audience() and refresh_targets() — both are
+        audience-materialization/preview sites (task 9), so the ghost
+        exclusion lives here once and force-hides (viewer_id=None)
+        regardless of who is previewing/publishing the campaign."""
         includes = [r for r in rules if r["mode"] == "include"]
         excludes = [r for r in rules if r["mode"] == "exclude"]
         params = []
@@ -143,6 +149,9 @@ class CampaignRepository(BaseRepository):
             clause += " AND (" + " OR ".join(inc) + ")"
         if exc:
             clause += " AND NOT (" + " OR ".join(exc) + ")"
+        gfrag, gargs = ghost_exclude_clause('id', viewer_id=None)
+        clause += gfrag
+        params += gargs
         return clause, params
 
     def preview_audience(self, rules):
