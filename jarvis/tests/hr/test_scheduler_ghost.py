@@ -196,12 +196,17 @@ def test_send_pontaje_digest_excludes_ghost_from_csv_body(monkeypatch):
     assert 'Total employees: 1' in sent['kwargs']['html_body']
 
 
-# ── send_monthly_pontaje_summary / compute_hr_weekly_report_data ───────────
-# Both pull from calendar/holiday-repository DB state that's impractical to
-# fully mock in a DB-free unit test; verify the wiring at the source level
-# (same standard as tests/hr/test_hr_employees_ghost.py's route-wiring check)
-# alongside the direct helper-drop tests above, which prove the drop logic
-# itself is correct.
+# ── send_monthly_pontaje_summary source-wiring ─────────────────────────────
+# send_monthly_pontaje_summary iterates the previous month day-by-day through
+# HolidayRepository().is_holiday(d) (real per-day DB round-trips) and its own
+# get_daily_summary loop, so a full mocked call would mean re-implementing a
+# calendar's worth of fakes. Its ghost drop is the exact same _drop_ghost_
+# employees(employee_map, hidden_ghost_ids(None)) call already proven correct
+# by the direct helper tests above and exercised end-to-end by the
+# send_pontaje_digest CSV test; a source-wiring assertion (same standard as
+# tests/hr/test_hr_employees_ghost.py's route-wiring check) confirms it's
+# present at the right point. compute_hr_weekly_report_data, by contrast, gets
+# a real BEHAVIORAL test below (its boundaries are cleanly patchable).
 
 def _hr_attendance_source():
     path = pathlib.Path(__file__).resolve().parents[2] / 'tasks' / 'hr_attendance.py'
@@ -218,6 +223,91 @@ def test_daily_and_monthly_digest_wire_ghost_drop():
     assert src.count('_drop_ghost_employees(employee_map, hidden_ghost_ids(None))') == 2
 
 
-def test_weekly_report_wires_ghost_drop():
+# ── compute_hr_weekly_report_data — behavioral: ghost fully absent from the ──
+#    department aggregate (BOTH headcount AND CO used/remaining) ──────────────
+
+_PRIMARY_CO_SQL_MARK = 'FROM primary_contracts'
+
+
+def _patch_weekly_report_boundaries(monkeypatch, *, dept_rows, co_rows,
+                                    leave_rows, used_by_company=None):
+    """Patch every fetch boundary compute_hr_weekly_report_data touches so it
+    runs purely on fabricated rows (no DB). Routes BaseRepository.query_all
+    (shared by _base, sincron_repo, _company_repo) by SQL substring."""
+    import core.base_repository as base_mod
+    import hr.co_balance.repository as co_mod
+    import core.connectors.biostar.repositories.biostar_repository as bio_mod
+    import core.utils.work_calendar as cal_mod
+
+    def fake_query_all(self, sql, params=None):
+        if 'u.department' in sql:                       # dept_rows / headcount source
+            return list(dept_rows)
+        if 'company_name, count_for_leave' in sql:      # sincron leave-allowed set
+            return list(leave_rows)
+        return []                                       # aliases, companies, primary_contracts, etc.
+
+    monkeypatch.setattr(base_mod.BaseRepository, 'query_all', fake_query_all)
+    monkeypatch.setattr(co_mod.CoBalanceRepository, 'get_all_for_year',
+                        lambda self, year: list(co_rows))
+    monkeypatch.setattr(co_mod.CoBalanceRepository, 'get_used_ytd_by_user_company',
+                        lambda self, year, **kw: dict(used_by_company or {}))
+    monkeypatch.setattr(bio_mod.BioStarRepository, 'get_range_summary',
+                        lambda self, s, e, jarvis_user_ids=None: [])
+    monkeypatch.setattr(bio_mod.BioStarRepository, 'get_all_employees',
+                        lambda self, active_only=True: [])
+    monkeypatch.setattr(cal_mod, 'get_working_days_range', lambda s, e: 20)
+
+
+def test_weekly_report_excludes_ghost_from_dept_aggregate(monkeypatch):
+    from datetime import date
+    from tasks.hr_attendance import compute_hr_weekly_report_data
+
+    # One ghost (999) and one normal (7) user, both active in dept "Sales",
+    # both with CO at company "ACME" (ghost has MORE remaining, so a leak
+    # would be obvious in the totals).
+    dept_rows = [
+        {'id': 7, 'department': 'Sales', 'company': 'ACME'},
+        {'id': 999, 'department': 'Sales', 'company': 'ACME'},
+    ]
+    co_rows = [
+        {'user_id': 7, 'company_name': 'ACME', 'total_available': 20,
+         'prenume': 'Norm', 'nume': 'User', 'departament': 'Sales'},
+        {'user_id': 999, 'company_name': 'ACME', 'total_available': 30,
+         'prenume': 'Ghost', 'nume': 'User', 'departament': 'Sales'},
+    ]
+    leave_rows = [
+        {'mapped_jarvis_user_id': 7, 'company_name': 'ACME', 'count_for_leave': True},
+        {'mapped_jarvis_user_id': 999, 'company_name': 'ACME', 'count_for_leave': True},
+    ]
+    _patch_weekly_report_boundaries(
+        monkeypatch, dept_rows=dept_rows, co_rows=co_rows, leave_rows=leave_rows,
+    )
+
+    monkeypatch.setattr(ghost, 'get_ghost_user_ids', lambda: {999})
+    monkeypatch.setattr(ghost, 'get_ghost_admin_ids', lambda: set())
+    monkeypatch.setattr(ghost, '_resolve_viewer', lambda: None)
+    ghost.invalidate_ghost_cache()
+
+    result = compute_hr_weekly_report_data(reference_date=date(2026, 8, 20), period='ytd')
+
+    # Department aggregate: ghost gone from BOTH headcount and CO totals.
+    sales = [d for d in result['leave_by_department'] if d['department'] == 'Sales']
+    assert len(sales) == 1
+    assert sales[0]['headcount'] == 1, "ghost must not be counted in department headcount"
+    assert sales[0]['co_remaining'] == 20.0, "only the non-ghost's 20 CO days remain (ghost's 30 excluded)"
+
+    # Named CO roster in the digest body is ghost-free too.
+    roster_names = {r['name'] for r in result['all_co_rows']}
+    assert 'Norm User' in roster_names
+    assert 'Ghost User' not in roster_names
+    top_names = {r['name'] for r in result['top_10_co']}
+    assert 'Ghost User' not in top_names
+
+
+def test_weekly_report_wires_ghost_drop_source():
+    """Belt-and-suspenders source check: the all_co drop and the dept-map
+    drop both reuse the single hoisted _hidden_ghosts set (viewer=None)."""
     src = _hr_attendance_source()
-    assert "_drop_ghost_rows(all_co, hidden_ghost_ids(None), key='user_id')" in src
+    assert '_hidden_ghosts = hidden_ghost_ids(None)' in src
+    assert "_drop_ghost_rows(all_co, _hidden_ghosts, key='user_id')" in src
+    assert 'if dr[\'id\'] in _hidden_ghosts:' in src

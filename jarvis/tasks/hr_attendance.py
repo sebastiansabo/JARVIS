@@ -839,13 +839,17 @@ def compute_hr_weekly_report_data(reference_date=None, period=None):
             'avg': round(days / hc, 1) if hc else 0,
         })
 
+    # Ghosts vanish from every people-aggregation in the weekly report:
+    # the named CO roster (top_10_co / all_co_rows), the per-user CO totals
+    # (co_by_user → dept_stats used/remaining), AND the department headcount
+    # (built from a separate users query below). Digest recipients are
+    # arbitrary setting emails, not necessarily super-admins, so this is the
+    # unconditional full-hide (viewer=None). Computed once, reused everywhere.
+    _hidden_ghosts = hidden_ghost_ids(None)
+
     # ── Section 3: Top 10 CO remaining (per company) ──
     all_co = co_repo.get_all_for_year(year)
-    # Ghosts never appear in the named roster (top_10_co / all_co_rows) sent in
-    # the digest body — recipients are arbitrary setting emails, not necessarily
-    # super-admins. Filtering here also removes them from the per-user
-    # aggregation below (co_by_user → dept_stats).
-    all_co = _drop_ghost_rows(all_co, hidden_ghost_ids(None), key='user_id')
+    all_co = _drop_ghost_rows(all_co, _hidden_ghosts, key='user_id')
     used_by_company = co_repo.get_used_ytd_by_user_company(year)
 
     # Build set of (user_id, norm_company) where count_for_leave = TRUE
@@ -905,9 +909,12 @@ def compute_hr_weekly_report_data(reference_date=None, period=None):
         FROM users u
         WHERE u.is_active = TRUE AND u.department IS NOT NULL AND u.department != ''
     ''')
-    # Build user_id -> department map
+    # Build user_id -> department map — drop ghosts so department headcount
+    # stays consistent with the ghost-free CO used/remaining totals above.
     user_dept_map = {}
     for dr in dept_rows:
+        if dr['id'] in _hidden_ghosts:
+            continue
         user_dept_map[dr['id']] = dr['department']
 
     # Build CO data keyed by user_id — aggregate from co_rows (already filtered)
