@@ -170,6 +170,8 @@ export function HrSummaryWidget({ enabled }: { enabled: boolean }) {
             { label: 'Employees', value: data?.total_employees ?? 0 },
             { label: 'Bonuses', value: data?.total_bonuses ?? 0 },
             { label: 'Total Amount', value: `${Number(data?.total_bonus_amount ?? 0).toLocaleString('ro-RO')} RON` },
+            { label: 'Free Hours', value: data?.total_hours ?? 0 },
+            { label: 'Event Hours', value: data?.total_event_hours ?? 0 },
           ].map(s => (
             <div key={s.label} className="rounded-lg border p-3 text-center">
               <p className="text-lg font-semibold">{s.value}</p>

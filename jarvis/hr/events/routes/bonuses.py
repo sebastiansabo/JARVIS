@@ -54,6 +54,7 @@ def api_create_event_bonus():
     # block if any month they touch is locked; day count drives bonus_days/net.
     try:
         presence_days = resolve_presence_days(data)
+        day_hours = resolve_day_hours(data, presence_days)
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     if presence_days:
@@ -79,6 +80,7 @@ def api_create_event_bonus():
         allocation_month=data.get('allocation_month'),
         created_by=current_user.id,
         presence_days=presence_days,
+        day_hours=day_hours,
     )
 
     # Time Bank auto-credit for hours_free
@@ -104,6 +106,7 @@ def api_create_event_bonuses_bulk():
     for bonus in bonuses:
         try:
             days = resolve_presence_days(bonus)
+            bonus['day_hours'] = resolve_day_hours(bonus, days)
         except ValueError as e:
             return jsonify({'success': False, 'error': str(e)}), 400
         if days:
@@ -167,6 +170,7 @@ def api_update_event_bonus(bonus_id):
     # NEW days touch is locked (the existing month was already checked above).
     try:
         presence_days = resolve_presence_days(data)
+        day_hours = resolve_day_hours(data, presence_days)
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     bonus_net = data.get('bonus_net')
@@ -193,6 +197,7 @@ def api_update_event_bonus(bonus_id):
         details=data.get('details'),
         allocation_month=data.get('allocation_month'),
         presence_days=presence_days,
+        day_hours=day_hours,
     )
 
     return jsonify({'success': True})

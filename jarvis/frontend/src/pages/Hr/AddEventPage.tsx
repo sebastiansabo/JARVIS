@@ -18,6 +18,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { PresenceDayPicker, enumerateDays } from '@/components/shared/PresenceDayPicker'
+import { DayHoursEditor } from '@/components/shared/DayHoursEditor'
+import { eventHoursFromDayHours, type DayHours } from '@/lib/eventHours'
 import { hrApi } from '@/api/hr'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
@@ -34,9 +36,38 @@ interface EmployeeRow {
   userName: string
   company: string | null
   presenceDays: string[] // specific attended days ('YYYY-MM-DD'), source of truth
+  dayHours: DayHours // per-day worked interval (whole hours) -> Event Hours
   hoursFree: string
   bonusTypeId: string
   bonusNet: number | null
+}
+
+/** Keep only the day-hour entries whose day is still attended. */
+function pruneDayHours(dayHours: DayHours, days: string[]): DayHours {
+  const keep = new Set(days)
+  const out: DayHours = {}
+  for (const [iso, iv] of Object.entries(dayHours)) {
+    if (keep.has(iso)) out[iso] = iv
+  }
+  return out
+}
+
+/** The finished intervals (both bounds set) to send to the API. */
+function completedDayHours(dayHours: DayHours): Record<string, { start: number; end: number }> {
+  const out: Record<string, { start: number; end: number }> = {}
+  for (const [iso, iv] of Object.entries(dayHours)) {
+    if (iv.start != null && iv.end != null) out[iso] = { start: iv.start, end: iv.end }
+  }
+  return out
+}
+
+/** True if any day has exactly one bound set, or end ≤ start. */
+function hasInvalidInterval(dayHours: DayHours): boolean {
+  return Object.values(dayHours).some((iv) => {
+    const oneSet = (iv.start == null) !== (iv.end == null)
+    const badOrder = iv.start != null && iv.end != null && iv.end <= iv.start
+    return oneSet || badOrder
+  })
 }
 
 const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -148,6 +179,7 @@ export default function AddEventPage() {
         userName: p.user_name,
         company: null,
         presenceDays: days,
+        dayHours: (p.presence_day_hours ?? {}) as DayHours,
         hoursFree: p.hours_free != null ? String(p.hours_free) : '',
         bonusTypeId: type ? String(type.id) : '',
         bonusNet: p.bonus_net != null ? Number(p.bonus_net) : null,
@@ -188,6 +220,7 @@ export default function AddEventPage() {
         userName: emp.name,
         company: emp.company ?? null,
         presenceDays: days,
+        dayHours: {},
         hoursFree: '6',
         bonusTypeId: defaultType ? String(defaultType.id) : '',
         bonusNet: defaultType ? rate * days.length : null,
@@ -206,6 +239,10 @@ export default function AddEventPage() {
       prev.map((r, i) => {
         if (i !== idx) return r
         const updated = { ...r, ...updates }
+        // Deselecting a day drops any interval that was set for it.
+        if ('presenceDays' in updates) {
+          updated.dayHours = pruneDayHours(updated.dayHours, updated.presenceDays)
+        }
         // Recalculate bonus when type or the selected day count changed
         if ('bonusTypeId' in updates || 'presenceDays' in updates) {
           const type = bonusTypes.find((t) => String(t.id) === updated.bonusTypeId)
@@ -228,6 +265,10 @@ export default function AddEventPage() {
   // Summary
   const totalDays = useMemo(() => rows.reduce((s, r) => s + r.presenceDays.length, 0), [rows])
   const totalBonus = useMemo(() => rows.reduce((s, r) => s + (r.bonusNet ?? 0), 0), [rows])
+  const totalEventHours = useMemo(
+    () => rows.reduce((s, r) => s + eventHoursFromDayHours(r.dayHours), 0),
+    [rows],
+  )
 
   // presence_days is the source of truth; the server derives
   // year/month/participation window/bonus_days from it.
@@ -237,6 +278,7 @@ export default function AddEventPage() {
     year: Number(year),
     month: Number(month),
     presence_days: r.presenceDays,
+    day_hours: completedDayHours(r.dayHours),
     hours_free: parseFloat(r.hoursFree) || null,
     bonus_net: r.bonusNet,
     bonus_type_id: r.bonusTypeId ? Number(r.bonusTypeId) : null,
@@ -292,6 +334,8 @@ export default function AddEventPage() {
     if (rows.length === 0) return toast.error('Add at least one employee')
     if (rows.some((r) => r.presenceDays.length === 0))
       return toast.error('Each employee needs at least one presence day selected')
+    if (rows.some((r) => hasInvalidInterval(r.dayHours)))
+      return toast.error('Each hour interval needs both a start and end, with end after start')
     if (rows.some((r) => (parseFloat(r.hoursFree) || 0) > maxBonusDays * maxHoursPerDay))
       return toast.error(`Hours free cannot exceed ${maxBonusDays * maxHoursPerDay} (${maxBonusDays} days x ${maxHoursPerDay}h)`)
     saveMutation.mutate()
@@ -479,6 +523,11 @@ export default function AddEventPage() {
                           onChange={(days) => updateRow(idx, { presenceDays: days })}
                         />
                       </div>
+                      <DayHoursEditor
+                        days={row.presenceDays}
+                        value={row.dayHours}
+                        onChange={(dh) => updateRow(idx, { dayHours: dh })}
+                      />
                     </div>
                   ))}
                 </div>
@@ -489,6 +538,7 @@ export default function AddEventPage() {
                 <div className="flex items-center gap-6 border-t pt-3 text-sm">
                   <span><span className="font-medium">{rows.length}</span> employees</span>
                   <span><span className="font-medium">{totalDays}</span> total days</span>
+                  <span><span className="font-medium">{totalEventHours}</span> ore eveniment</span>
                   {canViewAmounts && (
                     <span className="text-green-600 font-medium">{totalBonus.toFixed(0)} RON total</span>
                   )}
