@@ -266,7 +266,13 @@ class EmployeeOverviewRepository(BaseRepository):
         """Return all active BioStar-mapped employees with no punch and no leave on a date.
 
         Uses DISTINCT ON to avoid duplicate rows when an employee belongs to multiple structure nodes.
+
+        Ghosts are excluded here (not just at the notification-fanout level) so a ghost is
+        never a "missing punch" subject in the first place — nobody (manager/HR/L0) is ever
+        notified about them. Default viewer resolution: in the cron there's no request
+        context, so `_resolve_viewer()` returns None → hide all ghosts.
         """
+        ghost_frag, ghost_args = ghost_exclude_clause('u.id')
         return self.query_all(f'''
             SELECT DISTINCT ON (be.mapped_jarvis_user_id)
                    be.mapped_jarvis_user_id AS user_id, u.name AS user_name,
@@ -282,6 +288,7 @@ class EmployeeOverviewRepository(BaseRepository):
               AND be.schedule_start IS NOT NULL
               AND COALESCE(u.contract_status, 'active') = 'active'
               AND COALESCE(u.notify_missing_punch, TRUE) = TRUE
+              {ghost_frag}
               AND NOT EXISTS (
                   SELECT 1 FROM biostar_punch_logs pl
                   WHERE pl.biostar_user_id = be.biostar_user_id
@@ -317,7 +324,7 @@ class EmployeeOverviewRepository(BaseRepository):
                   SELECT 1 FROM public_holidays ph WHERE ph.date = %s
               )
             ORDER BY be.mapped_jarvis_user_id
-        ''', (check_date, check_date, check_date, check_date, check_date, check_date, check_date))
+        ''', tuple(ghost_args) + (check_date, check_date, check_date, check_date, check_date, check_date, check_date))
 
     def get_absence_status_for_date(self, check_date):
         """Return absence status for all active employees on a given date.
