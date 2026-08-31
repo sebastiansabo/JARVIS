@@ -36,15 +36,16 @@ _veh_repo = FPVehicleRepository()
 
 
 def _period(c: dict):
-    """(year, month) for a session — explicit columns, falling back to created_at.
+    """(year, month) for a session — the actual drive START date (departure),
+    falling back to created_at. A session created in one month but driven on the
+    1st of the next belongs to the month it DROVE, not the month it was created,
+    so the foaie is gated to real drive activity within its month.
 
-    `get_contracts` returns rows via `dict_from_row`, which serializes `created_at`
-    to an ISO *string*, so parse it with `_as_dt` rather than isinstance-checking
-    for `datetime` (that check always failed on string rows, dropping every session
-    with NULL year/month — i.e. all test-drive sessions — and blanking the sheet)."""
-    dt = _as_dt(c.get('created_at'))
-    return (c.get('year') or (dt.year if dt else None),
-            c.get('month') or (dt.month if dt else None))
+    `get_contracts` returns rows via `dict_from_row`, which serializes datetimes to
+    ISO *strings*, so parse with `_as_dt` rather than isinstance-checking for
+    `datetime` (that check always failed on string rows)."""
+    dt = _as_dt(c.get('departure_datetime')) or _as_dt(c.get('created_at'))
+    return (dt.year if dt else None, dt.month if dt else None)
 
 
 def _as_dt(v):
@@ -76,16 +77,19 @@ def _iso_date(v) -> str:
 def aggregate_month(vin: str, year: int, month: int) -> dict:
     """Collect the locked-facts view of one car's month of driving sessions."""
     rows, _ = _fp_repo.get_contracts(vin=vin, per_page=2000, lean=True)
-    # Excluded from the client Foaie de Parcurs:
-    #  • Ratate (no-show) — `td_status='missed'` (explicit MISSED or PLANNED past
-    #    its grace window); never drove, archived not documented.
-    #  • Internal (company) drives — `is_internal`; their odometer span surfaces
-    #    as a gap between the surrounding client drives (see _rows_with_gaps), so
-    #    the KM stays accounted and can be redistributed onto a client session.
-    sessions = [c for c in rows
-                if _period(c) == (year, month)
-                and (c.get('td_status') or '') != 'missed'
-                and not c.get('is_internal')]
+    # In-month drives that actually moved the car — Ratate (no-shows) excluded.
+    # This set INCLUDES internal drives: they define the month's true odometer span
+    # (km_month_min/max) so an internal drive at the month edge still contributes
+    # its KM as a boundary gap, even though it isn't listed as a client trip.
+    in_month = [c for c in rows
+                if _period(c) == (year, month) and (c.get('td_status') or '') != 'missed']
+    km_month_min = min((int(c.get('km_start') or 0) for c in in_month), default=0)
+    km_month_max = max((int(c.get('km_end') or 0) for c in in_month), default=0)
+    # Excluded from the client Foaie de Parcurs listing:
+    #  • Internal (company) drives — `is_internal`; their KM shows as a gap (a
+    #    between-drive jump, or a leading/trailing boundary gap — see
+    #    _rows_with_gaps) so it stays accounted and redistributable to a client.
+    sessions = [c for c in in_month if not c.get('is_internal')]
     # chronological by drive date (departure, else created)
     sessions.sort(key=lambda c: str(c.get('departure_datetime') or c.get('created_at') or ''))
 
@@ -179,9 +183,11 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
             'fuel_consumed': float(c.get('fuel_consumed_liters') or 0),
         })
 
-    total_km = _span_km(trips)
-    km_start = min((t['km_start'] for t in trips), default=0)
-    km_end = max((t['km_end'] for t in trips), default=0)
+    # Range + Total over the month's full odometer span (incl. internal drives
+    # shown as boundary gaps), so edge KM isn't dropped from the sheet.
+    km_start = km_month_min
+    km_end = km_month_max
+    total_km = max(0, km_end - km_start)
     clients = len({t['driver'] for t in trips if t['driver']})
     consum_efectiv = round(sum(t['fuel_consumed'] for t in trips), 2)
 
@@ -322,13 +328,20 @@ def _span_km(trips: list) -> int:
             - min(int(t.get('km_start') or 0) for t in trips))
 
 
-def _rows_with_gaps(trips: list) -> list:
+def _rows_with_gaps(trips: list, km_min=None, km_max=None) -> list:
     """Order trips by odometer and interleave gap markers wherever the odometer
     jumps between logged sessions (km moved without a logged drive). Gap dict:
     {'gap': True, 'date', 'km_start', 'km_end', 'distance_km'}; trip:
-    {'gap': False, 'trip': <trip>}. The gap's date is the session that revealed it."""
+    {'gap': False, 'trip': <trip>}. The gap's date is the session that revealed it.
+
+    `km_min`/`km_max` are the month's full odometer span (incl. internal drives not
+    listed as trips); KM below the first / above the last trip surfaces as a
+    leading / trailing boundary gap so an edge internal drive isn't dropped."""
     ordered = sorted(trips, key=lambda t: (t['km_start'], t['km_end']))
     rows = []
+    if ordered and km_min is not None and km_min < ordered[0]['km_start']:
+        rows.append({'gap': True, 'date': ordered[0]['date'], 'km_start': km_min,
+                     'km_end': ordered[0]['km_start'], 'distance_km': ordered[0]['km_start'] - km_min})
     prev_end = None
     for t in ordered:
         if prev_end is not None and t['km_start'] > prev_end:
@@ -336,6 +349,9 @@ def _rows_with_gaps(trips: list) -> list:
                          'km_end': t['km_start'], 'distance_km': t['km_start'] - prev_end})
         rows.append({'gap': False, 'trip': t})
         prev_end = max(prev_end or 0, t['km_end'])
+    if ordered and km_max is not None and prev_end is not None and km_max > prev_end:
+        rows.append({'gap': True, 'date': ordered[-1]['date'], 'km_start': prev_end,
+                     'km_end': km_max, 'distance_km': km_max - prev_end})
     return rows
 
 
@@ -421,7 +437,7 @@ def _skeleton_html(data: dict, prose: dict) -> str:
     e = html.escape
     v = data['vehicle']
     rows = []
-    for r in _rows_with_gaps(data['trips']):
+    for r in _rows_with_gaps(data['trips'], data['totals']['km_start'], data['totals']['km_end']):
         if r['gap']:
             rows.append(
                 '<tr class="gap">'
@@ -902,7 +918,7 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
         cell.font = head; cell.fill = fill; cell.alignment = Alignment(horizontal='center')
 
     r = hrow + 1
-    for row in _rows_with_gaps(data['trips']):
+    for row in _rows_with_gaps(data['trips'], data['totals']['km_start'], data['totals']['km_end']):
         if row['gap']:
             ws.cell(row=r, column=1, value=row['date'])
             ws.cell(row=r, column=3, value='Gap kilometraj (nejustificat)')

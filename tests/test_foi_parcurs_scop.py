@@ -29,12 +29,12 @@ class _FakeVehRepo:
         return {'mark': 'MG', 'model': 'MG ZS HEV', 'company_id': None}
 
 
-def _run(monkeypatch, rows):
+def _run(monkeypatch, rows, year=2026, month=8):
     monkeypatch.setattr(rss, '_fp_repo', _FakeFpRepo(rows))
     monkeypatch.setattr(rss, '_veh_repo', _FakeVehRepo())
     # company_id=None on every row keeps aggregate_month off the DB-backed
     # prestator / comodat-routes lookups (they're gated on a company id).
-    return rss.aggregate_month('LSJW1', 2026, 8)
+    return rss.aggregate_month('LSJW1', year, month)
 
 
 def _session(**over):
@@ -112,3 +112,50 @@ def test_internal_drives_excluded_and_km_becomes_gap(monkeypatch):
     from foi_parcurs.services.route_sheet_service import _rows_with_gaps
     gaps = [r for r in _rows_with_gaps(data['trips']) if r['gap']]
     assert len(gaps) == 1 and gaps[0]['distance_km'] == 100  # reflected as a gap
+
+
+def test_period_uses_departure_not_created():
+    # A session created in July but DRIVEN on Aug 1 belongs to August's foaie.
+    assert rss._period({'departure_datetime': '2026-08-01 09:00:00',
+                        'created_at': '2026-07-30 10:00:00'}) == (2026, 8)
+    # No departure → fall back to created_at.
+    assert rss._period({'departure_datetime': None,
+                        'created_at': '2026-07-15 10:00:00'}) == (2026, 7)
+
+
+def test_next_month_client_gated_out_of_month(monkeypatch):
+    # A client that drove Aug 1 must not appear in July's foaie.
+    rows = [
+        _session(id=1, td_status='complete', km_start=5651, km_end=5699,
+                 departure_datetime='2026-07-28 10:00:00'),
+        _session(id=2, td_status='complete', km_start=5699, km_end=5740,
+                 departure_datetime='2026-08-01 10:00:00', client_name='Anca'),
+    ]
+    data = _run(monkeypatch, rows, year=2026, month=7)
+    assert len(data['trips']) == 1                         # only the July drive
+    assert data['trips'][0]['km_end'] == 5699
+
+
+def test_boundary_internal_drive_is_trailing_gap(monkeypatch):
+    # July: two client drives, plus an internal drive at the odometer edge (after
+    # the last client) and a next-month client. The internal 7 km stays as a
+    # trailing gap in July; the next-month client is gated out.
+    rows = [
+        _session(id=1, td_status='complete', km_start=5651, km_end=5699,
+                 departure_datetime='2026-07-28 10:00:00'),
+        _session(id=2, td_status='complete', km_start=5699, km_end=5740,
+                 departure_datetime='2026-07-31 10:00:00'),
+        _session(id=3, is_internal=True, td_status='driving', km_start=5740, km_end=5747,
+                 departure_datetime='2026-07-30 10:00:00', client_name='', advisor_name='Firma'),
+        _session(id=4, td_status='complete', km_start=5747, km_end=5753,
+                 departure_datetime='2026-08-01 10:00:00', client_name='Anca'),
+    ]
+    data = _run(monkeypatch, rows, year=2026, month=7)
+    assert len(data['trips']) == 2                         # two July client drives
+    assert data['totals']['km'] == 96                      # 5651→5747 incl. the internal 7 km
+    assert data['totals']['km_end'] == 5747
+    from foi_parcurs.services.route_sheet_service import _rows_with_gaps
+    gaps = [r for r in _rows_with_gaps(data['trips'], data['totals']['km_start'], data['totals']['km_end'])
+            if r['gap']]
+    assert len(gaps) == 1 and gaps[0]['distance_km'] == 7   # trailing internal gap
+    assert gaps[0]['km_start'] == 5740 and gaps[0]['km_end'] == 5747
