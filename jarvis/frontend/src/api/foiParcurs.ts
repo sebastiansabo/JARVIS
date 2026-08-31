@@ -249,6 +249,10 @@ export const foiParcursApi = {
   unlockVehicle: (id: number) =>
     api.post<{ success: boolean }>(`${BASE}/vehicles/${id}/unlock`, {}),
 
+  // Block/unblock audit trail (newest first) for the lock modal's "Istoric" section.
+  getLockEvents: (id: number) =>
+    api.get<{ events: import('@/types/foiParcurs').LockEvent[] }>(`${BASE}/vehicles/${id}/lock-events`),
+
   // ── Lockout reasons (configurable, editable in Settings → Motive blocare) ──
   getLockoutReasons: (activeOnly = false) =>
     api.get<{ success: boolean; reasons: import('@/types/foiParcurs').LockoutReason[] }>(

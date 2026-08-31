@@ -112,6 +112,19 @@ export interface LockoutReason {
   is_active: boolean
 }
 
+/** One row in a car's block/unblock audit trail (fp_vehicle_lock_events).
+ *  `category` is a lockout-reason slug; `actor_name` is snapshotted at write time. */
+export interface LockEvent {
+  id: number
+  action: 'lock' | 'unlock'
+  category: string | null
+  note: string | null
+  until: string | null
+  actor_id: number | null
+  actor_name: string | null
+  created_at: string
+}
+
 /** A scheduled block window for a car (to-do #3). `category` is a lockout-reason slug. */
 export interface ScheduledBlock {
   id: number

@@ -306,7 +306,7 @@ class FPVehicleRepository(BaseRepository):
 
     def lock_vehicle(self, vehicle_id, category, note, until, user_id):
         """Lock a car out of the driving park (blocks new sessions)."""
-        return self.execute(
+        row = self.execute(
             '''UPDATE fp_vehicles
                SET locked_out = TRUE, lockout_category = %s, lockout_note = %s,
                    lockout_until = %s, locked_by = %s, locked_at = NOW(), updated_at = NOW()
@@ -314,16 +314,66 @@ class FPVehicleRepository(BaseRepository):
             (category, note, until, user_id, vehicle_id),
             returning=True,
         )
+        if row:
+            self._log_lock_event(vehicle_id, 'lock', category, note, until, user_id)
+        return row
 
-    def unlock_vehicle(self, vehicle_id):
-        """Clear a car's lockout, making it available again."""
-        return self.execute(
+    def unlock_vehicle(self, vehicle_id, user_id=None):
+        """Clear a car's lockout, making it available again. `user_id` is the
+        acting user, recorded in the audit trail as who unblocked the car."""
+        # Snapshot the reason being cleared BEFORE the wipe, so the 'unlock'
+        # event records what the car was unblocked from.
+        prev = self.query_one(
+            'SELECT lockout_category, lockout_note, lockout_until FROM fp_vehicles WHERE id = %s',
+            (vehicle_id,),
+        ) or {}
+        row = self.execute(
             '''UPDATE fp_vehicles
                SET locked_out = FALSE, lockout_category = NULL, lockout_note = NULL,
                    lockout_until = NULL, locked_by = NULL, locked_at = NULL, updated_at = NOW()
                WHERE id = %s RETURNING *''',
             (vehicle_id,),
             returning=True,
+        )
+        if row:
+            self._log_lock_event(
+                vehicle_id, 'unlock',
+                prev.get('lockout_category'), prev.get('lockout_note'),
+                prev.get('lockout_until'), user_id,
+            )
+        return row
+
+    # ── Lock/unlock audit trail (fp_vehicle_lock_events) ────────────────────
+    def _actor_name(self, user_id):
+        """Display name for a user id (snapshotted into the event); None if the
+        action was unauthenticated/system or the user is unknown."""
+        if not user_id:
+            return None
+        row = self.query_one('SELECT name FROM users WHERE id = %s', (user_id,))
+        return row['name'] if row else None
+
+    def _log_lock_event(self, vehicle_id, action, category, note, until, user_id):
+        """Append one row to a car's lock/unlock history. Best-effort: an audit
+        write must never break the lock/unlock it records, so failures (e.g. a
+        missing table on a stale DB) are swallowed and logged."""
+        try:
+            self.execute(
+                '''INSERT INTO fp_vehicle_lock_events
+                       (vehicle_id, action, category, note, until, actor_id, actor_name)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)''',
+                (vehicle_id, action, category, note, until, user_id, self._actor_name(user_id)),
+            )
+        except Exception:
+            logger.warning('fp lock-event log failed for vehicle %s (%s)', vehicle_id, action, exc_info=True)
+
+    def get_lock_events(self, vehicle_id):
+        """A car's block/unblock audit trail, newest first — for the lock modal."""
+        return self.query_all(
+            '''SELECT id, action, category, note, until, actor_id, actor_name, created_at
+               FROM fp_vehicle_lock_events
+               WHERE vehicle_id = %s
+               ORDER BY created_at DESC, id DESC''',
+            (vehicle_id,),
         )
 
     def get_lock_by_vin(self, vin):
