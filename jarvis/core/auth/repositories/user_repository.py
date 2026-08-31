@@ -82,6 +82,11 @@ class UserRepository(BaseRepository):
             WHERE id = %s
         ''', (user_id,)) > 0
 
+    def set_ghost(self, user_id: int, is_ghost: bool) -> bool:
+        """Set (or clear) the ghost flag for a user (leadership-privacy)."""
+        self.execute('UPDATE users SET is_ghost = %s WHERE id = %s', (bool(is_ghost), user_id))
+        return True
+
     def get_online_users(self, minutes: int = 5) -> List[Dict[str, Any]]:
         """Get users who have been active in the last N minutes."""
         rows = self.query_all('''
