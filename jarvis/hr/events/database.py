@@ -1,5 +1,6 @@
 """HR Module Database Operations."""
 from database import get_db, get_cursor, release_db, dict_from_row
+from core.organization.ghost import ghost_exclude_clause
 from core.utils.scope_filter import apply_scope_filter
 from .presence import derive_bonus_fields
 
@@ -46,6 +47,10 @@ def get_all_hr_employees(active_only=True, scope='all', user_context=None, contr
         scope_sql, scope_params = apply_scope_filter(scope, user_context)
         query += scope_sql
         params.extend(scope_params)
+
+        gfrag, gargs = ghost_exclude_clause('id')
+        query += gfrag
+        params += gargs
 
         query += ' ORDER BY name'
 
