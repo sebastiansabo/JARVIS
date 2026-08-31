@@ -76,11 +76,16 @@ def _iso_date(v) -> str:
 def aggregate_month(vin: str, year: int, month: int) -> dict:
     """Collect the locked-facts view of one car's month of driving sessions."""
     rows, _ = _fp_repo.get_contracts(vin=vin, per_page=2000, lean=True)
-    # Ratate (no-show) sessions never drove — exclude them from the route sheet
-    # entirely (they're archived, not documented). `td_status='missed'` covers
-    # both an explicit MISSED and a PLANNED past its grace window.
+    # Excluded from the client Foaie de Parcurs:
+    #  • Ratate (no-show) — `td_status='missed'` (explicit MISSED or PLANNED past
+    #    its grace window); never drove, archived not documented.
+    #  • Internal (company) drives — `is_internal`; their odometer span surfaces
+    #    as a gap between the surrounding client drives (see _rows_with_gaps), so
+    #    the KM stays accounted and can be redistributed onto a client session.
     sessions = [c for c in rows
-                if _period(c) == (year, month) and (c.get('td_status') or '') != 'missed']
+                if _period(c) == (year, month)
+                and (c.get('td_status') or '') != 'missed'
+                and not c.get('is_internal')]
     # chronological by drive date (departure, else created)
     sessions.sort(key=lambda c: str(c.get('departure_datetime') or c.get('created_at') or ''))
 

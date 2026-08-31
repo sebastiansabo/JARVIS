@@ -544,6 +544,10 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
       // Ratate (no-show) sessions never drove — keep them out of the route sheet
       // (they're archived). Covers explicit MISSED + PLANNED past its grace window.
       if (c.td_status === 'missed') continue
+      // Internal (company) drives aren't listed on the client Foaie de Parcurs.
+      // Dropping them leaves an odometer jump between the surrounding client
+      // drives, which `withGaps()` surfaces as a gap the user can redistribute.
+      if (c.is_internal) continue
       // Make filter (header dropdown): keep only cars whose catalog brand matches
       // the selected make. Brand is read from the full vehicle catalog
       // (getVehicles(false)), so archived/blocked cars of that make stay visible.

@@ -57,14 +57,13 @@ def test_client_session_is_test_drive_even_over_td_max(monkeypatch):
     assert trip['is_td'] is True
 
 
-def test_internal_session_reads_deplasare(monkeypatch):
-    # Short internal trip — the business-trip scop, not Test Drive.
+def test_internal_session_excluded_from_route_sheet(monkeypatch):
+    # Internal (company) drives are no longer listed on the client foaie — their
+    # KM becomes a gap instead of a "Deplasare" line.
     data = _run(monkeypatch, [_session(
-        id=2, is_internal=True, distance_km=5, km_start=1500, km_end=1505,
+        id=2, is_internal=True, km_start=1500, km_end=1505,
         client_name='', advisor_name='Firma')])
-    trip = data['trips'][0]
-    assert trip['traseu'] == 'Deplasare în interes de serviciu'
-    assert trip['is_td'] is False
+    assert data['trips'] == []
 
 
 def test_null_is_internal_defaults_to_client(monkeypatch):
@@ -95,3 +94,21 @@ def test_grace_hours_is_six():
     # No-shows are archived 6h after departure (was 8).
     from foi_parcurs.session_lifecycle import GRACE_HOURS
     assert GRACE_HOURS == 6
+
+
+def test_internal_drives_excluded_and_km_becomes_gap(monkeypatch):
+    # An internal (company) drive between two client drives isn't listed on the
+    # foaie; its 100 km stays in the total and surfaces as a gap.
+    rows = [
+        _session(id=1, is_internal=False, td_status='complete', km_start=1000, km_end=1100),
+        _session(id=2, is_internal=True, td_status='driving', km_start=1100, km_end=1200,
+                 client_name='', advisor_name='Firma'),
+        _session(id=3, is_internal=False, td_status='complete', km_start=1200, km_end=1300),
+    ]
+    data = _run(monkeypatch, rows)
+    assert len(data['trips']) == 2                         # internal not listed
+    assert all(not t.get('is_internal') for t in data['trips'])
+    assert data['totals']['km'] == 300                     # its 100 km still counted
+    from foi_parcurs.services.route_sheet_service import _rows_with_gaps
+    gaps = [r for r in _rows_with_gaps(data['trips']) if r['gap']]
+    assert len(gaps) == 1 and gaps[0]['distance_km'] == 100  # reflected as a gap
