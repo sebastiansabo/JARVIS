@@ -299,6 +299,19 @@ def api_correct_contract(id):
         if advisor:
             fields['advisor_name'] = advisor
 
+    # Client identity recorded on THIS foaie (snapshot columns, not a live CRM
+    # join) — lets an admin fix the driver/licence printed on a finalized
+    # document. client_name is non-empty-only (a foaie must always name its
+    # client); phone + licence fields accept set-or-clear when the key is present.
+    if 'client_name' in data:
+        client_name = (data.get('client_name') or '').strip()
+        if client_name:
+            fields['client_name'] = client_name
+    for k in ('client_phone', 'driver_license_number', 'driver_license_expiry',
+              'driver_license_photo'):
+        if k in data:
+            fields[k] = (data.get(k) or '').strip() or None
+
     if not fields:
         return jsonify({'success': False, 'error': 'No fields to correct'}), 400
 
@@ -334,8 +347,11 @@ def api_correct_contract(id):
     if revived:
         log_status_change(id, contract.get('status'), 'FILLED')
         updated = revived
+    # Redact the licence photo (a ~155 kB base64 data URL) from the audit log.
+    logged = {k: ('<photo>' if k == 'driver_license_photo' and v else v)
+              for k, v in fields.items()}
     logger.info('foi-parcurs contract %s corrected by admin %s: %s',
-                id, getattr(current_user, 'email', '?'), fields)
+                id, getattr(current_user, 'email', '?'), logged)
 
     # Keep the vehicle's odometer floor honest if km_end was raised (mirrors return).
     try:
