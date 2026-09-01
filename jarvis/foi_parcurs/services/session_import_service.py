@@ -174,7 +174,7 @@ def import_sessions(company_id: int, file_bytes: bytes, user_name: str | None) -
         if _fp_repo.query_one('SELECT 1 AS x FROM foi_de_parcurs WHERE contract_id=%s', (cid,)):
             skipped += 1
             continue
-        route_type = 'TD' if dist <= td_max else 'Comodat'
+        route_type = 'TD'  # Comodat deprecated (2026-09): imported sessions are always TD
         tank = (vehicle or {}).get('fuel_tank_capacity_liters') or 50
         reg = (vehicle or {}).get('registration_number') or ''
         def _s(col):

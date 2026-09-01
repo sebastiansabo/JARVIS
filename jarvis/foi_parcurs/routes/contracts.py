@@ -92,10 +92,9 @@ def api_create_contract():
     if missing:
         return jsonify({'success': False, 'error': f'Missing fields: {", ".join(missing)}'}), 400
 
-    # Validate route_type
-    route_type = data['route_type']
-    if route_type not in ('TD', 'Comodat'):
-        return jsonify({'success': False, 'error': 'route_type must be TD or Comodat'}), 400
+    # Comodat deprecated (2026-09): every session is a Test Drive. Any legacy
+    # route_type value from the client is coerced to TD.
+    route_type = 'TD'
 
     # Generate contract_id: {VIN}_{unix_timestamp}_{slot_number}
     contract_id = f"{data['vin']}_{int(time.time())}_{data['slot_number']}"
@@ -456,7 +455,7 @@ def api_save_batch():
                 'company_id': company_id,
                 'year': year,
                 'month': month,
-                'route_type': slot.get('route_type', 'TD'),
+                'route_type': 'TD',  # Comodat deprecated (2026-09)
                 'slot_number': slot.get('slot', i),
                 'km_start': int(slot.get('km_start', 0)),
                 'km_end': int(slot.get('km_end', 0)),
