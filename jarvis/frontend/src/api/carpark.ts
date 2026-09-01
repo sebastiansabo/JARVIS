@@ -126,6 +126,16 @@ export const carparkApi = {
       refresh ? { refresh: 'true' } : undefined,
     ),
 
+  decodeCIV: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<{
+      success: boolean
+      data?: { vehicle_fields: Partial<Vehicle>; provider: string; confidence: number }
+      error?: string
+    }>('/api/carpark/vin/decode-civ', form)
+  },
+
   validateVIN: (vin: string) =>
     api.get<{ success: boolean; data: import('@/types/carpark').VINValidation }>(
       `/api/carpark/vin/validate/${encodeURIComponent(vin)}`,
