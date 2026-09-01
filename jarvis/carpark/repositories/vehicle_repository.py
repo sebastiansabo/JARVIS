@@ -38,6 +38,7 @@ VEHICLE_UPDATABLE_FIELDS = {
     'acquisition_currency', 'acquisition_exchange_rate',
     'purchase_price_net', 'purchase_price_currency', 'purchase_vat_rate',
     'reconditioning_cost', 'transport_cost', 'registration_cost', 'other_costs',
+    'cost_lines',
     'list_price', 'promotional_price', 'minimum_price', 'current_price',
     'price_currency', 'price_includes_vat', 'vat_deductible',
     'is_negotiable', 'margin_scheme',

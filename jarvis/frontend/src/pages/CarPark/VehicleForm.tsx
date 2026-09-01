@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Loader2, Search, Check, X } from 'lucide-react'
+import { Save, Loader2, Search, Check, X, RefreshCw, Sparkles, Plus, ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchSelect } from '@/components/shared/SearchSelect'
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { carparkApi } from '@/api/carpark'
 import { useAuthStore } from '@/stores/authStore'
 import { useCarParkStore } from '@/stores/carParkStore'
@@ -44,9 +45,19 @@ import {
   AUTOVIT_VEHICLE_STATES,
   AUTOVIT_DOORS,
   AUTOVIT_SEATS,
+  VEHICLE_SOURCES,
+  CARPARK_COST_TYPES,
 } from '@/data/autovitData'
 
 type FormData = Record<string, string | number | boolean | null | string[]>
+type CostLine = {
+  type: string
+  description: string
+  date: string
+  lei: number | null
+  kurs: number | null
+  eur: number | null
+}
 
 /** Safely extract a numeric/string value for <Input value=...> (excludes boolean) */
 function inputVal(v: string | number | boolean | string[] | null | undefined): string | number {
@@ -218,12 +229,41 @@ const FUEL_USES_BATTERY = new Set(['electric', 'hybrid', 'plugin-hybrid'])
 const usesFuelTank = (ft?: string | null) => FUEL_USES_TANK.has(ft ?? '')
 const usesBattery = (ft?: string | null) => FUEL_USES_BATTERY.has(ft ?? '')
 
+// Compose the "Titlu anunț" from the vehicle's spec fields, e.g.
+// "Dacia Duster 1.5 Blue dCi Prestige III 1.5l Diesel Manuala Fata (FWD)".
+function buildListingTitle(f: FormData): string {
+  const label = (opts: readonly { value: string; label: string }[], v: unknown) =>
+    opts.find((o) => o.value === v)?.label ?? ''
+  const cc = f.engine_displacement_cc
+  const liters = typeof cc === 'number' && cc > 0 ? `${(cc / 1000).toFixed(1)}l` : ''
+  return [
+    f.brand, f.model, f.variant, f.generation, f.equipment_level,
+    liters,
+    label(AUTOVIT_FUEL_TYPES, f.fuel_type),
+    label(AUTOVIT_GEARBOX_TYPES, f.transmission),
+    label(AUTOVIT_DRIVE_TYPES, f.drive_type),
+  ]
+    .map((p) => (p == null ? '' : String(p)).trim())
+    .filter(Boolean)
+    .join(' ')
+}
+
 // ── Main Form ──────────────────────────────────────────────
 export default function VehicleForm() {
   const { vehicleId } = useParams<{ vehicleId: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isEdit = vehicleId && vehicleId !== 'new'
+
+  // Active tab persisted in the URL (?tab=…) so it survives a page refresh
+  // and is shareable/bookmarkable.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') ?? 'vehicul'
+  const handleTabChange = (v: string) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', v)
+    setSearchParams(next, { replace: true })
+  }
   const id = isEdit ? Number(vehicleId) : null
 
   // Tenant switcher: new cars are created into the selected (acting) company,
@@ -238,6 +278,12 @@ export default function VehicleForm() {
     queryFn: () => carparkApi.getVehicle(id!),
     enabled: !!id,
   })
+  const { data: pricingHistoryData } = useQuery({
+    queryKey: ['carpark', 'pricing-history', id],
+    queryFn: () => carparkApi.getPricingHistory(id!),
+    enabled: !!id,
+  })
+  const pricingHistory = pricingHistoryData?.history ?? []
 
   // Load locations for dropdown (scoped to the acting company)
   const { data: locationsData } = useQuery({
@@ -285,6 +331,7 @@ export default function VehicleForm() {
     euro_pallets: null,
     current_price: null,
     list_price: null,
+    promotional_price: null,
     minimum_price: null,
     price_currency: 'EUR',
     price_includes_vat: true,
@@ -294,7 +341,10 @@ export default function VehicleForm() {
     purchase_price_net: null,
     purchase_price_currency: 'EUR',
     acquisition_value: null,
-    acquisition_currency: 'EUR',
+    acquisition_currency: 'RON',
+    acquisition_price: null,
+    acquisition_date: '',
+    acquisition_exchange_rate: null,
     reconditioning_cost: null,
     transport_cost: null,
     registration_cost: null,
@@ -304,6 +354,7 @@ export default function VehicleForm() {
     source: '',
     supplier_name: '',
     supplier_cif: '',
+    acquisition_document_number: '',
     has_manufacturer_warranty: false,
     manufacturer_warranty_date: '',
     has_dealer_warranty: false,
@@ -333,6 +384,10 @@ export default function VehicleForm() {
     listing_description: '',
   })
 
+  // "Titlu anunț" auto-composes from the specs until the user edits it manually
+  // (then titleTouched stays true and we stop overwriting their text).
+  const titleTouched = useRef(false)
+
   // Populate form when editing
   useEffect(() => {
     if (existingData?.vehicle) {
@@ -344,10 +399,127 @@ export default function VehicleForm() {
         }
       }
       setForm((prev) => ({ ...prev, ...populated }))
+      // Keep an existing custom title — don't auto-overwrite it.
+      if (v.listing_title) titleTouched.current = true
+      // Cost lines: parse the stored JSON, else migrate the old fixed columns.
+      const vAny = v as unknown as Record<string, unknown>
+      let lines: CostLine[] = []
+      if (typeof vAny.cost_lines === 'string' && vAny.cost_lines) {
+        try {
+          const parsed = JSON.parse(vAny.cost_lines as string) as Array<Record<string, unknown>>
+          lines = parsed.map((l) => ({
+            type: String(l.type ?? l.label ?? ''),
+            description: String(l.description ?? ''),
+            date: String(l.date ?? ''),
+            lei: l.lei == null ? null : Number(l.lei),
+            kurs: l.kurs == null ? null : Number(l.kurs),
+            eur: l.eur != null ? Number(l.eur) : l.amount != null ? Number(l.amount) : null,
+          }))
+        } catch {
+          lines = []
+        }
+      } else {
+        lines = (
+          [
+            ['Recondiționare', vAny.reconditioning_cost],
+            ['Transport', vAny.transport_cost],
+            ['Alte costuri', vAny.other_costs],
+          ] as [string, unknown][]
+        )
+          .filter(([, a]) => a != null && a !== 0)
+          .map(([type, a]) => ({ type, description: '', date: '', lei: null, kurs: null, eur: Number(a) }))
+      }
+      setCostLines(lines)
     }
     // Only run when existingData changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingData])
+
+  // Auto-composed listing title, refreshed as the specs change (unless edited).
+  const autoTitle = useMemo(() => buildListingTitle(form), [
+    form.brand, form.model, form.variant, form.generation, form.equipment_level,
+    form.engine_displacement_cc, form.fuel_type, form.transmission, form.drive_type,
+  ])
+  useEffect(() => {
+    if (!titleTouched.current) {
+      setForm((prev) => (prev.listing_title === autoTitle ? prev : { ...prev, listing_title: autoTitle }))
+    }
+  }, [autoTitle])
+  const regenerateTitle = () => {
+    titleTouched.current = false
+    setForm((prev) => ({ ...prev, listing_title: buildListingTitle(prev) }))
+  }
+
+  // AI-generated listing description from the vehicle's specs + dotări.
+  const [genDesc, setGenDesc] = useState(false)
+  const generateDescription = async () => {
+    const lbl = (opts: readonly { value: string; label: string }[], v: unknown) =>
+      opts.find((o) => o.value === v)?.label ?? (v == null ? '' : String(v))
+    const eqLabels = ((form.equipment_options as string[]) ?? []).map((val) => {
+      for (const g of AUTOVIT_EQUIPMENT) {
+        const o = g.options.find((x) => x.value === val)
+        if (o) return o.label
+      }
+      return val
+    })
+    const warranty = [
+      form.has_manufacturer_warranty
+        ? `Garanție producător${form.manufacturer_warranty_date ? ' până la ' + form.manufacturer_warranty_date : ''}`
+        : '',
+      form.has_dealer_warranty
+        ? `Garanție dealer${form.dealer_warranty_months ? ' ' + form.dealer_warranty_months + ' luni' : ''}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('; ')
+    const RO_MONTHS = ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie']
+    const md = (form.manufacture_date as string | null) ?? ''
+    const anFab = md
+      ? (() => {
+          const [y, m] = md.slice(0, 7).split('-')
+          const name = RO_MONTHS[Number(m) - 1]
+          return name ? `${name} ${y}` : md.slice(0, 7)
+        })()
+      : (form.year_of_manufacture ?? '')
+    const specs: Record<string, unknown> = {
+      Marcă: form.brand,
+      Model: form.model,
+      Versiune: form.variant,
+      Generație: form.generation,
+      'Nivel echipare': form.equipment_level,
+      'An fabricație': anFab,
+      Caroserie: lbl(AUTOVIT_BODY_TYPES, form.body_type),
+      Combustibil: lbl(AUTOVIT_FUEL_TYPES, form.fuel_type),
+      'Cutie de viteze': lbl(AUTOVIT_GEARBOX_TYPES, form.transmission),
+      Tracțiune: lbl(AUTOVIT_DRIVE_TYPES, form.drive_type),
+      'Capacitate cilindrică (cmc)': form.engine_displacement_cc,
+      'Putere (CP)': form.engine_power_hp,
+      'Rulaj (km)': form.mileage_km,
+      'Culoare exterioară': lbl(AUTOVIT_COLORS, form.color_exterior),
+      Tapițerie: lbl(AUTOVIT_INTERIOR_MATERIALS, form.interior_material),
+      'Normă de poluare': lbl(AUTOVIT_EURO_STANDARDS, form.euro_standard),
+      Portiere: form.doors,
+      Locuri: form.seats,
+      'Culoare interior': lbl(AUTOVIT_INTERIOR_COLORS, form.color_interior),
+      'Prima înmatriculare': form.first_registration_date,
+      'Primul proprietar': form.is_first_owner ? 'Da' : '',
+      'Carte service': form.has_service_book ? 'Da' : '',
+      'Nr. proprietari anteriori': form.previous_owners,
+      'Nr. stoc': form.nr_stoc,
+      Sursă: lbl(VEHICLE_SOURCES, form.source),
+      Garanție: warranty,
+    }
+    setGenDesc(true)
+    try {
+      const description = await carparkApi.generateDescription({ specs, equipment: eqLabels })
+      setForm((prev) => ({ ...prev, listing_description: description }))
+      toast.success('Descriere generată')
+    } catch {
+      toast.error('Generarea descrierii a eșuat')
+    } finally {
+      setGenDesc(false)
+    }
+  }
 
   // Model options based on selected brand
   const modelOptions = useMemo(() => {
@@ -470,13 +642,197 @@ export default function VehicleForm() {
     })
   }
 
+  // Local draft: save partial progress (from any tab, no required fields) to the
+  // browser and restore it on return. Cleared once the vehicle is really saved.
+  const draftKey = `carpark-draft-${vehicleId ?? 'new'}`
+  const [pendingDraft, setPendingDraft] = useState<FormData | null>(null)
+  useEffect(() => {
+    const raw = localStorage.getItem(draftKey)
+    if (raw) {
+      try {
+        setPendingDraft(JSON.parse(raw) as FormData)
+      } catch {
+        /* ignore a corrupt draft */
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const saveDraft = () => {
+    localStorage.setItem(draftKey, JSON.stringify(form))
+    setPendingDraft(null)
+    toast.success('Ciornă salvată (local, în acest browser)')
+  }
+  const restoreDraft = () => {
+    if (pendingDraft) setForm((prev) => ({ ...prev, ...pendingDraft }))
+    setPendingDraft(null)
+  }
+  const discardDraft = () => {
+    localStorage.removeItem(draftKey)
+    setPendingDraft(null)
+  }
+
+  // Freeform acquisition cost lines — each entered in LEI on a date, converted
+  // to EUR via BNR for that date. Sum of EUR feeds the cost total.
+  const [costLines, setCostLines] = useState<CostLine[]>([])
+  const fetchBnrRate = async (date: string): Promise<number | null> => {
+    if (!date) return null
+    try {
+      const r = await carparkApi.getBnrRate(date)
+      return r.kurs ?? null
+    } catch {
+      toast.error('Cursul BNR nu a putut fi preluat')
+      return null
+    }
+  }
+  const addCostLine = () =>
+    setCostLines((p) => [...p, { type: '', description: '', date: '', lei: null, kurs: null, eur: null }])
+  const removeCostLine = (i: number) => setCostLines((p) => p.filter((_, idx) => idx !== i))
+  const patchLine = (i: number, patch: Partial<CostLine>) =>
+    setCostLines((p) => p.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
+  const lineEur = (lei: number | null, kurs: number | null) =>
+    lei != null && kurs != null && kurs > 0 ? Math.round((lei / kurs) * 100) / 100 : null
+  const handleLineDate = async (i: number, date: string) => {
+    patchLine(i, { date })
+    const kurs = await fetchBnrRate(date)
+    if (kurs) {
+      setCostLines((p) => p.map((l, idx) => (idx === i ? { ...l, kurs, eur: lineEur(l.lei, kurs) ?? l.eur } : l)))
+    }
+  }
+  const handleLineLei = (i: number, v: string) => {
+    const lei = v === '' ? null : Number(v)
+    setCostLines((p) => p.map((l, idx) => (idx === i ? { ...l, lei, eur: lineEur(lei, l.kurs) ?? l.eur } : l)))
+  }
+  const handleLineEur = (i: number, v: string) => {
+    const eur = v === '' ? null : Number(v)
+    setCostLines((p) =>
+      p.map((l, idx) => {
+        if (idx !== i) return l
+        const lei = eur != null && l.kurs != null && l.kurs > 0 ? Math.round(eur * l.kurs * 100) / 100 : l.lei
+        return { ...l, eur, lei }
+      }),
+    )
+  }
+  const _num = (v: unknown) => (typeof v === 'number' ? v : 0)
+  const costLinesTotal = costLines.reduce((s, l) => s + (l.eur ?? 0), 0)
+  const totalCost = _num(form.purchase_price_net) + costLinesTotal
+
+  // Today's BNR EUR/RON rate — to also show the selling prices in lei.
+  const [eurRonRate, setEurRonRate] = useState<number | null>(null)
+  useEffect(() => {
+    fetchBnrRate(new Date().toISOString().slice(0, 10)).then(setEurRonRate)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const priceAlt = (price: unknown) => {
+    const p = typeof price === 'number' ? price : null
+    if (p == null || !eurRonRate) return null
+    const cur = (form.price_currency as string) || 'EUR'
+    if (cur === 'EUR') return `${Math.round(p * eurRonRate).toLocaleString('ro-RO')} lei`
+    if (cur === 'RON') return `${Math.round(p / eurRonRate).toLocaleString('ro-RO')} EUR`
+    return null
+  }
+  // Switching the Monedă converts the existing prices to the new currency.
+  const handleCurrencyChange = (_name: string, next: string) => {
+    const prevCur = (form.price_currency as string) || 'EUR'
+    if (prevCur === next || !eurRonRate) {
+      setForm((f) => ({ ...f, price_currency: next }))
+      return
+    }
+    const conv = (v: unknown): number | null => {
+      const p = typeof v === 'number' ? v : null
+      if (p == null) return p
+      if (prevCur === 'EUR' && next === 'RON') return Math.round(p * eurRonRate * 100) / 100
+      if (prevCur === 'RON' && next === 'EUR') return Math.round((p / eurRonRate) * 100) / 100
+      return p
+    }
+    setForm((f) => ({
+      ...f,
+      price_currency: next,
+      list_price: conv(f.list_price),
+      promotional_price: conv(f.promotional_price),
+      minimum_price: conv(f.minimum_price),
+      current_price: conv(f.current_price),
+    }))
+  }
+  const marginInfo = (price: unknown) => {
+    let p = typeof price === 'number' ? price : null
+    // Margin is always computed in EUR (acquisition cost total is EUR).
+    if (p != null && (form.price_currency as string) === 'RON' && eurRonRate) p = p / eurRonRate
+    if (p == null || totalCost <= 0) return null
+    const val = p - totalCost
+    const pct = (val / totalCost) * 100
+    return {
+      text: `Marjă: ${Math.round(val).toLocaleString('ro-RO')} EUR · ${pct.toFixed(1)}%`,
+      positive: val >= 0,
+    }
+  }
+  const listMargin = marginInfo(form.list_price)
+  const minMargin = marginInfo(form.minimum_price)
+
+  // Acquisition price is entered in LEI (RON) and converted to EUR using the BNR
+  // rate for the invoice date. The EUR value (purchase_price_net) stays editable.
+  const [bnrLoading, setBnrLoading] = useState(false)
+  const eurFromLei = (lei: unknown, kurs: unknown) => {
+    const l = _num(lei)
+    const k = _num(kurs)
+    return l > 0 && k > 0 ? Math.round((l / k) * 100) / 100 : null
+  }
+  const fetchBnr = async (date: string) => {
+    if (!date) return
+    setBnrLoading(true)
+    try {
+      const r = await carparkApi.getBnrRate(date)
+      if (r.kurs) {
+        setForm((prev) => ({
+          ...prev,
+          acquisition_exchange_rate: r.kurs,
+          purchase_price_net: eurFromLei(prev.acquisition_price, r.kurs) ?? prev.purchase_price_net,
+        }))
+        toast.success(`Curs BNR ${r.kurs} (${r.kurs_date})`)
+      }
+    } catch {
+      toast.error('Cursul BNR nu a putut fi preluat')
+    } finally {
+      setBnrLoading(false)
+    }
+  }
+  const handleAcqDate = (date: string) => {
+    setForm((prev) => ({ ...prev, acquisition_date: date }))
+    fetchBnr(date)
+  }
+  const handleAcqLei = (v: string) => {
+    const lei = v === '' ? null : Number(v)
+    setForm((prev) => ({
+      ...prev,
+      acquisition_price: lei,
+      acquisition_currency: 'RON',
+      purchase_price_net: eurFromLei(lei, prev.acquisition_exchange_rate) ?? prev.purchase_price_net,
+    }))
+  }
+  const handleKurs = (v: string) => {
+    const kurs = v === '' ? null : Number(v)
+    setForm((prev) => ({
+      ...prev,
+      acquisition_exchange_rate: kurs,
+      purchase_price_net: eurFromLei(prev.acquisition_price, kurs) ?? prev.purchase_price_net,
+    }))
+  }
+  const handleAcqEur = (v: string) => {
+    const eur = v === '' ? null : Number(v)
+    setForm((prev) => {
+      const kurs = _num(prev.acquisition_exchange_rate)
+      const lei = eur != null && kurs > 0 ? Math.round(eur * kurs * 100) / 100 : prev.acquisition_price
+      return { ...prev, purchase_price_net: eur, acquisition_price: lei }
+    })
+  }
+
   // Submit
   const createMutation = useMutation({
     mutationFn: (data: Partial<Vehicle>) => carparkApi.createVehicle(data, effectiveCompanyId),
     onSuccess: (result) => {
+      localStorage.removeItem(draftKey)
       queryClient.invalidateQueries({ queryKey: ['carpark'] })
-      toast.success('Vehicle created')
-      navigate(`/app/carpark/${result.vehicle.id}`)
+      toast.success('Mașină adăugată')
+      navigate(`/app/carpark/${result.vehicle.id}/edit`)
     },
     onError: (err: Error & { data?: { error?: string } }) => {
       toast.error((err as any).data?.error || 'Failed to create vehicle')
@@ -486,9 +842,10 @@ export default function VehicleForm() {
   const updateMutation = useMutation({
     mutationFn: (data: Partial<Vehicle>) => carparkApi.updateVehicle(id!, data),
     onSuccess: () => {
+      localStorage.removeItem(draftKey)
+      // Refresh the list + this vehicle, but stay on the edit page.
       queryClient.invalidateQueries({ queryKey: ['carpark'] })
-      toast.success('Vehicle updated')
-      navigate(`/app/carpark/${id}`)
+      toast.success('Modificări salvate')
     },
     onError: (err: Error & { data?: { error?: string } }) => {
       toast.error((err as any).data?.error || 'Failed to update vehicle')
@@ -557,6 +914,11 @@ export default function VehicleForm() {
     if (Array.isArray(payload.equipment_options) && (payload.equipment_options as string[]).length === 0) {
       payload.equipment_options = null
     }
+    // Cost lines (JSON) replace the old fixed cost columns.
+    payload.cost_lines = costLines.length ? JSON.stringify(costLines) : null
+    payload.reconditioning_cost = null
+    payload.transport_cost = null
+    payload.other_costs = null
 
     if (isEdit) {
       updateMutation.mutate(payload as Partial<Vehicle>)
@@ -591,6 +953,14 @@ export default function VehicleForm() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            {isEdit && (
+              <Button variant="ghost" type="button" asChild>
+                <Link to={`/app/carpark/${id}`}>
+                  <ArrowLeft className="mr-1 h-4 w-4" />
+                  Înapoi la profil
+                </Link>
+              </Button>
+            )}
             <Button variant="outline" type="button" asChild>
               <Link to={isEdit ? `/app/carpark/${id}` : '/app/carpark'}>
                 Cancel
@@ -608,8 +978,30 @@ export default function VehicleForm() {
         }
       />
 
+      {pendingDraft && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-800 dark:bg-amber-950">
+          <span>Există o ciornă salvată pentru această mașină.</span>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={restoreDraft}>
+              Restaurează ciorna
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={discardDraft}>
+              Șterge
+            </Button>
+          </div>
+        </div>
+      )}
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="vehicul">Vehicul</TabsTrigger>
+          <TabsTrigger value="specificatii">Specificații</TabsTrigger>
+          <TabsTrigger value="dotari">Dotări</TabsTrigger>
+          <TabsTrigger value="anunt">Anunț</TabsTrigger>
+          <TabsTrigger value="comercial">Comercial</TabsTrigger>
+        </TabsList>
+        <TabsContent value="vehicul" className="space-y-4 pt-4">
       {/* Identification */}
-      <Card className="p-4 space-y-4">
+      <Card className="p-4 space-y-3">
         <h3 className="text-sm font-semibold">Identificare</h3>
         <div className="grid gap-4 md:grid-cols-4">
           <SearchSelectField
@@ -744,9 +1136,53 @@ export default function VehicleForm() {
           />
         </div>
       </Card>
-
+      {/* Condition & Warranty */}
+      <Card className="p-4 space-y-3">
+        <h3 className="text-sm font-semibold">Stare & Garanție</h3>
+        <div className="flex flex-wrap gap-6">
+          <CheckboxField label="Primul proprietar" name="is_first_owner" checked={!!form.is_first_owner} onChange={handleChange} />
+          <CheckboxField label="Istoric accidente" name="has_accident_history" checked={!!form.has_accident_history} onChange={handleChange} />
+          <CheckboxField label="Carte service" name="has_service_book" checked={!!form.has_service_book} onChange={handleChange} />
+          <CheckboxField label="Tuning" name="has_tuning" checked={!!form.has_tuning} onChange={handleChange} />
+          <CheckboxField label="Înmatriculat" name="is_registered" checked={!!form.is_registered} onChange={handleChange} />
+          <CheckboxField label="Volan pe dreapta" name="is_right_hand_drive" checked={!!form.is_right_hand_drive} onChange={handleChange} />
+          <CheckboxField label="Filtru de particule" name="has_particle_filter" checked={!!form.has_particle_filter} onChange={handleChange} />
+          <CheckboxField label="Vehicul de epocă" name="is_vintage" checked={!!form.is_vintage} onChange={handleChange} />
+          <CheckboxField label="Autovehicul avariat" name="is_damaged" checked={!!form.is_damaged} onChange={handleChange} />
+          <CheckboxField label="Rulaj certificat" name="certified_mileage" checked={!!form.certified_mileage} onChange={handleChange} />
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label>Nr. proprietari anteriori</Label>
+            <Input type="number" min={0} value={inputVal(form.previous_owners)} onChange={(e) => handleNumericChange('previous_owners', e.target.value)} placeholder="ex. 1" />
+          </div>
+          <TextField label="Țara de origine" name="country_of_origin" value={form.country_of_origin as string} onChange={handleChange} placeholder="ex. Germania" />
+        </div>
+        <Separator />
+        <div className="grid gap-4 md:grid-cols-3">
+          <CheckboxField label="Garanție producător" name="has_manufacturer_warranty" checked={!!form.has_manufacturer_warranty} onChange={handleChange} />
+          {form.has_manufacturer_warranty && (
+            <TextField label="Garanție până la" name="manufacturer_warranty_date" value={form.manufacturer_warranty_date as string} onChange={handleChange} type="date" />
+          )}
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <CheckboxField label="Garanție dealer" name="has_dealer_warranty" checked={!!form.has_dealer_warranty} onChange={handleChange} />
+          {form.has_dealer_warranty && (
+            <div className="space-y-1.5">
+              <Label>Luni garanție</Label>
+              <Input
+                type="number"
+                value={inputVal(form.dealer_warranty_months)}
+                onChange={(e) => handleNumericChange('dealer_warranty_months', e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+      </Card>
+        </TabsContent>
+        <TabsContent value="specificatii" className="space-y-4 pt-4">
       {/* Technical */}
-      <Card className="p-4 space-y-4">
+      <Card className="p-4 space-y-3">
         <h3 className="text-sm font-semibold">Specificații tehnice</h3>
         <div className="grid gap-4 md:grid-cols-3">
           <SearchSelectField
@@ -993,165 +1429,10 @@ export default function VehicleForm() {
           </div>
         )}
       </Card>
-
-      {/* Pricing */}
-      <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Preț</h3>
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label>Preț curent</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.current_price)}
-              onChange={(e) => handleNumericChange('current_price', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Preț listă</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.list_price)}
-              onChange={(e) => handleNumericChange('list_price', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Preț minim</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.minimum_price)}
-              onChange={(e) => handleNumericChange('minimum_price', e.target.value)}
-            />
-          </div>
-          <SelectField
-            label="Monedă"
-            name="price_currency"
-            value={form.price_currency as string}
-            options={[
-              { value: 'EUR', label: 'EUR' },
-              { value: 'RON', label: 'RON' },
-              { value: 'USD', label: 'USD' },
-            ]}
-            onChange={handleChange}
-          />
-        </div>
-        <div className="flex flex-wrap gap-6">
-          <CheckboxField label="Preț cu TVA" name="price_includes_vat" checked={!!form.price_includes_vat} onChange={handleChange} />
-          <CheckboxField label="Negociabil" name="is_negotiable" checked={!!form.is_negotiable} onChange={handleChange} />
-          <CheckboxField label="Regim marjă" name="margin_scheme" checked={!!form.margin_scheme} onChange={handleChange} />
-          <CheckboxField label="Eligibil finanțare" name="eligible_for_financing" checked={!!form.eligible_for_financing} onChange={handleChange} />
-        </div>
-
-        <Separator />
-        <h4 className="text-xs font-medium text-muted-foreground">Acquisition Costs</h4>
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label>Preț achiziție (net)</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.purchase_price_net)}
-              onChange={(e) => handleNumericChange('purchase_price_net', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Recondiționare</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.reconditioning_cost)}
-              onChange={(e) => handleNumericChange('reconditioning_cost', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Transport</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.transport_cost)}
-              onChange={(e) => handleNumericChange('transport_cost', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Alte costuri</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.other_costs)}
-              onChange={(e) => handleNumericChange('other_costs', e.target.value)}
-            />
-          </div>
-        </div>
-      </Card>
-
-      {/* Location & Source */}
-      <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Locație & Sursă</h3>
-        <div className="grid gap-4 md:grid-cols-3">
-          <SelectField
-            label="Locație"
-            name="location_id"
-            value={form.location_id != null ? String(form.location_id) : ''}
-            options={locationOptions}
-            onChange={(name, value) => handleNumericChange(name, value)}
-          />
-          <TextField label="Loc parcare" name="parking_spot" value={form.parking_spot as string} onChange={handleChange} placeholder="e.g. A-15" />
-          <TextField label="Sursă" name="source" value={form.source as string} onChange={handleChange} placeholder="e.g. Trade-in, Auction" />
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <TextField label="Nume furnizor" name="supplier_name" value={form.supplier_name as string} onChange={handleChange} />
-          <TextField label="CIF furnizor" name="supplier_cif" value={form.supplier_cif as string} onChange={handleChange} />
-        </div>
-      </Card>
-
-      {/* Condition & Warranty */}
-      <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Stare & Garanție</h3>
-        <div className="flex flex-wrap gap-6">
-          <CheckboxField label="Primul proprietar" name="is_first_owner" checked={!!form.is_first_owner} onChange={handleChange} />
-          <CheckboxField label="Istoric accidente" name="has_accident_history" checked={!!form.has_accident_history} onChange={handleChange} />
-          <CheckboxField label="Carte service" name="has_service_book" checked={!!form.has_service_book} onChange={handleChange} />
-          <CheckboxField label="Tuning" name="has_tuning" checked={!!form.has_tuning} onChange={handleChange} />
-          <CheckboxField label="Înmatriculat" name="is_registered" checked={!!form.is_registered} onChange={handleChange} />
-          <CheckboxField label="Volan pe dreapta" name="is_right_hand_drive" checked={!!form.is_right_hand_drive} onChange={handleChange} />
-          <CheckboxField label="Filtru de particule" name="has_particle_filter" checked={!!form.has_particle_filter} onChange={handleChange} />
-          <CheckboxField label="Vehicul de epocă" name="is_vintage" checked={!!form.is_vintage} onChange={handleChange} />
-          <CheckboxField label="Autovehicul avariat" name="is_damaged" checked={!!form.is_damaged} onChange={handleChange} />
-          <CheckboxField label="Rulaj certificat" name="certified_mileage" checked={!!form.certified_mileage} onChange={handleChange} />
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label>Nr. proprietari anteriori</Label>
-            <Input type="number" min={0} value={inputVal(form.previous_owners)} onChange={(e) => handleNumericChange('previous_owners', e.target.value)} placeholder="ex. 1" />
-          </div>
-          <TextField label="Țara de origine" name="country_of_origin" value={form.country_of_origin as string} onChange={handleChange} placeholder="ex. Germania" />
-        </div>
-        <Separator />
-        <div className="grid gap-4 md:grid-cols-3">
-          <CheckboxField label="Garanție producător" name="has_manufacturer_warranty" checked={!!form.has_manufacturer_warranty} onChange={handleChange} />
-          {form.has_manufacturer_warranty && (
-            <TextField label="Garanție până la" name="manufacturer_warranty_date" value={form.manufacturer_warranty_date as string} onChange={handleChange} type="date" />
-          )}
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <CheckboxField label="Garanție dealer" name="has_dealer_warranty" checked={!!form.has_dealer_warranty} onChange={handleChange} />
-          {form.has_dealer_warranty && (
-            <div className="space-y-1.5">
-              <Label>Luni garanție</Label>
-              <Input
-                type="number"
-                value={inputVal(form.dealer_warranty_months)}
-                onChange={(e) => handleNumericChange('dealer_warranty_months', e.target.value)}
-              />
-            </div>
-          )}
-        </div>
-      </Card>
-
+        </TabsContent>
+        <TabsContent value="dotari" className="space-y-4 pt-4">
       {/* Dotări (Equipment) */}
-      <Card className="p-4 space-y-4">
+      <Card className="p-4 space-y-3">
         <h3 className="text-sm font-semibold">Dotări</h3>
         {AUTOVIT_EQUIPMENT.map((group) => (
           <div key={group.category} className="space-y-2">
@@ -1178,17 +1459,61 @@ export default function VehicleForm() {
           </div>
         ))}
       </Card>
-
+        </TabsContent>
+        <TabsContent value="anunt" className="space-y-4 pt-4">
       {/* Listing */}
-      <Card className="p-4 space-y-4">
+      <Card className="p-4 space-y-3">
         <h3 className="text-sm font-semibold">Anunț & Note</h3>
-        <TextField label="Titlu anunț" name="listing_title" value={form.listing_title as string} onChange={handleChange} placeholder="Custom title for online listings" />
         <div className="space-y-1.5">
-          <Label>Descriere anunț</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="listing_title">Titlu anunț</Label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground"
+              onClick={regenerateTitle}
+              title="Recompune titlul din specificații"
+            >
+              <RefreshCw className="mr-1 h-3 w-3" />
+              Din specificații
+            </Button>
+          </div>
+          <Input
+            id="listing_title"
+            value={(form.listing_title as string) ?? ''}
+            onChange={(e) => {
+              titleTouched.current = true
+              handleChange('listing_title', e.target.value)
+            }}
+            placeholder="Se completează automat din specificații"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="listing_description">Descriere anunț</Label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground"
+              onClick={generateDescription}
+              disabled={genDesc}
+              title="Generează descrierea cu AI din specificații și dotări"
+            >
+              {genDesc ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <Sparkles className="mr-1 h-3 w-3" />
+              )}
+              Generează cu AI
+            </Button>
+          </div>
           <Textarea
+            id="listing_description"
             value={(form.listing_description as string) ?? ''}
             onChange={(e) => handleChange('listing_description', e.target.value)}
-            placeholder="Description for online platforms..."
+            placeholder="Se poate genera cu AI din specificații și dotări."
             rows={4}
           />
         </div>
@@ -1211,9 +1536,196 @@ export default function VehicleForm() {
           </div>
         </div>
       </Card>
+        </TabsContent>
+        <TabsContent value="comercial" className="space-y-4 pt-4">
+      {/* Location & Source */}
+      <Card className="p-4 space-y-3">
+        <h3 className="text-sm font-semibold">Locație & Sursă</h3>
+        <div className="grid gap-4 md:grid-cols-3">
+          <SelectField
+            label="Locație"
+            name="location_id"
+            value={form.location_id != null ? String(form.location_id) : ''}
+            options={locationOptions}
+            onChange={(name, value) => handleNumericChange(name, value)}
+          />
+          <TextField label="Loc parcare" name="parking_spot" value={form.parking_spot as string} onChange={handleChange} placeholder="e.g. A-15" />
+          <SearchSelectField
+            label="Sursă"
+            name="source"
+            value={form.source as string}
+            options={[...VEHICLE_SOURCES]}
+            onChange={handleChange}
+            allowCustom
+            searchPlaceholder="Caută sursă..."
+          />
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <TextField label="Nume furnizor" name="supplier_name" value={form.supplier_name as string} onChange={handleChange} />
+          <TextField label="CIF furnizor" name="supplier_cif" value={form.supplier_cif as string} onChange={handleChange} />
+          <TextField label="Nr. factură intrare" name="acquisition_document_number" value={form.acquisition_document_number as string} onChange={handleChange} />
+        </div>
+      </Card>
+      {/* Pricing */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Achiziție */}
+        <Card className="p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Achiziție</h3>
+            {totalCost > 0 && (
+              <span className="text-xs font-medium">Cost total: {totalCost.toLocaleString('ro-RO')} EUR</span>
+            )}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Preț achiziție (LEI)</Label>
+              <Input type="number" step="0.01" value={inputVal(form.acquisition_price)} onChange={(e) => handleAcqLei(e.target.value)} placeholder="RON" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Data factură</Label>
+              <Input type="date" value={(form.acquisition_date as string) ?? ''} onChange={(e) => handleAcqDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Curs BNR (RON/EUR)</Label>
+              <Input type="number" step="0.0001" value={inputVal(form.acquisition_exchange_rate)} onChange={(e) => handleKurs(e.target.value)} placeholder={bnrLoading ? 'Se preia…' : 'auto la data facturii'} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Preț achiziție (EUR)</Label>
+              <Input type="number" step="0.01" value={inputVal(form.purchase_price_net)} onChange={(e) => handleAcqEur(e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Costuri suplimentare (EUR)</Label>
+              <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={addCostLine}>
+                <Plus className="mr-1 h-3 w-3" /> Adaugă linie
+              </Button>
+            </div>
+            {costLines.length === 0 && (
+              <p className="text-xs text-muted-foreground">Nicio linie. Adaugă recondiționare, transport etc.</p>
+            )}
+            {costLines.map((line, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
+                <div className="w-36 shrink-0">
+                  <SearchSelect
+                    value={line.type}
+                    onValueChange={(v) => patchLine(i, { type: v })}
+                    options={[...CARPARK_COST_TYPES]}
+                    placeholder="Tip cost"
+                    searchPlaceholder="Caută/adaugă..."
+                    allowCustom
+                  />
+                </div>
+                <Input placeholder="Descriere" className="min-w-[7rem] flex-1" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} />
+                <Input type="date" className="w-36 shrink-0" value={line.date} onChange={(e) => handleLineDate(i, e.target.value)} />
+                <Input type="number" step="0.01" placeholder="LEI" className="w-24 shrink-0" value={line.lei ?? ''} onChange={(e) => handleLineLei(i, e.target.value)} title={line.kurs ? `Curs BNR ${line.kurs}` : ''} />
+                <Input type="number" step="0.01" placeholder="EUR" className="w-24 shrink-0" value={line.eur ?? ''} onChange={(e) => handleLineEur(i, e.target.value)} />
+                <Button type="button" size="icon" variant="ghost" className="shrink-0" onClick={() => removeCostLine(i)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+        {/* Vânzare */}
+        <Card className="p-4 space-y-3">
+          <h3 className="text-sm font-semibold">Vânzare</h3>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Preț</Label>
+              <Input type="number" step="0.01" value={inputVal(form.list_price)} onChange={(e) => handleNumericChange('list_price', e.target.value)} />
+              {priceAlt(form.list_price) && (
+                <p className="text-[10px] text-muted-foreground">≈ {priceAlt(form.list_price)}</p>
+              )}
+              {listMargin && (
+                <p className={`text-xs ${listMargin.positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{listMargin.text}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Preț promoțional</Label>
+              <Input type="number" step="0.01" value={inputVal(form.promotional_price)} onChange={(e) => handleNumericChange('promotional_price', e.target.value)} />
+              {priceAlt(form.promotional_price) && (
+                <p className="text-[10px] text-muted-foreground">≈ {priceAlt(form.promotional_price)}</p>
+              )}
+            </div>
+            <SelectField
+              label="Monedă"
+              name="price_currency"
+              value={form.price_currency as string}
+              options={[
+                { value: 'EUR', label: 'EUR' },
+                { value: 'RON', label: 'RON' },
+                { value: 'USD', label: 'USD' },
+              ]}
+              onChange={handleCurrencyChange}
+            />
+            <div className="space-y-1.5">
+              <Label>Preț minim</Label>
+              <Input type="number" step="0.01" value={inputVal(form.minimum_price)} onChange={(e) => handleNumericChange('minimum_price', e.target.value)} />
+              {priceAlt(form.minimum_price) && (
+                <p className="text-[10px] text-muted-foreground">≈ {priceAlt(form.minimum_price)}</p>
+              )}
+              <p className="text-[10px] text-muted-foreground">Doar pentru alerte & statistici</p>
+              {minMargin && (
+                <p className={`text-xs ${minMargin.positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{minMargin.text}</p>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <CheckboxField label="Preț cu TVA" name="price_includes_vat" checked={!!form.price_includes_vat} onChange={handleChange} />
+            <CheckboxField label="Negociabil" name="is_negotiable" checked={!!form.is_negotiable} onChange={handleChange} />
+            <CheckboxField label="Regim marjă" name="margin_scheme" checked={!!form.margin_scheme} onChange={handleChange} />
+            <CheckboxField label="Eligibil finanțare" name="eligible_for_financing" checked={!!form.eligible_for_financing} onChange={handleChange} />
+          </div>
+          {isEdit && pricingHistory.length > 0 && (
+            <>
+              <Separator />
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Istoric preț</Label>
+                <ul className="max-h-32 space-y-0.5 overflow-y-auto text-xs text-muted-foreground">
+                  {pricingHistory.map((h, i) => {
+                    const d = new Date(h.created_at).toLocaleDateString('ro-RO')
+                    const cur = (form.price_currency as string) || 'EUR'
+                    const reasons: Record<string, string> = {
+                      manual_update: 'modificare manuală',
+                      rule: 'regulă de preț',
+                      promotion: 'promoție',
+                      initial: 'preț inițial',
+                    }
+                    const reason = h.change_reason ? reasons[h.change_reason] ?? h.change_reason : ''
+                    const changed = h.old_price != null && h.old_price !== h.new_price
+                    const price = changed
+                      ? `${(h.old_price ?? 0).toLocaleString('ro-RO')} → ${(h.new_price ?? 0).toLocaleString('ro-RO')} ${cur}`
+                      : `${(h.new_price ?? 0).toLocaleString('ro-RO')} ${cur}`
+                    return (
+                      <li key={i}>
+                        {d} — {price}
+                        {reason ? ` · ${reason}` : ''}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
+        </TabsContent>
+      </Tabs>
 
       {/* Submit bar */}
       <div className="flex justify-end gap-2 sticky bottom-4">
+        <Button variant="secondary" type="button" onClick={saveDraft} className="mr-auto">
+          Salvează ciornă
+        </Button>
+        {isEdit && (
+          <Button variant="ghost" type="button" asChild>
+            <Link to={`/app/carpark/${id}`}>
+              <ArrowLeft className="mr-1 h-4 w-4" />
+              Înapoi la profil
+            </Link>
+          </Button>
+        )}
         <Button variant="outline" type="button" asChild>
           <Link to={isEdit ? `/app/carpark/${id}` : '/app/carpark'}>Cancel</Link>
         </Button>
