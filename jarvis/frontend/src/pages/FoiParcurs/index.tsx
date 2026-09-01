@@ -1705,6 +1705,9 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
   // "Corectează" is gated by the role matrix (test_drive.contracts.correct); admins
   // bypass. Default-deny to match the backend decorator — absent grant → hidden.
   const canCorrect = isAdmin || !!user?.permissions?.['test_drive.contracts.correct']
+  // "Marchează ca intern/extern" is gated by the role matrix
+  // (test_drive.contracts.drive_type); admins bypass.
+  const canChangeDriveType = isAdmin || !!user?.permissions?.['test_drive.contracts.drive_type']
 
   const { data, isLoading } = useQuery({
     queryKey: ['foi-contracts-all', companyId, documentType],
@@ -2207,7 +2210,7 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                                 Corectează
                               </Button>
                             )}
-                            {isAdmin && c.route_type === 'TD' && (
+                            {canChangeDriveType && c.route_type === 'TD' && (
                               <Button variant="outline" size="sm"
                                 disabled={driveTypeMutation.isPending}
                                 onClick={() => {
