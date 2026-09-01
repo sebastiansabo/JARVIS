@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Loader2, Search, Check, X, RefreshCw, Sparkles, Plus, ArrowLeft } from 'lucide-react'
+import { Save, Loader2, Search, Check, X, RefreshCw, Sparkles, Plus, ArrowLeft, Upload } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchSelect } from '@/components/shared/SearchSelect'
 import { Button } from '@/components/ui/button'
@@ -569,7 +569,54 @@ export default function VehicleForm() {
     }
     setForm((prev) => ({ ...prev, ...fields }))
     setDecodeResult(null)
-    toast.success('Vehicle specs applied from VIN decode')
+    toast.success('Date aplicate în formular')
+  }
+
+  // CIV import (AI vision extraction of a Romanian vehicle registration card)
+  const [isImportingCiv, setIsImportingCiv] = useState(false)
+  const civInputRef = useRef<HTMLInputElement>(null)
+
+  const handleCivFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file
+    if (!file) return
+    if (file.size > 12 * 1024 * 1024) {
+      toast.error('Fișierul CIV este prea mare (max 12MB).')
+      return
+    }
+    setIsImportingCiv(true)
+    try {
+      const result = await carparkApi.decodeCIV(file)
+      const f = result.data?.vehicle_fields as Record<string, unknown> | undefined
+      if (result.success && f && Object.keys(f).length > 0) {
+        // Reuse the VIN-decode preview card so the user reviews before applying.
+        const preview = {
+          specs: {
+            brand: f.brand ?? '',
+            model: f.model ?? '',
+            model_year: f.year_of_manufacture ?? 0,
+            fuel_type: f.fuel_type ?? '',
+            engine_power_hp: f.engine_power_hp ?? 0,
+            engine_displacement_cc: f.engine_displacement_cc ?? 0,
+            transmission: f.transmission ?? '',
+            body_type: f.body_type ?? '',
+            drive_type: f.drive_type ?? '',
+          },
+          vehicle_fields: f,
+          provider: 'CIV',
+          confidence: result.data?.confidence ?? 0.9,
+        } as unknown as VINDecodeResult
+        handleTabChange('vehicul')
+        setDecodeResult(preview)
+        toast.success('CIV citit — verifică datele și apasă „Aplică".')
+      } else {
+        toast.error(result.error || 'Nu am putut extrage date din CIV.')
+      }
+    } catch (err: any) {
+      toast.error(err?.data?.error || 'Importul CIV a eșuat.')
+    } finally {
+      setIsImportingCiv(false)
+    }
   }
 
   // VIN duplicate check
@@ -961,6 +1008,27 @@ export default function VehicleForm() {
                 </Link>
               </Button>
             )}
+            <input
+              ref={civInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={handleCivFile}
+            />
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => civInputRef.current?.click()}
+              disabled={isImportingCiv}
+              title="Importă datele dintr-o poză sau PDF al CIV-ului"
+            >
+              {isImportingCiv ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-1 h-4 w-4" />
+              )}
+              Importă CIV
+            </Button>
             <Button variant="outline" type="button" asChild>
               <Link to={isEdit ? `/app/carpark/${id}` : '/app/carpark'}>
                 Cancel
@@ -1105,21 +1173,21 @@ export default function VehicleForm() {
                   </span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 text-xs text-muted-foreground mb-2">
-                  {decodeResult.specs.fuel_type && <span>Fuel: {decodeResult.specs.fuel_type}</span>}
-                  {decodeResult.specs.engine_power_hp > 0 && <span>Power: {decodeResult.specs.engine_power_hp} HP</span>}
-                  {decodeResult.specs.engine_displacement_cc > 0 && <span>Engine: {decodeResult.specs.engine_displacement_cc} cc</span>}
-                  {decodeResult.specs.transmission && <span>Trans: {decodeResult.specs.transmission}</span>}
-                  {decodeResult.specs.body_type && <span>Body: {decodeResult.specs.body_type}</span>}
-                  {decodeResult.specs.drive_type && <span>Drive: {decodeResult.specs.drive_type}</span>}
+                  {decodeResult.specs.fuel_type && <span>Combustibil: {decodeResult.specs.fuel_type}</span>}
+                  {decodeResult.specs.engine_power_hp > 0 && <span>Putere: {decodeResult.specs.engine_power_hp} CP</span>}
+                  {decodeResult.specs.engine_displacement_cc > 0 && <span>Motor: {decodeResult.specs.engine_displacement_cc} cmc</span>}
+                  {decodeResult.specs.transmission && <span>Cutie: {decodeResult.specs.transmission}</span>}
+                  {decodeResult.specs.body_type && <span>Caroserie: {decodeResult.specs.body_type}</span>}
+                  {decodeResult.specs.drive_type && <span>Tracțiune: {decodeResult.specs.drive_type}</span>}
                 </div>
                 <div className="flex gap-2">
                   <Button type="button" size="sm" onClick={applyDecodedFields}>
                     <Check className="mr-1 h-3 w-3" />
-                    Apply to Vehicle
+                    Aplică
                   </Button>
                   <Button type="button" size="sm" variant="ghost" onClick={() => setDecodeResult(null)}>
                     <X className="mr-1 h-3 w-3" />
-                    Dismiss
+                    Renunță
                   </Button>
                 </div>
               </div>
