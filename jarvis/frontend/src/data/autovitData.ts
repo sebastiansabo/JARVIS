@@ -231,6 +231,20 @@ export const AUTOVIT_SEATS = [
   { value: '9', label: '9' },
 ] as const
 
+// ── Vehicle Source (acquisition channel) ────────────────────
+export const VEHICLE_SOURCES = [
+  { value: 'poro', label: 'PoRo' },
+  { value: 'buyback', label: 'Buyback' },
+  { value: 'irc', label: 'IRC (Comandă / Licitații)' },
+] as const
+
+// ── Acquisition cost-line types (predefined; custom values allowed) ──
+export const CARPARK_COST_TYPES = [
+  'Recondiționare', 'Transport', 'Vopsitorie', 'Piese schimb', 'Manoperă service',
+  'Comision achiziție', 'Taxe / Impozite', 'Asigurare', 'Detailing', 'Anvelope',
+  'Documente / Acte', 'Alte costuri',
+].map((c) => ({ value: c, label: c }))
+
 // ── Equipment / Dotări ──────────────────────────────────────
 // Autovit «Dotări», grouped by category. Stored as a text[] of selected
 // values in carpark_vehicles.equipment_options.
