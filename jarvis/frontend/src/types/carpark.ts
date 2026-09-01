@@ -19,7 +19,12 @@ export interface VehicleCatalogItem {
   category: VehicleCategory
   status: VehicleStatus
   year_of_manufacture: number | null
+  manufacture_date: string | null
   fuel_type: string | null
+  fuel_tank_capacity_liters: number | null
+  battery_capacity_kwh: number | null
+  norma_combustibil: number | null
+  norma_energie: number | null
   transmission: string | null
   body_type: string | null
   mileage_km: number
@@ -63,6 +68,13 @@ export interface Vehicle extends VehicleCatalogItem {
   co2_emissions: number | null
   euro_standard: string | null
   max_weight_kg: number | null
+  payload_kg: number | null
+  cargo_volume_m3: number | null
+  cargo_length_mm: number | null
+  cargo_width_mm: number | null
+  cargo_height_mm: number | null
+  euro_pallets: number | null
+  interior_material: string | null
   doors: number | null
   seats: number | null
   tire_type: string | null
