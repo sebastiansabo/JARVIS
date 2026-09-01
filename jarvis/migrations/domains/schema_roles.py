@@ -695,6 +695,19 @@ def create_schema_roles(conn, cursor):
           AND p.action_key <> 'drive_type'
         ON CONFLICT (role_id, permission_id) DO NOTHING
     ''')
+    # Grant drive_type to Manager too — managers clean up sessions colleagues
+    # mis-marked internal↔external. Admin already covered above; Viewer stays
+    # denied. Idempotent + non-clobbering: DO NOTHING preserves a later manual
+    # revoke in the matrix.
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'all', TRUE
+        FROM roles r
+        CROSS JOIN permissions_v2 p
+        WHERE r.name = 'Manager'
+          AND p.module_key = 'test_drive' AND p.entity_key = 'contracts' AND p.action_key = 'drive_type'
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+    ''')
 
     # Migration: Add CRM RAG source permissions if not already present
     crm_rag_perms = [
