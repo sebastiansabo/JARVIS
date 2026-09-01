@@ -8,18 +8,21 @@
 // ── Brands ──────────────────────────────────────────────────
 
 export const AUTOVIT_BRANDS = [
-  'Abarth', 'Acura', 'Aiways', 'Alfa Romeo', 'Alpine', 'Aston Martin',
-  'Audi', 'Bentley', 'BMW', 'Bugatti', 'Buick', 'BYD', 'Cadillac',
-  'Caterham', 'Chevrolet', 'Chrysler', 'Citroen', 'Cupra', 'Dacia',
-  'Daewoo', 'Daihatsu', 'DFSK', 'Dodge', 'DS', 'Ferrari', 'Fiat',
-  'Ford', 'Genesis', 'GMC', 'Great Wall', 'Honda', 'Hummer', 'Hyundai',
-  'Infiniti', 'Isuzu', 'Iveco', 'Jaguar', 'Jeep', 'Kia', 'KTM',
-  'Lada', 'Lamborghini', 'Lancia', 'Land Rover', 'Lexus', 'Lincoln',
-  'Lotus', 'Maserati', 'Maybach', 'Mazda', 'McLaren', 'Mercedes-Benz',
-  'MG', 'MINI', 'Mitsubishi', 'Morgan', 'Nissan', 'Opel', 'Peugeot',
-  'Polestar', 'Pontiac', 'Porsche', 'Renault', 'Rolls-Royce', 'Rover',
-  'Saab', 'SEAT', 'Skoda', 'Smart', 'SsangYong', 'Subaru', 'Suzuki',
-  'Tesla', 'Toyota', 'Trabant', 'Volkswagen', 'Volvo', 'Wartburg',
+  'Abarth', 'Acura', 'Aiways', 'Alfa Romeo', 'Alpina', 'Alpine',
+  'Aston Martin', 'Audi', 'Baic', 'Bentley', 'BMW', 'Bugatti', 'Buick',
+  'BYD', 'Cadillac', 'Caterham', 'Chery', 'Chevrolet', 'Chrysler',
+  'Citroen', 'Cupra', 'Dacia', 'Daewoo', 'Daihatsu', 'DFSK', 'Dodge',
+  'DR', 'DS', 'Ferrari', 'Fiat', 'Ford', 'Foton', 'Genesis', 'GMC',
+  'Great Wall', 'Honda', 'Hummer', 'Hyundai', 'Ineos', 'Infiniti',
+  'Isuzu', 'Iveco', 'Jaecoo', 'Jaguar', 'Jeep', 'Kia', 'KTM', 'Lada',
+  'Lamborghini', 'Lancia', 'Land Rover', 'Leapmotor', 'Lexus', 'Lincoln',
+  'Lotus', 'Lucid', 'Lynk & Co', 'Maserati', 'Maxus', 'Maybach', 'Mazda',
+  'McLaren', 'Mercedes-Benz', 'MG', 'MINI', 'Mitsubishi', 'Morgan', 'NIO',
+  'Nissan', 'Omoda', 'Opel', 'Peugeot', 'Polestar', 'Pontiac', 'Porsche',
+  'RAM', 'Renault', 'Rivian', 'Rolls-Royce', 'Rover', 'Saab', 'SEAT',
+  'Seres', 'Skoda', 'Smart', 'SsangYong', 'Subaru', 'Suzuki', 'Tesla',
+  'Toyota', 'Trabant', 'Volkswagen', 'Volvo', 'Voyah', 'Wartburg',
+  'XPeng', 'Zeekr',
 ] as const
 
 // ── Models per brand ────────────────────────────────────────
@@ -76,17 +79,22 @@ export const AUTOVIT_MODELS: Record<string, string[]> = {
 
 // ── Body Types ──────────────────────────────────────────────
 
+// Aligned to Autovit «Tip caroserie» (autoturisme) labels + order. Value slugs
+// are kept stable (they are persisted in carpark_vehicles.body_type) — only
+// labels changed and Minibus added. Pickup / Van are Autovit's Autoutilitare
+// categories, kept because the dealer profile mixes cars + commercials.
 export const AUTOVIT_BODY_TYPES = [
   { value: 'sedan', label: 'Sedan' },
-  { value: 'suv', label: 'SUV' },
-  { value: 'compact', label: 'Hatchback / Compact' },
-  { value: 'combi', label: 'Break / Combi' },
+  { value: 'combi', label: 'Break' },
+  { value: 'suv', label: 'Off-road (SUV)' },
   { value: 'coupe', label: 'Coupe' },
-  { value: 'cabrio', label: 'Cabrio / Decapotabil' },
-  { value: 'minivan', label: 'Monovolum / Minivan' },
-  { value: 'city-car', label: 'City Car' },
-  { value: 'small-car', label: 'Small Car' },
-  { value: 'pickup', label: 'Pickup' },
+  { value: 'cabrio', label: 'Cabrio' },
+  { value: 'compact', label: 'Compactă' },
+  { value: 'minivan', label: 'Monovolum' },
+  { value: 'minibus', label: 'Minibus' },
+  { value: 'city-car', label: 'Mașină de oraș' },
+  { value: 'small-car', label: 'Mașină mică' },
+  { value: 'pickup', label: 'Pick-up' },
   { value: 'van', label: 'Van / Utilitara' },
 ] as const
 
@@ -98,20 +106,20 @@ export const AUTOVIT_FUEL_TYPES = [
   { value: 'electric', label: 'Electric' },
   { value: 'hybrid', label: 'Hibrid' },
   { value: 'plugin-hybrid', label: 'Hibrid Plug-In' },
+  { value: 'mild-hybrid-petrol', label: 'Mild Hybrid Benzina' },
+  { value: 'mild-hybrid-diesel', label: 'Mild Hybrid Diesel' },
   { value: 'petrol-lpg', label: 'Benzina + GPL' },
   { value: 'petrol-cng', label: 'Benzina + CNG' },
   { value: 'hydrogen', label: 'Hidrogen' },
+  { value: 'ethanol', label: 'Etanol' },
 ] as const
 
 // ── Gearbox / Transmission ─────────────────────────────────
 
+// Autovit «Cutie de viteze» — the marketplace filter has only Manuală / Automată.
 export const AUTOVIT_GEARBOX_TYPES = [
   { value: 'manual', label: 'Manuala' },
   { value: 'automatic', label: 'Automata' },
-  { value: 'dual-clutch', label: 'Dublu ambreiaj (DSG/PDK)' },
-  { value: 'cvt', label: 'CVT' },
-  { value: 'semi-automatic', label: 'Semi-automata' },
-  { value: 'automated-manual', label: 'Manuala automatizata' },
 ] as const
 
 // ── Drive Type ──────────────────────────────────────────────
@@ -141,6 +149,8 @@ export const AUTOVIT_COLORS = [
   { value: 'orange', label: 'Portocaliu' },
   { value: 'gold', label: 'Auriu' },
   { value: 'violet', label: 'Violet / Mov' },
+  { value: 'bordeaux', label: 'Bordo' },
+  { value: 'pink', label: 'Roz' },
   { value: 'other', label: 'Alta culoare' },
 ] as const
 
@@ -157,11 +167,24 @@ export const AUTOVIT_INTERIOR_COLORS = [
   { value: 'other', label: 'Alta culoare' },
 ] as const
 
+// ── Interior Material / Tapițerie ───────────────────────────
+
+// Autovit «Tapițerie» — upholstery material options.
+export const AUTOVIT_INTERIOR_MATERIALS = [
+  { value: 'textile', label: 'Textil' },
+  { value: 'leather', label: 'Piele' },
+  { value: 'leather-natural', label: 'Piele naturală' },
+  { value: 'leather-eco', label: 'Piele ecologică' },
+  { value: 'velour', label: 'Velur' },
+  { value: 'alcantara', label: 'Alcantara' },
+] as const
+
 // ── Euro Emission Standards ─────────────────────────────────
 
 export const AUTOVIT_EURO_STANDARDS = [
   { value: 'euro-6d', label: 'Euro 6d' },
   { value: 'euro-6d-temp', label: 'Euro 6d-TEMP' },
+  { value: 'euro-6c', label: 'Euro 6c' },
   { value: 'euro-6', label: 'Euro 6' },
   { value: 'euro-5', label: 'Euro 5' },
   { value: 'euro-4', label: 'Euro 4' },
@@ -180,20 +203,22 @@ export const AUTOVIT_VEHICLE_STATES = [
 
 // ── Doors ───────────────────────────────────────────────────
 
+// Autovit «Număr de portiere» — grouped exactly as the marketplace filter.
 export const AUTOVIT_DOORS = [
   { value: '2', label: '2/3' },
   { value: '4', label: '4/5' },
-  { value: '6', label: '6+' },
 ] as const
 
 // ── Seats ───────────────────────────────────────────────────
 
+// Autovit «Număr de locuri» — discrete counts 2–9.
 export const AUTOVIT_SEATS = [
   { value: '2', label: '2' },
+  { value: '3', label: '3' },
   { value: '4', label: '4' },
   { value: '5', label: '5' },
   { value: '6', label: '6' },
   { value: '7', label: '7' },
   { value: '8', label: '8' },
-  { value: '9', label: '9+' },
+  { value: '9', label: '9' },
 ] as const

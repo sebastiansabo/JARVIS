@@ -1866,6 +1866,11 @@ def _create_carpark_incremental(conn, cursor):
         ('gw_file_number', 'VARCHAR(50)'), ('is_impus', 'BOOLEAN DEFAULT FALSE'),
         ('missing_civ', 'BOOLEAN DEFAULT FALSE'), ('stock_removed', 'BOOLEAN DEFAULT FALSE'),
         ('stock_removed_date', 'DATE'),
+        # Fabrication date at year+month precision (stored as the 1st of the
+        # chosen month) — backs the "Date of fabrication" form field;
+        # year_of_manufacture is kept in sync client-side for the existing
+        # fleet year-range filters.
+        ('manufacture_date', 'DATE'),
         # Inter-company transfer: marks a vehicle that landed here via a
         # transfer FROM another AutoWorld sibling company (see
         # carpark_transfers below — this column is the fast "is this a
@@ -1881,6 +1886,56 @@ def _create_carpark_incremental(conn, cursor):
               END IF;
             END $$;
         """)
+
+    # ── CarPark specs: fuel-tank / battery capacity + consumption norms ──
+    # Mirrors the Driving-Park (fp_vehicles) capacity/norm model so the
+    # car-profile form can capture battery capacity for EV/hybrid/PHEV and the
+    # fuel-consumption norm for combustion cars. Rendered conditionally by
+    # fuel_type in the CarPark VehicleForm (usesFuelTank / usesBattery).
+    for _col, _type in [
+        ('fuel_tank_capacity_liters', 'NUMERIC'),
+        ('battery_capacity_kwh', 'NUMERIC'),
+        ('norma_combustibil', 'NUMERIC'),
+        ('norma_energie', 'NUMERIC'),
+    ]:
+        cursor.execute(f"""
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_name='carpark_vehicles' AND column_name='{_col}') THEN
+                ALTER TABLE carpark_vehicles ADD COLUMN {_col} {_type};
+              END IF;
+            END $$;
+        """)
+
+    # ── CarPark specs: van / utilitară cargo details ──
+    # Shown conditionally when body_type = 'van' in the CarPark VehicleForm.
+    # (max_weight_kg / MMA already exists on the base carpark_vehicles table.)
+    for _col, _type in [
+        ('payload_kg', 'INTEGER'),
+        ('cargo_volume_m3', 'NUMERIC'),
+        ('cargo_length_mm', 'INTEGER'),
+        ('cargo_width_mm', 'INTEGER'),
+        ('cargo_height_mm', 'INTEGER'),
+        ('euro_pallets', 'INTEGER'),
+    ]:
+        cursor.execute(f"""
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_name='carpark_vehicles' AND column_name='{_col}') THEN
+                ALTER TABLE carpark_vehicles ADD COLUMN {_col} {_type};
+              END IF;
+            END $$;
+        """)
+
+    # ── CarPark specs: interior upholstery material (Autovit «Tapițerie») ──
+    cursor.execute("""
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                         WHERE table_name='carpark_vehicles' AND column_name='interior_material') THEN
+            ALTER TABLE carpark_vehicles ADD COLUMN interior_material VARCHAR(50);
+          END IF;
+        END $$;
+    """)
 
     # ── CarPark Dispo: inter-company vehicle transfer log ──
     # A transfer MOVES the vehicle row to the destination company
