@@ -351,13 +351,13 @@ def api_correct_contract(id):
 
 @foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/drive-type', methods=['PUT'])
 @login_required
+@v2_permission_required('test_drive', 'contracts', 'drive_type')
 def api_set_drive_type(id):
-    """Admin-only: reclassify a session between internal (company driving) and
-    external (client) — a cleaning tool for sessions a colleague mis-marked.
-    Flag-only: client identity is left intact, so the change is reversible with
-    one more flip. Logs `mark_internal` / `mark_external` to the session history."""
-    if not _is_admin():
-        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    """Reclassify a session between internal (company driving) and external
+    (client) — a cleaning tool for sessions a colleague mis-marked. Gated by the
+    role-matrix permission test_drive.contracts.drive_type (admins bypass; Admin
+    granted by default). Flag-only: client identity is left intact, so the change
+    is reversible with one more flip. Logs `mark_internal` / `mark_external`."""
     contract = _fp_repo.get_contract_by_id(id)
     if not contract:
         return jsonify({'success': False, 'error': 'Not found'}), 404
@@ -370,7 +370,7 @@ def api_set_drive_type(id):
 
     updated = _fp_repo.set_internal_flag(id, is_internal, getattr(current_user, 'email', None))
     log_history(id, 'mark_internal' if is_internal else 'mark_external')
-    logger.info('foi-parcurs contract %s marked %s by admin %s', id,
+    logger.info('foi-parcurs contract %s marked %s by %s', id,
                 'internal' if is_internal else 'external', getattr(current_user, 'email', '?'))
     return jsonify({'success': True, 'contract': updated})
 
