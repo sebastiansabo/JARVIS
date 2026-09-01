@@ -665,6 +665,7 @@ def create_schema_roles(conn, cursor):
     # Admin-only by default; admins allocate it to other roles in the matrix later.
     test_drive_perms = [
         ('test_drive', 'Test Drive', 'bi-car-front', 'module', 'Module', 'access', 'Access', 'Access the Sales / Test Drive section', False, 1),
+        ('test_drive', 'Test Drive', 'bi-car-front', 'contracts', 'Registrations', 'drive_type', 'Change drive type (internal/external)', 'Reclassify a session between internal (company) and client driving (Foaie de Parcurs)', False, 3),
     ]
     for p in test_drive_perms:
         cursor.execute('''
@@ -683,12 +684,15 @@ def create_schema_roles(conn, cursor):
     ''')
     # Grant Test Drive access to Viewer role as well (consilieri use the mobile
     # Test Drive tile). Admins can still revoke/adjust it in the matrix.
+    # EXCLUDE drive_type: reclassifying internal↔external is an admin cleanup
+    # action, default-deny for consilieri (admins grant it per-role in the matrix).
     cursor.execute('''
         INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
         SELECT r.id, p.id, 'all', TRUE
         FROM roles r
         CROSS JOIN permissions_v2 p
         WHERE r.name = 'Viewer' AND p.module_key = 'test_drive'
+          AND p.action_key <> 'drive_type'
         ON CONFLICT (role_id, permission_id) DO NOTHING
     ''')
 
