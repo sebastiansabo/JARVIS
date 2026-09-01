@@ -67,6 +67,8 @@ const ServiceCatalog = lazy(() => import('./pages/Service/Catalog'))
 const Hub = lazy(() => import('./pages/Hub'))
 const HappyBoard = lazy(() => import('./pages/HappyBoard'))
 const HappyTransparency = lazy(() => import('./pages/Happy/Transparency'))
+const AcorduriPage = lazy(() => import('./pages/Consents/AcorduriPage'))
+const AcordViewer = lazy(() => import('./pages/Consents/AcordViewer'))
 
 function PageLoader() {
   return (
@@ -272,6 +274,10 @@ export default function App() {
         {/* Open-access modules — all authenticated users */}
         <Route path="mobile-checkin" element={<SuspensePage><MobileCheckin /></SuspensePage>} />
         <Route path="download" element={<SuspensePage><DownloadApp /></SuspensePage>} />
+
+        {/* Acorduri — read-only re-read of signed consent documents, open to all authenticated users */}
+        <Route path="acorduri" element={<SuspensePage><AcorduriPage /></SuspensePage>} />
+        <Route path="acord/:docKey" element={<SuspensePage><AcordViewer /></SuspensePage>} />
 
         <Route path="*" element={<DefaultRedirect />} />
       </Route>
