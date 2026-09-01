@@ -25,6 +25,7 @@ from flask import Flask
 from flask_login import LoginManager, UserMixin
 
 from core.consents.routes import consents_bp
+from core.consents.repositories.consent_repository import ConsentRepository
 from .conftest import REAL_DB_AVAILABLE
 
 
@@ -120,28 +121,37 @@ def test_mine_returns_documents_key_for_logged_in_user(client, login_as):
 
 
 def test_mine_shows_signed_at_after_signing(client, login_as):
-    # Activate 'nda' as a Settings admin, sign it as a normal user, and
-    # confirm /api/consents/mine surfaces a non-null signed_at for it.
-    # insert_signature() is `ON CONFLICT (user_id, document_id) DO NOTHING`
-    # (see ConsentRepository), so re-signing on a repeat run is a harmless
-    # no-op — this test intentionally does NOT assert signed_at is None
-    # beforehand, since a prior run may have already signed it (deleting the
-    # row here would need raw SQL, which the Architecture hook forbids in
-    # any file whose name contains "routes", including this one). Restores
-    # is_active to its original value in a `finally` so this test doesn't
-    # leak state into test_consent_repository.py's "all seeds inactive"
-    # assumption or test_current_user_exposes_consents_complete below (both
-    # expect zero active mandatory docs).
+    # Activate 'nda' as a Settings admin, sign it as a normal user (id=2), and
+    # confirm /api/consents/mine flips signed_at from null to a timestamp.
+    # The `finally` restores the DB EXACTLY as it was found: it reverts
+    # is_active (so test_consent_repository.py's "all seeds inactive" and
+    # test_current_user_exposes_consents_complete's "zero active mandatory"
+    # invariants still hold) AND deletes the signature row this test created
+    # (so no stray user_consent_signatures row leaks into the real dev DB).
+    # The DELETE lives in ConsentRepository.delete_signature() — no SQL in
+    # this *routes*-named test file (Ruling R1). We also delete any
+    # pre-existing signature up front so signed_at is provably null before
+    # signing, making this a full round-trip on every run regardless of prior
+    # state.
+    repo = ConsentRepository()
     login_as(3)  # Settings admin
     target = _seed_doc(client, 'nda')
     original_active = target['is_active']
-    resp = client.put(f"/api/consents/documents/{target['id']}",
+    doc_id = target['id']
+    repo.delete_signature(2, doc_id)  # clear any leftover from a prior run
+    resp = client.put(f"/api/consents/documents/{doc_id}",
                       json={'is_active': True, 'body': target['body']})
     assert resp.status_code == 200
     try:
         login_as(2)  # normal user
+        resp = client.get('/api/consents/mine')
+        assert resp.status_code == 200
+        docs = {d['doc_key']: d for d in resp.get_json()['documents']}
+        assert 'nda' in docs
+        assert docs['nda']['signed_at'] is None
+
         sign_resp = client.post('/api/consents/sign', json={
-            'document_id': target['id'],
+            'document_id': doc_id,
             'signature_image': 'data:image/png;base64,AAAA',
         })
         assert sign_resp.status_code == 200
@@ -149,11 +159,11 @@ def test_mine_shows_signed_at_after_signing(client, login_as):
         resp = client.get('/api/consents/mine')
         assert resp.status_code == 200
         docs = {d['doc_key']: d for d in resp.get_json()['documents']}
-        assert 'nda' in docs
         assert docs['nda']['signed_at'] is not None
     finally:
+        repo.delete_signature(2, doc_id)
         login_as(3)
-        client.put(f"/api/consents/documents/{target['id']}",
+        client.put(f"/api/consents/documents/{doc_id}",
                    json={'is_active': original_active, 'body': target['body']})
 
 

@@ -76,6 +76,15 @@ class ConsentRepository(BaseRepository):
         ''', (user_id, document_id, version, signature_image,
               document_hash, ip, user_agent))
 
+    def delete_signature(self, user_id: int, document_id: int) -> None:
+        """Remove a user's signature for one document. Currently used only by
+        the route tests to undo a signature they created (keeping the real dev
+        DB pristine); mirrors insert_signature()'s (user_id, document_id) key."""
+        self.execute('''
+            DELETE FROM user_consent_signatures
+            WHERE user_id = %s AND document_id = %s
+        ''', (user_id, document_id))
+
     def count_active_mandatory(self) -> int:
         row = self.query_one('''
             SELECT COUNT(*) AS n FROM consent_documents
