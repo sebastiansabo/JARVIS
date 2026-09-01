@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { useTabParam } from '@/hooks/useTabParam'
 import {
   FileSpreadsheet,
@@ -37,6 +38,7 @@ import {
   Plus,
   Ticket,
   MoreHorizontal,
+  FileCheck2,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -62,6 +64,7 @@ import { useIsMobile } from '@/hooks/useMediaQuery'
 import { fmtPunchTime } from '@/lib/punchTime'
 import { MobileCardList, type MobileCardField } from '@/components/shared/MobileCardList'
 import { profileApi, type ProfileUpdatePayload } from '@/api/profile'
+import { consentsApi } from '@/api/consents'
 import { sincronApi, type SincronTimesheetData } from '@/api/sincron'
 import { settingsApi } from '@/api/settings'
 import { checkinApi } from '@/api/checkin'
@@ -529,6 +532,59 @@ function SignatureSection() {
   )
 }
 
+// ─── Acorduri Semnate (signed consent documents) ─────────────────
+
+function fmtSignedAt(signedAt: string | null): string {
+  if (!signedAt) return 'Nesemnat'
+  const d = new Date(signedAt)
+  if (Number.isNaN(d.getTime())) return 'Nesemnat'
+  return d.toLocaleDateString('ro-RO', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function AcorduriSemnateSection() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['consents', 'mine'],
+    queryFn: () => consentsApi.getMine(),
+  })
+  const documents = data?.documents ?? []
+
+  if (!isLoading && documents.length === 0) return null
+
+  return (
+    <div className="border-t pt-3 space-y-2">
+      <span className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
+        <FileCheck2 className="h-3.5 w-3.5" />
+        Acorduri semnate
+      </span>
+      {isLoading ? (
+        <div className="space-y-1.5">
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-full" />
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {documents.map((doc) => (
+            <div key={doc.doc_key} className="flex items-center justify-between gap-3 text-sm">
+              <div className="min-w-0">
+                <p className="truncate leading-tight">{doc.title}</p>
+                <p className={cn('text-xs leading-tight', doc.signed_at ? 'text-muted-foreground' : 'text-orange-600')}>
+                  {doc.signed_at ? `Semnat pe ${fmtSignedAt(doc.signed_at)}` : 'Nesemnat'}
+                </p>
+              </div>
+              <Link
+                to={`/app/acord/${doc.doc_key}`}
+                className="shrink-0 text-xs font-medium text-primary hover:underline"
+              >
+                Vezi
+              </Link>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Profile Details Dialog ──────────────────────────────────────
 
 function ProfileDetailsDialog({
@@ -579,6 +635,7 @@ function ProfileDetailsDialog({
             <InfoField icon={Calendar} label="Contract Start" value={user?.contract_work_date ? new Date(user.contract_work_date).toLocaleDateString('ro-RO') : null} />
           </div>
           <SignatureSection />
+          <AcorduriSemnateSection />
           <AnniversaryBanners birthdate={user?.birthdate} contractDate={user?.contract_work_date} name={user?.name ?? ''} />
         </div>
       </DialogContent>

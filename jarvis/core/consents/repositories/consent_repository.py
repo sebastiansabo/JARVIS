@@ -93,6 +93,20 @@ class ConsentRepository(BaseRepository):
         ''', (user_id,))
         return int(row['n']) if row else 0
 
+    def get_user_signatures(self, user_id: int) -> List[Dict[str, Any]]:
+        """Active documents LEFT JOINed with this user's accepted signature —
+        used by the profile "Acorduri semnate" section (GET /api/consents/mine).
+        Unsigned docs come back with signed_at = NULL rather than being
+        omitted, so the caller can render "Nesemnat" for each one."""
+        return self.query_all('''
+            SELECT d.doc_key, d.title, s.signed_at
+            FROM consent_documents d
+            LEFT JOIN user_consent_signatures s
+              ON s.document_id = d.id AND s.user_id = %s AND s.response = 'accepted'
+            WHERE d.is_active = TRUE
+            ORDER BY d.sort_order, d.id
+        ''', (user_id,))
+
     def get_compliance(self) -> List[Dict[str, Any]]:
         return self.query_all('''
             SELECT u.id AS user_id, u.name, u.email, u.company,

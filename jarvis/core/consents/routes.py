@@ -113,6 +113,15 @@ def pending():
     return jsonify(_svc.get_pending_for_user(current_user.id))
 
 
+@consents_bp.route('/api/consents/mine')
+@login_required
+def mine():
+    """Current user's signed state for every active document — powers the
+    profile "Acorduri semnate" section. No SQL here (Ruling R1): the query
+    lives in ConsentRepository.get_user_signatures()."""
+    return jsonify({'documents': _svc.repo.get_user_signatures(current_user.id)})
+
+
 @consents_bp.route('/api/consents/sign', methods=['POST'])
 @login_required
 def sign():

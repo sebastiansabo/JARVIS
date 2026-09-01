@@ -65,6 +65,15 @@ interface PendingConsentsResponse {
   pending: ConsentDocument[]
 }
 
+// GET /api/consents/mine — current user's signed state for every active
+// document (LEFT JOIN, so unsigned docs still appear with signed_at: null).
+// Powers the profile "Acorduri semnate" section.
+export interface ConsentMineDocument {
+  doc_key: string
+  title: string
+  signed_at: string | null
+}
+
 interface SignConsentResponse {
   complete: boolean
   pending_count: number
@@ -72,6 +81,8 @@ interface SignConsentResponse {
 
 export const consentsApi = {
   getPending: () => api.get<PendingConsentsResponse>('/api/consents/pending'),
+
+  getMine: () => api.get<{ documents: ConsentMineDocument[] }>('/api/consents/mine'),
 
   sign: (documentId: number, signatureImage: string) =>
     api.post<SignConsentResponse>('/api/consents/sign', {

@@ -98,6 +98,65 @@ def test_mobile_pending_requires_auth(client):
     assert resp.status_code in (302, 401)
 
 
+def test_mine_requires_auth(client):
+    resp = client.get('/api/consents/mine')
+    assert resp.status_code in (302, 401)
+
+
+# ---------- Task 12: GET /api/consents/mine (profile "Acorduri semnate") ----------
+# The route itself does no SQL (Ruling R1) — it calls
+# ConsentRepository.get_user_signatures(), exercised here only through HTTP.
+
+def test_mine_returns_documents_key_for_logged_in_user(client, login_as):
+    login_as(2)  # normal user
+    resp = client.get('/api/consents/mine')
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert 'documents' in body
+    # All 3 seed docs are is_active=FALSE by default (see
+    # test_consent_repository.py), so an empty list here is expected and
+    # valid — the shape assertion above is what this test guards.
+    assert isinstance(body['documents'], list)
+
+
+def test_mine_shows_signed_at_after_signing(client, login_as):
+    # Activate 'nda' as a Settings admin, sign it as a normal user, and
+    # confirm /api/consents/mine surfaces a non-null signed_at for it.
+    # insert_signature() is `ON CONFLICT (user_id, document_id) DO NOTHING`
+    # (see ConsentRepository), so re-signing on a repeat run is a harmless
+    # no-op — this test intentionally does NOT assert signed_at is None
+    # beforehand, since a prior run may have already signed it (deleting the
+    # row here would need raw SQL, which the Architecture hook forbids in
+    # any file whose name contains "routes", including this one). Restores
+    # is_active to its original value in a `finally` so this test doesn't
+    # leak state into test_consent_repository.py's "all seeds inactive"
+    # assumption or test_current_user_exposes_consents_complete below (both
+    # expect zero active mandatory docs).
+    login_as(3)  # Settings admin
+    target = _seed_doc(client, 'nda')
+    original_active = target['is_active']
+    resp = client.put(f"/api/consents/documents/{target['id']}",
+                      json={'is_active': True, 'body': target['body']})
+    assert resp.status_code == 200
+    try:
+        login_as(2)  # normal user
+        sign_resp = client.post('/api/consents/sign', json={
+            'document_id': target['id'],
+            'signature_image': 'data:image/png;base64,AAAA',
+        })
+        assert sign_resp.status_code == 200
+
+        resp = client.get('/api/consents/mine')
+        assert resp.status_code == 200
+        docs = {d['doc_key']: d for d in resp.get_json()['documents']}
+        assert 'nda' in docs
+        assert docs['nda']['signed_at'] is not None
+    finally:
+        login_as(3)
+        client.put(f"/api/consents/documents/{target['id']}",
+                   json={'is_active': original_active, 'body': target['body']})
+
+
 # ---------- IDOR guard: sign always uses the session user, never body user_id ----------
 
 def test_sign_uses_session_user_not_body(client, login_as):
