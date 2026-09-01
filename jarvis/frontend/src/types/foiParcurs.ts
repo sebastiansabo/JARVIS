@@ -298,6 +298,12 @@ export interface FoiContract {
   // the client is the company and a gate-valid contact person drove.
   driver_name?: string | null
   driver_contact_id?: number | null
+  // Driver-licence snapshot recorded on the foaie (returned by the detail
+  // endpoint; the list omits driver_license_photo as it's a large data URL).
+  // Editable on an archived session via the Corectează dialog → /correct.
+  driver_license_number?: string | null
+  driver_license_expiry?: string | null
+  driver_license_photo?: string | null
   event_id?: number | null
   // Joined HR event name (Task 15) — LEFT JOIN hr.events he ON he.id =
   // fp.event_id in get_contracts; populates the "Eveniment" list/detail badge.
