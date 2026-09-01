@@ -340,6 +340,12 @@ def api_current_user():
         all_perms = _perm_repo.get_all_role_permissions(current_user.role_id) if current_user.role_id else {}
         perm_scopes = _perm_repo.get_all_role_permission_scopes(current_user.role_id) if current_user.role_id else {}
 
+        # Mandatory consent-documents gate status — single 2-query pass
+        # (never call is_complete()/pending_count() separately here; this
+        # endpoint runs on ~every request).
+        from core.consents.services.consent_service import ConsentService as _ConsentSvc
+        _consent_status = _ConsentSvc().get_status(current_user.id)
+
         def _access(module_key, fallback_attr):
             if module_key in mod_access:
                 return mod_access[module_key]
@@ -406,6 +412,9 @@ def api_current_user():
                 # Scope values for granted permissions — "module.entity.action" → scope string
                 # Used by HR module to determine team filter behavior without extra round-trip
                 'permission_scopes': perm_scopes,
+                # Mandatory consent-documents gate — read by the frontend gate
+                'consents_complete': _consent_status['complete'],
+                'pending_consents_count': _consent_status['pending_count'],
             }
         })
     return jsonify({'authenticated': False})

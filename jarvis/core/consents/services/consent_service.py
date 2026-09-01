@@ -30,6 +30,14 @@ class ConsentService:
     def pending_count(self, user_id: int) -> int:
         return max(0, self.repo.count_active_mandatory() - self.repo.count_user_accepted_mandatory(user_id))
 
+    def get_status(self, user_id: int) -> Dict[str, Any]:
+        """Combined is_complete + pending_count in a single pass (2 queries
+        instead of 4) — used by the hot current-user endpoints, which must
+        not call is_complete()/pending_count() separately."""
+        active = self.repo.count_active_mandatory()
+        accepted = self.repo.count_user_accepted_mandatory(user_id)
+        return {'complete': accepted >= active, 'pending_count': max(0, active - accepted)}
+
     def sign(self, user_id: int, document_id: int, signature_image: str,
              ip: str, user_agent: str) -> Dict[str, Any]:
         doc = self.repo.get_by_id(document_id)
