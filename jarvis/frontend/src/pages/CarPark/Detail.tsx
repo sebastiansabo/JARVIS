@@ -170,9 +170,9 @@ function Field({ label, value, className }: { label: string; value: React.ReactN
   // Hide fields with no data — the profile shows only what the car actually has.
   if (value == null || value === '' || value === '-') return null
   return (
-    <div className={className}>
+    <div className={`min-w-0 ${className ?? ''}`}>
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="text-sm font-medium">{value}</dd>
+      <dd className="text-sm font-medium break-words">{value}</dd>
     </div>
   )
 }
@@ -1039,7 +1039,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
         <div className="space-y-6">
           <Card className="p-4 h-fit">
             <h3 className="text-sm font-semibold mb-3">Identificare</h3>
-            <dl className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+            <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               <Field label="VIN" value={v.vin} />
               <Field label="Nr. stoc" value={v.nr_stoc} />
               <Field label="Înmatriculare" value={v.registration_number} />
@@ -1053,7 +1053,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           {/* Technical */}
           <Card className="p-4 h-fit">
             <h3 className="text-sm font-semibold mb-3">Specificații tehnice</h3>
-            <dl className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+            <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               <Field label="Motor" value={v.engine_displacement_cc ? `${v.engine_displacement_cc} cc` : null} />
               <Field label="Putere" value={v.engine_power_hp ? `${v.engine_power_hp} HP${v.engine_power_kw ? ` (${v.engine_power_kw} kW)` : ''}` : null} />
               <Field label="Cuplu" value={v.engine_torque_nm ? `${v.engine_torque_nm} Nm` : null} />
@@ -1079,7 +1079,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           {v.body_type === 'van' && (
             <Card className="p-4 h-fit">
               <h3 className="text-sm font-semibold mb-3">Cargo (Utilitară)</h3>
-              <dl className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+              <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 <Field label="Masă maximă" value={v.max_weight_kg != null ? `${v.max_weight_kg} kg` : null} />
                 <Field label="Sarcină utilă" value={v.payload_kg != null ? `${v.payload_kg} kg` : null} />
                 <Field label="Volum util" value={v.cargo_volume_m3 != null ? `${v.cargo_volume_m3} m³` : null} />
@@ -1145,7 +1145,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
       {/* Condition */}
       <Card className="p-4">
         <h3 className="text-sm font-semibold mb-3">Stare & Garanție</h3>
-        <dl className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+        <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           <Field label="Primul proprietar" value={v.is_first_owner ? 'Da' : null} />
           <Field label="Istoric accidente" value={v.has_accident_history ? 'Da' : null} />
           <Field label="Carte service" value={v.has_service_book ? 'Da' : null} />
@@ -1165,7 +1165,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
       {/* Source & Acquisition */}
       <Card className="p-4">
         <h3 className="text-sm font-semibold mb-3">Sursă & Achiziție</h3>
-        <dl className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+        <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           <Field label="Sursă" value={sourceLabel(v.source)} />
           <Field label="Furnizor" value={v.supplier_name} />
           <Field label="CIF furnizor" value={v.supplier_cif} />
