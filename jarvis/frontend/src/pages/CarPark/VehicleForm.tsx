@@ -37,6 +37,7 @@ import {
   AUTOVIT_DRIVE_TYPES,
   AUTOVIT_COLORS,
   AUTOVIT_INTERIOR_COLORS,
+  AUTOVIT_INTERIOR_MATERIALS,
   AUTOVIT_EURO_STANDARDS,
   AUTOVIT_VEHICLE_STATES,
   AUTOVIT_DOORS,
@@ -195,6 +196,26 @@ function CheckboxField({
 // ── Build options ──────────────────────────────────────────
 const brandOptions = AUTOVIT_BRANDS.map((b) => ({ value: b, label: b }))
 
+// "Date of fabrication" = Month + Year dropdowns (native <input type="month">
+// renders inconsistently across browsers). Stored as manufacture_date = YYYY-MM-01.
+const MONTH_OPTIONS = [
+  ['01', 'January'], ['02', 'February'], ['03', 'March'], ['04', 'April'],
+  ['05', 'May'], ['06', 'June'], ['07', 'July'], ['08', 'August'],
+  ['09', 'September'], ['10', 'October'], ['11', 'November'], ['12', 'December'],
+].map(([value, label]) => ({ value, label }))
+const _fabCurrentYear = new Date().getFullYear()
+const YEAR_OPTIONS = Array.from({ length: 41 }, (_, i) =>
+  String(_fabCurrentYear + 1 - i),
+).map((y) => ({ value: y, label: y }))
+
+// Fuel-type → which capacity/norm fields apply (mirrors Drive Park's
+// usesFuelTank / usesBattery, mapped to CarPark's AUTOVIT_FUEL_TYPES values).
+const FUEL_USES_TANK = new Set(['petrol', 'diesel', 'hybrid', 'plugin-hybrid', 'mild-hybrid-petrol', 'mild-hybrid-diesel', 'petrol-lpg', 'petrol-cng', 'hydrogen'])
+// Mild hybrids deliberately excluded — no battery capacity / kWh norm.
+const FUEL_USES_BATTERY = new Set(['electric', 'hybrid', 'plugin-hybrid'])
+const usesFuelTank = (ft?: string | null) => FUEL_USES_TANK.has(ft ?? '')
+const usesBattery = (ft?: string | null) => FUEL_USES_BATTERY.has(ft ?? '')
+
 // ── Main Form ──────────────────────────────────────────────
 export default function VehicleForm() {
   const { vehicleId } = useParams<{ vehicleId: string }>()
@@ -234,7 +255,12 @@ export default function VehicleForm() {
     category: 'SH',
     state: 'Rulat',
     year_of_manufacture: null,
+    manufacture_date: '',
     fuel_type: '',
+    fuel_tank_capacity_liters: null,
+    battery_capacity_kwh: null,
+    norma_combustibil: null,
+    norma_energie: null,
     transmission: '',
     body_type: '',
     mileage_km: 0,
@@ -243,10 +269,18 @@ export default function VehicleForm() {
     drive_type: '',
     color_exterior: '',
     color_interior: '',
+    interior_material: '',
     doors: null,
     seats: null,
     euro_standard: '',
     co2_emissions: null,
+    max_weight_kg: null,
+    payload_kg: null,
+    cargo_volume_m3: null,
+    cargo_length_mm: null,
+    cargo_width_mm: null,
+    cargo_height_mm: null,
+    euro_pallets: null,
     current_price: null,
     list_price: null,
     minimum_price: null,
@@ -389,6 +423,29 @@ export default function VehicleForm() {
     setForm((prev) => ({ ...prev, [name]: num }))
   }
 
+  // "Date of fabrication" = Month + Year dropdowns. Both drive manufacture_date
+  // (DATE column, stored as the 1st of the chosen month) and keep
+  // year_of_manufacture in sync for the fleet year-range filters. Picking one
+  // half defaults the other (current year / January) so a full date always forms.
+  const fabMonth = (form.manufacture_date as string | null)?.slice(5, 7) ?? ''
+  const fabYear = (form.manufacture_date as string | null)?.slice(0, 4) ?? ''
+  const handleFabMonth = (month: string) => {
+    const year = fabYear || String(_fabCurrentYear)
+    setForm((prev) => ({
+      ...prev,
+      manufacture_date: `${year}-${month}-01`,
+      year_of_manufacture: Number(year),
+    }))
+  }
+  const handleFabYear = (year: string) => {
+    const month = fabMonth || '01'
+    setForm((prev) => ({
+      ...prev,
+      manufacture_date: `${year}-${month}-01`,
+      year_of_manufacture: Number(year),
+    }))
+  }
+
   // Submit
   const createMutation = useMutation({
     mutationFn: (data: Partial<Vehicle>) => carparkApi.createVehicle(data, effectiveCompanyId),
@@ -447,6 +504,28 @@ export default function VehicleForm() {
       }
     }
 
+    // Mirror Drive Park: persist only the capacity/norm fields relevant to the
+    // selected fuel type (null the rest so an EV keeps no stale fuel-tank value).
+    const ft = form.fuel_type as string
+    if (!usesFuelTank(ft)) {
+      payload.fuel_tank_capacity_liters = null
+      payload.norma_combustibil = null
+    }
+    if (!usesBattery(ft)) {
+      payload.battery_capacity_kwh = null
+      payload.norma_energie = null
+    }
+    // Cargo details only apply to vans — null them for other body types so a
+    // car switched away from Van / Utilitara keeps no stale cargo values.
+    if (form.body_type !== 'van') {
+      payload.payload_kg = null
+      payload.cargo_volume_m3 = null
+      payload.cargo_length_mm = null
+      payload.cargo_width_mm = null
+      payload.cargo_height_mm = null
+      payload.euro_pallets = null
+    }
+
     if (isEdit) {
       updateMutation.mutate(payload as Partial<Vehicle>)
     } else {
@@ -500,6 +579,67 @@ export default function VehicleForm() {
       {/* Identification */}
       <Card className="p-4 space-y-4">
         <h3 className="text-sm font-semibold">Identification</h3>
+        <div className="grid gap-4 md:grid-cols-4">
+          <SearchSelectField
+            label="Brand"
+            name="brand"
+            value={form.brand as string}
+            options={brandOptions}
+            onChange={handleChange}
+            required
+            placeholder="Select brand"
+            searchPlaceholder="Search brand..."
+            allowCustom
+          />
+          <SearchSelectField
+            label="Model"
+            name="model"
+            value={form.model as string}
+            options={modelOptions}
+            onChange={handleChange}
+            required
+            placeholder={form.brand ? 'Select model' : 'Select brand first'}
+            searchPlaceholder="Search model..."
+            allowCustom
+            disabled={!form.brand}
+          />
+          <TextField label="Variant" name="variant" value={form.variant as string} onChange={handleChange} placeholder="e.g. xDrive40i" />
+          <SelectField
+            label="State"
+            name="state"
+            value={form.state as string}
+            options={[...AUTOVIT_VEHICLE_STATES]}
+            onChange={handleChange}
+          />
+        </div>
+        <div className="grid gap-4 md:grid-cols-4">
+          <TextField label="Generation" name="generation" value={form.generation as string} onChange={handleChange} placeholder="e.g. G05 (LCI)" />
+          <TextField label="Equipment Level" name="equipment_level" value={form.equipment_level as string} onChange={handleChange} placeholder="e.g. M Sport, Inscription" />
+          <div className="space-y-1.5">
+            <Label>Date of fabrication</Label>
+            <div className="flex gap-2">
+              <div className="flex-1 min-w-0">
+                <SearchSelect
+                  value={fabMonth}
+                  onValueChange={handleFabMonth}
+                  options={MONTH_OPTIONS}
+                  placeholder="Month"
+                  searchPlaceholder="Month..."
+                />
+              </div>
+              <div className="w-28 shrink-0">
+                <SearchSelect
+                  value={fabYear}
+                  onValueChange={handleFabYear}
+                  options={YEAR_OPTIONS}
+                  placeholder="Year"
+                  searchPlaceholder="Year..."
+                />
+              </div>
+            </div>
+          </div>
+          <TextField label="First Registration" name="first_registration_date" value={form.first_registration_date as string} onChange={handleChange} type="date" />
+        </div>
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-1.5">
             <Label htmlFor="vin">
@@ -571,59 +711,12 @@ export default function VehicleForm() {
             required
           />
         </div>
-        <div className="grid gap-4 md:grid-cols-4">
-          <SearchSelectField
-            label="Brand"
-            name="brand"
-            value={form.brand as string}
-            options={brandOptions}
-            onChange={handleChange}
-            required
-            placeholder="Select brand"
-            searchPlaceholder="Search brand..."
-            allowCustom
-          />
-          <SearchSelectField
-            label="Model"
-            name="model"
-            value={form.model as string}
-            options={modelOptions}
-            onChange={handleChange}
-            required
-            placeholder={form.brand ? 'Select model' : 'Select brand first'}
-            searchPlaceholder="Search model..."
-            allowCustom
-            disabled={!form.brand}
-          />
-          <TextField label="Variant" name="variant" value={form.variant as string} onChange={handleChange} placeholder="e.g. xDrive40i" />
-          <SelectField
-            label="State"
-            name="state"
-            value={form.state as string}
-            options={[...AUTOVIT_VEHICLE_STATES]}
-            onChange={handleChange}
-          />
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <TextField label="Generation" name="generation" value={form.generation as string} onChange={handleChange} placeholder="e.g. G05 (LCI)" />
-          <TextField label="Equipment Level" name="equipment_level" value={form.equipment_level as string} onChange={handleChange} placeholder="e.g. M Sport, Inscription" />
-          <TextField label="First Registration" name="first_registration_date" value={form.first_registration_date as string} onChange={handleChange} type="date" />
-        </div>
       </Card>
 
       {/* Technical */}
       <Card className="p-4 space-y-4">
         <h3 className="text-sm font-semibold">Technical Specs</h3>
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label>Year</Label>
-            <Input
-              type="number"
-              value={inputVal(form.year_of_manufacture)}
-              onChange={(e) => handleNumericChange('year_of_manufacture', e.target.value)}
-              placeholder="2024"
-            />
-          </div>
+        <div className="grid gap-4 md:grid-cols-3">
           <SearchSelectField
             label="Fuel Type"
             name="fuel_type"
@@ -649,9 +742,65 @@ export default function VehicleForm() {
             searchPlaceholder="Search body type..."
           />
         </div>
+        {(usesFuelTank(form.fuel_type as string) || usesBattery(form.fuel_type as string)) && (
+          <div className="grid gap-4 md:grid-cols-4">
+            {usesFuelTank(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Fuel tank capacity (L)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={inputVal(form.fuel_tank_capacity_liters)}
+                  onChange={(e) => handleNumericChange('fuel_tank_capacity_liters', e.target.value)}
+                  placeholder="e.g. 50"
+                />
+              </div>
+            )}
+            {usesBattery(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Battery capacity (kWh)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={inputVal(form.battery_capacity_kwh)}
+                  onChange={(e) => handleNumericChange('battery_capacity_kwh', e.target.value)}
+                  placeholder="e.g. 64"
+                />
+              </div>
+            )}
+            {usesFuelTank(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Normă consum (l/100 km)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  value={inputVal(form.norma_combustibil)}
+                  onChange={(e) => handleNumericChange('norma_combustibil', e.target.value)}
+                  placeholder="ex. 6.5"
+                />
+              </div>
+            )}
+            {usesBattery(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Normă energie (kWh/100 km)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  value={inputVal(form.norma_energie)}
+                  onChange={(e) => handleNumericChange('norma_energie', e.target.value)}
+                  placeholder="ex. 17.5"
+                />
+              </div>
+            )}
+          </div>
+        )}
         <div className="grid gap-4 md:grid-cols-4">
           <div className="space-y-1.5">
-            <Label>Mileage (km)</Label>
+            <Label>Odometer (km)</Label>
             <Input
               type="number"
               value={inputVal(form.mileage_km)}
@@ -701,6 +850,14 @@ export default function VehicleForm() {
             onChange={handleChange}
             searchPlaceholder="Search color..."
           />
+          <SearchSelectField
+            label="Interior material"
+            name="interior_material"
+            value={form.interior_material as string}
+            options={[...AUTOVIT_INTERIOR_MATERIALS]}
+            onChange={handleChange}
+            searchPlaceholder="Search material..."
+          />
           <SelectField
             label="Doors"
             name="doors"
@@ -734,6 +891,43 @@ export default function VehicleForm() {
             />
           </div>
         </div>
+        {form.body_type === 'van' && (
+          <div className="space-y-4 rounded-md border border-dashed p-3">
+            <h4 className="text-xs font-semibold text-muted-foreground">Cargo (Utilitară)</h4>
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="space-y-1.5">
+                <Label>Max authorized mass (kg)</Label>
+                <Input type="number" min={0} value={inputVal(form.max_weight_kg)} onChange={(e) => handleNumericChange('max_weight_kg', e.target.value)} placeholder="e.g. 3500" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Payload capacity (kg)</Label>
+                <Input type="number" min={0} value={inputVal(form.payload_kg)} onChange={(e) => handleNumericChange('payload_kg', e.target.value)} placeholder="e.g. 1200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Cargo volume (m³)</Label>
+                <Input type="number" min={0} step="0.1" value={inputVal(form.cargo_volume_m3)} onChange={(e) => handleNumericChange('cargo_volume_m3', e.target.value)} placeholder="e.g. 11.5" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Euro pallets</Label>
+                <Input type="number" min={0} value={inputVal(form.euro_pallets)} onChange={(e) => handleNumericChange('euro_pallets', e.target.value)} placeholder="e.g. 3" />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label>Cargo length (mm)</Label>
+                <Input type="number" min={0} value={inputVal(form.cargo_length_mm)} onChange={(e) => handleNumericChange('cargo_length_mm', e.target.value)} placeholder="e.g. 3200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Cargo width (mm)</Label>
+                <Input type="number" min={0} value={inputVal(form.cargo_width_mm)} onChange={(e) => handleNumericChange('cargo_width_mm', e.target.value)} placeholder="e.g. 1700" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Cargo height (mm)</Label>
+                <Input type="number" min={0} value={inputVal(form.cargo_height_mm)} onChange={(e) => handleNumericChange('cargo_height_mm', e.target.value)} placeholder="e.g. 1900" />
+              </div>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Pricing */}
