@@ -17,7 +17,7 @@ const { getContracts, getVehicles, getContractPdfUrl, setDriveType } = vi.hoiste
 vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { getContracts, getVehicles, getContractPdfUrl, setDriveType } }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-let mockUser: { role_name?: string } | null = null
+let mockUser: { role_name?: string; permissions?: Record<string, boolean> } | null = null
 vi.mock('@/stores/authStore', () => ({ useAuthStore: (sel: (s: unknown) => unknown) => sel({ user: mockUser }) }))
 
 import { SessionsTab } from './index'
@@ -42,12 +42,20 @@ describe('SessionsTab drive-type cleaning action', () => {
     await waitFor(() => expect(setDriveType).toHaveBeenCalledWith(42, true))
   })
 
-  it('hides the action from non-admins', async () => {
-    mockUser = { role_name: 'consilier' }
+  it('hides the action from a role without the matrix permission', async () => {
+    mockUser = { role_name: 'consilier', permissions: {} }
     wrap(<SessionsTab companyId={0} brand="" />)
     fireEvent.click(await screen.findByText('AutoWorld'))
-    // Footer renders (Istoric is visible to everyone) but the admin action does not.
+    // Footer renders (Istoric is visible to everyone) but the gated action does not.
     await screen.findByRole('button', { name: /istoric/i })
     expect(screen.queryByRole('button', { name: /marchează ca intern/i })).toBeNull()
+  })
+
+  it('shows the action to a non-admin granted test_drive.contracts.drive_type', async () => {
+    mockUser = { role_name: 'consilier', permissions: { 'test_drive.contracts.drive_type': true } }
+    wrap(<SessionsTab companyId={0} brand="" />)
+    fireEvent.click(await screen.findByText('AutoWorld'))
+    fireEvent.click(await screen.findByRole('button', { name: /marchează ca intern/i }))
+    await waitFor(() => expect(setDriveType).toHaveBeenCalledWith(42, true))
   })
 })
