@@ -533,8 +533,15 @@ class FoiParcursRepository(BaseRepository):
         columns only; applies to ANY status; bumps updated_at and stamps
         corrected_at/corrected_by (the "Modificat" audit marker). Returns the
         fresh row. Validation (km_end >= km_start, return >= departure, admin
-        gate) lives in the route — this is the persistence primitive."""
-        allowed = ('departure_datetime', 'return_datetime', 'km_start', 'km_end', 'advisor_name')
+        gate) lives in the route — this is the persistence primitive.
+
+        Also corrects the client identity snapshotted on the foaie itself
+        (client_name/phone + driver-licence fields) — these are stored columns,
+        not a live CRM join, so a finalized document only changes when written
+        here. The route decides which keys to pass (client_name never blank)."""
+        allowed = ('departure_datetime', 'return_datetime', 'km_start', 'km_end', 'advisor_name',
+                   'client_name', 'client_phone', 'driver_license_number',
+                   'driver_license_expiry', 'driver_license_photo')
         sets = {k: fields[k] for k in allowed if k in fields}
         if not sets:
             return self.get_contract_by_id(contract_id)
