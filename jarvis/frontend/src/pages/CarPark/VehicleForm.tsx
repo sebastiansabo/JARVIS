@@ -38,17 +38,19 @@ import {
   AUTOVIT_COLORS,
   AUTOVIT_INTERIOR_COLORS,
   AUTOVIT_INTERIOR_MATERIALS,
+  AUTOVIT_COLOR_FINISHES,
+  AUTOVIT_EQUIPMENT,
   AUTOVIT_EURO_STANDARDS,
   AUTOVIT_VEHICLE_STATES,
   AUTOVIT_DOORS,
   AUTOVIT_SEATS,
 } from '@/data/autovitData'
 
-type FormData = Record<string, string | number | boolean | null>
+type FormData = Record<string, string | number | boolean | null | string[]>
 
 /** Safely extract a numeric/string value for <Input value=...> (excludes boolean) */
-function inputVal(v: string | number | boolean | null | undefined): string | number {
-  if (v == null || typeof v === 'boolean') return ''
+function inputVal(v: string | number | boolean | string[] | null | undefined): string | number {
+  if (v == null || typeof v === 'boolean' || Array.isArray(v)) return ''
   return v
 }
 
@@ -311,6 +313,19 @@ export default function VehicleForm() {
     has_service_book: false,
     has_tuning: false,
     is_registered: false,
+    is_right_hand_drive: false,
+    has_particle_filter: false,
+    is_vintage: false,
+    is_damaged: false,
+    certified_mileage: false,
+    color_finish: '',
+    consum_urban: null,
+    consum_extraurban: null,
+    consum_mixt: null,
+    electric_range_km: null,
+    previous_owners: null,
+    country_of_origin: '',
+    equipment_options: [],
     first_registration_date: '',
     notes: '',
     internal_notes: '',
@@ -446,6 +461,15 @@ export default function VehicleForm() {
     }))
   }
 
+  // Dotări equipment: toggle a value in the equipment_options string[].
+  const toggleEquipment = (value: string) => {
+    setForm((prev) => {
+      const cur = Array.isArray(prev.equipment_options) ? (prev.equipment_options as string[]) : []
+      const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value]
+      return { ...prev, equipment_options: next }
+    })
+  }
+
   // Submit
   const createMutation = useMutation({
     mutationFn: (data: Partial<Vehicle>) => carparkApi.createVehicle(data, effectiveCompanyId),
@@ -510,10 +534,14 @@ export default function VehicleForm() {
     if (!usesFuelTank(ft)) {
       payload.fuel_tank_capacity_liters = null
       payload.norma_combustibil = null
+      payload.consum_urban = null
+      payload.consum_extraurban = null
+      payload.consum_mixt = null
     }
     if (!usesBattery(ft)) {
       payload.battery_capacity_kwh = null
       payload.norma_energie = null
+      payload.electric_range_km = null
     }
     // Cargo details only apply to vans — null them for other body types so a
     // car switched away from Van / Utilitara keeps no stale cargo values.
@@ -524,6 +552,10 @@ export default function VehicleForm() {
       payload.cargo_width_mm = null
       payload.cargo_height_mm = null
       payload.euro_pallets = null
+    }
+    // Empty equipment array → null (avoids empty-array SQL adaptation).
+    if (Array.isArray(payload.equipment_options) && (payload.equipment_options as string[]).length === 0) {
+      payload.equipment_options = null
     }
 
     if (isEdit) {
@@ -578,10 +610,10 @@ export default function VehicleForm() {
 
       {/* Identification */}
       <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Identification</h3>
+        <h3 className="text-sm font-semibold">Identificare</h3>
         <div className="grid gap-4 md:grid-cols-4">
           <SearchSelectField
-            label="Brand"
+            label="Marcă"
             name="brand"
             value={form.brand as string}
             options={brandOptions}
@@ -603,9 +635,9 @@ export default function VehicleForm() {
             allowCustom
             disabled={!form.brand}
           />
-          <TextField label="Variant" name="variant" value={form.variant as string} onChange={handleChange} placeholder="e.g. xDrive40i" />
+          <TextField label="Versiune" name="variant" value={form.variant as string} onChange={handleChange} placeholder="e.g. xDrive40i" />
           <SelectField
-            label="State"
+            label="Stare"
             name="state"
             value={form.state as string}
             options={[...AUTOVIT_VEHICLE_STATES]}
@@ -613,10 +645,10 @@ export default function VehicleForm() {
           />
         </div>
         <div className="grid gap-4 md:grid-cols-4">
-          <TextField label="Generation" name="generation" value={form.generation as string} onChange={handleChange} placeholder="e.g. G05 (LCI)" />
-          <TextField label="Equipment Level" name="equipment_level" value={form.equipment_level as string} onChange={handleChange} placeholder="e.g. M Sport, Inscription" />
+          <TextField label="Generație" name="generation" value={form.generation as string} onChange={handleChange} placeholder="e.g. G05 (LCI)" />
+          <TextField label="Nivel echipare" name="equipment_level" value={form.equipment_level as string} onChange={handleChange} placeholder="e.g. M Sport, Inscription" />
           <div className="space-y-1.5">
-            <Label>Date of fabrication</Label>
+            <Label>Data fabricației</Label>
             <div className="flex gap-2">
               <div className="flex-1 min-w-0">
                 <SearchSelect
@@ -638,7 +670,7 @@ export default function VehicleForm() {
               </div>
             </div>
           </div>
-          <TextField label="First Registration" name="first_registration_date" value={form.first_registration_date as string} onChange={handleChange} type="date" />
+          <TextField label="Prima înmatriculare" name="first_registration_date" value={form.first_registration_date as string} onChange={handleChange} type="date" />
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-1.5">
@@ -701,9 +733,9 @@ export default function VehicleForm() {
               </div>
             )}
           </div>
-          <TextField label="Stock Number" name="nr_stoc" value={form.nr_stoc as string} onChange={handleChange} />
+          <TextField label="Nr. stoc" name="nr_stoc" value={form.nr_stoc as string} onChange={handleChange} />
           <SelectField
-            label="Category"
+            label="Categorie"
             name="category"
             value={form.category as string}
             options={CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABELS[c] }))}
@@ -715,10 +747,10 @@ export default function VehicleForm() {
 
       {/* Technical */}
       <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Technical Specs</h3>
+        <h3 className="text-sm font-semibold">Specificații tehnice</h3>
         <div className="grid gap-4 md:grid-cols-3">
           <SearchSelectField
-            label="Fuel Type"
+            label="Combustibil"
             name="fuel_type"
             value={form.fuel_type as string}
             options={[...AUTOVIT_FUEL_TYPES]}
@@ -726,7 +758,7 @@ export default function VehicleForm() {
             searchPlaceholder="Search fuel type..."
           />
           <SearchSelectField
-            label="Transmission"
+            label="Cutie de viteze"
             name="transmission"
             value={form.transmission as string}
             options={[...AUTOVIT_GEARBOX_TYPES]}
@@ -734,7 +766,7 @@ export default function VehicleForm() {
             searchPlaceholder="Search gearbox..."
           />
           <SearchSelectField
-            label="Body Type"
+            label="Caroserie"
             name="body_type"
             value={form.body_type as string}
             options={[...AUTOVIT_BODY_TYPES]}
@@ -746,7 +778,7 @@ export default function VehicleForm() {
           <div className="grid gap-4 md:grid-cols-4">
             {usesFuelTank(form.fuel_type as string) && (
               <div className="space-y-1.5">
-                <Label>Fuel tank capacity (L)</Label>
+                <Label>Capacitate rezervor (L)</Label>
                 <Input
                   type="number"
                   min={0}
@@ -759,7 +791,7 @@ export default function VehicleForm() {
             )}
             {usesBattery(form.fuel_type as string) && (
               <div className="space-y-1.5">
-                <Label>Battery capacity (kWh)</Label>
+                <Label>Capacitate baterie (kWh)</Label>
                 <Input
                   type="number"
                   min={0}
@@ -783,6 +815,24 @@ export default function VehicleForm() {
                 />
               </div>
             )}
+            {usesFuelTank(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Consum urban (l/100 km)</Label>
+                <Input type="number" min={0} step="0.1" value={inputVal(form.consum_urban)} onChange={(e) => handleNumericChange('consum_urban', e.target.value)} placeholder="ex. 7.5" />
+              </div>
+            )}
+            {usesFuelTank(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Consum extraurban (l/100 km)</Label>
+                <Input type="number" min={0} step="0.1" value={inputVal(form.consum_extraurban)} onChange={(e) => handleNumericChange('consum_extraurban', e.target.value)} placeholder="ex. 5.0" />
+              </div>
+            )}
+            {usesFuelTank(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Consum mixt (l/100 km)</Label>
+                <Input type="number" min={0} step="0.1" value={inputVal(form.consum_mixt)} onChange={(e) => handleNumericChange('consum_mixt', e.target.value)} placeholder="ex. 6.0" />
+              </div>
+            )}
             {usesBattery(form.fuel_type as string) && (
               <div className="space-y-1.5">
                 <Label>Normă energie (kWh/100 km)</Label>
@@ -796,11 +846,17 @@ export default function VehicleForm() {
                 />
               </div>
             )}
+            {usesBattery(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Autonomie electrică (km)</Label>
+                <Input type="number" min={0} value={inputVal(form.electric_range_km)} onChange={(e) => handleNumericChange('electric_range_km', e.target.value)} placeholder="ex. 450" />
+              </div>
+            )}
           </div>
         )}
         <div className="grid gap-4 md:grid-cols-4">
           <div className="space-y-1.5">
-            <Label>Odometer (km)</Label>
+            <Label>Rulaj (km)</Label>
             <Input
               type="number"
               value={inputVal(form.mileage_km)}
@@ -809,7 +865,7 @@ export default function VehicleForm() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Power (HP)</Label>
+            <Label>Putere (CP)</Label>
             <Input
               type="number"
               value={inputVal(form.engine_power_hp)}
@@ -817,7 +873,7 @@ export default function VehicleForm() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Engine (cc)</Label>
+            <Label>Capacitate cilindrică (cmc)</Label>
             <Input
               type="number"
               value={inputVal(form.engine_displacement_cc)}
@@ -825,7 +881,7 @@ export default function VehicleForm() {
             />
           </div>
           <SearchSelectField
-            label="Drive Type"
+            label="Tracțiune"
             name="drive_type"
             value={form.drive_type as string}
             options={[...AUTOVIT_DRIVE_TYPES]}
@@ -835,7 +891,7 @@ export default function VehicleForm() {
         </div>
         <div className="grid gap-4 md:grid-cols-4">
           <SearchSelectField
-            label="Exterior Color"
+            label="Culoare exterioară"
             name="color_exterior"
             value={form.color_exterior as string}
             options={[...AUTOVIT_COLORS]}
@@ -843,7 +899,15 @@ export default function VehicleForm() {
             searchPlaceholder="Search color..."
           />
           <SearchSelectField
-            label="Interior Color"
+            label="Tip culoare"
+            name="color_finish"
+            value={form.color_finish as string}
+            options={[...AUTOVIT_COLOR_FINISHES]}
+            onChange={handleChange}
+            searchPlaceholder="Search finish..."
+          />
+          <SearchSelectField
+            label="Culoare interior"
             name="color_interior"
             value={form.color_interior as string}
             options={[...AUTOVIT_INTERIOR_COLORS]}
@@ -851,7 +915,7 @@ export default function VehicleForm() {
             searchPlaceholder="Search color..."
           />
           <SearchSelectField
-            label="Interior material"
+            label="Tapițerie"
             name="interior_material"
             value={form.interior_material as string}
             options={[...AUTOVIT_INTERIOR_MATERIALS]}
@@ -859,14 +923,14 @@ export default function VehicleForm() {
             searchPlaceholder="Search material..."
           />
           <SelectField
-            label="Doors"
+            label="Nr. portiere"
             name="doors"
             value={form.doors != null ? String(form.doors) : ''}
             options={[...AUTOVIT_DOORS]}
             onChange={(n, v) => handleNumericChange(n, v)}
           />
           <SelectField
-            label="Seats"
+            label="Nr. locuri"
             name="seats"
             value={form.seats != null ? String(form.seats) : ''}
             options={[...AUTOVIT_SEATS]}
@@ -875,7 +939,7 @@ export default function VehicleForm() {
         </div>
         <div className="grid gap-4 md:grid-cols-4">
           <SearchSelectField
-            label="Euro Standard"
+            label="Normă de poluare"
             name="euro_standard"
             value={form.euro_standard as string}
             options={[...AUTOVIT_EURO_STANDARDS]}
@@ -883,7 +947,7 @@ export default function VehicleForm() {
             searchPlaceholder="Search euro..."
           />
           <div className="space-y-1.5">
-            <Label>CO2 Emissions (g/km)</Label>
+            <Label>Emisii CO2 (g/km)</Label>
             <Input
               type="number"
               value={inputVal(form.co2_emissions)}
@@ -896,33 +960,33 @@ export default function VehicleForm() {
             <h4 className="text-xs font-semibold text-muted-foreground">Cargo (Utilitară)</h4>
             <div className="grid gap-4 md:grid-cols-4">
               <div className="space-y-1.5">
-                <Label>Max authorized mass (kg)</Label>
+                <Label>Masă maximă autorizată (kg)</Label>
                 <Input type="number" min={0} value={inputVal(form.max_weight_kg)} onChange={(e) => handleNumericChange('max_weight_kg', e.target.value)} placeholder="e.g. 3500" />
               </div>
               <div className="space-y-1.5">
-                <Label>Payload capacity (kg)</Label>
+                <Label>Sarcină utilă (kg)</Label>
                 <Input type="number" min={0} value={inputVal(form.payload_kg)} onChange={(e) => handleNumericChange('payload_kg', e.target.value)} placeholder="e.g. 1200" />
               </div>
               <div className="space-y-1.5">
-                <Label>Cargo volume (m³)</Label>
+                <Label>Volum util (m³)</Label>
                 <Input type="number" min={0} step="0.1" value={inputVal(form.cargo_volume_m3)} onChange={(e) => handleNumericChange('cargo_volume_m3', e.target.value)} placeholder="e.g. 11.5" />
               </div>
               <div className="space-y-1.5">
-                <Label>Euro pallets</Label>
+                <Label>Europaleți</Label>
                 <Input type="number" min={0} value={inputVal(form.euro_pallets)} onChange={(e) => handleNumericChange('euro_pallets', e.target.value)} placeholder="e.g. 3" />
               </div>
             </div>
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-1.5">
-                <Label>Cargo length (mm)</Label>
+                <Label>Lungime cală (mm)</Label>
                 <Input type="number" min={0} value={inputVal(form.cargo_length_mm)} onChange={(e) => handleNumericChange('cargo_length_mm', e.target.value)} placeholder="e.g. 3200" />
               </div>
               <div className="space-y-1.5">
-                <Label>Cargo width (mm)</Label>
+                <Label>Lățime cală (mm)</Label>
                 <Input type="number" min={0} value={inputVal(form.cargo_width_mm)} onChange={(e) => handleNumericChange('cargo_width_mm', e.target.value)} placeholder="e.g. 1700" />
               </div>
               <div className="space-y-1.5">
-                <Label>Cargo height (mm)</Label>
+                <Label>Înălțime cală (mm)</Label>
                 <Input type="number" min={0} value={inputVal(form.cargo_height_mm)} onChange={(e) => handleNumericChange('cargo_height_mm', e.target.value)} placeholder="e.g. 1900" />
               </div>
             </div>
@@ -932,10 +996,10 @@ export default function VehicleForm() {
 
       {/* Pricing */}
       <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Pricing</h3>
+        <h3 className="text-sm font-semibold">Preț</h3>
         <div className="grid gap-4 md:grid-cols-4">
           <div className="space-y-1.5">
-            <Label>Current Price</Label>
+            <Label>Preț curent</Label>
             <Input
               type="number"
               step="0.01"
@@ -944,7 +1008,7 @@ export default function VehicleForm() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>List Price</Label>
+            <Label>Preț listă</Label>
             <Input
               type="number"
               step="0.01"
@@ -953,7 +1017,7 @@ export default function VehicleForm() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Minimum Price</Label>
+            <Label>Preț minim</Label>
             <Input
               type="number"
               step="0.01"
@@ -962,7 +1026,7 @@ export default function VehicleForm() {
             />
           </div>
           <SelectField
-            label="Currency"
+            label="Monedă"
             name="price_currency"
             value={form.price_currency as string}
             options={[
@@ -974,17 +1038,17 @@ export default function VehicleForm() {
           />
         </div>
         <div className="flex flex-wrap gap-6">
-          <CheckboxField label="Price includes VAT" name="price_includes_vat" checked={!!form.price_includes_vat} onChange={handleChange} />
-          <CheckboxField label="Negotiable" name="is_negotiable" checked={!!form.is_negotiable} onChange={handleChange} />
-          <CheckboxField label="Margin scheme" name="margin_scheme" checked={!!form.margin_scheme} onChange={handleChange} />
-          <CheckboxField label="Eligible for financing" name="eligible_for_financing" checked={!!form.eligible_for_financing} onChange={handleChange} />
+          <CheckboxField label="Preț cu TVA" name="price_includes_vat" checked={!!form.price_includes_vat} onChange={handleChange} />
+          <CheckboxField label="Negociabil" name="is_negotiable" checked={!!form.is_negotiable} onChange={handleChange} />
+          <CheckboxField label="Regim marjă" name="margin_scheme" checked={!!form.margin_scheme} onChange={handleChange} />
+          <CheckboxField label="Eligibil finanțare" name="eligible_for_financing" checked={!!form.eligible_for_financing} onChange={handleChange} />
         </div>
 
         <Separator />
         <h4 className="text-xs font-medium text-muted-foreground">Acquisition Costs</h4>
         <div className="grid gap-4 md:grid-cols-4">
           <div className="space-y-1.5">
-            <Label>Purchase Price (net)</Label>
+            <Label>Preț achiziție (net)</Label>
             <Input
               type="number"
               step="0.01"
@@ -993,7 +1057,7 @@ export default function VehicleForm() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Reconditioning</Label>
+            <Label>Recondiționare</Label>
             <Input
               type="number"
               step="0.01"
@@ -1011,7 +1075,7 @@ export default function VehicleForm() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Other Costs</Label>
+            <Label>Alte costuri</Label>
             <Input
               type="number"
               step="0.01"
@@ -1024,46 +1088,58 @@ export default function VehicleForm() {
 
       {/* Location & Source */}
       <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Location & Source</h3>
+        <h3 className="text-sm font-semibold">Locație & Sursă</h3>
         <div className="grid gap-4 md:grid-cols-3">
           <SelectField
-            label="Location"
+            label="Locație"
             name="location_id"
             value={form.location_id != null ? String(form.location_id) : ''}
             options={locationOptions}
             onChange={(name, value) => handleNumericChange(name, value)}
           />
-          <TextField label="Parking Spot" name="parking_spot" value={form.parking_spot as string} onChange={handleChange} placeholder="e.g. A-15" />
-          <TextField label="Source" name="source" value={form.source as string} onChange={handleChange} placeholder="e.g. Trade-in, Auction" />
+          <TextField label="Loc parcare" name="parking_spot" value={form.parking_spot as string} onChange={handleChange} placeholder="e.g. A-15" />
+          <TextField label="Sursă" name="source" value={form.source as string} onChange={handleChange} placeholder="e.g. Trade-in, Auction" />
         </div>
         <div className="grid gap-4 md:grid-cols-3">
-          <TextField label="Supplier Name" name="supplier_name" value={form.supplier_name as string} onChange={handleChange} />
-          <TextField label="Supplier CIF" name="supplier_cif" value={form.supplier_cif as string} onChange={handleChange} />
+          <TextField label="Nume furnizor" name="supplier_name" value={form.supplier_name as string} onChange={handleChange} />
+          <TextField label="CIF furnizor" name="supplier_cif" value={form.supplier_cif as string} onChange={handleChange} />
         </div>
       </Card>
 
       {/* Condition & Warranty */}
       <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Condition & Warranty</h3>
+        <h3 className="text-sm font-semibold">Stare & Garanție</h3>
         <div className="flex flex-wrap gap-6">
-          <CheckboxField label="First owner" name="is_first_owner" checked={!!form.is_first_owner} onChange={handleChange} />
-          <CheckboxField label="Accident history" name="has_accident_history" checked={!!form.has_accident_history} onChange={handleChange} />
-          <CheckboxField label="Service book" name="has_service_book" checked={!!form.has_service_book} onChange={handleChange} />
-          <CheckboxField label="Has tuning" name="has_tuning" checked={!!form.has_tuning} onChange={handleChange} />
-          <CheckboxField label="Registered" name="is_registered" checked={!!form.is_registered} onChange={handleChange} />
+          <CheckboxField label="Primul proprietar" name="is_first_owner" checked={!!form.is_first_owner} onChange={handleChange} />
+          <CheckboxField label="Istoric accidente" name="has_accident_history" checked={!!form.has_accident_history} onChange={handleChange} />
+          <CheckboxField label="Carte service" name="has_service_book" checked={!!form.has_service_book} onChange={handleChange} />
+          <CheckboxField label="Tuning" name="has_tuning" checked={!!form.has_tuning} onChange={handleChange} />
+          <CheckboxField label="Înmatriculat" name="is_registered" checked={!!form.is_registered} onChange={handleChange} />
+          <CheckboxField label="Volan pe dreapta" name="is_right_hand_drive" checked={!!form.is_right_hand_drive} onChange={handleChange} />
+          <CheckboxField label="Filtru de particule" name="has_particle_filter" checked={!!form.has_particle_filter} onChange={handleChange} />
+          <CheckboxField label="Vehicul de epocă" name="is_vintage" checked={!!form.is_vintage} onChange={handleChange} />
+          <CheckboxField label="Autovehicul avariat" name="is_damaged" checked={!!form.is_damaged} onChange={handleChange} />
+          <CheckboxField label="Rulaj certificat" name="certified_mileage" checked={!!form.certified_mileage} onChange={handleChange} />
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label>Nr. proprietari anteriori</Label>
+            <Input type="number" min={0} value={inputVal(form.previous_owners)} onChange={(e) => handleNumericChange('previous_owners', e.target.value)} placeholder="ex. 1" />
+          </div>
+          <TextField label="Țara de origine" name="country_of_origin" value={form.country_of_origin as string} onChange={handleChange} placeholder="ex. Germania" />
         </div>
         <Separator />
         <div className="grid gap-4 md:grid-cols-3">
-          <CheckboxField label="Manufacturer warranty" name="has_manufacturer_warranty" checked={!!form.has_manufacturer_warranty} onChange={handleChange} />
+          <CheckboxField label="Garanție producător" name="has_manufacturer_warranty" checked={!!form.has_manufacturer_warranty} onChange={handleChange} />
           {form.has_manufacturer_warranty && (
-            <TextField label="Warranty Until" name="manufacturer_warranty_date" value={form.manufacturer_warranty_date as string} onChange={handleChange} type="date" />
+            <TextField label="Garanție până la" name="manufacturer_warranty_date" value={form.manufacturer_warranty_date as string} onChange={handleChange} type="date" />
           )}
         </div>
         <div className="grid gap-4 md:grid-cols-3">
-          <CheckboxField label="Dealer warranty" name="has_dealer_warranty" checked={!!form.has_dealer_warranty} onChange={handleChange} />
+          <CheckboxField label="Garanție dealer" name="has_dealer_warranty" checked={!!form.has_dealer_warranty} onChange={handleChange} />
           {form.has_dealer_warranty && (
             <div className="space-y-1.5">
-              <Label>Warranty Months</Label>
+              <Label>Luni garanție</Label>
               <Input
                 type="number"
                 value={inputVal(form.dealer_warranty_months)}
@@ -1074,12 +1150,41 @@ export default function VehicleForm() {
         </div>
       </Card>
 
+      {/* Dotări (Equipment) */}
+      <Card className="p-4 space-y-4">
+        <h3 className="text-sm font-semibold">Dotări</h3>
+        {AUTOVIT_EQUIPMENT.map((group) => (
+          <div key={group.category} className="space-y-2">
+            <h4 className="text-xs font-semibold text-muted-foreground">{group.category}</h4>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              {group.options.map((opt) => {
+                const selected =
+                  Array.isArray(form.equipment_options) &&
+                  (form.equipment_options as string[]).includes(opt.value)
+                return (
+                  <div key={opt.value} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`eq-${opt.value}`}
+                      checked={selected}
+                      onCheckedChange={() => toggleEquipment(opt.value)}
+                    />
+                    <Label htmlFor={`eq-${opt.value}`} className="text-sm font-normal cursor-pointer">
+                      {opt.label}
+                    </Label>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </Card>
+
       {/* Listing */}
       <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Listing & Notes</h3>
-        <TextField label="Listing Title" name="listing_title" value={form.listing_title as string} onChange={handleChange} placeholder="Custom title for online listings" />
+        <h3 className="text-sm font-semibold">Anunț & Note</h3>
+        <TextField label="Titlu anunț" name="listing_title" value={form.listing_title as string} onChange={handleChange} placeholder="Custom title for online listings" />
         <div className="space-y-1.5">
-          <Label>Listing Description</Label>
+          <Label>Descriere anunț</Label>
           <Textarea
             value={(form.listing_description as string) ?? ''}
             onChange={(e) => handleChange('listing_description', e.target.value)}
@@ -1089,7 +1194,7 @@ export default function VehicleForm() {
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>Notes</Label>
+            <Label>Note</Label>
             <Textarea
               value={(form.notes as string) ?? ''}
               onChange={(e) => handleChange('notes', e.target.value)}
@@ -1097,7 +1202,7 @@ export default function VehicleForm() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Internal Notes</Label>
+            <Label>Note interne</Label>
             <Textarea
               value={(form.internal_notes as string) ?? ''}
               onChange={(e) => handleChange('internal_notes', e.target.value)}

@@ -1937,6 +1937,44 @@ def _create_carpark_incremental(conn, cursor):
         END $$;
     """)
 
+    # ── CarPark condition flags (Autovit «Detalii») ──
+    for _col in ['is_right_hand_drive', 'has_particle_filter', 'is_vintage',
+                 'is_damaged', 'certified_mileage']:
+        cursor.execute(f"""
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_name='carpark_vehicles' AND column_name='{_col}') THEN
+                ALTER TABLE carpark_vehicles ADD COLUMN {_col} BOOLEAN DEFAULT FALSE;
+              END IF;
+            END $$;
+        """)
+
+    # ── CarPark specs: colour finish, consumption, EV range, owners, origin ──
+    for _col, _type in [
+        ('color_finish', 'VARCHAR(30)'),
+        ('consum_urban', 'NUMERIC'), ('consum_extraurban', 'NUMERIC'),
+        ('consum_mixt', 'NUMERIC'), ('electric_range_km', 'INTEGER'),
+        ('previous_owners', 'INTEGER'), ('country_of_origin', 'VARCHAR(100)'),
+    ]:
+        cursor.execute(f"""
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_name='carpark_vehicles' AND column_name='{_col}') THEN
+                ALTER TABLE carpark_vehicles ADD COLUMN {_col} {_type};
+              END IF;
+            END $$;
+        """)
+
+    # ── CarPark equipment / Dotări (Autovit) — selected option keys ──
+    cursor.execute("""
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                         WHERE table_name='carpark_vehicles' AND column_name='equipment_options') THEN
+            ALTER TABLE carpark_vehicles ADD COLUMN equipment_options TEXT[];
+          END IF;
+        END $$;
+    """)
+
     # ── CarPark Dispo: inter-company vehicle transfer log ──
     # A transfer MOVES the vehicle row to the destination company
     # (carpark_vehicles.company_id changes — see DispoService.transfer /

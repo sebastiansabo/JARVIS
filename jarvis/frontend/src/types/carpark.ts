@@ -75,6 +75,19 @@ export interface Vehicle extends VehicleCatalogItem {
   cargo_height_mm: number | null
   euro_pallets: number | null
   interior_material: string | null
+  is_right_hand_drive: boolean
+  has_particle_filter: boolean
+  is_vintage: boolean
+  is_damaged: boolean
+  certified_mileage: boolean
+  color_finish: string | null
+  consum_urban: number | null
+  consum_extraurban: number | null
+  consum_mixt: number | null
+  electric_range_km: number | null
+  previous_owners: number | null
+  country_of_origin: string | null
+  equipment_options: string[] | null
   doors: number | null
   seats: number | null
   tire_type: string | null
