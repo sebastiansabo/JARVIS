@@ -50,6 +50,9 @@ export interface User {
   permissions?: Record<string, boolean>
   // Scope values for granted permissions — "module.entity.action" → 'own'|'department'|'all'
   permission_scopes?: Record<string, string>
+  // Mandatory consent-documents gate (core/consents) — present on /api/auth/current-user
+  consents_complete?: boolean
+  pending_consents_count?: number
 }
 
 export interface ApiResponse<T = unknown> {
