@@ -91,6 +91,16 @@ export const carparkApi = {
   updateVehicle: (id: number, data: Partial<Vehicle>) =>
     api.put<{ vehicle: Vehicle }>(`/api/carpark/vehicles/${id}`, data),
 
+  getBnrRate: (date: string) =>
+    api.get<{ success: boolean; kurs: number; kurs_date: string }>(
+      `/facturare/api/bnr-rate?date=${date}`,
+    ),
+
+  generateDescription: (payload: { specs: Record<string, unknown>; equipment: string[] }) =>
+    api
+      .post<{ description: string }>('/api/carpark/vehicles/generate-description', payload)
+      .then((r) => r.description),
+
   deleteVehicle: (id: number) =>
     api.delete<{ success: boolean }>(`/api/carpark/vehicles/${id}`),
 

@@ -1937,6 +1937,16 @@ def _create_carpark_incremental(conn, cursor):
         END $$;
     """)
 
+    # ── CarPark: freeform acquisition cost lines — JSON text [{label, amount}] ──
+    cursor.execute("""
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                         WHERE table_name='carpark_vehicles' AND column_name='cost_lines') THEN
+            ALTER TABLE carpark_vehicles ADD COLUMN cost_lines TEXT;
+          END IF;
+        END $$;
+    """)
+
     # ── CarPark condition flags (Autovit «Detalii») ──
     for _col in ['is_right_hand_drive', 'has_particle_filter', 'is_vintage',
                  'is_damaged', 'certified_mileage']:
