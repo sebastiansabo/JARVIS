@@ -224,3 +224,44 @@ def test_update_document_bumps_version_on_changed_body(client, login_as):
                        json={'body': changed_body, 'title': 'NDA — title only'})
     assert resp2.status_code == 200
     assert resp2.get_json()['document']['version'] == bumped_version
+
+
+# ---------- Task 5: consents_complete surfaced on /api/auth/current-user ----------
+# This exercises core.auth.routes.api_current_user, which lives on auth_bp
+# (not consents_bp), so it needs its own tiny Flask app instead of the
+# `app`/`client` fixtures above — but it reuses this module's real-DB gate
+# (the module-level `_skip_without_real_db` autouse fixture still applies)
+# and the same login_as(session) idiom as the rest of this file.
+
+def test_current_user_exposes_consents_complete():
+    from core.auth import auth_bp
+    from core.auth.models import User
+
+    flask_app = Flask(__name__)
+    flask_app.secret_key = 'test-secret'
+    flask_app.config['TESTING'] = True
+    lm = LoginManager()
+    lm.init_app(flask_app)
+
+    # role_id left None so the v2-permissions lookups in api_current_user
+    # short-circuit to {} — only ConsentService (real DB) is exercised here.
+    user = User({'id': 2, 'email': 'user2@test.local', 'name': 'Test User 2'})
+
+    @lm.user_loader
+    def _load(uid):
+        return user if int(uid) == user.id else None
+
+    flask_app.register_blueprint(auth_bp)
+    test_client = flask_app.test_client()
+    with test_client.session_transaction() as sess:
+        sess['_user_id'] = str(user.id)
+        sess['_fresh'] = True
+
+    resp = test_client.get('/api/auth/current-user')
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert 'consents_complete' in body['user']
+    assert 'pending_consents_count' in body['user']
+    # all 3 seed docs are is_active=FALSE -> nothing mandatory -> complete
+    assert body['user']['consents_complete'] is True
+    assert body['user']['pending_consents_count'] == 0

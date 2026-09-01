@@ -207,4 +207,14 @@ def api_mobile_current_user_v2():
     """Mobile-unique current-user route (avoids collision with web auth_bp's
     /api/auth/current-user, which is registered first and may shadow the JWT one)."""
     user = _current_mobile_user()
-    return jsonify({'authenticated': True, 'user': _user_json(user)})
+    payload = _user_json(user)
+
+    # Mandatory consent-documents gate status — single 2-query pass (never
+    # call is_complete()/pending_count() separately; this endpoint runs on
+    # ~every mobile app open/resume).
+    from core.consents.services.consent_service import ConsentService as _ConsentSvc
+    _consent_status = _ConsentSvc().get_status(user.id)
+    payload['consents_complete'] = _consent_status['complete']
+    payload['pending_consents_count'] = _consent_status['pending_count']
+
+    return jsonify({'authenticated': True, 'user': payload})
