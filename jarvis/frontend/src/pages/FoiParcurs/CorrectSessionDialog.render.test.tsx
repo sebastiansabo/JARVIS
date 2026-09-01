@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const { getUsers } = vi.hoisted(() => ({ getUsers: vi.fn() }))
 vi.mock('@/api/users', () => ({ usersApi: { getUsers } }))
+const { getContract } = vi.hoisted(() => ({ getContract: vi.fn() }))
+vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { getContract } }))
 
 import CorrectSessionDialog from './CorrectSessionDialog'
 
@@ -14,6 +16,7 @@ const base = {
 }
 const inProgress = { ...base, status: 'FILLED', td_status: 'driving' }
 const finalized = { ...base, status: 'COMPLETED', td_status: 'complete' }
+const internal = { ...base, status: 'FILLED', td_status: 'driving', is_internal: true }
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -24,16 +27,29 @@ describe('CorrectSessionDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getUsers.mockResolvedValue([{ name: 'Pop Marius', phone: '07', is_active: true, company: 'AW' }])
+    getContract.mockResolvedValue({ contract: { driver_license_photo: null } })
   })
 
-  it('in-progress: KM final is optional — saves without it, forwarding advisor + null km_end', () => {
+  it('in-progress: KM final is optional — saves without it, forwarding advisor + client + null km_end', () => {
     const onSubmit = vi.fn()
     wrap(<CorrectSessionDialog session={inProgress as never} onClose={vi.fn()} onSubmit={onSubmit} submitting={false} />)
     expect(screen.getByText('(opțional)')).toBeInTheDocument()
     const save = screen.getByRole('button', { name: /salvează/i })
     expect(save).not.toBeDisabled()
     fireEvent.click(save)
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ advisor_name: 'Pop Marius', km_end: null }))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ advisor_name: 'Pop Marius', km_end: null, client_name: 'Client X' }))
+  })
+
+  it('client-facing session shows the editable Client / permis section', () => {
+    wrap(<CorrectSessionDialog session={inProgress as never} onClose={vi.fn()} onSubmit={vi.fn()} submitting={false} />)
+    expect(screen.getByText(/Client \/ permis/i)).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Client X')).toBeInTheDocument()
+  })
+
+  it('internal session hides the Client / permis section (no client to correct)', () => {
+    wrap(<CorrectSessionDialog session={internal as never} onClose={vi.fn()} onSubmit={vi.fn()} submitting={false} />)
+    expect(screen.queryByText(/Client \/ permis/i)).not.toBeInTheDocument()
   })
 
   it('finalized: KM final stays required — save is blocked while it is blank', () => {

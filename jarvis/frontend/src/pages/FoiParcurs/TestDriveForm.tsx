@@ -185,6 +185,10 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
   // contacts query + gate below). Not required for a PLANNED draft.
   const [driverContact, setDriverContact] = useState<ClientContact | null>(null)
   const [showAddContact, setShowAddContact] = useState(false)
+  // Edit the selected contact person in place (name/email/phone + licence) —
+  // reuses ContactForm in edit mode so a company's driver with incomplete data
+  // can be completed without deleting and recreating the contact.
+  const [editingContact, setEditingContact] = useState(false)
 
   // Campaign / event (optional marketing project) — type-to-search, like mobile
   const [mktProject, setMktProject] = useState<MktProject | null>(null)
@@ -1211,18 +1215,20 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
                     <p className="text-xs text-destructive">
                       Persoanele de contact nu au putut fi încărcate. Încearcă din nou.
                     </p>
-                  ) : showAddContact ? (
-                    <AddContactForm
+                  ) : (showAddContact || editingContact) ? (
+                    <ContactForm
                       clientId={Number(selectedClient.id)}
-                      onCreated={(c) => {
-                        // Refresh the picker's option list so the just-created
-                        // contact is present (the Select renders from this
-                        // query; without invalidation its trigger can go blank).
+                      initial={editingContact ? driverContact : null}
+                      onSaved={(c) => {
+                        // Refresh the picker's option list so the created/edited
+                        // contact is current (the Select renders from this
+                        // query; without invalidation its trigger can go stale).
                         queryClient.invalidateQueries({ queryKey: ['client-contacts', selectedClient.id] })
                         setDriverContact(c)
                         setShowAddContact(false)
+                        setEditingContact(false)
                       }}
-                      onCancel={() => setShowAddContact(false)}
+                      onCancel={() => { setShowAddContact(false); setEditingContact(false) }}
                     />
                   ) : (
                     <>
@@ -1264,20 +1270,31 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
                               <p className="text-muted-foreground">Valabilitate: {driverContact.driver_license_expiry}</p>
                             )}
                           </div>
-                          <button
-                            type="button"
-                            aria-label="Șterge persoana de contact"
-                            title="Șterge persoana de contact"
-                            disabled={deleteContactMutation.isPending}
-                            onClick={() => {
-                              if (confirm(`Ștergi persoana de contact „${driverContact.full_name}”?`)) {
-                                deleteContactMutation.mutate(Number(driverContact.id))
-                              }
-                            }}
-                            className="ml-auto shrink-0 rounded-md p-1.5 text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <div className="ml-auto flex shrink-0 items-start gap-1">
+                            <button
+                              type="button"
+                              aria-label="Editează persoana de contact"
+                              title="Editează persoana de contact"
+                              onClick={() => { setShowAddContact(false); setEditingContact(true) }}
+                              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="Șterge persoana de contact"
+                              title="Șterge persoana de contact"
+                              disabled={deleteContactMutation.isPending}
+                              onClick={() => {
+                                if (confirm(`Ștergi persoana de contact „${driverContact.full_name}”?`)) {
+                                  deleteContactMutation.mutate(Number(driverContact.id))
+                                }
+                              }}
+                              className="rounded-md p-1.5 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
                       )}
                     </>
@@ -1923,31 +1940,38 @@ function ClientEditForm({
   )
 }
 
-/** Inline "new company contact" form (Task 11) — posts to
- *  crmApi.createClientContact, then hands the created contact back so the
- *  picker above can auto-select it. Mirrors DriverLicenseSection's
- *  photo-upload control (compress + preview) without its OCR/create-client
- *  wiring, which doesn't apply to a company's contact person. */
-function AddContactForm({
+/** Inline company-contact form (Task 11) — creates a new contact person, or
+ *  (when `initial` is passed) edits the selected one in place. On success it
+ *  hands the saved contact back so the picker above can (re)select it. Edit mode
+ *  lets a company's driver with incomplete data be completed without deleting
+ *  and recreating. Mirrors DriverLicenseSection's photo-upload control (compress
+ *  + preview) without its OCR/create-client wiring. */
+function ContactForm({
   clientId,
-  onCreated,
+  initial,
+  onSaved,
   onCancel,
 }: {
   clientId: number
-  onCreated: (contact: ClientContact) => void
+  initial?: ClientContact | null
+  onSaved: (contact: ClientContact) => void
   onCancel: () => void
 }) {
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
-  const [photo, setPhoto] = useState<string | null>(null)
+  const isEdit = !!initial
+  const [fullName, setFullName] = useState(initial?.full_name ?? '')
+  const [email, setEmail] = useState(initial?.email ?? '')
+  const [phone, setPhone] = useState(initial?.phone ?? '')
+  const [photo, setPhoto] = useState<string | null>(initial?.driver_license_photo ?? null)
   const [busy, setBusy] = useState(false)
-  const [license, setLicense] = useState('') // driving-license serie+number (one field)
-  const [expiry, setExpiry] = useState('')
+  const [license, setLicense] = useState(initial?.driver_license_number ?? '') // serie+number (one field)
+  const [expiry, setExpiry] = useState((initial?.driver_license_expiry ?? '').slice(0, 10))
   const [error, setError] = useState<string | null>(null)
 
-  const create = useMutation({
-    mutationFn: (data: Partial<ClientContact>) => crmApi.createClientContact(clientId, data),
+  const save = useMutation({
+    mutationFn: (data: Partial<ClientContact>) =>
+      isEdit
+        ? crmApi.updateClientContact(clientId, Number(initial!.id), data)
+        : crmApi.createClientContact(clientId, data),
   })
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1960,35 +1984,47 @@ function AddContactForm({
     if (compressed) setPhoto(compressed)
   }
 
-  const canCreate = fullName.trim() !== '' && !create.isPending
+  const canSave = fullName.trim() !== '' && !save.isPending
 
-  const handleCreate = () => {
-    if (!canCreate) return
+  const handleSave = () => {
+    if (!canSave) return
     setError(null)
-    create.mutate(
-      {
-        full_name: fullName.trim(),
-        ...(email.trim() ? { email: email.trim() } : {}),
-        ...(phone.trim() ? { phone: phone.trim() } : {}),
-        ...(photo ? { driver_license_photo: photo } : {}),
-        ...(license.trim() ? { driver_license_number: license.trim() } : {}),
-        ...(expiry.trim() ? { driver_license_expiry: expiry.trim() } : {}),
+    // Edit mode sends the full editable set so a user can also CLEAR a field;
+    // create mode keeps omit-empty so we never post blank columns on insert.
+    const data: Partial<ClientContact> = isEdit
+      ? {
+          full_name: fullName.trim(),
+          email: email.trim() || null,
+          phone: phone.trim() || null,
+          driver_license_photo: photo || null,
+          driver_license_number: license.trim() || null,
+          driver_license_expiry: expiry.trim() || null,
+        }
+      : {
+          full_name: fullName.trim(),
+          ...(email.trim() ? { email: email.trim() } : {}),
+          ...(phone.trim() ? { phone: phone.trim() } : {}),
+          ...(photo ? { driver_license_photo: photo } : {}),
+          ...(license.trim() ? { driver_license_number: license.trim() } : {}),
+          ...(expiry.trim() ? { driver_license_expiry: expiry.trim() } : {}),
+        }
+    save.mutate(data, {
+      onSuccess: (res) => {
+        if (res.contact) onSaved(res.contact)
+        else setError(isEdit ? 'Persoana de contact nu a putut fi salvată.' : 'Persoana de contact nu a putut fi creată.')
       },
-      {
-        onSuccess: (res) => {
-          if (res.contact) onCreated(res.contact)
-          else setError('Persoana de contact nu a putut fi creată.')
-        },
-        onError: (err: any) => {
-          setError(err?.data?.error || err?.message || 'Crearea persoanei de contact a eșuat.')
-        },
+      onError: (err: any) => {
+        setError(err?.data?.error || err?.message
+          || (isEdit ? 'Salvarea persoanei de contact a eșuat.' : 'Crearea persoanei de contact a eșuat.'))
       },
-    )
+    })
   }
 
   return (
     <div className="space-y-2.5 rounded-md border bg-background p-3">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Persoană de contact nouă</p>
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+        {isEdit ? 'Editează persoana de contact' : 'Persoană de contact nouă'}
+      </p>
       <div className="space-y-1">
         <Label className="text-xs">Nume complet *</Label>
         <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Nume și prenume" />
@@ -2037,8 +2073,10 @@ function AddContactForm({
 
       <div className="flex gap-2 pt-1">
         <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>Anulează</Button>
-        <Button type="button" className="flex-1" onClick={handleCreate} disabled={!canCreate}>
-          {create.isPending ? 'Se creează...' : 'Creează persoana de contact'}
+        <Button type="button" className="flex-1" onClick={handleSave} disabled={!canSave}>
+          {save.isPending
+            ? (isEdit ? 'Se salvează...' : 'Se creează...')
+            : (isEdit ? 'Salvează persoana de contact' : 'Creează persoana de contact')}
         </Button>
       </div>
     </div>
@@ -2049,7 +2087,7 @@ function AddContactForm({
  *  15) — creates an HR event via POST /api/events, then hands the new
  *  {id, name} back so the card can select it. Requires HR/marketing
  *  permissions the current user may lack; a 403 is surfaced inline rather
- *  than crashing the form (mirrors AddContactForm's error handling). */
+ *  than crashing the form (mirrors ContactForm's error handling). */
 function AddEventForm({
   onCreated,
   onCancel,

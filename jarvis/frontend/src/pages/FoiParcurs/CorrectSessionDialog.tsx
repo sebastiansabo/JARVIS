@@ -1,10 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { ImagePlus, Loader2, X } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { FoiContract } from '@/types/foiParcurs'
+import { foiParcursApi } from '@/api/foiParcurs'
+import { fileToCompressedDataUrl } from '@/lib/imageCompress'
 import { sessionStatus } from './sessionStatus'
 import { useUsersDirectory } from './useUsersDirectory'
 
@@ -17,6 +21,14 @@ export interface CorrectionPayload {
   km_start: number | null
   km_end: number | null
   advisor_name: string
+  // Client identity recorded on the foaie — only sent for client-facing TD
+  // sessions, never internal driving logs. An absent driver_license_photo means
+  // "leave the stored photo untouched"; an empty string clears the field.
+  client_name?: string
+  client_phone?: string | null
+  driver_license_number?: string | null
+  driver_license_expiry?: string | null
+  driver_license_photo?: string | null
 }
 
 export interface CorrectionState {
@@ -68,6 +80,44 @@ export default function CorrectSessionDialog({ session, onClose, onSubmit, submi
   const [kmEnd, setKmEnd] = useState(String(session.km_end ?? ''))
   const [advisorName, setAdvisorName] = useState((session.advisor_name ?? '').trim())
 
+  // Client identity recorded on THIS foaie — editable only for client-facing
+  // sessions (an internal driving log has no client). Text fields prefill from
+  // the list row; the licence photo isn't in the list payload, so it's hydrated
+  // from the detail endpoint below.
+  const isClientEditable = !session.is_internal
+  const [clientName, setClientName] = useState((session.client_name ?? '').trim())
+  const [clientPhone, setClientPhone] = useState((session.client_phone ?? '').trim())
+  const [licenseNumber, setLicenseNumber] = useState((session.driver_license_number ?? '').trim())
+  const [licenseExpiry, setLicenseExpiry] = useState((session.driver_license_expiry ?? '').slice(0, 10))
+  const [licensePhoto, setLicensePhoto] = useState<string | null>(session.driver_license_photo ?? null)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  // Marks the photo as user-edited so (a) the detail hydrate never overwrites a
+  // fresh upload and (b) submit only sends the photo when it actually changed —
+  // re-posting a ~155 kB data URL on every KM fix would be wasteful.
+  const photoTouched = useRef(false)
+
+  // The list row omits driver_license_photo (large data URL); fetch the detail
+  // to show/replace the current photo. Only for editable client sessions.
+  const { data: detail } = useQuery({
+    queryKey: ['fp-contract', session.id],
+    queryFn: () => foiParcursApi.getContract(session.id),
+    enabled: isClientEditable,
+  })
+  useEffect(() => {
+    const p = detail?.contract?.driver_license_photo
+    if (p && !photoTouched.current) setLicensePhoto(p)
+  }, [detail])
+
+  const handleLicenseFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setPhotoBusy(true)
+    const compressed = await fileToCompressedDataUrl(file)
+    setPhotoBusy(false)
+    if (compressed) { photoTouched.current = true; setLicensePhoto(compressed) }
+  }
+
   // Consilier options: the active users of the session's company (falling back
   // to all active users if the company name doesn't match any), always
   // including the current advisor so a legacy/free-typed name isn't lost.
@@ -94,6 +144,15 @@ export default function CorrectSessionDialog({ session, onClose, onSubmit, submi
       km_start: kmStart.trim() === '' ? null : Number(kmStart),
       km_end: kmEnd.trim() === '' ? null : Number(kmEnd),
       advisor_name: advisorName.trim(),
+      ...(isClientEditable ? {
+        client_name: clientName.trim(),
+        client_phone: clientPhone.trim() || null,
+        driver_license_number: licenseNumber.trim() || null,
+        driver_license_expiry: licenseExpiry.trim() || null,
+        // Omit the photo unless the user changed it → the backend keeps the
+        // stored one; an explicit clear sends null.
+        ...(photoTouched.current ? { driver_license_photo: licensePhoto || null } : {}),
+      } : {}),
     })
   }
 
@@ -137,6 +196,56 @@ export default function CorrectSessionDialog({ session, onClose, onSubmit, submi
             <Input type="number" value={kmEnd} onChange={(e) => setKmEnd(e.target.value)} className="text-sm" />
           </div>
         </div>
+
+        {isClientEditable && (
+          <div className="space-y-2.5 rounded-md border bg-muted/40 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Client / permis (pe această foaie)
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Client</Label>
+                <Input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Nume client" className="text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Telefon</Label>
+                <Input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="07..." inputMode="tel" className="text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Serie/nr permis</Label>
+                <Input value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} placeholder="Serie/număr" className="text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Valabilitate</Label>
+                <Input type="date" value={licenseExpiry} onChange={(e) => setLicenseExpiry(e.target.value)} className="text-sm" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Poză permis</Label>
+              {licensePhoto ? (
+                <div className="flex items-center gap-3">
+                  <img src={licensePhoto} alt="Permis de conducere" className="h-16 w-28 rounded-md object-cover border" />
+                  <label className="cursor-pointer text-xs font-medium text-primary hover:underline">
+                    Schimbă
+                    <input type="file" accept="image/*" className="hidden" onChange={handleLicenseFile} />
+                  </label>
+                  <Button
+                    type="button" variant="ghost" size="sm" className="text-destructive"
+                    onClick={() => { photoTouched.current = true; setLicensePhoto(null) }}
+                  >
+                    <X className="h-3.5 w-3.5 mr-1" />Șterge
+                  </Button>
+                </div>
+              ) : (
+                <label className="flex h-16 w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed text-muted-foreground hover:bg-accent transition-colors">
+                  {photoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                  <span className="text-xs font-medium">Adaugă poza permisului</span>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleLicenseFile} />
+                </label>
+              )}
+            </div>
+          </div>
+        )}
 
         {(errs.km || errs.date) && (
           <p className="text-xs text-red-600 dark:text-red-400">{errs.km || errs.date}</p>
