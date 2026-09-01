@@ -179,6 +179,14 @@ export const AUTOVIT_INTERIOR_MATERIALS = [
   { value: 'alcantara', label: 'Alcantara' },
 ] as const
 
+// ── Exterior Color Finish (Autovit «Tip culoare») ───────────
+
+export const AUTOVIT_COLOR_FINISHES = [
+  { value: 'metallic', label: 'Metalizat' },
+  { value: 'pearl', label: 'Perlat' },
+  { value: 'matte', label: 'Mat' },
+] as const
+
 // ── Euro Emission Standards ─────────────────────────────────
 
 export const AUTOVIT_EURO_STANDARDS = [
@@ -221,4 +229,87 @@ export const AUTOVIT_SEATS = [
   { value: '7', label: '7' },
   { value: '8', label: '8' },
   { value: '9', label: '9' },
+] as const
+
+// ── Equipment / Dotări ──────────────────────────────────────
+// Autovit «Dotări», grouped by category. Stored as a text[] of selected
+// values in carpark_vehicles.equipment_options.
+export const AUTOVIT_EQUIPMENT: { category: string; options: { value: string; label: string }[] }[] = [
+  {
+    category: 'Confort',
+    options: [
+      { value: 'ac', label: 'Aer condiționat' },
+      { value: 'climatronic', label: 'Climatronic' },
+      { value: 'heated-seats-front', label: 'Scaune încălzite față' },
+      { value: 'heated-seats-rear', label: 'Scaune încălzite spate' },
+      { value: 'ventilated-seats', label: 'Scaune ventilate' },
+      { value: 'electric-seats', label: 'Scaune electrice' },
+      { value: 'memory-seats', label: 'Scaune cu memorie' },
+      { value: 'heated-steering', label: 'Volan încălzit' },
+      { value: 'sunroof', label: 'Trapă / Panoramic' },
+      { value: 'keyless', label: 'Keyless entry/go' },
+      { value: 'electric-windows', label: 'Geamuri electrice' },
+      { value: 'folding-mirrors', label: 'Oglinzi rabatabile electric' },
+      { value: 'tow-bar', label: 'Cârlig remorcare' },
+      { value: 'power-tailgate', label: 'Haion electric' },
+    ],
+  },
+  {
+    category: 'Siguranță',
+    options: [
+      { value: 'abs', label: 'ABS' },
+      { value: 'esp', label: 'ESP' },
+      { value: 'airbags', label: 'Airbag-uri' },
+      { value: 'traction-control', label: 'Control tracțiune' },
+      { value: 'tpms', label: 'Senzori presiune anvelope' },
+      { value: 'isofix', label: 'ISOFIX' },
+      { value: 'alarm', label: 'Alarmă' },
+      { value: 'immobilizer', label: 'Imobilizator' },
+    ],
+  },
+  {
+    category: 'Asistență',
+    options: [
+      { value: 'rear-camera', label: 'Cameră marșarier' },
+      { value: '360-camera', label: 'Cameră 360°' },
+      { value: 'park-sensors-front', label: 'Senzori parcare față' },
+      { value: 'park-sensors-rear', label: 'Senzori parcare spate' },
+      { value: 'auto-park', label: 'Parcare automată' },
+      { value: 'cruise-control', label: 'Tempomat' },
+      { value: 'adaptive-cruise', label: 'Tempomat adaptiv' },
+      { value: 'lane-assist', label: 'Asistență menținere bandă' },
+      { value: 'blind-spot', label: 'Detectare unghi mort' },
+      { value: 'traffic-sign', label: 'Recunoaștere semne' },
+      { value: 'aeb', label: 'Frânare automată urgență' },
+      { value: 'hud', label: 'Head-up display' },
+    ],
+  },
+  {
+    category: 'Multimedia',
+    options: [
+      { value: 'navigation', label: 'Navigație' },
+      { value: 'bluetooth', label: 'Bluetooth' },
+      { value: 'carplay', label: 'Apple CarPlay' },
+      { value: 'android-auto', label: 'Android Auto' },
+      { value: 'premium-audio', label: 'Sistem audio premium' },
+      { value: 'touchscreen', label: 'Ecran tactil' },
+      { value: 'wireless-charging', label: 'Încărcare wireless' },
+      { value: 'usb', label: 'USB' },
+    ],
+  },
+  {
+    category: 'Lumini & Exterior',
+    options: [
+      { value: 'led-headlights', label: 'Faruri LED' },
+      { value: 'xenon', label: 'Faruri Xenon' },
+      { value: 'matrix', label: 'Faruri Matrix' },
+      { value: 'laser', label: 'Faruri Laser' },
+      { value: 'drl', label: 'Lumini de zi LED' },
+      { value: 'adaptive-headlights', label: 'Faruri adaptive' },
+      { value: 'high-beam-assist', label: 'Asistență fază lungă' },
+      { value: 'alloy-wheels', label: 'Jante aliaj' },
+      { value: 'roof-rails', label: 'Bare portbagaj' },
+      { value: 'tinted-windows', label: 'Geamuri fumurii' },
+    ],
+  },
 ] as const
