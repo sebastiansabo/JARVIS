@@ -122,6 +122,11 @@ export interface LeaveSchedule {
   placeholders?: Record<string, string>
   visible?: Record<string, boolean>
   terms_text?: string
+  /** The exact reason string that draws banked hours; only selectable when
+   *  time_bank_balance > 0. */
+  event_hours_reason?: string
+  /** Pooled Time Bank balance in hours for the current user (can be negative). */
+  time_bank_balance?: number
   /** The direct manager the empty-approver default routes to — auto-selected
    *  as a named chip on form open. Null when none can be resolved. */
   default_approver?: { id: number; name: string } | null
