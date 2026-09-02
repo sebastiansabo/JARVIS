@@ -54,6 +54,8 @@ export interface ConnecteamSubmission {
   leave_end_time: string | null
   leave_hours: number | null
   leave_reason: string | null
+  /** True when this bilet is a backdated Corectie Ore (shown with a red badge). */
+  is_correction?: boolean
   leave_destination: string | null
   approved_by: string | null
   pending_approvers?: string[]
@@ -91,6 +93,10 @@ export interface LeaveApproval {
   leave_hours: number | null
   leave_reason: string | null
   requested_at: string | null
+  /** True when the underlying bilet is a backdated Corectie Ore. */
+  is_correction?: boolean
+  /** The company contract the leave is against (multi-contract employees). */
+  company?: string | null
   is_cancellation?: boolean
   /** Requester's motive for a cancellation request (shown to the manager). */
   cancellation_reason?: string | null
@@ -125,11 +131,32 @@ export interface LeaveSchedule {
   /** The exact reason string that draws banked hours; only selectable when
    *  time_bank_balance > 0. */
   event_hours_reason?: string
+  /** Reasons that do NOT debit the Time Bank (e.g. lunch) — no live "remaining"
+   *  projection is shown for these. */
+  non_counting_reasons?: string[]
   /** Pooled Time Bank balance in hours for the current user (can be negative). */
   time_bank_balance?: number
+  /** Personal pool (total − event) — may go negative. */
+  time_bank_personal?: number
+  /** Event pool (capped, never negative) — the event reason draws it and can't exceed it. */
+  time_bank_event?: number
   /** The direct manager the empty-approver default routes to — auto-selected
    *  as a named chip on form open. Null when none can be resolved. */
   default_approver?: { id: number; name: string } | null
+  /** The company contract in effect (chosen, or primary = highest norma). */
+  selected_company?: string | null
+  /** All active company contracts — the multi-contract selector. Each has its own
+   *  window/cap/lunch; switching company re-syncs the schedule. */
+  companies?: LeaveScheduleCompany[]
+}
+
+export interface LeaveScheduleCompany {
+  company_name: string
+  norma_lucru: number | null
+  schedule_start: string
+  schedule_end: string
+  lunch_break_minutes: number
+  day_cap_hours: number
 }
 
 export const connecteamApi = {
@@ -200,8 +227,8 @@ export const connecteamApi = {
   getApprovers: (scope?: 'all') =>
     api.get<{ success: boolean; data: { id: number; name: string }[] }>(`${BASE}/approvers${scope ? '?scope=all' : ''}`),
 
-  getLeaveSchedule: (date?: string) =>
-    api.get<{ success: boolean; data: LeaveSchedule }>(`${BASE}/leave-schedule${qs({ date })}`),
+  getLeaveSchedule: (date?: string, company?: string) =>
+    api.get<{ success: boolean; data: LeaveSchedule }>(`${BASE}/leave-schedule${qs({ date, company })}`),
 
   importExcel: (file: File) => {
     const form = new FormData()

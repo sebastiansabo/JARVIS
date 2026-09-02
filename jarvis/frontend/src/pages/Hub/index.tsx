@@ -1692,6 +1692,7 @@ function HubLeavePermitsContent({ userId, year, month }: { userId: number; year:
                         ) : null}
                       </div>
                       <div className="flex items-center gap-2 shrink-0 ml-3">
+                        {s.is_correction && <Badge className="text-[9px] border-transparent bg-destructive/15 text-destructive">Corecție</Badge>}
                         <LeaveStatusBadge status={s.status} />
                         {s.source === 'jarvis' && <Badge variant="secondary" className="text-[9px]">JARVIS</Badge>}
                         <span className="text-sm font-semibold tabular-nums">{s.leave_hours != null ? `${s.leave_hours}h` : '—'}</span>
@@ -1906,9 +1907,13 @@ function HubLeaveApprovalsContent() {
                         {labels.badge}
                       </Badge>
                     )}
+                    {it.is_correction && (
+                      <Badge className="mb-1 ml-1 border-transparent bg-destructive/15 text-destructive">Corecție (retroactiv)</Badge>
+                    )}
                     <p className="text-base font-semibold">{it.requester_name || 'Angajat'}</p>
                     <p className="text-sm text-muted-foreground">
                       {dateStr} · {it.leave_start_time?.slice(0, 5) || '—'}–{it.leave_end_time?.slice(0, 5) || '—'} · Motiv: {it.leave_reason || 'Învoire'}
+                      {it.company && <> · {it.company}</>}
                     </p>
                     {it.is_cancellation && it.cancellation_reason && (
                       <p className="mt-0.5 text-sm font-medium text-amber-700 dark:text-amber-400">

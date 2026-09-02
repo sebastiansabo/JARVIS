@@ -29,6 +29,8 @@ def _open_cancellation_approval(sub, user_id, reason=None):
     ctx = {
         'cancellation': True,
         'cancellation_reason': (reason or '').strip(),
+        # Match the dedicated leave flow (24h auto-approve) like the submit path.
+        'form_slug': 'bilet-de-invoire',
         'title': f'Anulare bilet de invoire #{sub["id"]}',
         'approver_user_id': approver_id,
         'stakeholder_approver_ids': [approver_id] if approver_id else [],

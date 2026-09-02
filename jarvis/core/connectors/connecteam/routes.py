@@ -176,11 +176,16 @@ def get_leave_schedule_route():
     from forms.services.form_service import FormService
     try:
         fs = FormService()
-        data = get_leave_schedule(current_user.id, request.args.get('date'))
+        data = get_leave_schedule(current_user.id, request.args.get('date'),
+                                  request.args.get('company'))
         data.update(fs.get_leave_form_config())  # reasons, event_hours_reason, labels, placeholders, visible, terms_text
-        # Pooled Time Bank balance (can be negative) — the "Ore Libere din Eveniment"
-        # reason is only selectable when this is > 0.
-        data['time_bank_balance'] = fs.get_time_bank_balance(current_user.id)
+        # Two Time Bank pools shown separately on the form: personal (may go
+        # negative) and event (capped, never negative — the "Ore Libere din
+        # Eveniment" reason draws it and can't exceed it).
+        split = fs.get_time_bank_split(current_user.id)
+        data['time_bank_balance'] = split['total']       # back-compat / pooled
+        data['time_bank_personal'] = split['personal']
+        data['time_bank_event'] = split['event']
         # {id, name} of the direct manager the empty-approver default routes to, so
         # the form can auto-select it as a named chip on open.
         data['default_approver'] = fs.get_default_leave_approver(current_user.id)
@@ -219,6 +224,22 @@ def get_employee_submissions(user_id):
         return safe_error_response(e)
 
 
+def _can_create_correction(user) -> bool:
+    """True if the user may file a Corectie Ore — matrix perm
+    hr.leave_permissions.correct (admins always allowed)."""
+    if getattr(user, 'is_admin', False) or getattr(user, 'can_access_settings', False):
+        return True
+    role_id = getattr(user, 'role_id', None)
+    if not role_id:
+        return False
+    try:
+        from core.roles.repositories import PermissionRepository
+        return bool(PermissionRepository().check_permission_v2(
+            role_id, 'hr', 'leave_permissions', 'correct').get('has_permission'))
+    except Exception:
+        return False
+
+
 @connecteam_bp.route('/api/submissions/leave-permit', methods=['POST'])
 @api_login_required
 def create_leave_permit():
@@ -231,6 +252,11 @@ def create_leave_permit():
     from forms.services.form_service import FormService, UserContext
     data = request.get_json(silent=True) or {}
     answers = data.get('answers') if isinstance(data.get('answers'), dict) else data
+    # Corectie Ore (backdated hours correction) is gated by the role matrix.
+    if isinstance(answers, dict) and answers.get('f_bi_is_correction') \
+            and not _can_create_correction(current_user):
+        return jsonify({'success': False,
+                        'error': 'Permission denied: hr.leave_permissions.correct'}), 403
     user = UserContext(user_id=current_user.id, company=getattr(current_user, 'company', None))
     try:
         result = FormService().submit_leave_permit(answers, user, ip_address=request.remote_addr)
