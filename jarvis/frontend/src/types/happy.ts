@@ -181,6 +181,8 @@ export interface HappyKudosError {
 export interface HappyReceivedKudos {
   id: number
   from_user: string | number
+  /** Giver's display name; null if the account no longer exists. */
+  from_name: string | null
   note: string
   points: number
   created_at: string
@@ -190,6 +192,23 @@ export interface HappyReceivedKudos {
 
 export interface HappyReceivedResponse {
   items: HappyReceivedKudos[]
+}
+
+export interface HappySentKudos {
+  id: number
+  to_user: string | number
+  /** Recipient's display name; null if the account no longer exists. */
+  to_name: string | null
+  note: string
+  points: number
+  created_at: string
+  visibility: HappyKudosVisibility
+  value_tag: string | null
+  value_label: string | null
+}
+
+export interface HappySentResponse {
+  items: HappySentKudos[]
 }
 
 export interface HappyPraiseTrendPoint {
