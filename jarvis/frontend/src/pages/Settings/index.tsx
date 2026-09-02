@@ -22,6 +22,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Router,
+  ScrollText,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -48,6 +49,7 @@ const EmployeeMappingTab = lazy(() => import('./EmployeeMappingTab'))
 const TablesTab = lazy(() => import('./TablesTab'))
 const AutovitDetail = lazy(() => import('./AutovitDetail'))
 const TelemetryTab = lazy(() => import('./TelemetryTab'))
+const ConsentsTab = lazy(() => import('./ConsentsTab'))
 
 const baseTabs = [
   // Access
@@ -76,6 +78,8 @@ const baseTabs = [
   { path: 'connectors', label: 'Connectors', icon: Plug },
   // AI
   { path: 'ai', label: 'AI Agent', icon: Bot },
+  // Legal
+  { path: 'consents', label: 'Acorduri', icon: ScrollText },
 ] satisfies Array<{ path: string; label: string; icon: typeof Users }>
 
 function TabSkeleton() {
@@ -172,6 +176,7 @@ export default function Settings() {
               <Route path="connectors" element={<ConnectorsTab />} />
               <Route path="connectors/autovit/:accountId" element={<AutovitDetail />} />
               <Route path="ai" element={<AiTab />} />
+              <Route path="consents" element={<ConsentsTab />} />
               {isAdmin && <Route path="telemetry" element={<TelemetryTab />} />}
               <Route path="*" element={<Navigate to="users" replace />} />
             </Routes>

@@ -275,6 +275,9 @@ def _register_blueprints(flask_app: Flask):
     from core.media.routes import media_bp
     flask_app.register_blueprint(media_bp)
 
+    from core.consents.routes import consents_bp
+    flask_app.register_blueprint(consents_bp)
+
 
 def _register_hooks(flask_app: Flask):
     """Register before/after request hooks and approval notification handlers."""
@@ -303,6 +306,15 @@ def _register_hooks(flask_app: Flask):
 
     @flask_app.after_request
     def _mobile_cors(response):
+        # NOTE (consent-gate Task 4): this hook is origin+method based, not a
+        # per-path allowlist — it fires for every response regardless of
+        # blueprint/path. The two new mobile routes (GET
+        # /api/mobile/consents/pending, POST /api/mobile/consents/sign) use
+        # methods already covered by Access-Control-Allow-Methods below, so no
+        # path needs to be added here. (The known gotcha this hook guards
+        # against — see reference_jarvis_mobile_cors_methods memory — is a
+        # NEW HTTP *method* missing from the list, e.g. PATCH; it is not about
+        # missing paths.)
         origin = request.headers.get('Origin', '')
         if origin.startswith(('capacitor://', 'http://localhost', 'https://localhost', 'http://127.0.0.1')):
             response.headers['Access-Control-Allow-Origin'] = origin

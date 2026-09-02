@@ -3,6 +3,7 @@ import { Menu, MapPin, UserCircle, Bot } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { fetchColumnDefaults } from '@/lib/columnDefaults'
+import ConsentGate from '@/components/consents/ConsentGate'
 import { Sidebar } from './Sidebar'
 import { ThemeToggle } from './ThemeToggle'
 import { NotificationBell } from './NotificationBell'
@@ -75,6 +76,10 @@ export default function Layout() {
   if (!user) {
     window.location.href = '/login'
     return null
+  }
+
+  if (user.consents_complete === false) {
+    return <ConsentGate />
   }
 
   return (
