@@ -214,6 +214,16 @@ def test_create_document_denied_for_regular_user(client, login_as):
     assert resp.status_code == 403
 
 
+def test_create_document_duplicate_doc_key_returns_409(client, login_as):
+    # 'nda' is one of the 3 seed docs (see test_consent_repository.py) — the
+    # doc_key column has a UNIQUE constraint, so re-using it must surface as
+    # a clean 409, not an uncaught IntegrityError -> 500.
+    login_as(3)  # Settings admin
+    resp = client.post('/api/consents/documents', json={'doc_key': 'nda', 'title': 'Duplicate NDA'})
+    assert resp.status_code == 409
+    assert resp.get_json()['error'] == 'doc_key_exists'
+
+
 # ---------- R2: compliance gated to HR admins ----------
 
 def test_compliance_denied_for_regular_user(client, login_as):

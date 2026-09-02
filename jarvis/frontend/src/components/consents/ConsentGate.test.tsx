@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ConsentDocument } from '@/api/consents'
 
 vi.mock('@/components/shared/SignatureCanvas', () => ({
@@ -39,28 +40,77 @@ function signCurrentStep() {
   fireEvent.click(screen.getByRole('button', { name: /semnează și continuă/i }))
 }
 
+// ConsentGate's self-heal effect calls the *real* useQueryClient() /
+// invalidateQueries() (only usePendingConsents/useSignConsent are mocked
+// above), so every render needs a live QueryClientProvider in the tree.
+// Accepts an optional pre-built QueryClient so a test can attach a spy to
+// `invalidateQueries` *before* the first render/effect flush.
+function renderGate(queryClient: QueryClient = new QueryClient()) {
+  const utils = render(
+    <QueryClientProvider client={queryClient}>
+      <ConsentGate />
+    </QueryClientProvider>,
+  )
+  return { ...utils, queryClient }
+}
+
 describe('ConsentGate', () => {
   it('shows a loading state while pending consents load', () => {
     usePendingConsents.mockReturnValue({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() })
-    render(<ConsentGate />)
+    renderGate()
     expect(screen.getByText(/se încarcă acordurile/i)).toBeInTheDocument()
   })
 
-  it('renders nothing when there is nothing pending', () => {
+  it('never renders blank when there is nothing pending — shows a logout escape and self-heals exactly once', async () => {
+    const queryClient = new QueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
     usePendingConsents.mockReturnValue({ data: { complete: true, pending: [] }, isLoading: false, isError: false, refetch: vi.fn() })
-    const { container } = render(<ConsentGate />)
-    expect(container).toBeEmptyDOMElement()
+
+    const { container, rerender } = renderGate(queryClient)
+
+    // Never a bare blank screen: the gate shell + logout escape must render.
+    expect(container).not.toBeEmptyDOMElement()
+    expect(screen.getByRole('link', { name: /deconectează-te/i })).toHaveAttribute('href', '/logout')
+    expect(screen.getByText(/se finalizează/i)).toBeInTheDocument()
+
+    // Self-heals by invalidating the current-user query so Layout re-checks
+    // consents_complete and can unmount the gate.
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['currentUser'] }))
+
+    // Re-rendering (simulating the background query settling again) must
+    // NOT trigger a second invalidate — guarded to fire at most once.
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <ConsentGate />
+      </QueryClientProvider>,
+    )
+    expect(invalidateSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the logout escape on the finishing/terminal shell after the final document is signed', async () => {
+    usePendingConsents.mockReturnValue({ data: { complete: false, pending: DOCS }, isLoading: false, isError: false, refetch: vi.fn() })
+    renderGate()
+
+    mutateAsync.mockResolvedValueOnce({ complete: false, pending_count: 1 })
+    signCurrentStep()
+    await waitFor(() => expect(screen.getByText('Document 2 din 2')).toBeInTheDocument())
+
+    mutateAsync.mockResolvedValueOnce({ complete: true, pending_count: 0 })
+    signCurrentStep()
+
+    await waitFor(() => expect(screen.getByText(/se finalizează/i)).toBeInTheDocument())
+    expect(screen.getByRole('link', { name: /deconectează-te/i })).toHaveAttribute('href', '/logout')
   })
 
   it('exposes a logout escape', () => {
     usePendingConsents.mockReturnValue({ data: { complete: false, pending: DOCS }, isLoading: false, isError: false, refetch: vi.fn() })
-    render(<ConsentGate />)
+    renderGate()
     expect(screen.getByRole('link', { name: /deconectează-te/i })).toHaveAttribute('href', '/logout')
   })
 
   it('advances to the next pending document after a non-final sign, then shows a finishing state on the final sign', async () => {
     usePendingConsents.mockReturnValue({ data: { complete: false, pending: DOCS }, isLoading: false, isError: false, refetch: vi.fn() })
-    render(<ConsentGate />)
+    renderGate()
 
     expect(screen.getByText('Document 1 din 2')).toBeInTheDocument()
     expect(screen.getByText('Confidențialitate')).toBeInTheDocument()

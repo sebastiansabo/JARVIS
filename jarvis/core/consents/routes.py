@@ -26,6 +26,7 @@ every role.
 """
 from functools import wraps
 
+import psycopg2
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
 
@@ -168,10 +169,16 @@ def create_document():
     d = request.get_json(silent=True) or {}
     if not d.get('doc_key') or not d.get('title'):
         return jsonify({'error': 'doc_key_and_title_required'}), 400
-    doc = _svc.repo.create_document(
-        d['doc_key'], d['title'], d.get('body', ''), int(d.get('sort_order', 0)),
-        bool(d.get('requires_signature', True)), bool(d.get('is_mandatory', True)),
-        bool(d.get('is_active', False)), current_user.id)
+    try:
+        doc = _svc.repo.create_document(
+            d['doc_key'], d['title'], d.get('body', ''), int(d.get('sort_order', 0)),
+            bool(d.get('requires_signature', True)), bool(d.get('is_mandatory', True)),
+            bool(d.get('is_active', False)), current_user.id)
+    except psycopg2.errors.UniqueViolation:
+        # doc_key has a UNIQUE constraint (schema) — re-using an existing key
+        # would otherwise bubble up as an uncaught IntegrityError -> 500.
+        # BaseRepository.execute() already rolled back the connection.
+        return jsonify({'error': 'doc_key_exists'}), 409
     return jsonify({'document': doc}), 201
 
 
