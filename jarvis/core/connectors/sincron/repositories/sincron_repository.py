@@ -528,6 +528,24 @@ class SincronRepository(BaseRepository):
             LIMIT 1
         ''', (date_str, jarvis_user_id))
 
+    def get_active_company_schedules(self, jarvis_user_id):
+        """All active company contracts' static schedules for a mapped JARVIS user,
+        highest norma first. One row per company — this is the multi-contract case
+        the Invoire company selector uses (each company has its own window/cap/lunch)."""
+        return self.query_all('''
+            SELECT company_name,
+                   norma_lucru,
+                   schedule_start,
+                   schedule_end,
+                   COALESCE(lunch_break_minutes, 0) AS lunch_break_minutes
+            FROM sincron_employees
+            WHERE mapped_jarvis_user_id = %s
+              AND is_active = TRUE
+              AND norma_lucru IS NOT NULL
+              AND exclude_from_pontaje = FALSE
+            ORDER BY norma_lucru DESC, company_name
+        ''', (jarvis_user_id,))
+
     def get_day_intervals_by_jarvis_user(self, jarvis_user_id, date_str):
         """Get all company intervals for a JARVIS user on a specific date.
 

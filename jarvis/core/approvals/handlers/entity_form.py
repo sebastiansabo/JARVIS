@@ -135,12 +135,21 @@ def _debit_leave_permit_hours(submission_id, sub_repo):
 
         if not user_id or hours <= 0:
             return
+        # Lunch ('Pauza de masa') never debits the Time Bank.
+        from forms.services.form_service import FormService
+        reason = answers.get('f_bi_reason')
+        if not FormService.reason_counts_against_bank(reason):
+            logger.info(f'Time Bank debit skipped (reason "{reason}") for form_submission #{submission_id}')
+            return
+        # Event-reason leaves draw the capped event pool (distinct tx_type keeps the
+        # two pools separable); everything else draws the personal pool.
+        tx_type = 'leave_permit_event' if FormService.is_event_reason(reason) else 'leave_permit'
 
         from hr.time_bank.service import TimeBankService
         TimeBankService().debit(
             user_id=user_id,
             amount=hours,
-            tx_type='leave_permit',
+            tx_type=tx_type,
             description=f'Bilet de invoire: {hours}h on {leave_date or "N/A"}',
             reference_type='form_submission',
             reference_id=submission_id,
@@ -169,11 +178,18 @@ def _reverse_leave_permit_hours(submission_id, sub_repo):
         user_id = sub.get('respondent_user_id')
         if not user_id or hours <= 0:
             return
+        # Lunch never debited, so there is nothing to reverse.
+        from forms.services.form_service import FormService
+        reason = answers.get('f_bi_reason')
+        if not FormService.reason_counts_against_bank(reason):
+            return
+        # Reverse into the same pool the debit came from.
+        tx_type = 'leave_permit_event_reversal' if FormService.is_event_reason(reason) else 'leave_permit_reversal'
         from hr.time_bank.service import TimeBankService
         TimeBankService().credit(
             user_id=user_id,
             amount=hours,
-            tx_type='leave_permit_reversal',
+            tx_type=tx_type,
             description=f'Anulare bilet de invoire: +{hours}h',
             reference_type='form_submission_cancel',
             reference_id=submission_id,

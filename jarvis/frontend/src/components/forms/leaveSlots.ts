@@ -46,8 +46,11 @@ export function buildDurationOptions(
   return out
 }
 
-export function computeReturn(startHM: string, durationHours: number): string {
+// Return time = start + work duration + extraMinutes. A full-day leave passes the
+// lunch break as extraMinutes so the return shows the real program end
+// (08:00 + 8h work + 60m lunch = 17:00). The duration itself stays work-hours.
+export function computeReturn(startHM: string, durationHours: number, extraMinutes = 0): string {
   const s = parseHM(startHM)
   if (s === null) return ''
-  return toHM(s + Math.round(durationHours * 60))
+  return toHM(s + Math.round(durationHours * 60) + Math.round(extraMinutes))
 }

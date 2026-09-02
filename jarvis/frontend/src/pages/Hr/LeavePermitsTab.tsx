@@ -438,7 +438,12 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                         <TableCell className="text-xs">{s.leave_start_time?.slice(0, 5) || '-'}</TableCell>
                         <TableCell className="text-xs">{s.leave_end_time?.slice(0, 5) || '-'}</TableCell>
                         <TableCell className="text-xs tabular-nums">{s.leave_hours != null ? s.leave_hours : '-'}</TableCell>
-                        <TableCell className="max-w-[200px] truncate text-xs">{s.leave_reason || '-'}</TableCell>
+                        <TableCell className="max-w-[200px] text-xs">
+                          <div className="flex items-center gap-1">
+                            <span className="truncate">{s.leave_reason || '-'}</span>
+                            {s.is_correction && <Badge className="shrink-0 text-[9px] border-transparent bg-destructive/15 text-destructive">Corecție</Badge>}
+                          </div>
+                        </TableCell>
                         <TableCell className="whitespace-nowrap text-xs">{s.approved_by || '-'}</TableCell>
                         <TableCell>
                           <StatusBadge
