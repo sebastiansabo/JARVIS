@@ -208,6 +208,27 @@ def _user_json(user) -> dict:
     def _mobile(module_key):
         return mob_access.get(module_key, True)
 
+    # Mandatory consent-documents gate status (mobile first-login bypass fix):
+    # the mobile auth store is populated straight from the /api/auth/token,
+    # /api/auth/verify-otp and refresh response bodies — all of which serialize
+    # through _user_json — so these two keys MUST ride along uniformly, or the
+    # store starts with consents_complete === undefined and the gate's
+    # `=== false` check never fires (whole-session bypass on first login).
+    # Single 2-query pass via get_status(); lazy import avoids a circular
+    # import (consents service -> repositories -> ... back into mobile routes).
+    _uid = getattr(user, 'id', None)
+    try:
+        from core.consents.services.consent_service import ConsentService
+        _consent_status = (
+            ConsentService().get_status(_uid) if _uid
+            else {'complete': True, 'pending_count': 0}
+        )
+    except Exception:
+        # No DB / consents subsystem hiccup: degrade to "gate dormant"
+        # (complete=True) rather than throwing and breaking the whole login —
+        # the current-user endpoints re-check on every app open/resume anyway.
+        _consent_status = {'complete': True, 'pending_count': 0}
+
     return {
         'id': user.id,
         'name': user.name,
@@ -227,6 +248,9 @@ def _user_json(user) -> dict:
         # Flat permission flags (no wrapper — extractPermissions reads top-level)
         'is_hr_manager': bool(getattr(user, 'is_hr_manager', False)),
         'is_superuser': bool(getattr(user, 'is_superuser', False)),
+        # Mandatory consent-documents gate (see _consent_status above).
+        'consents_complete': _consent_status['complete'],
+        'pending_consents_count': _consent_status['pending_count'],
         'can_access_marketing':  _mod('marketing',  'can_access_marketing'),
         'can_access_hr':         _mod('hr',         'can_access_hr'),
         'can_access_approvals':  _mod('approvals',  'can_access_approvals'),

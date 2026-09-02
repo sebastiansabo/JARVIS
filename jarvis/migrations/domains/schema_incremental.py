@@ -16,6 +16,49 @@ import os
 logger = logging.getLogger(__name__)
 
 
+# ── Consent documents — mandatory first-login legal gate seed bodies ──
+# Placeholder copy only — never binding legal text. Seeded is_active=FALSE so
+# these never block real users until an admin finalizes wording and flips
+# active. See the "Consent documents" incremental block below.
+_SEED_DATA_USAGE = (
+    "Pentru o comunicare directă a informațiilor dinspre companie către "
+    "dumneavoastră și dinspre dumneavoastră către companie, Autoworld vă invită "
+    "să utilizați aplicația JARVIS, autentificându-vă cu:\n"
+    "• numele și prenumele\n"
+    "• numărul de telefon\n"
+    "• și/sau adresa de e-mail personală sau de firmă\n\n"
+    "Aplicația NU urmărește și NU prelucrează date privind:\n"
+    "• locația telefonului\n"
+    "• conținutul din telefon\n"
+    "• alte date personale în afara celor menționate mai sus\n\n"
+    "Prin semnarea prezentului acord confirm că sunt de acord ca datele "
+    "menționate să fie utilizate în cadrul aplicației JARVIS a Autoworld."
+)
+_SEED_GDPR = (
+    "‹DE COMPLETAT DPO›\n\n"
+    "Notă de informare privind prelucrarea datelor cu caracter personal\n"
+    "Temei legal: Regulamentul (UE) 2016/679 (GDPR) și Legea nr. 190/2018.\n\n"
+    "1. Operator de date: ‹denumire, CUI, sediu›\n"
+    "2. Categoriile de date prelucrate: ‹…›\n"
+    "3. Scopul prelucrării: ‹…›\n"
+    "4. Durata de stocare: ‹…›\n"
+    "5. Drepturile persoanei vizate: acces, rectificare, ștergere, "
+    "restricționare, portabilitate, opoziție, retragerea consimțământului, "
+    "plângere la ANSPDCP.\n"
+    "6. Date de contact DPO: ‹…›"
+)
+_SEED_NDA = (
+    "‹DE COMPLETAT — juridic›\n\n"
+    "Acord de confidențialitate (NDA)\n\n"
+    "1. Părțile\n"
+    "2. Definiția informațiilor confidențiale\n"
+    "3. Obligațiile de confidențialitate\n"
+    "4. Durata obligațiilor\n"
+    "5. Consecințele încălcării\n"
+    "6. Legea aplicabilă și jurisdicția"
+)
+
+
 def _recompute_bilant_formula_values(cursor):
     """Recompute all formula_rd values in bilant_results.
 
@@ -3212,5 +3255,62 @@ def _create_schema_incremental_continued(conn, cursor):
             END IF;
         END $$;
     ''')
+
+    # ── Consent documents — mandatory first-login legal gate ──
+    # Two user-keyed tables (users table is intentionally NOT altered).
+    # Seeded is_active=FALSE so placeholder copy never blocks staff; an admin
+    # finalizes text in Settings then flips active. See consents module.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS consent_documents (
+            id                 SERIAL PRIMARY KEY,
+            doc_key            TEXT NOT NULL UNIQUE,
+            title              TEXT NOT NULL,
+            body               TEXT NOT NULL DEFAULT '',
+            sort_order         INTEGER NOT NULL DEFAULT 0,
+            requires_signature BOOLEAN NOT NULL DEFAULT TRUE,
+            is_mandatory       BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active          BOOLEAN NOT NULL DEFAULT TRUE,
+            version            INTEGER NOT NULL DEFAULT 1,
+            created_at         TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at         TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_by         INTEGER REFERENCES users(id)
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_consent_signatures (
+            id               SERIAL PRIMARY KEY,
+            user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            document_id      INTEGER NOT NULL REFERENCES consent_documents(id) ON DELETE CASCADE,
+            document_version INTEGER NOT NULL DEFAULT 1,
+            response         TEXT NOT NULL DEFAULT 'accepted'
+                                CHECK (response IN ('accepted','declined')),
+            signature_image  TEXT,
+            document_hash    TEXT,
+            ip_address       TEXT,
+            user_agent       TEXT,
+            signed_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_user_consent UNIQUE (user_id, document_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_ucs_user ON user_consent_signatures(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_ucs_document ON user_consent_signatures(document_id)')
+
+    # Seed the 3 documents (inactive). Bodies are placeholders — the data_usage
+    # body is adapted from the provided Connecteam example; gdpr/nda are marked
+    # for DPO/legal completion. ON CONFLICT keeps admin edits on re-run.
+    cursor.execute('''
+        INSERT INTO consent_documents (doc_key, title, body, sort_order, is_active)
+        VALUES
+          ('data_usage',
+           'Acord privind utilizarea datelor de contact',
+           %s, 1, FALSE),
+          ('gdpr',
+           'Notă de informare și acord GDPR',
+           %s, 2, FALSE),
+          ('nda',
+           'Acord de confidențialitate (NDA)',
+           %s, 3, FALSE)
+        ON CONFLICT (doc_key) DO NOTHING
+    ''', (_SEED_DATA_USAGE, _SEED_GDPR, _SEED_NDA))
 
     conn.commit()

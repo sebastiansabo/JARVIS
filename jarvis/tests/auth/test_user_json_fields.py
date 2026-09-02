@@ -80,6 +80,18 @@ def test_user_json_includes_new_flags_with_correct_types():
     assert result['can_access_test_drive'] is True
     assert isinstance(result['can_access_test_drive'], bool)
 
+    # Mobile first-login bypass fix: EVERY auth response (token/verify-otp/
+    # refresh) serializes through _user_json, so both consent-gate keys must
+    # ride along here too. Under this test's mocked psycopg2 the real
+    # get_status() can't query, so it degrades to the dormant default
+    # (complete=True / 0) — the point of this assertion is that the keys are
+    # always present with the right primitive types (never `undefined` on the
+    # mobile store). See test_consent_user_json.py for the real-value flow.
+    assert 'consents_complete' in result
+    assert 'pending_consents_count' in result
+    assert isinstance(result['consents_complete'], bool)
+    assert isinstance(result['pending_consents_count'], int)
+
 
 def test_user_json_is_superuser_defaults_false_when_absent():
     """If the User instance has no is_superuser attribute at all, it must
