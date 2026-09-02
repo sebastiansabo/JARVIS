@@ -82,6 +82,13 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
   const showNotes = true
   const showApprover = true
   const termsText = sched?.terms_text || 'Declar că îmi asum responsabilitatea pentru orice eventual eveniment neplăcut care ar putea surveni în legătură cu mine, în această perioadă în care sunt învoit / învoită 🔒'
+  // "Ore Libere din Eveniment" draws from the pooled Time Bank balance — only
+  // selectable while that balance is > 0 (it can otherwise go negative).
+  const eventReason = sched?.event_hours_reason
+  const bankBalance = sched?.time_bank_balance ?? 0
+  const hasBalance = typeof sched?.time_bank_balance === 'number'
+  const eventReasonEnabled = bankBalance > 0
+  const fmtHours = (h: number) => (Number.isInteger(h) ? String(h) : h.toFixed(1))
   const startSlots = useMemo(
     () => (sched
       ? buildStartSlots(sched.schedule_start, sched.schedule_end,
@@ -291,12 +298,28 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
 
           <div className="space-y-1">
             <Label>{L('f_bi_reason', 'Motivul')}{req}</Label>
+            {hasBalance && (
+              <p className="text-xs text-muted-foreground">
+                Sold bancă de ore:{' '}
+                <span className={cn('font-medium', eventReasonEnabled ? 'text-foreground' : 'text-destructive')}>
+                  {fmtHours(bankBalance)}h
+                </span>
+              </p>
+            )}
             <Select value={reason} onValueChange={setReason}>
               <SelectTrigger aria-invalid={attempted && invalid.reason ? true : undefined}>
                 <SelectValue placeholder="Selectați motivul" />
               </SelectTrigger>
               <SelectContent>
-                {(sched?.reasons?.length ? sched.reasons : REASONS).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                {(sched?.reasons?.length ? sched.reasons : REASONS).map((r) => (
+                  r === eventReason
+                    ? <SelectItem key={r} value={r} disabled={!eventReasonEnabled}>
+                        {eventReasonEnabled
+                          ? `${r} — ${fmtHours(bankBalance)}h disponibile`
+                          : `${r} — indisponibil (sold ${fmtHours(bankBalance)}h)`}
+                      </SelectItem>
+                    : <SelectItem key={r} value={r}>{r}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
