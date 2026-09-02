@@ -752,5 +752,9 @@ def api_delete_client_contact(client_id, contact_id):
     existing = _contact_repo.get(contact_id)
     if not existing or existing['client_id'] != client_id:
         return jsonify({'success': False, 'error': 'Contact not found'}), 404
+    # Guard: never orphan a live/upcoming session's driver snapshot.
+    if _contact_repo.active_session_count(contact_id) > 0:
+        return jsonify({'success': False,
+                        'error': 'Persoana este șofer pe o sesiune activă și nu poate fi ștearsă.'}), 409
     _contact_repo.delete(contact_id)
     return jsonify({'success': True})

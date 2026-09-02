@@ -237,6 +237,69 @@ def _seed_document_types(conn, cursor):
         logger.exception('Failed to seed fp_document_types — continuing schema init')
 
 
+def _seed_rental_tariffs(conn, cursor):
+    """Seed the SHARETOO rental tariff scheme for Autoworld PREMIUM (company 11).
+
+    Idempotent (ON CONFLICT DO NOTHING everywhere) and company-scoped, so
+    re-runs and every other company are untouched; admins edit afterwards. Seed
+    data is loaded by file path (importlib) to avoid the foi_parcurs package
+    circular import when called from database.init_db(). Same SAVEPOINT
+    discipline as _seed_document_types — only the seed rolls back on failure."""
+    try:
+        seed_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', 'foi_parcurs',
+            'services', 'rental_tariff_seed.py'
+        )
+        spec = importlib.util.spec_from_file_location('_rental_tariff_seed', seed_path)
+        seed = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(seed)
+        co = seed.SHARETOO_COMPANY_ID
+
+        use_savepoint = not getattr(conn, 'autocommit', False)
+        if use_savepoint:
+            cursor.execute('SAVEPOINT rental_tariff_seed')
+        try:
+            for label, mn, mx, so in seed.SHARETOO_INTERVALS:
+                cursor.execute(
+                    '''INSERT INTO fp_rental_intervals
+                           (company_id, label, min_days, max_days, sort_order)
+                       VALUES (%s, %s, %s, %s, %s)
+                       ON CONFLICT (company_id, min_days) DO NOTHING''',
+                    (co, label, mn, mx, so))
+            cursor.execute(
+                'SELECT id, min_days FROM fp_rental_intervals WHERE company_id=%s', (co,))
+            iv_by_min = {r['min_days']: r['id'] for r in cursor.fetchall()}
+            mins_in_order = [mn for (_, mn, _, _) in seed.SHARETOO_INTERVALS]
+
+            for idx, (name, note, fr, ekm, prices) in enumerate(seed.SHARETOO_CATEGORIES):
+                cursor.execute(
+                    '''INSERT INTO fp_rental_categories
+                           (company_id, name, models_note, franchise_eur,
+                            extra_km_eur, sort_order, is_active)
+                       VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+                       ON CONFLICT (company_id, name) DO NOTHING''',
+                    (co, name, note, fr, ekm, idx))
+                cursor.execute(
+                    'SELECT id FROM fp_rental_categories WHERE company_id=%s AND name=%s',
+                    (co, name))
+                cat_id = cursor.fetchone()['id']
+                for mn, price in zip(mins_in_order, prices):
+                    cursor.execute(
+                        '''INSERT INTO fp_rental_category_prices
+                               (company_id, category_id, interval_id, eur_per_day)
+                           VALUES (%s, %s, %s, %s)
+                           ON CONFLICT (company_id, category_id, interval_id) DO NOTHING''',
+                        (co, cat_id, iv_by_min[mn], price))
+            if use_savepoint:
+                cursor.execute('RELEASE SAVEPOINT rental_tariff_seed')
+        except Exception:
+            if use_savepoint:
+                cursor.execute('ROLLBACK TO SAVEPOINT rental_tariff_seed')
+            raise
+    except Exception:
+        logger.exception('Failed to seed rental tariffs — continuing schema init')
+
+
 def create_schema_incremental(conn, cursor):
     """Run all incremental column/index/table migrations.
 
@@ -1846,6 +1909,11 @@ def _create_carpark_incremental(conn, cursor):
         ('gw_file_number', 'VARCHAR(50)'), ('is_impus', 'BOOLEAN DEFAULT FALSE'),
         ('missing_civ', 'BOOLEAN DEFAULT FALSE'), ('stock_removed', 'BOOLEAN DEFAULT FALSE'),
         ('stock_removed_date', 'DATE'),
+        # Fabrication date at year+month precision (stored as the 1st of the
+        # chosen month) — backs the "Date of fabrication" form field;
+        # year_of_manufacture is kept in sync client-side for the existing
+        # fleet year-range filters.
+        ('manufacture_date', 'DATE'),
         # Inter-company transfer: marks a vehicle that landed here via a
         # transfer FROM another AutoWorld sibling company (see
         # carpark_transfers below — this column is the fast "is this a
@@ -1861,6 +1929,104 @@ def _create_carpark_incremental(conn, cursor):
               END IF;
             END $$;
         """)
+
+    # ── CarPark specs: fuel-tank / battery capacity + consumption norms ──
+    # Mirrors the Driving-Park (fp_vehicles) capacity/norm model so the
+    # car-profile form can capture battery capacity for EV/hybrid/PHEV and the
+    # fuel-consumption norm for combustion cars. Rendered conditionally by
+    # fuel_type in the CarPark VehicleForm (usesFuelTank / usesBattery).
+    for _col, _type in [
+        ('fuel_tank_capacity_liters', 'NUMERIC'),
+        ('battery_capacity_kwh', 'NUMERIC'),
+        ('norma_combustibil', 'NUMERIC'),
+        ('norma_energie', 'NUMERIC'),
+    ]:
+        cursor.execute(f"""
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_name='carpark_vehicles' AND column_name='{_col}') THEN
+                ALTER TABLE carpark_vehicles ADD COLUMN {_col} {_type};
+              END IF;
+            END $$;
+        """)
+
+    # ── CarPark specs: van / utilitară cargo details ──
+    # Shown conditionally when body_type = 'van' in the CarPark VehicleForm.
+    # (max_weight_kg / MMA already exists on the base carpark_vehicles table.)
+    for _col, _type in [
+        ('payload_kg', 'INTEGER'),
+        ('cargo_volume_m3', 'NUMERIC'),
+        ('cargo_length_mm', 'INTEGER'),
+        ('cargo_width_mm', 'INTEGER'),
+        ('cargo_height_mm', 'INTEGER'),
+        ('euro_pallets', 'INTEGER'),
+    ]:
+        cursor.execute(f"""
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_name='carpark_vehicles' AND column_name='{_col}') THEN
+                ALTER TABLE carpark_vehicles ADD COLUMN {_col} {_type};
+              END IF;
+            END $$;
+        """)
+
+    # ── CarPark specs: interior upholstery material (Autovit «Tapițerie») ──
+    cursor.execute("""
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                         WHERE table_name='carpark_vehicles' AND column_name='interior_material') THEN
+            ALTER TABLE carpark_vehicles ADD COLUMN interior_material VARCHAR(50);
+          END IF;
+        END $$;
+    """)
+
+    # ── CarPark: freeform acquisition cost lines — JSON text [{label, amount}] ──
+    cursor.execute("""
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                         WHERE table_name='carpark_vehicles' AND column_name='cost_lines') THEN
+            ALTER TABLE carpark_vehicles ADD COLUMN cost_lines TEXT;
+          END IF;
+        END $$;
+    """)
+
+    # ── CarPark condition flags (Autovit «Detalii») ──
+    for _col in ['is_right_hand_drive', 'has_particle_filter', 'is_vintage',
+                 'is_damaged', 'certified_mileage']:
+        cursor.execute(f"""
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_name='carpark_vehicles' AND column_name='{_col}') THEN
+                ALTER TABLE carpark_vehicles ADD COLUMN {_col} BOOLEAN DEFAULT FALSE;
+              END IF;
+            END $$;
+        """)
+
+    # ── CarPark specs: colour finish, consumption, EV range, owners, origin ──
+    for _col, _type in [
+        ('color_finish', 'VARCHAR(30)'),
+        ('consum_urban', 'NUMERIC'), ('consum_extraurban', 'NUMERIC'),
+        ('consum_mixt', 'NUMERIC'), ('electric_range_km', 'INTEGER'),
+        ('previous_owners', 'INTEGER'), ('country_of_origin', 'VARCHAR(100)'),
+    ]:
+        cursor.execute(f"""
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_name='carpark_vehicles' AND column_name='{_col}') THEN
+                ALTER TABLE carpark_vehicles ADD COLUMN {_col} {_type};
+              END IF;
+            END $$;
+        """)
+
+    # ── CarPark equipment / Dotări (Autovit) — selected option keys ──
+    cursor.execute("""
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                         WHERE table_name='carpark_vehicles' AND column_name='equipment_options') THEN
+            ALTER TABLE carpark_vehicles ADD COLUMN equipment_options TEXT[];
+          END IF;
+        END $$;
+    """)
 
     # ── CarPark Dispo: inter-company vehicle transfer log ──
     # A transfer MOVES the vehicle row to the destination company
@@ -1969,6 +2135,23 @@ def _create_schema_incremental_continued(conn, cursor):
                 ALTER TABLE users ADD COLUMN notify_missing_punch BOOLEAN DEFAULT TRUE;
             END IF;
         END $$;
+    ''')
+
+    # ── is_ghost (leadership privacy) toggle on users ──
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'is_ghost') THEN
+                ALTER TABLE users ADD COLUMN is_ghost BOOLEAN DEFAULT FALSE;
+            END IF;
+        END $$;
+    ''')
+
+    # ── seed the ghost super-admin list (empty by default; edit via Settings) ──
+    cursor.execute('''
+        INSERT INTO notification_settings (setting_key, setting_value)
+        VALUES ('ghost_visible_admin_ids', '')
+        ON CONFLICT (setting_key) DO NOTHING;
     ''')
 
     # ── company_id on biostar_employees — maps BioStar group → JARVIS company ──
@@ -2228,6 +2411,41 @@ def _create_schema_incremental_continued(conn, cursor):
     ''')
     # Widen lockout_category so custom reason slugs (up to 40 chars) fit.
     cursor.execute("ALTER TABLE fp_vehicles ALTER COLUMN lockout_category TYPE VARCHAR(40)")
+
+    # ── Foi de Parcurs — vehicle lock/unlock audit trail ──────────────────────
+    # One row per manual block OR unblock of a car, so the lock modal can show a
+    # full history ("cine a blocat/deblocat, când, de ce"). This survives an
+    # unlock — fp_vehicles.locked_by/locked_at hold only the CURRENT lock and are
+    # NULLed on unblock. actor_name is snapshotted so the log stays correct even
+    # if the acting user is later renamed or removed.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_vehicle_lock_events (
+            id BIGSERIAL PRIMARY KEY,
+            vehicle_id BIGINT NOT NULL,
+            action VARCHAR(10) NOT NULL,          -- 'lock' | 'unlock'
+            category VARCHAR(40),                 -- reason slug at the time
+            note TEXT,
+            until DATE,                           -- lockout_until for a lock event
+            actor_id BIGINT,                      -- users.id who performed it
+            actor_name TEXT,                      -- snapshot of the actor's name
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_vehicle_lock_events_vehicle '
+                   'ON fp_vehicle_lock_events(vehicle_id, created_at DESC, id DESC)')
+    # One-time backfill: seed a 'lock' event for every car currently locked, so
+    # the history isn't empty for cars blocked before this shipped. Idempotent —
+    # only seeds cars that have no events yet.
+    cursor.execute('''
+        INSERT INTO fp_vehicle_lock_events
+            (vehicle_id, action, category, note, until, actor_id, actor_name, created_at)
+        SELECT v.id, 'lock', v.lockout_category, v.lockout_note, v.lockout_until,
+               v.locked_by, u.name, COALESCE(v.locked_at, NOW())
+        FROM fp_vehicles v
+        LEFT JOIN users u ON u.id = v.locked_by
+        WHERE v.locked_out = TRUE
+          AND NOT EXISTS (SELECT 1 FROM fp_vehicle_lock_events e WHERE e.vehicle_id = v.id)
+    ''')
 
     # ── Foi de Parcurs — scheduled vehicle blocks (to-do #3) ──
     # One row per scheduled block window for a car. Enforcement is dynamic: a car
@@ -2644,6 +2862,58 @@ def _create_schema_incremental_continued(conn, cursor):
             END IF;
         END $$;
     ''')
+
+    # ── Foi de Parcurs — category-based rental tariffs ──
+    # Per-company duration intervals + categories + the category×interval €/day
+    # grid. A car's rental_category_id + the rental day-count resolve to a €/day.
+    # Additive/idempotent; legacy per-car svc_tariff_* stays as a fallback.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_rental_intervals (
+            id          BIGSERIAL PRIMARY KEY,
+            company_id  BIGINT NOT NULL,
+            label       VARCHAR(64) NOT NULL,
+            min_days    INTEGER NOT NULL,
+            max_days    INTEGER,
+            sort_order  INTEGER NOT NULL DEFAULT 0,
+            created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE (company_id, min_days)
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_rental_categories (
+            id            BIGSERIAL PRIMARY KEY,
+            company_id    BIGINT NOT NULL,
+            name          VARCHAR(128) NOT NULL,
+            models_note   TEXT,
+            franchise_eur NUMERIC(10,2),
+            extra_km_eur  NUMERIC(10,2),
+            sort_order    INTEGER NOT NULL DEFAULT 0,
+            is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE (company_id, name)
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_rental_category_prices (
+            id          BIGSERIAL PRIMARY KEY,
+            company_id  BIGINT NOT NULL,
+            category_id BIGINT NOT NULL,
+            interval_id BIGINT NOT NULL,
+            eur_per_day NUMERIC(10,2),
+            UNIQUE (company_id, category_id, interval_id)
+        )
+    ''')
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='fp_vehicles' AND column_name='rental_category_id') THEN
+                ALTER TABLE fp_vehicles ADD COLUMN rental_category_id BIGINT;
+            END IF;
+        END $$;
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_rental_prices_lookup ON fp_rental_category_prices(company_id, category_id, interval_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_vehicles_rental_category ON fp_vehicles(rental_category_id)')
+    _seed_rental_tariffs(conn, cursor)
 
     # ── Foi de Parcurs — Test Drive RETURN fields ──
     cursor.execute('''

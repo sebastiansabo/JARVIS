@@ -1,9 +1,21 @@
 from ._shared import *
+from core.organization.ghost import hidden_ghost_ids
 
 
 # ============== Employees API Routes ==============
 # Note: Employee management page is now in core Settings (Settings → HR → Employees)
 # These API routes are kept for HR Events module to fetch employees for bonuses
+
+def _drop_ghosts_from_result(result, hidden):
+    """Remove hidden ghost user-ids (dict keys) from the work-stats result.
+
+    `result` is keyed by mapped_jarvis_user_id — a dict, not a list of rows —
+    so filtering is a key drop rather than a row-attribute match.
+    """
+    if not hidden:
+        return result
+    return {uid: v for uid, v in result.items() if uid not in hidden}
+
 
 @events_bp.route('/api/employees', methods=['GET'])
 @login_required
@@ -428,6 +440,12 @@ def api_employee_work_stats():
             'schedule_companies': enriched_cos,
             **_co_payload(uid, enriched_cos),
         }
+
+    # get_range_summary (the BioStar source of range_data) is already ghost-filtered
+    # (Task 4) — this drop covers the composed per-employee dict assembled above,
+    # keyed by mapped_jarvis_user_id, including the backfill loop's additions.
+    hidden = hidden_ghost_ids(current_user.id)
+    result = _drop_ghosts_from_result(result, hidden)
 
     return jsonify(result)
 

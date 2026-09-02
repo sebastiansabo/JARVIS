@@ -16,6 +16,11 @@ const { getContracts, getVehicles, getContractPdfUrl, discardTestDrive } = vi.ho
 }))
 vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { getContracts, getVehicles, getContractPdfUrl, discardTestDrive } }))
 
+// Users directory — resolves an internal session's driver (advisor) to their
+// profile phone. Default empty; the internal-sessions block sets a match.
+const { getUsers } = vi.hoisted(() => ({ getUsers: vi.fn().mockResolvedValue([]) }))
+vi.mock('@/api/users', () => ({ usersApi: { getUsers } }))
+
 import DrivingSessionsList from './DrivingSessionsList'
 
 function wrap(ui: React.ReactNode) {
@@ -76,6 +81,29 @@ describe('DrivingSessionsList', () => {
     await screen.findByText('Ion Pop')
     expect(getContracts).toHaveBeenCalledWith(expect.objectContaining({ document_type: 'sales' }))
     expect(getVehicles).toHaveBeenCalledWith(true, 'sales')
+  })
+})
+
+describe('DrivingSessionsList internal sessions', () => {
+  beforeEach(() => {
+    getContracts.mockResolvedValue({
+      contracts: [
+        { id: 55, status: 'FILLED', td_status: 'driving', vin: 'VF9', client_name: null,
+          is_internal: true, advisor_name: 'Patrasc Roger', departure_datetime: '2026-07-28T11:55', km_start: 972 },
+      ], total: 1, page: 1, per_page: 1000,
+    })
+    getVehicles.mockResolvedValue({ vehicles: [{ vin: 'VF9', mark: 'Audi', model: 'A6 e-tron' }] })
+    getUsers.mockResolvedValue([{ name: 'Patrasc Roger', phone: '0755123456' }])
+  })
+
+  it('tags it Intern, shows the driving user as the party, and their profile phone', async () => {
+    wrap(<DrivingSessionsList companyId={9} brand="" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    const title = await screen.findByText('Patrasc Roger')   // driver = advisor, as the card title
+    expect(screen.getByText('Intern')).toBeInTheDocument()
+    fireEvent.click(title)                                    // expand details
+    expect(screen.getByText('Șofer')).toBeInTheDocument()     // party label, not "Client"
+    expect(screen.queryByText('Client')).not.toBeInTheDocument()
+    expect(await screen.findByText('0755123456')).toBeInTheDocument() // phone from Users profile
   })
 })
 

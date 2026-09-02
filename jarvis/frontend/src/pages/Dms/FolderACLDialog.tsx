@@ -176,9 +176,9 @@ export default function FolderACLDialog({ folder, open, onOpenChange }: FolderAC
                     <SelectValue placeholder="Select user..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {(usersData || []).map((u: { id: number; name: string; email: string }) => (
+                    {(usersData || []).map((u: { id: number; name: string; email: string | null }) => (
                       <SelectItem key={u.id} value={u.id.toString()}>
-                        {u.name} ({u.email})
+                        {u.name}{u.email ? ` (${u.email})` : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>

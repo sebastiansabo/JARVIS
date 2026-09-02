@@ -12,6 +12,8 @@ export const SESSION_ACTION_LABELS: Record<string, string> = {
   extend: 'Retur prelungit',
   reset: 'Resetat',
   archive: 'Arhivat (ratat)',
+  mark_internal: 'Marcat ca intern',
+  mark_external: 'Marcat ca extern',
 }
 
 // Raw status column → localized label (for status-change history rows).

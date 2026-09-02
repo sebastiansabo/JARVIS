@@ -54,6 +54,24 @@ class TestParseValue:
         from accounting.statements.parser import parse_value
         assert parse_value('abc') == 0.0
 
+    def test_negative(self):
+        from accounting.statements.parser import parse_value
+        assert parse_value('-1.247,80') == -1247.80
+
+    def test_ocr_comma_as_thousands(self):
+        # OCR sometimes renders the thousands '.' as ',' -> "2,003,36"
+        from accounting.statements.parser import parse_value
+        assert parse_value('2,003,36') == 2003.36
+        assert parse_value('-2,000,00') == -2000.00
+        assert parse_value('3,000,00') == 3000.00
+
+    def test_multi_separator_integer(self):
+        # Multiple grouping separators, no decimal comma -> integer value.
+        # (A lone "1.234" stays a decimal, matching long-standing behavior;
+        # real statement amounts always carry a 2-digit decimal.)
+        from accounting.statements.parser import parse_value
+        assert parse_value('1.234.567') == 1234567.0
+
 
 class TestParseDate:
     """Tests for parse_date() function - DD.MM.YYYY to YYYY-MM-DD conversion."""
@@ -459,6 +477,155 @@ class TestBulkItemLimits:
         from accounting.statements.routes import RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW
         assert RATE_LIMIT_REQUESTS == 10
         assert RATE_LIMIT_WINDOW == 60
+
+
+# ============== OCR INLINE-LAYOUT TESTS ==============
+# Some UniCredit statements are vector-path PDFs (PyPDF2 returns no text) and,
+# under the current tesseract, OCR to an *inline* layout: each transaction's
+# date, description and signed amount all land on one line, and header fields
+# are label-prefixed ("Cont ales RO..", "CUI/CNP 123"). This differs from the
+# column-separated OCR layout the parser originally targeted.
+# Regression fixture captured from "Extras cont mk AW One 08.2026.pdf".
+
+# Load parser.py standalone (bypass the package __init__, which pulls in Flask
+# and DB modules) so these pure-function tests run in any environment.
+import importlib.util as _ilu
+_parser_path = os.path.join(os.path.dirname(__file__), '..', 'jarvis',
+                            'accounting', 'statements', 'parser.py')
+_spec = _ilu.spec_from_file_location('statements_parser_standalone', _parser_path)
+ocr_parser = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(ocr_parser)
+
+OCR_INLINE_TEXT = """printat de CLAUDIA BRUSLEA
+
+UniCredit Bank
+
+Lista Tranzactii 01.09.2026 08:25:42
+
+Cont ales RO42 BACX 0000 0004 3006 3029 | CARD SABO | RON
+
+Titular de cont AUTOWORLD ONE S.R.L.
+
+CUI/CNP 15128629
+
+Adresa STR.Floresti NR.145 BL.- SC.- ET.- AP.- CLUJ
+
+Istoric oO 1 Ultimele zile
+
+Data inregistrarii @ 01.08.2026 31.08.2026
+
+Tip Toate
+
+Data Data valutei Detaliile tranzactiei Valoare Tranz. Valuta
+
+inregistrarii
+
+31.08.2026 31.08.2026 Int.Appl. to 31/08/26 0,01 RON
+
+31.08.2026 31.08.2026 +CMS CLT-3541834139 Card 5586-84XX-XXXX-3100 -1.247,80 RON
+2026.08.31 FACEBK *HNARF5J9J4 POS purchase Auth
+code 071963 1.247,80 RON
+
+28.08.2026 28.08.2026 +CMS CLT-3540439447 Card 5586-84XX-XXXX-3100 -2,003,36 RON
+2026.08.28 FACEBK *ZWVEJ429J4 POS purchase Auth
+code 157087 2.003,36 RON
+
+27.08.2026 27.08.2026 AUTOWORLD ONE S.R.L., CUI/CNP:15128629, 4.000,00 RON
+CONT:RO21BACX0000000430063310, LA: UNICREDIT
+BANK S.A., Nr op.:1199, transfer disponibil,
+Ref.:566515600
+
+03.08.2026 03.08.2026 +CMS CLT-3525844194 Card 5586-84XX-XXXX-3100 -1.040,00 RON
+2026.08.01 GOOGLE *ADS1861622105 POS purchase
+Auth code 588442 1.040,00 RON
+
+Sold deschidere 03.08.2026 1.729,72 RON
+Credit total pentru tranzactiile selectate (4) 11.000,01 RON
+Debit total pentru tranzactiile selectate (7) -12.299,55 RON
+Totalul tranzactiilor selectate (11) -1.299,54 RON
+
+UniCredit Bank S.A.
+
+Pagina 1
+
+Sold inchidere 31.08.2026 430,18 RON
+"""
+
+
+class TestOcrInlineHeader:
+    """Header extraction from inline (label-prefixed) OCR output."""
+
+    def test_account_number(self):
+        info = ocr_parser._extract_header_ocr(OCR_INLINE_TEXT)
+        assert info['account_number'] == 'RO42BACX0000000430063029'
+
+    def test_company_name(self):
+        info = ocr_parser._extract_header_ocr(OCR_INLINE_TEXT)
+        assert info['company_name'] == 'AUTOWORLD ONE S.R.L.'
+
+    def test_company_cui(self):
+        info = ocr_parser._extract_header_ocr(OCR_INLINE_TEXT)
+        assert info['company_cui'] == '15128629'
+
+    def test_period(self):
+        info = ocr_parser._extract_header_ocr(OCR_INLINE_TEXT)
+        assert info['period_from'] == '2026-08-01'
+        assert info['period_to'] == '2026-08-31'
+
+
+class TestOcrInlineTransactions:
+    """Transaction amounts must be read from the inline (trailing) value column."""
+
+    def _txns(self):
+        header = {'company_name': 'AUTOWORLD ONE S.R.L.', 'company_cui': '15128629',
+                  'account_number': 'RO42BACX0000000430063029'}
+        return ocr_parser._extract_transactions_ocr(OCR_INLINE_TEXT, header)
+
+    def test_all_amounts_populated(self):
+        txns = self._txns()
+        assert len(txns) == 5
+        assert all(t['amount'] is not None for t in txns), [t['amount'] for t in txns]
+
+    def test_debit_is_negative(self):
+        txns = self._txns()
+        debit = next(t for t in txns if t['transaction_date'] == '2026-08-31'
+                     and 'FACEBK' in (t['description'] or ''))
+        assert debit['amount'] == -1247.80
+
+    def test_ocr_comma_thousands_amount(self):
+        # OCR mangled "-2.003,36" into "-2,003,36"; must still parse to -2003.36
+        txns = self._txns()
+        debit = next(t for t in txns if t['transaction_date'] == '2026-08-28')
+        assert debit['amount'] == -2003.36
+
+    def test_credit_is_positive(self):
+        txns = self._txns()
+        credit = next(t for t in txns if t['transaction_date'] == '2026-08-27')
+        assert credit['amount'] == 4000.00
+
+    def test_interest_row(self):
+        txns = self._txns()
+        interest = next(t for t in txns if t['transaction_date'] == '2026-08-31'
+                        and 'Int.Appl' in (t['description'] or ''))
+        assert interest['amount'] == 0.01
+
+    def test_header_propagated(self):
+        txns = self._txns()
+        assert txns[0]['company_cui'] == '15128629'
+        assert txns[0]['account_number'] == 'RO42BACX0000000430063029'
+
+
+class TestOcrInlineSummary:
+    """Summary balances/totals read from label-prefixed inline lines."""
+
+    def test_summary(self):
+        s = ocr_parser._extract_summary_ocr(OCR_INLINE_TEXT)
+        assert s['opening_balance'] == 1729.72
+        assert s['closing_balance'] == 430.18
+        assert s['credit_count'] == 4
+        assert s['credit_total'] == 11000.01
+        assert s['debit_count'] == 7
+        assert s['debit_total'] == 12299.55
 
 
 # Run with: pytest tests/test_statements.py -v

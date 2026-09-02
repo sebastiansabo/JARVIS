@@ -18,13 +18,25 @@ _user_repo = UserRepository()
 _event_repo = EventRepository()
 _auth_limiter = RateLimiter()
 
+from core.roles.repositories.role_repository import RoleRepository
+_role_repo = RoleRepository()
+
+
+def _role_is_viewer(role_id) -> bool:
+    """True if role_id belongs to the 'Viewer' role. Viewers may lack an email
+    (they log in by phone), so email is optional only for them."""
+    if not role_id:
+        return False
+    role = _role_repo.get(role_id)
+    return bool(role and (role.get('name') or '').strip().lower() == 'viewer')
+
 SUPERADMIN_EMAIL = os.environ.get('SUPERADMIN_EMAIL', 'sebastian.sabo@autoworld.ro')
 
 
 def _is_superadmin(user_id: int) -> bool:
     """Return True if user_id belongs to the protected superadmin account."""
     user = _user_repo.get_by_id(user_id)
-    return bool(user and user.get('email', '').lower() == SUPERADMIN_EMAIL)
+    return bool(user and (user.get('email') or '').lower() == SUPERADMIN_EMAIL)
 
 # Lazy-initialized password reset service
 _auth_service = None
@@ -73,22 +85,41 @@ def login():
             flash(f'Too many login attempts. Try again in {retry_after} seconds.', 'error')
             return render_template('core/login.html')
 
-        email = request.form.get('email', '').strip()
+        identifier = request.form.get('email', '').strip()
         password = request.form.get('password', '')
 
-        if not email or not password:
-            flash('Please enter both email and password.', 'error')
+        if not identifier or not password:
+            flash('Please enter both your email/phone and password.', 'error')
             return render_template('core/login.html')
 
-        user_data = _user_repo.authenticate(email, password)
+        via_phone = '@' not in identifier
+
+        user_data = _user_repo.authenticate_identifier(identifier, password)
         if user_data:
             user = User(user_data)
+            is_viewer = (user.role_name or '').strip().lower() == 'viewer'
+
+            # Phone sign-in is restricted to Viewer accounts.
+            if via_phone and not is_viewer:
+                _log_event('login_failed',
+                           f'Phone login rejected for non-viewer {identifier}')
+                flash('Phone sign-in is only available for viewer accounts. '
+                      'Please use your email address.', 'error')
+                return render_template('core/login.html')
+
             remember = request.form.get('remember') == 'on'
             next_page = request.args.get('next')
             if next_page and (not next_page.startswith('/') or next_page.startswith('//')):
                 next_page = None
 
-            # Check trusted device cookie
+            # Viewers are single-factor — skip OTP entirely.
+            if is_viewer:
+                login_user(user, remember=remember)
+                _user_repo.update_last_login(user.id)
+                _log_event('login', f'Viewer {user.email} logged in (single-factor)')
+                return redirect(next_page or url_for('index'))
+
+            # Non-viewers: existing trusted-device + OTP 2FA flow.
             auth_svc = _get_auth_service()
             cookie = request.cookies.get(auth_svc.TRUSTED_COOKIE_NAME)
             if auth_svc.validate_trusted_device_cookie(
@@ -97,20 +128,17 @@ def login():
                 request.remote_addr,
                 current_app.secret_key
             ):
-                # Trusted device — skip OTP
                 login_user(user, remember=remember)
                 _user_repo.update_last_login(user.id)
-                _log_event('login', f'User {email} logged in (trusted device)')
+                _log_event('login', f'User {user.email} logged in (trusted device)')
                 return redirect(next_page or url_for('index'))
 
-            # Per-user OTP rate limit — 3 attempts per 10 minutes
             otp_allowed, otp_retry = _auth_limiter.is_allowed(
                 f'otp:{user.id}', max_requests=3, window_seconds=600)
             if not otp_allowed:
                 flash(f'Too many verification attempts. Try again in {otp_retry} seconds.', 'error')
                 return render_template('core/login.html')
 
-            # Not trusted — generate and send OTP
             otp_id, email_sent, error = auth_svc.generate_and_send_otp(
                 user.id, user.email, user.name, current_app.secret_key)
 
@@ -118,7 +146,6 @@ def login():
                 flash('An error occurred. Please try again.', 'error')
                 return render_template('core/login.html')
 
-            # Store pending OTP state in session
             session['otp_pending'] = {
                 'user_id': user.id,
                 'otp_id': otp_id,
@@ -132,8 +159,8 @@ def login():
 
             return redirect(url_for('auth.verify_otp'))
         else:
-            _log_event('login_failed', f'Failed login attempt for {email}')
-            flash('Invalid email or password.', 'error')
+            _log_event('login_failed', f'Failed login attempt for {identifier}')
+            flash('Invalid credentials.', 'error')
 
     return render_template('core/login.html')
 
@@ -470,7 +497,12 @@ def api_online_users():
 @login_required
 def api_get_users():
     """Get all users with role information."""
+    from core.organization.ghost import can_see_ghosts
     users = _user_repo.get_all()
+    if not can_see_ghosts(current_user.id):
+        # Non-ghost-admins must never see who is flagged is_ghost (spec §8).
+        for u in users:
+            u.pop('is_ghost', None)
     return jsonify(users)
 
 
@@ -497,16 +529,22 @@ def api_create_user():
     email = data.get('email', '').strip() if data.get('email') else ''
     phone = data.get('phone', '').strip() if data.get('phone') else ''
     password = data.get('password', '').strip() if data.get('password') else ''
+    role_id = data.get('role_id')
+    is_viewer = _role_is_viewer(role_id)
 
-    if not name or not email:
-        return error_response('Name and email are required')
+    if not name:
+        return error_response('Name is required')
+    if not email and not is_viewer:
+        return error_response('Email is required')
+    if is_viewer and not email and not phone:
+        return error_response('A viewer needs an email or a phone number')
 
     try:
         user_id = _user_repo.save(
             name=name,
-            email=email,
+            email=email or None,
             phone=phone if phone else None,
-            role_id=data.get('role_id'),
+            role_id=role_id,
             is_active=data.get('is_active', True)
         )
         if password:
@@ -526,6 +564,26 @@ def api_update_user(user_id):
     if _is_superadmin(user_id):
         data.pop('role_id', None)
         data['is_active'] = True
+
+    # Email is optional only for Viewer accounts (who then need a phone). Enforce
+    # against the effective role/email/phone (payload value, else existing).
+    existing = _user_repo.get_by_id(user_id)
+    if not existing:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    def _eff(key):
+        if key in data:
+            v = data[key]
+            return v.strip() if isinstance(v, str) else v
+        return existing.get(key)
+
+    is_viewer = _role_is_viewer(data.get('role_id', existing.get('role_id')))
+    eff_email, eff_phone = _eff('email'), _eff('phone')
+    if not eff_email and not is_viewer:
+        return jsonify({'success': False, 'error': 'Email is required'}), 400
+    if is_viewer and not eff_email and not eff_phone:
+        return jsonify({'success': False, 'error': 'A viewer needs an email or a phone number'}), 400
+
     try:
         updated = _user_repo.update(
             user_id=user_id,
@@ -566,6 +624,28 @@ def api_delete_user(user_id):
     if _user_repo.delete(user_id):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'User not found'}), 404
+
+
+@auth_bp.route('/api/users/can-manage-ghosts', methods=['GET'])
+@login_required
+def api_can_manage_ghosts():
+    """Whether the current user is a ghost-visibility super-admin."""
+    from core.organization.ghost import can_see_ghosts
+    return jsonify({'can_manage_ghosts': can_see_ghosts(current_user.id)})
+
+
+@auth_bp.route('/api/users/<int:user_id>/ghost', methods=['PUT'])
+@login_required
+def api_set_user_ghost(user_id):
+    """Toggle a user's ghost (leadership-privacy) flag. Ghost-admin only."""
+    from core.organization.ghost import can_see_ghosts, invalidate_ghost_cache
+    if not can_see_ghosts(current_user.id):
+        return jsonify({'error': 'forbidden'}), 403
+    data = request.get_json(silent=True) or {}
+    is_ghost = bool(data.get('is_ghost'))
+    _user_repo.set_ghost(user_id, is_ghost)
+    invalidate_ghost_cache()
+    return jsonify({'success': True, 'is_ghost': is_ghost})
 
 
 @auth_bp.route('/api/users/bulk-delete', methods=['POST'])

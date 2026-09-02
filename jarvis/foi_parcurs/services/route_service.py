@@ -53,8 +53,10 @@ def calculate_route_assignments(
 
         distances = raw
 
-    # ── 2. Randomly assign TD/Comodat to slots (interleaved, not grouped) ──
-    types = ['TD'] * num_td + ['Comodat'] * num_comodat
+    # ── 2. Assign route types. Comodat is deprecated (2026-09): every slot is
+    #       a Test Drive. num_comodat stays in the signature for UI/preview
+    #       compatibility but no longer produces Comodat rows. ──
+    types = ['TD'] * num_clients
     random.shuffle(types)
 
     # ── 3. Build slots with monotonically increasing odometer ──

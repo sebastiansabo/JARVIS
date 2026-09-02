@@ -28,11 +28,13 @@ import {
   ChevronRight,
   Download,
   FileSpreadsheet,
+  FileArchive,
   PlayCircle,
   Loader2,
   AlertTriangle,
   Clock,
   History,
+  ArrowLeftRight,
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -92,9 +94,11 @@ import {
   type FpVehicle,
 } from '@/types/foiParcurs'
 import { VehicleOdometerHistory } from './VehicleOdometerHistory'
+import { VehicleLockHistory } from './VehicleLockHistory'
 import SessionTypeChooser from './SessionTypeChooser'
 import { sessionStatus, type SessionStatusKey } from './sessionStatus'
-import { sessionActualKm, sessionEstimatedKm, carSpanKm } from './distance'
+import { clientCell } from './sessionParty'
+import { sessionActualKm, sessionEstimatedKm } from './distance'
 import { sessionAnomalies, driveDate } from './anomalies'
 import CorrectSessionDialog, { type CorrectionPayload } from './CorrectSessionDialog'
 import ExtendSessionDialog from './ExtendSessionDialog'
@@ -111,12 +115,35 @@ import DriveTypeToggle from './DriveTypeToggle'
 import { formatRoPlate, isValidRoPlate } from './plateFormat'
 import { vehicleHealth, type Gravity, type HealthTag } from '../Hub/vehicleHealth'
 import ContractConfigSection from './ContractConfigSection'
+import RentalTariffsSection from './RentalTariffsSection'
 import { DOC_TYPE_LABELS, contextFromSearch, type DocType } from './documentType'
 import DocTypeSelect from './DocTypeSelect'
 
 /** Truncate a display name to `max` chars with an ellipsis; the full value stays
  *  available in the cell's title tooltip. */
 const truncName = (s: string, max = 20) => (s.length > max ? s.slice(0, max) + '…' : s)
+
+// Client column: leads with the person who drives (Client = Driver). For a
+// company booking that's the driver contact, with the company on a secondary
+// line; internal logs show the driving user. See clientCell().
+function ClientCellContent({ c, hideCompany }: { c: Parameters<typeof clientCell>[0]; hideCompany?: boolean }) {
+  const cc = clientCell(c)
+  if (cc.primary === '—') return <span className="text-muted-foreground text-xs">—</span>
+  return (
+    <div className="leading-tight">
+      <span className="font-medium text-sm" title={cc.primary}>{truncName(cc.primary)}</span>
+      {/* Company sub-line — suppressed where a dedicated "Companie client" column
+          already carries it (avoids showing the company twice). */}
+      {!hideCompany && cc.secondary && <div className="text-muted-foreground text-[11px]" title={cc.secondary}>{truncName(cc.secondary)}</div>}
+    </div>
+  )
+}
+
+// The company behind a booking, for the "Companie client" column: the company
+// client itself (clientCell.secondary), else the person's employer field.
+function clientCompanyCell(c: Parameters<typeof clientCell>[0]): string {
+  return clientCell(c).secondary || c.client_company || '—'
+}
 
 /** useState backed by localStorage — survives a page refresh. */
 function usePersistentState<T>(key: string, initial: T) {
@@ -293,7 +320,7 @@ export default function FoiParcurs() {
         </div>
       </Tabs>
 
-      {activeTab === 'contracts' && <ContractsTab companyId={companyId} toolbarSlot={tabToolbar} documentType={docType} />}
+      {activeTab === 'contracts' && <ContractsTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} documentType={docType} />}
       {/* In the rental (Service) context the franchise brand filter doesn't apply —
           the courtesy stock is multi-brand — so pass an empty brand to show it all. */}
       {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
@@ -306,7 +333,7 @@ export default function FoiParcurs() {
 }
 
 // ── Contracts Tab — Form → Preview → Save Batch ──
-export function ContractsTab({ companyId, toolbarSlot, documentType = 'sales' }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
+export function ContractsTab({ companyId, brand = '', toolbarSlot, documentType = 'sales' }: { companyId: number; brand?: string; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
   const [importOpen, setImportOpen] = useState(false)
   const toolbar = (
     <Button variant="outline" size="sm" className="h-8" onClick={() => setImportOpen(true)}>
@@ -317,7 +344,7 @@ export function ContractsTab({ companyId, toolbarSlot, documentType = 'sales' }:
     <div className="space-y-4">
       {/* RouteSheetsTable renders first so its month/year filters land in the slot
           before the Importă button (filters left, action right). */}
-      <RouteSheetsTable companyId={companyId} toolbarSlot={toolbarSlot} documentType={documentType} />
+      <RouteSheetsTable companyId={companyId} brand={brand} toolbarSlot={toolbarSlot} documentType={documentType} />
       {toolbarSlot ? createPortal(toolbar, toolbarSlot) : <div className="flex justify-end">{toolbar}</div>}
       <SessionImportDialog companyId={companyId} open={importOpen} onOpenChange={setImportOpen} />
     </div>
@@ -408,17 +435,31 @@ type DetailRow =
   | { gap: false; session: FoiContract }
   | ({ gap: true } & GapRow)
 
-function withGaps(sessions: FoiContract[]): DetailRow[] {
+// `kmMin`/`kmMax` are the month's full odometer span (including internal drives
+// that aren't listed as trips). When a client trip doesn't reach that edge, the
+// leftover KM (an internal drive at the month boundary) shows as a leading or
+// trailing gap — attributed to the adjacent client so it can be redistributed.
+function withGaps(sessions: FoiContract[], kmMin?: number, kmMax?: number): DetailRow[] {
   const sorted = [...sessions].sort(
     (a, b) => (a.km_start ?? 0) - (b.km_start ?? 0) || (a.km_end ?? 0) - (b.km_end ?? 0),
   )
   const rows: DetailRow[] = []
-  let prevEnd: number | null = null
-  let prevSession: FoiContract | null = null
   const neighbor = (s: FoiContract): GapNeighbor => ({
     id: s.id, client: s.client_name || s.advisor_name || '—',
     kmStart: s.km_start ?? 0, kmEnd: s.km_end ?? 0,
   })
+  const first = sorted[0]
+  if (first && kmMin != null && Number.isFinite(kmMin) && (first.km_start ?? 0) > kmMin) {
+    const n = neighbor(first)
+    rows.push({
+      gap: true, id: `gap-lead-${first.id}`, date: first.created_at,
+      dateFrom: first.created_at, dateTo: first.created_at,
+      kmStart: kmMin, kmEnd: first.km_start ?? 0, distance: (first.km_start ?? 0) - kmMin,
+      before: n, after: n,
+    })
+  }
+  let prevEnd: number | null = null
+  let prevSession: FoiContract | null = null
   for (const c of sorted) {
     const start = c.km_start ?? 0
     if (prevEnd != null && start > prevEnd && prevSession) {
@@ -432,6 +473,15 @@ function withGaps(sessions: FoiContract[]): DetailRow[] {
     rows.push({ gap: false, session: c })
     if (prevEnd == null || (c.km_end ?? 0) > prevEnd) { prevEnd = c.km_end ?? 0; prevSession = c }
   }
+  if (prevSession && prevEnd != null && kmMax != null && Number.isFinite(kmMax) && kmMax > prevEnd) {
+    const n = neighbor(prevSession)
+    rows.push({
+      gap: true, id: `gap-trail-${prevSession.id}`, date: prevSession.created_at,
+      dateFrom: prevSession.created_at, dateTo: prevSession.created_at,
+      kmStart: prevEnd, kmEnd: kmMax, distance: kmMax - prevEnd,
+      before: n, after: n,
+    })
+  }
   return rows
 }
 
@@ -439,8 +489,9 @@ function withGaps(sessions: FoiContract[]): DetailRow[] {
 //    sessions for that vehicle that month), scoped to the header company.
 //    Month is a filter; each row expands to its individual sessions and can
 //    generate/store an AI-drafted legal Foaie de Parcurs (PDF) or Excel. ──
-function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { companyId: number; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
+function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = 'sales' }: { companyId: number; brand?: string; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [previewVin, setPreviewVin] = useState<string | null>(null)
   const [redistribute, setRedistribute] = useState<{ vin: string; gap: GapRow; sessions: WinSession[] } | null>(null)
@@ -497,9 +548,11 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
   }, [storedData])
 
   const contracts = data?.contracts ?? []
+  // Group by the actual drive START date (departure), not created_at: a session
+  // created in July but driven on Aug 1 belongs to August's foaie, not July's.
   const period = (c: (typeof contracts)[number]) => {
-    const d = new Date(c.created_at)
-    return { year: c.year ?? d.getFullYear(), month: c.month ?? d.getMonth() + 1 }
+    const d = (c.departure_datetime ? naiveDate(c.departure_datetime) : null) ?? new Date(c.created_at)
+    return { year: d.getFullYear(), month: d.getMonth() + 1 }
   }
 
   const years = React.useMemo(() => {
@@ -510,16 +563,34 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
 
   // One row per car (VIN), cumulating the sessions that match the period filter.
   const cars = React.useMemo(() => {
-    const map = new Map<string, { vin: string; sessions: typeof contracts }>()
+    const map = new Map<string, { vin: string; sessions: typeof contracts; kmMin: number; kmMax: number }>()
     for (const c of contracts) {
       const p = period(c)
       if (p.year !== filterYear) continue
       if (filterMonth !== 0 && p.month !== filterMonth) continue
-      if (!map.has(c.vin)) map.set(c.vin, { vin: c.vin, sessions: [] })
-      map.get(c.vin)!.sessions.push(c)
+      // Ratate (no-show) sessions never drove — excluded from the sheet entirely.
+      // Covers explicit MISSED + PLANNED past its grace window.
+      if (c.td_status === 'missed') continue
+      // Make filter (header dropdown): keep only cars whose catalog brand matches
+      // the selected make. Brand is read from the full vehicle catalog
+      // (getVehicles(false)), so archived/blocked cars of that make stay visible.
+      if (brand && vinMap.get(c.vin)?.brand !== brand) continue
+      let e = map.get(c.vin)
+      if (!e) { e = { vin: c.vin, sessions: [], kmMin: Infinity, kmMax: -Infinity }; map.set(c.vin, e) }
+      // Odometer span over ALL of this car's in-month drives INCLUDING internal:
+      // an internal drive at the month edge still contributes its KM as a boundary
+      // gap and keeps Total KM correct, even though it isn't listed as a trip.
+      if (c.km_start != null) e.kmMin = Math.min(e.kmMin, c.km_start)
+      if (c.km_end != null) e.kmMax = Math.max(e.kmMax, c.km_end)
+      // Internal (company) drives aren't listed as trips — their KM shows as a gap
+      // (between-drive jump, or a leading/trailing gap at the month boundary).
+      if (c.is_internal) continue
+      e.sessions.push(c)
     }
-    return [...map.values()].sort((a, b) => a.vin.localeCompare(b.vin))
-  }, [contracts, filterYear, filterMonth])
+    // A car needs at least one client drive this month to get a foaie.
+    return [...map.values()].filter((e) => e.sessions.length)
+      .sort((a, b) => a.vin.localeCompare(b.vin))
+  }, [contracts, filterYear, filterMonth, brand, vinMap])
 
   const toggle = (key: string) =>
     setExpanded((prev) => {
@@ -588,9 +659,11 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
               {cars.map((sheet) => {
                 const isOpen = expanded.has(sheet.vin)
                 const veh = vinMap.get(sheet.vin)
-                const kmStart = Math.min(...sheet.sessions.map((c) => c.km_start ?? 0))
-                const kmEnd = Math.max(...sheet.sessions.map((c) => c.km_end ?? 0))
-                const totalKm = carSpanKm(sheet.sessions)
+                // Odometer range + Total over the month's full span (incl. internal
+                // drives that show as boundary gaps), so edge KM isn't dropped.
+                const kmStart = Number.isFinite(sheet.kmMin) ? sheet.kmMin : Math.min(...sheet.sessions.map((c) => c.km_start ?? 0))
+                const kmEnd = Number.isFinite(sheet.kmMax) ? sheet.kmMax : Math.max(...sheet.sessions.map((c) => c.km_end ?? 0))
+                const totalKm = Math.max(0, kmEnd - kmStart)
                 const anomalies = sessionAnomalies(sheet.sessions)
                 const clientCount = new Set(sheet.sessions.map((c) => c.client_name).filter(Boolean)).size
                 const stored = storedByVin.get(sheet.vin)
@@ -602,7 +675,24 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
                         {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       </TableCell>
                       <TableCell className="text-sm">{veh?.mark || <span className="text-muted-foreground">—</span>}</TableCell>
-                      <TableCell className="text-sm font-medium">{veh?.model || <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="text-sm font-medium">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{veh?.model || <span className="text-muted-foreground">—</span>}</span>
+                          {/* Archived / blocked cars still show here (they had trips this
+                              month); badge them so they're distinguishable from active stock. */}
+                          {veh && !veh.is_active && (
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Arhivat</span>
+                          )}
+                          {veh?.is_active && (veh.locked_out || veh.blocked_now) && (
+                            <span
+                              className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                              title={veh.lockout_note || undefined}
+                            >
+                              🔒 {(veh.locked_out ? veh.lockout_category : veh.active_block_category) || 'Blocat'}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">{sheet.vin}</TableCell>
                       <TableCell className="text-sm whitespace-nowrap">{kmStart.toLocaleString('ro-RO')}</TableCell>
                       <TableCell className="text-sm whitespace-nowrap">{kmEnd.toLocaleString('ro-RO')}</TableCell>
@@ -617,6 +707,17 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
                               Salvat
                             </Badge>
                           )}
+                          {/* Download this car's per-session contract PDFs for the
+                              period as a ZIP — exactly the sessions in this row. */}
+                          <Button asChild variant="outline" size="sm" className="h-7 w-7 p-0"
+                            title="Descarcă contractele lunii (ZIP)">
+                            <a
+                              href={foiParcursApi.getRouteSheetContractsZipUrl(sheet.vin, filterYear, filterMonth, companyId, documentType)}
+                              download
+                            >
+                              <FileArchive className="h-3.5 w-3.5" />
+                            </a>
+                          </Button>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="outline" size="sm" className="h-7 gap-1" disabled={!monthChosen}
@@ -658,7 +759,7 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {withGaps(sheet.sessions).slice().reverse().map((row) => {
+                                {withGaps(sheet.sessions, sheet.kmMin, sheet.kmMax).slice().reverse().map((row) => {
                                   if (row.gap) {
                                     return (
                                       <TableRow key={row.id} className="bg-amber-500/10">
@@ -701,13 +802,7 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
                                           </span>
                                         )}
                                       </TableCell>
-                                      <TableCell>
-                                        {c.client_name ? (
-                                          <span className="font-medium text-sm" title={c.client_name}>{truncName(c.client_name)}</span>
-                                        ) : (
-                                          <span className="text-muted-foreground text-xs">—</span>
-                                        )}
-                                      </TableCell>
+                                      <TableCell><ClientCellContent c={c} /></TableCell>
                                       <TableCell className="max-w-[220px] truncate text-sm">{c.itinerary || '—'}</TableCell>
                                       <TableCell className="text-sm whitespace-nowrap">
                                         {sessionActualKm(c) != null ? `${sessionActualKm(c)} km` : '—'}
@@ -724,7 +819,7 @@ function RouteSheetsTable({ companyId, toolbarSlot, documentType = 'sales' }: { 
                                         <div className="flex justify-end gap-1">
                                           {canCorrect && (
                                             <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
-                                              onClick={() => setCorrecting(c)} title="Corectează data/kilometrajul">
+                                              onClick={() => sessionStatus(c).key === 'planificat' ? navigate(`/app/foi-parcurs/test-drive?edit=${c.id}`) : setCorrecting(c)} title="Corectează">
                                               Corectează
                                             </Button>
                                           )}
@@ -1568,6 +1663,16 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }); setCorrecting(null) },
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Corectarea a eșuat'),
   })
+  // Admin-only cleaning: flip a session between internal (company) and external
+  // (client) to fix a mis-marked row. Flag-only, so a mis-click is one flip back.
+  const driveTypeMutation = useMutation({
+    mutationFn: (vars: { id: number; isInternal: boolean }) => foiParcursApi.setDriveType(vars.id, vars.isInternal),
+    onSuccess: (_res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      toast.success(vars.isInternal ? 'Sesiune marcată ca internă' : 'Sesiune marcată ca externă')
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Schimbarea tipului a eșuat'),
+  })
   const [search, setSearch] = useState('')
   const [filterVin, setFilterVin] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
@@ -1600,6 +1705,9 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
   // "Corectează" is gated by the role matrix (test_drive.contracts.correct); admins
   // bypass. Default-deny to match the backend decorator — absent grant → hidden.
   const canCorrect = isAdmin || !!user?.permissions?.['test_drive.contracts.correct']
+  // "Marchează ca intern/extern" is gated by the role matrix
+  // (test_drive.contracts.drive_type); admins bypass.
+  const canChangeDriveType = isAdmin || !!user?.permissions?.['test_drive.contracts.drive_type']
 
   const { data, isLoading } = useQuery({
     queryKey: ['foi-contracts-all', companyId, documentType],
@@ -1657,9 +1765,12 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
     // Client vs internal drive filter (from the header toggle).
     if (driveType === 'client' && c.is_internal) return false
     if (driveType === 'internal' && !c.is_internal) return false
-    // Session view: Active = non-finalised only, Arhivate = finalised only, Toate = both.
-    if (sessionView === 'active' && sessionStatus(c).key === 'finalizat') return false
-    if (sessionView === 'archived' && sessionStatus(c).key !== 'finalizat') return false
+    // Session view: Active = live sessions; Arhivate = finalised + Ratate (no-shows,
+    // which are archived once past their grace window); Toate = both.
+    const _skey = sessionStatus(c).key
+    const _isArchived = _skey === 'finalizat' || _skey === 'ratat'
+    if (sessionView === 'active' && _isArchived) return false
+    if (sessionView === 'archived' && !_isArchived) return false
     if (brand && vinBrand.get(c.vin) !== brand) return false
     if (filterVin !== 'all' && c.vin !== filterVin) return false
     if (filterStatus !== 'all' && sessionStatus(c).key !== filterStatus) return false
@@ -1895,6 +2006,11 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                       {colVisible('status') && <TableCell>
                         <div className="flex items-center gap-1">
                           <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
+                          {c.is_internal && (
+                            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Intern
+                            </span>
+                          )}
                           <ModifiedBadge session={c} />
                         </div>
                       </TableCell>}
@@ -1911,14 +2027,8 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                           )
                         })()}
                       </TableCell>}
-                      {colVisible('client') && <TableCell>
-                        {c.client_name ? (
-                          <span className="font-medium text-sm" title={c.client_name}>{truncName(c.client_name)}</span>
-                        ) : (
-                          <span className="text-muted-foreground text-xs">—</span>
-                        )}
-                      </TableCell>}
-                      {colVisible('clientCompany') && <TableCell className="text-xs">{c.client_company || '—'}</TableCell>}
+                      {colVisible('client') && <TableCell><ClientCellContent c={c} hideCompany /></TableCell>}
+                      {colVisible('clientCompany') && <TableCell className="text-xs">{clientCompanyCell(c)}</TableCell>}
                       {colVisible('consilier') && <TableCell className="text-xs">{c.advisor_name || '—'}</TableCell>}
                       {colVisible('km') && <TableCell className="text-xs whitespace-nowrap">
                         {(() => {
@@ -2093,10 +2203,26 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                               Istoric
                             </Button>
                             {canCorrect && (
-                              <Button variant="outline" size="sm" onClick={() => setCorrecting(c)}
-                                title="Corectează data/kilometrajul">
+                              <Button variant="outline" size="sm"
+                                onClick={() => sessionStatus(c).key === 'planificat' ? navigate(`/app/foi-parcurs/test-drive?edit=${c.id}`) : setCorrecting(c)}
+                                title="Corectează">
                                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
                                 Corectează
+                              </Button>
+                            )}
+                            {canChangeDriveType && c.route_type === 'TD' && (
+                              <Button variant="outline" size="sm"
+                                disabled={driveTypeMutation.isPending}
+                                onClick={() => {
+                                  const toInternal = !c.is_internal
+                                  const msg = toInternal
+                                    ? 'Marchezi această sesiune ca INTERNĂ? Datele clientului rămân salvate, dar ascunse din vizualizarea internă (poți reveni oricând).'
+                                    : 'Marchezi această sesiune ca EXTERNĂ (client)?'
+                                  if (confirm(msg)) driveTypeMutation.mutate({ id: c.id, isInternal: toInternal })
+                                }}
+                                title={c.is_internal ? 'Marchează sesiunea ca externă (client)' : 'Marchează sesiunea ca internă (condusă intern)'}>
+                                <ArrowLeftRight className="mr-1.5 h-3.5 w-3.5" />
+                                {c.is_internal ? 'Marchează ca extern' : 'Marchează ca intern'}
                               </Button>
                             )}
                             {c.status !== 'PENDING' && c.status !== 'PLANNED' && (
@@ -2373,6 +2499,7 @@ interface VehicleFormValue {
   svc_extra_km_eur: string
   svc_deposit_eur: string
   svc_franchise_eur: string
+  rental_category_id: string
   vignette_valid_until: string
   itp_valid_until: string
   insurance_valid_until: string
@@ -2391,6 +2518,7 @@ function emptyVehicleForm(companyId?: number, documentType: DocType = 'sales'): 
     document_type: documentType,
     svc_tariff_eur_day: '', svc_tariff_eur_month: '', svc_km_included_day: '',
     svc_extra_km_eur: '', svc_deposit_eur: '', svc_franchise_eur: '',
+    rental_category_id: '',
     vignette_valid_until: '', itp_valid_until: '', insurance_valid_until: '',
     insurance_doc: '', talon_doc: '', civ_doc: '', registration_doc: '', offer_doc: '',
   }
@@ -2419,6 +2547,7 @@ function vehicleToForm(v: FpVehicle): VehicleFormValue {
     svc_extra_km_eur: v.svc_extra_km_eur != null ? String(v.svc_extra_km_eur) : '',
     svc_deposit_eur: v.svc_deposit_eur != null ? String(v.svc_deposit_eur) : '',
     svc_franchise_eur: v.svc_franchise_eur != null ? String(v.svc_franchise_eur) : '',
+    rental_category_id: v.rental_category_id != null ? String(v.rental_category_id) : '',
     vignette_valid_until: v.vignette_valid_until ? String(v.vignette_valid_until).slice(0, 10) : '',
     itp_valid_until: v.itp_valid_until ? String(v.itp_valid_until).slice(0, 10) : '',
     insurance_valid_until: v.insurance_valid_until ? String(v.insurance_valid_until).slice(0, 10) : '',
@@ -2563,6 +2692,13 @@ export function VehicleFormFields({
   const docTypes = docTypesData?.types ?? []
   const selectedDocType = docTypes.find((t) => t.key === value.document_type)
   const isRentalType = !!selectedDocType?.is_rental
+  const { data: rentalCatsData } = useQuery({
+    queryKey: ['fp-rental-categories', _companyId],
+    queryFn: () => foiParcursApi.getRentalCategories(_companyId, true),
+    enabled: _companyId > 0 && isRentalType,
+    staleTime: 30_000,
+  })
+  const rentalCategories = rentalCatsData?.categories ?? []
   // Non-sales pools are multi-brand (courtesy/rental fleet independent of the
   // dealer franchise), so allow any brand there.
   const allowAnyBrand = value.document_type !== 'sales' && !!onBrandChange
@@ -2702,6 +2838,24 @@ export function VehicleFormFields({
 
     {isRentalType && (
       <div className="space-y-3 border-t pt-4">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Categorie tarifară</Label>
+          <Select
+            value={value.rental_category_id || 'none'}
+            onValueChange={(v) => onChange({ rental_category_id: v === 'none' ? '' : v })}
+          >
+            <SelectTrigger><SelectValue placeholder="Fără categorie" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Fără categorie (tarif per mașină)</SelectItem>
+              {rentalCategories.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Prețul se ia din categoria selectată (Settings → Tarife închiriere). Câmpurile de mai jos se folosesc doar când nu e selectată o categorie.
+          </p>
+        </div>
         <p className="text-sm font-semibold">Preț & politică (Mașini de curtoazie)</p>
         <p className="text-xs text-muted-foreground">
           Câmp gol = moștenește politica implicită a companiei (Settings → Politică implicită mașini de curtoazie).
@@ -2890,6 +3044,7 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
         svc_extra_km_eur: newVehicle.svc_extra_km_eur.trim() === '' ? null : Number(newVehicle.svc_extra_km_eur),
         svc_deposit_eur: newVehicle.svc_deposit_eur.trim() === '' ? null : Number(newVehicle.svc_deposit_eur),
         svc_franchise_eur: newVehicle.svc_franchise_eur.trim() === '' ? null : Number(newVehicle.svc_franchise_eur),
+        rental_category_id: newVehicle.rental_category_id.trim() === '' ? null : Number(newVehicle.rental_category_id),
         vignette_valid_until: newVehicle.vignette_valid_until || undefined,
         itp_valid_until: newVehicle.itp_valid_until || undefined,
         insurance_valid_until: newVehicle.insurance_valid_until || undefined,
@@ -3028,6 +3183,7 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
         svc_extra_km_eur: editForm.svc_extra_km_eur.trim() === '' ? null : Number(editForm.svc_extra_km_eur),
         svc_deposit_eur: editForm.svc_deposit_eur.trim() === '' ? null : Number(editForm.svc_deposit_eur),
         svc_franchise_eur: editForm.svc_franchise_eur.trim() === '' ? null : Number(editForm.svc_franchise_eur),
+        rental_category_id: editForm.rental_category_id.trim() === '' ? null : Number(editForm.rental_category_id),
         vignette_valid_until: editForm.vignette_valid_until || null,
         itp_valid_until: editForm.itp_valid_until || null,
         insurance_valid_until: editForm.insurance_valid_until || null,
@@ -3404,6 +3560,9 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
                   <TableRow className="bg-muted/30 border-l-4 border-l-primary/30 hover:bg-muted/30">
                     <TableCell colSpan={12} className="p-0">
                       <VehicleOdometerHistory vin={v.vin} />
+                      <div className="border-t border-border px-4 py-3">
+                        <VehicleLockHistory vehicleId={v.id} />
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}
@@ -3800,6 +3959,7 @@ export function SettingsTab({ documentType = 'sales', companyId }: { documentTyp
       {/* Section 5: Service contract setup (per company+brand) — Mașini de curtoazie only.
           Uses the header-selected company; no separate picker. */}
       {isService && <ContractConfigSection companyId={companyId} />}
+      {isService && <RentalTariffsSection companyId={companyId} />}
     </div>
   )
 }

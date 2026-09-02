@@ -11,6 +11,7 @@ import logging
 from collections import defaultdict
 
 from core.base_repository import BaseRepository
+from core.organization.ghost import ghost_exclude_clause
 
 logger = logging.getLogger("jarvis.happy.pulse_repository")
 
@@ -34,7 +35,15 @@ class PulseRepository(BaseRepository):
 
     def resolve_cohort(self, user_id, min_group_size=5):
         """Smallest ancestor org node with subtree >= min_group_size members,
-        else the user's company, else 'all'. Robust if the organigram is absent."""
+        else the user's company, else 'all'. Robust if the organigram is absent.
+
+        Ghost-user note (task 9): the `se.mapped_jarvis_user_id = %s` lookup
+        below resolves the CALLING/responding user's OWN node (self-access,
+        same shape as dept-pulse's `_ELIGIBLE_SQL` in task 8) — it must not
+        gain a ghost filter, since a ghost still needs their own cohort key
+        resolved to respond to a pulse. The function returns a cohort-key
+        STRING ('node:<id>' / 'company:<id>'), never a list of user rows, so
+        there is no audience to filter here in the first place."""
         try:
             row = self.query_one(
                 """SELECT som.node_id, n.company_id
@@ -68,6 +77,17 @@ class PulseRepository(BaseRepository):
         return f"company:{row['company_id']}"
 
     def _subtree_members(self, node_id):
+        """Distinct-employee headcount for a subtree, used only to size the
+        anonymity threshold for `resolve_cohort`. Ghost-user note (task 9):
+        this returns a scalar COUNT, not a list of user/employee rows — no
+        identity is enumerated or exposed — and it counts raw Sincron
+        org-membership rows (sincron_employee_id/company_name), which are
+        not even joined to `users`/mapped_jarvis_user_id here. There is no
+        user column to splice a ghost filter onto without inventing a join
+        that this headcount doesn't otherwise need, so it is left
+        unfiltered (a ghost's own headcount presence only affects which
+        ancestor node is picked as the cohort boundary, never who is
+        identified)."""
         r = self.query_one(
             """WITH RECURSIVE d AS (
                    SELECT id FROM sincron_org_nodes WHERE id = %s
@@ -143,10 +163,19 @@ class PulseRepository(BaseRepository):
                 (now, now, pulse_id),
             )
             if audience_user_ids is None:
+                # Default audience = every active user, materialized here —
+                # this is the real enrollment site, so ghosts are ALWAYS
+                # excluded (viewer_id=None), regardless of who opened the
+                # pulse (task 9).
+                gfrag, gargs = ghost_exclude_clause('id', viewer_id=None)
                 cursor.execute(
                     "INSERT INTO happy.pulse_invites (pulse_id, user_id) "
-                    "SELECT %s, id FROM users WHERE is_active ON CONFLICT DO NOTHING", (pulse_id,))
+                    f"SELECT %s, id FROM users WHERE is_active{gfrag} ON CONFLICT DO NOTHING",
+                    (pulse_id, *gargs))
             else:
+                # Explicit admin-picked id list (not a broad cohort
+                # materialization) — task 9's brief scopes the ghost fix to
+                # "INSERT...SELECT of an audience", i.e. the branch above.
                 for uid in audience_user_ids:
                     cursor.execute(
                         "INSERT INTO happy.pulse_invites (pulse_id, user_id) VALUES (%s, %s) "

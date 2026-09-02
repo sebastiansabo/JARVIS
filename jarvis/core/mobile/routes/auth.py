@@ -35,17 +35,31 @@ def api_token():
     if not data:
         return jsonify({'error': 'JSON body required'}), 400
 
-    email = (data.get('email') or '').strip()
+    identifier = (data.get('identifier') or data.get('email') or '').strip()
     password = data.get('password') or ''
 
-    if not email or not password:
-        return jsonify({'error': 'Email and password are required'}), 400
+    if not identifier or not password:
+        return jsonify({'error': 'Identifier and password are required'}), 400
 
-    user_data = _user_repo.authenticate(email, password)
+    via_phone = '@' not in identifier
+
+    user_data = _user_repo.authenticate_identifier(identifier, password)
     if not user_data:
-        return jsonify({'error': 'Invalid email or password'}), 401
+        return jsonify({'error': 'Invalid credentials'}), 401
 
     user = User(user_data)
+    is_viewer = (user.role_name or '').strip().lower() == 'viewer'
+
+    # Phone sign-in is restricted to Viewer accounts.
+    if via_phone and not is_viewer:
+        return jsonify({'error': 'Phone sign-in is only available for viewer '
+                                 'accounts. Please use your email address.'}), 403
+
+    # Viewers are single-factor — issue tokens immediately, no OTP.
+    if is_viewer:
+        threading.Thread(target=lambda: _user_repo.update_last_login(user.id), daemon=True).start()
+        tokens = _generate_tokens(user.id)
+        return jsonify({**tokens, 'user': _user_json(user)})
 
     device_id = (data.get('device_id') or '').strip()
     trusted_token = data.get('trusted_device_token')

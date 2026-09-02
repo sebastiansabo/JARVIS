@@ -1,7 +1,7 @@
 export interface UserDetail {
   id: number
   name: string
-  email: string
+  email: string | null
   phone: string | null
   role_id: number
   role_name: string
@@ -18,11 +18,12 @@ export interface UserDetail {
   birthdate: string | null
   position: string | null
   contract_work_date: string | null
+  is_ghost?: boolean
 }
 
 export interface CreateUserInput {
   name: string
-  email: string
+  email?: string
   phone?: string
   password?: string
   role_id?: number

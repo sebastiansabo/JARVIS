@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { foiParcursApi } from '@/api/foiParcurs'
 import type { FpVehicle } from '@/types/foiParcurs'
 import ScheduleBlockSection from './ScheduleBlockSection'
+import { VehicleLockHistory } from './VehicleLockHistory'
 
 // Combined vehicle-block modal: a single entry point for BOTH an immediate
 // manual lock/unlock ("Blocare imediată") and scheduled future block windows
@@ -103,6 +104,12 @@ export default function LockVehicleDialog({ vehicle, onClose, onSubmit, submitti
                 </div>
               </>
             )}
+
+            {/* Istoric blocări — shared with the Driving Park car profile.
+                Shown for both locked and available cars; survives an unlock. */}
+            <div className="mt-1 border-t border-border pt-3">
+              <VehicleLockHistory vehicleId={vehicle.id} />
+            </div>
           </TabsContent>
 
           {/* Scheduled future block windows */}

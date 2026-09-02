@@ -88,9 +88,11 @@ const navItemsDef: NavItem[] = [
     children: [
       { path: '/app/sales/crm', label: 'CRM Database', icon: Contact, moduleKey: 'crm_database' },
       { path: '/app/sales/field-sales', label: 'Field Sales', icon: MapPin, moduleKey: 'field_sales' },
-      // Positioned in Sales (cosmetic); route/slug/moduleKey unchanged.
-      { path: '/app/foi-parcurs', label: 'Driving Hub', icon: FileText, moduleKey: 'foi_parcurs', permission: 'can_access_carpark' },
     ],
+  },
+  {
+    // Driving Hub — top-level (moved out of Sales), positioned above CarPark.
+    path: '/app/foi-parcurs', label: 'Driving Hub', icon: FileText, moduleKey: 'foi_parcurs', permission: 'can_access_carpark',
   },
   {
     path: '/app/carpark', label: 'CarPark', icon: Car, moduleKey: 'carpark', permission: 'can_access_carpark',

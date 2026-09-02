@@ -287,4 +287,8 @@ export const crmApi = {
     api.post<{ success: boolean; contact: ClientContact }>(`/api/crm/clients/${clientId}/contacts`, data),
   updateClientContact: (clientId: number, contactId: number, data: Partial<ClientContact>) =>
     api.put<{ success: boolean; contact: ClientContact }>(`/api/crm/clients/${clientId}/contacts/${contactId}`, data),
+  // Backend rejects with 409 when the contact is the driver on an active
+  // (PLANNED/FILLED) session — the caller surfaces that error to the user.
+  deleteClientContact: (clientId: number, contactId: number) =>
+    api.delete<{ success: boolean }>(`/api/crm/clients/${clientId}/contacts/${contactId}`),
 }

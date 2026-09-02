@@ -37,18 +37,38 @@ FOREX_PATTERN = re.compile(r'([\d.,]+)\s*(EUR|USD)\s*@([\d.,]+)\s*EUR-RON')
 
 
 def parse_value(value_str: str) -> float:
-    """Parse European number format (1.234,56) to float."""
+    """Parse a European-format number (e.g. ``1.234,56``) to float.
+
+    Robust to OCR noise where the thousands separator is misread as a comma
+    (``2,003,36`` instead of ``2.003,36``): the *last* separator is treated as
+    the decimal point and every earlier '.'/',' as a grouping separator. A
+    trailing group of 3 digits is treated as grouping (integer value), since
+    statement amounts always carry two decimals.
+    """
     if not value_str:
         return 0.0
-    # Remove spaces
-    value_str = value_str.replace(' ', '')
-    # Handle European format: 1.234,56 -> 1234.56
-    if ',' in value_str and '.' in value_str:
-        value_str = value_str.replace('.', '').replace(',', '.')
-    elif ',' in value_str:
-        value_str = value_str.replace(',', '.')
+    value_str = value_str.strip().replace(' ', '')
+
+    negative = value_str.startswith('-')
+    if negative:
+        value_str = value_str[1:]
+
+    last_sep = max(value_str.rfind('.'), value_str.rfind(','))
+    if last_sep == -1:
+        int_part, frac_part = value_str, ''
+    else:
+        int_part = value_str[:last_sep]
+        frac_part = value_str[last_sep + 1:]
+        # A 3-digit trailing group is a thousands separator, not a decimal.
+        if len(frac_part) == 3 and re.search(r'[.,]', int_part):
+            int_part, frac_part = int_part + frac_part, ''
+
+    int_digits = re.sub(r'[.,]', '', int_part)
+    normalized = int_digits + ('.' + frac_part if frac_part else '')
+
     try:
-        return float(value_str)
+        result = float(normalized)
+        return -result if negative else result
     except ValueError:
         logger.warning(f'Could not parse value: {value_str}')
         return 0.0
@@ -309,7 +329,15 @@ def extract_transactions(text: str, header_info: dict, filename: str = None) -> 
 # Header labels and values are also on separate lines.
 
 def _extract_header_ocr(text: str) -> dict:
-    """Extract header info from OCR text where labels and values are separated."""
+    """Extract header info from OCR text.
+
+    Handles two OCR layouts:
+      - Inline/labeled: "Cont ales RO..", "Titular de cont ..", "CUI/CNP 123"
+        (labels and values on the same line).
+      - Column-separated: IBAN / company / CUI each on their own line.
+    Inline/labeled patterns take priority; the positional logic below fills
+    anything still missing so the original column layout keeps working.
+    """
     info = {
         'company_name': None,
         'company_cui': None,
@@ -317,6 +345,20 @@ def _extract_header_ocr(text: str) -> dict:
         'period_from': None,
         'period_to': None,
     }
+
+    # --- Inline/labeled layout: search anywhere on the line ---
+    acc_match = re.search(r'Cont ales\s+(RO\d{2}\s*[A-Z]{4}[\d\s]+)', text)
+    if acc_match:
+        info['account_number'] = re.sub(r'\s+', '', acc_match.group(1).split('|')[0])
+
+    name_match = re.search(r'Titular de cont\s+(.+)', text)
+    if name_match:
+        info['company_name'] = name_match.group(1).strip()
+
+    cui_match = re.search(r'CUI/?CNP[:\s]+(\d{5,10})', text)
+    if cui_match:
+        info['company_cui'] = cui_match.group(1)
+
     lines = [l.strip() for l in text.split('\n') if l.strip()]
 
     for i, line in enumerate(lines):
@@ -359,8 +401,11 @@ def _extract_transactions_ocr(text: str, header_info: dict, filename: str = None
     date_pattern = re.compile(r'^(\d{2}\.\d{2}\.\d{4})\s+(\d{2}\.\d{2}\.\d{4})\s*(.*)')
     amount_pattern = re.compile(r'^-?[\d.,]+$')
     currency_pattern = re.compile(r'^(RON|EUR|USD)$')
+    # Inline layout: the transaction value (signed) sits at the end of the row,
+    # e.g. "... 5586-84XX-XXXX-3100 -1.247,80 RON" or "..., 4.000,00 RON".
+    inline_value_pattern = re.compile(r'(-?[\d.,]+)\s*(RON|EUR|USD)\s*$')
 
-    # --- Phase 1: Extract transaction descriptions ---
+    # --- Phase 1: Extract transaction descriptions (and inline amounts) ---
     transactions = []
     current_txn = None
     desc_lines = []
@@ -392,7 +437,15 @@ def _extract_transactions_ocr(text: str, header_info: dict, filename: str = None
                 'card_number': None,
                 'auth_code': None,
             }
-            desc_lines = [date_match.group(3).strip()] if date_match.group(3).strip() else []
+            first_desc = date_match.group(3).strip()
+            # Inline layout: read the signed value from the end of the date row.
+            # (Column layout has no trailing value here -> filled in Phase 4.)
+            value_match = inline_value_pattern.search(first_desc)
+            if value_match:
+                current_txn['amount'] = parse_value(value_match.group(1))
+                current_txn['currency'] = value_match.group(2)
+                first_desc = first_desc[:value_match.start()].strip()
+            desc_lines = [first_desc] if first_desc else []
         elif current_txn is not None:
             desc_lines.append(stripped)
 
@@ -429,8 +482,11 @@ def _extract_transactions_ocr(text: str, header_info: dict, filename: str = None
             elif stripped:
                 break  # Non-currency line ends the section
 
-    # --- Phase 4: Pair amounts/currencies to transactions by index ---
-    for i, txn in enumerate(transactions):
+    # --- Phase 4: Pair column amounts/currencies to transactions that still
+    # lack an inline value (index-aligned). Inline-layout statements already
+    # have every amount set in Phase 1, so this becomes a no-op for them. ---
+    unpriced = [txn for txn in transactions if txn['amount'] is None]
+    for i, txn in enumerate(unpriced):
         if i < len(amounts):
             val = amounts[i]
             if val.startswith('-'):
@@ -440,6 +496,7 @@ def _extract_transactions_ocr(text: str, header_info: dict, filename: str = None
         if i < len(currencies):
             txn['currency'] = currencies[i]
 
+    for txn in transactions:
         # Check for forex info in description
         forex_match = FOREX_PATTERN.search(txn.get('description', ''))
         if forex_match:
@@ -479,6 +536,27 @@ def _extract_summary_ocr(text: str) -> dict:
         if debit_match:
             summary['debit_count'] = int(debit_match.group(1))
 
+    # Inline/labeled layout: label + date + amount all on one line, e.g.
+    #   "Sold deschidere 03.08.2026 1.729,72 RON"
+    #   "Credit total pentru tranzactiile selectate (4) 11.000,01 RON"
+    m = re.search(r'Sold deschidere\s+\d{2}\.\d{2}\.\d{4}\s+([\d.,]+)\s*RON', text)
+    if m:
+        summary['opening_balance'] = parse_value(m.group(1))
+    m = re.search(r'Sold inchidere\s+\d{2}\.\d{2}\.\d{4}\s+([\d.,]+)\s*RON', text)
+    if m:
+        summary['closing_balance'] = parse_value(m.group(1))
+    m = re.search(r'Credit total.*?\(\s*\d+\s*\)\s+([\d.,]+)\s*RON', text)
+    if m:
+        summary['credit_total'] = parse_value(m.group(1))
+    m = re.search(r'Debit total.*?\(\s*\d+\s*\)\s+(-?[\d.,]+)\s*RON', text)
+    if m:
+        summary['debit_total'] = abs(parse_value(m.group(1)))
+
+    # If the inline patterns already resolved the balances, we're done.
+    if summary['opening_balance'] is not None and summary['closing_balance'] is not None:
+        return summary
+
+    # Column layout fallback:
     # Summary amounts are the "X.XXX,XX RON" lines at the bottom of the text.
     # Order: opening_balance, credit_total, debit_total, net_total, closing_balance
     amount_ron_pattern = re.compile(r'^(-?[\d.,]+)\s*RON$')

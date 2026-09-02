@@ -84,3 +84,38 @@ def compute_service_pricing(vehicle: dict, company_policy: dict, departure, retu
         'svc_garantie_eur': policy['deposit_eur'],
         'svc_fransiza_eur': policy['franchise_eur'],
     }
+
+
+def select_interval(intervals, days: int):
+    """Pick the duration interval whose [min_days, max_days] contains `days`.
+
+    intervals: dicts with 'min_days' (int) and 'max_days' (int or None; None =
+    open-ended top band). Returns the matching dict, or None when no interval
+    covers `days`. Sorted by min_days so an unordered input still resolves
+    deterministically."""
+    for iv in sorted(intervals or [], key=lambda x: x['min_days']):
+        hi = iv.get('max_days')
+        if days >= iv['min_days'] and (hi is None or days <= hi):
+            return iv
+    return None
+
+
+def compute_category_pricing(days: int, eur_per_day, franchise_eur,
+                             extra_km_eur, km_included_day) -> dict:
+    """Build the rent-a-car svc_* snapshot from a resolved category price.
+
+    Pure: `eur_per_day`/franchise/extra-km come from the car's category, the
+    interval is already resolved (its rate is `eur_per_day`), and the km-included
+    default comes from company policy. The deposit (svc_garantie_eur) is NOT set
+    here — it is layered on from policy by the caller, mirroring
+    compute_service_pricing's split."""
+    rate = eur_per_day or 0
+    return {
+        'svc_rate_basis': 'day',
+        'svc_tariff_eur': rate,
+        'svc_units': days,
+        'svc_total_eur': round(rate * days, 2),
+        'svc_km_included_day': km_included_day,
+        'svc_extra_km_eur': extra_km_eur,
+        'svc_fransiza_eur': franchise_eur,
+    }

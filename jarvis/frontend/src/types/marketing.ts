@@ -320,6 +320,10 @@ export interface EventParticipant {
   bonus_type_name: string | null
   /** Specific attended days ('YYYY-MM-DD'); empty for legacy rows w/o day data. */
   presence_days: string[]
+  /** Total worked hours across the per-day intervals (SUM(end-start), whole hours). */
+  event_hours: number | null
+  /** Per-day worked interval, only for days that have one set. */
+  presence_day_hours: Record<string, { start: number; end: number }> | null
 }
 
 export interface MktKpiBudgetLine {

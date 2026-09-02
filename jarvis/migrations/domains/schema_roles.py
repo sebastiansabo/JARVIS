@@ -77,6 +77,21 @@ def create_schema_roles(conn, cursor):
         END $$;
     ''')
 
+    # Viewer accounts may have no email (they log in by phone) — drop the
+    # NOT NULL constraint on email. UNIQUE stays: Postgres allows multiple NULLs,
+    # so any number of email-less viewers can coexist. Email remains required
+    # for non-Viewer roles, enforced at the application layer.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'users' AND column_name = 'email'
+                         AND is_nullable = 'NO') THEN
+                ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+            END IF;
+        END $$;
+    ''')
+
     # Add organizational fields to users table (migrate from responsables)
     cursor.execute('''
         DO $$
@@ -153,6 +168,67 @@ def create_schema_roles(conn, cursor):
                     FOR EACH ROW
                     EXECUTE FUNCTION sync_is_active_from_contract_status();
             END IF;
+        END $$;
+    ''')
+
+    # ── Phone-number login support (Viewer single-factor) ──
+    # Canonical Romanian form 40XXXXXXXXX. IMMUTABLE so it can back a
+    # STORED generated column. Mirrors crm.parsers.utils.normalize_phone.
+    # WARNING: users.phone_normalized is a STORED generated column backed by
+    # fn_normalize_phone. Postgres does NOT recompute existing rows when this
+    # function is changed via CREATE OR REPLACE. If you ever change the
+    # normalization rules, you MUST backfill existing rows to avoid stored
+    # values silently diverging from get_by_phone()'s live-normalized lookups,
+    # e.g.:  UPDATE users SET phone = phone;   (retriggers the generated column)
+    cursor.execute('''
+        CREATE OR REPLACE FUNCTION fn_normalize_phone(raw text)
+        RETURNS text AS $fn$
+        DECLARE d text;
+        BEGIN
+            IF raw IS NULL THEN RETURN NULL; END IF;
+            d := regexp_replace(raw, '\\D', '', 'g');
+            IF d = '' THEN RETURN NULL; END IF;
+            IF left(d, 1) = '0' AND length(d) = 10 THEN
+                d := '40' || substring(d from 2);
+            ELSIF left(d, 1) = '4' AND length(d) = 11 THEN
+                d := d;
+            ELSIF left(d, 2) = '40' AND length(d) = 12 THEN
+                d := d;
+            ELSIF length(d) >= 9 AND left(d, 2) <> '40' THEN
+                d := '40' || d;
+            END IF;
+            IF length(d) < 10 OR length(d) > 12 THEN RETURN NULL; END IF;
+            RETURN d;
+        END;
+        $fn$ LANGUAGE plpgsql IMMUTABLE;
+    ''')
+
+    # Generated column — auto-computes for every existing and future row.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name = 'users' AND column_name = 'phone_normalized') THEN
+                ALTER TABLE users
+                    ADD COLUMN phone_normalized TEXT
+                    GENERATED ALWAYS AS (fn_normalize_phone(phone)) STORED;
+            END IF;
+        END $$;
+    ''')
+
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_phone_normalized ON users(phone_normalized)')
+
+    # Unique index is defense-in-depth. Skip (with a notice) if duplicates
+    # already exist so the migration never hard-fails; resolve dupes then re-run.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            BEGIN
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_normalized_uniq
+                    ON users(phone_normalized) WHERE phone_normalized IS NOT NULL;
+            EXCEPTION WHEN unique_violation THEN
+                RAISE NOTICE 'users.phone_normalized has duplicates; unique index skipped.';
+            END;
         END $$;
     ''')
 
@@ -669,6 +745,7 @@ def create_schema_roles(conn, cursor):
     test_drive_perms = [
         ('test_drive', 'Test Drive', 'bi-car-front', 'module', 'Module', 'access', 'Access', 'Access the Sales / Test Drive section', False, 1),
         ('test_drive', 'Test Drive', 'bi-car-front', 'contracts', 'Registrations', 'correct', 'Correct date / odometer', "Correct a session's drive date & odometer readings (Foaie de Parcurs)", False, 2),
+        ('test_drive', 'Test Drive', 'bi-car-front', 'contracts', 'Registrations', 'drive_type', 'Change drive type (internal/external)', 'Reclassify a session between internal (company) and client driving (Foaie de Parcurs)', False, 3),
     ]
     for p in test_drive_perms:
         cursor.execute('''
@@ -687,12 +764,28 @@ def create_schema_roles(conn, cursor):
     ''')
     # Grant Test Drive access to Viewer role as well (consilieri use the mobile
     # Test Drive tile). Admins can still revoke/adjust it in the matrix.
+    # EXCLUDE drive_type: reclassifying internal↔external is an admin cleanup
+    # action, default-deny for consilieri (admins grant it per-role in the matrix).
     cursor.execute('''
         INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
         SELECT r.id, p.id, 'all', TRUE
         FROM roles r
         CROSS JOIN permissions_v2 p
         WHERE r.name = 'Viewer' AND p.module_key = 'test_drive'
+          AND p.action_key <> 'drive_type'
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+    ''')
+    # Grant drive_type to Manager too — managers clean up sessions colleagues
+    # mis-marked internal↔external. Admin already covered above; Viewer stays
+    # denied. Idempotent + non-clobbering: DO NOTHING preserves a later manual
+    # revoke in the matrix.
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'all', TRUE
+        FROM roles r
+        CROSS JOIN permissions_v2 p
+        WHERE r.name = 'Manager'
+          AND p.module_key = 'test_drive' AND p.entity_key = 'contracts' AND p.action_key = 'drive_type'
         ON CONFLICT (role_id, permission_id) DO NOTHING
     ''')
 

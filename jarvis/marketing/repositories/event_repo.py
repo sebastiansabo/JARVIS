@@ -95,7 +95,21 @@ class ProjectEventRepository(BaseRepository):
                        (SELECT array_agg(to_char(d.day, 'YYYY-MM-DD') ORDER BY d.day)
                         FROM hr.event_bonus_days d WHERE d.bonus_id = eb.id),
                        ARRAY[]::text[]
-                   ) AS presence_days
+                   ) AS presence_days,
+                   COALESCE(
+                       (SELECT SUM(d.end_hour - d.start_hour)
+                        FROM hr.event_bonus_days d
+                        WHERE d.bonus_id = eb.id
+                          AND d.start_hour IS NOT NULL AND d.end_hour IS NOT NULL),
+                       0
+                   ) AS event_hours,
+                   (SELECT jsonb_object_agg(
+                              to_char(d.day, 'YYYY-MM-DD'),
+                              jsonb_build_object('start', d.start_hour, 'end', d.end_hour))
+                    FROM hr.event_bonus_days d
+                    WHERE d.bonus_id = eb.id
+                      AND d.start_hour IS NOT NULL AND d.end_hour IS NOT NULL
+                   ) AS presence_day_hours
             FROM hr.event_bonuses eb
             JOIN users u ON u.id = eb.user_id
             LEFT JOIN hr.bonus_types bt ON bt.id = eb.bonus_type_id

@@ -34,6 +34,18 @@ def api_get_notification_settings():
 def api_save_notification_settings():
     """Save notification settings."""
     data = request.get_json()
+    # SECURITY: this endpoint is @login_required only — ANY authenticated
+    # user can POST here, and there is no per-key permission whitelist.
+    # `ghost_visible_admin_ids` (the ghost-visibility super-admin allowlist,
+    # see core.organization.ghost) is a security control and must never be
+    # settable through this generic, unauthenticated-by-role endpoint —
+    # otherwise any user could grant themselves ghost-visibility via
+    # `POST {"ghost_visible_admin_ids": "<own id>"}`. It may only be set
+    # internally (DB/seed/script) via `save_notification_setting()` /
+    # `NotificationRepository.save_setting()` directly. Strip it here before
+    # it ever reaches the bulk save, and do not add it back anywhere else.
+    if data and 'ghost_visible_admin_ids' in data:
+        data = {k: v for k, v in data.items() if k != 'ghost_visible_admin_ids'}
     try:
         _notif_repo.save_settings_bulk(data)
         return jsonify({'success': True})

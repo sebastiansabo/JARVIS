@@ -124,3 +124,37 @@ def test_lock_accepts_active_db_category(client, monkeypatch):
     monkeypatch.setattr(td_routes._vehicle_repo, 'lock_vehicle', lambda *a, **k: {'id': 1, 'locked_out': True})
     resp = client.post('/api/foi-parcurs/vehicles/1/lock', json={'category': 'reserved'})
     assert resp.status_code == 200, resp.get_json()
+
+
+# ── Lock/unlock history log (fp_vehicle_lock_events) ────────────────────────
+
+def test_unlock_passes_actor_to_repo(client, monkeypatch):
+    """The unlock route must record WHO unblocked the car, so unlock_vehicle is
+    called with the acting user id — not just the vehicle id."""
+    captured = {}
+    def fake_unlock(*args, **kwargs):
+        captured['args'] = args
+        return {'id': 7, 'locked_out': False}
+    monkeypatch.setattr(td_routes._vehicle_repo, 'unlock_vehicle', fake_unlock)
+    resp = client.post('/api/foi-parcurs/vehicles/7/unlock')
+    assert resp.status_code == 200, resp.get_json()
+    assert captured['args'][0] == 7
+    assert len(captured['args']) == 2  # (vehicle_id, actor_id)
+
+
+def test_lock_events_endpoint_returns_history(client, monkeypatch):
+    """GET .../lock-events returns the car's block/unblock audit trail, newest first."""
+    monkeypatch.setattr(
+        td_routes._vehicle_repo, 'get_lock_events',
+        lambda vid: [
+            {'id': 2, 'action': 'unlock', 'category': None, 'note': None,
+             'actor_name': 'Ion Pop', 'created_at': '2026-08-28T09:12:00+00:00'},
+            {'id': 1, 'action': 'lock', 'category': 'service', 'note': 'în service',
+             'actor_name': 'Sebastian Sabo', 'created_at': '2026-08-31T14:05:00+00:00'},
+        ],
+    )
+    resp = client.get('/api/foi-parcurs/vehicles/7/lock-events')
+    assert resp.status_code == 200, resp.get_json()
+    events = resp.get_json()['events']
+    assert events[0]['action'] == 'unlock'
+    assert events[1]['actor_name'] == 'Sebastian Sabo'
