@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
 import { fileToCompressedDataUrl } from '@/lib/imageCompress'
+import { matchesTenant } from '@/lib/tenant'
 import { useVehicleConflicts } from '@/hooks/useVehicleConflicts'
 import {
   usesFuelTank,
@@ -335,13 +336,33 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
     () => (companyId ? allVehicles.filter((v) => v.company_id === companyId) : []),
     [allVehicles, companyId],
   )
+
+  // Tenants (Company × Brand) come from company-brands settings — the same
+  // catalog the Hub/Sessions toolbar reads — NOT the makes present in stock. The
+  // picker appears only for multi-tenant companies (e.g. AW Plus: Mazda + MG).
+  const { data: brandsData } = useQuery({
+    queryKey: ['fp-brands', companyId, documentType],
+    queryFn: () => foiParcursApi.getBrands(companyId!, documentType),
+    enabled: !!companyId,
+    staleTime: 30_000,
+  })
+  const brands = brandsData?.brands ?? []
+  const [brandFilter, setBrandFilter] = useState('') // '' = all tenants
+  // Drop a tenant that doesn't belong to the selected company once its brands
+  // are known (guarded so it never clears while brands are still loading).
+  useEffect(() => {
+    if (brandFilter && brands.length > 0 && !brands.includes(brandFilter)) setBrandFilter('')
+  }, [brands, brandFilter])
+
   // Default picker hides archived (is_active=false) + blocked cars; a toggle
   // reveals them (selectable, badged). Blocked cars require a confirm (below).
   const [showAllVehicles, setShowAllVehicles] = useState(false)
   const visibleVehicles = useMemo(() => {
+    // Narrow to the selected tenant first (by catalog brand, case-insensitive).
+    const scoped = vehiclesForCompany.filter((v) => matchesTenant(v, brandFilter))
     const base = showAllVehicles
-      ? vehiclesForCompany
-      : vehiclesForCompany.filter((v) => v.is_active !== false && !v.locked_out && !v.blocked_now)
+      ? scoped
+      : scoped.filter((v) => v.is_active !== false && !v.locked_out && !v.blocked_now)
     // Keep the currently-selected car in the list even if it's hidden by the
     // toggle (a blocked car selected earlier) OR belongs to another company
     // (an activation prefill can resolve a vehicle whose company differs from
@@ -353,7 +374,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
       return [sel, ...base]
     }
     return base
-  }, [vehiclesForCompany, showAllVehicles, selectedVehicle])
+  }, [vehiclesForCompany, showAllVehicles, selectedVehicle, brandFilter])
   const hasHiddenVehicles = useMemo(
     () => vehiclesForCompany.some((v) => v.is_active === false || v.locked_out || v.blocked_now),
     [vehiclesForCompany],
@@ -972,7 +993,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
   const handleBack = () => { if (embedded) onCancel?.(); else navigate('/app/foi-parcurs') }
 
   function resetForm() {
-    setCompanyId(null); setVehicleId(null); setSelectedVehicle(null)
+    setCompanyId(null); setBrandFilter(''); setVehicleId(null); setSelectedVehicle(null)
     setClientSearch(''); setSelectedClient(null); setShowManualCreate(false)
     setDriverContact(null); setShowAddContact(false)
     setMktProject(null); setProjectSearch('')
@@ -1066,7 +1087,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
             <Label className="text-xs">Companie *</Label>
             <Select
               value={companyId ? String(companyId) : ''}
-              onValueChange={(v) => { setCompanyId(Number(v)); setVehicleId(null); setSelectedVehicle(null) }}
+              onValueChange={(v) => { setCompanyId(Number(v)); setBrandFilter(''); setVehicleId(null); setSelectedVehicle(null) }}
             >
               <SelectTrigger className={invalidRing(missing.company)}><SelectValue placeholder="Selectează compania" /></SelectTrigger>
               <SelectContent>
@@ -1074,6 +1095,21 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
               </SelectContent>
             </Select>
           </div>
+          {brands.length > 1 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Marcă</Label>
+              <Select
+                value={brandFilter || 'all'}
+                onValueChange={(v) => { setBrandFilter(v === 'all' ? '' : v); setVehicleId(null); setSelectedVehicle(null) }}
+              >
+                <SelectTrigger><SelectValue placeholder="Toate mărcile" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toate mărcile</SelectItem>
+                  {brands.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs">Vehicul *</Label>
             <Select value={vehicleId ? String(vehicleId) : ''} onValueChange={handleVehicleChange} disabled={!companyId}>
