@@ -555,6 +555,20 @@ def _register_routes(flask_app: Flask):
         resp.headers['Cache-Control'] = 'no-store, max-age=0'
         return resp
 
+    @flask_app.route('/download/jarvis2-staging.apk')
+    def download_apk_v2_staging():
+        # JARVIS Mobile 2.0 STAGING flavor (com.jarvis.mobile2.staging) — points at
+        # the staging backend. Installs side-by-side with the prod app so testers can
+        # validate a release against staging before it's promoted to prod. Published
+        # by the jarvis-mobile-2 CI alongside jarvis2.apk.
+        downloads_dir = os.path.join(flask_app.static_folder, 'downloads')
+        resp = send_from_directory(downloads_dir, 'jarvis2-staging.apk',
+                                   as_attachment=True,
+                                   download_name='jarvis2-staging.apk',
+                                   mimetype='application/vnd.android.package-archive')
+        resp.headers['Cache-Control'] = 'no-store, max-age=0'
+        return resp
+
     @flask_app.route('/download')
     def download_page():
         base_url = flask_app.config.get('APP_BASE_URL', 'https://jarvis.autoworld.ro').rstrip('/')

@@ -20,6 +20,8 @@ def format_leave_summary(row):
         'hours': a.get('f_bi_hours', ''),
         'reason': a.get('f_bi_reason', ''),
         'notes': a.get('f_bi_notes', ''),
+        'is_correction': bool(a.get('f_bi_is_correction')),
+        'company': a.get('f_bi_company') or None,
     }
 
 
