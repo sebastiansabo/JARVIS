@@ -615,7 +615,7 @@ def _insert_gap_fill(vin, year, month, ctx, item, user_name) -> int:
     client = (item.get('client_name') or '').strip()
     date = (item.get('date') or '').strip()
     dep = f'{date} 10:00:00' if date else None
-    route_type = 'TD' if dist <= td_max else 'Comodat'
+    route_type = 'TD'  # Comodat deprecated (2026-09): gap-fill sessions are always TD
     # Optional "client extra" documentation — advisor (consilier), the signed
     # client signature and the driver-license photo/number/expiry.
     advisor = (item.get('advisor_name') or user_name or 'Redistribuire')
@@ -708,7 +708,7 @@ def absorb_gap(vin: str, year: int, month: int, before_id: int, after_id: int,
 
     def _extend(row_id, new_start, new_end, added):
         dist = new_end - new_start
-        rtype = 'TD' if dist <= td_max else 'Comodat'
+        rtype = 'TD'  # Comodat deprecated (2026-09): re-tiled sessions stay TD
         _fp_repo.execute(
             '''UPDATE foi_de_parcurs
                  SET km_start=%s, km_end=%s, distance_km=%s, route_type=%s,
@@ -781,7 +781,7 @@ def retile_gap(vin: str, year: int, month: int, allocations: list, user_name=Non
     for r, dist in rows:
         orig_dist = int(r['km_end']) - int(r['km_start'])
         new_start, new_end = cursor, cursor + dist
-        rtype = 'TD' if dist <= td_max else 'Comodat'
+        rtype = 'TD'  # Comodat deprecated (2026-09): re-tiled sessions stay TD
         note = f' [KM ajustat +{dist - orig_dist} km prin redistribuire gap]' if dist != orig_dist else ''
         _fp_repo.execute(
             '''UPDATE foi_de_parcurs SET km_start=%s, km_end=%s, distance_km=%s, route_type=%s,
