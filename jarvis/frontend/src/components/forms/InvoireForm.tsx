@@ -317,12 +317,11 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
                   <History className="h-3.5 w-3.5" /> Corectie Ore
                 </button>
               </div>
-              {!correctionsExempt && (
-                <p className={cn('px-0.5 text-xs', correctionLimitReached ? 'font-medium text-destructive' : 'text-muted-foreground')}>
-                  Corecții luna aceasta: {correctionsUsed}/{correctionsLimit}
-                  {correctionLimitReached && ' — limită atinsă'}
-                </p>
-              )}
+              <p className={cn('px-0.5 text-xs', correctionLimitReached ? 'font-medium text-destructive' : 'text-muted-foreground')}>
+                {correctionsExempt
+                  ? 'Corecții: nelimitat (rol manager/HR/admin)'
+                  : `Corecții luna aceasta: ${correctionsUsed}/${correctionsLimit}${correctionLimitReached ? ' — limită atinsă' : ''}`}
+              </p>
             </div>
           )}
           {isCorrection && (
