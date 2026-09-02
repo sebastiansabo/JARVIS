@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Loader2, Search, Check, X, RefreshCw, Sparkles, Plus, ArrowLeft, Upload } from 'lucide-react'
+import { Save, Loader2, Search, X, RefreshCw, Sparkles, Plus, ArrowLeft, Upload } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchSelect } from '@/components/shared/SearchSelect'
+import { DecodePreviewDialog } from './DecodePreviewDialog'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -606,7 +607,6 @@ export default function VehicleForm() {
           provider: 'CIV',
           confidence: result.data?.confidence ?? 0.9,
         } as unknown as VINDecodeResult
-        handleTabChange('vehicul')
         setDecodeResult(preview)
         toast.success('CIV citit — verifică datele și apasă „Aplică".')
       } else {
@@ -1161,37 +1161,12 @@ export default function VehicleForm() {
               </Button>
             </div>
             {vinError && <p className="text-xs text-red-500">{vinError}</p>}
-            {decodeResult && (
-              <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">
-                    {decodeResult.specs.brand} {decodeResult.specs.model}
-                    {decodeResult.specs.model_year ? ` (${decodeResult.specs.model_year})` : ''}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {decodeResult.provider} &middot; {Math.round(decodeResult.confidence * 100)}%
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 text-xs text-muted-foreground mb-2">
-                  {decodeResult.specs.fuel_type && <span>Combustibil: {decodeResult.specs.fuel_type}</span>}
-                  {decodeResult.specs.engine_power_hp > 0 && <span>Putere: {decodeResult.specs.engine_power_hp} CP</span>}
-                  {decodeResult.specs.engine_displacement_cc > 0 && <span>Motor: {decodeResult.specs.engine_displacement_cc} cmc</span>}
-                  {decodeResult.specs.transmission && <span>Cutie: {decodeResult.specs.transmission}</span>}
-                  {decodeResult.specs.body_type && <span>Caroserie: {decodeResult.specs.body_type}</span>}
-                  {decodeResult.specs.drive_type && <span>Tracțiune: {decodeResult.specs.drive_type}</span>}
-                </div>
-                <div className="flex gap-2">
-                  <Button type="button" size="sm" onClick={applyDecodedFields}>
-                    <Check className="mr-1 h-3 w-3" />
-                    Aplică
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setDecodeResult(null)}>
-                    <X className="mr-1 h-3 w-3" />
-                    Renunță
-                  </Button>
-                </div>
-              </div>
-            )}
+            <DecodePreviewDialog
+              result={decodeResult}
+              form={form}
+              onApply={applyDecodedFields}
+              onClose={() => setDecodeResult(null)}
+            />
           </div>
           <TextField label="Nr. stoc" name="nr_stoc" value={form.nr_stoc as string} onChange={handleChange} />
           <SelectField
