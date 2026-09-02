@@ -138,12 +138,32 @@ class PraiseRepository(BaseRepository):
         return w
 
     def get_received(self, user_id, limit=20, offset=0):
+        """Kudos the user received, newest first, with the giver's display name.
+
+        `from_name` is the giver's `users.name` (NULL if the account is gone).
+        Visibility never hides the giver from the recipient — the person you
+        thanked always knows it was you; visibility only governs feed broadcast.
+        """
         return self.query_all(
-            """SELECT k.id, k.from_user, k.note, k.points, k.created_at,
+            """SELECT k.id, k.from_user, u.name AS from_name, k.note, k.points, k.created_at,
                       vt.slug AS value_tag, vt.label_ro AS value_label
                  FROM happy.kudos k
                  LEFT JOIN happy.value_tags vt ON vt.id = k.value_tag_id
+                 LEFT JOIN users u ON u.id = k.from_user
                 WHERE k.to_user = %s
+                ORDER BY k.created_at DESC LIMIT %s OFFSET %s""",
+            (user_id, limit, offset),
+        )
+
+    def get_sent(self, user_id, limit=20, offset=0):
+        """Kudos the user gave, newest first, with the recipient's display name."""
+        return self.query_all(
+            """SELECT k.id, k.to_user, u.name AS to_name, k.note, k.points, k.created_at,
+                      k.visibility, vt.slug AS value_tag, vt.label_ro AS value_label
+                 FROM happy.kudos k
+                 LEFT JOIN happy.value_tags vt ON vt.id = k.value_tag_id
+                 LEFT JOIN users u ON u.id = k.to_user
+                WHERE k.from_user = %s
                 ORDER BY k.created_at DESC LIMIT %s OFFSET %s""",
             (user_id, limit, offset),
         )

@@ -7,6 +7,7 @@ import { useWallet } from '@/api/happy'
 import { PraiseComposer } from './PraiseComposer'
 import { PraiseFeed } from './PraiseFeed'
 import { MyPraiseStreak } from './MyPraiseStreak'
+import { PraiseHistoryDialog } from './PraiseHistoryDialog'
 
 /** Whole days until the giveable balance expires, or null if unknown/past. */
 function daysUntil(iso: string | null): number | null {
@@ -23,6 +24,7 @@ function daysUntil(iso: string | null): number | null {
  */
 export function PraiseCard() {
   const [composerOpen, setComposerOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const { data: wallet, isLoading } = useWallet()
 
   const expiresIn = daysUntil(wallet?.giveable_expires_at ?? null)
@@ -80,10 +82,19 @@ export function PraiseCard() {
             Ultimele primite
           </p>
           <PraiseFeed limit={3} />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-muted-foreground"
+            onClick={() => setHistoryOpen(true)}
+          >
+            Vezi toate aprecierile
+          </Button>
         </div>
       </CardContent>
 
       <PraiseComposer open={composerOpen} onOpenChange={setComposerOpen} />
+      <PraiseHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
     </Card>
   )
 }
