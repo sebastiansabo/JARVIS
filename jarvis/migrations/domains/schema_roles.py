@@ -1234,25 +1234,6 @@ def _seed_sidebar_permissions_v2(cursor, conn):
         ''', (scope, role_name))
     conn.commit()
 
-    # hr.leave_permissions.correct — gates the "Corectie Ore" (backdated hours
-    # correction) toggle in the Invoire form. Registered in the matrix so admins
-    # can grant/revoke per role. Seeded to Admin + Manager ONLY on first install,
-    # insert-only (DO NOTHING) so later matrix edits are never re-applied on boot.
-    cursor.execute('''
-        INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order)
-        VALUES ('hr', 'HR', 'bi-people-fill', 'leave_permissions', 'Leave Permissions', 'correct', 'Corectie Ore', 'Create backdated hours corrections (Corectie Ore)', FALSE, 26)
-        ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
-    ''')
-    for role_name in ('Admin', 'Manager'):
-        cursor.execute('''
-            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
-            SELECT r.id, p.id, 'all', TRUE
-            FROM roles r CROSS JOIN permissions_v2 p
-            WHERE r.name = %s AND p.module_key = 'hr' AND p.entity_key = 'leave_permissions' AND p.action_key = 'correct'
-            ON CONFLICT (role_id, permission_id) DO NOTHING
-        ''', (role_name,))
-    conn.commit()
-
     # Grant forms.form.view to Viewer so they can submit forms from Command Hub
     cursor.execute('''
         INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
