@@ -2,18 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { praiseApi } from '@/api/happy'
-
-/** Short relative time, e.g. "acum 3 zile". */
-function timeAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(ms / 60_000)
-  if (mins < 1) return 'acum'
-  if (mins < 60) return `acum ${mins} min`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `acum ${hrs} h`
-  const days = Math.floor(hrs / 24)
-  return `acum ${days} ${days === 1 ? 'zi' : 'zile'}`
-}
+import { personLabel, timeAgo } from './praiseFormat'
 
 interface PraiseFeedProps {
   limit?: number
@@ -64,7 +53,7 @@ export function PraiseFeed({ limit = 10 }: PraiseFeedProps) {
             </span>
           </div>
           <p className="text-sm">{k.note}</p>
-          <p className="mt-1 text-xs text-muted-foreground">de la {String(k.from_user)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">de la {personLabel(k.from_name, k.from_user)}</p>
         </div>
       ))}
     </div>
