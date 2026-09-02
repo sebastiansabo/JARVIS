@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Upload, ChevronLeft, ChevronRight, ChevronDown, Info, MoreHorizontal, Pencil, Archive, Trash2, RotateCcw } from 'lucide-react'
+import { Loader2, Upload, Download, ChevronLeft, ChevronRight, ChevronDown, Info, MoreHorizontal, Pencil, Archive, Trash2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -46,6 +46,7 @@ export default function LeavePermitsTab({ search }: { search: string }) {
   const [collapsedEmployees, setCollapsedEmployees] = useState<Set<string>>(new Set())
   const [view, setView] = useState<LeaveView>('active')
   const [editing, setEditing] = useState<ConnecteamSubmission | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   useQuery({
     queryKey: ['connecteam', 'status'],
@@ -202,6 +203,52 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     else setMonth(m => m + 1)
   }
 
+  const handleExport = async () => {
+    if (filtered.length === 0) {
+      toast.info('Nu există bilete de exportat')
+      return
+    }
+    setExporting(true)
+    try {
+      const XLSX = await import('xlsx')
+      const header = ['Nume', 'Companie', 'Data', 'Început', 'Sfârșit', 'Ore', 'Motiv', 'Aprobat de', 'Status', 'Sursă']
+      const rows: (string | number)[][] = [header]
+      // Flat rows, ordered by employee to match the on-screen grouping.
+      for (const [employeeName, { submissions }] of grouped) {
+        for (const s of submissions) {
+          rows.push([
+            employeeName,
+            s.jarvis_user_company?.replace(' S.R.L.', '') || '',
+            s.leave_date ? new Date(s.leave_date + 'T00:00').toLocaleDateString('ro-RO') : '',
+            s.leave_start_time?.slice(0, 5) || '',
+            s.leave_end_time?.slice(0, 5) || '',
+            s.leave_hours != null ? s.leave_hours : '',
+            s.leave_reason || '',
+            s.approved_by || '',
+            s.status || '',
+            s.source === 'jarvis' ? 'JARVIS' : 'Connecteam',
+          ])
+        }
+      }
+      const ws = XLSX.utils.aoa_to_sheet(rows)
+      ws['!cols'] = [
+        { wch: 24 }, { wch: 20 }, { wch: 12 }, { wch: 8 }, { wch: 8 },
+        { wch: 6 }, { wch: 24 }, { wch: 20 }, { wch: 12 }, { wch: 12 },
+      ]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Bilete')
+      const viewSuffix = view === 'archived' ? '_arhivate' : view === 'trashed' ? '_cos' : ''
+      const fileName = `bilete_invoire_${year}-${String(month).padStart(2, '0')}${viewSuffix}.xlsx`
+      XLSX.writeFile(wb, fileName)
+      toast.success('Export finalizat')
+    } catch (err) {
+      console.error('[LeavePermits Export] failed:', err)
+      toast.error('Exportul a eșuat')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* CO Conversion notice */}
@@ -272,6 +319,18 @@ export default function LeavePermitsTab({ search }: { search: string }) {
           <span className="text-xs text-muted-foreground">
             {filtered.length} permits · {grouped.length} employees
           </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExport}
+            disabled={exporting || filtered.length === 0}
+            title="Exportă biletele filtrate în Excel"
+          >
+            {exporting
+              ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              : <Download className="mr-1.5 h-4 w-4" />}
+            Export
+          </Button>
           <input
             type="file"
             accept=".xlsx"
