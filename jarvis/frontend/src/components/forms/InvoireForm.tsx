@@ -315,6 +315,7 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
                   className={cn('flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed',
                     isCorrection ? 'bg-destructive text-destructive-foreground' : 'text-muted-foreground hover:bg-muted')}>
                   <History className="h-3.5 w-3.5" /> Corectie Ore
+                  {!correctionsExempt && ` (${Math.max(0, correctionsLimit - correctionsUsed)})`}
                 </button>
               </div>
               <p className={cn('px-0.5 text-xs', correctionLimitReached ? 'font-medium text-destructive' : 'text-muted-foreground')}>
