@@ -51,6 +51,14 @@ def praise_received():
     return jsonify({"items": jsonable(PraiseRepository().get_received(current_user.id, limit, offset))})
 
 
+@happy_bp.route("/praise/sent", methods=["GET"])
+@login_required
+def praise_sent():
+    limit = min(int(request.args.get("limit", 20)), 100)
+    offset = int(request.args.get("offset", 0))
+    return jsonify({"items": jsonable(PraiseRepository().get_sent(current_user.id, limit, offset))})
+
+
 @happy_bp.route("/praise/me", methods=["GET"])
 @login_required
 def praise_me():

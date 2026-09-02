@@ -20,6 +20,8 @@ def test_happy_bp_registers_expected_rules():
         "/api/happy/campaigns/<int:campaign_id>/snooze",
         "/api/happy/campaigns/<int:campaign_id>/dismiss",
         "/api/happy/inbox",
+        "/api/happy/praise/received",
+        "/api/happy/praise/sent",
         "/api/happy/admin/campaigns",
         "/api/happy/admin/campaigns/<int:campaign_id>/publish",
         "/api/happy/admin/campaigns/<int:campaign_id>/preview-audience",

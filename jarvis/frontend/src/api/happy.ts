@@ -16,6 +16,7 @@ import type {
   HappySendKudosPayload,
   HappySendKudosResponse,
   HappyReceivedResponse,
+  HappySentResponse,
   HappyMyPraise,
   HappyPulseCurrent,
   HappyPulseAnswers,
@@ -87,6 +88,12 @@ export const praiseApi = {
 
   getReceived: (limit = 10, offset = 0) =>
     api.get<HappyReceivedResponse>('/api/happy/praise/received', {
+      limit: String(limit),
+      offset: String(offset),
+    }),
+
+  getSent: (limit = 10, offset = 0) =>
+    api.get<HappySentResponse>('/api/happy/praise/sent', {
       limit: String(limit),
       offset: String(offset),
     }),
