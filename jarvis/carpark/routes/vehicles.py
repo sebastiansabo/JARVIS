@@ -193,6 +193,65 @@ def get_vehicle(vehicle_id):
     return jsonify({'vehicle': _serialize(vehicle)})
 
 
+@carpark_bp.route('/vehicles/generate-description', methods=['POST'])
+@login_required
+@carpark_required
+def generate_vehicle_description():
+    """Build a Romanian listing description for the vehicle.
+
+    The «Specificații» / «Dotări» bullets are built deterministically from the
+    specs the form sends (no AI). The AI (ai_agent.llm_client) writes ONLY the
+    short intro paragraph; if that call fails, a deterministic template intro is
+    used instead, so generation never fails.
+    """
+    data = request.get_json(silent=True) or {}
+    specs = data.get('specs') or {}
+    equipment = [str(e) for e in (data.get('equipment') or []) if e]
+    spec_bullets = [f"• {k}: {v}" for k, v in specs.items() if v not in (None, '', 0)]
+    if not spec_bullets and not equipment:
+        return jsonify({'success': False, 'error': 'Completează întâi câteva specificații.'}), 400
+
+    # Deterministic template intro — used as-is if the AI call fails.
+    brand = str(specs.get('Marcă') or '').strip()
+    model = str(specs.get('Model') or '').strip()
+    intro_bits = [b for b in [
+        (brand + ' ' + model).strip(),
+        specs.get('Versiune'),
+        (f"an {specs.get('An fabricație')}" if specs.get('An fabricație') else None),
+        specs.get('Combustibil'),
+        (f"{specs.get('Rulaj (km)')} km" if specs.get('Rulaj (km)') else None),
+    ] if b]
+    intro = ", ".join(str(b) for b in intro_bits)
+    if intro:
+        intro = intro[0].upper() + intro[1:] + "."
+
+    # AI writes ONLY the intro paragraph; on any error we keep the template intro.
+    try:
+        from ai_agent.services.llm_client import ask
+        ctx = "\n".join(spec_bullets)
+        if equipment:
+            ctx += "\nDotări: " + ", ".join(equipment)
+        ai_intro = ask(
+            "Scrie DOAR un paragraf scurt de introducere (2-3 propoziții) pentru un anunț auto, "
+            "în limba română, atractiv și onest, folosind DOAR aceste date, fără preț și fără liste:\n\n" + ctx,
+            system="Ești copywriter auto. Scrii în română, concis, onest, fără Markdown.",
+            max_tokens=250,
+        )
+        if ai_intro and ai_intro.strip():
+            intro = ai_intro.strip()
+    except Exception as e:
+        logger.warning(f"AI intro failed, using template intro: {e}")
+
+    sections = []
+    if intro:
+        sections.append(intro)
+    if spec_bullets:
+        sections.append("Specificații:\n" + "\n".join(spec_bullets))
+    if equipment:
+        sections.append("Dotări:\n" + "\n".join(f"• {e}" for e in equipment))
+    return jsonify({'success': True, 'description': "\n\n".join(sections)})
+
+
 # ═══════════════════════════════════════════════
 # VEHICLES — CREATE
 # ═══════════════════════════════════════════════

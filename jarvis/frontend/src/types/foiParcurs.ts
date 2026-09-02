@@ -52,6 +52,7 @@ export interface FpVehicle {
   svc_extra_km_eur?: number | null
   svc_deposit_eur?: number | null
   svc_franchise_eur?: number | null
+  rental_category_id?: number | null
   // Documents + validity (rovinietă/vignette, ITP, RCA insurance). Docs are
   // base64 (image or PDF data-URL).
   vignette_valid_until?: string | null
@@ -109,6 +110,19 @@ export interface LockoutReason {
   label: string
   sort_order: number
   is_active: boolean
+}
+
+/** One row in a car's block/unblock audit trail (fp_vehicle_lock_events).
+ *  `category` is a lockout-reason slug; `actor_name` is snapshotted at write time. */
+export interface LockEvent {
+  id: number
+  action: 'lock' | 'unlock'
+  category: string | null
+  note: string | null
+  until: string | null
+  actor_id: number | null
+  actor_name: string | null
+  created_at: string
 }
 
 /** A scheduled block window for a car (to-do #3). `category` is a lockout-reason slug. */
@@ -268,7 +282,7 @@ export interface FoiContract {
   created_at: string
   updated_at: string
   // Returned by get_contracts (fp.* + _TD_STATUS_SQL) but previously undeclared:
-  td_status?: 'complete' | 'incomplete' | 'driving'
+  td_status?: 'complete' | 'incomplete' | 'driving' | 'missed' | 'late' | 'planned'
   departure_datetime?: string | null
   return_datetime?: string | null
   returned_at?: string | null
@@ -284,6 +298,12 @@ export interface FoiContract {
   // the client is the company and a gate-valid contact person drove.
   driver_name?: string | null
   driver_contact_id?: number | null
+  // Driver-licence snapshot recorded on the foaie (returned by the detail
+  // endpoint; the list omits driver_license_photo as it's a large data URL).
+  // Editable on an archived session via the Corectează dialog → /correct.
+  driver_license_number?: string | null
+  driver_license_expiry?: string | null
+  driver_license_photo?: string | null
   event_id?: number | null
   // Joined HR event name (Task 15) — LEFT JOIN hr.events he ON he.id =
   // fp.event_id in get_contracts; populates the "Eveniment" list/detail badge.

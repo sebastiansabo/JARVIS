@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { crmApi, type ClientContact } from '@/api/crm'
+import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
 import { fileToCompressedDataUrl } from '@/lib/imageCompress'
@@ -51,6 +52,7 @@ import {
   Loader2,
   X,
   UserPlus,
+  Trash2,
   ImagePlus,
   ChevronDown,
   FileText,
@@ -109,6 +111,9 @@ function clientAddress(c: CrmClient | null): string {
 interface TestDriveFormProps {
   embedded?: boolean
   activateId?: number
+  /** Edit a PLANNED draft in place (Corectează on a not-started session) —
+   *  loads + prefills like activation but saves via PUT /plan without starting. */
+  editId?: number
   initialCompanyId?: number
   /** Seed the departure datetime ("YYYY-MM-DDTHH:MM"), e.g. from a calendar
    *  slot the user dragged/clicked. Return defaults to +1h. Ignored in
@@ -127,7 +132,7 @@ interface TestDriveFormProps {
 }
 
 // ── Component ──
-export default function TestDriveForm({ embedded, activateId: activateIdProp, initialCompanyId, initialDeparture, initialReturn, onDone, onCancel, initialDocumentType }: TestDriveFormProps = {}) {
+export default function TestDriveForm({ embedded, activateId: activateIdProp, editId: editIdProp, initialCompanyId, initialDeparture, initialReturn, onDone, onCancel, initialDocumentType }: TestDriveFormProps = {}) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
@@ -138,6 +143,12 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const [searchParams] = useSearchParams()
   const activateId = activateIdProp ?? (searchParams.get('activate') ? Number(searchParams.get('activate')) : null)
   const isActivating = activateId != null
+  // ── Edit mode — reopens this form pre-filled from a PLANNED draft, saving in
+  //    place (PUT /plan) without starting it. Loads/prefills exactly like
+  //    activation (via draftLoadId); only the save action + button differ. ──
+  const editId = editIdProp ?? (searchParams.get('edit') ? Number(searchParams.get('edit')) : null)
+  const isEditing = editId != null
+  const draftLoadId = activateId ?? editId
 
   // Service context (Task 13) — the standalone route deep-links with
   // `?context=service` (Task 12); anything else defaults to 'sales'. The
@@ -174,6 +185,10 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // contacts query + gate below). Not required for a PLANNED draft.
   const [driverContact, setDriverContact] = useState<ClientContact | null>(null)
   const [showAddContact, setShowAddContact] = useState(false)
+  // Edit the selected contact person in place (name/email/phone + licence) —
+  // reuses ContactForm in edit mode so a company's driver with incomplete data
+  // can be completed without deleting and recreating the contact.
+  const [editingContact, setEditingContact] = useState(false)
 
   // Campaign / event (optional marketing project) — type-to-search, like mobile
   const [mktProject, setMktProject] = useState<MktProject | null>(null)
@@ -274,9 +289,9 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // drives `documentType` below (used by the vehicle/pricing queries right
   // after), so it must resolve before them. Only depends on activateId.
   const { data: draftData, isLoading: loadingDraft } = useQuery({
-    queryKey: ['fp-test-drive', activateId],
-    queryFn: () => foiParcursApi.getTestDrive(activateId!),
-    enabled: activateId != null,
+    queryKey: ['fp-test-drive', draftLoadId],
+    queryFn: () => foiParcursApi.getTestDrive(draftLoadId!),
+    enabled: draftLoadId != null,
   })
 
   // The effective document context. On a fresh create it's the URL context
@@ -288,7 +303,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   // flips to 'service' once draftData arrives (the draft-prefill effect
   // restores the frozen pricing snapshot at that same point).
   const _draftDocType = draftData?.contract?.document_type as DocType | undefined
-  const documentType: DocType = (isActivating && _draftDocType && _draftDocType !== 'sales')
+  const documentType: DocType = ((isActivating || isEditing) && _draftDocType && _draftDocType !== 'sales')
     ? _draftDocType
     : urlDocumentType
 
@@ -367,7 +382,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const { data: draftClientData } = useQuery({
     queryKey: ['fp-draft-client', draftClientId],
     queryFn: () => crmApi.getClient(draftClientId!),
-    enabled: isActivating && draftClientId != null,
+    enabled: (isActivating || isEditing) && draftClientId != null,
   })
 
   useEffect(() => {
@@ -558,6 +573,25 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
   const contacts = contactsData?.contacts ?? []
   const contactsForbidden = (contactsErr as any)?.status === 403
   const contactsErrored = !!contactsErr
+  // Delete a contact person. The backend blocks (409) a contact who is the
+  // driver on an active session; that message is surfaced via toast.
+  const deleteContactMutation = useMutation({
+    mutationFn: (contactId: number) => crmApi.deleteClientContact(Number(selectedClient!.id), contactId),
+    onSuccess: (_r, contactId) => {
+      queryClient.invalidateQueries({ queryKey: ['client-contacts', selectedClient?.id] })
+      if (driverContact?.id === contactId) setDriverContact(null)
+      toast.success('Persoană de contact ștearsă')
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Ștergerea a eșuat'),
+  })
+  // Edit mode: prefill the current driver contact from the draft so the picker
+  // shows who's already assigned (activation leaves this choice to the advisor).
+  useEffect(() => {
+    if (!isEditing) return
+    const dcid = draftData?.contract?.driver_contact_id
+    if (!dcid || !contacts.length) return
+    setDriverContact((prev) => prev ?? contacts.find((x) => x.id === dcid) ?? null)
+  }, [isEditing, draftData, contacts])
   // Keep the currently-selected contact in the option list even if the query
   // cache hasn't caught up yet (e.g. a just-created contact whose invalidation
   // refetch is still in flight) — otherwise the Select trigger has no matching
@@ -911,6 +945,28 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
     withConflictCheck(selectedVehicle.vin, () => activateMutation.mutate(payload), activateId)
   }
 
+  // Edit a PLANNED draft in place (Corectează on a not-started session) — saves
+  // the full form via PUT /plan without starting it; status stays PLANNED.
+  const updatePlanMutation = useMutation({
+    mutationFn: (payload: Partial<TestDriveFormPayload>) => foiParcursApi.updatePlan(editId!, payload),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      if (embedded) onDone?.(data.contract); else setSubmittedContract(data.contract)
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Salvarea a eșuat'),
+  })
+
+  function handleEditPlan() {
+    if (updatePlanMutation.isPending || checking || editId == null) return
+    // Same minimal validity as planning: car + client (name) + departure.
+    if (!draftValid || !selectedVehicle?.vin || !selectedClient) {
+      setAttemptedAction('plan')
+      return
+    }
+    const payload: Partial<TestDriveFormPayload> = buildBasePayload(selectedVehicle, selectedClient)
+    withConflictCheck(selectedVehicle.vin, () => updatePlanMutation.mutate(payload), editId)
+  }
+
   // Back/cancel out of the form — routes to the parent's onCancel callback
   // when embedded (e.g. the Hub panel), else the standalone route's nav.
   const handleBack = () => { if (embedded) onCancel?.(); else navigate('/app/foi-parcurs') }
@@ -984,12 +1040,16 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
         </Button>
         <div>
           <h1 className="text-lg font-semibold">
-            {isActivating
+            {isEditing
+              ? 'Corectează sesiunea planificată'
+              : isActivating
               ? 'Activează Test Drive'
               : isRental ? 'Predare mașină de curtoazie' : 'Test Drive Nou'}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {isActivating
+            {isEditing
+              ? 'Modifică datele sesiunii — se salvează fără a o porni'
+              : isActivating
               ? 'Confirmă/ajustează datele și capturează semnătura clientului'
               : isRental ? 'Completați datele pentru predarea mașinii de curtoazie' : 'Completați datele pentru test drive'}
           </p>
@@ -1155,18 +1215,20 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                     <p className="text-xs text-destructive">
                       Persoanele de contact nu au putut fi încărcate. Încearcă din nou.
                     </p>
-                  ) : showAddContact ? (
-                    <AddContactForm
+                  ) : (showAddContact || editingContact) ? (
+                    <ContactForm
                       clientId={Number(selectedClient.id)}
-                      onCreated={(c) => {
-                        // Refresh the picker's option list so the just-created
-                        // contact is present (the Select renders from this
-                        // query; without invalidation its trigger can go blank).
+                      initial={editingContact ? driverContact : null}
+                      onSaved={(c) => {
+                        // Refresh the picker's option list so the created/edited
+                        // contact is current (the Select renders from this
+                        // query; without invalidation its trigger can go stale).
                         queryClient.invalidateQueries({ queryKey: ['client-contacts', selectedClient.id] })
                         setDriverContact(c)
                         setShowAddContact(false)
+                        setEditingContact(false)
                       }}
-                      onCancel={() => setShowAddContact(false)}
+                      onCancel={() => { setShowAddContact(false); setEditingContact(false) }}
                     />
                   ) : (
                     <>
@@ -1207,6 +1269,31 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
                             {driverContact.driver_license_expiry && (
                               <p className="text-muted-foreground">Valabilitate: {driverContact.driver_license_expiry}</p>
                             )}
+                          </div>
+                          <div className="ml-auto flex shrink-0 items-start gap-1">
+                            <button
+                              type="button"
+                              aria-label="Editează persoana de contact"
+                              title="Editează persoana de contact"
+                              onClick={() => { setShowAddContact(false); setEditingContact(true) }}
+                              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="Șterge persoana de contact"
+                              title="Șterge persoana de contact"
+                              disabled={deleteContactMutation.isPending}
+                              onClick={() => {
+                                if (confirm(`Ștergi persoana de contact „${driverContact.full_name}”?`)) {
+                                  deleteContactMutation.mutate(Number(driverContact.id))
+                                }
+                              }}
+                              className="rounded-md p-1.5 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                           </div>
                         </div>
                       )}
@@ -1653,7 +1740,11 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, in
             || 'Eroare la trimitere. Vă rugăm încercați din nou.'}
         </div>
       )}
-      {isActivating ? (
+      {isEditing ? (
+        <Button className={cn('w-full', attemptedAction === 'plan' && !draftValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleEditPlan} disabled={updatePlanMutation.isPending || checking || loadingDraft}>
+          {updatePlanMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se salvează...</> : <><Save className="h-4 w-4 mr-2" />Salvează modificările</>}
+        </Button>
+      ) : isActivating ? (
         <Button className={cn('w-full', attemptedAction === 'activate' && !activateValid && 'bg-destructive hover:bg-destructive/90')} size="lg" onClick={handleActivate} disabled={activateMutation.isPending || checking || loadingDraft}>
           {activateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se activează...</> : <><PlayCircle className="h-4 w-4 mr-2" />Începe sesiunea</>}
         </Button>
@@ -1849,31 +1940,38 @@ function ClientEditForm({
   )
 }
 
-/** Inline "new company contact" form (Task 11) — posts to
- *  crmApi.createClientContact, then hands the created contact back so the
- *  picker above can auto-select it. Mirrors DriverLicenseSection's
- *  photo-upload control (compress + preview) without its OCR/create-client
- *  wiring, which doesn't apply to a company's contact person. */
-function AddContactForm({
+/** Inline company-contact form (Task 11) — creates a new contact person, or
+ *  (when `initial` is passed) edits the selected one in place. On success it
+ *  hands the saved contact back so the picker above can (re)select it. Edit mode
+ *  lets a company's driver with incomplete data be completed without deleting
+ *  and recreating. Mirrors DriverLicenseSection's photo-upload control (compress
+ *  + preview) without its OCR/create-client wiring. */
+function ContactForm({
   clientId,
-  onCreated,
+  initial,
+  onSaved,
   onCancel,
 }: {
   clientId: number
-  onCreated: (contact: ClientContact) => void
+  initial?: ClientContact | null
+  onSaved: (contact: ClientContact) => void
   onCancel: () => void
 }) {
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
-  const [photo, setPhoto] = useState<string | null>(null)
+  const isEdit = !!initial
+  const [fullName, setFullName] = useState(initial?.full_name ?? '')
+  const [email, setEmail] = useState(initial?.email ?? '')
+  const [phone, setPhone] = useState(initial?.phone ?? '')
+  const [photo, setPhoto] = useState<string | null>(initial?.driver_license_photo ?? null)
   const [busy, setBusy] = useState(false)
-  const [license, setLicense] = useState('') // driving-license serie+number (one field)
-  const [expiry, setExpiry] = useState('')
+  const [license, setLicense] = useState(initial?.driver_license_number ?? '') // serie+number (one field)
+  const [expiry, setExpiry] = useState((initial?.driver_license_expiry ?? '').slice(0, 10))
   const [error, setError] = useState<string | null>(null)
 
-  const create = useMutation({
-    mutationFn: (data: Partial<ClientContact>) => crmApi.createClientContact(clientId, data),
+  const save = useMutation({
+    mutationFn: (data: Partial<ClientContact>) =>
+      isEdit
+        ? crmApi.updateClientContact(clientId, Number(initial!.id), data)
+        : crmApi.createClientContact(clientId, data),
   })
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1886,35 +1984,47 @@ function AddContactForm({
     if (compressed) setPhoto(compressed)
   }
 
-  const canCreate = fullName.trim() !== '' && !create.isPending
+  const canSave = fullName.trim() !== '' && !save.isPending
 
-  const handleCreate = () => {
-    if (!canCreate) return
+  const handleSave = () => {
+    if (!canSave) return
     setError(null)
-    create.mutate(
-      {
-        full_name: fullName.trim(),
-        ...(email.trim() ? { email: email.trim() } : {}),
-        ...(phone.trim() ? { phone: phone.trim() } : {}),
-        ...(photo ? { driver_license_photo: photo } : {}),
-        ...(license.trim() ? { driver_license_number: license.trim() } : {}),
-        ...(expiry.trim() ? { driver_license_expiry: expiry.trim() } : {}),
+    // Edit mode sends the full editable set so a user can also CLEAR a field;
+    // create mode keeps omit-empty so we never post blank columns on insert.
+    const data: Partial<ClientContact> = isEdit
+      ? {
+          full_name: fullName.trim(),
+          email: email.trim() || null,
+          phone: phone.trim() || null,
+          driver_license_photo: photo || null,
+          driver_license_number: license.trim() || null,
+          driver_license_expiry: expiry.trim() || null,
+        }
+      : {
+          full_name: fullName.trim(),
+          ...(email.trim() ? { email: email.trim() } : {}),
+          ...(phone.trim() ? { phone: phone.trim() } : {}),
+          ...(photo ? { driver_license_photo: photo } : {}),
+          ...(license.trim() ? { driver_license_number: license.trim() } : {}),
+          ...(expiry.trim() ? { driver_license_expiry: expiry.trim() } : {}),
+        }
+    save.mutate(data, {
+      onSuccess: (res) => {
+        if (res.contact) onSaved(res.contact)
+        else setError(isEdit ? 'Persoana de contact nu a putut fi salvată.' : 'Persoana de contact nu a putut fi creată.')
       },
-      {
-        onSuccess: (res) => {
-          if (res.contact) onCreated(res.contact)
-          else setError('Persoana de contact nu a putut fi creată.')
-        },
-        onError: (err: any) => {
-          setError(err?.data?.error || err?.message || 'Crearea persoanei de contact a eșuat.')
-        },
+      onError: (err: any) => {
+        setError(err?.data?.error || err?.message
+          || (isEdit ? 'Salvarea persoanei de contact a eșuat.' : 'Crearea persoanei de contact a eșuat.'))
       },
-    )
+    })
   }
 
   return (
     <div className="space-y-2.5 rounded-md border bg-background p-3">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Persoană de contact nouă</p>
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+        {isEdit ? 'Editează persoana de contact' : 'Persoană de contact nouă'}
+      </p>
       <div className="space-y-1">
         <Label className="text-xs">Nume complet *</Label>
         <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Nume și prenume" />
@@ -1963,8 +2073,10 @@ function AddContactForm({
 
       <div className="flex gap-2 pt-1">
         <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>Anulează</Button>
-        <Button type="button" className="flex-1" onClick={handleCreate} disabled={!canCreate}>
-          {create.isPending ? 'Se creează...' : 'Creează persoana de contact'}
+        <Button type="button" className="flex-1" onClick={handleSave} disabled={!canSave}>
+          {save.isPending
+            ? (isEdit ? 'Se salvează...' : 'Se creează...')
+            : (isEdit ? 'Salvează persoana de contact' : 'Creează persoana de contact')}
         </Button>
       </div>
     </div>
@@ -1975,7 +2087,7 @@ function AddContactForm({
  *  15) — creates an HR event via POST /api/events, then hands the new
  *  {id, name} back so the card can select it. Requires HR/marketing
  *  permissions the current user may lack; a 403 is surfaced inline rather
- *  than crashing the form (mirrors AddContactForm's error handling). */
+ *  than crashing the form (mirrors ContactForm's error handling). */
 function AddEventForm({
   onCreated,
   onCancel,

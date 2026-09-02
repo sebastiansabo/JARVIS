@@ -385,6 +385,11 @@ function BonusListTable({
       label: 'Hours',
       render: (b) => <span className="text-xs">{b.hours_free ?? '—'}</span>,
     },
+    {
+      key: 'event_hours',
+      label: 'Event Hours',
+      render: (b) => <span className="text-xs">{b.event_hours || '—'}</span>,
+    },
     ...(canViewAmounts ? [{
       key: 'bonus_net',
       label: 'Bonus (Net)',
@@ -492,6 +497,7 @@ function BonusListTable({
               <TableHead>Period</TableHead>
               <SortHead label="Days" field="bonus_days" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
               <SortHead label="Hours" field="hours_free" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
+              <SortHead label="Event Hours" field="event_hours" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
               {canViewAmounts && <SortHead label="Bonus (Net)" field="bonus_net" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />}
               <TableHead>Details</TableHead>
               {isEditable && <TableHead className="w-28">Actions</TableHead>}
@@ -518,6 +524,7 @@ function BonusListTable({
                 <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{fmtRange(b.participation_start, b.participation_end)}</TableCell>
                 <TableCell className="text-right text-sm">{b.bonus_days ?? '—'}</TableCell>
                 <TableCell className="text-right text-sm">{b.hours_free ?? '—'}</TableCell>
+                <TableCell className="text-right text-sm">{b.event_hours || '—'}</TableCell>
                 {canViewAmounts && (
                   <TableCell className="text-right text-sm font-medium">
                     {b.bonus_net != null ? `${Number(b.bonus_net).toFixed(0)} RON` : '—'}
@@ -579,6 +586,7 @@ function EmployeeEventsDetail({ employeeId, year, month, canViewAmounts }: {
               <TableHead>Period</TableHead>
               <TableHead className="text-right">Days</TableHead>
               <TableHead className="text-right">Hours</TableHead>
+              <TableHead className="text-right">Event Hours</TableHead>
               {canViewAmounts && <TableHead className="text-right">Bonus (Net)</TableHead>}
               <TableHead>Details</TableHead>
             </TableRow>
@@ -596,6 +604,7 @@ function EmployeeEventsDetail({ employeeId, year, month, canViewAmounts }: {
                 </TableCell>
                 <TableCell className="text-right text-sm">{b.bonus_days ?? '—'}</TableCell>
                 <TableCell className="text-right text-sm">{b.hours_free ?? '—'}</TableCell>
+                <TableCell className="text-right text-sm">{b.event_hours || '—'}</TableCell>
                 {canViewAmounts && (
                   <TableCell className="text-right text-sm font-medium text-green-600">
                     {b.bonus_net != null ? `${Number(b.bonus_net).toFixed(0)} RON` : '—'}
@@ -640,6 +649,7 @@ function EventEmployeesDetail({ eventId, year, month, canViewAmounts, isEditable
               <TableHead>Period</TableHead>
               <TableHead className="text-right">Days</TableHead>
               <TableHead className="text-right">Hours</TableHead>
+              <TableHead className="text-right">Event Hours</TableHead>
               {canViewAmounts && <TableHead className="text-right">Bonus (Net)</TableHead>}
               <TableHead>Details</TableHead>
               {isEditable && <TableHead className="w-20">Actions</TableHead>}
@@ -656,6 +666,7 @@ function EventEmployeesDetail({ eventId, year, month, canViewAmounts, isEditable
                 </TableCell>
                 <TableCell className="text-right text-sm">{b.bonus_days ?? '—'}</TableCell>
                 <TableCell className="text-right text-sm">{b.hours_free ?? '—'}</TableCell>
+                <TableCell className="text-right text-sm">{b.event_hours || '—'}</TableCell>
                 {canViewAmounts && (
                   <TableCell className="text-right text-sm font-medium text-green-600">
                     {b.bonus_net != null ? `${Number(b.bonus_net).toFixed(0)} RON` : '—'}
@@ -723,6 +734,11 @@ function ByEmployeeTable({ data, canViewAmounts, isMobile }: { data: BonusSummar
       label: 'Total Hours',
       render: (row) => <span className="text-xs">{row.total_hours}</span>,
     },
+    {
+      key: 'total_event_hours',
+      label: 'Event Hours',
+      render: (row) => <span className="text-xs">{row.total_event_hours || '—'}</span>,
+    },
     ...(canViewAmounts ? [{
       key: 'total_bonus',
       label: 'Total Bonus',
@@ -749,14 +765,14 @@ function ByEmployeeTable({ data, canViewAmounts, isMobile }: { data: BonusSummar
           getRowId={(row) => row.id}
         />
         <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs font-medium">
-          Total ({data.length}) — {data.reduce((s, r) => s + r.bonus_count, 0)} bonuses, {data.reduce((s, r) => s + r.total_days, 0)} days, {data.reduce((s, r) => s + r.total_hours, 0)} hours
+          Total ({data.length}) — {data.reduce((s, r) => s + r.bonus_count, 0)} bonuses, {data.reduce((s, r) => s + r.total_days, 0)} days, {data.reduce((s, r) => s + r.total_hours, 0)} hours, {data.reduce((s, r) => s + r.total_event_hours, 0)} event hours
           {canViewAmounts && `, ${data.reduce((s, r) => s + Number(r.total_bonus), 0).toFixed(0)} RON`}
         </div>
       </>
     )
   }
 
-  const colCount = canViewAmounts ? 9 : 8
+  const colCount = canViewAmounts ? 10 : 9
 
   return (
     <Card>
@@ -772,6 +788,7 @@ function ByEmployeeTable({ data, canViewAmounts, isMobile }: { data: BonusSummar
               <SortHead label="# Bonuses" field="bonus_count" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
               <SortHead label="Total Days" field="total_days" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
               <SortHead label="Total Hours" field="total_hours" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
+              <SortHead label="Event Hours" field="total_event_hours" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
               {canViewAmounts && <SortHead label="Total Bonus" field="total_bonus" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />}
             </TableRow>
           </TableHeader>
@@ -793,6 +810,7 @@ function ByEmployeeTable({ data, canViewAmounts, isMobile }: { data: BonusSummar
                   <TableCell className="text-right text-sm">{row.bonus_count}</TableCell>
                   <TableCell className="text-right text-sm">{row.total_days}</TableCell>
                   <TableCell className="text-right text-sm">{row.total_hours}</TableCell>
+                  <TableCell className="text-right text-sm">{row.total_event_hours || '—'}</TableCell>
                   {canViewAmounts && (
                     <TableCell className="text-right text-sm font-medium text-green-600">
                       {Number(row.total_bonus).toFixed(0)} RON
@@ -823,6 +841,7 @@ function ByEmployeeTable({ data, canViewAmounts, isMobile }: { data: BonusSummar
               <TableCell className="text-right text-sm">{data.reduce((s, r) => s + r.bonus_count, 0)}</TableCell>
               <TableCell className="text-right text-sm">{data.reduce((s, r) => s + r.total_days, 0)}</TableCell>
               <TableCell className="text-right text-sm">{data.reduce((s, r) => s + r.total_hours, 0)}</TableCell>
+              <TableCell className="text-right text-sm">{data.reduce((s, r) => s + r.total_event_hours, 0)}</TableCell>
               {canViewAmounts && (
                 <TableCell className="text-right text-sm text-green-600">
                   {data.reduce((s, r) => s + Number(r.total_bonus), 0).toFixed(0)} RON
@@ -878,6 +897,11 @@ function ByEventTable({ data, canViewAmounts, isMobile, isEditable, onEdit, onDe
       label: 'Total Hours',
       render: (row) => <span className="text-xs">{row.total_hours}</span>,
     },
+    {
+      key: 'total_event_hours',
+      label: 'Event Hours',
+      render: (row) => <span className="text-xs">{row.total_event_hours || '—'}</span>,
+    },
     ...(canViewAmounts ? [{
       key: 'total_bonus',
       label: 'Total Bonus',
@@ -904,14 +928,14 @@ function ByEventTable({ data, canViewAmounts, isMobile, isEditable, onEdit, onDe
           getRowId={(row) => row.id * 10000 + row.year * 100 + row.month}
         />
         <div className="rounded-md border bg-muted/50 px-3 py-2 text-xs font-medium">
-          Total ({data.length}) — {data.reduce((s, r) => s + r.employee_count, 0)} employees, {data.reduce((s, r) => s + r.total_days, 0)} days, {data.reduce((s, r) => s + r.total_hours, 0)} hours
+          Total ({data.length}) — {data.reduce((s, r) => s + r.employee_count, 0)} employees, {data.reduce((s, r) => s + r.total_days, 0)} days, {data.reduce((s, r) => s + r.total_hours, 0)} hours, {data.reduce((s, r) => s + r.total_event_hours, 0)} event hours
           {canViewAmounts && `, ${data.reduce((s, r) => s + Number(r.total_bonus), 0).toFixed(0)} RON`}
         </div>
       </>
     )
   }
 
-  const colCount = canViewAmounts ? 10 : 9
+  const colCount = canViewAmounts ? 11 : 10
 
   return (
     <Card>
@@ -928,6 +952,7 @@ function ByEventTable({ data, canViewAmounts, isMobile, isEditable, onEdit, onDe
               <SortHead label="# Employees" field="employee_count" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
               <SortHead label="Total Days" field="total_days" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
               <SortHead label="Total Hours" field="total_hours" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
+              <SortHead label="Event Hours" field="total_event_hours" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />
               {canViewAmounts && <SortHead label="Total Bonus" field="total_bonus" sortKey={sortKey} sortDir={sortDir} onSort={toggle} className="text-right" />}
             </TableRow>
           </TableHeader>
@@ -956,6 +981,7 @@ function ByEventTable({ data, canViewAmounts, isMobile, isEditable, onEdit, onDe
                     <TableCell className="text-right text-sm">{row.employee_count}</TableCell>
                     <TableCell className="text-right text-sm">{row.total_days}</TableCell>
                     <TableCell className="text-right text-sm">{row.total_hours}</TableCell>
+                    <TableCell className="text-right text-sm">{row.total_event_hours || '—'}</TableCell>
                     {canViewAmounts && (
                       <TableCell className="text-right text-sm font-medium text-green-600">
                         {Number(row.total_bonus).toFixed(0)} RON
@@ -991,6 +1017,7 @@ function ByEventTable({ data, canViewAmounts, isMobile, isEditable, onEdit, onDe
               <TableCell className="text-right text-sm">{data.reduce((s, r) => s + r.employee_count, 0)}</TableCell>
               <TableCell className="text-right text-sm">{data.reduce((s, r) => s + r.total_days, 0)}</TableCell>
               <TableCell className="text-right text-sm">{data.reduce((s, r) => s + r.total_hours, 0)}</TableCell>
+              <TableCell className="text-right text-sm">{data.reduce((s, r) => s + r.total_event_hours, 0)}</TableCell>
               {canViewAmounts && (
                 <TableCell className="text-right text-sm text-green-600">
                   {data.reduce((s, r) => s + Number(r.total_bonus), 0).toFixed(0)} RON

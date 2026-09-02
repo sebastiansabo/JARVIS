@@ -26,6 +26,8 @@ export interface EventBonus {
   /** Read-only: portion of bonus_net/days falling in the queried month (server). */
   period_bonus_net?: number | null
   period_bonus_days?: number | null
+  /** Read-only: worked hours (SUM of per-day intervals) in the queried period. */
+  event_hours?: number | null
 }
 
 export interface HrEvent {
@@ -152,6 +154,7 @@ export interface HrSummary {
   total_bonuses: number
   total_bonus_amount: number | null
   total_hours: number | null
+  total_event_hours: number | null
   total_days: number | null
 }
 
@@ -179,6 +182,7 @@ export interface BonusSummaryByEmployee {
   bonus_count: number
   total_days: number
   total_hours: number
+  total_event_hours: number
   total_bonus: number
 }
 
@@ -195,6 +199,7 @@ export interface BonusSummaryByEvent {
   employee_count: number
   total_days: number
   total_hours: number
+  total_event_hours: number
   total_bonus: number
 }
 

@@ -1,17 +1,26 @@
 """HR Module Database Operations."""
 from database import get_db, get_cursor, release_db, dict_from_row
+from core.organization.ghost import ghost_exclude_clause
 from core.utils.scope_filter import apply_scope_filter
 from .presence import derive_bonus_fields
 
 
-def _replace_bonus_days(cursor, bonus_id, presence_days):
-    """Replace the presence-day rows for a bonus with the given dates (same txn)."""
+def _replace_bonus_days(cursor, bonus_id, presence_days, day_hours=None):
+    """Replace the presence-day rows for a bonus with the given dates (same txn).
+
+    ``day_hours`` (optional) maps ``'YYYY-MM-DD' -> {'start': h, 'end': h}`` and
+    stores the per-day worked interval (whole hours). Days absent from the map
+    are written with NULL hours.
+    """
+    day_hours = day_hours or {}
     cursor.execute('DELETE FROM hr.event_bonus_days WHERE bonus_id = %s', (bonus_id,))
     for d in presence_days:
+        interval = day_hours.get(str(d)[:10]) or {}
         cursor.execute(
-            'INSERT INTO hr.event_bonus_days (bonus_id, day) VALUES (%s, %s) '
+            'INSERT INTO hr.event_bonus_days (bonus_id, day, start_hour, end_hour) '
+            'VALUES (%s, %s, %s, %s) '
             'ON CONFLICT (bonus_id, day) DO NOTHING',
-            (bonus_id, d))
+            (bonus_id, d, interval.get('start'), interval.get('end')))
 
 
 # ============== HR Employees (now using users table) ==============
@@ -46,6 +55,10 @@ def get_all_hr_employees(active_only=True, scope='all', user_context=None, contr
         scope_sql, scope_params = apply_scope_filter(scope, user_context)
         query += scope_sql
         params.extend(scope_params)
+
+        gfrag, gargs = ghost_exclude_clause('id')
+        query += gfrag
+        params += gargs
 
         query += ' ORDER BY name'
 
@@ -293,7 +306,8 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
                    creator.name as created_by_name,
                    b.user_id as effective_employee_id,
                    period.period_bonus_days,
-                   period.period_bonus_net
+                   period.period_bonus_net,
+                   period.period_event_hours AS event_hours
             FROM hr.event_bonuses b
             LEFT JOIN public.users u ON u.id = b.user_id
             LEFT JOIN public.companies co ON co.id = u.company_id
@@ -301,7 +315,8 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
             LEFT JOIN public.users creator ON b.created_by = creator.id
             LEFT JOIN LATERAL (
                 SELECT COUNT(*) AS period_bonus_days,
-                       COALESCE(SUM(vd.day_net), 0) AS period_bonus_net
+                       COALESCE(SUM(vd.day_net), 0) AS period_bonus_net,
+                       COALESCE(SUM(vd.day_event_hours), 0) AS period_event_hours
                 FROM hr.v_event_bonus_days vd
                 WHERE vd.bonus_id = b.id AND {period_cond}
             ) period ON TRUE
@@ -331,6 +346,10 @@ def get_all_event_bonuses(year=None, month=None, employee_id=None, event_id=None
         )
         query += scope_sql
         params.extend(scope_params)
+
+        gfrag, gargs = ghost_exclude_clause('b.user_id')
+        query += gfrag
+        params += gargs
 
         query += ' ORDER BY b.year DESC, b.month DESC, u.name'
 
@@ -426,7 +445,7 @@ def can_access_employee(employee_id, scope, user_context):
 def save_event_bonus(employee_id, event_id, year, month, participation_start=None,
                      participation_end=None, bonus_days=None, hours_free=None,
                      bonus_net=None, details=None, allocation_month=None, created_by=None,
-                     presence_days=None):
+                     presence_days=None, day_hours=None):
     """Create a new event bonus record using user_id (references users.id).
 
     When ``presence_days`` (a list of dates) is given it is the source of truth:
@@ -451,7 +470,7 @@ def save_event_bonus(employee_id, event_id, year, month, participation_start=Non
               bonus_days, hours_free, bonus_net, details, allocation_month, created_by))
         bonus_id = cursor.fetchone()['id']
         if presence_days:
-            _replace_bonus_days(cursor, bonus_id, presence_days)
+            _replace_bonus_days(cursor, bonus_id, presence_days, day_hours)
         conn.commit()
         return bonus_id
 
@@ -488,7 +507,7 @@ def save_event_bonuses_bulk(bonuses, created_by=None):
                   b.get('details'), b.get('allocation_month'), created_by))
             new_id = cursor.fetchone()['id']
             if presence_days:
-                _replace_bonus_days(cursor, new_id, presence_days)
+                _replace_bonus_days(cursor, new_id, presence_days, b.get('day_hours'))
             created_ids.append(new_id)
 
         conn.commit()
@@ -500,7 +519,7 @@ def save_event_bonuses_bulk(bonuses, created_by=None):
 def update_event_bonus(bonus_id, employee_id, event_id, year, month, participation_start=None,
                        participation_end=None, bonus_days=None, hours_free=None,
                        bonus_net=None, details=None, allocation_month=None,
-                       presence_days=None):
+                       presence_days=None, day_hours=None):
     """Update an event bonus record using user_id (references users.id).
 
     When ``presence_days`` is given it is the source of truth: the derived
@@ -524,7 +543,7 @@ def update_event_bonus(bonus_id, employee_id, event_id, year, month, participati
         ''', (employee_id, event_id, year, month, participation_start, participation_end,
               bonus_days, hours_free, bonus_net, details, allocation_month, bonus_id))
         if presence_days is not None:
-            _replace_bonus_days(cursor, bonus_id, presence_days)
+            _replace_bonus_days(cursor, bonus_id, presence_days, day_hours)
         conn.commit()
 
 
@@ -635,13 +654,25 @@ def get_event_bonuses_summary(year=None):
                 COUNT(*) as total_bonuses,
                 SUM(b.bonus_net) as total_bonus_amount,
                 SUM(b.hours_free) as total_hours,
+                COALESCE(SUM(eh.event_hours), 0) as total_event_hours,
                 SUM(b.bonus_days) as total_days
             FROM hr.event_bonuses b
+            LEFT JOIN (
+                SELECT bonus_id, SUM(end_hour - start_hour) AS event_hours
+                FROM hr.event_bonus_days
+                WHERE start_hour IS NOT NULL AND end_hour IS NOT NULL
+                GROUP BY bonus_id
+            ) eh ON eh.bonus_id = b.id
+            WHERE 1=1
         '''
         params = []
         if year:
-            query += ' WHERE b.year = %s'
+            query += ' AND b.year = %s'
             params.append(year)
+
+        gfrag, gargs = ghost_exclude_clause('b.user_id')
+        query += gfrag
+        params += gargs
 
         cursor.execute(query, params)
         row = cursor.fetchone()
@@ -659,15 +690,21 @@ def get_bonuses_by_month(year):
     conn = get_db()
     try:
         cursor = get_cursor(conn)
-        cursor.execute('''
+
+        gfrag, gargs = ghost_exclude_clause('vd.user_id')
+        query = '''
             SELECT vd.month AS month,
                    COUNT(DISTINCT vd.bonus_id) as count,
                    SUM(vd.day_net) as total
             FROM hr.v_event_bonus_days vd
             WHERE vd.year = %s
+        ''' + gfrag + '''
             GROUP BY vd.month
             ORDER BY vd.month
-        ''', (year,))
+        '''
+        params = [year] + gargs
+
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         return [dict_from_row(row) for row in rows]
 
@@ -687,6 +724,7 @@ def get_bonuses_by_employee(year=None, month=None):
                    COUNT(DISTINCT vd.bonus_id) as bonus_count,
                    COUNT(*) as total_days,
                    COALESCE(SUM(CASE WHEN vd.is_primary_day THEN vd.hours_free ELSE 0 END), 0) as total_hours,
+                   COALESCE(SUM(vd.day_event_hours), 0) as total_event_hours,
                    COALESCE(SUM(vd.day_net), 0) as total_bonus
             FROM hr.v_event_bonus_days vd
             LEFT JOIN public.users u ON u.id = vd.user_id
@@ -700,6 +738,10 @@ def get_bonuses_by_employee(year=None, month=None):
         if month:
             query += ' AND vd.month = %s'
             params.append(month)
+
+        gfrag, gargs = ghost_exclude_clause('vd.user_id')
+        query += gfrag
+        params += gargs
 
         query += ' GROUP BY u.id, u.name, u.department, co.company, u.company, u.brand ORDER BY total_bonus DESC'
 
@@ -724,6 +766,7 @@ def get_bonuses_by_event(year=None, month=None):
                    COUNT(DISTINCT vd.user_id) as employee_count,
                    COUNT(*) as total_days,
                    COALESCE(SUM(CASE WHEN vd.is_primary_day THEN vd.hours_free ELSE 0 END), 0) as total_hours,
+                   COALESCE(SUM(vd.day_event_hours), 0) as total_event_hours,
                    COALESCE(SUM(vd.day_net), 0) as total_bonus
             FROM hr.v_event_bonus_days vd
             JOIN hr.events e ON e.id = vd.event_id
@@ -736,6 +779,10 @@ def get_bonuses_by_event(year=None, month=None):
         if month:
             query += ' AND vd.month = %s'
             params.append(month)
+
+        gfrag, gargs = ghost_exclude_clause('vd.user_id')
+        query += gfrag
+        params += gargs
 
         query += ' GROUP BY e.id, e.name, e.start_date, e.end_date, e.company, e.brand, vd.year, vd.month ORDER BY vd.year DESC, vd.month DESC, total_bonus DESC'
 

@@ -92,10 +92,9 @@ def api_create_contract():
     if missing:
         return jsonify({'success': False, 'error': f'Missing fields: {", ".join(missing)}'}), 400
 
-    # Validate route_type
-    route_type = data['route_type']
-    if route_type not in ('TD', 'Comodat'):
-        return jsonify({'success': False, 'error': 'route_type must be TD or Comodat'}), 400
+    # Comodat deprecated (2026-09): every session is a Test Drive. Any legacy
+    # route_type value from the client is coerced to TD.
+    route_type = 'TD'
 
     # Generate contract_id: {VIN}_{unix_timestamp}_{slot_number}
     contract_id = f"{data['vin']}_{int(time.time())}_{data['slot_number']}"
@@ -292,6 +291,26 @@ def api_correct_contract(id):
         if k in data:
             fields[k] = data[k] or None
 
+    # Consilier change (light-correction). Non-empty only — a blank advisor must
+    # never wipe the existing one.
+    if 'advisor_name' in data:
+        advisor = (data.get('advisor_name') or '').strip()
+        if advisor:
+            fields['advisor_name'] = advisor
+
+    # Client identity recorded on THIS foaie (snapshot columns, not a live CRM
+    # join) — lets an admin fix the driver/licence printed on a finalized
+    # document. client_name is non-empty-only (a foaie must always name its
+    # client); phone + licence fields accept set-or-clear when the key is present.
+    if 'client_name' in data:
+        client_name = (data.get('client_name') or '').strip()
+        if client_name:
+            fields['client_name'] = client_name
+    for k in ('client_phone', 'driver_license_number', 'driver_license_expiry',
+              'driver_license_photo'):
+        if k in data:
+            fields[k] = (data.get(k) or '').strip() or None
+
     if not fields:
         return jsonify({'success': False, 'error': 'No fields to correct'}), 400
 
@@ -327,8 +346,11 @@ def api_correct_contract(id):
     if revived:
         log_status_change(id, contract.get('status'), 'FILLED')
         updated = revived
+    # Redact the licence photo (a ~155 kB base64 data URL) from the audit log.
+    logged = {k: ('<photo>' if k == 'driver_license_photo' and v else v)
+              for k, v in fields.items()}
     logger.info('foi-parcurs contract %s corrected by admin %s: %s',
-                id, getattr(current_user, 'email', '?'), fields)
+                id, getattr(current_user, 'email', '?'), logged)
 
     # Keep the vehicle's odometer floor honest if km_end was raised (mirrors return).
     try:
@@ -339,6 +361,32 @@ def api_correct_contract(id):
     except Exception:
         logger.warning('Could not advance vehicle odometer after correcting contract %s', id, exc_info=True)
 
+    return jsonify({'success': True, 'contract': updated})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/drive-type', methods=['PUT'])
+@login_required
+@v2_permission_required('test_drive', 'contracts', 'drive_type')
+def api_set_drive_type(id):
+    """Reclassify a session between internal (company driving) and external
+    (client) — a cleaning tool for sessions a colleague mis-marked. Gated by the
+    role-matrix permission test_drive.contracts.drive_type (admins bypass; Admin
+    granted by default). Flag-only: client identity is left intact, so the change
+    is reversible with one more flip. Logs `mark_internal` / `mark_external`."""
+    contract = _fp_repo.get_contract_by_id(id)
+    if not contract:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    # Strict boolean — reject 1/"true"/None so a bad payload can't corrupt the flag.
+    if not isinstance(data.get('is_internal'), bool):
+        return jsonify({'success': False, 'error': 'is_internal (boolean) is required'}), 400
+    is_internal = data['is_internal']
+
+    updated = _fp_repo.set_internal_flag(id, is_internal, getattr(current_user, 'email', None))
+    log_history(id, 'mark_internal' if is_internal else 'mark_external')
+    logger.info('foi-parcurs contract %s marked %s by %s', id,
+                'internal' if is_internal else 'external', getattr(current_user, 'email', '?'))
     return jsonify({'success': True, 'contract': updated})
 
 
@@ -407,7 +455,7 @@ def api_save_batch():
                 'company_id': company_id,
                 'year': year,
                 'month': month,
-                'route_type': slot.get('route_type', 'TD'),
+                'route_type': 'TD',  # Comodat deprecated (2026-09)
                 'slot_number': slot.get('slot', i),
                 'km_start': int(slot.get('km_start', 0)),
                 'km_end': int(slot.get('km_end', 0)),

@@ -230,7 +230,7 @@ export const foiParcursApi = {
   getVehicle: (id: number) =>
     api.get<{ success: boolean; vehicle: FpVehicle }>(`${BASE}/vehicles/${id}`),
 
-  createVehicle: (data: { vin: string; registration_number?: string; car_id?: string; mark: string; brand?: string; model: string; color?: string; fuel_type: string; fuel_tank_capacity_liters?: number | null; battery_capacity_kwh?: number | null; odometer_km?: number | null; norma_combustibil?: number | null; norma_energie?: number | null; category?: string | null; company_id?: number; document_type?: string; svc_tariff_eur_day?: number | null; svc_tariff_eur_month?: number | null; svc_km_included_day?: number | null; svc_extra_km_eur?: number | null; svc_deposit_eur?: number | null; svc_franchise_eur?: number | null; vignette_valid_until?: string; itp_valid_until?: string; insurance_valid_until?: string; insurance_doc?: string; talon_doc?: string; civ_doc?: string; registration_doc?: string; offer_doc?: string }) =>
+  createVehicle: (data: { vin: string; registration_number?: string; car_id?: string; mark: string; brand?: string; model: string; color?: string; fuel_type: string; fuel_tank_capacity_liters?: number | null; battery_capacity_kwh?: number | null; odometer_km?: number | null; norma_combustibil?: number | null; norma_energie?: number | null; category?: string | null; company_id?: number; document_type?: string; svc_tariff_eur_day?: number | null; svc_tariff_eur_month?: number | null; svc_km_included_day?: number | null; svc_extra_km_eur?: number | null; svc_deposit_eur?: number | null; svc_franchise_eur?: number | null; rental_category_id?: number | null; vignette_valid_until?: string; itp_valid_until?: string; insurance_valid_until?: string; insurance_doc?: string; talon_doc?: string; civ_doc?: string; registration_doc?: string; offer_doc?: string }) =>
     api.post<{ success: boolean; vehicle: FpVehicle }>(`${BASE}/vehicles`, data),
 
   updateVehicle: (id: number, data: Partial<FpVehicle>) =>
@@ -248,6 +248,10 @@ export const foiParcursApi = {
     api.post<{ success: boolean }>(`${BASE}/vehicles/${id}/lock`, data),
   unlockVehicle: (id: number) =>
     api.post<{ success: boolean }>(`${BASE}/vehicles/${id}/unlock`, {}),
+
+  // Block/unblock audit trail (newest first) for the lock modal's "Istoric" section.
+  getLockEvents: (id: number) =>
+    api.get<{ events: import('@/types/foiParcurs').LockEvent[] }>(`${BASE}/vehicles/${id}/lock-events`),
 
   // ── Lockout reasons (configurable, editable in Settings → Motive blocare) ──
   getLockoutReasons: (activeOnly = false) =>
@@ -335,6 +339,26 @@ export const foiParcursApi = {
   deleteDocumentType: (payload: { company_id: number; key: string }) =>
     api.delete<{ success: boolean }>(`${BASE}/document-types`, payload),
 
+  // ── Rental tariffs (courtesy-car category pricing) ──
+  getRentalIntervals: (companyId: number) =>
+    api.get<{ success: boolean; intervals: Array<{ id: number; label: string; min_days: number; max_days: number | null; sort_order: number }> }>(
+      `${BASE}/rental-tariffs/intervals`, { company_id: String(companyId) }),
+  putRentalInterval: (payload: { company_id: number; id?: number; label: string; min_days: number; max_days: number | null; sort_order?: number }) =>
+    api.put<{ success: boolean; id: number }>(`${BASE}/rental-tariffs/intervals`, payload),
+  deleteRentalInterval: (payload: { company_id: number; id: number }) =>
+    api.delete<{ success: boolean }>(`${BASE}/rental-tariffs/intervals`, payload),
+  getRentalCategories: (companyId: number, active = false) =>
+    api.get<{ success: boolean; categories: Array<{ id: number; name: string; models_note: string | null; franchise_eur: number | null; extra_km_eur: number | null; sort_order: number; is_active: boolean; prices: Record<number, number> }> }>(
+      `${BASE}/rental-tariffs/categories`, { company_id: String(companyId), ...(active ? { active: '1' } : {}) }),
+  addRentalCategory: (payload: { company_id: number; name: string }) =>
+    api.post<{ success: boolean; id: number }>(`${BASE}/rental-tariffs/categories`, payload),
+  putRentalCategory: (payload: { company_id: number; id: number; name: string; models_note: string | null; franchise_eur: number | null; extra_km_eur: number | null; sort_order?: number; is_active: boolean }) =>
+    api.put<{ success: boolean }>(`${BASE}/rental-tariffs/categories`, payload),
+  deleteRentalCategory: (payload: { company_id: number; id: number }) =>
+    api.delete<{ success: boolean }>(`${BASE}/rental-tariffs/categories`, payload),
+  setRentalPrice: (payload: { company_id: number; category_id: number; interval_id: number; eur_per_day: number | null }) =>
+    api.put<{ success: boolean }>(`${BASE}/rental-tariffs/prices`, payload),
+
   // ── KM Configs (Settings) ──
   getKmConfigs: () =>
     api.get<{ configs: { company_id: number; td_km_min: number; td_km_max: number; comodat_km_min: number; comodat_km_max: number; km_gap: number }[] }>(`${BASE}/km-configs`),
@@ -419,6 +443,11 @@ export const foiParcursApi = {
   activateTestDrive: (id: number, data: ActivateTestDrivePayload) =>
     api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/activate`, data),
 
+  // ── Edit a PLANNED draft in place (Corectează on a not-started session):
+  //    full-form edit without starting it; PLANNED-only server-side ──
+  updatePlan: (id: number, data: Partial<TestDriveFormPayload>) =>
+    api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/test-drive/${id}/plan`, data),
+
   // ── Reschedule a PLANNED/MISSED session to a new time (drag-to-move in the
   //    calendar); backend guards to those statuses + rejects past dates ──
   rescheduleTestDrive: (id: number, data: { departure_datetime: string; return_datetime?: string }) =>
@@ -431,10 +460,17 @@ export const foiParcursApi = {
     data: {
       departure_datetime?: string | null
       return_datetime?: string | null
-      km_start?: number
-      km_end?: number
+      km_start?: number | null
+      km_end?: number | null
+      advisor_name?: string
     },
   ) => api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${id}/correct`, data),
+
+  // Admin-only cleaning tool: reclassify a session as internal (company driving)
+  // or external (client), fixing rows a colleague mis-marked. Flag-only — client
+  // data is preserved so the change is reversible with one more flip.
+  setDriveType: (id: number, isInternal: boolean) =>
+    api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${id}/drive-type`, { is_internal: isInternal }),
 
   // Advisor extends an OPEN test drive's return time (any logged-in user).
   extendReturn: (id: number, data: { return_datetime: string }) =>
@@ -541,6 +577,11 @@ export const foiParcursApi = {
 
   getRouteSheetXlsxUrl: (vin: string, year: number, month: number) =>
     `${BASE}/route-sheet/xlsx${qs({ vin, year, month })}`,
+
+  // ZIP of this car's per-session contract PDFs for the selected period — exactly
+  // the sessions the Foi de Parcurs row aggregates. month=0 → the whole year.
+  getRouteSheetContractsZipUrl: (vin: string, year: number, month: number, companyId?: number, documentType?: string) =>
+    `${BASE}/route-sheet/contracts-zip${qs({ vin, year, month: month || undefined, company_id: companyId || undefined, document_type: documentType })}`,
 
   // Stored sheets for the period — badge + modal prefill (norma/alimentari).
   listRouteSheets: (companyId: number, year: number, month: number) =>

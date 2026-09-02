@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Loader2, Search, Check, X } from 'lucide-react'
+import { Save, Loader2, Search, Check, X, RefreshCw, Sparkles, Plus, ArrowLeft, Upload } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchSelect } from '@/components/shared/SearchSelect'
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { carparkApi } from '@/api/carpark'
 import { useAuthStore } from '@/stores/authStore'
 import { useCarParkStore } from '@/stores/carParkStore'
@@ -37,17 +38,30 @@ import {
   AUTOVIT_DRIVE_TYPES,
   AUTOVIT_COLORS,
   AUTOVIT_INTERIOR_COLORS,
+  AUTOVIT_INTERIOR_MATERIALS,
+  AUTOVIT_COLOR_FINISHES,
+  AUTOVIT_EQUIPMENT,
   AUTOVIT_EURO_STANDARDS,
   AUTOVIT_VEHICLE_STATES,
   AUTOVIT_DOORS,
   AUTOVIT_SEATS,
+  VEHICLE_SOURCES,
+  CARPARK_COST_TYPES,
 } from '@/data/autovitData'
 
-type FormData = Record<string, string | number | boolean | null>
+type FormData = Record<string, string | number | boolean | null | string[]>
+type CostLine = {
+  type: string
+  description: string
+  date: string
+  lei: number | null
+  kurs: number | null
+  eur: number | null
+}
 
 /** Safely extract a numeric/string value for <Input value=...> (excludes boolean) */
-function inputVal(v: string | number | boolean | null | undefined): string | number {
-  if (v == null || typeof v === 'boolean') return ''
+function inputVal(v: string | number | boolean | string[] | null | undefined): string | number {
+  if (v == null || typeof v === 'boolean' || Array.isArray(v)) return ''
   return v
 }
 
@@ -195,12 +209,61 @@ function CheckboxField({
 // ── Build options ──────────────────────────────────────────
 const brandOptions = AUTOVIT_BRANDS.map((b) => ({ value: b, label: b }))
 
+// "Date of fabrication" = Month + Year dropdowns (native <input type="month">
+// renders inconsistently across browsers). Stored as manufacture_date = YYYY-MM-01.
+const MONTH_OPTIONS = [
+  ['01', 'January'], ['02', 'February'], ['03', 'March'], ['04', 'April'],
+  ['05', 'May'], ['06', 'June'], ['07', 'July'], ['08', 'August'],
+  ['09', 'September'], ['10', 'October'], ['11', 'November'], ['12', 'December'],
+].map(([value, label]) => ({ value, label }))
+const _fabCurrentYear = new Date().getFullYear()
+const YEAR_OPTIONS = Array.from({ length: 41 }, (_, i) =>
+  String(_fabCurrentYear + 1 - i),
+).map((y) => ({ value: y, label: y }))
+
+// Fuel-type → which capacity/norm fields apply (mirrors Drive Park's
+// usesFuelTank / usesBattery, mapped to CarPark's AUTOVIT_FUEL_TYPES values).
+const FUEL_USES_TANK = new Set(['petrol', 'diesel', 'hybrid', 'plugin-hybrid', 'mild-hybrid-petrol', 'mild-hybrid-diesel', 'petrol-lpg', 'petrol-cng', 'hydrogen'])
+// Mild hybrids deliberately excluded — no battery capacity / kWh norm.
+const FUEL_USES_BATTERY = new Set(['electric', 'hybrid', 'plugin-hybrid'])
+const usesFuelTank = (ft?: string | null) => FUEL_USES_TANK.has(ft ?? '')
+const usesBattery = (ft?: string | null) => FUEL_USES_BATTERY.has(ft ?? '')
+
+// Compose the "Titlu anunț" from the vehicle's spec fields, e.g.
+// "Dacia Duster 1.5 Blue dCi Prestige III 1.5l Diesel Manuala Fata (FWD)".
+function buildListingTitle(f: FormData): string {
+  const label = (opts: readonly { value: string; label: string }[], v: unknown) =>
+    opts.find((o) => o.value === v)?.label ?? ''
+  const cc = f.engine_displacement_cc
+  const liters = typeof cc === 'number' && cc > 0 ? `${(cc / 1000).toFixed(1)}l` : ''
+  return [
+    f.brand, f.model, f.variant, f.generation, f.equipment_level,
+    liters,
+    label(AUTOVIT_FUEL_TYPES, f.fuel_type),
+    label(AUTOVIT_GEARBOX_TYPES, f.transmission),
+    label(AUTOVIT_DRIVE_TYPES, f.drive_type),
+  ]
+    .map((p) => (p == null ? '' : String(p)).trim())
+    .filter(Boolean)
+    .join(' ')
+}
+
 // ── Main Form ──────────────────────────────────────────────
 export default function VehicleForm() {
   const { vehicleId } = useParams<{ vehicleId: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isEdit = vehicleId && vehicleId !== 'new'
+
+  // Active tab persisted in the URL (?tab=…) so it survives a page refresh
+  // and is shareable/bookmarkable.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') ?? 'vehicul'
+  const handleTabChange = (v: string) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', v)
+    setSearchParams(next, { replace: true })
+  }
   const id = isEdit ? Number(vehicleId) : null
 
   // Tenant switcher: new cars are created into the selected (acting) company,
@@ -215,6 +278,12 @@ export default function VehicleForm() {
     queryFn: () => carparkApi.getVehicle(id!),
     enabled: !!id,
   })
+  const { data: pricingHistoryData } = useQuery({
+    queryKey: ['carpark', 'pricing-history', id],
+    queryFn: () => carparkApi.getPricingHistory(id!),
+    enabled: !!id,
+  })
+  const pricingHistory = pricingHistoryData?.history ?? []
 
   // Load locations for dropdown (scoped to the acting company)
   const { data: locationsData } = useQuery({
@@ -234,7 +303,12 @@ export default function VehicleForm() {
     category: 'SH',
     state: 'Rulat',
     year_of_manufacture: null,
+    manufacture_date: '',
     fuel_type: '',
+    fuel_tank_capacity_liters: null,
+    battery_capacity_kwh: null,
+    norma_combustibil: null,
+    norma_energie: null,
     transmission: '',
     body_type: '',
     mileage_km: 0,
@@ -243,12 +317,21 @@ export default function VehicleForm() {
     drive_type: '',
     color_exterior: '',
     color_interior: '',
+    interior_material: '',
     doors: null,
     seats: null,
     euro_standard: '',
     co2_emissions: null,
+    max_weight_kg: null,
+    payload_kg: null,
+    cargo_volume_m3: null,
+    cargo_length_mm: null,
+    cargo_width_mm: null,
+    cargo_height_mm: null,
+    euro_pallets: null,
     current_price: null,
     list_price: null,
+    promotional_price: null,
     minimum_price: null,
     price_currency: 'EUR',
     price_includes_vat: true,
@@ -258,7 +341,10 @@ export default function VehicleForm() {
     purchase_price_net: null,
     purchase_price_currency: 'EUR',
     acquisition_value: null,
-    acquisition_currency: 'EUR',
+    acquisition_currency: 'RON',
+    acquisition_price: null,
+    acquisition_date: '',
+    acquisition_exchange_rate: null,
     reconditioning_cost: null,
     transport_cost: null,
     registration_cost: null,
@@ -268,6 +354,7 @@ export default function VehicleForm() {
     source: '',
     supplier_name: '',
     supplier_cif: '',
+    acquisition_document_number: '',
     has_manufacturer_warranty: false,
     manufacturer_warranty_date: '',
     has_dealer_warranty: false,
@@ -277,12 +364,29 @@ export default function VehicleForm() {
     has_service_book: false,
     has_tuning: false,
     is_registered: false,
+    is_right_hand_drive: false,
+    has_particle_filter: false,
+    is_vintage: false,
+    is_damaged: false,
+    certified_mileage: false,
+    color_finish: '',
+    consum_urban: null,
+    consum_extraurban: null,
+    consum_mixt: null,
+    electric_range_km: null,
+    previous_owners: null,
+    country_of_origin: '',
+    equipment_options: [],
     first_registration_date: '',
     notes: '',
     internal_notes: '',
     listing_title: '',
     listing_description: '',
   })
+
+  // "Titlu anunț" auto-composes from the specs until the user edits it manually
+  // (then titleTouched stays true and we stop overwriting their text).
+  const titleTouched = useRef(false)
 
   // Populate form when editing
   useEffect(() => {
@@ -295,10 +399,127 @@ export default function VehicleForm() {
         }
       }
       setForm((prev) => ({ ...prev, ...populated }))
+      // Keep an existing custom title — don't auto-overwrite it.
+      if (v.listing_title) titleTouched.current = true
+      // Cost lines: parse the stored JSON, else migrate the old fixed columns.
+      const vAny = v as unknown as Record<string, unknown>
+      let lines: CostLine[] = []
+      if (typeof vAny.cost_lines === 'string' && vAny.cost_lines) {
+        try {
+          const parsed = JSON.parse(vAny.cost_lines as string) as Array<Record<string, unknown>>
+          lines = parsed.map((l) => ({
+            type: String(l.type ?? l.label ?? ''),
+            description: String(l.description ?? ''),
+            date: String(l.date ?? ''),
+            lei: l.lei == null ? null : Number(l.lei),
+            kurs: l.kurs == null ? null : Number(l.kurs),
+            eur: l.eur != null ? Number(l.eur) : l.amount != null ? Number(l.amount) : null,
+          }))
+        } catch {
+          lines = []
+        }
+      } else {
+        lines = (
+          [
+            ['Recondiționare', vAny.reconditioning_cost],
+            ['Transport', vAny.transport_cost],
+            ['Alte costuri', vAny.other_costs],
+          ] as [string, unknown][]
+        )
+          .filter(([, a]) => a != null && a !== 0)
+          .map(([type, a]) => ({ type, description: '', date: '', lei: null, kurs: null, eur: Number(a) }))
+      }
+      setCostLines(lines)
     }
     // Only run when existingData changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingData])
+
+  // Auto-composed listing title, refreshed as the specs change (unless edited).
+  const autoTitle = useMemo(() => buildListingTitle(form), [
+    form.brand, form.model, form.variant, form.generation, form.equipment_level,
+    form.engine_displacement_cc, form.fuel_type, form.transmission, form.drive_type,
+  ])
+  useEffect(() => {
+    if (!titleTouched.current) {
+      setForm((prev) => (prev.listing_title === autoTitle ? prev : { ...prev, listing_title: autoTitle }))
+    }
+  }, [autoTitle])
+  const regenerateTitle = () => {
+    titleTouched.current = false
+    setForm((prev) => ({ ...prev, listing_title: buildListingTitle(prev) }))
+  }
+
+  // AI-generated listing description from the vehicle's specs + dotări.
+  const [genDesc, setGenDesc] = useState(false)
+  const generateDescription = async () => {
+    const lbl = (opts: readonly { value: string; label: string }[], v: unknown) =>
+      opts.find((o) => o.value === v)?.label ?? (v == null ? '' : String(v))
+    const eqLabels = ((form.equipment_options as string[]) ?? []).map((val) => {
+      for (const g of AUTOVIT_EQUIPMENT) {
+        const o = g.options.find((x) => x.value === val)
+        if (o) return o.label
+      }
+      return val
+    })
+    const warranty = [
+      form.has_manufacturer_warranty
+        ? `Garanție producător${form.manufacturer_warranty_date ? ' până la ' + form.manufacturer_warranty_date : ''}`
+        : '',
+      form.has_dealer_warranty
+        ? `Garanție dealer${form.dealer_warranty_months ? ' ' + form.dealer_warranty_months + ' luni' : ''}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('; ')
+    const RO_MONTHS = ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie']
+    const md = (form.manufacture_date as string | null) ?? ''
+    const anFab = md
+      ? (() => {
+          const [y, m] = md.slice(0, 7).split('-')
+          const name = RO_MONTHS[Number(m) - 1]
+          return name ? `${name} ${y}` : md.slice(0, 7)
+        })()
+      : (form.year_of_manufacture ?? '')
+    const specs: Record<string, unknown> = {
+      Marcă: form.brand,
+      Model: form.model,
+      Versiune: form.variant,
+      Generație: form.generation,
+      'Nivel echipare': form.equipment_level,
+      'An fabricație': anFab,
+      Caroserie: lbl(AUTOVIT_BODY_TYPES, form.body_type),
+      Combustibil: lbl(AUTOVIT_FUEL_TYPES, form.fuel_type),
+      'Cutie de viteze': lbl(AUTOVIT_GEARBOX_TYPES, form.transmission),
+      Tracțiune: lbl(AUTOVIT_DRIVE_TYPES, form.drive_type),
+      'Capacitate cilindrică (cmc)': form.engine_displacement_cc,
+      'Putere (CP)': form.engine_power_hp,
+      'Rulaj (km)': form.mileage_km,
+      'Culoare exterioară': lbl(AUTOVIT_COLORS, form.color_exterior),
+      Tapițerie: lbl(AUTOVIT_INTERIOR_MATERIALS, form.interior_material),
+      'Normă de poluare': lbl(AUTOVIT_EURO_STANDARDS, form.euro_standard),
+      Portiere: form.doors,
+      Locuri: form.seats,
+      'Culoare interior': lbl(AUTOVIT_INTERIOR_COLORS, form.color_interior),
+      'Prima înmatriculare': form.first_registration_date,
+      'Primul proprietar': form.is_first_owner ? 'Da' : '',
+      'Carte service': form.has_service_book ? 'Da' : '',
+      'Nr. proprietari anteriori': form.previous_owners,
+      'Nr. stoc': form.nr_stoc,
+      Sursă: lbl(VEHICLE_SOURCES, form.source),
+      Garanție: warranty,
+    }
+    setGenDesc(true)
+    try {
+      const description = await carparkApi.generateDescription({ specs, equipment: eqLabels })
+      setForm((prev) => ({ ...prev, listing_description: description }))
+      toast.success('Descriere generată')
+    } catch {
+      toast.error('Generarea descrierii a eșuat')
+    } finally {
+      setGenDesc(false)
+    }
+  }
 
   // Model options based on selected brand
   const modelOptions = useMemo(() => {
@@ -348,7 +569,54 @@ export default function VehicleForm() {
     }
     setForm((prev) => ({ ...prev, ...fields }))
     setDecodeResult(null)
-    toast.success('Vehicle specs applied from VIN decode')
+    toast.success('Date aplicate în formular')
+  }
+
+  // CIV import (AI vision extraction of a Romanian vehicle registration card)
+  const [isImportingCiv, setIsImportingCiv] = useState(false)
+  const civInputRef = useRef<HTMLInputElement>(null)
+
+  const handleCivFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file
+    if (!file) return
+    if (file.size > 12 * 1024 * 1024) {
+      toast.error('Fișierul CIV este prea mare (max 12MB).')
+      return
+    }
+    setIsImportingCiv(true)
+    try {
+      const result = await carparkApi.decodeCIV(file)
+      const f = result.data?.vehicle_fields as Record<string, unknown> | undefined
+      if (result.success && f && Object.keys(f).length > 0) {
+        // Reuse the VIN-decode preview card so the user reviews before applying.
+        const preview = {
+          specs: {
+            brand: f.brand ?? '',
+            model: f.model ?? '',
+            model_year: f.year_of_manufacture ?? 0,
+            fuel_type: f.fuel_type ?? '',
+            engine_power_hp: f.engine_power_hp ?? 0,
+            engine_displacement_cc: f.engine_displacement_cc ?? 0,
+            transmission: f.transmission ?? '',
+            body_type: f.body_type ?? '',
+            drive_type: f.drive_type ?? '',
+          },
+          vehicle_fields: f,
+          provider: 'CIV',
+          confidence: result.data?.confidence ?? 0.9,
+        } as unknown as VINDecodeResult
+        handleTabChange('vehicul')
+        setDecodeResult(preview)
+        toast.success('CIV citit — verifică datele și apasă „Aplică".')
+      } else {
+        toast.error(result.error || 'Nu am putut extrage date din CIV.')
+      }
+    } catch (err: any) {
+      toast.error(err?.data?.error || 'Importul CIV a eșuat.')
+    } finally {
+      setIsImportingCiv(false)
+    }
   }
 
   // VIN duplicate check
@@ -389,13 +657,229 @@ export default function VehicleForm() {
     setForm((prev) => ({ ...prev, [name]: num }))
   }
 
+  // "Date of fabrication" = Month + Year dropdowns. Both drive manufacture_date
+  // (DATE column, stored as the 1st of the chosen month) and keep
+  // year_of_manufacture in sync for the fleet year-range filters. Picking one
+  // half defaults the other (current year / January) so a full date always forms.
+  const fabMonth = (form.manufacture_date as string | null)?.slice(5, 7) ?? ''
+  const fabYear = (form.manufacture_date as string | null)?.slice(0, 4) ?? ''
+  const handleFabMonth = (month: string) => {
+    const year = fabYear || String(_fabCurrentYear)
+    setForm((prev) => ({
+      ...prev,
+      manufacture_date: `${year}-${month}-01`,
+      year_of_manufacture: Number(year),
+    }))
+  }
+  const handleFabYear = (year: string) => {
+    const month = fabMonth || '01'
+    setForm((prev) => ({
+      ...prev,
+      manufacture_date: `${year}-${month}-01`,
+      year_of_manufacture: Number(year),
+    }))
+  }
+
+  // Dotări equipment: toggle a value in the equipment_options string[].
+  const toggleEquipment = (value: string) => {
+    setForm((prev) => {
+      const cur = Array.isArray(prev.equipment_options) ? (prev.equipment_options as string[]) : []
+      const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value]
+      return { ...prev, equipment_options: next }
+    })
+  }
+
+  // Local draft: save partial progress (from any tab, no required fields) to the
+  // browser and restore it on return. Cleared once the vehicle is really saved.
+  const draftKey = `carpark-draft-${vehicleId ?? 'new'}`
+  const [pendingDraft, setPendingDraft] = useState<FormData | null>(null)
+  useEffect(() => {
+    const raw = localStorage.getItem(draftKey)
+    if (raw) {
+      try {
+        setPendingDraft(JSON.parse(raw) as FormData)
+      } catch {
+        /* ignore a corrupt draft */
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const saveDraft = () => {
+    localStorage.setItem(draftKey, JSON.stringify(form))
+    setPendingDraft(null)
+    toast.success('Ciornă salvată (local, în acest browser)')
+  }
+  const restoreDraft = () => {
+    if (pendingDraft) setForm((prev) => ({ ...prev, ...pendingDraft }))
+    setPendingDraft(null)
+  }
+  const discardDraft = () => {
+    localStorage.removeItem(draftKey)
+    setPendingDraft(null)
+  }
+
+  // Freeform acquisition cost lines — each entered in LEI on a date, converted
+  // to EUR via BNR for that date. Sum of EUR feeds the cost total.
+  const [costLines, setCostLines] = useState<CostLine[]>([])
+  const fetchBnrRate = async (date: string): Promise<number | null> => {
+    if (!date) return null
+    try {
+      const r = await carparkApi.getBnrRate(date)
+      return r.kurs ?? null
+    } catch {
+      toast.error('Cursul BNR nu a putut fi preluat')
+      return null
+    }
+  }
+  const addCostLine = () =>
+    setCostLines((p) => [...p, { type: '', description: '', date: '', lei: null, kurs: null, eur: null }])
+  const removeCostLine = (i: number) => setCostLines((p) => p.filter((_, idx) => idx !== i))
+  const patchLine = (i: number, patch: Partial<CostLine>) =>
+    setCostLines((p) => p.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
+  const lineEur = (lei: number | null, kurs: number | null) =>
+    lei != null && kurs != null && kurs > 0 ? Math.round((lei / kurs) * 100) / 100 : null
+  const handleLineDate = async (i: number, date: string) => {
+    patchLine(i, { date })
+    const kurs = await fetchBnrRate(date)
+    if (kurs) {
+      setCostLines((p) => p.map((l, idx) => (idx === i ? { ...l, kurs, eur: lineEur(l.lei, kurs) ?? l.eur } : l)))
+    }
+  }
+  const handleLineLei = (i: number, v: string) => {
+    const lei = v === '' ? null : Number(v)
+    setCostLines((p) => p.map((l, idx) => (idx === i ? { ...l, lei, eur: lineEur(lei, l.kurs) ?? l.eur } : l)))
+  }
+  const handleLineEur = (i: number, v: string) => {
+    const eur = v === '' ? null : Number(v)
+    setCostLines((p) =>
+      p.map((l, idx) => {
+        if (idx !== i) return l
+        const lei = eur != null && l.kurs != null && l.kurs > 0 ? Math.round(eur * l.kurs * 100) / 100 : l.lei
+        return { ...l, eur, lei }
+      }),
+    )
+  }
+  const _num = (v: unknown) => (typeof v === 'number' ? v : 0)
+  const costLinesTotal = costLines.reduce((s, l) => s + (l.eur ?? 0), 0)
+  const totalCost = _num(form.purchase_price_net) + costLinesTotal
+
+  // Today's BNR EUR/RON rate — to also show the selling prices in lei.
+  const [eurRonRate, setEurRonRate] = useState<number | null>(null)
+  useEffect(() => {
+    fetchBnrRate(new Date().toISOString().slice(0, 10)).then(setEurRonRate)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const priceAlt = (price: unknown) => {
+    const p = typeof price === 'number' ? price : null
+    if (p == null || !eurRonRate) return null
+    const cur = (form.price_currency as string) || 'EUR'
+    if (cur === 'EUR') return `${Math.round(p * eurRonRate).toLocaleString('ro-RO')} lei`
+    if (cur === 'RON') return `${Math.round(p / eurRonRate).toLocaleString('ro-RO')} EUR`
+    return null
+  }
+  // Switching the Monedă converts the existing prices to the new currency.
+  const handleCurrencyChange = (_name: string, next: string) => {
+    const prevCur = (form.price_currency as string) || 'EUR'
+    if (prevCur === next || !eurRonRate) {
+      setForm((f) => ({ ...f, price_currency: next }))
+      return
+    }
+    const conv = (v: unknown): number | null => {
+      const p = typeof v === 'number' ? v : null
+      if (p == null) return p
+      if (prevCur === 'EUR' && next === 'RON') return Math.round(p * eurRonRate * 100) / 100
+      if (prevCur === 'RON' && next === 'EUR') return Math.round((p / eurRonRate) * 100) / 100
+      return p
+    }
+    setForm((f) => ({
+      ...f,
+      price_currency: next,
+      list_price: conv(f.list_price),
+      promotional_price: conv(f.promotional_price),
+      minimum_price: conv(f.minimum_price),
+      current_price: conv(f.current_price),
+    }))
+  }
+  const marginInfo = (price: unknown) => {
+    let p = typeof price === 'number' ? price : null
+    // Margin is always computed in EUR (acquisition cost total is EUR).
+    if (p != null && (form.price_currency as string) === 'RON' && eurRonRate) p = p / eurRonRate
+    if (p == null || totalCost <= 0) return null
+    const val = p - totalCost
+    const pct = (val / totalCost) * 100
+    return {
+      text: `Marjă: ${Math.round(val).toLocaleString('ro-RO')} EUR · ${pct.toFixed(1)}%`,
+      positive: val >= 0,
+    }
+  }
+  const listMargin = marginInfo(form.list_price)
+  const minMargin = marginInfo(form.minimum_price)
+
+  // Acquisition price is entered in LEI (RON) and converted to EUR using the BNR
+  // rate for the invoice date. The EUR value (purchase_price_net) stays editable.
+  const [bnrLoading, setBnrLoading] = useState(false)
+  const eurFromLei = (lei: unknown, kurs: unknown) => {
+    const l = _num(lei)
+    const k = _num(kurs)
+    return l > 0 && k > 0 ? Math.round((l / k) * 100) / 100 : null
+  }
+  const fetchBnr = async (date: string) => {
+    if (!date) return
+    setBnrLoading(true)
+    try {
+      const r = await carparkApi.getBnrRate(date)
+      if (r.kurs) {
+        setForm((prev) => ({
+          ...prev,
+          acquisition_exchange_rate: r.kurs,
+          purchase_price_net: eurFromLei(prev.acquisition_price, r.kurs) ?? prev.purchase_price_net,
+        }))
+        toast.success(`Curs BNR ${r.kurs} (${r.kurs_date})`)
+      }
+    } catch {
+      toast.error('Cursul BNR nu a putut fi preluat')
+    } finally {
+      setBnrLoading(false)
+    }
+  }
+  const handleAcqDate = (date: string) => {
+    setForm((prev) => ({ ...prev, acquisition_date: date }))
+    fetchBnr(date)
+  }
+  const handleAcqLei = (v: string) => {
+    const lei = v === '' ? null : Number(v)
+    setForm((prev) => ({
+      ...prev,
+      acquisition_price: lei,
+      acquisition_currency: 'RON',
+      purchase_price_net: eurFromLei(lei, prev.acquisition_exchange_rate) ?? prev.purchase_price_net,
+    }))
+  }
+  const handleKurs = (v: string) => {
+    const kurs = v === '' ? null : Number(v)
+    setForm((prev) => ({
+      ...prev,
+      acquisition_exchange_rate: kurs,
+      purchase_price_net: eurFromLei(prev.acquisition_price, kurs) ?? prev.purchase_price_net,
+    }))
+  }
+  const handleAcqEur = (v: string) => {
+    const eur = v === '' ? null : Number(v)
+    setForm((prev) => {
+      const kurs = _num(prev.acquisition_exchange_rate)
+      const lei = eur != null && kurs > 0 ? Math.round(eur * kurs * 100) / 100 : prev.acquisition_price
+      return { ...prev, purchase_price_net: eur, acquisition_price: lei }
+    })
+  }
+
   // Submit
   const createMutation = useMutation({
     mutationFn: (data: Partial<Vehicle>) => carparkApi.createVehicle(data, effectiveCompanyId),
     onSuccess: (result) => {
+      localStorage.removeItem(draftKey)
       queryClient.invalidateQueries({ queryKey: ['carpark'] })
-      toast.success('Vehicle created')
-      navigate(`/app/carpark/${result.vehicle.id}`)
+      toast.success('Mașină adăugată')
+      navigate(`/app/carpark/${result.vehicle.id}/edit`)
     },
     onError: (err: Error & { data?: { error?: string } }) => {
       toast.error((err as any).data?.error || 'Failed to create vehicle')
@@ -405,9 +889,10 @@ export default function VehicleForm() {
   const updateMutation = useMutation({
     mutationFn: (data: Partial<Vehicle>) => carparkApi.updateVehicle(id!, data),
     onSuccess: () => {
+      localStorage.removeItem(draftKey)
+      // Refresh the list + this vehicle, but stay on the edit page.
       queryClient.invalidateQueries({ queryKey: ['carpark'] })
-      toast.success('Vehicle updated')
-      navigate(`/app/carpark/${id}`)
+      toast.success('Modificări salvate')
     },
     onError: (err: Error & { data?: { error?: string } }) => {
       toast.error((err as any).data?.error || 'Failed to update vehicle')
@@ -447,6 +932,41 @@ export default function VehicleForm() {
       }
     }
 
+    // Mirror Drive Park: persist only the capacity/norm fields relevant to the
+    // selected fuel type (null the rest so an EV keeps no stale fuel-tank value).
+    const ft = form.fuel_type as string
+    if (!usesFuelTank(ft)) {
+      payload.fuel_tank_capacity_liters = null
+      payload.norma_combustibil = null
+      payload.consum_urban = null
+      payload.consum_extraurban = null
+      payload.consum_mixt = null
+    }
+    if (!usesBattery(ft)) {
+      payload.battery_capacity_kwh = null
+      payload.norma_energie = null
+      payload.electric_range_km = null
+    }
+    // Cargo details only apply to vans — null them for other body types so a
+    // car switched away from Van / Utilitara keeps no stale cargo values.
+    if (form.body_type !== 'van') {
+      payload.payload_kg = null
+      payload.cargo_volume_m3 = null
+      payload.cargo_length_mm = null
+      payload.cargo_width_mm = null
+      payload.cargo_height_mm = null
+      payload.euro_pallets = null
+    }
+    // Empty equipment array → null (avoids empty-array SQL adaptation).
+    if (Array.isArray(payload.equipment_options) && (payload.equipment_options as string[]).length === 0) {
+      payload.equipment_options = null
+    }
+    // Cost lines (JSON) replace the old fixed cost columns.
+    payload.cost_lines = costLines.length ? JSON.stringify(costLines) : null
+    payload.reconditioning_cost = null
+    payload.transport_cost = null
+    payload.other_costs = null
+
     if (isEdit) {
       updateMutation.mutate(payload as Partial<Vehicle>)
     } else {
@@ -480,6 +1000,35 @@ export default function VehicleForm() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            {isEdit && (
+              <Button variant="ghost" type="button" asChild>
+                <Link to={`/app/carpark/${id}`}>
+                  <ArrowLeft className="mr-1 h-4 w-4" />
+                  Înapoi la profil
+                </Link>
+              </Button>
+            )}
+            <input
+              ref={civInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={handleCivFile}
+            />
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => civInputRef.current?.click()}
+              disabled={isImportingCiv}
+              title="Importă datele dintr-o poză sau PDF al CIV-ului"
+            >
+              {isImportingCiv ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-1 h-4 w-4" />
+              )}
+              Importă CIV
+            </Button>
             <Button variant="outline" type="button" asChild>
               <Link to={isEdit ? `/app/carpark/${id}` : '/app/carpark'}>
                 Cancel
@@ -497,9 +1046,92 @@ export default function VehicleForm() {
         }
       />
 
+      {pendingDraft && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-800 dark:bg-amber-950">
+          <span>Există o ciornă salvată pentru această mașină.</span>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={restoreDraft}>
+              Restaurează ciorna
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={discardDraft}>
+              Șterge
+            </Button>
+          </div>
+        </div>
+      )}
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="vehicul">Vehicul</TabsTrigger>
+          <TabsTrigger value="specificatii">Specificații</TabsTrigger>
+          <TabsTrigger value="dotari">Dotări</TabsTrigger>
+          <TabsTrigger value="anunt">Anunț</TabsTrigger>
+          <TabsTrigger value="comercial">Comercial</TabsTrigger>
+        </TabsList>
+        <TabsContent value="vehicul" className="space-y-4 pt-4">
       {/* Identification */}
-      <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Identification</h3>
+      <Card className="p-4 space-y-3">
+        <h3 className="text-sm font-semibold">Identificare</h3>
+        <div className="grid gap-4 md:grid-cols-4">
+          <SearchSelectField
+            label="Marcă"
+            name="brand"
+            value={form.brand as string}
+            options={brandOptions}
+            onChange={handleChange}
+            required
+            placeholder="Select brand"
+            searchPlaceholder="Search brand..."
+            allowCustom
+          />
+          <SearchSelectField
+            label="Model"
+            name="model"
+            value={form.model as string}
+            options={modelOptions}
+            onChange={handleChange}
+            required
+            placeholder={form.brand ? 'Select model' : 'Select brand first'}
+            searchPlaceholder="Search model..."
+            allowCustom
+            disabled={!form.brand}
+          />
+          <TextField label="Versiune" name="variant" value={form.variant as string} onChange={handleChange} placeholder="e.g. xDrive40i" />
+          <SelectField
+            label="Stare"
+            name="state"
+            value={form.state as string}
+            options={[...AUTOVIT_VEHICLE_STATES]}
+            onChange={handleChange}
+          />
+        </div>
+        <div className="grid gap-4 md:grid-cols-4">
+          <TextField label="Generație" name="generation" value={form.generation as string} onChange={handleChange} placeholder="e.g. G05 (LCI)" />
+          <TextField label="Nivel echipare" name="equipment_level" value={form.equipment_level as string} onChange={handleChange} placeholder="e.g. M Sport, Inscription" />
+          <div className="space-y-1.5">
+            <Label>Data fabricației</Label>
+            <div className="flex gap-2">
+              <div className="flex-1 min-w-0">
+                <SearchSelect
+                  value={fabMonth}
+                  onValueChange={handleFabMonth}
+                  options={MONTH_OPTIONS}
+                  placeholder="Month"
+                  searchPlaceholder="Month..."
+                />
+              </div>
+              <div className="w-28 shrink-0">
+                <SearchSelect
+                  value={fabYear}
+                  onValueChange={handleFabYear}
+                  options={YEAR_OPTIONS}
+                  placeholder="Year"
+                  searchPlaceholder="Year..."
+                />
+              </div>
+            </div>
+          </div>
+          <TextField label="Prima înmatriculare" name="first_registration_date" value={form.first_registration_date as string} onChange={handleChange} type="date" />
+        </div>
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-1.5">
             <Label htmlFor="vin">
@@ -541,29 +1173,29 @@ export default function VehicleForm() {
                   </span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 text-xs text-muted-foreground mb-2">
-                  {decodeResult.specs.fuel_type && <span>Fuel: {decodeResult.specs.fuel_type}</span>}
-                  {decodeResult.specs.engine_power_hp > 0 && <span>Power: {decodeResult.specs.engine_power_hp} HP</span>}
-                  {decodeResult.specs.engine_displacement_cc > 0 && <span>Engine: {decodeResult.specs.engine_displacement_cc} cc</span>}
-                  {decodeResult.specs.transmission && <span>Trans: {decodeResult.specs.transmission}</span>}
-                  {decodeResult.specs.body_type && <span>Body: {decodeResult.specs.body_type}</span>}
-                  {decodeResult.specs.drive_type && <span>Drive: {decodeResult.specs.drive_type}</span>}
+                  {decodeResult.specs.fuel_type && <span>Combustibil: {decodeResult.specs.fuel_type}</span>}
+                  {decodeResult.specs.engine_power_hp > 0 && <span>Putere: {decodeResult.specs.engine_power_hp} CP</span>}
+                  {decodeResult.specs.engine_displacement_cc > 0 && <span>Motor: {decodeResult.specs.engine_displacement_cc} cmc</span>}
+                  {decodeResult.specs.transmission && <span>Cutie: {decodeResult.specs.transmission}</span>}
+                  {decodeResult.specs.body_type && <span>Caroserie: {decodeResult.specs.body_type}</span>}
+                  {decodeResult.specs.drive_type && <span>Tracțiune: {decodeResult.specs.drive_type}</span>}
                 </div>
                 <div className="flex gap-2">
                   <Button type="button" size="sm" onClick={applyDecodedFields}>
                     <Check className="mr-1 h-3 w-3" />
-                    Apply to Vehicle
+                    Aplică
                   </Button>
                   <Button type="button" size="sm" variant="ghost" onClick={() => setDecodeResult(null)}>
                     <X className="mr-1 h-3 w-3" />
-                    Dismiss
+                    Renunță
                   </Button>
                 </div>
               </div>
             )}
           </div>
-          <TextField label="Stock Number" name="nr_stoc" value={form.nr_stoc as string} onChange={handleChange} />
+          <TextField label="Nr. stoc" name="nr_stoc" value={form.nr_stoc as string} onChange={handleChange} />
           <SelectField
-            label="Category"
+            label="Categorie"
             name="category"
             value={form.category as string}
             options={CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABELS[c] }))}
@@ -571,305 +1203,41 @@ export default function VehicleForm() {
             required
           />
         </div>
-        <div className="grid gap-4 md:grid-cols-4">
-          <SearchSelectField
-            label="Brand"
-            name="brand"
-            value={form.brand as string}
-            options={brandOptions}
-            onChange={handleChange}
-            required
-            placeholder="Select brand"
-            searchPlaceholder="Search brand..."
-            allowCustom
-          />
-          <SearchSelectField
-            label="Model"
-            name="model"
-            value={form.model as string}
-            options={modelOptions}
-            onChange={handleChange}
-            required
-            placeholder={form.brand ? 'Select model' : 'Select brand first'}
-            searchPlaceholder="Search model..."
-            allowCustom
-            disabled={!form.brand}
-          />
-          <TextField label="Variant" name="variant" value={form.variant as string} onChange={handleChange} placeholder="e.g. xDrive40i" />
-          <SelectField
-            label="State"
-            name="state"
-            value={form.state as string}
-            options={[...AUTOVIT_VEHICLE_STATES]}
-            onChange={handleChange}
-          />
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <TextField label="Generation" name="generation" value={form.generation as string} onChange={handleChange} placeholder="e.g. G05 (LCI)" />
-          <TextField label="Equipment Level" name="equipment_level" value={form.equipment_level as string} onChange={handleChange} placeholder="e.g. M Sport, Inscription" />
-          <TextField label="First Registration" name="first_registration_date" value={form.first_registration_date as string} onChange={handleChange} type="date" />
-        </div>
       </Card>
-
-      {/* Technical */}
-      <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Technical Specs</h3>
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label>Year</Label>
-            <Input
-              type="number"
-              value={inputVal(form.year_of_manufacture)}
-              onChange={(e) => handleNumericChange('year_of_manufacture', e.target.value)}
-              placeholder="2024"
-            />
-          </div>
-          <SearchSelectField
-            label="Fuel Type"
-            name="fuel_type"
-            value={form.fuel_type as string}
-            options={[...AUTOVIT_FUEL_TYPES]}
-            onChange={handleChange}
-            searchPlaceholder="Search fuel type..."
-          />
-          <SearchSelectField
-            label="Transmission"
-            name="transmission"
-            value={form.transmission as string}
-            options={[...AUTOVIT_GEARBOX_TYPES]}
-            onChange={handleChange}
-            searchPlaceholder="Search gearbox..."
-          />
-          <SearchSelectField
-            label="Body Type"
-            name="body_type"
-            value={form.body_type as string}
-            options={[...AUTOVIT_BODY_TYPES]}
-            onChange={handleChange}
-            searchPlaceholder="Search body type..."
-          />
-        </div>
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label>Mileage (km)</Label>
-            <Input
-              type="number"
-              value={inputVal(form.mileage_km)}
-              onChange={(e) => handleNumericChange('mileage_km', e.target.value)}
-              placeholder="0"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Power (HP)</Label>
-            <Input
-              type="number"
-              value={inputVal(form.engine_power_hp)}
-              onChange={(e) => handleNumericChange('engine_power_hp', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Engine (cc)</Label>
-            <Input
-              type="number"
-              value={inputVal(form.engine_displacement_cc)}
-              onChange={(e) => handleNumericChange('engine_displacement_cc', e.target.value)}
-            />
-          </div>
-          <SearchSelectField
-            label="Drive Type"
-            name="drive_type"
-            value={form.drive_type as string}
-            options={[...AUTOVIT_DRIVE_TYPES]}
-            onChange={handleChange}
-            searchPlaceholder="Search drive type..."
-          />
-        </div>
-        <div className="grid gap-4 md:grid-cols-4">
-          <SearchSelectField
-            label="Exterior Color"
-            name="color_exterior"
-            value={form.color_exterior as string}
-            options={[...AUTOVIT_COLORS]}
-            onChange={handleChange}
-            searchPlaceholder="Search color..."
-          />
-          <SearchSelectField
-            label="Interior Color"
-            name="color_interior"
-            value={form.color_interior as string}
-            options={[...AUTOVIT_INTERIOR_COLORS]}
-            onChange={handleChange}
-            searchPlaceholder="Search color..."
-          />
-          <SelectField
-            label="Doors"
-            name="doors"
-            value={form.doors != null ? String(form.doors) : ''}
-            options={[...AUTOVIT_DOORS]}
-            onChange={(n, v) => handleNumericChange(n, v)}
-          />
-          <SelectField
-            label="Seats"
-            name="seats"
-            value={form.seats != null ? String(form.seats) : ''}
-            options={[...AUTOVIT_SEATS]}
-            onChange={(n, v) => handleNumericChange(n, v)}
-          />
-        </div>
-        <div className="grid gap-4 md:grid-cols-4">
-          <SearchSelectField
-            label="Euro Standard"
-            name="euro_standard"
-            value={form.euro_standard as string}
-            options={[...AUTOVIT_EURO_STANDARDS]}
-            onChange={handleChange}
-            searchPlaceholder="Search euro..."
-          />
-          <div className="space-y-1.5">
-            <Label>CO2 Emissions (g/km)</Label>
-            <Input
-              type="number"
-              value={inputVal(form.co2_emissions)}
-              onChange={(e) => handleNumericChange('co2_emissions', e.target.value)}
-            />
-          </div>
-        </div>
-      </Card>
-
-      {/* Pricing */}
-      <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Pricing</h3>
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label>Current Price</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.current_price)}
-              onChange={(e) => handleNumericChange('current_price', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>List Price</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.list_price)}
-              onChange={(e) => handleNumericChange('list_price', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Minimum Price</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.minimum_price)}
-              onChange={(e) => handleNumericChange('minimum_price', e.target.value)}
-            />
-          </div>
-          <SelectField
-            label="Currency"
-            name="price_currency"
-            value={form.price_currency as string}
-            options={[
-              { value: 'EUR', label: 'EUR' },
-              { value: 'RON', label: 'RON' },
-              { value: 'USD', label: 'USD' },
-            ]}
-            onChange={handleChange}
-          />
-        </div>
-        <div className="flex flex-wrap gap-6">
-          <CheckboxField label="Price includes VAT" name="price_includes_vat" checked={!!form.price_includes_vat} onChange={handleChange} />
-          <CheckboxField label="Negotiable" name="is_negotiable" checked={!!form.is_negotiable} onChange={handleChange} />
-          <CheckboxField label="Margin scheme" name="margin_scheme" checked={!!form.margin_scheme} onChange={handleChange} />
-          <CheckboxField label="Eligible for financing" name="eligible_for_financing" checked={!!form.eligible_for_financing} onChange={handleChange} />
-        </div>
-
-        <Separator />
-        <h4 className="text-xs font-medium text-muted-foreground">Acquisition Costs</h4>
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label>Purchase Price (net)</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.purchase_price_net)}
-              onChange={(e) => handleNumericChange('purchase_price_net', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Reconditioning</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.reconditioning_cost)}
-              onChange={(e) => handleNumericChange('reconditioning_cost', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Transport</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.transport_cost)}
-              onChange={(e) => handleNumericChange('transport_cost', e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Other Costs</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={inputVal(form.other_costs)}
-              onChange={(e) => handleNumericChange('other_costs', e.target.value)}
-            />
-          </div>
-        </div>
-      </Card>
-
-      {/* Location & Source */}
-      <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Location & Source</h3>
-        <div className="grid gap-4 md:grid-cols-3">
-          <SelectField
-            label="Location"
-            name="location_id"
-            value={form.location_id != null ? String(form.location_id) : ''}
-            options={locationOptions}
-            onChange={(name, value) => handleNumericChange(name, value)}
-          />
-          <TextField label="Parking Spot" name="parking_spot" value={form.parking_spot as string} onChange={handleChange} placeholder="e.g. A-15" />
-          <TextField label="Source" name="source" value={form.source as string} onChange={handleChange} placeholder="e.g. Trade-in, Auction" />
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <TextField label="Supplier Name" name="supplier_name" value={form.supplier_name as string} onChange={handleChange} />
-          <TextField label="Supplier CIF" name="supplier_cif" value={form.supplier_cif as string} onChange={handleChange} />
-        </div>
-      </Card>
-
       {/* Condition & Warranty */}
-      <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Condition & Warranty</h3>
+      <Card className="p-4 space-y-3">
+        <h3 className="text-sm font-semibold">Stare & Garanție</h3>
         <div className="flex flex-wrap gap-6">
-          <CheckboxField label="First owner" name="is_first_owner" checked={!!form.is_first_owner} onChange={handleChange} />
-          <CheckboxField label="Accident history" name="has_accident_history" checked={!!form.has_accident_history} onChange={handleChange} />
-          <CheckboxField label="Service book" name="has_service_book" checked={!!form.has_service_book} onChange={handleChange} />
-          <CheckboxField label="Has tuning" name="has_tuning" checked={!!form.has_tuning} onChange={handleChange} />
-          <CheckboxField label="Registered" name="is_registered" checked={!!form.is_registered} onChange={handleChange} />
+          <CheckboxField label="Primul proprietar" name="is_first_owner" checked={!!form.is_first_owner} onChange={handleChange} />
+          <CheckboxField label="Istoric accidente" name="has_accident_history" checked={!!form.has_accident_history} onChange={handleChange} />
+          <CheckboxField label="Carte service" name="has_service_book" checked={!!form.has_service_book} onChange={handleChange} />
+          <CheckboxField label="Tuning" name="has_tuning" checked={!!form.has_tuning} onChange={handleChange} />
+          <CheckboxField label="Înmatriculat" name="is_registered" checked={!!form.is_registered} onChange={handleChange} />
+          <CheckboxField label="Volan pe dreapta" name="is_right_hand_drive" checked={!!form.is_right_hand_drive} onChange={handleChange} />
+          <CheckboxField label="Filtru de particule" name="has_particle_filter" checked={!!form.has_particle_filter} onChange={handleChange} />
+          <CheckboxField label="Vehicul de epocă" name="is_vintage" checked={!!form.is_vintage} onChange={handleChange} />
+          <CheckboxField label="Autovehicul avariat" name="is_damaged" checked={!!form.is_damaged} onChange={handleChange} />
+          <CheckboxField label="Rulaj certificat" name="certified_mileage" checked={!!form.certified_mileage} onChange={handleChange} />
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label>Nr. proprietari anteriori</Label>
+            <Input type="number" min={0} value={inputVal(form.previous_owners)} onChange={(e) => handleNumericChange('previous_owners', e.target.value)} placeholder="ex. 1" />
+          </div>
+          <TextField label="Țara de origine" name="country_of_origin" value={form.country_of_origin as string} onChange={handleChange} placeholder="ex. Germania" />
         </div>
         <Separator />
         <div className="grid gap-4 md:grid-cols-3">
-          <CheckboxField label="Manufacturer warranty" name="has_manufacturer_warranty" checked={!!form.has_manufacturer_warranty} onChange={handleChange} />
+          <CheckboxField label="Garanție producător" name="has_manufacturer_warranty" checked={!!form.has_manufacturer_warranty} onChange={handleChange} />
           {form.has_manufacturer_warranty && (
-            <TextField label="Warranty Until" name="manufacturer_warranty_date" value={form.manufacturer_warranty_date as string} onChange={handleChange} type="date" />
+            <TextField label="Garanție până la" name="manufacturer_warranty_date" value={form.manufacturer_warranty_date as string} onChange={handleChange} type="date" />
           )}
         </div>
         <div className="grid gap-4 md:grid-cols-3">
-          <CheckboxField label="Dealer warranty" name="has_dealer_warranty" checked={!!form.has_dealer_warranty} onChange={handleChange} />
+          <CheckboxField label="Garanție dealer" name="has_dealer_warranty" checked={!!form.has_dealer_warranty} onChange={handleChange} />
           {form.has_dealer_warranty && (
             <div className="space-y-1.5">
-              <Label>Warranty Months</Label>
+              <Label>Luni garanție</Label>
               <Input
                 type="number"
                 value={inputVal(form.dealer_warranty_months)}
@@ -879,23 +1247,347 @@ export default function VehicleForm() {
           )}
         </div>
       </Card>
-
+        </TabsContent>
+        <TabsContent value="specificatii" className="space-y-4 pt-4">
+      {/* Technical */}
+      <Card className="p-4 space-y-3">
+        <h3 className="text-sm font-semibold">Specificații tehnice</h3>
+        <div className="grid gap-4 md:grid-cols-3">
+          <SearchSelectField
+            label="Combustibil"
+            name="fuel_type"
+            value={form.fuel_type as string}
+            options={[...AUTOVIT_FUEL_TYPES]}
+            onChange={handleChange}
+            searchPlaceholder="Search fuel type..."
+          />
+          <SearchSelectField
+            label="Cutie de viteze"
+            name="transmission"
+            value={form.transmission as string}
+            options={[...AUTOVIT_GEARBOX_TYPES]}
+            onChange={handleChange}
+            searchPlaceholder="Search gearbox..."
+          />
+          <SearchSelectField
+            label="Caroserie"
+            name="body_type"
+            value={form.body_type as string}
+            options={[...AUTOVIT_BODY_TYPES]}
+            onChange={handleChange}
+            searchPlaceholder="Search body type..."
+          />
+        </div>
+        {(usesFuelTank(form.fuel_type as string) || usesBattery(form.fuel_type as string)) && (
+          <div className="grid gap-4 md:grid-cols-4">
+            {usesFuelTank(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Capacitate rezervor (L)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={inputVal(form.fuel_tank_capacity_liters)}
+                  onChange={(e) => handleNumericChange('fuel_tank_capacity_liters', e.target.value)}
+                  placeholder="e.g. 50"
+                />
+              </div>
+            )}
+            {usesBattery(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Capacitate baterie (kWh)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={inputVal(form.battery_capacity_kwh)}
+                  onChange={(e) => handleNumericChange('battery_capacity_kwh', e.target.value)}
+                  placeholder="e.g. 64"
+                />
+              </div>
+            )}
+            {usesFuelTank(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Normă consum (l/100 km)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  value={inputVal(form.norma_combustibil)}
+                  onChange={(e) => handleNumericChange('norma_combustibil', e.target.value)}
+                  placeholder="ex. 6.5"
+                />
+              </div>
+            )}
+            {usesFuelTank(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Consum urban (l/100 km)</Label>
+                <Input type="number" min={0} step="0.1" value={inputVal(form.consum_urban)} onChange={(e) => handleNumericChange('consum_urban', e.target.value)} placeholder="ex. 7.5" />
+              </div>
+            )}
+            {usesFuelTank(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Consum extraurban (l/100 km)</Label>
+                <Input type="number" min={0} step="0.1" value={inputVal(form.consum_extraurban)} onChange={(e) => handleNumericChange('consum_extraurban', e.target.value)} placeholder="ex. 5.0" />
+              </div>
+            )}
+            {usesFuelTank(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Consum mixt (l/100 km)</Label>
+                <Input type="number" min={0} step="0.1" value={inputVal(form.consum_mixt)} onChange={(e) => handleNumericChange('consum_mixt', e.target.value)} placeholder="ex. 6.0" />
+              </div>
+            )}
+            {usesBattery(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Normă energie (kWh/100 km)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  value={inputVal(form.norma_energie)}
+                  onChange={(e) => handleNumericChange('norma_energie', e.target.value)}
+                  placeholder="ex. 17.5"
+                />
+              </div>
+            )}
+            {usesBattery(form.fuel_type as string) && (
+              <div className="space-y-1.5">
+                <Label>Autonomie electrică (km)</Label>
+                <Input type="number" min={0} value={inputVal(form.electric_range_km)} onChange={(e) => handleNumericChange('electric_range_km', e.target.value)} placeholder="ex. 450" />
+              </div>
+            )}
+          </div>
+        )}
+        <div className="grid gap-4 md:grid-cols-4">
+          <div className="space-y-1.5">
+            <Label>Rulaj (km)</Label>
+            <Input
+              type="number"
+              value={inputVal(form.mileage_km)}
+              onChange={(e) => handleNumericChange('mileage_km', e.target.value)}
+              placeholder="0"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Putere (CP)</Label>
+            <Input
+              type="number"
+              value={inputVal(form.engine_power_hp)}
+              onChange={(e) => handleNumericChange('engine_power_hp', e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Capacitate cilindrică (cmc)</Label>
+            <Input
+              type="number"
+              value={inputVal(form.engine_displacement_cc)}
+              onChange={(e) => handleNumericChange('engine_displacement_cc', e.target.value)}
+            />
+          </div>
+          <SearchSelectField
+            label="Tracțiune"
+            name="drive_type"
+            value={form.drive_type as string}
+            options={[...AUTOVIT_DRIVE_TYPES]}
+            onChange={handleChange}
+            searchPlaceholder="Search drive type..."
+          />
+        </div>
+        <div className="grid gap-4 md:grid-cols-4">
+          <SearchSelectField
+            label="Culoare exterioară"
+            name="color_exterior"
+            value={form.color_exterior as string}
+            options={[...AUTOVIT_COLORS]}
+            onChange={handleChange}
+            searchPlaceholder="Search color..."
+          />
+          <SearchSelectField
+            label="Tip culoare"
+            name="color_finish"
+            value={form.color_finish as string}
+            options={[...AUTOVIT_COLOR_FINISHES]}
+            onChange={handleChange}
+            searchPlaceholder="Search finish..."
+          />
+          <SearchSelectField
+            label="Culoare interior"
+            name="color_interior"
+            value={form.color_interior as string}
+            options={[...AUTOVIT_INTERIOR_COLORS]}
+            onChange={handleChange}
+            searchPlaceholder="Search color..."
+          />
+          <SearchSelectField
+            label="Tapițerie"
+            name="interior_material"
+            value={form.interior_material as string}
+            options={[...AUTOVIT_INTERIOR_MATERIALS]}
+            onChange={handleChange}
+            searchPlaceholder="Search material..."
+          />
+          <SelectField
+            label="Nr. portiere"
+            name="doors"
+            value={form.doors != null ? String(form.doors) : ''}
+            options={[...AUTOVIT_DOORS]}
+            onChange={(n, v) => handleNumericChange(n, v)}
+          />
+          <SelectField
+            label="Nr. locuri"
+            name="seats"
+            value={form.seats != null ? String(form.seats) : ''}
+            options={[...AUTOVIT_SEATS]}
+            onChange={(n, v) => handleNumericChange(n, v)}
+          />
+        </div>
+        <div className="grid gap-4 md:grid-cols-4">
+          <SearchSelectField
+            label="Normă de poluare"
+            name="euro_standard"
+            value={form.euro_standard as string}
+            options={[...AUTOVIT_EURO_STANDARDS]}
+            onChange={handleChange}
+            searchPlaceholder="Search euro..."
+          />
+          <div className="space-y-1.5">
+            <Label>Emisii CO2 (g/km)</Label>
+            <Input
+              type="number"
+              value={inputVal(form.co2_emissions)}
+              onChange={(e) => handleNumericChange('co2_emissions', e.target.value)}
+            />
+          </div>
+        </div>
+        {form.body_type === 'van' && (
+          <div className="space-y-4 rounded-md border border-dashed p-3">
+            <h4 className="text-xs font-semibold text-muted-foreground">Cargo (Utilitară)</h4>
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="space-y-1.5">
+                <Label>Masă maximă autorizată (kg)</Label>
+                <Input type="number" min={0} value={inputVal(form.max_weight_kg)} onChange={(e) => handleNumericChange('max_weight_kg', e.target.value)} placeholder="e.g. 3500" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Sarcină utilă (kg)</Label>
+                <Input type="number" min={0} value={inputVal(form.payload_kg)} onChange={(e) => handleNumericChange('payload_kg', e.target.value)} placeholder="e.g. 1200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Volum util (m³)</Label>
+                <Input type="number" min={0} step="0.1" value={inputVal(form.cargo_volume_m3)} onChange={(e) => handleNumericChange('cargo_volume_m3', e.target.value)} placeholder="e.g. 11.5" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Europaleți</Label>
+                <Input type="number" min={0} value={inputVal(form.euro_pallets)} onChange={(e) => handleNumericChange('euro_pallets', e.target.value)} placeholder="e.g. 3" />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label>Lungime cală (mm)</Label>
+                <Input type="number" min={0} value={inputVal(form.cargo_length_mm)} onChange={(e) => handleNumericChange('cargo_length_mm', e.target.value)} placeholder="e.g. 3200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Lățime cală (mm)</Label>
+                <Input type="number" min={0} value={inputVal(form.cargo_width_mm)} onChange={(e) => handleNumericChange('cargo_width_mm', e.target.value)} placeholder="e.g. 1700" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Înălțime cală (mm)</Label>
+                <Input type="number" min={0} value={inputVal(form.cargo_height_mm)} onChange={(e) => handleNumericChange('cargo_height_mm', e.target.value)} placeholder="e.g. 1900" />
+              </div>
+            </div>
+          </div>
+        )}
+      </Card>
+        </TabsContent>
+        <TabsContent value="dotari" className="space-y-4 pt-4">
+      {/* Dotări (Equipment) */}
+      <Card className="p-4 space-y-3">
+        <h3 className="text-sm font-semibold">Dotări</h3>
+        {AUTOVIT_EQUIPMENT.map((group) => (
+          <div key={group.category} className="space-y-2">
+            <h4 className="text-xs font-semibold text-muted-foreground">{group.category}</h4>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              {group.options.map((opt) => {
+                const selected =
+                  Array.isArray(form.equipment_options) &&
+                  (form.equipment_options as string[]).includes(opt.value)
+                return (
+                  <div key={opt.value} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`eq-${opt.value}`}
+                      checked={selected}
+                      onCheckedChange={() => toggleEquipment(opt.value)}
+                    />
+                    <Label htmlFor={`eq-${opt.value}`} className="text-sm font-normal cursor-pointer">
+                      {opt.label}
+                    </Label>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </Card>
+        </TabsContent>
+        <TabsContent value="anunt" className="space-y-4 pt-4">
       {/* Listing */}
-      <Card className="p-4 space-y-4">
-        <h3 className="text-sm font-semibold">Listing & Notes</h3>
-        <TextField label="Listing Title" name="listing_title" value={form.listing_title as string} onChange={handleChange} placeholder="Custom title for online listings" />
+      <Card className="p-4 space-y-3">
+        <h3 className="text-sm font-semibold">Anunț & Note</h3>
         <div className="space-y-1.5">
-          <Label>Listing Description</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="listing_title">Titlu anunț</Label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground"
+              onClick={regenerateTitle}
+              title="Recompune titlul din specificații"
+            >
+              <RefreshCw className="mr-1 h-3 w-3" />
+              Din specificații
+            </Button>
+          </div>
+          <Input
+            id="listing_title"
+            value={(form.listing_title as string) ?? ''}
+            onChange={(e) => {
+              titleTouched.current = true
+              handleChange('listing_title', e.target.value)
+            }}
+            placeholder="Se completează automat din specificații"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="listing_description">Descriere anunț</Label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground"
+              onClick={generateDescription}
+              disabled={genDesc}
+              title="Generează descrierea cu AI din specificații și dotări"
+            >
+              {genDesc ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <Sparkles className="mr-1 h-3 w-3" />
+              )}
+              Generează cu AI
+            </Button>
+          </div>
           <Textarea
+            id="listing_description"
             value={(form.listing_description as string) ?? ''}
             onChange={(e) => handleChange('listing_description', e.target.value)}
-            placeholder="Description for online platforms..."
+            placeholder="Se poate genera cu AI din specificații și dotări."
             rows={4}
           />
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>Notes</Label>
+            <Label>Note</Label>
             <Textarea
               value={(form.notes as string) ?? ''}
               onChange={(e) => handleChange('notes', e.target.value)}
@@ -903,7 +1595,7 @@ export default function VehicleForm() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Internal Notes</Label>
+            <Label>Note interne</Label>
             <Textarea
               value={(form.internal_notes as string) ?? ''}
               onChange={(e) => handleChange('internal_notes', e.target.value)}
@@ -912,9 +1604,196 @@ export default function VehicleForm() {
           </div>
         </div>
       </Card>
+        </TabsContent>
+        <TabsContent value="comercial" className="space-y-4 pt-4">
+      {/* Location & Source */}
+      <Card className="p-4 space-y-3">
+        <h3 className="text-sm font-semibold">Locație & Sursă</h3>
+        <div className="grid gap-4 md:grid-cols-3">
+          <SelectField
+            label="Locație"
+            name="location_id"
+            value={form.location_id != null ? String(form.location_id) : ''}
+            options={locationOptions}
+            onChange={(name, value) => handleNumericChange(name, value)}
+          />
+          <TextField label="Loc parcare" name="parking_spot" value={form.parking_spot as string} onChange={handleChange} placeholder="e.g. A-15" />
+          <SearchSelectField
+            label="Sursă"
+            name="source"
+            value={form.source as string}
+            options={[...VEHICLE_SOURCES]}
+            onChange={handleChange}
+            allowCustom
+            searchPlaceholder="Caută sursă..."
+          />
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <TextField label="Nume furnizor" name="supplier_name" value={form.supplier_name as string} onChange={handleChange} />
+          <TextField label="CIF furnizor" name="supplier_cif" value={form.supplier_cif as string} onChange={handleChange} />
+          <TextField label="Nr. factură intrare" name="acquisition_document_number" value={form.acquisition_document_number as string} onChange={handleChange} />
+        </div>
+      </Card>
+      {/* Pricing */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Achiziție */}
+        <Card className="p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Achiziție</h3>
+            {totalCost > 0 && (
+              <span className="text-xs font-medium">Cost total: {totalCost.toLocaleString('ro-RO')} EUR</span>
+            )}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Preț achiziție (LEI)</Label>
+              <Input type="number" step="0.01" value={inputVal(form.acquisition_price)} onChange={(e) => handleAcqLei(e.target.value)} placeholder="RON" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Data factură</Label>
+              <Input type="date" value={(form.acquisition_date as string) ?? ''} onChange={(e) => handleAcqDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Curs BNR (RON/EUR)</Label>
+              <Input type="number" step="0.0001" value={inputVal(form.acquisition_exchange_rate)} onChange={(e) => handleKurs(e.target.value)} placeholder={bnrLoading ? 'Se preia…' : 'auto la data facturii'} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Preț achiziție (EUR)</Label>
+              <Input type="number" step="0.01" value={inputVal(form.purchase_price_net)} onChange={(e) => handleAcqEur(e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Costuri suplimentare (EUR)</Label>
+              <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={addCostLine}>
+                <Plus className="mr-1 h-3 w-3" /> Adaugă linie
+              </Button>
+            </div>
+            {costLines.length === 0 && (
+              <p className="text-xs text-muted-foreground">Nicio linie. Adaugă recondiționare, transport etc.</p>
+            )}
+            {costLines.map((line, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
+                <div className="w-36 shrink-0">
+                  <SearchSelect
+                    value={line.type}
+                    onValueChange={(v) => patchLine(i, { type: v })}
+                    options={[...CARPARK_COST_TYPES]}
+                    placeholder="Tip cost"
+                    searchPlaceholder="Caută/adaugă..."
+                    allowCustom
+                  />
+                </div>
+                <Input placeholder="Descriere" className="min-w-[7rem] flex-1" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} />
+                <Input type="date" className="w-36 shrink-0" value={line.date} onChange={(e) => handleLineDate(i, e.target.value)} />
+                <Input type="number" step="0.01" placeholder="LEI" className="w-24 shrink-0" value={line.lei ?? ''} onChange={(e) => handleLineLei(i, e.target.value)} title={line.kurs ? `Curs BNR ${line.kurs}` : ''} />
+                <Input type="number" step="0.01" placeholder="EUR" className="w-24 shrink-0" value={line.eur ?? ''} onChange={(e) => handleLineEur(i, e.target.value)} />
+                <Button type="button" size="icon" variant="ghost" className="shrink-0" onClick={() => removeCostLine(i)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+        {/* Vânzare */}
+        <Card className="p-4 space-y-3">
+          <h3 className="text-sm font-semibold">Vânzare</h3>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Preț</Label>
+              <Input type="number" step="0.01" value={inputVal(form.list_price)} onChange={(e) => handleNumericChange('list_price', e.target.value)} />
+              {priceAlt(form.list_price) && (
+                <p className="text-[10px] text-muted-foreground">≈ {priceAlt(form.list_price)}</p>
+              )}
+              {listMargin && (
+                <p className={`text-xs ${listMargin.positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{listMargin.text}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Preț promoțional</Label>
+              <Input type="number" step="0.01" value={inputVal(form.promotional_price)} onChange={(e) => handleNumericChange('promotional_price', e.target.value)} />
+              {priceAlt(form.promotional_price) && (
+                <p className="text-[10px] text-muted-foreground">≈ {priceAlt(form.promotional_price)}</p>
+              )}
+            </div>
+            <SelectField
+              label="Monedă"
+              name="price_currency"
+              value={form.price_currency as string}
+              options={[
+                { value: 'EUR', label: 'EUR' },
+                { value: 'RON', label: 'RON' },
+                { value: 'USD', label: 'USD' },
+              ]}
+              onChange={handleCurrencyChange}
+            />
+            <div className="space-y-1.5">
+              <Label>Preț minim</Label>
+              <Input type="number" step="0.01" value={inputVal(form.minimum_price)} onChange={(e) => handleNumericChange('minimum_price', e.target.value)} />
+              {priceAlt(form.minimum_price) && (
+                <p className="text-[10px] text-muted-foreground">≈ {priceAlt(form.minimum_price)}</p>
+              )}
+              <p className="text-[10px] text-muted-foreground">Doar pentru alerte & statistici</p>
+              {minMargin && (
+                <p className={`text-xs ${minMargin.positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{minMargin.text}</p>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <CheckboxField label="Preț cu TVA" name="price_includes_vat" checked={!!form.price_includes_vat} onChange={handleChange} />
+            <CheckboxField label="Negociabil" name="is_negotiable" checked={!!form.is_negotiable} onChange={handleChange} />
+            <CheckboxField label="Regim marjă" name="margin_scheme" checked={!!form.margin_scheme} onChange={handleChange} />
+            <CheckboxField label="Eligibil finanțare" name="eligible_for_financing" checked={!!form.eligible_for_financing} onChange={handleChange} />
+          </div>
+          {isEdit && pricingHistory.length > 0 && (
+            <>
+              <Separator />
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Istoric preț</Label>
+                <ul className="max-h-32 space-y-0.5 overflow-y-auto text-xs text-muted-foreground">
+                  {pricingHistory.map((h, i) => {
+                    const d = new Date(h.created_at).toLocaleDateString('ro-RO')
+                    const cur = (form.price_currency as string) || 'EUR'
+                    const reasons: Record<string, string> = {
+                      manual_update: 'modificare manuală',
+                      rule: 'regulă de preț',
+                      promotion: 'promoție',
+                      initial: 'preț inițial',
+                    }
+                    const reason = h.change_reason ? reasons[h.change_reason] ?? h.change_reason : ''
+                    const changed = h.old_price != null && h.old_price !== h.new_price
+                    const price = changed
+                      ? `${(h.old_price ?? 0).toLocaleString('ro-RO')} → ${(h.new_price ?? 0).toLocaleString('ro-RO')} ${cur}`
+                      : `${(h.new_price ?? 0).toLocaleString('ro-RO')} ${cur}`
+                    return (
+                      <li key={i}>
+                        {d} — {price}
+                        {reason ? ` · ${reason}` : ''}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
+        </TabsContent>
+      </Tabs>
 
       {/* Submit bar */}
       <div className="flex justify-end gap-2 sticky bottom-4">
+        <Button variant="secondary" type="button" onClick={saveDraft} className="mr-auto">
+          Salvează ciornă
+        </Button>
+        {isEdit && (
+          <Button variant="ghost" type="button" asChild>
+            <Link to={`/app/carpark/${id}`}>
+              <ArrowLeft className="mr-1 h-4 w-4" />
+              Înapoi la profil
+            </Link>
+          </Button>
+        )}
         <Button variant="outline" type="button" asChild>
           <Link to={isEdit ? `/app/carpark/${id}` : '/app/carpark'}>Cancel</Link>
         </Button>

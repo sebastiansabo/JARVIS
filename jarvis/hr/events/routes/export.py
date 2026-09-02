@@ -26,7 +26,7 @@ def api_export_bonuses():
     # Headers
     headers = ['An', 'Luna', 'Nume', 'Dep', 'Brand', 'Compania', 'Eveniment',
                'Start event', 'End event', 'Data Start Participare', 'Data End Participare',
-               'Zile Bonusabile', 'Ore / Libere', 'Prima (Net)', 'Detalii']
+               'Zile Bonusabile', 'Ore / Libere', 'Ore Eveniment', 'Prima (Net)', 'Detalii']
 
     header_fill = PatternFill(start_color='9C27B0', end_color='9C27B0', fill_type='solid')
     header_font = Font(bold=True, color='FFFFFF')
@@ -52,8 +52,9 @@ def api_export_bonuses():
         ws.cell(row=row_idx, column=11, value=bonus.get('participation_end', ''))
         ws.cell(row=row_idx, column=12, value=bonus.get('bonus_days'))
         ws.cell(row=row_idx, column=13, value=bonus.get('hours_free'))
-        ws.cell(row=row_idx, column=14, value=bonus.get('bonus_net'))
-        ws.cell(row=row_idx, column=15, value=bonus.get('details', ''))
+        ws.cell(row=row_idx, column=14, value=bonus.get('event_hours'))
+        ws.cell(row=row_idx, column=15, value=bonus.get('bonus_net'))
+        ws.cell(row=row_idx, column=16, value=bonus.get('details', ''))
 
     # Auto-width columns
     for col in ws.columns:

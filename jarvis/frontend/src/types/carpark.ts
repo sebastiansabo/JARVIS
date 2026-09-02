@@ -19,7 +19,12 @@ export interface VehicleCatalogItem {
   category: VehicleCategory
   status: VehicleStatus
   year_of_manufacture: number | null
+  manufacture_date: string | null
   fuel_type: string | null
+  fuel_tank_capacity_liters: number | null
+  battery_capacity_kwh: number | null
+  norma_combustibil: number | null
+  norma_energie: number | null
   transmission: string | null
   body_type: string | null
   mileage_km: number
@@ -63,6 +68,26 @@ export interface Vehicle extends VehicleCatalogItem {
   co2_emissions: number | null
   euro_standard: string | null
   max_weight_kg: number | null
+  payload_kg: number | null
+  cargo_volume_m3: number | null
+  cargo_length_mm: number | null
+  cargo_width_mm: number | null
+  cargo_height_mm: number | null
+  euro_pallets: number | null
+  interior_material: string | null
+  is_right_hand_drive: boolean
+  has_particle_filter: boolean
+  is_vintage: boolean
+  is_damaged: boolean
+  certified_mileage: boolean
+  color_finish: string | null
+  consum_urban: number | null
+  consum_extraurban: number | null
+  consum_mixt: number | null
+  electric_range_km: number | null
+  previous_owners: number | null
+  country_of_origin: string | null
+  equipment_options: string[] | null
   doors: number | null
   seats: number | null
   tire_type: string | null
@@ -106,6 +131,9 @@ export interface Vehicle extends VehicleCatalogItem {
   transport_cost: number | null
   registration_cost: number | null
   other_costs: number | null
+  // TEXT column holding a JSON string of acquisition cost lines
+  // ([{type, description, date, lei, kurs, eur}]). Returned by SELECT v.*.
+  cost_lines: string | null
   minimum_price: number | null
   price_includes_vat: boolean
   vat_deductible: boolean

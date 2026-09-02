@@ -533,8 +533,15 @@ class FoiParcursRepository(BaseRepository):
         columns only; applies to ANY status; bumps updated_at and stamps
         corrected_at/corrected_by (the "Modificat" audit marker). Returns the
         fresh row. Validation (km_end >= km_start, return >= departure, admin
-        gate) lives in the route — this is the persistence primitive."""
-        allowed = ('departure_datetime', 'return_datetime', 'km_start', 'km_end')
+        gate) lives in the route — this is the persistence primitive.
+
+        Also corrects the client identity snapshotted on the foaie itself
+        (client_name/phone + driver-licence fields) — these are stored columns,
+        not a live CRM join, so a finalized document only changes when written
+        here. The route decides which keys to pass (client_name never blank)."""
+        allowed = ('departure_datetime', 'return_datetime', 'km_start', 'km_end', 'advisor_name',
+                   'client_name', 'client_phone', 'driver_license_number',
+                   'driver_license_expiry', 'driver_license_photo')
         sets = {k: fields[k] for k in allowed if k in fields}
         if not sets:
             return self.get_contract_by_id(contract_id)
@@ -543,6 +550,18 @@ class FoiParcursRepository(BaseRepository):
         sql = (f'UPDATE foi_de_parcurs SET {cols}, corrected_at = NOW(), corrected_by = %s, '
                f'updated_at = NOW() WHERE id = %s RETURNING id')
         row = self.execute(sql, tuple(params), returning=True)
+        return self.get_contract_by_id(row['id']) if row and row.get('id') else None
+
+    def set_internal_flag(self, contract_id: int, is_internal: bool, modified_by=None) -> dict:
+        """Reclassify a session as internal (True) or external/client (False),
+        fixing a row a colleague mis-marked. Flips ONLY the `is_internal` flag —
+        client identity columns (client_id/name/phone/signature/GDPR) are left
+        intact so the change is fully reversible — and stamps corrected_at/
+        corrected_by so the "Modificat" marker reflects the edit. The route owns
+        the admin gate; this is the persistence primitive. Returns the fresh row."""
+        sql = ('UPDATE foi_de_parcurs SET is_internal = %s, corrected_at = NOW(), '
+               'corrected_by = %s, updated_at = NOW() WHERE id = %s RETURNING id')
+        row = self.execute(sql, (bool(is_internal), modified_by, contract_id), returning=True)
         return self.get_contract_by_id(row['id']) if row and row.get('id') else None
 
     def extend_return(self, contract_id: int, return_datetime, modified_by=None) -> dict:

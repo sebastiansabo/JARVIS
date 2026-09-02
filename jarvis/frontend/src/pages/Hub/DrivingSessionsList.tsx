@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
+import { sessionParty, clientCell } from '@/pages/FoiParcurs/sessionParty'
+import { useUsersDirectory } from '@/pages/FoiParcurs/useUsersDirectory'
 import type { DocType } from '@/pages/FoiParcurs/documentType'
 import ModifiedBadge from '@/pages/FoiParcurs/ModifiedBadge'
 import EventBadge from '@/pages/FoiParcurs/EventBadge'
@@ -38,6 +40,9 @@ interface Props {
   consultantFilter?: string[]
   onActivate: (id: number) => void
   onReturn: (id: number) => void
+  /** Open the full editor for a not-started (PLANNED) session — "Corectează"
+   *  becomes a full edit there instead of the light date/KM dialog. */
+  onEditPlan?: (id: number) => void
   /** Which fleet/pool to show — 'sales' (default) or 'service' (courtesy). */
   documentType?: DocType
 }
@@ -50,7 +55,7 @@ interface Props {
  * action, with tap-to-expand details. Reuses the same data + status derivation;
  * actions call back into the panel's overlay openers.
  */
-export default function DrivingSessionsList({ companyId, brand, carFilter = [], consultantFilter = [], onActivate, onReturn, documentType = 'sales' }: Props) {
+export default function DrivingSessionsList({ companyId, brand, carFilter = [], consultantFilter = [], onActivate, onReturn, onEditPlan, documentType = 'sales' }: Props) {
   const queryClient = useQueryClient()
   const [showArchived, setShowArchived] = useState(false)
   const [search, setSearch] = useState('')
@@ -59,6 +64,7 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
   const [extending, setExtending] = useState<FoiContract | null>(null)
   const user = useAuthStore((s) => s.user)
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
+  const { phoneByName } = useUsersDirectory()
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['foi-contracts-all', companyId, documentType],
@@ -175,8 +181,10 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
               }}
               discarding={discardMutation.isPending}
               isAdmin={isAdmin}
+              usersByPhone={phoneByName}
               onExtend={() => setExtending(c)}
               onCorrect={() => setCorrecting(c)}
+              onEditPlan={onEditPlan ? () => onEditPlan(c.id) : undefined}
             />
           ))}
         </div>
@@ -203,7 +211,7 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
 
 function SessionCard({
   contract: c, vehicle, expanded, onToggle, onActivate, onReturn, onDiscard, discarding,
-  isAdmin, onExtend, onCorrect,
+  isAdmin, usersByPhone, onExtend, onCorrect, onEditPlan,
 }: {
   contract: FoiContract
   vehicle?: FpVehicle
@@ -214,20 +222,21 @@ function SessionCard({
   onDiscard: () => void
   discarding: boolean
   isAdmin: boolean
+  usersByPhone: Map<string, string | null>
   onExtend: () => void
   onCorrect: () => void
+  onEditPlan?: () => void
 }) {
   const ss = sessionStatus(c)
   const isPlanned = ss.key === 'planificat'
   const isDone = ss.key === 'finalizat'
   const showRetur = ss.key === 'driving' || ss.key === 'intarziat'
 
-  const clientLabel = c.client_name || (c.client_id != null ? `Client #${c.client_id}` : '—')
-  // Company sessions carry a driver_name snapshot (Task 10) — show
-  // "Company · Driver" when it's set and differs from the client label.
-  const tester = c.driver_name && c.driver_name !== c.client_name
-    ? `${clientLabel} · ${c.driver_name}`
-    : clientLabel
+  // Client = Driver: the card leads with the person who drives — the contact for
+  // a company booking, the driving user for an internal log, the client
+  // otherwise — with the company kept on a secondary line (cc.secondary).
+  const party = sessionParty(c, usersByPhone)
+  const cc = clientCell(c)
   const vehicleName = vehicle
     ? [vehicle.mark, vehicle.model].filter(Boolean).join(' ') || vehicle.registration_number || c.vin
     : c.vin || '—'
@@ -246,10 +255,15 @@ function SessionCard({
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate text-[15px] font-semibold leading-tight">{tester}</span>
+              <span className="truncate text-[15px] font-semibold leading-tight">{cc.primary}</span>
               <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', ss.badgeClass)}>
                 {ss.label}
               </span>
+              {party.isInternal && (
+                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Intern
+                </span>
+              )}
               <ModifiedBadge session={c} />
               <EventBadge session={c} />
             </div>
@@ -258,11 +272,15 @@ function SessionCard({
               <span className="truncate">{vehicleName}</span>
             </div>
             <div className="mt-1 flex items-center justify-between gap-2">
-              <span className="flex min-w-0 items-center gap-1 truncate text-[12px] text-muted-foreground">
-                <User2 className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{c.advisor_name || '—'}</span>
-              </span>
-              <span className="shrink-0 text-[12px] text-muted-foreground">{fmtDateTime(c.departure_datetime)}</span>
+              {/* For internal logs the driver IS the advisor (already the card
+                  title), so the advisor sub-line would just repeat it. */}
+              {!party.isInternal && (
+                <span className="flex min-w-0 items-center gap-1 truncate text-[12px] text-muted-foreground">
+                  <User2 className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{c.advisor_name || '—'}</span>
+                </span>
+              )}
+              <span className="ml-auto shrink-0 text-[12px] text-muted-foreground">{fmtDateTime(c.departure_datetime)}</span>
             </div>
           </div>
           <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform', expanded && 'rotate-180')} />
@@ -296,8 +314,12 @@ function SessionCard({
       {expanded && (
         <div className="border-t border-border/60 bg-muted/20 px-3.5 py-3">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[13px]">
-            <Field label="Client" value={tester} />
-            <Field label="Telefon" value={c.client_phone || '—'} icon={<Phone className="h-3 w-3" />} />
+            <div className="min-w-0">
+              <dt className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">{party.label}</dt>
+              <dd className="mt-0.5 truncate font-medium">{cc.primary}</dd>
+              {cc.secondary && <dd className="truncate text-[11px] text-muted-foreground" title={cc.secondary}>{cc.secondary}</dd>}
+            </div>
+            <Field label="Telefon" value={party.phone} icon={<Phone className="h-3 w-3" />} />
             <Field label="Vehicul" value={vehicleName} />
             <Field label="VIN" value={c.vin || '—'} mono />
             <Field label="Kilometraj" value={`${c.km_start ?? vehicle?.mileage_floor ?? '—'}${isDone && c.km_end != null ? ` → ${c.km_end}` : ''} km`} />
@@ -335,11 +357,12 @@ function SessionCard({
                 <Clock className="h-3.5 w-3.5" /> Prelungește
               </button>
             )}
-            {/* Corectează — admin fix of date/odometer */}
+            {/* Corectează — full edit for a not-started (planned) session, else
+                the light date/odometer/consilier fix. */}
             {isAdmin && (
               <button
                 type="button"
-                onClick={onCorrect}
+                onClick={isPlanned && onEditPlan ? onEditPlan : onCorrect}
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-background px-3 text-[13px] font-medium shadow-sm ring-1 ring-border transition-colors hover:bg-muted"
               >
                 <Pencil className="h-3.5 w-3.5" /> Corectează
