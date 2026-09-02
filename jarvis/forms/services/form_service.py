@@ -313,6 +313,10 @@ class FormService:
                         'eveniment neplăcut care ar putea surveni în legătură cu mine, '
                         'în această perioadă în care sunt învoit / învoită 🔒')
     LEAVE_DEFAULT_REASONS = ('Personal', 'Medical', 'Familial', 'Oficial', 'Altul')
+    # Special code-managed reason: taking banked hours off (event perks, T0, etc.).
+    # Always offered by the module, but the UI only enables it when the employee's
+    # pooled Time Bank balance is > 0; the server mirrors that gate on submit.
+    EVENT_HOURS_REASON = 'Ore Libere din Eveniment'
 
     @staticmethod
     def _reason_opts_from_schema(schema):
@@ -346,9 +350,18 @@ class FormService:
         return schema or []
 
     def get_leave_reason_options(self):
-        """Current Motivul options for the leave form (draft schema, else defaults)."""
-        return self._reason_opts_from_schema(self._leave_draft_schema()) \
-            or list(self.LEAVE_DEFAULT_REASONS)
+        """Current Motivul options for the leave form (draft schema, else defaults),
+        always including the banked-hours reason."""
+        return self.get_leave_form_config()['reasons']
+
+    def get_time_bank_balance(self, user_id: int) -> float:
+        """Current pooled Time Bank balance for a user (can be negative)."""
+        try:
+            from hr.time_bank.service import TimeBankService
+            return float(TimeBankService().get_balance(user_id))
+        except Exception as e:
+            logger.warning('time bank balance lookup failed for %s: %s', user_id, e)
+            return 0.0
 
     def get_leave_form_config(self):
         """Forms-managed content for the coded Invoire module — reasons, field
@@ -367,9 +380,15 @@ class FormService:
                 schema = []
         by_id = {f.get('id'): f for f in (schema or []) if isinstance(f, dict) and f.get('id')}
         terms = (by_id.get('f_bi_terms') or {}).get('label')
+        reasons = FormService._reason_opts_from_schema(schema) \
+            or list(FormService.LEAVE_DEFAULT_REASONS)
+        # Always offer the banked-hours reason (client+server gate it on balance).
+        if not any(str(r).strip().lower() == FormService.EVENT_HOURS_REASON.lower()
+                   for r in reasons):
+            reasons = [*reasons, FormService.EVENT_HOURS_REASON]
         return {
-            'reasons': FormService._reason_opts_from_schema(schema)
-                       or list(FormService.LEAVE_DEFAULT_REASONS),
+            'reasons': reasons,
+            'event_hours_reason': FormService.EVENT_HOURS_REASON,
             'labels': {i: f['label'] for i, f in by_id.items() if f.get('label')},
             'placeholders': {i: f['placeholder'] for i, f in by_id.items() if f.get('placeholder')},
             # Optional fields the module shows only when present in the Forms schema.
@@ -432,6 +451,11 @@ class FormService:
         cfg = self.get_leave_form_config()
         if answers.get('f_bi_reason') not in cfg['reasons']:
             raise ValueError('Motiv invalid')
+        # Mirror the UI gate: the banked-hours reason is only valid with a
+        # positive Time Bank balance (which can otherwise go negative).
+        if answers.get('f_bi_reason') == self.EVENT_HOURS_REASON \
+                and self.get_time_bank_balance(user_id) <= 0:
+            raise ValueError('Nu ai ore disponibile în bancă pentru acest motiv.')
 
         schedule = get_leave_schedule(user_id, answers.get('f_bi_leave_date'))
         time_err = validate_leave(answers.get('f_bi_start_time'),

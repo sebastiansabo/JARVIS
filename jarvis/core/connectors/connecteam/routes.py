@@ -177,7 +177,10 @@ def get_leave_schedule_route():
     try:
         fs = FormService()
         data = get_leave_schedule(current_user.id, request.args.get('date'))
-        data.update(fs.get_leave_form_config())  # reasons, labels, placeholders, visible, terms_text
+        data.update(fs.get_leave_form_config())  # reasons, event_hours_reason, labels, placeholders, visible, terms_text
+        # Pooled Time Bank balance (can be negative) — the "Ore Libere din Eveniment"
+        # reason is only selectable when this is > 0.
+        data['time_bank_balance'] = fs.get_time_bank_balance(current_user.id)
         # {id, name} of the direct manager the empty-approver default routes to, so
         # the form can auto-select it as a named chip on open.
         data['default_approver'] = fs.get_default_leave_approver(current_user.id)
