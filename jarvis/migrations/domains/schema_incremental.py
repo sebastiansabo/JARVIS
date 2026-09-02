@@ -2193,6 +2193,33 @@ def _create_schema_incremental_continued(conn, cursor):
         AND NOT EXISTS (SELECT 1 FROM approval_steps s WHERE s.flow_id = f.id)
     ''')
 
+    # ── Bilet de Invoire approval flow (dedicated) ──
+    # Mirrors the generic form-submission flow but its step carries timeout_hours=24
+    # so a bilet the manager never actions is auto-APPROVED after 24h (the engine's
+    # process_timeouts auto-approves a timed-out step that has no escalation path).
+    # Scoped to the leave form via trigger_conditions.form_slug and a higher priority
+    # than the generic flow (1), so vouchers/courses/other form submissions stay on
+    # the generic flow and are NEVER auto-approved.
+    cursor.execute('''
+        INSERT INTO approval_flows (name, slug, description, entity_type, is_active, priority, trigger_conditions, created_by)
+        SELECT 'Bilet de Invoire Approval', 'leave-permit-approval',
+               'Manager approval for Bilet de Invoire; auto-approves after 24h of no response',
+               'form_submission', TRUE, 10, '{"form_slug": "bilet-de-invoire"}', 1
+        WHERE NOT EXISTS (SELECT 1 FROM approval_flows WHERE slug = 'leave-permit-approval')
+    ''')
+    cursor.execute('''
+        INSERT INTO approval_steps (flow_id, name, step_order, approver_type, notify_on_pending, notify_on_decision, timeout_hours)
+        SELECT f.id, 'Manager', 1, 'context_approver', TRUE, TRUE, 24
+        FROM approval_flows f WHERE f.slug = 'leave-permit-approval'
+        AND NOT EXISTS (SELECT 1 FROM approval_steps s WHERE s.flow_id = f.id)
+    ''')
+    # Keep the 24h timeout current even on installs where the step predates it.
+    cursor.execute('''
+        UPDATE approval_steps SET timeout_hours = 24
+        WHERE flow_id = (SELECT id FROM approval_flows WHERE slug = 'leave-permit-approval')
+          AND timeout_hours IS DISTINCT FROM 24
+    ''')
+
     # ── Verification tables — cross-source data consistency checks ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS verification_runs (

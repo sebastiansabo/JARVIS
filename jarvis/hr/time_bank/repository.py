@@ -7,6 +7,11 @@ from core.base_repository import BaseRepository
 # Only these statuses count toward the effective balance
 ACTIVE_STATUSES = ('approved', 'processed')
 
+# tx_types whose net sum forms the separately-capped "event" pool (Ore Libere din
+# Eveniment). Everything else (T0, manual, personal leave, connecteam, co_conversion…)
+# is the "personal" pool = total − event, which may go negative.
+EVENT_TX_TYPES = ('marketing_event', 'leave_permit_event', 'leave_permit_event_reversal')
+
 
 class TimeBankRepository(BaseRepository):
     """CRUD for hr.time_bank_transactions."""
@@ -22,6 +27,19 @@ class TimeBankRepository(BaseRepository):
             WHERE jarvis_user_id = %s AND status IN %s
             """,
             (user_id, ACTIVE_STATUSES),
+        )
+        return Decimal(row['balance']) if row else Decimal(0)
+
+    def get_event_balance(self, user_id):
+        """Net event-pool balance: marketing_event credits minus event-reason leave
+        debits (+ reversals). Event leaves are capped at this so it never goes < 0."""
+        row = self.query_one(
+            """
+            SELECT COALESCE(SUM(amount), 0) AS balance
+            FROM hr.time_bank_transactions
+            WHERE jarvis_user_id = %s AND status IN %s AND tx_type IN %s
+            """,
+            (user_id, ACTIVE_STATUSES, EVENT_TX_TYPES),
         )
         return Decimal(row['balance']) if row else Decimal(0)
 

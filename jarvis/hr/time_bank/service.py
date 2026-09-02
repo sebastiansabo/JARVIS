@@ -8,7 +8,13 @@ from .repository import TimeBankRepository
 logger = logging.getLogger('jarvis.hr.time_bank.service')
 
 # tx_types that are auto-approved (no manual approval needed)
-AUTO_APPROVED_TYPES = ('T0', 'marketing_event', 'co_conversion', 'connecteam', 'leave_permit', 'leave_permit_reversal')
+AUTO_APPROVED_TYPES = ('T0', 'marketing_event', 'co_conversion', 'connecteam',
+                       'leave_permit', 'leave_permit_reversal',
+                       'leave_permit_event', 'leave_permit_event_reversal')
+# Leave debits skip the pooled insufficient-balance guard: personal leave may go
+# negative by design, and event leave is capped against the EVENT pool upstream
+# (form_service) — not the pooled balance the guard would check.
+_SKIP_BALANCE_CHECK_TYPES = ('connecteam', 'leave_permit', 'leave_permit_event')
 
 
 class TimeBankService:
@@ -65,7 +71,7 @@ class TimeBankService:
 
         # Only check balance for auto-approved debits (pending ones don't affect balance yet)
         # Skip balance check for system imports (connecteam) — T0 may not be set yet
-        if status == 'approved' and tx_type not in ('connecteam', 'leave_permit'):
+        if status == 'approved' and tx_type not in _SKIP_BALANCE_CHECK_TYPES:
             balance = self.repo.get_balance(user_id)
             if balance < amount:
                 raise ValueError(
@@ -131,8 +137,12 @@ class TimeBankService:
         return row
 
     def get_balance(self, user_id):
-        """Get current balance for a user."""
+        """Get current (pooled) balance for a user."""
         return float(self.repo.get_balance(user_id))
+
+    def get_event_balance(self, user_id):
+        """Event-pool balance (never negative — event leaves are capped at it)."""
+        return float(self.repo.get_event_balance(user_id))
 
     def get_all_balances(self, include_all_employees=False):
         """Get all employee balances."""

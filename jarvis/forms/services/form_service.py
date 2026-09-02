@@ -317,6 +317,9 @@ class FormService:
     # Always offered by the module, but the UI only enables it when the employee's
     # pooled Time Bank balance is > 0; the server mirrors that gate on submit.
     EVENT_HOURS_REASON = 'Ore Libere din Eveniment'
+    # Lunch is a leave reason but never debits the Time Bank; every other reason
+    # (Personal, Ore Libere din Eveniment, ...) does.
+    LEAVE_NON_COUNTING_REASONS = ('Pauza de masa',)
 
     @staticmethod
     def _reason_opts_from_schema(schema):
@@ -331,6 +334,38 @@ class FormService:
             if isinstance(f, dict) and f.get('id') == 'f_bi_reason':
                 return [str(o).strip() for o in (f.get('options') or []) if str(o).strip()]
         return []
+
+    @staticmethod
+    def _norm_reason(r) -> str:
+        """Lower-cased, diacritic-stripped reason for robust comparison."""
+        import unicodedata
+        s = unicodedata.normalize('NFD', str(r or '').strip().lower())
+        return ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+
+    @classmethod
+    def reason_counts_against_bank(cls, reason) -> bool:
+        """Whether a leave reason debits a Time Bank pool. Lunch ('Pauza de masa')
+        never does; every other reason does (event → event pool, rest → personal)."""
+        blocked = {cls._norm_reason(r) for r in cls.LEAVE_NON_COUNTING_REASONS}
+        return cls._norm_reason(reason) not in blocked
+
+    @classmethod
+    def is_event_reason(cls, reason) -> bool:
+        """True when the reason draws from the (capped) event pool."""
+        return cls._norm_reason(reason) == cls._norm_reason(cls.EVENT_HOURS_REASON)
+
+    @staticmethod
+    def _first_of_current_month() -> str:
+        """ISO date (YYYY-MM-DD) of the 1st of the current month — the earliest
+        date a Corectie Ore may target (current month only)."""
+        from datetime import date
+        return date.today().replace(day=1).isoformat()
+
+    @staticmethod
+    def _fmt_hours(h) -> str:
+        """Compact hours label — integer when whole, else one decimal."""
+        h = float(h)
+        return str(int(h)) if h == int(h) else f'{h:.1f}'
 
     def _leave_draft_schema(self):
         """The leave form's schema list — DRAFT (via get_by_id, the Forms editor state,
@@ -363,6 +398,20 @@ class FormService:
             logger.warning('time bank balance lookup failed for %s: %s', user_id, e)
             return 0.0
 
+    def get_time_bank_split(self, user_id: int) -> dict:
+        """Two-pool view of the Time Bank: {total, event, personal}. Event is the
+        capped event-perk pool (never negative); personal = total − event and may
+        go negative."""
+        try:
+            from hr.time_bank.service import TimeBankService
+            svc = TimeBankService()
+            total = float(svc.get_balance(user_id))
+            event = float(svc.get_event_balance(user_id))
+            return {'total': total, 'event': event, 'personal': total - event}
+        except Exception as e:
+            logger.warning('time bank split lookup failed for %s: %s', user_id, e)
+            return {'total': 0.0, 'event': 0.0, 'personal': 0.0}
+
     def get_leave_form_config(self):
         """Forms-managed content for the coded Invoire module — reasons, field
         labels/placeholders, optional-field visibility, and the consent text — all
@@ -389,6 +438,9 @@ class FormService:
         return {
             'reasons': reasons,
             'event_hours_reason': FormService.EVENT_HOURS_REASON,
+            # Reasons that do NOT debit the Time Bank (lunch) — the form uses this
+            # to suppress the live "remaining after" projection for them.
+            'non_counting_reasons': list(FormService.LEAVE_NON_COUNTING_REASONS),
             'labels': {i: f['label'] for i, f in by_id.items() if f.get('label')},
             'placeholders': {i: f['placeholder'] for i, f in by_id.items() if f.get('placeholder')},
             # Optional fields the module shows only when present in the Forms schema.
@@ -435,7 +487,7 @@ class FormService:
         Shared by `submit_leave_permit` (NEW contract) and `update_leave_permit`.
         """
         from core.connectors.connecteam.services.leave_schedule import (
-            get_leave_schedule, validate_leave, compute_return)
+            get_leave_schedule, validate_leave, compute_return, _full_day_lunch)
         from datetime import datetime, timezone
 
         answers = dict(answers or {})
@@ -451,13 +503,22 @@ class FormService:
         cfg = self.get_leave_form_config()
         if answers.get('f_bi_reason') not in cfg['reasons']:
             raise ValueError('Motiv invalid')
-        # Mirror the UI gate: the banked-hours reason is only valid with a
-        # positive Time Bank balance (which can otherwise go negative).
-        if answers.get('f_bi_reason') == self.EVENT_HOURS_REASON \
-                and self.get_time_bank_balance(user_id) <= 0:
-            raise ValueError('Nu ai ore disponibile în bancă pentru acest motiv.')
+        # Event pool is capped — an "Ore Libere din Eveniment" leave can't exceed
+        # the event balance (which never goes negative), unlike personal leave.
+        if self.is_event_reason(answers.get('f_bi_reason')):
+            event_bal = self.get_time_bank_split(user_id)['event']
+            duration = float(answers.get('f_bi_duration_hours') or 0)
+            if event_bal <= 0:
+                raise ValueError('Nu ai ore disponibile în banca de eveniment pentru acest motiv.')
+            if duration > event_bal + 1e-9:
+                raise ValueError(f'Poți lua din eveniment cel mult {self._fmt_hours(event_bal)} ore.')
+        # Corectie Ore may backdate, but only within the current month.
+        if answers.get('f_bi_is_correction') \
+                and str(answers.get('f_bi_leave_date') or '') < self._first_of_current_month():
+            raise ValueError('Corecția se poate face doar pentru luna curentă.')
 
-        schedule = get_leave_schedule(user_id, answers.get('f_bi_leave_date'))
+        schedule = get_leave_schedule(user_id, answers.get('f_bi_leave_date'),
+                                      answers.get('f_bi_company'))
         time_err = validate_leave(answers.get('f_bi_start_time'),
                                   answers.get('f_bi_duration_hours'), schedule)
         if time_err:
@@ -465,7 +526,10 @@ class FormService:
 
         duration = float(answers['f_bi_duration_hours'])
         answers['f_bi_hours'] = duration
-        answers['f_bi_end_time'] = compute_return(answers['f_bi_start_time'], duration)
+        # Return reflects the real clock time back: a full-day leave adds the lunch
+        # (08:00 + 8h + 1h = 17:00). f_bi_hours (bank debit) stays work-hours only.
+        answers['f_bi_end_time'] = compute_return(
+            answers['f_bi_start_time'], duration, _full_day_lunch(duration, schedule))
         answers['f_bi_terms_accepted'] = True
         answers['f_bi_terms_text'] = cfg['terms_text']
         answers['f_bi_terms_accepted_at'] = datetime.now(timezone.utc).isoformat()
@@ -500,6 +564,14 @@ class FormService:
                     user.user_id, {**answers, 'signature_image': signature_image})
             except ValueError as e:
                 return ServiceResult(success=False, error=str(e), status_code=400)
+            # A normal bilet can't be backdated — backdating is Corectie Ore, which
+            # is permission-gated at the route. Reject a past date without the flag
+            # so the gate can't be bypassed by simply omitting f_bi_is_correction.
+            from datetime import date as _date
+            if not answers.get('f_bi_is_correction') \
+                    and str(answers.get('f_bi_leave_date') or '') < _date.today().isoformat():
+                return ServiceResult(success=False, status_code=400,
+                    error='Nu poți crea un bilet pentru o zi anterioară. Folosește Corectie Ore.')
         else:
             missing = self._leave_permit_missing_fields_legacy(answers)
             if missing:
@@ -853,7 +925,8 @@ class FormService:
 
             # Picked approver(s) from the leave form REPLACE the default direct
             # manager; all picked can approve. None picked → org-hierarchy manager.
-            picked = self._parse_approver_ids(answers)
+            # A Corectie Ore always routes to the direct manager only (no picker).
+            picked = [] if answers.get('f_bi_is_correction') else self._parse_approver_ids(answers)
             if picked:
                 approver_user_id = picked[0]
                 stakeholder_ids = picked
@@ -863,6 +936,9 @@ class FormService:
             context = {
                 'title': title,
                 'form_id': form['id'],
+                # form_slug lets the dedicated leave approval flow (24h auto-approve)
+                # match via trigger_conditions; other forms fall to the generic flow.
+                'form_slug': form.get('slug'),
                 'form_name': form.get('name', ''),
                 'submission_id': submission_id,
                 'respondent_email': respondent_info.get('email', ''),
