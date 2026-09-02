@@ -83,7 +83,7 @@ def test_absorb_all_to_before(fake_repos):
     _, params = fake_repos.executed[0]
     new_start, new_end, dist, rtype = params[0], params[1], params[2], params[3]
     assert (new_start, new_end, dist) == (1000, 1080, 80)
-    assert rtype == 'Comodat'          # 80 km > td_km_max(50)
+    assert rtype == 'TD'               # Comodat deprecated (2026-09): always TD
     assert params[-1] == 10            # WHERE id
     assert '+30 km' in params[4]       # audit note
 
@@ -95,8 +95,8 @@ def test_absorb_split_between_both(fake_repos):
     assert len(fake_repos.executed) == 2
     before, after = fake_repos.executed
     # boundaries meet at 1060: before 1000→1060 (60 km), after 1060→1120 (60 km)
-    assert (before[1][0], before[1][1], before[1][2], before[1][3]) == (1000, 1060, 60, 'Comodat')
-    assert (after[1][0], after[1][1], after[1][2], after[1][3]) == (1060, 1120, 60, 'Comodat')
+    assert (before[1][0], before[1][1], before[1][2], before[1][3]) == (1000, 1060, 60, 'TD')
+    assert (after[1][0], after[1][1], after[1][2], after[1][3]) == (1060, 1120, 60, 'TD')
 
 
 def test_absorb_tiles_with_middles(fake_repos):
