@@ -320,6 +320,8 @@ class FormService:
     # Lunch is a leave reason but never debits the Time Bank; every other reason
     # (Personal, Ore Libere din Eveniment, ...) does.
     LEAVE_NON_COUNTING_REASONS = ('Pauza de masa',)
+    # Max Corectie Ore (backdated) biletele a user may file per calendar month.
+    CORRECTION_MONTHLY_LIMIT = 2
 
     @staticmethod
     def _reason_opts_from_schema(schema):
@@ -397,6 +399,19 @@ class FormService:
         except Exception as e:
             logger.warning('time bank balance lookup failed for %s: %s', user_id, e)
             return 0.0
+
+    def count_user_corrections_this_month(self, user_id: int) -> int:
+        """How many active (non-rejected/cancelled) Corectie Ore biletele the user has
+        for the current month — the quota against CORRECTION_MONTHLY_LIMIT."""
+        try:
+            form = self.form_repo.get_by_slug(self.LEAVE_FORM_SLUG)
+            if not form:
+                return 0
+            return self.submission_repo.count_corrections_for_month(
+                user_id, form['id'], self._first_of_current_month()[:7])
+        except Exception as e:
+            logger.warning('correction count failed for %s: %s', user_id, e)
+            return 0
 
     def get_time_bank_split(self, user_id: int) -> dict:
         """Two-pool view of the Time Bank: {total, event, personal}. Event is the
@@ -535,7 +550,8 @@ class FormService:
         answers['f_bi_terms_accepted_at'] = datetime.now(timezone.utc).isoformat()
         return answers
 
-    def submit_leave_permit(self, answers: Dict, user: UserContext, ip_address=None) -> ServiceResult:
+    def submit_leave_permit(self, answers: Dict, user: UserContext, ip_address=None,
+                            correction_limit_exempt=False) -> ServiceResult:
         """Create a Bilet de Invoire (code-defined Invoire module form).
 
         Branches on the presence of `f_bi_duration_hours`:
@@ -572,6 +588,12 @@ class FormService:
                     and str(answers.get('f_bi_leave_date') or '') < _date.today().isoformat():
                 return ServiceResult(success=False, status_code=400,
                     error='Nu poți crea un bilet pentru o zi anterioară. Folosește Corectie Ore.')
+            # Corectie Ore is capped per user per calendar month (mobile + web).
+            # Managers/HR/admins are exempt (correction_limit_exempt, set by the route).
+            if answers.get('f_bi_is_correction') and not correction_limit_exempt \
+                    and self.count_user_corrections_this_month(user.user_id) >= self.CORRECTION_MONTHLY_LIMIT:
+                return ServiceResult(success=False, status_code=400,
+                    error=f'Ai atins limita de {self.CORRECTION_MONTHLY_LIMIT} corecții pe lună.')
         else:
             missing = self._leave_permit_missing_fields_legacy(answers)
             if missing:

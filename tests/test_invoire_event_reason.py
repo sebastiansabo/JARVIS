@@ -151,6 +151,61 @@ class TestCorrectionBackdateGuard:
             assert 'luna curent' not in str(e)
 
 
+# ---- Corectie Ore monthly limit ----
+
+class TestCorrectionMonthlyLimit:
+    def test_limit_constant(self):
+        assert FormService.CORRECTION_MONTHLY_LIMIT == 2
+
+    def test_submit_blocked_at_limit(self, monkeypatch):
+        from forms.services.form_service import UserContext
+        svc = FormService()
+        monkeypatch.setattr(svc.form_repo, 'get_by_slug',
+                            lambda slug: {'id': 2, 'version': 1, 'requires_approval': False})
+        monkeypatch.setattr(svc, 'validate_and_normalize_leave_answers',
+                            lambda uid, a: {'f_bi_is_correction': True, 'f_bi_leave_date': '2026-09-05',
+                                            'f_bi_hours': 2, 'f_bi_start_time': '09:00'})
+        monkeypatch.setattr(svc, 'count_user_corrections_this_month', lambda uid: 2)
+        answers = {'f_bi_leave_date': '2026-09-05', 'f_bi_start_time': '09:00',
+                   'f_bi_duration_hours': '2', 'f_bi_reason': 'Personal',
+                   'f_bi_is_correction': True, 'f_bi_terms_accepted': True, 'signature_image': 'x'}
+        res = svc.submit_leave_permit(answers, UserContext(user_id=1, company=None))
+        assert not res.success and 'limita' in (res.error or '')
+
+    def test_submit_not_blocked_below_limit(self, monkeypatch):
+        from forms.services.form_service import UserContext
+        svc = FormService()
+        monkeypatch.setattr(svc.form_repo, 'get_by_slug',
+                            lambda slug: {'id': 2, 'version': 1, 'requires_approval': False})
+        monkeypatch.setattr(svc, 'validate_and_normalize_leave_answers',
+                            lambda uid, a: {'f_bi_is_correction': True, 'f_bi_leave_date': '2026-09-05',
+                                            'f_bi_hours': 2, 'f_bi_start_time': '09:00'})
+        monkeypatch.setattr(svc, 'count_user_corrections_this_month', lambda uid: 1)
+        monkeypatch.setattr(svc.submission_repo, 'create', lambda **k: 999)
+        answers = {'f_bi_leave_date': '2026-09-05', 'f_bi_start_time': '09:00',
+                   'f_bi_duration_hours': '2', 'f_bi_reason': 'Personal',
+                   'f_bi_is_correction': True, 'f_bi_terms_accepted': True}
+        res = svc.submit_leave_permit(answers, UserContext(user_id=1, company=None))
+        assert res.success and 'limita' not in (res.error or '')
+
+    def test_exempt_user_not_blocked_over_limit(self, monkeypatch):
+        from forms.services.form_service import UserContext
+        svc = FormService()
+        monkeypatch.setattr(svc.form_repo, 'get_by_slug',
+                            lambda slug: {'id': 2, 'version': 1, 'requires_approval': False})
+        monkeypatch.setattr(svc, 'validate_and_normalize_leave_answers',
+                            lambda uid, a: {'f_bi_is_correction': True, 'f_bi_leave_date': '2026-09-05',
+                                            'f_bi_hours': 2, 'f_bi_start_time': '09:00'})
+        monkeypatch.setattr(svc, 'count_user_corrections_this_month', lambda uid: 5)  # way over cap
+        monkeypatch.setattr(svc.submission_repo, 'create', lambda **k: 999)
+        answers = {'f_bi_leave_date': '2026-09-05', 'f_bi_start_time': '09:00',
+                   'f_bi_duration_hours': '2', 'f_bi_reason': 'Personal',
+                   'f_bi_is_correction': True, 'f_bi_terms_accepted': True}
+        res = svc.submit_leave_permit(answers, UserContext(user_id=1, company=None),
+                                      correction_limit_exempt=True)
+        assert res.success and 'limita' not in (res.error or '')
+
+
 # ---- leave duration day-cap (full workday, not norma − lunch) ----
 
 class TestLeaveDayCap:
