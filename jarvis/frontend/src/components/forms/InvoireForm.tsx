@@ -14,7 +14,6 @@ import SignatureCanvas from '@/components/shared/SignatureCanvas'
 import { connecteamApi } from '@/api/connecteam'
 import { digestApi } from '@/api/digest'
 import { profileApi } from '@/api/profile'
-import { useAuthStore } from '@/stores/authStore'
 import { buildStartSlots, buildDurationOptions, computeReturn } from './leaveSlots'
 
 // Code-defined "Bilet de Invoire" form. Fields live here (not a DB form schema),
@@ -76,12 +75,10 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
   const [signature, setSignature] = useState('')
   const [attempted, setAttempted] = useState(false)
 
-  // Corectie Ore = a backdated bilet for forgotten leave. Permission-gated (matrix
-  // hr.leave_permissions.correct, admins always), red, and manager-only. The toggle
-  // is hidden entirely for users without the permission.
-  const user = useAuthStore((s) => s.user)
-  const canCreateCorrection = !!user?.can_access_settings
-    || !!user?.permissions?.['hr.leave_permissions.correct']
+  // Corectie Ore = a backdated bilet for forgotten leave. Open to everyone (red,
+  // manager-only routing), capped at 2/month for regular users; managers/HR/admins
+  // are exempt from the cap (corrections_exempt from the server).
+  const canCreateCorrection = true
   const [isCorrection, setIsCorrection] = useState<boolean>(() => !!initial?.f_bi_is_correction)
   const correctionFloor = firstOfCurrentMonthStr()
 
@@ -95,6 +92,12 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
   const sched = schedRes?.data
   const companies = sched?.companies ?? []
   const activeCompany = company || sched?.selected_company || ''
+  // Corectie Ore monthly quota — counter + gate on the toggle. Managers/HR/admins
+  // are exempt (no cap, no counter).
+  const correctionsUsed = sched?.corrections_used ?? 0
+  const correctionsLimit = sched?.corrections_limit ?? 2
+  const correctionsExempt = !!sched?.corrections_exempt
+  const correctionLimitReached = !correctionsExempt && correctionsUsed >= correctionsLimit
   // Forms-managed content (labels/placeholders/visibility/consent) with coded fallbacks.
   const L = (id: string, fallback: string) => sched?.labels?.[id] || fallback
   const P = (id: string, fallback: string) => sched?.placeholders?.[id] ?? fallback
@@ -300,17 +303,26 @@ export function InvoireForm({ onClose, onSubmitted, submissionId, initial }: {
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-lg px-5 py-6 space-y-5">
           {canCreateCorrection && !isEdit && (
-            <div className="grid grid-cols-2 gap-1 rounded-lg border p-1">
-              <button type="button" onClick={() => setIsCorrection(false)}
-                className={cn('flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition',
-                  !isCorrection ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}>
-                Învoire
-              </button>
-              <button type="button" onClick={() => setIsCorrection(true)}
-                className={cn('flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition',
-                  isCorrection ? 'bg-destructive text-destructive-foreground' : 'text-muted-foreground hover:bg-muted')}>
-                <History className="h-3.5 w-3.5" /> Corectie Ore
-              </button>
+            <div className="space-y-1">
+              <div className="grid grid-cols-2 gap-1 rounded-lg border p-1">
+                <button type="button" onClick={() => setIsCorrection(false)}
+                  className={cn('flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition',
+                    !isCorrection ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}>
+                  Învoire
+                </button>
+                <button type="button" disabled={correctionLimitReached && !isCorrection}
+                  onClick={() => setIsCorrection(true)}
+                  className={cn('flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed',
+                    isCorrection ? 'bg-destructive text-destructive-foreground' : 'text-muted-foreground hover:bg-muted')}>
+                  <History className="h-3.5 w-3.5" /> Corectie Ore
+                </button>
+              </div>
+              {!correctionsExempt && (
+                <p className={cn('px-0.5 text-xs', correctionLimitReached ? 'font-medium text-destructive' : 'text-muted-foreground')}>
+                  Corecții luna aceasta: {correctionsUsed}/{correctionsLimit}
+                  {correctionLimitReached && ' — limită atinsă'}
+                </p>
+              )}
             </div>
           )}
           {isCorrection && (

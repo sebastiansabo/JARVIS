@@ -153,6 +153,20 @@ class SubmissionRepository(BaseRepository):
             WHERE id = %s
         ''', (approval_request_id, submission_id)) > 0
 
+    def count_corrections_for_month(self, respondent_user_id, form_id, month_prefix):
+        """Active (non-rejected/cancelled) Corectie Ore submissions for a user whose
+        leave date falls in the given month (month_prefix = 'YYYY-MM')."""
+        row = self.query_one('''
+            SELECT COUNT(*) AS n
+            FROM form_submissions
+            WHERE respondent_user_id = %s
+              AND form_id = %s
+              AND (answers->>'f_bi_is_correction') = 'true'
+              AND (answers->>'f_bi_leave_date') LIKE %s
+              AND status NOT IN ('rejected', 'cancelled')
+        ''', (respondent_user_id, form_id, f'{month_prefix}%'))
+        return int(row['n']) if row and row.get('n') is not None else 0
+
     def export_by_form(self, form_id):
         """Get all submissions for export (no pagination)."""
         return self.query_all('''

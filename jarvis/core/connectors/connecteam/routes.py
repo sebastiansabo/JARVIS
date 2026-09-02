@@ -186,6 +186,11 @@ def get_leave_schedule_route():
         data['time_bank_balance'] = split['total']       # back-compat / pooled
         data['time_bank_personal'] = split['personal']
         data['time_bank_event'] = split['event']
+        # Corectie Ore monthly quota (mobile + web) — for the counter + toggle gate.
+        # Everyone may file corrections; managers/HR/admins are exempt from the cap.
+        data['corrections_limit'] = FormService.CORRECTION_MONTHLY_LIMIT
+        data['corrections_used'] = fs.count_user_corrections_this_month(current_user.id)
+        data['corrections_exempt'] = _is_correction_limit_exempt(current_user)
         # {id, name} of the direct manager the empty-approver default routes to, so
         # the form can auto-select it as a named chip on open.
         data['default_approver'] = fs.get_default_leave_approver(current_user.id)
@@ -224,18 +229,15 @@ def get_employee_submissions(user_id):
         return safe_error_response(e)
 
 
-def _can_create_correction(user) -> bool:
-    """True if the user may file a Corectie Ore — matrix perm
-    hr.leave_permissions.correct (admins always allowed)."""
-    if getattr(user, 'is_admin', False) or getattr(user, 'can_access_settings', False):
+def _is_correction_limit_exempt(user) -> bool:
+    """Corectie Ore is open to everyone (max 2/month) — but managers, HR and admins
+    are NOT subject to that monthly cap."""
+    if getattr(user, 'is_admin', False) or getattr(user, 'can_access_settings', False) \
+            or getattr(user, 'is_hr_manager', False):
         return True
-    role_id = getattr(user, 'role_id', None)
-    if not role_id:
-        return False
     try:
-        from core.roles.repositories import PermissionRepository
-        return bool(PermissionRepository().check_permission_v2(
-            role_id, 'hr', 'leave_permissions', 'correct').get('has_permission'))
+        from core.organization.manager_utils import is_manager
+        return bool(is_manager(getattr(user, 'id', None)))
     except Exception:
         return False
 
@@ -252,14 +254,11 @@ def create_leave_permit():
     from forms.services.form_service import FormService, UserContext
     data = request.get_json(silent=True) or {}
     answers = data.get('answers') if isinstance(data.get('answers'), dict) else data
-    # Corectie Ore (backdated hours correction) is gated by the role matrix.
-    if isinstance(answers, dict) and answers.get('f_bi_is_correction') \
-            and not _can_create_correction(current_user):
-        return jsonify({'success': False,
-                        'error': 'Permission denied: hr.leave_permissions.correct'}), 403
     user = UserContext(user_id=current_user.id, company=getattr(current_user, 'company', None))
     try:
-        result = FormService().submit_leave_permit(answers, user, ip_address=request.remote_addr)
+        result = FormService().submit_leave_permit(
+            answers, user, ip_address=request.remote_addr,
+            correction_limit_exempt=_is_correction_limit_exempt(current_user))
     except Exception as e:
         return safe_error_response(e)
     if not result.success:

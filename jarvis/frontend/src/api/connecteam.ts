@@ -134,6 +134,11 @@ export interface LeaveSchedule {
   /** Reasons that do NOT debit the Time Bank (e.g. lunch) — no live "remaining"
    *  projection is shown for these. */
   non_counting_reasons?: string[]
+  /** Corectie Ore monthly quota for the current user (counter + toggle gate).
+   *  Managers/HR/admins are exempt from the cap. */
+  corrections_used?: number
+  corrections_limit?: number
+  corrections_exempt?: boolean
   /** Pooled Time Bank balance in hours for the current user (can be negative). */
   time_bank_balance?: number
   /** Personal pool (total − event) — may go negative. */
