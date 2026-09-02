@@ -445,7 +445,7 @@ def _on_reminder(payload):
         notify_users(
             approver_ids,
             f'Reminder: {project_title} awaits your approval',
-            message='This request has been pending for over 48 hours.',
+            message='This request is awaiting your approval.',
             link=link,
             entity_type=entity_type,
             entity_id=entity_id,
@@ -455,7 +455,7 @@ def _on_reminder(payload):
             body = f"""
             <p>Buna ziua {name},</p>
             <p>Aceasta este o reamintire ca urmatoarea cerere de aprobare asteapta
-            decizia dumneavoastra de mai mult de <strong>48 de ore</strong>:</p>
+            decizia dumneavoastra:</p>
             <table style="width:100%;border-collapse:collapse;margin:16px 0;">
               <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:bold;border:1px solid #ddd;width:40%;">Proiect</td>
                   <td style="padding:8px 12px;border:1px solid #ddd;">{project_title}</td></tr>
