@@ -125,7 +125,7 @@ export function DecodePreviewDialog({ result, form, onApply, onClose }: DecodePr
 
   return (
     <Dialog open={!!result} onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-[1080px]">
         <DialogHeader>
           <DialogTitle>Verifică datele înainte de aplicare</DialogTitle>
         </DialogHeader>
