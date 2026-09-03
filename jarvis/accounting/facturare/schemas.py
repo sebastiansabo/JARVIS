@@ -66,6 +66,7 @@ class ProformaCreateRequest(BaseModel):
     notes: Optional[str] = None
     line_ids: Optional[list[int]] = None  # selected anexa line IDs (None = all lines)
     doc_mode: str = "per_car"  # "per_car" or "single_doc"
+    round_decimals: bool = False  # keep 2 decimals per car ("zecimale") instead of whole EUR
 
 
 class InvoiceCreateRequest(BaseModel):
@@ -77,6 +78,7 @@ class InvoiceCreateRequest(BaseModel):
     notes: Optional[str] = None
     doc_mode: str = "per_car"  # "per_car" or "single_doc"
     kurs: Optional[Decimal] = Field(None, gt=0)  # manual BNR rate when auto-fetch fails
+    round_decimals: Optional[bool] = None  # None = inherit the paired proforma's mode
 
 
 class StornoCreateRequest(BaseModel):
@@ -88,6 +90,7 @@ class StornoCreateRequest(BaseModel):
     line_ids: Optional[list[int]] = None
     target_invoice_ids: Optional[list[int]] = None  # specific invoices to reverse
     kurs: Optional[Decimal] = Field(None, gt=0)  # override only when no prior-invoice rate exists
+    round_decimals: Optional[bool] = None  # None = inherit the reversed invoice's mode
 
 
 class FinalCreateRequest(BaseModel):
@@ -98,3 +101,4 @@ class FinalCreateRequest(BaseModel):
     notes: Optional[str] = None
     line_ids: Optional[list[int]] = None
     kurs: Optional[Decimal] = Field(None, gt=0)  # override only when no prior-invoice rate exists
+    round_decimals: Optional[bool] = None  # None = inherit the advance invoice's mode
