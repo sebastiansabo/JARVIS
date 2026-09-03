@@ -30,11 +30,15 @@ def api_upload_files(doc_id):
     if not doc:
         return jsonify({'success': False, 'error': 'Document not found'}), 404
 
-    # Company isolation
-    user_company = getattr(current_user, 'company_id', None)
-    if user_company and doc['company_id'] != user_company:
-        return jsonify({'success': False, 'error': 'Document not found'}), 404
-
+    # No company isolation (deliberate, accepted risk — see below). Invoice annexes
+    # are filed under the invoice's company (a subsidiary), while the back-office
+    # operators who manage them live on the parent holding company, so a per-company
+    # check locked out the very people who need these files. Access is governed by
+    # @dms_permission_required, consistent with the (also unisolated) document view
+    # route. TRADE-OFF: any user with the dms.document permission can reach any
+    # company's files across the Autoworld group (cross-tenant by design for this
+    # single-group internal tool). Reintroduce a parent_company_id hierarchy check
+    # here if per-tenant file isolation is ever required.
     files = request.files.getlist('files')
     if not files:
         # Try single file field
@@ -82,10 +86,8 @@ def api_list_files(doc_id):
     if not doc:
         return jsonify({'success': False, 'error': 'Document not found'}), 404
 
-    user_company = getattr(current_user, 'company_id', None)
-    if user_company and doc['company_id'] != user_company:
-        return jsonify({'success': False, 'error': 'Document not found'}), 404
-
+    # No company isolation — see note in api_upload_files. Access is governed by
+    # @dms_permission_required, consistent with the document view route.
     files = _file_repo.get_by_document(doc_id)
     return jsonify({'success': True, 'files': files})
 
@@ -99,12 +101,8 @@ def api_delete_file(file_id):
     if not file_row:
         return jsonify({'success': False, 'error': 'File not found'}), 404
 
-    # Company isolation via parent document
-    doc = _doc_repo.get_by_id(file_row['document_id'])
-    user_company = getattr(current_user, 'company_id', None)
-    if doc and user_company and doc['company_id'] != user_company:
-        return jsonify({'success': False, 'error': 'File not found'}), 404
-
+    # No company isolation — see note in api_upload_files. Access is governed by
+    # @dms_permission_required, consistent with the document view route.
     try:
         result = _service.delete_file(file_id)
         if result.success:
@@ -123,12 +121,8 @@ def api_download_file(file_id):
     if not file_row:
         return jsonify({'success': False, 'error': 'File not found'}), 404
 
-    # Company isolation via parent document
-    doc = _doc_repo.get_by_id(file_row['document_id'])
-    user_company = getattr(current_user, 'company_id', None)
-    if doc and user_company and doc['company_id'] != user_company:
-        return jsonify({'success': False, 'error': 'File not found'}), 404
-
+    # No company isolation — see note in api_upload_files. Access is governed by
+    # @dms_permission_required, consistent with the document view route.
     if file_row['storage_type'] == 'drive':
         # Validate redirect URL against allowed hosts
         parsed = urlparse(file_row['storage_uri'])
