@@ -51,6 +51,9 @@ def create_schema_facturare(conn, cursor):
     cursor.execute("ALTER TABLE facturare_anexas    ADD COLUMN IF NOT EXISTS archived      BOOLEAN NOT NULL DEFAULT FALSE")
     cursor.execute("ALTER TABLE facturare_anexas    ADD COLUMN IF NOT EXISTS status        VARCHAR(20) NOT NULL DEFAULT 'NEW'")
     cursor.execute("ALTER TABLE facturare_invoices  ADD COLUMN IF NOT EXISTS archived      BOOLEAN NOT NULL DEFAULT FALSE")
+    # Per-invoice rounding mode: FALSE = whole-EUR per car (legacy default, keeps
+    # already-issued documents unchanged); TRUE = keep 2 decimals per car ("zecimale").
+    cursor.execute("ALTER TABLE facturare_invoices  ADD COLUMN IF NOT EXISTS round_decimals BOOLEAN NOT NULL DEFAULT FALSE")
     cursor.execute("ALTER TABLE facturare_contracts ADD COLUMN IF NOT EXISTS archived      BOOLEAN NOT NULL DEFAULT FALSE")
     cursor.execute("ALTER TABLE facturare_contracts ADD COLUMN IF NOT EXISTS archive_after TIMESTAMP")
     cursor.execute("ALTER TABLE facturare_contracts ADD COLUMN IF NOT EXISTS archived_at   TIMESTAMP")

@@ -117,18 +117,19 @@ class InvoiceStorageRepository(BaseRepository):
                        invoice_number=None, issued_date=None,
                        kurs_applied=None, intocmit_de=None,
                        notes=None, created_by=None, split_mode="equal",
-                       line_ids=None, doc_mode="per_car"):
+                       line_ids=None, doc_mode="per_car", round_decimals=False):
         import json
         return self.execute(
             """INSERT INTO facturare_invoices
                (anexa_id, invoice_type, invoice_state, sequence_number,
                 invoice_number, issued_date, total_amount_eur, total_amount_ron,
-                currency, kurs_applied, intocmit_de, notes, created_by, split_mode, line_ids, doc_mode)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                currency, kurs_applied, intocmit_de, notes, created_by, split_mode, line_ids, doc_mode,
+                round_decimals)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (anexa_id, invoice_type.value, invoice_state.value, sequence_number,
              invoice_number, issued_date, total_amount_eur, total_amount_ron,
              currency, kurs_applied, intocmit_de, notes, created_by, split_mode,
-             json.dumps(line_ids) if line_ids else None, doc_mode),
+             json.dumps(line_ids) if line_ids else None, doc_mode, bool(round_decimals)),
             returning=True)
 
     def get_invoice_by_id(self, invoice_id):
