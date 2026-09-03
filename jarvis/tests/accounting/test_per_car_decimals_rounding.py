@@ -65,6 +65,20 @@ def test_decimals_per_car_sum_reconciles_to_invoice_total():
     assert per_car * 100 == pytest.approx(199970.00)
 
 
+# ── coverage/doc-items views honour split_mode (€/car equal split) ────────────
+
+def test_equal_split_coverage_share_is_total_over_n():
+    # €/car = 1999 -> total 199900 split equally over 100 cars must show 1999.00
+    # per car in the Hub/coverage table, NOT the proportional snap (10% -> 2000).
+    assert routes_orders._coverage_share(199900, 19997, 100 * 19997, 100, "equal", [], CENTS) == pytest.approx(1999.00)
+    assert routes_orders._coverage_share(199900, 19997, 100 * 19997, 100, "equal", [], routes_orders.WHOLE_EUR) == 1999
+
+
+def test_proportional_split_coverage_share_still_snaps():
+    # A real 10% proportional advance still slices by price with the snapped percent.
+    assert routes_orders._coverage_share(199970, 19997, 100 * 19997, 100, "proportional", [], CENTS) == pytest.approx(1999.70)
+
+
 # ── whole-EUR mode (default) unchanged ────────────────────────────────────────
 
 def test_whole_mode_still_rounds_half_up():
