@@ -168,6 +168,23 @@ def _per_car_advance_eur(inv_total, selling, covered_selling, split_mode, n_line
                               prior_fractions or [], quant)
     return _round_half_up(inv_total / max(n_lines, 1), quant)
 
+
+def _coverage_share(inv_total, selling, covered_total, covered_n, split_mode,
+                    prior_fractions, quant: Decimal = WHOLE_EUR):
+    """Per-car EUR a single invoice books for one covered car, for the coverage /
+    document-items views.
+
+    Mirrors the PDF generator: an *equal* split divides the total evenly across
+    the covered cars (a fixed 1999 €/car proforma of 199900 shows 1999, not the
+    proportional snap that rounds 9.9965% up to 10% -> 1999.70/2000). Proportional
+    splits slice by price with the snapped percent + closing residual. Without the
+    equal branch these views disagreed with the actual proforma PDF.
+    """
+    if split_mode == "equal":
+        return _round_half_up(inv_total / max(covered_n, 1), quant)
+    return _car_slice_eur(selling, _snap_pct(inv_total, covered_total),
+                          prior_fractions or [], quant)
+
 # ── Document items cache (in-memory, per doc_type key) ──────────
 _doc_items_cache: dict[str, tuple[float, list]] = {}  # key -> (timestamp, items)
 _DOC_ITEMS_TTL = 60  # seconds
@@ -210,6 +227,8 @@ def _inv_to_dict(row):
         "notes": row.get("notes"),
         "line_ids": raw_line_ids,
         "doc_mode": row.get("doc_mode", "per_car"),
+        "split_mode": row.get("split_mode", "equal"),
+        "round_decimals": bool(row.get("round_decimals")),
         "created_at": str(row["created_at"]) if row.get("created_at") else None,
     }
 
@@ -763,10 +782,12 @@ def api_get_anexa_detail(anexa_id):
         base_no = inv.get("invoice_number")
         # Stored per-car document numbers for this invoice (facturare_document_numbers).
         docnum = _repo.get_document_number_map(inv["id"])
-        # Per-car share: car_price × snapped_pct (nearest whole % from the total,
-        # never snapped to 0). Cents vs whole EUR follows the invoice's own mode.
+        # Per-car share follows the invoice's split_mode (equal = total/N, matching
+        # the PDF; proportional = price-sliced with the snapped percent, never 0).
+        # Cents vs whole EUR follows the invoice's own round_decimals.
         covered_total = sum(line_prices.get(lid, 0) for lid in covered)
-        pct = _snap_pct(float(inv["total_amount_eur"]), covered_total)
+        inv_total = float(inv["total_amount_eur"])
+        split_mode = inv.get("split_mode", "equal")
         quant = _quant_for(inv)
         for idx, lid in enumerate(covered):
             if lid not in line_coverage:
@@ -774,7 +795,8 @@ def api_get_anexa_detail(anexa_id):
             # Closing slice books the residual so advance + rest reconcile to the
             # car's price (2288 + 43462 = 45750, not …43463 = 45751).
             priors = _prior_car_fractions(invoices, inv, lid, line_prices, all_line_ids)
-            share = _car_slice_eur(line_prices.get(lid, 0), pct, priors, quant)
+            share = _coverage_share(inv_total, line_prices.get(lid, 0), covered_total,
+                                    len(covered), split_mode, priors, quant)
             share_ron = 0
             # Per-vehicle document number: prefer the stored number; fall back
             # to the pre-backfill derivation (matches PDF renderer logic: start_no + idx).
@@ -1446,14 +1468,14 @@ def api_document_items():
         # Stored per-car document numbers for this invoice, fetched once (not
         # per car) — facturare_document_numbers.
         docnum = _repo.get_document_number_map(inv["invoice_id"])
-        pct = _snap_pct(total_amount, total_selling)
         quant = _quant_for(inv)
 
         for idx, l in enumerate(inv_lines):
             selling = float(l["selling_price_eur"])
             priors = _prior_car_fractions(
                 same_type_siblings, inv, l["id"], anexa_price_by_line, anexa_all_lids)
-            car_amount = _car_slice_eur(selling, pct, priors, quant)
+            car_amount = _coverage_share(total_amount, selling, total_selling,
+                                         len(inv_lines), split_mode, priors, quant)
             # Prefer the stored number for this car; fall back to the
             # pre-backfill positional derivation (start_no + idx).
             fallback_no = start_no + idx if start_no else None
