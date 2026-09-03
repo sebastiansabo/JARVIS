@@ -3,7 +3,7 @@
 import logging
 from decimal import Decimal
 
-from .repository import TimeBankRepository
+from .repository import TimeBankRepository, EVENT_TX_TYPES
 
 logger = logging.getLogger('jarvis.hr.time_bank.service')
 
@@ -22,6 +22,13 @@ class TimeBankService:
 
     def __init__(self):
         self.repo = TimeBankRepository()
+
+    def _available_for(self, user_id, tx_type):
+        """Balance a debit is checked against: the capped event pool for event
+        tx_types, otherwise the pooled total (existing personal behaviour)."""
+        if tx_type in EVENT_TX_TYPES:
+            return self.repo.get_event_balance(user_id)
+        return self.repo.get_balance(user_id)
 
     def credit(self, user_id, amount, tx_type, description=None,
                reference_type=None, reference_id=None, created_by=None):
@@ -72,7 +79,7 @@ class TimeBankService:
         # Only check balance for auto-approved debits (pending ones don't affect balance yet)
         # Skip balance check for system imports (connecteam) — T0 may not be set yet
         if status == 'approved' and tx_type not in _SKIP_BALANCE_CHECK_TYPES:
-            balance = self.repo.get_balance(user_id)
+            balance = self._available_for(user_id, tx_type)
             if balance < amount:
                 raise ValueError(
                     f'Insufficient balance: {balance}h available, {amount}h requested'
@@ -99,9 +106,9 @@ class TimeBankService:
         if tx['status'] != 'pending':
             raise ValueError(f"Cannot approve: transaction is already '{tx['status']}'")
 
-        # For debits, check balance before approving
+        # For debits, check balance before approving (event debits vs the event pool)
         if tx['amount'] < 0:
-            balance = self.repo.get_balance(tx['jarvis_user_id'])
+            balance = self._available_for(tx['jarvis_user_id'], tx['tx_type'])
             needed = abs(tx['amount'])
             if balance < needed:
                 raise ValueError(

@@ -15,6 +15,11 @@ from .service import TimeBankService
 
 logger = logging.getLogger('jarvis.hr.time_bank.routes')
 
+# Which tx_type a manual +/− targets, per pool. Personal = the pooled default;
+# event = the capped "Ore Libere din Eveniment" pool.
+_POOL_CREDIT_TX = {'personal': 'manual_credit', 'event': 'manual_event_credit'}
+_POOL_DEBIT_TX = {'personal': 'manual_debit', 'event': 'manual_event_debit'}
+
 
 def _require_hr():
     if not current_user.is_authenticated:
@@ -157,14 +162,17 @@ def time_bank_credit():
         user_id = data.get('user_id')
         amount = data.get('amount')
         description = data.get('description', '')
+        tx_type = _POOL_CREDIT_TX.get((data.get('pool') or 'personal').lower())
         if not user_id or not amount:
             return jsonify({'success': False, 'error': 'user_id and amount required'}), 400
+        if not tx_type:
+            return jsonify({'success': False, 'error': 'Invalid pool'}), 400
 
         svc = TimeBankService()
         row = svc.credit(
             user_id=int(user_id),
             amount=float(amount),
-            tx_type='manual_credit',
+            tx_type=tx_type,
             description=description,
             created_by=current_user.id,
         )
@@ -187,14 +195,17 @@ def time_bank_debit():
         user_id = data.get('user_id')
         amount = data.get('amount')
         description = data.get('description', '')
+        tx_type = _POOL_DEBIT_TX.get((data.get('pool') or 'personal').lower())
         if not user_id or not amount:
             return jsonify({'success': False, 'error': 'user_id and amount required'}), 400
+        if not tx_type:
+            return jsonify({'success': False, 'error': 'Invalid pool'}), 400
 
         svc = TimeBankService()
         row = svc.debit(
             user_id=int(user_id),
             amount=float(amount),
-            tx_type='manual_debit',
+            tx_type=tx_type,
             description=description,
             created_by=current_user.id,
         )
