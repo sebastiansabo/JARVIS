@@ -66,6 +66,9 @@ class TimeBankRepository(BaseRepository):
         """
         join = 'LEFT' if include_all_employees else 'INNER'
         where = "WHERE u.is_active = true" if include_all_employees else ""
+        # Split each employee's balance into the two pools shown on the leave form:
+        # event = capped event-perk pool (EVENT_TX_TYPES, never negative);
+        # personal = total − event (may go negative).
         return self.query_all(
             f"""
             SELECT
@@ -75,12 +78,16 @@ class TimeBankRepository(BaseRepository):
                 u.company,
                 u.department,
                 COALESCE(tb.balance, 0) AS balance,
+                COALESCE(tb.event_balance, 0) AS event_balance,
+                COALESCE(tb.balance, 0) - COALESCE(tb.event_balance, 0) AS personal_balance,
                 COALESCE(pend.pending_count, 0) AS pending_count
             FROM public.users u
             {join} JOIN (
-                SELECT jarvis_user_id, SUM(amount) AS balance
+                SELECT jarvis_user_id,
+                       SUM(amount) AS balance,
+                       SUM(amount) FILTER (WHERE tx_type IN %s) AS event_balance
                 FROM hr.time_bank_transactions
-                WHERE status IN ('approved', 'processed')
+                WHERE status IN %s
                 GROUP BY jarvis_user_id
             ) tb ON tb.jarvis_user_id = u.id
             LEFT JOIN (
@@ -91,7 +98,8 @@ class TimeBankRepository(BaseRepository):
             ) pend ON pend.jarvis_user_id = u.id
             {where}
             ORDER BY u.name
-            """
+            """,
+            (EVENT_TX_TYPES, ACTIVE_STATUSES),
         )
 
     # ── Transactions ──
