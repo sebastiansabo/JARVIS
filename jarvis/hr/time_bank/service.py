@@ -149,6 +149,8 @@ class TimeBankService:
         rows = self.repo.get_all_balances(include_all_employees=include_all_employees)
         for r in rows:
             r['balance'] = float(r['balance'])
+            r['event_balance'] = float(r.get('event_balance') or 0)
+            r['personal_balance'] = float(r.get('personal_balance') or 0)
             r['pending_count'] = int(r.get('pending_count', 0))
         return rows
 
