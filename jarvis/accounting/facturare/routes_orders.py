@@ -36,14 +36,30 @@ _perm_repo = PermissionRepository()
 TYPE_LABELS = {"PROFORMA": "Proforma", "INVOICE": "Factura", "STORNO": "Storno", "FINAL": "Final"}
 
 
-def _round_half_up(value) -> int:
-    """Round to the nearest whole EUR with halves going up (1014.50 -> 1015).
+WHOLE_EUR = Decimal("1")
+CENTS = Decimal("0.01")
+
+
+def _quant_for(inv_row) -> Decimal:
+    """Per-car rounding granularity for an invoice row: cents when the invoice was
+    issued in "zecimale" mode (`round_decimals` true), whole EUR otherwise."""
+    return CENTS if (inv_row or {}).get("round_decimals") else WHOLE_EUR
+
+
+def _round_half_up(value, quant: Decimal = WHOLE_EUR):
+    """Round `value` to `quant` (a whole EUR by default) with halves going up
+    (1014.50 -> 1015).
 
     Python's built-in round() uses banker's rounding (round-half-to-even), so a
     5% advance landing exactly on X.50 with an even X rounds DOWN (1014.50 ->
     1014). Per-car advance amounts must round half up per the accounting spec.
+
+    In "zecimale" mode callers pass `quant=CENTS` so each car keeps its two
+    decimals (19997 * 10% = 1999.70 instead of 2000). Whole-EUR rounding returns
+    an int (unchanged); cent rounding returns a float.
     """
-    return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    q = Decimal(str(value)).quantize(quant, rounding=ROUND_HALF_UP)
+    return int(q) if quant == WHOLE_EUR else float(q)
 
 
 def _snap_pct(total_amount, total_selling) -> float:
@@ -62,30 +78,37 @@ def _snap_pct(total_amount, total_selling) -> float:
         return 0.0
     raw = total_amount / total_selling
     snapped = round(raw * 100) / 100
-    return snapped if abs(raw - snapped) < 0.005 else raw
+    # Never snap a positive advance down to 0% — a real total (e.g. a 0,0999%
+    # advance on a 100-car anexa) must keep its raw fraction, else every car
+    # renders 0,00 €. Only snap when the clean percent is itself non-zero.
+    if snapped != 0 and abs(raw - snapped) < 0.005:
+        return snapped
+    return raw
 
 
 _PCT_CLOSE_TOL = 0.005  # how near cumulative fraction must be to 1.0 to "close" a car
 
 
-def _car_slice_eur(selling, this_fraction, prior_fractions) -> int:
-    """Whole-EUR amount one invoice books for a single car (cumulative rounding).
+def _car_slice_eur(selling, this_fraction, prior_fractions, quant: Decimal = WHOLE_EUR):
+    """Amount one invoice books for a single car (cumulative rounding).
 
-    Every non-closing slice rounds its own `selling * fraction` half-up. The
+    Every non-closing slice rounds its own `selling * fraction` to `quant`. The
     invoice that *closes* the car's coverage — cumulative fraction reaches 1.0 —
-    instead books the residual `round_half_up(selling) - sum(prior slices)`, so the
-    successive slices reconcile to the car's whole-EUR price exactly.
+    instead books the residual `round(selling) - sum(prior slices)`, so the
+    successive slices reconcile to the car's price exactly.
 
     Without this, a 5% advance and a 95% remainder that both land on X.50 each
     round up and overshoot by 1 EUR: 2288 + 43463 = 45751 instead of
     2288 + 43462 = 45750 (CTR-945 / comanda 352848). Because prior slices are
-    themselves half-up rounded, `sum(prior slices)` telescopes to the running total
-    actually invoiced, so the residual reverses exactly what was billed.
+    themselves rounded to the same `quant`, `sum(prior slices)` telescopes to the
+    running total actually invoiced, so the residual reverses exactly what was
+    billed. `quant=CENTS` keeps two decimals (zecimale mode); the default whole
+    EUR is unchanged.
     """
     if abs(sum(prior_fractions) + this_fraction - 1.0) < _PCT_CLOSE_TOL:
-        prior_booked = sum(_round_half_up(selling * f) for f in prior_fractions)
-        return _round_half_up(selling) - prior_booked
-    return _round_half_up(selling * this_fraction)
+        prior_booked = sum(_round_half_up(selling * f, quant) for f in prior_fractions)
+        return _round_half_up(selling, quant) - prior_booked
+    return _round_half_up(selling * this_fraction, quant)
 
 
 def _order_key(inv):
@@ -124,7 +147,7 @@ def _prior_car_fractions(invoices, this_inv, line_id, price_by_line, all_line_id
 
 
 def _per_car_advance_eur(inv_total, selling, covered_selling, split_mode, n_lines,
-                         prior_fractions=None) -> int:
+                         prior_fractions=None, quant: Decimal = WHOLE_EUR):
     """Whole-EUR per-car slice of an advance/invoice total.
 
     Single source of truth for the advance, storno and final exports so all three
@@ -142,8 +165,8 @@ def _per_car_advance_eur(inv_total, selling, covered_selling, split_mode, n_line
     """
     if split_mode == "proportional" and covered_selling:
         return _car_slice_eur(selling, _snap_pct(inv_total, covered_selling),
-                              prior_fractions or [])
-    return _round_half_up(inv_total / max(n_lines, 1))
+                              prior_fractions or [], quant)
+    return _round_half_up(inv_total / max(n_lines, 1), quant)
 
 # ── Document items cache (in-memory, per doc_type key) ──────────
 _doc_items_cache: dict[str, tuple[float, list]] = {}  # key -> (timestamp, items)
@@ -740,19 +763,18 @@ def api_get_anexa_detail(anexa_id):
         base_no = inv.get("invoice_number")
         # Stored per-car document numbers for this invoice (facturare_document_numbers).
         docnum = _repo.get_document_number_map(inv["id"])
-        # Per-car share: car_price × rounded_pct (detect nearest whole % from total)
+        # Per-car share: car_price × snapped_pct (nearest whole % from the total,
+        # never snapped to 0). Cents vs whole EUR follows the invoice's own mode.
         covered_total = sum(line_prices.get(lid, 0) for lid in covered)
-        raw_pct = (inv["total_amount_eur"] / covered_total) if covered_total else 0
-        # Snap to nearest whole percentage (10%, 90%, 100%, etc.) if within 0.5%
-        rounded_pct = round(raw_pct * 100) / 100
-        pct = rounded_pct if abs(raw_pct - rounded_pct) < 0.005 else raw_pct
+        pct = _snap_pct(float(inv["total_amount_eur"]), covered_total)
+        quant = _quant_for(inv)
         for idx, lid in enumerate(covered):
             if lid not in line_coverage:
                 line_coverage[lid] = []
             # Closing slice books the residual so advance + rest reconcile to the
-            # car's whole-EUR price (2288 + 43462 = 45750, not …43463 = 45751).
+            # car's price (2288 + 43462 = 45750, not …43463 = 45751).
             priors = _prior_car_fractions(invoices, inv, lid, line_prices, all_line_ids)
-            share = _car_slice_eur(line_prices.get(lid, 0), pct, priors)
+            share = _car_slice_eur(line_prices.get(lid, 0), pct, priors, quant)
             share_ron = 0
             # Per-vehicle document number: prefer the stored number; fall back
             # to the pre-backfill derivation (matches PDF renderer logic: start_no + idx).
@@ -843,6 +865,7 @@ def api_issue_proforma():
             line_ids=req.line_ids,
             created_by_user_id=current_user.id,
             doc_mode=req.doc_mode,
+            round_decimals=req.round_decimals,
         )
     except InvoiceStateMachineError as e:
         return error_response(str(e), 409)
@@ -869,6 +892,7 @@ def api_issue_invoice():
             created_by_user_id=current_user.id,
             doc_mode=req.doc_mode,
             manual_kurs=req.kurs,
+            round_decimals=req.round_decimals,
         )
     except InvoiceStateMachineError as e:
         return error_response(str(e), 409)
@@ -895,6 +919,7 @@ def api_issue_storno():
             target_invoice_ids=req.target_invoice_ids,
             created_by_user_id=current_user.id,
             manual_kurs=req.kurs,
+            round_decimals=req.round_decimals,
         )
     except InvoiceStateMachineError as e:
         return error_response(str(e), 409)
@@ -920,6 +945,7 @@ def api_issue_final():
             notes=req.notes, line_ids=req.line_ids,
             created_by_user_id=current_user.id,
             manual_kurs=req.kurs,
+            round_decimals=req.round_decimals,
         )
     except InvoiceStateMachineError as e:
         return error_response(str(e), 409)
@@ -1014,10 +1040,11 @@ def api_anexa_status_export(anexa_id):
         if not covered_total:
             continue
         amt = float(inv["total_amount_eur"])
+        quant = _quant_for(inv)
         for lid in inv_lids:
             if lid not in line_data:
                 continue
-            share = _round_half_up(abs(amt) * (prices[lid] / covered_total))
+            share = _round_half_up(abs(amt) * (prices[lid] / covered_total), quant)
             if inv["invoice_type"] == "PROFORMA":
                 line_data[lid]["prof"] += share
             elif inv["invoice_type"] == "INVOICE":
@@ -1358,7 +1385,7 @@ def api_document_items():
         f"""SELECT i.id AS invoice_id, i.invoice_type, i.sequence_number,
                   i.invoice_number, i.issued_date, i.total_amount_eur,
                   i.kurs_applied, i.intocmit_de, i.split_mode, i.notes, i.payment_status,
-                  i.line_ids,
+                  i.line_ids, i.round_decimals,
                   a.id AS anexa_id, a.anexa_number,
                   c.id AS contract_id, c.contract_ref,
                   c.supplier_id, c.customer_id,
@@ -1419,15 +1446,14 @@ def api_document_items():
         # Stored per-car document numbers for this invoice, fetched once (not
         # per car) — facturare_document_numbers.
         docnum = _repo.get_document_number_map(inv["invoice_id"])
-        raw_pct = (total_amount / total_selling) if total_selling else 0
-        rounded_pct = round(raw_pct * 100) / 100
-        pct = rounded_pct if abs(raw_pct - rounded_pct) < 0.005 else raw_pct
+        pct = _snap_pct(total_amount, total_selling)
+        quant = _quant_for(inv)
 
         for idx, l in enumerate(inv_lines):
             selling = float(l["selling_price_eur"])
             priors = _prior_car_fractions(
                 same_type_siblings, inv, l["id"], anexa_price_by_line, anexa_all_lids)
-            car_amount = _car_slice_eur(selling, pct, priors)
+            car_amount = _car_slice_eur(selling, pct, priors, quant)
             # Prefer the stored number for this car; fall back to the
             # pre-backfill positional derivation (start_no + idx).
             fallback_no = start_no + idx if start_no else None
@@ -1571,7 +1597,7 @@ def api_generate_pdf(invoice_id):
                 inv_selling_sum = sum(float(line_map[x]["selling_price_eur"]) for x in inv_lines if x in line_map) or 1
                 _priors = _prior_car_fractions(
                     _anexa_invoices, inv, lid, _anexa_price_by_line, _anexa_all_lids)
-                car_share = _car_slice_eur(selling, _snap_pct(inv_total, inv_selling_sum), _priors)
+                car_share = _car_slice_eur(selling, _snap_pct(inv_total, inv_selling_sum), _priors, _quant_for(inv))
                 base_no = inv.get("invoice_number") or inv["id"]
                 inv_doc_mode = inv.get("doc_mode", "per_car")
                 # Per-vehicle document number for the REVERSED invoice: prefer
@@ -1615,6 +1641,7 @@ def api_generate_pdf(invoice_id):
         total_amount = float(inv_row["total_amount_eur"])
         split_mode = inv_row.get("split_mode", "equal")
         total_selling = sum(float(l["selling_price_eur"]) for l in lines) or 1
+        quant = _quant_for(inv_row)
 
         order_lines = []
         for l in lines:
@@ -1623,9 +1650,9 @@ def api_generate_pdf(invoice_id):
                 priors = _prior_car_fractions(
                     _anexa_invoices, inv_row, l["id"], _anexa_price_by_line, _anexa_all_lids)
                 car_advance = _car_slice_eur(
-                    selling, _snap_pct(total_amount, total_selling), priors)
+                    selling, _snap_pct(total_amount, total_selling), priors, quant)
             else:
-                car_advance = _round_half_up(total_amount / max(len(lines), 1))
+                car_advance = _round_half_up(total_amount / max(len(lines), 1), quant)
 
             order_lines.append(OrderLine(
                 comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
@@ -1908,7 +1935,7 @@ def api_generate_eurofib(invoice_id):
                     _anexa_invoices, ri_full, car["id"], _anexa_price_by_line, _anexa_all_lids)
                 car_amount = _per_car_advance_eur(
                     ri_total, selling, covered_selling, ri_split, len(ri_line_ids),
-                    prior_fractions=ri_priors)
+                    prior_fractions=ri_priors, quant=_quant_for(ri_full))
                 order_lines.append(OrderLine(
                     comanda=int(car["nr_comanda"]) if car.get("nr_comanda") and str(car["nr_comanda"]).isdigit() else 0,
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
@@ -1940,9 +1967,9 @@ def api_generate_eurofib(invoice_id):
                 _priors = _prior_car_fractions(
                     _anexa_invoices, inv_row, l["id"], _anexa_price_by_line, _anexa_all_lids)
                 car_advance = _car_slice_eur(
-                    selling, _snap_pct(total_amount, total_selling), _priors)
+                    selling, _snap_pct(total_amount, total_selling), _priors, _quant_for(inv_row))
             else:
-                car_advance = _round_half_up(total_amount / max(len(lines), 1))
+                car_advance = _round_half_up(total_amount / max(len(lines), 1), _quant_for(inv_row))
 
             # For FINAL: look up venituri rule per line + blended kurs
             line_kostenstelle = None
@@ -2092,7 +2119,7 @@ def _final_blended_kurs(repo, inv_row, all_lines):
         if adv_ids:
             ph = ",".join(["%s"] * len(adv_ids))
             advances = repo.query_all(
-                "SELECT id, total_amount_eur, split_mode, kurs_applied, issued_date, line_ids "
+                "SELECT id, total_amount_eur, split_mode, kurs_applied, issued_date, line_ids, round_decimals "
                 "FROM facturare_invoices WHERE id IN ({})".format(ph),
                 tuple(adv_ids))
     if advances is None:
@@ -2105,7 +2132,7 @@ def _final_blended_kurs(repo, inv_row, all_lines):
             "(anexa %s, eur %s) — falling back to all anexa advances",
             inv_row.get("id"), anexa_id, final_eur)
         advances = repo.query_all(
-            "SELECT id, total_amount_eur, split_mode, kurs_applied, issued_date, line_ids "
+            "SELECT id, total_amount_eur, split_mode, kurs_applied, issued_date, line_ids, round_decimals "
             "FROM facturare_invoices "
             "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number",
             (anexa_id,))
@@ -2130,7 +2157,7 @@ def _final_blended_kurs(repo, inv_row, all_lines):
                 anexa_invoices, adv_full, lid, prices, list(all_ids))
             share = _per_car_advance_eur(
                 adv_eur, prices.get(lid, 0), covered, adv_split, len(adv_lids),
-                prior_fractions=adv_priors)
+                prior_fractions=adv_priors, quant=_quant_for(adv_full))
             slot = acc.setdefault(lid, [0.0, 0.0])
             slot[0] += share * adv_kurs
             slot[1] += share
@@ -2232,7 +2259,7 @@ def _build_eurofib_batch(inv_row):
                     _anexa_invoices, ri_full, car["id"], _anexa_price_by_line, _anexa_all_lids)
                 car_amount = _per_car_advance_eur(
                     ri_total, selling, covered_selling, ri_split, len(ri_line_ids),
-                    prior_fractions=ri_priors)
+                    prior_fractions=ri_priors, quant=_quant_for(ri_full))
                 order_lines.append(OrderLine(
                     comanda=int(car["nr_comanda"]) if car.get("nr_comanda") and str(car["nr_comanda"]).isdigit() else 0,
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
@@ -2261,9 +2288,9 @@ def _build_eurofib_batch(inv_row):
                 _priors = _prior_car_fractions(
                     _anexa_invoices, inv_row, l["id"], _anexa_price_by_line, _anexa_all_lids)
                 car_advance = _car_slice_eur(
-                    selling, _snap_pct(total_amount, total_selling), _priors)
+                    selling, _snap_pct(total_amount, total_selling), _priors, _quant_for(inv_row))
             else:
-                car_advance = _round_half_up(total_amount / max(len(lines), 1))
+                car_advance = _round_half_up(total_amount / max(len(lines), 1), _quant_for(inv_row))
             line_kostenstelle = None
             line_konto_credit = None
             line_kurs = None

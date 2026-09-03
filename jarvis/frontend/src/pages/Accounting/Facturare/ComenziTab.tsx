@@ -1227,6 +1227,8 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
   const [selectedIds, setSelectedIds] = useState<Set<number>>(defaultSelection)
   const [amount, setAmount] = useState('')
   const [percent, setPercent] = useState('')
+  const [perCar, setPerCar] = useState('')  // €/car input (drives equal split)
+  const [roundDecimals, setRoundDecimals] = useState(true)  // keep 2 decimals per car ("zecimale")
   const [splitMode, setSplitMode] = useState<'equal' | 'proportional'>('proportional')
   const [docMode, setDocMode] = useState<'per_car' | 'single_doc'>('per_car')
   const [startNo, setStartNo] = useState('')
@@ -1294,7 +1296,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           anexa_id: anexaId, amount_eur: parseFloat(amount),
-          split_mode: splitMode, doc_mode: docMode,
+          split_mode: splitMode, doc_mode: docMode, round_decimals: roundDecimals,
           line_ids: Array.from(selectedIds),
           invoice_number: startNo ? parseInt(startNo) : undefined,
           issued_date: issuedDate || undefined, intocmit_de: intocmitDe || undefined, notes: notes || undefined,
@@ -1349,7 +1351,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
                 value={percent}
                 onChange={e => {
                   const p = e.target.value
-                  setPercent(p)
+                  setPercent(p); setPerCar('')
                   recalcAmount(p, selectedPrices, selectedTotal, splitMode)
                 }} />
             </div>
@@ -1359,7 +1361,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
                 value={amount}
                 onChange={e => {
                   const a = e.target.value
-                  setAmount(a)
+                  setAmount(a); setPerCar('')
                   if (a && selectedTotal > 0) {
                     setPercent(((parseFloat(a) / selectedTotal) * 100).toFixed(1))
                   }
@@ -1367,6 +1369,26 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
             </div>
             <div><Label>Start No.</Label><Input type="number" value={startNo} onChange={e => setStartNo(e.target.value)} /></div>
             <div><Label>Date</Label><Input type="date" value={issuedDate} onChange={e => setIssuedDate(e.target.value)} /></div>
+          </div>
+          {/* €/car (drives equal split) + rounding mode */}
+          <div className="flex items-end gap-4">
+            <div className="w-36">
+              <Label>€/mașină</Label>
+              <Input type="number" step="0.01" placeholder="1999.70" value={perCar}
+                onChange={e => {
+                  const v = e.target.value
+                  setPerCar(v)
+                  setSplitMode('equal'); setPercent('')
+                  setAmount(v && carCount ? (parseFloat(v) * carCount).toFixed(2) : '')
+                }} />
+            </div>
+            <div className="flex items-center gap-1.5 pb-2">
+              <span className="text-xs text-muted-foreground">Rotunjire:</span>
+              <button type="button" className={`px-2 py-0.5 rounded text-xs ${roundDecimals ? 'bg-foreground text-background' : 'bg-muted'}`}
+                onClick={() => setRoundDecimals(true)}>Zecimale</button>
+              <button type="button" className={`px-2 py-0.5 rounded text-xs ${!roundDecimals ? 'bg-foreground text-background' : 'bg-muted'}`}
+                onClick={() => setRoundDecimals(false)}>Fără zecimale</button>
+            </div>
           </div>
           {/* Split mode + doc mode + breakdown */}
           {carCount > 0 && (
@@ -1397,7 +1419,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
                 <div className="text-muted-foreground pt-1 space-y-0.5">
                   <div className="flex justify-between">
                     {splitMode === 'equal' ? (
-                      <span>{carCount} vehicle(s) × <span className="font-mono">{fmtEur(parseFloat(amount) / carCount)}</span> EUR each</span>
+                      <span>{carCount} vehicle(s) × <span className="font-mono">{fmtEur(roundDecimals ? parseFloat(amount) / carCount : Math.round(parseFloat(amount) / carCount))}</span> EUR each</span>
                     ) : (
                       <span>{carCount} vehicle(s) × <span className="font-mono">{percent || '?'}%</span> of unit price</span>
                     )}
@@ -1407,7 +1429,7 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
                   {splitMode === 'proportional' && percent && selectedPrices.some((p, i) => i > 0 && p !== selectedPrices[0]) && (
                     <div className="text-[10px] text-muted-foreground/70">
                       {selectedPrices.map((cp, i) => (
-                        <span key={i} className="mr-2">{fmtEur(cp * parseFloat(percent) / 100)}</span>
+                        <span key={i} className="mr-2">{fmtEur(roundDecimals ? cp * parseFloat(percent) / 100 : Math.round(cp * parseFloat(percent) / 100))}</span>
                       ))}
                     </div>
                   )}
@@ -1443,6 +1465,7 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
   const [intocmitDe, setIntocmitDe] = useState(defaultIntocmit || '')
   const [notes, setNotes] = useState('')
   const [docMode, setDocMode] = useState<'per_car' | 'single_doc'>('per_car')
+  const [roundDecimals, setRoundDecimals] = useState(false)  // inherited from the selected proforma
   const [submitting, setSubmitting] = useState(false)
   const [kurs, setKurs] = useState('')
   const [kursHint, setKursHint] = useState<string | null>(null)
@@ -1473,11 +1496,14 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
   // Reset the manual-edit latch each time the dialog opens.
   useEffect(() => { if (open) kursEdited.current = false }, [open])
 
-  // Inherit doc_mode from selected proforma
+  // Inherit doc_mode + rounding mode from selected proforma
   useEffect(() => {
     if (!selectedSeq || !invoiceDetails) return
     const proforma = invoiceDetails.find(i => i.invoice_type === 'PROFORMA' && i.sequence_number === parseInt(selectedSeq))
-    if (proforma) setDocMode(((proforma as any).doc_mode || 'per_car') as 'per_car' | 'single_doc')
+    if (proforma) {
+      setDocMode(((proforma as any).doc_mode || 'per_car') as 'per_car' | 'single_doc')
+      setRoundDecimals(Boolean((proforma as any).round_decimals))
+    }
   }, [selectedSeq, invoiceDetails])
 
   // Auto-select the proforma matching the selected cars when dialog opens
@@ -1504,7 +1530,7 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
           anexa_id: anexaId, sequence_number: parseInt(selectedSeq),
           invoice_number: invoiceNumber ? parseInt(invoiceNumber) : undefined,
           issued_date: issuedDate || undefined, intocmit_de: intocmitDe || undefined,
-          notes: notes || undefined, doc_mode: docMode,
+          notes: notes || undefined, doc_mode: docMode, round_decimals: roundDecimals,
           kurs: kurs && parseFloat(kurs) > 0 ? parseFloat(kurs) : undefined,
         }),
       })
@@ -1546,12 +1572,17 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
             <div className={`text-xs -mt-2 ${kursHint.includes('indisponibil') ? 'text-amber-600' : 'text-muted-foreground'}`}>{kursHint}</div>
           )}
           <div><Label>Intocmit de</Label><UserSearchInput value={intocmitDe} onChange={setIntocmitDe} /></div>
-          <div className="flex items-center gap-3 text-xs bg-muted/30 rounded-md px-3 py-2">
+          <div className="flex items-center gap-3 text-xs bg-muted/30 rounded-md px-3 py-2 flex-wrap">
             <span className="text-muted-foreground">Doc:</span>
             <button className={`px-2 py-0.5 rounded ${docMode === 'per_car' ? 'bg-foreground text-background' : 'bg-muted'}`}
               onClick={() => setDocMode('per_car')}>Per car</button>
             <button className={`px-2 py-0.5 rounded ${docMode === 'single_doc' ? 'bg-foreground text-background' : 'bg-muted'}`}
               onClick={() => setDocMode('single_doc')}>Single document</button>
+            <span className="text-muted-foreground ml-2">Rotunjire:</span>
+            <button className={`px-2 py-0.5 rounded ${roundDecimals ? 'bg-foreground text-background' : 'bg-muted'}`}
+              onClick={() => setRoundDecimals(true)}>Zecimale</button>
+            <button className={`px-2 py-0.5 rounded ${!roundDecimals ? 'bg-foreground text-background' : 'bg-muted'}`}
+              onClick={() => setRoundDecimals(false)}>Fără zecimale</button>
           </div>
           <div><Label>Notes</Label><Input placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} /></div>
         </div>
