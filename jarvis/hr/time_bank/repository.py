@@ -10,7 +10,10 @@ ACTIVE_STATUSES = ('approved', 'processed')
 # tx_types whose net sum forms the separately-capped "event" pool (Ore Libere din
 # Eveniment). Everything else (T0, manual, personal leave, connecteam, co_conversion…)
 # is the "personal" pool = total − event, which may go negative.
-EVENT_TX_TYPES = ('marketing_event', 'leave_permit_event', 'leave_permit_event_reversal')
+# manual_event_credit/debit are admin adjustments targeted at this pool from the
+# Balances tab (the personal-pool counterparts are manual_credit/manual_debit).
+EVENT_TX_TYPES = ('marketing_event', 'leave_permit_event', 'leave_permit_event_reversal',
+                  'manual_event_credit', 'manual_event_debit')
 
 
 class TimeBankRepository(BaseRepository):

@@ -79,10 +79,10 @@ export const timeBankApi = {
     return res
   },
 
-  credit: (data: { user_id: number; amount: number; description?: string }) =>
+  credit: (data: { user_id: number; amount: number; description?: string; pool?: 'personal' | 'event' }) =>
     api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/credit`, data),
 
-  debit: (data: { user_id: number; amount: number; description?: string }) =>
+  debit: (data: { user_id: number; amount: number; description?: string; pool?: 'personal' | 'event' }) =>
     api.post<{ success: boolean; data: TimeBankTransaction }>(`${BASE}/debit`, data),
 
   setT0: (userId: number, amount: number) =>
