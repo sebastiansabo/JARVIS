@@ -17,6 +17,10 @@ export interface TimeBankBalance {
   company: string
   department: string
   balance: number
+  /** Event-perk pool ("Ore Libere din Eveniment") — capped, never negative. */
+  event_balance: number
+  /** Personal pool = balance − event_balance — may go negative. */
+  personal_balance: number
   pending_count: number
 }
 
