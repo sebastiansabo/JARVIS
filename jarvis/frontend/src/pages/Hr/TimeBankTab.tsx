@@ -217,6 +217,8 @@ function BalancesPanel({ search }: { search: string }) {
                 <TableHead>Department</TableHead>
                 <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-right">Balance (h)</TableHead>
+                <TableHead className="text-right">Sold Personal</TableHead>
+                <TableHead className="text-right">Sold Eveniment</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -254,6 +256,16 @@ function BalancesPanel({ search }: { search: string }) {
                     <span className={b.balance > 0 ? 'text-green-600 dark:text-green-400' : b.balance < 0 ? 'text-red-600 dark:text-red-400' : ''}>
                       {b.balance}h
                     </span>
+                  </TableCell>
+                  {/* Personal pool — may go negative (red) */}
+                  <TableCell className="text-right tabular-nums">
+                    <span className={b.personal_balance < 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}>
+                      {b.personal_balance}h
+                    </span>
+                  </TableCell>
+                  {/* Event pool ("Ore Libere din Eveniment") — capped, never negative */}
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {b.event_balance}h
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
