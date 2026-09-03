@@ -27,7 +27,10 @@ const TX_TYPE_LABELS: Record<string, string> = {
   marketing_event: 'Marketing Event',
   manual_credit: 'Manual Credit',
   manual_debit: 'Manual Debit',
+  manual_event_credit: 'Event Credit',
+  manual_event_debit: 'Event Debit',
   leave_permit: 'Leave Permit',
+  leave_permit_event: 'Event Leave',
   connecteam: 'Connecteam',
   co_conversion: 'CO Conversion',
 }
@@ -71,6 +74,8 @@ function BalancesPanel({ search }: { search: string }) {
   const [creditDialog, setCreditDialog] = useState<TimeBankBalance | null>(null)
   const [debitDialog, setDebitDialog] = useState<TimeBankBalance | null>(null)
   const [t0Dialog, setT0Dialog] = useState<TimeBankBalance | null>(null)
+  // Which pool the open +/− dialog targets ('personal' = default pooled, 'event' = Ore din eveniment).
+  const [pool, setPool] = useState<'personal' | 'event'>('personal')
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [detailUser, setDetailUser] = useState<{ id: number; name: string } | null>(null)
@@ -84,7 +89,7 @@ function BalancesPanel({ search }: { search: string }) {
 
 
   const creditMut = useMutation({
-    mutationFn: (data: { user_id: number; amount: number; description?: string }) =>
+    mutationFn: (data: { user_id: number; amount: number; description?: string; pool?: 'personal' | 'event' }) =>
       timeBankApi.credit(data),
     onSuccess: () => {
       toast.success('Credit added')
@@ -97,7 +102,7 @@ function BalancesPanel({ search }: { search: string }) {
   })
 
   const debitMut = useMutation({
-    mutationFn: (data: { user_id: number; amount: number; description?: string }) =>
+    mutationFn: (data: { user_id: number; amount: number; description?: string; pool?: 'personal' | 'event' }) =>
       timeBankApi.debit(data),
     onSuccess: () => {
       toast.success('Debit applied')
@@ -257,28 +262,40 @@ function BalancesPanel({ search }: { search: string }) {
                       {b.balance}h
                     </span>
                   </TableCell>
-                  {/* Personal pool — may go negative (red) */}
+                  {/* Personal pool — may go negative (red); +/− target the personal pool */}
                   <TableCell className="text-right tabular-nums">
-                    <span className={b.personal_balance < 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}>
-                      {b.personal_balance}h
-                    </span>
+                    <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      <span className={b.personal_balance < 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}>
+                        {b.personal_balance}h
+                      </span>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" title="Credit personal"
+                        onClick={() => { setPool('personal'); setCreditDialog(b); setAmount(''); setDescription('') }}>
+                        <Plus className="h-3 w-3 text-green-600" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" title="Debit personal"
+                        onClick={() => { setPool('personal'); setDebitDialog(b); setAmount(''); setDescription('') }}>
+                        <Minus className="h-3 w-3 text-red-600" />
+                      </Button>
+                    </div>
                   </TableCell>
-                  {/* Event pool ("Ore Libere din Eveniment") — capped, never negative */}
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {b.event_balance}h
+                  {/* Event pool ("Ore Libere din Eveniment") — capped; +/− target the event pool */}
+                  <TableCell className="text-right tabular-nums">
+                    <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      <span className="text-muted-foreground">{b.event_balance}h</span>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" title="Credit eveniment"
+                        onClick={() => { setPool('event'); setCreditDialog(b); setAmount(''); setDescription('') }}>
+                        <Plus className="h-3 w-3 text-green-600" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" title="Debit eveniment"
+                        onClick={() => { setPool('event'); setDebitDialog(b); setAmount(''); setDescription('') }}>
+                        <Minus className="h-3 w-3 text-red-600" />
+                      </Button>
+                    </div>
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Credit"
-                        onClick={() => { setCreditDialog(b); setAmount(''); setDescription('') }}>
-                        <Plus className="h-3.5 w-3.5 text-green-600" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Debit"
-                        onClick={() => { setDebitDialog(b); setAmount(''); setDescription('') }}>
-                        <Minus className="h-3.5 w-3.5 text-red-600" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Set T0"
-                        onClick={() => { setT0Dialog(b); setAmount(String(b.balance || '')) }}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Set T0 (personal starting balance)"
+                        onClick={() => { setT0Dialog(b); setAmount(String(b.personal_balance || '')) }}>
                         <TrendingUp className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -293,7 +310,7 @@ function BalancesPanel({ search }: { search: string }) {
       {/* Credit Dialog */}
       <AmountDialog
         open={!!creditDialog}
-        title={`Credit hours to ${creditDialog?.name}`}
+        title={`Credit ${pool === 'event' ? 'Eveniment' : 'Personal'} hours to ${creditDialog?.name}`}
         label="Hours to credit"
         showDescription
         amount={amount}
@@ -303,7 +320,7 @@ function BalancesPanel({ search }: { search: string }) {
         onClose={() => setCreditDialog(null)}
         onSubmit={() => {
           if (!creditDialog || !amount) return
-          creditMut.mutate({ user_id: creditDialog.user_id, amount: parseFloat(amount), description: description || undefined })
+          creditMut.mutate({ user_id: creditDialog.user_id, amount: parseFloat(amount), description: description || undefined, pool })
         }}
         isPending={creditMut.isPending}
         submitLabel="Add Credit"
@@ -312,7 +329,7 @@ function BalancesPanel({ search }: { search: string }) {
       {/* Debit Dialog */}
       <AmountDialog
         open={!!debitDialog}
-        title={`Debit hours from ${debitDialog?.name}`}
+        title={`Debit ${pool === 'event' ? 'Eveniment' : 'Personal'} hours from ${debitDialog?.name}`}
         label="Hours to debit"
         showDescription
         amount={amount}
@@ -322,7 +339,7 @@ function BalancesPanel({ search }: { search: string }) {
         onClose={() => setDebitDialog(null)}
         onSubmit={() => {
           if (!debitDialog || !amount) return
-          debitMut.mutate({ user_id: debitDialog.user_id, amount: parseFloat(amount), description: description || undefined })
+          debitMut.mutate({ user_id: debitDialog.user_id, amount: parseFloat(amount), description: description || undefined, pool })
         }}
         isPending={debitMut.isPending}
         submitLabel="Apply Debit"
