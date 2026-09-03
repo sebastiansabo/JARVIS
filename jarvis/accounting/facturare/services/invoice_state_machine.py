@@ -158,7 +158,8 @@ class InvoiceStateMachine:
                        intocmit_de: str | None = None, notes: str | None = None,
                        line_ids: list[int] | None = None,
                        created_by_user_id: int = 0,
-                       doc_mode: str = "per_car") -> StoredInvoice:
+                       doc_mode: str = "per_car",
+                       round_decimals: bool = False) -> StoredInvoice:
         """Issue a Proforma for an Anexa (optionally for selected lines only)."""
         # Check amount doesn't exceed anexa total value
         anexa_lines = self.repo.get_lines_by_anexa(anexa_id)
@@ -226,8 +227,9 @@ class InvoiceStateMachine:
             created_by=created_by_user_id,
             line_ids=line_ids,
             doc_mode=doc_mode,
+            round_decimals=round_decimals,
         )
-        logger.info("Proforma #%d created: anexa=%s amount=%s EUR lines=%s mode=%s", seq, anexa_id, amount_eur, line_ids or "all", doc_mode)
+        logger.info("Proforma #%d created: anexa=%s amount=%s EUR lines=%s mode=%s decimals=%s", seq, anexa_id, amount_eur, line_ids or "all", doc_mode, round_decimals)
         self._persist_document_numbers(inv_row, anexa_id)
         return StoredInvoice.from_row(inv_row)
 
@@ -239,7 +241,8 @@ class InvoiceStateMachine:
                       notes: str | None = None,
                       created_by_user_id: int = 0,
                       doc_mode: str | None = None,
-                      manual_kurs=None) -> StoredInvoice:
+                      manual_kurs=None,
+                      round_decimals: bool | None = None) -> StoredInvoice:
         """Issue an Invoice confirming payment of a specific Proforma.
 
         A manual_kurs override (when the BNR rate service is unreachable) takes
@@ -273,6 +276,7 @@ class InvoiceStateMachine:
             proforma_line_ids = _json.loads(proforma_line_ids)
 
         effective_doc_mode = doc_mode if doc_mode else proforma_row.get("doc_mode", "per_car")
+        effective_round = round_decimals if round_decimals is not None else bool(proforma_row.get("round_decimals"))
         inv_row = self.repo.create_invoice(
             anexa_id=anexa_id,
             invoice_type=InvoiceTypeEnum.INVOICE,
@@ -289,6 +293,7 @@ class InvoiceStateMachine:
             created_by=created_by_user_id,
             line_ids=proforma_line_ids,
             doc_mode=effective_doc_mode,
+            round_decimals=effective_round,
         )
 
         self.repo.create_link(
@@ -310,7 +315,8 @@ class InvoiceStateMachine:
                      line_ids: list[int] | None = None,
                      target_invoice_ids: list[int] | None = None,
                      created_by_user_id: int = 0,
-                     manual_kurs=None) -> StoredInvoice:
+                     manual_kurs=None,
+                     round_decimals: bool | None = None) -> StoredInvoice:
         """Issue a Storno reversing INVOICES for selected cars (or all if no line_ids)."""
         import json as _json
 
@@ -348,6 +354,12 @@ class InvoiceStateMachine:
         if not relevant_invoices:
             raise InvoiceStateMachineError("No invoices found for selected vehicles")
 
+        # Reverse in the same rounding mode the invoices were booked in, so the
+        # storno total nets them to zero (explicit override wins, else inherit).
+        effective_round = round_decimals if round_decimals is not None else any(
+            inv.get("round_decimals") for inv in relevant_invoices)
+        share_q = Decimal("0.01") if effective_round else ONE
+
         # Sum proportional share of each invoice for the target cars
         line_prices = {l["id"]: Decimal(str(l["selling_price_eur"])) for l in all_lines}
         invoiced_for_target = Decimal("0")
@@ -358,7 +370,7 @@ class InvoiceStateMachine:
             inv_lines = set(raw) if raw else all_line_id_set
             covered_total = sum(line_prices.get(lid, Decimal("0")) for lid in inv_lines)
             for lid in (inv_lines & target_lines):
-                share = (line_prices.get(lid, Decimal("0")) / covered_total * Decimal(str(inv["total_amount_eur"]))).quantize(ONE, rounding=ROUND_HALF_UP) if covered_total else Decimal("0")
+                share = (line_prices.get(lid, Decimal("0")) / covered_total * Decimal(str(inv["total_amount_eur"]))).quantize(share_q, rounding=ROUND_HALF_UP) if covered_total else Decimal("0")
                 invoiced_for_target += share
 
         storno_total = invoiced_for_target
@@ -397,6 +409,7 @@ class InvoiceStateMachine:
             notes=notes or f"Reverses invoices for {len(target_lines)} vehicle(s)",
             created_by=created_by_user_id,
             line_ids=sorted_target_line_ids if line_ids else None,
+            round_decimals=effective_round,
         )
 
         for inv in relevant_invoices:
@@ -418,7 +431,8 @@ class InvoiceStateMachine:
                     notes: str | None = None,
                     line_ids: list[int] | None = None,
                     created_by_user_id: int = 0,
-                    manual_kurs=None) -> StoredInvoice:
+                    manual_kurs=None,
+                    round_decimals: bool | None = None) -> StoredInvoice:
         """Issue the Final invoice after Storno (for selected cars or all)."""
         import json as _json
 
@@ -451,6 +465,11 @@ class InvoiceStateMachine:
         # Compute net invoiced per target car: invoices minus stornos
         all_invoices = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.INVOICE)
         all_stornos = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.STORNO)
+        # Net in the same rounding mode the prior invoices/stornos used, so the
+        # residual (final total) matches what those documents actually booked.
+        effective_round = round_decimals if round_decimals is not None else any(
+            inv.get("round_decimals") for inv in all_invoices)
+        share_q = Decimal("0.01") if effective_round else ONE
         net_invoiced = Decimal("0")
         for inv in all_invoices:
             raw = inv.get("line_ids")
@@ -459,7 +478,7 @@ class InvoiceStateMachine:
             inv_lines = set(raw) if raw else all_line_id_set
             covered_total = sum(line_prices.get(lid, Decimal("0")) for lid in inv_lines)
             for lid in (inv_lines & target_lines):
-                share = (line_prices.get(lid, Decimal("0")) / covered_total * Decimal(str(inv["total_amount_eur"]))).quantize(ONE, rounding=ROUND_HALF_UP) if covered_total else Decimal("0")
+                share = (line_prices.get(lid, Decimal("0")) / covered_total * Decimal(str(inv["total_amount_eur"]))).quantize(share_q, rounding=ROUND_HALF_UP) if covered_total else Decimal("0")
                 net_invoiced += share
         for s in all_stornos:
             raw = s.get("line_ids")
@@ -468,7 +487,7 @@ class InvoiceStateMachine:
             s_lines = set(raw) if raw else all_line_id_set
             covered_total = sum(line_prices.get(lid, Decimal("0")) for lid in s_lines)
             for lid in (s_lines & target_lines):
-                share = (line_prices.get(lid, Decimal("0")) / covered_total * abs(Decimal(str(s["total_amount_eur"])))).quantize(ONE, rounding=ROUND_HALF_UP) if covered_total else Decimal("0")
+                share = (line_prices.get(lid, Decimal("0")) / covered_total * abs(Decimal(str(s["total_amount_eur"])))).quantize(share_q, rounding=ROUND_HALF_UP) if covered_total else Decimal("0")
                 net_invoiced -= share
         final_total = target_total - net_invoiced
 
@@ -517,6 +536,7 @@ class InvoiceStateMachine:
             created_by=created_by_user_id,
             line_ids=sorted_target_line_ids if line_ids else None,
             split_mode="proportional",
+            round_decimals=effective_round,
         )
 
         self.repo.create_link(
