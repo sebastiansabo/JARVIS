@@ -409,11 +409,11 @@ export default function Procesare() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <TabsList>
             <TabsTrigger value="worklist">Worklist ({invoicesData?.invoices.length ?? 0})</TabsTrigger>
-            <TabsTrigger value="master">Master</TabsTrigger>
+            <TabsTrigger value="master">Furnizori</TabsTrigger>
           </TabsList>
           {tab === 'worklist' && (
             <div className="flex flex-wrap items-center gap-2">
-              <Seg value={worklistView} onChange={setWorklistView} options={[['bugetata', 'Bugetata'], ['procesate', 'Procesate']] as const} />
+              <Seg value={worklistView} onChange={setWorklistView} options={[['bugetata', 'In lucru'], ['procesate', 'Procesate']] as const} />
               <Seg value={preset} onChange={setPreset} options={[['month', 'Luna curentă'], ['30d', 'Ultimele 30 zile'], ['year', 'Anul curent'], ['custom', 'Interval']] as const} />
               {preset === 'custom' && (
                 <DateField
@@ -423,27 +423,23 @@ export default function Procesare() {
                   onRangeChange={(start, end) => { setCustomFrom(start); setCustomTo(end) }}
                 />
               )}
+              {!isProcessedView && (
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="ml-auto h-8 w-8"
+                  title="Export toate (ZIP)"
+                  onClick={() => exportAllMut.mutate()}
+                  disabled={exportAllMut.isPending || supplierGroups.length === 0}
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           )}
         </div>
 
         <TabsContent value="worklist" className="mt-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="text-sm text-muted-foreground">
-              {supplierGroups.length} furnizori · {(invoicesData?.invoices ?? []).length} facturi
-            </div>
-            {!isProcessedView && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => exportAllMut.mutate()}
-                disabled={exportAllMut.isPending || supplierGroups.length === 0}
-              >
-                <Download className="mr-1.5 h-3.5 w-3.5" />
-                {exportAllMut.isPending ? 'Se exportă...' : 'Export toate (ZIP)'}
-              </Button>
-            )}
-          </div>
           <Card><CardContent className="p-0">
             <Table>
               <TableHeader><TableRow>
