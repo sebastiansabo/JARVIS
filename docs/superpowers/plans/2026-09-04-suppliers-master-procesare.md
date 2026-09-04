@@ -1206,3 +1206,13 @@ git add -A && git commit -m "chore(suppliers): phase 1 verification fixups" || e
 - **Placeholder scan:** the only intentional marker is the `ignore` dead-branch in T9 Step 1, explicitly cleaned in T9 Step 2.
 - **Type consistency:** resolver lookup method names in T4 (`find_by_cui_normalized`, `find_by_nr_reg_normalized`, `find_by_ref_no`, `find_by_alias`, `find_by_name_exact`, `find_by_fuzzy_name`) match the repository in T5; API method names in T11 match routes in T6-T10.
 - **Open tunable:** `_FUZZY_THRESHOLD = 0.55` (T5) — adjust after seeing real worklist output.
+
+---
+
+## Amendment — API input hardening (review round 1, 2026-09-04)
+
+Route handlers in `jarvis/core/suppliers/routes.py` must not splat the raw request body into repository write methods, and must validate ids:
+- `api_create_supplier`: drop reserved keys before splat — `fields = {k:v for k,v in data.items() if k not in {'id','name','created_by','created_at','updated_at'}}` then `create_master(name, created_by=<user>, **fields)`.
+- `api_update_supplier`: `fields = {k:v for k,v in data.items() if k not in {'id','supplier_id','created_by','created_at','updated_at'}}` then `update_master(supplier_id, **fields)`.
+- `api_merge_suppliers`: `int()`-coerce `survivor_id`/`duplicate_id` in a try/except → 400 on non-int; keep the `survivor == dup` → 400 check.
+- `api_resolve` `create` branch: 400 if `partner_name` is empty before `create_master`.
