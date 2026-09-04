@@ -74,11 +74,11 @@ def test_belegnummer_numeric_rightmost6():
     assert _col(c2, 'belegnummer') == '234567'
 
 
-def test_valuta_and_brutto_netto_same_on_both_lines():
+def test_valuta_on_both_lines_and_brutto_netto_B_then_N():
     credit, debit = build_medline_rows(_SAMPLE_INVOICE, _SAMPLE_CONFIG)
     assert _col(credit, 'valuta') == '2026-09-30'
     assert _col(debit, 'valuta') == '2026-09-30'
-    assert _col(credit, 'brutto_netto') == 'N'
+    assert _col(credit, 'brutto_netto') == 'B'
     assert _col(debit, 'brutto_netto') == 'N'
 
 
