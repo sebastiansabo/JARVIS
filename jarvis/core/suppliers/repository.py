@@ -12,6 +12,18 @@ _EDITABLE = (
     'extbeleg_debit', 'extbeleg_credit',
 )
 
+# Per-(supplier, company) EuroFib posting config ("Table 2"). The first 9 fields also exist as
+# flat columns on `suppliers` (the per-supplier DEFAULT/fallback); steuercode/text_template/
+# belegart exist only on supplier_konto_config (no flat fallback for those).
+KONTO_FIELDS = (
+    'konto_debit', 'konto_credit', 'klient', 'gegenkonto_debit', 'gegenkonto_credit',
+    'kostenstelle_debit', 'kostenstelle_credit', 'extbeleg_debit', 'extbeleg_credit',
+    'steuercode', 'text_template', 'belegart',
+)
+
+# Subset of KONTO_FIELDS that also exists as a flat column on `suppliers` (per-supplier default).
+_KONTO_FLAT_FIELDS = KONTO_FIELDS[:9]
+
 
 class SupplierMasterRepository(BaseRepository):
 
@@ -50,14 +62,71 @@ class SupplierMasterRepository(BaseRepository):
         return (row['id'], float(row['score'])) if row else None
 
     # ---- master reads / writes ----
-    def list_master(self, search=None, limit=100, offset=0):
-        where, params = "WHERE is_active", []
+    def list_master(self, search=None, limit=100, offset=0, company_id=None):
+        """List master suppliers. When company_id is given, each row carries that company's
+        EFFECTIVE konto (supplier_konto_config child row, falling back to the flat suppliers.*
+        defaults for the 9 flat-backed fields) plus has_company_config. Without company_id,
+        behaves as before (flat columns only, no steuercode/text_template/belegart)."""
+        where, params = "WHERE s.is_active", []
         if search:
-            where += " AND (name ILIKE %s OR cui ILIKE %s OR ref_no ILIKE %s)"
+            where += " AND (s.name ILIKE %s OR s.cui ILIKE %s OR s.ref_no ILIKE %s)"
             like = f"%{search}%"
             params += [like, like, like]
+
+        if company_id is not None:
+            effective_cols = ', '.join(
+                f"COALESCE(kc.{f}, s.{f}) AS {f}" for f in _KONTO_FLAT_FIELDS)
+            child_only_cols = ', '.join(f"kc.{f} AS {f}" for f in KONTO_FIELDS[9:])
+            sql = (
+                f"SELECT s.*, {effective_cols}, {child_only_cols}, (kc.id IS NOT NULL) AS has_company_config "
+                f"FROM suppliers s LEFT JOIN supplier_konto_config kc "
+                f"ON kc.supplier_id = s.id AND kc.company_id = %s {where} "
+                f"ORDER BY s.name LIMIT %s OFFSET %s")
+            return self.query_all(sql, tuple([company_id] + params + [limit, offset]))
+
         params += [limit, offset]
-        return self.query_all(f"SELECT * FROM suppliers {where} ORDER BY name LIMIT %s OFFSET %s", tuple(params))
+        return self.query_all(f"SELECT s.* FROM suppliers s {where} ORDER BY s.name LIMIT %s OFFSET %s", tuple(params))
+
+    def get_effective_konto(self, supplier_id, company_id):
+        """Effective Table-2 konto for (supplier, company): the supplier_konto_config child
+        row (if present) overrides the flat suppliers.* defaults field-by-field. NULL/absent
+        fields on the child fall back to the flat columns (steuercode/text_template/belegart
+        have no flat fallback — they stay NULL when no child row/value exists).
+
+        Returns {'konto': {...KONTO_FIELDS...}, 'has_company_config': bool}.
+        """
+        child = self.query_one(
+            f"SELECT {', '.join(KONTO_FIELDS)} FROM supplier_konto_config "
+            f"WHERE supplier_id = %s AND company_id = %s",
+            (supplier_id, company_id))
+        flat = self.query_one(
+            f"SELECT {', '.join(_KONTO_FLAT_FIELDS)} FROM suppliers WHERE id = %s",
+            (supplier_id,)) or {}
+        konto = {}
+        for field in KONTO_FIELDS:
+            child_val = child.get(field) if child else None
+            konto[field] = child_val if child_val is not None else flat.get(field)
+        return {'konto': konto, 'has_company_config': child is not None}
+
+    def upsert_konto(self, supplier_id, company_id, created_by=None, **fields):
+        """Create/update the supplier_konto_config row for (supplier_id, company_id).
+        Only KONTO_FIELDS are ever written — arbitrary kwargs are silently dropped, never
+        interpolated as SQL identifiers."""
+        cols = [f for f in KONTO_FIELDS if f in fields]
+        vals = [fields[f] for f in cols]
+        insert_cols = ['supplier_id', 'company_id', 'created_by'] + cols
+        insert_vals = [supplier_id, company_id, created_by] + vals
+        placeholders = ', '.join(['%s'] * len(insert_vals))
+        update_sets = ', '.join(f"{f} = EXCLUDED.{f}" for f in cols)
+        update_clause = (update_sets + ', ') if update_sets else ''
+        row = self.execute(
+            f"""INSERT INTO supplier_konto_config ({', '.join(insert_cols)})
+                VALUES ({placeholders})
+                ON CONFLICT (supplier_id, company_id) DO UPDATE SET
+                    {update_clause}updated_at = CURRENT_TIMESTAMP
+                RETURNING id""",
+            tuple(insert_vals), returning=True)
+        return row['id']
 
     def get_master(self, supplier_id):
         sup = self.query_one("SELECT * FROM suppliers WHERE id = %s", (supplier_id,))
@@ -135,13 +204,32 @@ class SupplierMasterRepository(BaseRepository):
         return self.execute_many(_work)
 
     # ---- worklist sources ----
-    def unresolved_efactura(self, limit=200):
-        return self.query_all(
-            """SELECT DISTINCT partner_name, partner_cif FROM efactura_invoices
-               WHERE supplier_id IS NULL AND deleted_at IS NULL
-               ORDER BY partner_name LIMIT %s""", (limit,))
+    def unresolved_efactura(self, limit=200, company_id=None):
+        sql = """SELECT DISTINCT partner_name, partner_cif FROM efactura_invoices
+                 WHERE supplier_id IS NULL AND deleted_at IS NULL"""
+        params = []
+        if company_id is not None:
+            sql += " AND company_id = %s"
+            params.append(company_id)
+        sql += " ORDER BY partner_name LIMIT %s"
+        params.append(limit)
+        return self.query_all(sql, tuple(params))
 
-    def unresolved_invoice_suppliers(self, limit=200):
+    def unresolved_invoice_suppliers(self, limit=200, company_name=None):
+        if company_name is not None:
+            # allocations can hold multiple rows per invoice for the same company (split across
+            # departments) — DISTINCT (i.id, partner_name) before the count(*) so the JOIN's
+            # fan-out doesn't inflate the per-supplier invoice count.
+            sql = """SELECT partner_name, count(*) AS n FROM (
+                         SELECT DISTINCT i.id, i.supplier AS partner_name
+                         FROM invoices i
+                         JOIN allocations a ON a.invoice_id = i.id AND lower(a.company) = lower(%s)
+                         WHERE i.deleted_at IS NULL
+                           AND NOT EXISTS (SELECT 1 FROM suppliers s WHERE lower(s.name) = lower(i.supplier) AND s.is_active)
+                           AND NOT EXISTS (SELECT 1 FROM supplier_aliases al WHERE lower(al.alias_name) = lower(i.supplier))
+                     ) sub
+                     GROUP BY partner_name ORDER BY n DESC LIMIT %s"""
+            return self.query_all(sql, (company_name, limit))
         return self.query_all(
             """SELECT i.supplier AS partner_name, count(*) AS n
                FROM invoices i
