@@ -226,7 +226,7 @@ export default function Procesare() {
   }, [companies, companyId, user, setCompanyId])
 
   // Worklist period filter — presets mirror FoiParcurs/ReportsTab; 'custom' uses DateField range.
-  const [preset, setPreset] = useState<PeriodPreset>('month')
+  const [preset, setPreset] = useState<PeriodPreset>('30d')
   const [customFrom, setCustomFrom] = useState<string>(ymd(new Date(Date.now() - 29 * 864e5)))
   const [customTo, setCustomTo] = useState<string>(ymd(new Date()))
   const { from: startDate, to: endDate } = rangeForPreset(preset, customFrom, customTo)
@@ -236,11 +236,20 @@ export default function Procesare() {
   const [worklistView, setWorklistView] = useState<'bugetata' | 'procesate'>('bugetata')
   const isProcessedView = worklistView === 'procesate'
 
-  const { data: invoicesData, isLoading: invoicesLoading } = useQuery({
-    queryKey: ['supplier-worklist-invoices', companyId, startDate, endDate, worklistView],
-    queryFn: () => suppliersApi.fetchInvoices(companyId as number, startDate, endDate, isProcessedView ? 'processed' : undefined),
+  const bugetataQ = useQuery({
+    queryKey: ['supplier-worklist-invoices', companyId, startDate, endDate, 'bugetata'],
+    queryFn: () => suppliersApi.fetchInvoices(companyId as number, startDate, endDate, undefined),
     enabled: !!companyId,
   })
+  const procesateQ = useQuery({
+    queryKey: ['supplier-worklist-invoices', companyId, startDate, endDate, 'procesate'],
+    queryFn: () => suppliersApi.fetchInvoices(companyId as number, startDate, endDate, 'processed'),
+    enabled: !!companyId,
+  })
+  const invoicesData = isProcessedView ? procesateQ.data : bugetataQ.data
+  const invoicesLoading = isProcessedView ? procesateQ.isLoading : bugetataQ.isLoading
+  const bugetataCount = bugetataQ.data?.invoices.length ?? 0
+  const procesateCount = procesateQ.data?.invoices.length ?? 0
   const { data: masters, isLoading: mastersLoading } = useQuery({
     queryKey: ['supplier-master', companyId, search],
     queryFn: () => suppliersApi.list(companyId as number, search || undefined),
@@ -310,6 +319,7 @@ export default function Procesare() {
     onSuccess: (_res, group) => {
       // Exported invoices flip Bugetata → processed server-side — refresh the worklist so they drop off.
       qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] })
+      setWorklistView('procesate')
       toast.success(`Exportat — facturile au fost marcate procesate (${group.supplierName})`)
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Exportul a eșuat'),
@@ -322,6 +332,7 @@ export default function Procesare() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] })
+      setWorklistView('procesate')
       toast.success('Exportat — facturile au fost marcate procesate')
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Exportul a eșuat'),
@@ -413,7 +424,7 @@ export default function Procesare() {
           </TabsList>
           {tab === 'worklist' && (
             <div className="flex flex-wrap items-center gap-2">
-              <Seg value={worklistView} onChange={setWorklistView} options={[['bugetata', 'In lucru'], ['procesate', 'Procesate']] as const} />
+              <Seg value={worklistView} onChange={setWorklistView} options={[['bugetata', `In lucru (${bugetataCount})`], ['procesate', `Procesate (${procesateCount})`]] as const} />
               <Seg value={preset} onChange={setPreset} options={[['month', 'Luna curentă'], ['30d', 'Ultimele 30 zile'], ['year', 'Anul curent'], ['custom', 'Interval']] as const} />
               {preset === 'custom' && (
                 <DateField
