@@ -65,8 +65,21 @@ Insert after the existing `suppliers` `DO $$ ... $$` guard (around `schema_incre
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_suppliers_nrreg_norm ON suppliers(nr_reg_normalized)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_suppliers_ref_no ON suppliers(ref_no)")
 
-    # Backfill normalized identity for existing rows (digits-only CUI; upper/no-space Nr.Reg)
-    cursor.execute("UPDATE suppliers SET cui_normalized = NULLIF(regexp_replace(COALESCE(cui,''), '\\D', '', 'g'), '') WHERE cui_normalized IS NULL")
+    # Backfill normalized identity — DEDUP-AWARE for CUI: assign cui_normalized only to the
+    # FIRST (lowest-id) supplier per normalized CUI, so the partial-unique index cannot be
+    # violated on dirty data (duplicate suppliers legitimately exist — that is what Procesare
+    # merges). Duplicates stay NULL and surface in the worklist. nr_reg index is non-unique.
+    cursor.execute('''
+        UPDATE suppliers s SET cui_normalized = sub.norm
+        FROM (
+            SELECT DISTINCT ON (regexp_replace(cui, '\\D', '', 'g')) id,
+                   NULLIF(regexp_replace(cui, '\\D', '', 'g'), '') AS norm
+            FROM suppliers
+            WHERE cui IS NOT NULL AND regexp_replace(cui, '\\D', '', 'g') <> ''
+            ORDER BY regexp_replace(cui, '\\D', '', 'g'), id
+        ) sub
+        WHERE s.id = sub.id AND s.cui_normalized IS NULL
+    ''')
     cursor.execute("UPDATE suppliers SET nr_reg_normalized = NULLIF(upper(regexp_replace(COALESCE(nr_reg_com,''), '\\s', '', 'g')), '') WHERE nr_reg_normalized IS NULL")
 
     # ── supplier_aliases (spelling/CUI variants → one master) ──
