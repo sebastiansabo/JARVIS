@@ -50,6 +50,51 @@ export interface BudgetedInvoice {
   supplier_id: number
 }
 
+/** Trigger a browser download for a raw fetch Response that carries a file (blob) body,
+ * using the filename from its Content-Disposition header (falling back to `fallbackFilename`).
+ * Mirrors the download helpers in api/bilant.ts and Hub/Profile's handleDownloadPdf. */
+async function _triggerFileDownload(res: Response, fallbackFilename: string): Promise<void> {
+  const blob = await res.blob()
+  const filename = res.headers.get('Content-Disposition')?.match(/filename="?([^";\n]+)"?/)?.[1] || fallbackFilename
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+/** POST a body via a raw fetch (the shared `api` client always parses JSON, but these two
+ * endpoints return a CSV/ZIP file download) and trigger a browser download of the response.
+ * The export routes return 200 + JSON (not a file) when there is nothing to export — that
+ * case, and any non-OK response, is surfaced as a thrown Error for the caller to toast. */
+async function _downloadPost(path: string, body: unknown, fallbackFilename: string): Promise<void> {
+  const res = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const contentType = res.headers.get('Content-Type') || ''
+  if (!res.ok || contentType.includes('application/json')) {
+    let message = 'Exportul a eșuat'
+    try {
+      const data = await res.json()
+      if (Array.isArray(data?.skipped) && data.skipped.length > 0) {
+        message = 'Nicio factură validă de exportat (configurație EuroFib incompletă sau sume lipsă)'
+      } else if (data?.error) {
+        message = String(data.error)
+      }
+    } catch {
+      // response body wasn't JSON — keep the default message
+    }
+    throw new Error(message)
+  }
+  await _triggerFileDownload(res, fallbackFilename)
+}
+
 export const suppliersApi = {
   list: (companyId?: number, search?: string) => {
     const params = new URLSearchParams()
@@ -83,4 +128,17 @@ export const suppliersApi = {
     api.put<{ success: boolean; id?: number; replicated?: number }>(
       `/api/suppliers/${id}/konto?company_id=${companyId}`,
       replicateAll ? { ...fields, replicate_all: true } : fields),
+  /** EuroFib MEDLINE CSV download — one supplier's invoices (or all budgeted invoices for the
+   * period when invoiceIds is omitted), grouped/ordered per build_csv. */
+  exportCsv: (companyId: number, startDate: string, endDate: string, invoiceIds?: number[]) =>
+    _downloadPost(
+      '/api/suppliers/export',
+      { company_id: companyId, start_date: startDate, end_date: endDate, invoice_ids: invoiceIds },
+      `eurofib_${companyId}_${startDate}_${endDate}.csv`),
+  /** ZIP download — one EuroFib MEDLINE CSV per supplier, for all budgeted invoices in the period. */
+  exportAllZip: (companyId: number, startDate: string, endDate: string) =>
+    _downloadPost(
+      '/api/suppliers/export-all',
+      { company_id: companyId, start_date: startDate, end_date: endDate },
+      `eurofib_${companyId}_${startDate}_${endDate}.zip`),
 }
