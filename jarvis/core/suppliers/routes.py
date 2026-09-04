@@ -54,8 +54,8 @@ def api_create_supplier():
     name = (data.get('name') or '').strip()
     if not name:
         return jsonify({'success': False, 'error': 'name is required'}), 400
-    sid = _repo.create_master(name, created_by=getattr(current_user, 'id', None),
-                              **{k: v for k, v in data.items() if k != 'name'})
+    fields = {k: v for k, v in data.items() if k not in {'id', 'name', 'created_by', 'created_at', 'updated_at'}}
+    sid = _repo.create_master(name, created_by=getattr(current_user, 'id', None), **fields)
     return jsonify({'success': True, 'id': sid}), 201
 
 
@@ -65,7 +65,8 @@ def api_update_supplier(supplier_id):
     if not _check_supplier_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     data = request.get_json(force=True) or {}
-    _repo.update_master(supplier_id, **data)
+    fields = {k: v for k, v in data.items() if k not in {'id', 'supplier_id', 'created_by', 'created_at', 'updated_at'}}
+    _repo.update_master(supplier_id, **fields)
     return jsonify({'success': True})
 
 
@@ -87,9 +88,13 @@ def api_merge_suppliers():
     if not _check_supplier_perm('merge'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     data = request.get_json(force=True) or {}
-    survivor, dup = data.get('survivor_id'), data.get('duplicate_id')
-    if not survivor or not dup or survivor == dup:
-        return jsonify({'success': False, 'error': 'survivor_id and distinct duplicate_id are required'}), 400
+    try:
+        survivor = int(data.get('survivor_id'))
+        dup = int(data.get('duplicate_id'))
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'survivor_id and duplicate_id must be integers'}), 400
+    if survivor == dup:
+        return jsonify({'success': False, 'error': 'survivor_id and duplicate_id must differ'}), 400
     _repo.merge(survivor, dup, created_by=getattr(current_user, 'id', None))
     return jsonify({'success': True})
 
@@ -131,6 +136,8 @@ def api_resolve():
         if not sid:
             return jsonify({'success': False, 'error': 'supplier_id required for link'}), 400
     elif action == 'create':
+        if not partner_name:
+            return jsonify({'success': False, 'error': 'partner_name required to create'}), 400
         sid = _repo.create_master(partner_name, created_by=uid, cui=partner_cif)
     elif action == 'ignore':
         return jsonify({'success': True, 'ignored': True})
