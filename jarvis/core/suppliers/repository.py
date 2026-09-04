@@ -244,6 +244,32 @@ class SupplierMasterRepository(BaseRepository):
         params.append(limit)
         return self.query_all(sql, tuple(params))
 
+    def list_efactura_partners(self, company_id=None, limit=500):
+        """Distinct e-Factura SUPPLIER partners (direction='received') not yet linked to a master
+        supplier — the candidate list for the "Sync cu e-Factura" import modal. Only received
+        invoices are considered, so the partner is always the furnizor (never a client). Each row
+        carries the invoice count. Optionally scoped to one company."""
+        sql = """SELECT partner_name, partner_cif, COUNT(*) AS n
+                 FROM efactura_invoices
+                 WHERE supplier_id IS NULL AND deleted_at IS NULL AND direction = 'received'
+                   AND partner_name IS NOT NULL AND partner_name <> ''"""
+        params = []
+        if company_id is not None:
+            sql += " AND company_id = %s"
+            params.append(company_id)
+        sql += " GROUP BY partner_name, partner_cif ORDER BY partner_name LIMIT %s"
+        params.append(limit)
+        return self.query_all(sql, tuple(params))
+
+    def names_by_ids(self, ids):
+        """Map {supplier_id: name} for the given ids — used to label the 'există deja' badge in
+        the sync modal. Falsy/duplicate ids are dropped; an empty input returns {}."""
+        ids = [i for i in {*ids} if i]
+        if not ids:
+            return {}
+        rows = self.query_all("SELECT id, name FROM suppliers WHERE id = ANY(%s)", (ids,))
+        return {r['id']: r['name'] for r in rows}
+
     def list_budgeted_invoices(self, company_id, company_name, start_date, end_date, limit=500,
                                 status='Bugetata'):
         """Invoices in the given `status` (default 'Bugetata') allocated to `company_name`,

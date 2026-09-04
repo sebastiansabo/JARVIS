@@ -36,6 +36,19 @@ export interface WorklistItem {
   method: string
 }
 
+/** A distinct e-Factura *supplier* partner (received invoice) not yet linked to the master —
+ * a candidate row in the "Sync cu e-Factura" import modal. `existing` (with candidate_id/name)
+ * means it already resolves to a master supplier, so the UI defaults it unchecked (link, not create). */
+export interface EfacturaPartner {
+  partner_name: string
+  partner_cif: string | null
+  count: number
+  existing: boolean
+  candidate_id: number | null
+  candidate_name: string | null
+  confidence: 'high' | 'medium' | 'low' | 'none'
+}
+
 export interface BudgetedInvoice {
   id: number
   supplier: string
@@ -121,6 +134,16 @@ export const suppliersApi = {
       + (status ? `&status=${encodeURIComponent(status)}` : '')),
   resolve: (body: { action: 'link' | 'create' | 'ignore'; partner_name: string; partner_cif?: string | null; supplier_id?: number }) =>
     api.post<{ success: boolean; supplier_id?: number; efactura_linked?: number }>(`/api/suppliers/resolve`, body),
+  /** Distinct e-Factura supplier partners (received invoices) not yet in the master — the
+   * "Sync cu e-Factura" picker. Company-scoped when companyId is given. */
+  efacturaPartners: (companyId?: number) =>
+    api.get<{ success: boolean; partners: EfacturaPartner[] }>(
+      `/api/suppliers/efactura-partners${companyId !== undefined ? `?company_id=${companyId}` : ''}`),
+  /** Bulk-import the selected e-Factura partners: new ones are created, ones matching an existing
+   * master supplier are linked (no duplicate). */
+  importEfactura: (partners: { partner_name: string; partner_cif: string | null }[]) =>
+    api.post<{ success: boolean; created: number; linked: number; skipped: { partner_name: string; reason: string }[] }>(
+      '/api/suppliers/import-efactura', { partners }),
   backfillEfactura: () =>
     api.post<{ success: boolean; bound: number }>(`/api/suppliers/backfill-efactura`, {}),
   getKonto: (id: number, companyId: number) =>
