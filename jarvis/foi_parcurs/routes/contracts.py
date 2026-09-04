@@ -364,6 +364,110 @@ def api_correct_contract(id):
     return jsonify({'success': True, 'contract': updated})
 
 
+@foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/reading', methods=['PUT'])
+@login_required
+@v2_permission_required('test_drive', 'contracts', 'correct')
+def api_adjust_reading(id):
+    """Inline odometer-boundary edit (the Foaie de Parcurs KM cell). Moves ONE
+    session's start/end reading and, where the chain is contiguous, the SHARED
+    reading on the adjacent session — nothing else on the row changes. Enforces
+    two guardrails on the vehicle's odometer chain:
+      • chronological — a moved reading stays strictly between its neighbours
+        (can't cross into an earlier/later session);
+      • not below last month — the earliest reading never drops below the prior
+        session's close (which, across months, IS last month's ending odometer).
+    Reuses the test_drive.contracts.correct permission (same give/take toggle as
+    the "Corectează" dialog)."""
+    contract = _fp_repo.get_contract_by_id(id)
+    if not contract:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    vin = contract.get('vin')
+    if not vin:
+        return jsonify({'success': False, 'error': 'Sesiunea nu are un vehicul asociat'}), 400
+    if contract.get('status') not in ('FILLED', 'COMPLETED'):
+        # Only real drives (out now or finished) carry a genuine odometer span;
+        # PLANNED/PENDING have placeholder km and MISSED never drove.
+        return jsonify({'success': False, 'error': 'Sesiunea nu are un kilometraj real de editat'}), 400
+    if contract.get('km_start') is None or contract.get('km_end') is None:
+        return jsonify({'success': False, 'error': 'Sesiunea nu are kilometraj înregistrat'}), 400
+
+    data = request.get_json(silent=True) or {}
+    new = {}
+    for k in ('km_start', 'km_end'):
+        if k in data and data[k] not in (None, ''):
+            try:
+                new[k] = int(data[k])
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': f'{k} must be a number'}), 400
+    if not new:
+        return jsonify({'success': False, 'error': 'Niciun kilometraj de modificat'}), 400
+
+    old_start, old_end = int(contract['km_start']), int(contract['km_end'])
+    ns = new.get('km_start', old_start)
+    ne = new.get('km_end', old_end)
+    if ne < ns:
+        return jsonify({'success': False,
+                        'error': f'km_end ({ne}) nu poate fi sub km_start ({ns})'}), 400
+
+    # The vehicle's real odometer chain, KM-ordered (mirrors the route-sheet
+    # table). Only real sessions carrying both readings participate; PLANNED
+    # drafts (placeholder km) never anchor a boundary.
+    chain = [r for r in _fp_repo.get_odometer_readings(vin)
+             if r.get('status') != 'PLANNED'
+             and r.get('km_start') is not None and r.get('km_end') is not None]
+    chain.sort(key=lambda r: (int(r['km_start']), int(r['km_end']), r['id']))
+    idx = next((i for i, r in enumerate(chain) if r['id'] == id), None)
+    prev = chain[idx - 1] if idx is not None and idx > 0 else None
+    nxt = chain[idx + 1] if idx is not None and idx + 1 < len(chain) else None
+
+    updates = [{'id': id, **new}]
+
+    # ── Start boundary: guard against the previous session ──────────────
+    if 'km_start' in new and ns != old_start:
+        if prev is not None:
+            if int(prev['km_end']) == old_start:          # contiguous → shared reading
+                if ns < int(prev['km_start']):
+                    return jsonify({'success': False,
+                                    'error': f'Kilometrajul de plecare ({ns}) nu poate fi sub sesiunea anterioară ({prev["km_start"]})'}), 400
+                updates.append({'id': prev['id'], 'km_end': ns})
+            elif ns < int(prev['km_end']):                # gap → stay above prior close
+                return jsonify({'success': False,
+                                'error': f'Kilometrajul de plecare ({ns}) nu poate fi sub kilometrajul anterior ({prev["km_end"]})'}), 400
+        # no prev: earliest reading ever for this vehicle → no lower floor beyond ns<=ne
+
+    # ── End boundary: guard against the next session ────────────────────
+    if 'km_end' in new and ne != old_end:
+        if nxt is not None:
+            if int(nxt['km_start']) == old_end:           # contiguous → shared reading
+                if ne > int(nxt['km_end']):
+                    return jsonify({'success': False,
+                                    'error': f'Kilometrajul de sosire ({ne}) nu poate depăși sesiunea următoare ({nxt["km_end"]})'}), 400
+                updates.append({'id': nxt['id'], 'km_start': ne})
+            elif ne > int(nxt['km_start']):               # gap → stay below next start
+                return jsonify({'success': False,
+                                'error': f'Kilometrajul de sosire ({ne}) nu poate depăși kilometrajul următor ({nxt["km_start"]})'}), 400
+        # no next: becomes the vehicle's new top odometer
+
+    written_ids = _fp_repo.adjust_boundary_readings(updates, getattr(current_user, 'email', None))
+    for uid in written_ids:
+        log_history(uid, 'correct')
+    logger.info('foi-parcurs reading adjusted by %s: %s',
+                getattr(current_user, 'email', '?'), updates)
+
+    # Keep the vehicle's odometer floor honest if the top reading rose (mirrors
+    # /correct and the return flow).
+    try:
+        if 'km_end' in new and nxt is None:
+            veh = _vehicle_repo.get_by_vin(vin)
+            if veh and (veh.get('odometer_km') is None or ne > veh['odometer_km']):
+                _vehicle_repo.update(veh['id'], {'odometer_km': ne})
+    except Exception:
+        logger.warning('Could not advance vehicle odometer after adjusting reading on %s', id, exc_info=True)
+
+    main = _fp_repo.get_contract_by_id(id)
+    return jsonify({'success': True, 'contract': main, 'updated_ids': written_ids})
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/drive-type', methods=['PUT'])
 @login_required
 @v2_permission_required('test_drive', 'contracts', 'drive_type')
