@@ -298,6 +298,10 @@ def api_export():
     if written == 0:
         return jsonify({'success': False, 'skipped': skipped}), 200
 
+    skipped_numbers = {s['invoice_number'] for s in skipped}
+    exported_ids = [r['id'] for r in rows if r.get('invoice_number') not in skipped_numbers]
+    _repo.mark_invoices_processed(exported_ids)
+
     filename = f"eurofib_{company['company']}_{start_date}_{end_date}.csv"
     filename = re.sub(r'[^A-Za-z0-9_.\-]+', '_', filename)
     return Response(
@@ -339,6 +343,7 @@ def api_export_all():
     zip_buffer = io.BytesIO()
     used_names = set()
     all_skipped = []
+    exported_ids = []
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for group in sorted(by_supplier.values(), key=lambda g: (g['name'] or '').lower()):
             skipped = []
@@ -351,6 +356,9 @@ def api_export_all():
             if written == 0:
                 continue
 
+            skipped_numbers = {s['invoice_number'] for s in skipped}
+            exported_ids.extend(r['id'] for r in group['rows'] if r.get('invoice_number') not in skipped_numbers)
+
             base_name = _safe_filename_part(group['name'])
             filename = f"{base_name}.csv"
             suffix = 2
@@ -362,6 +370,8 @@ def api_export_all():
 
     if not used_names:
         return jsonify({'success': False, 'skipped': all_skipped}), 200
+
+    _repo.mark_invoices_processed(exported_ids)
 
     zip_buffer.seek(0)
     filename = f"eurofib_{company['company']}_{start_date}_{end_date}.zip"
