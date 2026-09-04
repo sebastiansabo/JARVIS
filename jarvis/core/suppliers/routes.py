@@ -1,6 +1,7 @@
 """Supplier master + Procesare resolution API."""
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
+from psycopg2 import errors as pg_errors
 
 from core.roles.repositories.permission_repository import PermissionRepository
 from core.suppliers.repository import SupplierMasterRepository
@@ -10,6 +11,14 @@ suppliers_bp = Blueprint('suppliers', __name__)
 _perm_repo = PermissionRepository()
 _repo = SupplierMasterRepository()
 _resolver = SupplierResolver(_repo)
+
+
+def _is_unique_violation(exc: Exception) -> bool:
+    """True for a psycopg2 UniqueViolation, or (fallback) any exception whose class name
+    contains 'UniqueViolation' — covers cases where the driver exception is mocked/wrapped."""
+    if isinstance(exc, pg_errors.UniqueViolation):
+        return True
+    return 'UniqueViolation' in type(exc).__name__
 
 
 def _check_supplier_perm(action: str) -> bool:
@@ -55,7 +64,14 @@ def api_create_supplier():
     if not name:
         return jsonify({'success': False, 'error': 'name is required'}), 400
     fields = {k: v for k, v in data.items() if k not in {'id', 'name', 'created_by', 'created_at', 'updated_at'}}
-    sid = _repo.create_master(name, created_by=getattr(current_user, 'id', None), **fields)
+    try:
+        sid = _repo.create_master(name, created_by=getattr(current_user, 'id', None), **fields)
+    except pg_errors.UniqueViolation:
+        return jsonify({'success': False, 'error': 'A supplier with this CUI already exists'}), 409
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            return jsonify({'success': False, 'error': 'A supplier with this CUI already exists'}), 409
+        raise
     return jsonify({'success': True, 'id': sid}), 201
 
 
@@ -138,7 +154,14 @@ def api_resolve():
     elif action == 'create':
         if not partner_name:
             return jsonify({'success': False, 'error': 'partner_name required to create'}), 400
-        sid = _repo.create_master(partner_name, created_by=uid, cui=partner_cif)
+        try:
+            sid = _repo.create_master(partner_name, created_by=uid, cui=partner_cif)
+        except pg_errors.UniqueViolation:
+            return jsonify({'success': False, 'error': 'A supplier with this CUI already exists'}), 409
+        except Exception as exc:
+            if _is_unique_violation(exc):
+                return jsonify({'success': False, 'error': 'A supplier with this CUI already exists'}), 409
+            raise
     elif action == 'ignore':
         return jsonify({'success': True, 'ignored': True})
     else:
