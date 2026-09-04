@@ -387,6 +387,24 @@ def api_export_all():
     )
 
 
+@suppliers_bp.route('/api/suppliers/unprocess', methods=['POST'])
+@login_required
+def api_unprocess():
+    """Revert exported invoices from 'processed' back to 'Bugetata' (send back to In lucru)."""
+    if not _check_supplier_perm('resolve'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(force=True) or {}
+    ids = data.get('invoice_ids') or []
+    if not isinstance(ids, list):
+        return jsonify({'success': False, 'error': 'invoice_ids must be a list'}), 400
+    try:
+        ids = [int(x) for x in ids]
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'invoice_ids must be integers'}), 400
+    reverted = _repo.mark_invoices_budgeted(ids)
+    return jsonify({'success': True, 'reverted': reverted})
+
+
 @suppliers_bp.route('/api/suppliers/resolve', methods=['POST'])
 @login_required
 def api_resolve():

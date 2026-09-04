@@ -294,6 +294,16 @@ class SupplierMasterRepository(BaseRepository):
             "WHERE id = ANY(%s) AND lower(status) = 'bugetata'",
             (list(invoice_ids),))
 
+    def mark_invoices_budgeted(self, invoice_ids):
+        """Revert the given invoices from 'processed' back to 'Bugetata' (send them back to the
+        In-lucru worklist). Only rows still in 'processed' are touched. Returns rows updated."""
+        if not invoice_ids:
+            return 0
+        return self.execute(
+            "UPDATE invoices SET status = 'Bugetata', updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ANY(%s) AND lower(status) = 'processed'",
+            (list(invoice_ids),))
+
     def unresolved_invoice_suppliers(self, limit=200, company_name=None):
         if company_name is not None:
             # allocations can hold multiple rows per invoice for the same company (split across
