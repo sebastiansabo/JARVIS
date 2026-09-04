@@ -33,7 +33,7 @@
 - Modify: `jarvis/migrations/domains/schema_incremental.py` (inside `create_schema_incremental`, immediately after the existing `suppliers` block near line 1398)
 
 **Interfaces:**
-- Produces: `suppliers.cui_normalized`, `suppliers.nr_reg_normalized`, `suppliers.ref_no`, `suppliers.firmennr`, `suppliers.konto_debit`, `suppliers.konto_credit_avans`, `suppliers.konto_credit_storno`, `suppliers.konto_credit_final`, `suppliers.centru_gestiune`; table `supplier_aliases(id, supplier_id, alias_name, alias_cui_normalized, source, created_by, created_at)`; column `efactura_invoices.supplier_id`.
+- Produces: `suppliers.cui_normalized`, `suppliers.nr_reg_normalized`, `suppliers.ref_no`, `suppliers.konto_debit`, `suppliers.konto_credit`, `suppliers.klient`, `suppliers.gegenkonto_debit`, `suppliers.gegenkonto_credit`, `suppliers.kostenstelle_debit`, `suppliers.kostenstelle_credit`, `suppliers.extbeleg_debit`, `suppliers.extbeleg_credit`; table `supplier_aliases(id, supplier_id, alias_name, alias_cui_normalized, source, created_by, created_at)`; column `efactura_invoices.supplier_id`.
 
 - [ ] **Step 1: Add the idempotent DDL block**
 
@@ -49,12 +49,15 @@ Insert after the existing `suppliers` `DO $$ ... $$` guard (around `schema_incre
                 ALTER TABLE suppliers ADD COLUMN cui_normalized TEXT;
                 ALTER TABLE suppliers ADD COLUMN nr_reg_normalized TEXT;
                 ALTER TABLE suppliers ADD COLUMN ref_no TEXT;
-                ALTER TABLE suppliers ADD COLUMN firmennr TEXT;
                 ALTER TABLE suppliers ADD COLUMN konto_debit TEXT;
-                ALTER TABLE suppliers ADD COLUMN konto_credit_avans TEXT;
-                ALTER TABLE suppliers ADD COLUMN konto_credit_storno TEXT;
-                ALTER TABLE suppliers ADD COLUMN konto_credit_final TEXT;
-                ALTER TABLE suppliers ADD COLUMN centru_gestiune TEXT;
+                ALTER TABLE suppliers ADD COLUMN konto_credit TEXT;
+                ALTER TABLE suppliers ADD COLUMN klient TEXT;
+                ALTER TABLE suppliers ADD COLUMN gegenkonto_debit TEXT;
+                ALTER TABLE suppliers ADD COLUMN gegenkonto_credit TEXT;
+                ALTER TABLE suppliers ADD COLUMN kostenstelle_debit TEXT;
+                ALTER TABLE suppliers ADD COLUMN kostenstelle_credit TEXT;
+                ALTER TABLE suppliers ADD COLUMN extbeleg_debit TEXT;
+                ALTER TABLE suppliers ADD COLUMN extbeleg_credit TEXT;
             END IF;
         END $$;
     ''')
@@ -99,7 +102,7 @@ Insert after the existing `suppliers` `DO $$ ... $$` guard (around `schema_incre
 
 Run:
 ```bash
-psql "postgresql://localhost/defaultdb" -c "\d suppliers" | grep -E "cui_normalized|konto_credit_avans|centru_gestiune|ref_no"
+psql "postgresql://localhost/defaultdb" -c "\d suppliers" | grep -E "cui_normalized|konto_credit|klient|gegenkonto_debit|kostenstelle_debit|extbeleg_debit|ref_no"
 psql "postgresql://localhost/defaultdb" -c "\d supplier_aliases"
 psql "postgresql://localhost/defaultdb" -c "\d efactura_invoices" | grep supplier_id
 ```
@@ -394,8 +397,9 @@ _FUZZY_THRESHOLD = 0.55
 _EDITABLE = (
     'name', 'supplier_type', 'cui', 'nr_reg_com', 'ref_no', 'address', 'city', 'county',
     'iban', 'bank_account', 'bank_name', 'phone', 'email', 'is_active',
-    'firmennr', 'konto_debit', 'konto_credit_avans', 'konto_credit_storno',
-    'konto_credit_final', 'centru_gestiune',
+    'konto_debit', 'konto_credit', 'klient',
+    'gegenkonto_debit', 'gegenkonto_credit', 'kostenstelle_debit', 'kostenstelle_credit',
+    'extbeleg_debit', 'extbeleg_credit',
 )
 
 
@@ -922,12 +926,15 @@ export interface MasterSupplier {
   cui?: string | null
   nr_reg_com?: string | null
   ref_no?: string | null
-  firmennr?: string | null
   konto_debit?: string | null
-  konto_credit_avans?: string | null
-  konto_credit_storno?: string | null
-  konto_credit_final?: string | null
-  centru_gestiune?: string | null
+  konto_credit?: string | null
+  klient?: string | null
+  gegenkonto_debit?: string | null
+  gegenkonto_credit?: string | null
+  kostenstelle_debit?: string | null
+  kostenstelle_credit?: string | null
+  extbeleg_debit?: string | null
+  extbeleg_credit?: string | null
   is_active?: boolean
   aliases?: { id: number; alias_name: string | null; alias_cui_normalized: string | null; source: string }[]
 }
@@ -1059,17 +1066,19 @@ export default function Procesare() {
           <Card><CardContent className="p-0">
             <Table>
               <TableHeader><TableRow>
-                <TableHead>Name</TableHead><TableHead>CUI</TableHead><TableHead>Firmennr</TableHead>
-                <TableHead>Debit</TableHead><TableHead>Credit (Av/St/Fi)</TableHead><TableHead>C. Gest.</TableHead></TableRow></TableHeader>
+                <TableHead>Name</TableHead><TableHead>CUI</TableHead>
+                <TableHead>Konto (D/C)</TableHead><TableHead>Gegenkonto (D/C)</TableHead>
+                <TableHead>Kostenstelle (D/C)</TableHead><TableHead>Extbeleg (D/C)</TableHead><TableHead>Klient</TableHead></TableRow></TableHeader>
               <TableBody>
                 {(masters?.suppliers ?? []).map((s: MasterSupplier) => (
                   <TableRow key={s.id}>
                     <TableCell>{s.name}</TableCell>
                     <TableCell>{s.cui ?? '-'}</TableCell>
-                    <TableCell>{s.firmennr ?? '-'}</TableCell>
-                    <TableCell>{s.konto_debit ?? '-'}</TableCell>
-                    <TableCell>{[s.konto_credit_avans, s.konto_credit_storno, s.konto_credit_final].map((x) => x ?? '-').join(' / ')}</TableCell>
-                    <TableCell>{s.centru_gestiune ?? '-'}</TableCell>
+                    <TableCell>{`${s.konto_debit ?? '-'} / ${s.konto_credit ?? '-'}`}</TableCell>
+                    <TableCell>{`${s.gegenkonto_debit ?? '-'} / ${s.gegenkonto_credit ?? '-'}`}</TableCell>
+                    <TableCell>{`${s.kostenstelle_debit ?? '-'} / ${s.kostenstelle_credit ?? '-'}`}</TableCell>
+                    <TableCell>{`${s.extbeleg_debit ?? '-'} / ${s.extbeleg_credit ?? '-'}`}</TableCell>
+                    <TableCell>{s.klient ?? '-'}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

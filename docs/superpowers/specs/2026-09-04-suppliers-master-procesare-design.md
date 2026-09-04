@@ -41,7 +41,7 @@ confidently.
 - One shared supplier master, keyed by **CUI → Nr. Reg. Com → Ref. No → name** (tiered).
 - Robust, normalization-aware resolver shared by Accounting and e-Factura.
 - Alias capture so every confirmed spelling variant auto-resolves thereafter.
-- Per-supplier **AP EuroFib posting config** (Firmennr, Konto Debit, Konto Credit ×3, Centru Gestiune).
+- Per-supplier **AP EuroFib posting config** (Konto Debit/Credit, Klient, Gegenkonto Debit/Credit, Kostenstelle Debit/Credit, Extbeleg Debit/Credit).
 - A "Procesare" Accounting sub-tab: worklist of unresolved suppliers + master management.
 - Bind e-Factura invoices to the master **now** (they carry CUI). Invoices resolve by
   name/alias only (resolve-on-read).
@@ -79,13 +79,16 @@ Identity / normalization:
   Indexed, **non-unique** (can legitimately repeat historically).
 - `ref_no TEXT` — external reference for foreign/no-CUI suppliers. Indexed.
 
-AP EuroFib posting block:
-- `firmennr TEXT`
+AP EuroFib posting block (per supplier; used when booking incoming AP invoices):
 - `konto_debit TEXT`
-- `konto_credit_avans TEXT`
-- `konto_credit_storno TEXT`
-- `konto_credit_final TEXT`
-- `centru_gestiune TEXT`
+- `konto_credit TEXT`
+- `klient TEXT`
+- `gegenkonto_debit TEXT`
+- `gegenkonto_credit TEXT`
+- `kostenstelle_debit TEXT`
+- `kostenstelle_credit TEXT`
+- `extbeleg_debit TEXT`
+- `extbeleg_credit TEXT`
 
 Normalized columns are maintained in the repository on every write (not DB triggers), so the
 canonical logic lives in one place with the resolver.
