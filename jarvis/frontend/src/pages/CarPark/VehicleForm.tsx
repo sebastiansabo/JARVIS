@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Loader2, Search, X, RefreshCw, Sparkles, Plus, ArrowLeft, Upload } from 'lucide-react'
+import { Save, Loader2, Search, RefreshCw, Sparkles, ArrowLeft, Upload } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchSelect } from '@/components/shared/SearchSelect'
 import { DecodePreviewDialog } from './DecodePreviewDialog'
@@ -47,7 +47,6 @@ import {
   AUTOVIT_DOORS,
   AUTOVIT_SEATS,
   VEHICLE_SOURCES,
-  CARPARK_COST_TYPES,
 } from '@/data/autovitData'
 
 type FormData = Record<string, string | number | boolean | null | string[]>
@@ -344,8 +343,11 @@ export default function VehicleForm() {
     acquisition_value: null,
     acquisition_currency: 'RON',
     acquisition_price: null,
-    acquisition_date: '',
+    acquisition_date: new Date().toLocaleDateString('en-CA'), // today (local), YYYY-MM-DD
     acquisition_exchange_rate: null,
+    purchase_vat_rate: 21,
+    acquisition_vat: null,
+    vat_deductible: true,
     reconditioning_cost: null,
     transport_cost: null,
     registration_cost: null,
@@ -388,6 +390,8 @@ export default function VehicleForm() {
   // "Titlu anunț" auto-composes from the specs until the user edits it manually
   // (then titleTouched stays true and we stop overwriting their text).
   const titleTouched = useRef(false)
+  // Preț critic auto-defaults to acquisition + 1% until the user edits it.
+  const criticTouched = useRef(false)
 
   // Populate form when editing
   useEffect(() => {
@@ -399,9 +403,16 @@ export default function VehicleForm() {
           populated[key] = (v as unknown as Record<string, string | number | boolean | null>)[key]
         }
       }
+      // VAT: default the rate to 21% and (re)compute the LEI VAT value from the price.
+      const _vatRate = populated.purchase_vat_rate == null ? 21 : Number(populated.purchase_vat_rate)
+      populated.purchase_vat_rate = _vatRate
+      const _acqLei = Number(populated.acquisition_price) || 0
+      populated.acquisition_vat =
+        _acqLei > 0 && _vatRate > 0 ? Math.round(_acqLei * (_vatRate / 100) * 100) / 100 : (populated.acquisition_vat ?? null)
       setForm((prev) => ({ ...prev, ...populated }))
-      // Keep an existing custom title — don't auto-overwrite it.
+      // Keep an existing custom title / manual Preț critic — don't auto-overwrite them.
       if (v.listing_title) titleTouched.current = true
+      if (v.minimum_price != null) criticTouched.current = true
       // Cost lines: parse the stored JSON, else migrate the old fixed columns.
       const vAny = v as unknown as Record<string, unknown>
       let lines: CostLine[] = []
@@ -721,99 +732,11 @@ export default function VehicleForm() {
   // Freeform acquisition cost lines — each entered in LEI on a date, converted
   // to EUR via BNR for that date. Sum of EUR feeds the cost total.
   const [costLines, setCostLines] = useState<CostLine[]>([])
-  const fetchBnrRate = async (date: string): Promise<number | null> => {
-    if (!date) return null
-    try {
-      const r = await carparkApi.getBnrRate(date)
-      return r.kurs ?? null
-    } catch {
-      toast.error('Cursul BNR nu a putut fi preluat')
-      return null
-    }
-  }
-  const addCostLine = () =>
-    setCostLines((p) => [...p, { type: '', description: '', date: '', lei: null, kurs: null, eur: null }])
-  const removeCostLine = (i: number) => setCostLines((p) => p.filter((_, idx) => idx !== i))
-  const patchLine = (i: number, patch: Partial<CostLine>) =>
-    setCostLines((p) => p.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
-  const lineEur = (lei: number | null, kurs: number | null) =>
-    lei != null && kurs != null && kurs > 0 ? Math.round((lei / kurs) * 100) / 100 : null
-  const handleLineDate = async (i: number, date: string) => {
-    patchLine(i, { date })
-    const kurs = await fetchBnrRate(date)
-    if (kurs) {
-      setCostLines((p) => p.map((l, idx) => (idx === i ? { ...l, kurs, eur: lineEur(l.lei, kurs) ?? l.eur } : l)))
-    }
-  }
-  const handleLineLei = (i: number, v: string) => {
-    const lei = v === '' ? null : Number(v)
-    setCostLines((p) => p.map((l, idx) => (idx === i ? { ...l, lei, eur: lineEur(lei, l.kurs) ?? l.eur } : l)))
-  }
-  const handleLineEur = (i: number, v: string) => {
-    const eur = v === '' ? null : Number(v)
-    setCostLines((p) =>
-      p.map((l, idx) => {
-        if (idx !== i) return l
-        const lei = eur != null && l.kurs != null && l.kurs > 0 ? Math.round(eur * l.kurs * 100) / 100 : l.lei
-        return { ...l, eur, lei }
-      }),
-    )
-  }
   const _num = (v: unknown) => (typeof v === 'number' ? v : 0)
   const costLinesTotal = costLines.reduce((s, l) => s + (l.eur ?? 0), 0)
-  const totalCost = _num(form.purchase_price_net) + costLinesTotal
+  // Net acquisition cost (VAT is deductible → net is the real cost) + extra costs, in EUR.
+  const totalCost = Math.round((_num(form.purchase_price_net) / (1 + _num(form.purchase_vat_rate) / 100) + costLinesTotal) * 100) / 100
 
-  // Today's BNR EUR/RON rate — to also show the selling prices in lei.
-  const [eurRonRate, setEurRonRate] = useState<number | null>(null)
-  useEffect(() => {
-    fetchBnrRate(new Date().toISOString().slice(0, 10)).then(setEurRonRate)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  const priceAlt = (price: unknown) => {
-    const p = typeof price === 'number' ? price : null
-    if (p == null || !eurRonRate) return null
-    const cur = (form.price_currency as string) || 'EUR'
-    if (cur === 'EUR') return `${Math.round(p * eurRonRate).toLocaleString('ro-RO')} lei`
-    if (cur === 'RON') return `${Math.round(p / eurRonRate).toLocaleString('ro-RO')} EUR`
-    return null
-  }
-  // Switching the Monedă converts the existing prices to the new currency.
-  const handleCurrencyChange = (_name: string, next: string) => {
-    const prevCur = (form.price_currency as string) || 'EUR'
-    if (prevCur === next || !eurRonRate) {
-      setForm((f) => ({ ...f, price_currency: next }))
-      return
-    }
-    const conv = (v: unknown): number | null => {
-      const p = typeof v === 'number' ? v : null
-      if (p == null) return p
-      if (prevCur === 'EUR' && next === 'RON') return Math.round(p * eurRonRate * 100) / 100
-      if (prevCur === 'RON' && next === 'EUR') return Math.round((p / eurRonRate) * 100) / 100
-      return p
-    }
-    setForm((f) => ({
-      ...f,
-      price_currency: next,
-      list_price: conv(f.list_price),
-      promotional_price: conv(f.promotional_price),
-      minimum_price: conv(f.minimum_price),
-      current_price: conv(f.current_price),
-    }))
-  }
-  const marginInfo = (price: unknown) => {
-    let p = typeof price === 'number' ? price : null
-    // Margin is always computed in EUR (acquisition cost total is EUR).
-    if (p != null && (form.price_currency as string) === 'RON' && eurRonRate) p = p / eurRonRate
-    if (p == null || totalCost <= 0) return null
-    const val = p - totalCost
-    const pct = (val / totalCost) * 100
-    return {
-      text: `Marjă: ${Math.round(val).toLocaleString('ro-RO')} EUR · ${pct.toFixed(1)}%`,
-      positive: val >= 0,
-    }
-  }
-  const listMargin = marginInfo(form.list_price)
-  const minMargin = marginInfo(form.minimum_price)
 
   // Acquisition price is entered in LEI (RON) and converted to EUR using the BNR
   // rate for the invoice date. The EUR value (purchase_price_net) stays editable.
@@ -822,6 +745,18 @@ export default function VehicleForm() {
     const l = _num(lei)
     const k = _num(kurs)
     return l > 0 && k > 0 ? Math.round((l / k) * 100) / 100 : null
+  }
+  // VAT value (LEI) added on top of the net acquisition price (LEI): net × rate/100.
+  const vatFromLei = (lei: unknown, rate: unknown) => {
+    const l = _num(lei)
+    const r = _num(rate)
+    return l > 0 && r > 0 ? Math.round(l * (r / 100) * 100) / 100 : null
+  }
+  // Gross (VAT-inclusive) LEI price from the net price + rate: net × (1 + rate/100).
+  const grossLei = (net: unknown, rate: unknown) => {
+    const n = _num(net)
+    const r = _num(rate)
+    return n > 0 ? Math.round(n * (1 + r / 100) * 100) / 100 : null
   }
   const fetchBnr = async (date: string) => {
     if (!date) return
@@ -832,7 +767,7 @@ export default function VehicleForm() {
         setForm((prev) => ({
           ...prev,
           acquisition_exchange_rate: r.kurs,
-          purchase_price_net: eurFromLei(prev.acquisition_price, r.kurs) ?? prev.purchase_price_net,
+          purchase_price_net: eurFromLei(grossLei(prev.acquisition_price, prev.purchase_vat_rate), r.kurs) ?? prev.purchase_price_net,
         }))
         toast.success(`Curs BNR ${r.kurs} (${r.kurs_date})`)
       }
@@ -852,7 +787,8 @@ export default function VehicleForm() {
       ...prev,
       acquisition_price: lei,
       acquisition_currency: 'RON',
-      purchase_price_net: eurFromLei(lei, prev.acquisition_exchange_rate) ?? prev.purchase_price_net,
+      purchase_price_net: eurFromLei(grossLei(lei, prev.purchase_vat_rate), prev.acquisition_exchange_rate) ?? prev.purchase_price_net,
+      acquisition_vat: vatFromLei(lei, prev.purchase_vat_rate),
     }))
   }
   const handleKurs = (v: string) => {
@@ -860,16 +796,41 @@ export default function VehicleForm() {
     setForm((prev) => ({
       ...prev,
       acquisition_exchange_rate: kurs,
-      purchase_price_net: eurFromLei(prev.acquisition_price, kurs) ?? prev.purchase_price_net,
+      purchase_price_net: eurFromLei(grossLei(prev.acquisition_price, prev.purchase_vat_rate), kurs) ?? prev.purchase_price_net,
     }))
   }
   const handleAcqEur = (v: string) => {
     const eur = v === '' ? null : Number(v)
     setForm((prev) => {
       const kurs = _num(prev.acquisition_exchange_rate)
-      const lei = eur != null && kurs > 0 ? Math.round(eur * kurs * 100) / 100 : prev.acquisition_price
-      return { ...prev, purchase_price_net: eur, acquisition_price: lei }
+      const rate = _num(prev.purchase_vat_rate)
+      // EUR is VAT-inclusive (gross) → gross LEI, then back out the net LEI base.
+      const brut = eur != null && kurs > 0 ? eur * kurs : null
+      const net = brut != null ? Math.round((brut / (1 + rate / 100)) * 100) / 100 : prev.acquisition_price
+      return { ...prev, purchase_price_net: eur, acquisition_price: net, acquisition_vat: vatFromLei(net, rate) }
     })
+  }
+  const handleVatRate = (v: string) => {
+    const rate = v === '' ? null : Number(v)
+    setForm((prev) => ({
+      ...prev,
+      purchase_vat_rate: rate,
+      acquisition_vat: vatFromLei(prev.acquisition_price, rate),
+      purchase_price_net: eurFromLei(grossLei(prev.acquisition_price, rate), prev.acquisition_exchange_rate) ?? prev.purchase_price_net,
+    }))
+  }
+  // Supplier is a non-VAT payer (e.g. persoană fizică) → no purchase VAT (rate 0).
+  const handleNonVatSupplier = (nonVat: boolean) => {
+    const rate = nonVat ? 0 : 21
+    setForm((prev) => ({
+      ...prev,
+      vat_deductible: !nonVat,
+      // No deductible VAT → prices are entered gross ("Cu TVA"); lock that mode.
+      price_includes_vat: nonVat ? true : prev.price_includes_vat,
+      purchase_vat_rate: rate,
+      acquisition_vat: vatFromLei(prev.acquisition_price, rate),
+      purchase_price_net: eurFromLei(grossLei(prev.acquisition_price, rate), prev.acquisition_exchange_rate) ?? prev.purchase_price_net,
+    }))
   }
 
   // Submit
@@ -1065,7 +1026,7 @@ export default function VehicleForm() {
           <TabsTrigger value="specificatii">Specificații</TabsTrigger>
           <TabsTrigger value="dotari">Dotări</TabsTrigger>
           <TabsTrigger value="anunt">Anunț</TabsTrigger>
-          <TabsTrigger value="comercial">Comercial</TabsTrigger>
+          <TabsTrigger value="comercial">Achiziție</TabsTrigger>
         </TabsList>
         <TabsContent value="vehicul" className="space-y-4 pt-4">
       {/* Identification */}
@@ -1170,7 +1131,7 @@ export default function VehicleForm() {
           </div>
           <TextField label="Nr. stoc" name="nr_stoc" value={form.nr_stoc as string} onChange={handleChange} />
           <SelectField
-            label="Categorie"
+            label="Tip stoc"
             name="category"
             value={form.category as string}
             options={CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABELS[c] }))}
@@ -1603,14 +1564,9 @@ export default function VehicleForm() {
             searchPlaceholder="Caută sursă..."
           />
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <TextField label="Nume furnizor" name="supplier_name" value={form.supplier_name as string} onChange={handleChange} />
-          <TextField label="CIF furnizor" name="supplier_cif" value={form.supplier_cif as string} onChange={handleChange} />
-          <TextField label="Nr. factură intrare" name="acquisition_document_number" value={form.acquisition_document_number as string} onChange={handleChange} />
-        </div>
       </Card>
-      {/* Pricing */}
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Achiziție (sale pricing lives on the profile Pricing tab) */}
+      <div className="grid gap-4">
         {/* Achiziție */}
         <Card className="p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
@@ -1619,140 +1575,91 @@ export default function VehicleForm() {
               <span className="text-xs font-medium">Cost total: {totalCost.toLocaleString('ro-RO')} EUR</span>
             )}
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-4">
+            <TextField label="Nume furnizor" name="supplier_name" value={form.supplier_name as string} onChange={handleChange} />
+            <TextField label="CIF / Nr. Reg. furnizor" name="supplier_cif" value={form.supplier_cif as string} onChange={handleChange} />
+            <TextField label="Nr. Document" name="acquisition_document_number" value={form.acquisition_document_number as string} onChange={handleChange} />
             <div className="space-y-1.5">
-              <Label>Preț achiziție (LEI)</Label>
-              <Input type="number" step="0.01" value={inputVal(form.acquisition_price)} onChange={(e) => handleAcqLei(e.target.value)} placeholder="RON" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Data factură</Label>
+              <Label>Data Document</Label>
               <Input type="date" value={(form.acquisition_date as string) ?? ''} onChange={(e) => handleAcqDate(e.target.value)} />
             </div>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <CheckboxField label="Furnizor neplătitor de TVA" name="non_vat_supplier" checked={form.vat_deductible === false} onChange={(_n, checked) => handleNonVatSupplier(checked)} />
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>{form.vat_deductible === false ? 'Preț Achiziție (Lei)' : 'Preț Achiziție Net (Lei)'}</Label>
+              <Input type="number" step="0.01" value={inputVal(form.acquisition_price)} onChange={(e) => handleAcqLei(e.target.value)} placeholder="RON" />
+            </div>
+            {form.vat_deductible !== false && (
+              <div className="space-y-1.5">
+                <Label>Cotă TVA (%)</Label>
+                <Input type="number" step="1" value={inputVal(form.purchase_vat_rate)} onChange={(e) => handleVatRate(e.target.value)} />
+              </div>
+            )}
+            {form.vat_deductible !== false && (
+              <div className="space-y-1.5">
+                <Label>Valoare TVA (LEI)</Label>
+                <Input type="number" readOnly value={inputVal(form.acquisition_vat)} className="bg-muted" />
+              </div>
+            )}
+            {form.vat_deductible !== false && (
+              <div className="space-y-1.5">
+                <Label>Preț Achiziție Brut (Lei)</Label>
+                <Input type="number" readOnly value={inputVal(grossLei(form.acquisition_price, form.purchase_vat_rate))} className="bg-muted" />
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Curs BNR (RON/EUR)</Label>
               <Input type="number" step="0.0001" value={inputVal(form.acquisition_exchange_rate)} onChange={(e) => handleKurs(e.target.value)} placeholder={bnrLoading ? 'Se preia…' : 'auto la data facturii'} />
             </div>
             <div className="space-y-1.5">
-              <Label>Preț achiziție (EUR)</Label>
+              <Label>{form.vat_deductible === false ? 'Preț Achiziție (Eur)' : 'Preț Achiziție Eur (TVA inclus)'}</Label>
               <Input type="number" step="0.01" value={inputVal(form.purchase_price_net)} onChange={(e) => handleAcqEur(e.target.value)} />
             </div>
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">Costuri suplimentare (EUR)</Label>
-              <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={addCostLine}>
-                <Plus className="mr-1 h-3 w-3" /> Adaugă linie
-              </Button>
-            </div>
-            {costLines.length === 0 && (
-              <p className="text-xs text-muted-foreground">Nicio linie. Adaugă recondiționare, transport etc.</p>
+            {form.vat_deductible !== false && (
+              <div className="space-y-1.5">
+                <Label>Preț Achiziție Eur (fără TVA)</Label>
+                <Input type="number" readOnly value={inputVal(eurFromLei(form.acquisition_price, form.acquisition_exchange_rate))} className="bg-muted" />
+              </div>
             )}
-            {costLines.map((line, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
-                <div className="w-36 shrink-0">
-                  <SearchSelect
-                    value={line.type}
-                    onValueChange={(v) => patchLine(i, { type: v })}
-                    options={[...CARPARK_COST_TYPES]}
-                    placeholder="Tip cost"
-                    searchPlaceholder="Caută/adaugă..."
-                    allowCustom
-                  />
-                </div>
-                <Input placeholder="Descriere" className="min-w-[7rem] flex-1" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} />
-                <Input type="date" className="w-36 shrink-0" value={line.date} onChange={(e) => handleLineDate(i, e.target.value)} />
-                <Input type="number" step="0.01" placeholder="LEI" className="w-24 shrink-0" value={line.lei ?? ''} onChange={(e) => handleLineLei(i, e.target.value)} title={line.kurs ? `Curs BNR ${line.kurs}` : ''} />
-                <Input type="number" step="0.01" placeholder="EUR" className="w-24 shrink-0" value={line.eur ?? ''} onChange={(e) => handleLineEur(i, e.target.value)} />
-                <Button type="button" size="icon" variant="ghost" className="shrink-0" onClick={() => removeCostLine(i)}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
           </div>
-        </Card>
-        {/* Vânzare */}
-        <Card className="p-4 space-y-3">
-          <h3 className="text-sm font-semibold">Vânzare</h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label>Preț</Label>
-              <Input type="number" step="0.01" value={inputVal(form.list_price)} onChange={(e) => handleNumericChange('list_price', e.target.value)} />
-              {priceAlt(form.list_price) && (
-                <p className="text-[10px] text-muted-foreground">≈ {priceAlt(form.list_price)}</p>
-              )}
-              {listMargin && (
-                <p className={`text-xs ${listMargin.positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{listMargin.text}</p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label>Preț promoțional</Label>
-              <Input type="number" step="0.01" value={inputVal(form.promotional_price)} onChange={(e) => handleNumericChange('promotional_price', e.target.value)} />
-              {priceAlt(form.promotional_price) && (
-                <p className="text-[10px] text-muted-foreground">≈ {priceAlt(form.promotional_price)}</p>
-              )}
-            </div>
-            <SelectField
-              label="Monedă"
-              name="price_currency"
-              value={form.price_currency as string}
-              options={[
-                { value: 'EUR', label: 'EUR' },
-                { value: 'RON', label: 'RON' },
-                { value: 'USD', label: 'USD' },
-              ]}
-              onChange={handleCurrencyChange}
-            />
-            <div className="space-y-1.5">
-              <Label>Preț minim</Label>
-              <Input type="number" step="0.01" value={inputVal(form.minimum_price)} onChange={(e) => handleNumericChange('minimum_price', e.target.value)} />
-              {priceAlt(form.minimum_price) && (
-                <p className="text-[10px] text-muted-foreground">≈ {priceAlt(form.minimum_price)}</p>
-              )}
-              <p className="text-[10px] text-muted-foreground">Doar pentru alerte & statistici</p>
-              {minMargin && (
-                <p className={`text-xs ${minMargin.positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{minMargin.text}</p>
-              )}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-4">
-            <CheckboxField label="Preț cu TVA" name="price_includes_vat" checked={!!form.price_includes_vat} onChange={handleChange} />
-            <CheckboxField label="Negociabil" name="is_negotiable" checked={!!form.is_negotiable} onChange={handleChange} />
-            <CheckboxField label="Regim marjă" name="margin_scheme" checked={!!form.margin_scheme} onChange={handleChange} />
-            <CheckboxField label="Eligibil finanțare" name="eligible_for_financing" checked={!!form.eligible_for_financing} onChange={handleChange} />
-          </div>
-          {isEdit && pricingHistory.length > 0 && (
-            <>
-              <Separator />
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Istoric preț</Label>
-                <ul className="max-h-32 space-y-0.5 overflow-y-auto text-xs text-muted-foreground">
-                  {pricingHistory.map((h, i) => {
-                    const d = new Date(h.created_at).toLocaleDateString('ro-RO')
-                    const cur = (form.price_currency as string) || 'EUR'
-                    const reasons: Record<string, string> = {
-                      manual_update: 'modificare manuală',
-                      rule: 'regulă de preț',
-                      promotion: 'promoție',
-                      initial: 'preț inițial',
-                    }
-                    const reason = h.change_reason ? reasons[h.change_reason] ?? h.change_reason : ''
-                    const changed = h.old_price != null && h.old_price !== h.new_price
-                    const price = changed
-                      ? `${(h.old_price ?? 0).toLocaleString('ro-RO')} → ${(h.new_price ?? 0).toLocaleString('ro-RO')} ${cur}`
-                      : `${(h.new_price ?? 0).toLocaleString('ro-RO')} ${cur}`
-                    return (
-                      <li key={i}>
-                        {d} — {price}
-                        {reason ? ` · ${reason}` : ''}
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            </>
-          )}
         </Card>
       </div>
+      {/* Istoric preț — collapsed */}
+      {isEdit && pricingHistory.length > 0 && (
+        <Card className="p-4">
+          <details>
+            <summary className="cursor-pointer select-none text-sm font-semibold">
+              Istoric preț ({pricingHistory.length})
+            </summary>
+            <ul className="mt-3 max-h-64 space-y-0.5 overflow-y-auto text-xs text-muted-foreground">
+              {pricingHistory.map((h, i) => {
+                const d = new Date(h.created_at).toLocaleDateString('ro-RO')
+                const cur = (form.price_currency as string) || 'EUR'
+                const reasons: Record<string, string> = {
+                  manual_update: 'modificare manuală',
+                  rule: 'regulă de preț',
+                  promotion: 'promoție',
+                  initial: 'preț inițial',
+                }
+                const reason = h.change_reason ? reasons[h.change_reason] ?? h.change_reason : ''
+                const changed = h.old_price != null && h.old_price !== h.new_price
+                const price = changed
+                  ? `${(h.old_price ?? 0).toLocaleString('ro-RO')} → ${(h.new_price ?? 0).toLocaleString('ro-RO')} ${cur}`
+                  : `${(h.new_price ?? 0).toLocaleString('ro-RO')} ${cur}`
+                return (
+                  <li key={i}>
+                    {d} — {price}
+                    {reason ? ` · ${reason}` : ''}
+                  </li>
+                )
+              })}
+            </ul>
+          </details>
+        </Card>
+      )}
         </TabsContent>
       </Tabs>
 
