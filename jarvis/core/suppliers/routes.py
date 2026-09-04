@@ -77,3 +77,16 @@ def api_add_alias(supplier_id):
                                alias_cui=data.get('alias_cui'), source=data.get('source', 'manual'),
                                created_by=getattr(current_user, 'id', None))
     return jsonify({'success': True, 'id': alias_id}), 201
+
+
+@suppliers_bp.route('/api/suppliers/merge', methods=['POST'])
+@login_required
+def api_merge_suppliers():
+    if not _check_supplier_perm('merge'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(force=True) or {}
+    survivor, dup = data.get('survivor_id'), data.get('duplicate_id')
+    if not survivor or not dup or survivor == dup:
+        return jsonify({'success': False, 'error': 'survivor_id and distinct duplicate_id are required'}), 400
+    _repo.merge(survivor, dup, created_by=getattr(current_user, 'id', None))
+    return jsonify({'success': True})
