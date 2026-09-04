@@ -16,6 +16,7 @@ import {
   Lock,
   Car,
   Pencil,
+  X,
   XIcon,
   SlidersHorizontal,
   Filter,
@@ -485,6 +486,81 @@ function withGaps(sessions: FoiContract[], kmMin?: number, kmMax?: number): Deta
   return rows
 }
 
+// Inline odometer-boundary editor for the route-sheet KM cell. Reads as
+// "start - end"; with edit permission it becomes two number inputs. Saving posts
+// to /reading, which moves this boundary and — when the chain is contiguous —
+// the shared reading on the adjacent session, enforcing the chain stays
+// chronological and never dips below last month's close. Gated by the same
+// permission as "Corectează" (test_drive.contracts.correct → canCorrect).
+function KmCell({ c, canEdit }: { c: FoiContract; canEdit: boolean }) {
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [start, setStart] = useState('')
+  const [end, setEnd] = useState('')
+
+  // Only real drives (out now or finished) carry a genuine odometer span; planned/
+  // pending/missed rows have placeholder km and are handled via the full form.
+  const editable = canEdit && (c.status === 'FILLED' || c.status === 'COMPLETED')
+  const label = `${c.km_start} - ${c.km_end}`
+
+  const save = useMutation({
+    mutationFn: () => foiParcursApi.adjustReading(c.id, { km_start: Number(start), km_end: Number(end) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      queryClient.invalidateQueries({ queryKey: ['fp-route-sheets'] })
+      setEditing(false)
+      toast.success('Kilometraj actualizat')
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Actualizarea a eșuat'),
+  })
+
+  if (!editing) {
+    if (!editable) return <span className="text-xs whitespace-nowrap tabular-nums">{label}</span>
+    return (
+      <button
+        type="button"
+        onClick={() => { setStart(String(c.km_start)); setEnd(String(c.km_end)); setEditing(true) }}
+        className="-mx-1 inline-flex items-center gap-1 rounded px-1 text-xs tabular-nums hover:bg-accent hover:text-accent-foreground"
+        title="Editează kilometrajul"
+      >
+        {label}
+        <Pencil className="h-3 w-3 opacity-40" />
+      </button>
+    )
+  }
+
+  const dirty = start !== String(c.km_start) || end !== String(c.km_end)
+  const valid = start !== '' && end !== '' && Number.isFinite(Number(start)) &&
+    Number.isFinite(Number(end)) && Number(end) >= Number(start)
+  const submit = () => { if (dirty && valid) save.mutate() }
+
+  return (
+    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <Input
+        value={start} onChange={(e) => setStart(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setEditing(false) }}
+        inputMode="numeric" aria-label="KM plecare" autoFocus
+        className="h-7 w-20 px-1 text-xs tabular-nums"
+      />
+      <span className="text-muted-foreground">-</span>
+      <Input
+        value={end} onChange={(e) => setEnd(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setEditing(false) }}
+        inputMode="numeric" aria-label="KM sosire"
+        className="h-7 w-20 px-1 text-xs tabular-nums"
+      />
+      <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+        disabled={!dirty || !valid || save.isPending} onClick={submit} title="Salvează">
+        <Check className="h-3.5 w-3.5" />
+      </Button>
+      <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+        disabled={save.isPending} onClick={() => setEditing(false)} title="Anulează">
+        <X className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  )
+}
+
 // ── Foi de Parcurs — one route sheet per car × month (cumulated driving
 //    sessions for that vehicle that month), scoped to the header company.
 //    Month is a filter; each row expands to its individual sessions and can
@@ -808,7 +884,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                         {sessionActualKm(c) != null ? `${sessionActualKm(c)} km` : '—'}
                                       </TableCell>
                                       <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{sessionEstimatedKm(c)} km</TableCell>
-                                      <TableCell className="text-xs whitespace-nowrap">{c.km_start} - {c.km_end}</TableCell>
+                                      <TableCell className="whitespace-nowrap"><KmCell c={c} canEdit={canCorrect} /></TableCell>
                                       <TableCell>
                                         <div className="flex items-center gap-1">
                                           <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
