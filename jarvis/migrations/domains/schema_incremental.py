@@ -1475,6 +1475,30 @@ def create_schema_incremental(conn, cursor):
     ''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_efactura_invoices_supplier ON efactura_invoices(supplier_id)")
 
+    # ── supplier_konto_config: per-company AP EuroFib posting (Phase 1.1) ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS supplier_konto_config (
+            id SERIAL PRIMARY KEY,
+            supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            konto_debit TEXT,
+            konto_credit TEXT,
+            klient TEXT,
+            gegenkonto_debit TEXT,
+            gegenkonto_credit TEXT,
+            kostenstelle_debit TEXT,
+            kostenstelle_credit TEXT,
+            extbeleg_debit TEXT,
+            extbeleg_credit TEXT,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(supplier_id, company_id)
+        )
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_supplier_konto_company ON supplier_konto_config(company_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_supplier_konto_supplier ON supplier_konto_config(supplier_id)")
+
     # ── document_wml + chunks (Phase D) ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS document_wml (
