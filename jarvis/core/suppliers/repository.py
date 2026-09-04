@@ -126,7 +126,11 @@ class SupplierMasterRepository(BaseRepository):
                     """INSERT INTO supplier_aliases (supplier_id, alias_name, alias_cui_normalized, source, created_by)
                        VALUES (%s, %s, %s, 'merge', %s)""",
                     (survivor_id, dup['name'], dup['cui_normalized'], created_by))
-            cursor.execute("UPDATE suppliers SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s", (duplicate_id,))
+            cursor.execute(
+                """UPDATE suppliers
+                   SET is_active = FALSE, cui_normalized = NULL, nr_reg_normalized = NULL, ref_no = NULL,
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE id = %s""", (duplicate_id,))
             return True
         return self.execute_many(_work)
 
