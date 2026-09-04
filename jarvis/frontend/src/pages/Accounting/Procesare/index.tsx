@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil } from 'lucide-react'
+import { Plus, Pencil, ChevronDown, ChevronRight, Download } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
@@ -21,6 +21,13 @@ import { useAuthStore } from '@/stores/authStore'
 import { organizationApi } from '@/api/organization'
 import { suppliersApi, type MasterSupplier, type BudgetedInvoice, type KontoConfig } from '@/api/suppliers'
 import type { CompanyWithBrands } from '@/types/organization'
+
+/* ── worklist grouped by supplier ── */
+interface SupplierGroup {
+  supplierId: number
+  supplierName: string
+  invoices: BudgetedInvoice[]
+}
 
 /* ── period preset control (mirrors FoiParcurs/ReportsTab's Seg + rangeForPreset) ── */
 type PeriodPreset = 'month' | '30d' | 'year' | 'custom'
@@ -235,6 +242,79 @@ export default function Procesare() {
     enabled: !!companyId,
   })
 
+  // ── Worklist grouped by supplier ──
+  const supplierGroups = useMemo<SupplierGroup[]>(() => {
+    const byId = new Map<number, SupplierGroup>()
+    for (const inv of invoicesData?.invoices ?? []) {
+      let group = byId.get(inv.supplier_id)
+      if (!group) {
+        group = { supplierId: inv.supplier_id, supplierName: inv.supplier, invoices: [] }
+        byId.set(inv.supplier_id, group)
+      }
+      group.invoices.push(inv)
+    }
+    return Array.from(byId.values()).sort((a, b) => a.supplierName.localeCompare(b.supplierName))
+  }, [invoicesData])
+
+  const [expandedSuppliers, setExpandedSuppliers] = useState<Set<number>>(new Set())
+  const toggleSupplier = (supplierId: number) =>
+    setExpandedSuppliers((prev) => {
+      const next = new Set(prev)
+      if (next.has(supplierId)) next.delete(supplierId)
+      else next.add(supplierId)
+      return next
+    })
+
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<number>>(new Set())
+  // Selection is period/company scoped — drop stale picks when either changes.
+  useEffect(() => { setSelectedInvoiceIds(new Set()) }, [companyId, startDate, endDate])
+
+  const toggleInvoiceSelected = (invoiceId: number) =>
+    setSelectedInvoiceIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(invoiceId)) next.delete(invoiceId)
+      else next.add(invoiceId)
+      return next
+    })
+
+  const groupSelectionState = (group: SupplierGroup): boolean | 'indeterminate' => {
+    const selectedCount = group.invoices.filter((inv) => selectedInvoiceIds.has(inv.id)).length
+    if (selectedCount === 0) return false
+    return selectedCount === group.invoices.length ? true : 'indeterminate'
+  }
+
+  const toggleGroupSelected = (group: SupplierGroup) => {
+    const allSelected = group.invoices.every((inv) => selectedInvoiceIds.has(inv.id))
+    setSelectedInvoiceIds((prev) => {
+      const next = new Set(prev)
+      for (const inv of group.invoices) {
+        if (allSelected) next.delete(inv.id)
+        else next.add(inv.id)
+      }
+      return next
+    })
+  }
+
+  const exportSupplierMut = useMutation({
+    mutationFn: async (group: SupplierGroup) => {
+      if (companyId === null) throw new Error('Nicio companie selectată')
+      const selectedInGroup = group.invoices.filter((inv) => selectedInvoiceIds.has(inv.id)).map((inv) => inv.id)
+      const invoiceIds = selectedInGroup.length > 0 ? selectedInGroup : group.invoices.map((inv) => inv.id)
+      await suppliersApi.exportCsv(companyId, startDate, endDate, invoiceIds)
+    },
+    onSuccess: (_res, group) => toast.success(`Export CSV descărcat — ${group.supplierName}`),
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Exportul a eșuat'),
+  })
+
+  const exportAllMut = useMutation({
+    mutationFn: async () => {
+      if (companyId === null) throw new Error('Nicio companie selectată')
+      await suppliersApi.exportAllZip(companyId, startDate, endDate)
+    },
+    onSuccess: () => toast.success('Export ZIP descărcat'),
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Exportul a eșuat'),
+  })
+
   // ── Add supplier dialog ──
   const [addOpen, setAddOpen] = useState(false)
   const [addForm, setAddForm] = useState({ name: '', cui: '', nr_reg_com: '', ref_no: '' })
@@ -314,46 +394,109 @@ export default function Procesare() {
         <div className="py-12 text-center text-sm text-muted-foreground">Se încarcă companiile…</div>
       ) : (
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-        <TabsList>
-          <TabsTrigger value="worklist">Worklist ({invoicesData?.invoices.length ?? 0})</TabsTrigger>
-          <TabsTrigger value="master">Master</TabsTrigger>
-        </TabsList>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList>
+            <TabsTrigger value="worklist">Worklist ({invoicesData?.invoices.length ?? 0})</TabsTrigger>
+            <TabsTrigger value="master">Master</TabsTrigger>
+          </TabsList>
+          {tab === 'worklist' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Seg value={preset} onChange={setPreset} options={[['month', 'Luna curentă'], ['30d', 'Ultimele 30 zile'], ['year', 'Anul curent'], ['custom', 'Interval']] as const} />
+              {preset === 'custom' && (
+                <DateField
+                  mode="range"
+                  startDate={customFrom}
+                  endDate={customTo}
+                  onRangeChange={(start, end) => { setCustomFrom(start); setCustomTo(end) }}
+                />
+              )}
+            </div>
+          )}
+        </div>
 
-        <TabsContent value="worklist">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <Seg value={preset} onChange={setPreset} options={[['month', 'Luna curentă'], ['30d', 'Ultimele 30 zile'], ['year', 'Anul curent'], ['custom', 'Interval']] as const} />
-            {preset === 'custom' && (
-              <DateField
-                mode="range"
-                startDate={customFrom}
-                endDate={customTo}
-                onRangeChange={(start, end) => { setCustomFrom(start); setCustomTo(end) }}
-              />
-            )}
+        <TabsContent value="worklist" className="mt-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="text-sm text-muted-foreground">
+              {supplierGroups.length} furnizori · {(invoicesData?.invoices ?? []).length} facturi
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => exportAllMut.mutate()}
+              disabled={exportAllMut.isPending || supplierGroups.length === 0}
+            >
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              {exportAllMut.isPending ? 'Se exportă...' : 'Export toate (ZIP)'}
+            </Button>
           </div>
           <Card><CardContent className="p-0">
             <Table>
               <TableHeader><TableRow>
-                <TableHead>Furnizor</TableHead><TableHead>Nr. factură</TableHead><TableHead>Data</TableHead>
+                <TableHead className="w-8" />
+                <TableHead>Furnizor / Nr. factură</TableHead><TableHead>Data</TableHead>
                 <TableHead className="text-right">Net</TableHead><TableHead className="text-right">Total</TableHead>
-                <TableHead>Monedă</TableHead><TableHead /></TableRow></TableHeader>
+                <TableHead>Monedă</TableHead><TableHead className="text-right">Acțiuni</TableHead></TableRow></TableHeader>
               <TableBody>
-                {(invoicesData?.invoices ?? []).map((inv: BudgetedInvoice) => (
-                  <TableRow key={inv.id}>
-                    <TableCell>{inv.supplier}</TableCell>
-                    <TableCell>{inv.invoice_number}</TableCell>
-                    <TableCell className="whitespace-nowrap">{new Date(inv.invoice_date).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}</TableCell>
-                    <TableCell className="text-right">
-                      {inv.net_value != null ? <CurrencyDisplay value={Number(inv.net_value)} currency={inv.currency} /> : '—'}
-                    </TableCell>
-                    <TableCell className="text-right"><CurrencyDisplay value={Number(inv.invoice_value)} currency={inv.currency} /></TableCell>
-                    <TableCell>{inv.currency}</TableCell>
-                    <TableCell className="text-right">
-                      <Badge className="bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/15 dark:text-emerald-400">Ready</Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!invoicesLoading && (invoicesData?.invoices ?? []).length === 0 && (
+                {supplierGroups.map((group) => {
+                  const isExpanded = expandedSuppliers.has(group.supplierId)
+                  return (
+                    <Fragment key={group.supplierId}>
+                      <TableRow
+                        className="cursor-pointer bg-muted/30 hover:bg-muted/50"
+                        onClick={() => toggleSupplier(group.supplierId)}
+                      >
+                        <TableCell>
+                          {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                        </TableCell>
+                        <TableCell colSpan={4}>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              checked={groupSelectionState(group)}
+                              onCheckedChange={() => toggleGroupSelected(group)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <span className="font-medium">{group.supplierName}</span>
+                            <Badge variant="secondary" className="font-normal">{group.invoices.length} facturi</Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell />
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => { e.stopPropagation(); exportSupplierMut.mutate(group) }}
+                            disabled={exportSupplierMut.isPending}
+                          >
+                            <Download className="mr-1.5 h-3.5 w-3.5" />
+                            Export CSV
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && group.invoices.map((inv) => (
+                        <TableRow key={inv.id}>
+                          <TableCell />
+                          <TableCell className="pl-8">
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                checked={selectedInvoiceIds.has(inv.id)}
+                                onCheckedChange={() => toggleInvoiceSelected(inv.id)}
+                              />
+                              {inv.invoice_number}
+                            </div>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">{new Date(inv.invoice_date).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}</TableCell>
+                          <TableCell className="text-right">
+                            {inv.net_value != null ? <CurrencyDisplay value={Number(inv.net_value)} currency={inv.currency} /> : '—'}
+                          </TableCell>
+                          <TableCell className="text-right"><CurrencyDisplay value={Number(inv.invoice_value)} currency={inv.currency} /></TableCell>
+                          <TableCell>{inv.currency}</TableCell>
+                          <TableCell />
+                        </TableRow>
+                      ))}
+                    </Fragment>
+                  )
+                })}
+                {!invoicesLoading && supplierGroups.length === 0 && (
                   <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">Nicio factură bugetată în interval</TableCell></TableRow>
                 )}
               </TableBody>
