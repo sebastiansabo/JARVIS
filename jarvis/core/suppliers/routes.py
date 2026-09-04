@@ -1,10 +1,13 @@
 """Supplier master + Procesare resolution API."""
-from flask import Blueprint, jsonify, request
+import re
+
+from flask import Blueprint, Response, jsonify, request
 from flask_login import login_required, current_user
 from psycopg2 import errors as pg_errors
 
 from core.organization.repositories.company_repository import CompanyRepository
 from core.roles.repositories.permission_repository import PermissionRepository
+from core.suppliers.eurofib_export import build_csv
 from core.suppliers.repository import SupplierMasterRepository, KONTO_FIELDS
 from core.suppliers.resolver import SupplierResolver
 
@@ -211,6 +214,79 @@ def api_worklist_invoices():
         return jsonify({'success': False, 'error': 'Company not found'}), 404
     invoices = _repo.list_budgeted_invoices(company_id, company['company'], start_date, end_date)
     return jsonify({'success': True, 'invoices': invoices})
+
+
+@suppliers_bp.route('/api/suppliers/export', methods=['POST'])
+@login_required
+def api_export():
+    """Batch EuroFib (MEDLINE) CSV export of budgeted invoices for a company + period,
+    grouped by supplier. Body: {company_id, start_date, end_date, invoice_ids?}."""
+    if not _check_supplier_perm('view'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+    data = request.get_json(force=True) or {}
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    company_id, err = _parse_company_id(data.get('company_id'))
+    if err:
+        return err
+    if not start_date or not end_date:
+        return jsonify({'success': False, 'error': 'start_date and end_date are required'}), 400
+
+    company = _company_repo.get(company_id)
+    if not company:
+        return jsonify({'success': False, 'error': 'Company not found'}), 404
+
+    rows = _repo.list_budgeted_invoices(company_id, company['company'], start_date, end_date, limit=5000)
+
+    invoice_ids = data.get('invoice_ids')
+    if invoice_ids:
+        try:
+            wanted = {int(i) for i in invoice_ids}
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'invoice_ids must be integers'}), 400
+        rows = [r for r in rows if r['id'] in wanted]
+
+    skipped = []
+    invoices_with_configs = []
+    for row in rows:
+        net = row.get('net_value')
+        gross = row.get('gross_amount') if row.get('gross_amount') is not None else row.get('invoice_value')
+        if net is None or gross is None:
+            skipped.append({'invoice_number': row.get('invoice_number'), 'supplier': row.get('supplier'),
+                            'reason': 'missing_amounts'})
+            continue
+        vat = float(gross) - float(net)
+        konto = _repo.get_effective_konto(row['supplier_id'], company_id)['konto']
+        invoice = {
+            'supplier': row.get('supplier'),
+            'supplier_id': row.get('supplier_id'),
+            'invoice_number': row.get('invoice_number'),
+            'invoice_date': row.get('invoice_date'),
+            # `invoices` has no due_date column (only efactura_invoices does) — fall back to
+            # invoice_date as the "valuta" value date until a real due_date is plumbed through.
+            'due_date': row.get('invoice_date'),
+            'net_amount': net,
+            'vat_amount': vat,
+            'gross_amount': gross,
+        }
+        invoices_with_configs.append((invoice, konto))
+
+    skipped_before_csv = len(skipped)
+    csv_text = build_csv(invoices_with_configs, skipped=skipped)
+    skipped_in_csv = len(skipped) - skipped_before_csv
+    written = len(invoices_with_configs) - skipped_in_csv
+
+    if written == 0:
+        return jsonify({'success': False, 'skipped': skipped}), 200
+
+    filename = f"eurofib_{company['company']}_{start_date}_{end_date}.csv"
+    filename = re.sub(r'[^A-Za-z0-9_.\-]+', '_', filename)
+    return Response(
+        csv_text,
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+    )
 
 
 @suppliers_bp.route('/api/suppliers/resolve', methods=['POST'])
