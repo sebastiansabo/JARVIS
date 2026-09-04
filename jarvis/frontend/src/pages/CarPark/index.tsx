@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -16,6 +16,7 @@ import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
+import { ColumnToggle, useColumnState } from '@/components/shared/ColumnToggle'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -99,6 +100,39 @@ function formatKm(km: number): string {
   return new Intl.NumberFormat('ro-RO').format(km) + ' km'
 }
 
+// ── Toggleable table columns (thumbnail, Vehicle, and actions stay fixed) ──
+type CarparkCol = {
+  key: string
+  label: string
+  sortKey?: string
+  headClassName?: string
+  cellClassName?: string
+  render: (v: VehicleCatalogItem) => ReactNode
+}
+const CARPARK_COLUMNS: CarparkCol[] = [
+  { key: 'category', label: 'Tip stoc', render: (v) => <CategoryBadge category={v.category} /> },
+  { key: 'status', label: 'Status', render: (v) => <VehicleStatusBadge status={v.status} /> },
+  { key: 'year', label: 'Year', sortKey: 'year_of_manufacture', cellClassName: 'tabular-nums', render: (v) => v.year_of_manufacture ?? '-' },
+  { key: 'mileage', label: 'Mileage', sortKey: 'mileage_km', cellClassName: 'tabular-nums text-sm', render: (v) => (v.mileage_km > 0 ? formatKm(v.mileage_km) : '-') },
+  { key: 'fuel', label: 'Fuel', cellClassName: 'text-sm', render: (v) => v.fuel_type ?? '-' },
+  {
+    key: 'price', label: 'Price', sortKey: 'current_price', headClassName: 'text-right', cellClassName: 'text-right',
+    render: (v) => (v.current_price != null
+      ? <CurrencyDisplay value={v.current_price} currency={v.price_currency} />
+      : <span className="text-muted-foreground">-</span>),
+  },
+  {
+    key: 'days', label: 'Days', sortKey: 'stationary_days', cellClassName: 'tabular-nums',
+    render: (v) => (
+      <span className={v.stationary_days > 90 ? 'text-red-600 dark:text-red-400 font-medium' : v.stationary_days > 60 ? 'text-orange-600 dark:text-orange-400' : ''}>
+        {v.stationary_days}
+      </span>
+    ),
+  },
+  { key: 'location', label: 'Location', cellClassName: 'text-sm text-muted-foreground truncate max-w-[120px]', render: (v) => v.location_text ?? '-' },
+]
+const CARPARK_COL_KEYS = CARPARK_COLUMNS.map((c) => c.key)
+
 // ── Catalog page ───────────────────────────────────────────
 export default function CarPark() {
   const isMobile = useIsMobile()
@@ -114,6 +148,15 @@ export default function CarPark() {
   const filters = useCarParkStore((s) => s.filters)
   const updateFilter = useCarParkStore((s) => s.updateFilter)
   const clearFilters = useCarParkStore((s) => s.clearFilters)
+
+  // Column visibility + order (persisted to localStorage)
+  const { visibleColumns, setVisibleColumns, defaultColumns } = useColumnState(
+    'carpark.listCols.v1', CARPARK_COL_KEYS, CARPARK_COL_KEYS,
+  )
+  const visibleColDefs = useMemo(
+    () => visibleColumns.map((k) => CARPARK_COLUMNS.find((c) => c.key === k)).filter(Boolean) as CarparkCol[],
+    [visibleColumns],
+  )
   const page = useCarParkStore((s) => s.page)
   const perPage = useCarParkStore((s) => s.perPage)
   const setPage = useCarParkStore((s) => s.setPage)
@@ -291,15 +334,6 @@ export default function CarPark() {
       <PageHeader
         title="CarPark"
         breadcrumbs={[{ label: 'CarPark' }]}
-        search={
-          <SearchInput
-            value={search}
-            onChange={handleSearch}
-            placeholder="VIN, brand, model..."
-            className={isSmall ? undefined : 'w-48 md:w-64'}
-            collapsible={isSmall}
-          />
-        }
         actions={
           <div className="flex items-center gap-2">
             {effectiveCompanyId != null && (
@@ -324,10 +358,10 @@ export default function CarPark() {
               onValueChange={(v) => setSelectedBrand(v === '__all__' ? '' : v)}
             >
               <SelectTrigger className="w-32 sm:w-40">
-                <SelectValue placeholder="Toate mărcile" />
+                <SelectValue placeholder="Brand" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__all__">Toate mărcile</SelectItem>
+                <SelectItem value="__all__">Brand</SelectItem>
                 {brands.map((b) => (
                   <SelectItem key={b} value={b}>
                     {b}
@@ -335,19 +369,22 @@ export default function CarPark() {
                 ))}
               </SelectContent>
             </Select>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setShowFilters(!showFilters)}
-              className="relative"
+            <Select
+              value={filters.category || '__all__'}
+              onValueChange={(val) => updateFilter('category', val === '__all__' ? undefined : val)}
             >
-              <SlidersHorizontal className="h-4 w-4" />
-              {Object.values(filterValues).filter(Boolean).length > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
-                  {Object.values(filterValues).filter(Boolean).length}
-                </span>
-              )}
-            </Button>
+              <SelectTrigger className="w-32 sm:w-40">
+                <SelectValue placeholder="Tip Stoc" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Tip Stoc</SelectItem>
+                {Object.entries(CATEGORY_LABELS).map(([code, label]) => (
+                  <SelectItem key={code} value={code}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {canEdit && (
               <Button size="sm" asChild>
                 <Link to="/app/carpark/new">
@@ -360,8 +397,9 @@ export default function CarPark() {
         }
       />
 
-      {/* Status tabs */}
-      <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none">
+      {/* Status tabs + inline search & tools */}
+      <div className="flex items-center gap-3">
+        <div className="flex flex-1 gap-1 overflow-x-auto pb-1 scrollbar-none">
         {CATALOG_TABS.map((tab) => {
           const isActive = activeTab === tab.key
           const count = countMap.get(tab.key)
@@ -391,6 +429,35 @@ export default function CarPark() {
             </button>
           )
         })}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <SearchInput
+            value={search}
+            onChange={handleSearch}
+            placeholder="VIN, brand, model..."
+            className={isSmall ? undefined : 'w-48 md:w-64'}
+            collapsible={isSmall}
+          />
+          <ColumnToggle
+            visibleColumns={visibleColumns}
+            defaultColumns={defaultColumns}
+            columnDefs={CARPARK_COLUMNS.map((c) => ({ key: c.key, label: c.label, render: () => null }))}
+            onChange={setVisibleColumns}
+          />
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setShowFilters(!showFilters)}
+            className="relative"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            {Object.values(filterValues).filter(Boolean).length > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                {Object.values(filterValues).filter(Boolean).length}
+              </span>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -400,13 +467,6 @@ export default function CarPark() {
           values={filterValues}
           onChange={handleFilterChange}
         />
-      )}
-
-      {/* Results count */}
-      {!isLoading && (
-        <div className="text-sm text-muted-foreground">
-          {total} {total === 1 ? 'vehicle' : 'vehicles'}
-        </div>
       )}
 
       {/* Content */}
@@ -434,20 +494,19 @@ export default function CarPark() {
               <TableRow>
                 <TableHead className="w-16" />
                 <SortableHeader column="brand" label="Vehicle" />
-                <TableHead>Category</TableHead>
-                <TableHead>Status</TableHead>
-                <SortableHeader column="year_of_manufacture" label="Year" />
-                <SortableHeader column="mileage_km" label="Mileage" />
-                <TableHead>Fuel</TableHead>
-                <SortableHeader column="current_price" label="Price" />
-                <SortableHeader column="stationary_days" label="Days" />
-                <TableHead>Location</TableHead>
+                {visibleColDefs.map((col) =>
+                  col.sortKey ? (
+                    <SortableHeader key={col.key} column={col.sortKey} label={col.label} />
+                  ) : (
+                    <TableHead key={col.key} className={col.headClassName}>{col.label}</TableHead>
+                  ),
+                )}
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.map((v) => (
-                <VehicleRow key={v.id} vehicle={v} />
+                <VehicleRow key={v.id} vehicle={v} columns={visibleColDefs} />
               ))}
             </TableBody>
           </Table>
@@ -501,7 +560,7 @@ export default function CarPark() {
 }
 
 // ── Table row ────────────────────────────────────────────────
-function VehicleRow({ vehicle: v }: { vehicle: VehicleCatalogItem }) {
+function VehicleRow({ vehicle: v, columns }: { vehicle: VehicleCatalogItem; columns: CarparkCol[] }) {
   return (
     <TableRow className="group">
       {/* Thumbnail */}
@@ -538,57 +597,12 @@ function VehicleRow({ vehicle: v }: { vehicle: VehicleCatalogItem }) {
         )}
       </TableCell>
 
-      {/* Category */}
-      <TableCell>
-        <CategoryBadge category={v.category} />
-      </TableCell>
-
-      {/* Status */}
-      <TableCell>
-        <VehicleStatusBadge status={v.status} />
-      </TableCell>
-
-      {/* Year */}
-      <TableCell className="tabular-nums">
-        {v.year_of_manufacture ?? '-'}
-      </TableCell>
-
-      {/* Mileage */}
-      <TableCell className="tabular-nums text-sm">
-        {v.mileage_km > 0 ? formatKm(v.mileage_km) : '-'}
-      </TableCell>
-
-      {/* Fuel */}
-      <TableCell className="text-sm">{v.fuel_type ?? '-'}</TableCell>
-
-      {/* Price */}
-      <TableCell className="text-right">
-        {v.current_price != null ? (
-          <CurrencyDisplay value={v.current_price} currency={v.price_currency} />
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        )}
-      </TableCell>
-
-      {/* Days */}
-      <TableCell className="tabular-nums">
-        <span
-          className={
-            v.stationary_days > 90
-              ? 'text-red-600 dark:text-red-400 font-medium'
-              : v.stationary_days > 60
-                ? 'text-orange-600 dark:text-orange-400'
-                : ''
-          }
-        >
-          {v.stationary_days}
-        </span>
-      </TableCell>
-
-      {/* Location */}
-      <TableCell className="text-sm text-muted-foreground truncate max-w-[120px]">
-        {v.location_text ?? '-'}
-      </TableCell>
+      {/* Toggleable columns */}
+      {columns.map((col) => (
+        <TableCell key={col.key} className={col.cellClassName}>
+          {col.render(v)}
+        </TableCell>
+      ))}
 
       {/* Actions */}
       <TableCell>
