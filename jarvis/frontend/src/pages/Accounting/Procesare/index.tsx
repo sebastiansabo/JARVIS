@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, ChevronDown, ChevronRight, Download, RotateCcw } from 'lucide-react'
+import { Plus, Pencil, ChevronDown, ChevronRight, Download, RotateCcw, RefreshCw } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
@@ -19,7 +19,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { useAuthStore } from '@/stores/authStore'
 import { organizationApi } from '@/api/organization'
-import { suppliersApi, type MasterSupplier, type BudgetedInvoice, type KontoConfig } from '@/api/suppliers'
+import { suppliersApi, type MasterSupplier, type BudgetedInvoice, type KontoConfig, type EfacturaPartner } from '@/api/suppliers'
 import type { CompanyWithBrands } from '@/types/organization'
 
 /* ── worklist grouped by supplier ── */
@@ -352,6 +352,7 @@ export default function Procesare() {
 
   // ── Add supplier dialog ──
   const [addOpen, setAddOpen] = useState(false)
+  const [syncOpen, setSyncOpen] = useState(false)
   const [addForm, setAddForm] = useState({ name: '', cui: '', nr_reg_com: '', ref_no: '' })
   const [addKonto, setAddKonto] = useState<KontoConfig>(EMPTY_KONTO)
   const [addReplicateAll, setAddReplicateAll] = useState(false)
@@ -419,6 +420,14 @@ export default function Procesare() {
               onChange={(e) => setSearch(e.target.value)}
               className="w-56"
             />
+            <Button
+              variant="outline"
+              onClick={() => setSyncOpen(true)}
+              title="Importă furnizori din e-Factura"
+              disabled={companyId === null}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" /> Sync e-Factura
+            </Button>
             <Button size="icon" onClick={() => setAddOpen(true)} title="Adaugă furnizor" disabled={companyId === null}>
               <Plus className="h-4 w-4" />
             </Button>
@@ -654,6 +663,13 @@ export default function Procesare() {
         </DialogContent>
       </Dialog>
 
+      {/* ═══ Sync furnizori din e-Factura ═══ */}
+      <SyncEfacturaDialog
+        open={syncOpen}
+        company={selectedCompany}
+        onOpenChange={setSyncOpen}
+      />
+
       {/* ═══ Per-company konto editor ═══ */}
       <KontoEditorDialog
         supplier={editorSupplier}
@@ -737,6 +753,137 @@ function KontoEditorDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>Anulează</Button>
           <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !form}>
             {saveMut.isPending ? 'Se salvează...' : 'Salvează'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ═══════════════════════════════════════
+   Sync furnizori din e-Factura
+   ═══════════════════════════════════════ */
+
+const partnerKey = (p: Pick<EfacturaPartner, 'partner_name' | 'partner_cif'>) =>
+  `${p.partner_name}||${p.partner_cif ?? ''}`
+
+function SyncEfacturaDialog({
+  open,
+  company,
+  onOpenChange,
+}: {
+  open: boolean
+  company: CompanyWithBrands | null
+  onOpenChange: (open: boolean) => void
+}) {
+  const qc = useQueryClient()
+  const companyId = company?.id ?? null
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['efactura-partners', companyId],
+    queryFn: () => suppliersApi.efacturaPartners(companyId as number),
+    enabled: open && companyId !== null,
+  })
+
+  const partners = data?.partners ?? []
+
+  // Default selection: genuinely-new partners checked, already-existing ones unchecked
+  // (so we don't create duplicates — the user can still tick them to link).
+  useEffect(() => {
+    if (data) setSelected(new Set(data.partners.filter((p) => !p.existing).map(partnerKey)))
+  }, [data])
+
+  const toggle = (key: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+
+  const allKeys = partners.map(partnerKey)
+  const allChecked = allKeys.length > 0 && allKeys.every((k) => selected.has(k))
+  const toggleAll = () => setSelected(allChecked ? new Set() : new Set(allKeys))
+
+  const importMut = useMutation({
+    mutationFn: () =>
+      suppliersApi.importEfactura(
+        partners
+          .filter((p) => selected.has(partnerKey(p)))
+          .map((p) => ({ partner_name: p.partner_name, partner_cif: p.partner_cif })),
+      ),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['supplier-master'] })
+      qc.invalidateQueries({ queryKey: ['efactura-partners'] })
+      const parts: string[] = []
+      if (res.created) parts.push(`${res.created} creați`)
+      if (res.linked) parts.push(`${res.linked} legați`)
+      toast.success(parts.length ? `Import e-Factura: ${parts.join(', ')}` : 'Nimic de importat')
+      onOpenChange(false)
+    },
+    onError: () => toast.error('Importul din e-Factura a eșuat'),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Importă furnizori din e-Factura</DialogTitle>
+          <DialogDescription>
+            Furnizori din facturile primite{company ? ` — ${companyLabel(company)}` : ''}, care nu sunt încă în master.
+          </DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">Se încarcă…</div>
+        ) : partners.length === 0 ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">Niciun furnizor nou în e-Factura.</div>
+        ) : (
+          <div className="max-h-[60vh] overflow-y-auto">
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead className="w-8">
+                  <Checkbox checked={allChecked} onCheckedChange={toggleAll} aria-label="Selectează tot" />
+                </TableHead>
+                <TableHead>Furnizor</TableHead>
+                <TableHead>CUI</TableHead>
+                <TableHead className="text-right">Facturi</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {partners.map((p) => {
+                  const key = partnerKey(p)
+                  return (
+                    <TableRow key={key} className="cursor-pointer hover:bg-muted/40" onClick={() => toggle(key)}>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox checked={selected.has(key)} onCheckedChange={() => toggle(key)} />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          {p.partner_name}
+                          {p.existing && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] font-normal text-muted-foreground"
+                              title={p.candidate_name ? `Se leagă de: ${p.candidate_name}` : 'Există deja în master'}
+                            >
+                              există deja
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>{p.partner_cif ?? '-'}</TableCell>
+                      <TableCell className="text-right">{p.count}</TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Anulează</Button>
+          <Button onClick={() => importMut.mutate()} disabled={selected.size === 0 || importMut.isPending}>
+            {importMut.isPending ? 'Se importă…' : `Importă ${selected.size} furnizori`}
           </Button>
         </DialogFooter>
       </DialogContent>

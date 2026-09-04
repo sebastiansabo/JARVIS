@@ -10,6 +10,7 @@ from psycopg2 import errors as pg_errors
 from core.organization.repositories.company_repository import CompanyRepository
 from core.roles.repositories.permission_repository import PermissionRepository
 from core.suppliers.eurofib_export import build_csv
+from core.suppliers.normalize import normalize_cui
 from core.suppliers.repository import SupplierMasterRepository, KONTO_FIELDS
 from core.suppliers.resolver import SupplierResolver
 
@@ -22,10 +23,13 @@ _resolver = SupplierResolver(_repo)
 
 def _is_unique_violation(exc: Exception) -> bool:
     """True for a psycopg2 UniqueViolation, or (fallback) any exception whose class name
-    contains 'UniqueViolation' — covers cases where the driver exception is mocked/wrapped."""
-    if isinstance(exc, pg_errors.UniqueViolation):
+    contains 'UniqueViolation' — covers cases where the driver exception is mocked/wrapped.
+    The name check runs first (a real psycopg2 UniqueViolation is class-named 'UniqueViolation'
+    too) so this stays correct even where pg_errors.UniqueViolation is stubbed to a non-type."""
+    if 'UniqueViolation' in type(exc).__name__:
         return True
-    return 'UniqueViolation' in type(exc).__name__
+    unique_violation = getattr(pg_errors, 'UniqueViolation', None)
+    return isinstance(unique_violation, type) and isinstance(exc, unique_violation)
 
 
 def _check_supplier_perm(action: str) -> bool:
@@ -439,6 +443,90 @@ def api_resolve():
     _repo.add_alias(sid, alias_name=partner_name, alias_cui=partner_cif, source='resolve', created_by=uid)
     linked = _repo.set_efactura_supplier_id(sid, partner_name=partner_name, partner_cif=partner_cif)
     return jsonify({'success': True, 'supplier_id': sid, 'efactura_linked': linked})
+
+
+@suppliers_bp.route('/api/suppliers/efactura-partners', methods=['GET'])
+@login_required
+def api_efactura_partners():
+    """List distinct e-Factura *supplier* partners (received invoices) not yet in the master —
+    the picker for the "Sync cu e-Factura" modal. Each row is tagged `existing` (+candidate id/
+    name) when it already resolves to a master supplier, so the UI can default those unchecked."""
+    if not _check_supplier_perm('view'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    raw = request.args.get('company_id')
+    company_id = None
+    if raw:
+        try:
+            company_id = int(raw)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'company_id must be an integer'}), 400
+    resolved = [(row, _resolver.resolve(name=row['partner_name'], cui=row['partner_cif']))
+                for row in _repo.list_efactura_partners(company_id=company_id)]
+    names = _repo.names_by_ids([res.supplier_id for _, res in resolved
+                                if res.confidence in ('high', 'medium') and res.supplier_id])
+    partners = []
+    for row, res in resolved:
+        existing = res.confidence in ('high', 'medium') and bool(res.supplier_id)
+        partners.append({
+            'partner_name': row['partner_name'],
+            'partner_cif': row['partner_cif'],
+            'count': row['n'],
+            'existing': existing,
+            'candidate_id': res.supplier_id if existing else None,
+            'candidate_name': names.get(res.supplier_id) if existing else None,
+            'confidence': res.confidence,
+        })
+    return jsonify({'success': True, 'partners': partners})
+
+
+def _import_partner(name, cif, uid):
+    """Import one e-Factura partner into the master. Returns 'created' | 'linked' | 'skipped'.
+    A partner that already resolves to a master supplier (high/medium confidence, or a CUI
+    collision on create) is LINKED to it; otherwise a new master supplier is CREATED. In both
+    non-skip cases the partner name/CUI is aliased and its e-Factura rows are bound. Mirrors the
+    single-partner /resolve 'create' path."""
+    res = _resolver.resolve(name=name, cui=cif)
+    if res.confidence in ('high', 'medium') and res.supplier_id:
+        sid, outcome = res.supplier_id, 'linked'
+    else:
+        try:
+            sid, outcome = _repo.create_master(name, created_by=uid, cui=cif), 'created'
+        except Exception as exc:
+            if not _is_unique_violation(exc):
+                raise
+            # CUI already belongs to a master supplier the resolver didn't match by name — link it.
+            sid = _repo.find_by_cui_normalized(normalize_cui(cif))
+            if not sid:
+                return 'skipped'
+            outcome = 'linked'
+    _repo.add_alias(sid, alias_name=name, alias_cui=cif, source='efactura_import', created_by=uid)
+    _repo.set_efactura_supplier_id(sid, partner_name=name, partner_cif=cif)
+    return outcome
+
+
+@suppliers_bp.route('/api/suppliers/import-efactura', methods=['POST'])
+@login_required
+def api_import_efactura():
+    """Bulk-import selected e-Factura supplier partners into the master (see _import_partner)."""
+    if not _check_supplier_perm('resolve'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(force=True) or {}
+    partners = data.get('partners') or []
+    uid = getattr(current_user, 'id', None)
+    created, linked, skipped = 0, 0, []
+    for entry in partners:
+        name = (entry or {}).get('partner_name')
+        cif = (entry or {}).get('partner_cif')
+        if not name:
+            continue
+        outcome = _import_partner(name, cif, uid)
+        if outcome == 'created':
+            created += 1
+        elif outcome == 'linked':
+            linked += 1
+        else:
+            skipped.append({'partner_name': name, 'reason': 'duplicate_cui'})
+    return jsonify({'success': True, 'created': created, 'linked': linked, 'skipped': skipped})
 
 
 @suppliers_bp.route('/api/suppliers/backfill-efactura', methods=['POST'])
