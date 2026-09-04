@@ -140,3 +140,18 @@ def api_resolve():
     _repo.add_alias(sid, alias_name=partner_name, alias_cui=partner_cif, source='resolve', created_by=uid)
     linked = _repo.set_efactura_supplier_id(sid, partner_name=partner_name, partner_cif=partner_cif)
     return jsonify({'success': True, 'supplier_id': sid, 'efactura_linked': linked})
+
+
+@suppliers_bp.route('/api/suppliers/backfill-efactura', methods=['POST'])
+@login_required
+def api_backfill_efactura():
+    if not _check_supplier_perm('resolve'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    bound = 0
+    for row in _repo.unresolved_efactura(limit=5000):
+        res = _resolver.resolve(name=row['partner_name'], cui=row['partner_cif'])
+        if res.confidence == 'high' and res.supplier_id:
+            bound += _repo.set_efactura_supplier_id(res.supplier_id,
+                                                    partner_name=row['partner_name'],
+                                                    partner_cif=row['partner_cif'])
+    return jsonify({'success': True, 'bound': bound})
