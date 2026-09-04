@@ -117,12 +117,18 @@ def api_get_konto(supplier_id):
 def api_update_konto(supplier_id):
     if not _check_supplier_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(force=True) or {}
+    fields = {k: v for k, v in data.items() if k in KONTO_FIELDS}
+    uid = getattr(current_user, 'id', None)
+
+    if data.get('replicate_all'):
+        count = _repo.replicate_konto(supplier_id, fields, created_by=uid)
+        return jsonify({'success': True, 'replicated': count})
+
     company_id, err = _parse_company_id(request.args.get('company_id'))
     if err:
         return err
-    data = request.get_json(force=True) or {}
-    fields = {k: v for k, v in data.items() if k in KONTO_FIELDS}
-    kc_id = _repo.upsert_konto(supplier_id, company_id, created_by=getattr(current_user, 'id', None), **fields)
+    kc_id = _repo.upsert_konto(supplier_id, company_id, created_by=uid, **fields)
     return jsonify({'success': True, 'id': kc_id})
 
 
