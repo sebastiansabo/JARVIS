@@ -1499,6 +1499,19 @@ def create_schema_incremental(conn, cursor):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_supplier_konto_company ON supplier_konto_config(company_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_supplier_konto_supplier ON supplier_konto_config(supplier_id)")
 
+    # ── supplier_konto_config: VAT code / booking text / doc type (Phase 1.1 Batch B) ──
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'supplier_konto_config' AND column_name = 'steuercode') THEN
+                ALTER TABLE supplier_konto_config ADD COLUMN steuercode TEXT;
+                ALTER TABLE supplier_konto_config ADD COLUMN text_template TEXT;
+                ALTER TABLE supplier_konto_config ADD COLUMN belegart TEXT;
+            END IF;
+        END $$;
+    ''')
+
     # ── document_wml + chunks (Phase D) ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS document_wml (
