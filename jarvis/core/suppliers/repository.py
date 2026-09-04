@@ -279,6 +279,17 @@ class SupplierMasterRepository(BaseRepository):
         """
         return self.query_all(sql, (company_name, company_id, start_date, end_date, limit))
 
+    def mark_invoices_processed(self, invoice_ids):
+        """Flip the given invoices from 'Bugetata' to 'processed' after a successful EuroFib
+        export. Only rows still in 'Bugetata' are touched — any invoice that changed status in
+        the meantime (or was never Bugetata) is left alone. Returns the number of rows updated."""
+        if not invoice_ids:
+            return 0
+        return self.execute(
+            "UPDATE invoices SET status = 'processed', updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ANY(%s) AND lower(status) = 'bugetata'",
+            (list(invoice_ids),))
+
     def unresolved_invoice_suppliers(self, limit=200, company_name=None):
         if company_name is not None:
             # allocations can hold multiple rows per invoice for the same company (split across
