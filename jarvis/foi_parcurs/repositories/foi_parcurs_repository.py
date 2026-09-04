@@ -552,6 +552,34 @@ class FoiParcursRepository(BaseRepository):
         row = self.execute(sql, tuple(params), returning=True)
         return self.get_contract_by_id(row['id']) if row and row.get('id') else None
 
+    def adjust_boundary_readings(self, updates: list, modified_by=None) -> list:
+        """Atomically move odometer boundary readings across adjacent sessions.
+
+        `updates` is a list of {'id': int, 'km_start'?: int, 'km_end'?: int}. Each
+        listed session gets its provided km field(s) set and is stamped
+        corrected_at/corrected_by (the same "Modificat" audit marker as
+        correct_session). All writes share ONE transaction so a contiguous chain
+        never lands half-updated. The route owns validation (monotonic chain,
+        floor, admin gate) — this is the persistence primitive. Returns the ids
+        actually written."""
+        def _run(cursor):
+            written = []
+            for u in updates:
+                sets = {k: u[k] for k in ('km_start', 'km_end') if k in u}
+                if not sets:
+                    continue
+                cols = ', '.join(f'{k} = %s' for k in sets)
+                params = list(sets.values()) + [modified_by, u['id']]
+                cursor.execute(
+                    f'UPDATE foi_de_parcurs SET {cols}, corrected_at = NOW(), '
+                    f'corrected_by = %s, updated_at = NOW() WHERE id = %s',
+                    tuple(params),
+                )
+                written.append(u['id'])
+            return written
+
+        return self.execute_many(_run)
+
     def set_internal_flag(self, contract_id: int, is_internal: bool, modified_by=None) -> dict:
         """Reclassify a session as internal (True) or external/client (False),
         fixing a row a colleague mis-marked. Flips ONLY the `is_internal` flag —

@@ -466,6 +466,16 @@ export const foiParcursApi = {
     },
   ) => api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${id}/correct`, data),
 
+  // Inline odometer-boundary edit (Foaie de Parcurs KM cell): move ONE session's
+  // start/end reading. Where the chain is contiguous the shared reading on the
+  // adjacent session moves too. Server enforces the chain stays chronological
+  // and the earliest reading never drops below last month's close. Gated by the
+  // same test_drive.contracts.correct permission as correctSession.
+  adjustReading: (id: number, data: { km_start?: number; km_end?: number }) =>
+    api.put<{ success: boolean; contract: FoiContract; updated_ids: number[] }>(
+      `${BASE}/contracts/${id}/reading`, data,
+    ),
+
   // Admin-only cleaning tool: reclassify a session as internal (company driving)
   // or external (client), fixing rows a colleague mis-marked. Flag-only — client
   // data is preserved so the change is reversible with one more flip.
