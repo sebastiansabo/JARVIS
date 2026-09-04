@@ -107,6 +107,10 @@ def build_medline_rows(invoice: dict, config: dict) -> list:
     belegart = _s(config.get('belegart'))
     # Same kostenstelle on both lines (Debit value wins, else Credit).
     kostenstelle = _s(config.get('kostenstelle_debit')) or _s(config.get('kostenstelle_credit'))
+    # Same extbeleg (invoice number) on both lines when configured on either side.
+    extbeleg_val = _belegnummer(invoice_number) if (
+        config.get('extbeleg_credit') == 'invoice_number' or config.get('extbeleg_debit') == 'invoice_number'
+    ) else ''
     text = _resolve_text(config.get('text_template'), invoice)
 
     credit = _new_row()
@@ -125,7 +129,7 @@ def build_medline_rows(invoice: dict, config: dict) -> list:
         text=text,
         brutto_netto='N',
         valuta=due_date,
-        extbeleg=_belegnummer(invoice_number) if config.get('extbeleg_credit') == 'invoice_number' else '',
+        extbeleg=extbeleg_val,
         kostenstelle=kostenstelle,
     )
 
@@ -143,7 +147,9 @@ def build_medline_rows(invoice: dict, config: dict) -> list:
         steuerbetrag=_money(invoice.get('vat_amount')),
         gegenkonto=_s(config.get('gegenkonto_debit')),
         kostenstelle=kostenstelle,
-        extbeleg=_belegnummer(invoice_number) if config.get('extbeleg_debit') == 'invoice_number' else '',
+        extbeleg=extbeleg_val,
+        brutto_netto='N',
+        valuta=due_date,
     )
 
     return [credit, debit]
