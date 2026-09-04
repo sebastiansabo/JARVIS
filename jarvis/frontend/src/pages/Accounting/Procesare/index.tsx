@@ -231,9 +231,14 @@ export default function Procesare() {
   const [customTo, setCustomTo] = useState<string>(ymd(new Date()))
   const { from: startDate, to: endDate } = rangeForPreset(preset, customFrom, customTo)
 
+  // Worklist "Procesate" toggle — 'bugetata' (default) shows the actionable worklist,
+  // 'procesate' shows a read-only history of already-exported invoices (status='processed').
+  const [worklistView, setWorklistView] = useState<'bugetata' | 'procesate'>('bugetata')
+  const isProcessedView = worklistView === 'procesate'
+
   const { data: invoicesData, isLoading: invoicesLoading } = useQuery({
-    queryKey: ['supplier-worklist-invoices', companyId, startDate, endDate],
-    queryFn: () => suppliersApi.fetchInvoices(companyId as number, startDate, endDate),
+    queryKey: ['supplier-worklist-invoices', companyId, startDate, endDate, worklistView],
+    queryFn: () => suppliersApi.fetchInvoices(companyId as number, startDate, endDate, isProcessedView ? 'processed' : undefined),
     enabled: !!companyId,
   })
   const { data: masters, isLoading: mastersLoading } = useQuery({
@@ -266,8 +271,8 @@ export default function Procesare() {
     })
 
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<number>>(new Set())
-  // Selection is period/company scoped — drop stale picks when either changes.
-  useEffect(() => { setSelectedInvoiceIds(new Set()) }, [companyId, startDate, endDate])
+  // Selection is period/company/view scoped — drop stale picks when any changes.
+  useEffect(() => { setSelectedInvoiceIds(new Set()) }, [companyId, startDate, endDate, worklistView])
 
   const toggleInvoiceSelected = (invoiceId: number) =>
     setSelectedInvoiceIds((prev) => {
@@ -408,6 +413,7 @@ export default function Procesare() {
           </TabsList>
           {tab === 'worklist' && (
             <div className="flex flex-wrap items-center gap-2">
+              <Seg value={worklistView} onChange={setWorklistView} options={[['bugetata', 'Bugetata'], ['procesate', 'Procesate']] as const} />
               <Seg value={preset} onChange={setPreset} options={[['month', 'Luna curentă'], ['30d', 'Ultimele 30 zile'], ['year', 'Anul curent'], ['custom', 'Interval']] as const} />
               {preset === 'custom' && (
                 <DateField
@@ -426,15 +432,17 @@ export default function Procesare() {
             <div className="text-sm text-muted-foreground">
               {supplierGroups.length} furnizori · {(invoicesData?.invoices ?? []).length} facturi
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => exportAllMut.mutate()}
-              disabled={exportAllMut.isPending || supplierGroups.length === 0}
-            >
-              <Download className="mr-1.5 h-3.5 w-3.5" />
-              {exportAllMut.isPending ? 'Se exportă...' : 'Export toate (ZIP)'}
-            </Button>
+            {!isProcessedView && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => exportAllMut.mutate()}
+                disabled={exportAllMut.isPending || supplierGroups.length === 0}
+              >
+                <Download className="mr-1.5 h-3.5 w-3.5" />
+                {exportAllMut.isPending ? 'Se exportă...' : 'Export toate (ZIP)'}
+              </Button>
+            )}
           </div>
           <Card><CardContent className="p-0">
             <Table>
@@ -457,26 +465,30 @@ export default function Procesare() {
                         </TableCell>
                         <TableCell colSpan={4}>
                           <div className="flex items-center gap-2">
-                            <Checkbox
-                              checked={groupSelectionState(group)}
-                              onCheckedChange={() => toggleGroupSelected(group)}
-                              onClick={(e) => e.stopPropagation()}
-                            />
+                            {!isProcessedView && (
+                              <Checkbox
+                                checked={groupSelectionState(group)}
+                                onCheckedChange={() => toggleGroupSelected(group)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            )}
                             <span className="font-medium">{group.supplierName}</span>
                             <Badge variant="secondary" className="font-normal">{group.invoices.length} facturi</Badge>
                           </div>
                         </TableCell>
                         <TableCell />
                         <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => { e.stopPropagation(); exportSupplierMut.mutate(group) }}
-                            disabled={exportSupplierMut.isPending}
-                          >
-                            <Download className="mr-1.5 h-3.5 w-3.5" />
-                            Export CSV
-                          </Button>
+                          {!isProcessedView && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => { e.stopPropagation(); exportSupplierMut.mutate(group) }}
+                              disabled={exportSupplierMut.isPending}
+                            >
+                              <Download className="mr-1.5 h-3.5 w-3.5" />
+                              Export CSV
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                       {isExpanded && group.invoices.map((inv) => (
@@ -484,10 +496,12 @@ export default function Procesare() {
                           <TableCell />
                           <TableCell className="pl-8">
                             <div className="flex items-center gap-2">
-                              <Checkbox
-                                checked={selectedInvoiceIds.has(inv.id)}
-                                onCheckedChange={() => toggleInvoiceSelected(inv.id)}
-                              />
+                              {!isProcessedView && (
+                                <Checkbox
+                                  checked={selectedInvoiceIds.has(inv.id)}
+                                  onCheckedChange={() => toggleInvoiceSelected(inv.id)}
+                                />
+                              )}
                               {inv.invoice_number}
                             </div>
                           </TableCell>
@@ -504,7 +518,9 @@ export default function Procesare() {
                   )
                 })}
                 {!invoicesLoading && supplierGroups.length === 0 && (
-                  <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">Nicio factură bugetată în interval</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
+                    {isProcessedView ? 'Nicio factură procesată în interval' : 'Nicio factură bugetată în interval'}
+                  </TableCell></TableRow>
                 )}
               </TableBody>
             </Table>

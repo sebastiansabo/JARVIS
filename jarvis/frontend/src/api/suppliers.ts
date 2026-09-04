@@ -115,9 +115,10 @@ export const suppliersApi = {
     api.post<{ success: boolean }>(`/api/suppliers/merge`, { survivor_id, duplicate_id }),
   worklist: (companyId?: number) =>
     api.get<{ success: boolean; items: WorklistItem[] }>(`/api/suppliers/worklist${companyId !== undefined ? `?company_id=${companyId}` : ''}`),
-  fetchInvoices: (companyId: number, startDate: string, endDate: string) =>
+  fetchInvoices: (companyId: number, startDate: string, endDate: string, status?: string) =>
     api.get<{ success: boolean; invoices: BudgetedInvoice[] }>(
-      `/api/suppliers/invoices?company_id=${companyId}&start_date=${startDate}&end_date=${endDate}`),
+      `/api/suppliers/invoices?company_id=${companyId}&start_date=${startDate}&end_date=${endDate}`
+      + (status ? `&status=${encodeURIComponent(status)}` : '')),
   resolve: (body: { action: 'link' | 'create' | 'ignore'; partner_name: string; partner_cif?: string | null; supplier_id?: number }) =>
     api.post<{ success: boolean; supplier_id?: number; efactura_linked?: number }>(`/api/suppliers/resolve`, body),
   backfillEfactura: () =>
