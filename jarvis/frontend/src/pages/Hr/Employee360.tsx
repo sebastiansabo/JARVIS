@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   User, Building2, Mail, Phone, Fingerprint, FileSpreadsheet, FileText,
@@ -26,6 +27,7 @@ import {
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { BioStarDayHistory } from '@/types/biostar'
+import type { HrEmployee } from '@/types/hr'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -44,6 +46,16 @@ const CODE_LABELS: Record<string, { label: string; color: string }> = {
 }
 
 const NORM_HOURS = 8
+
+// Half-hour options for the flexible-schedule window (06:00–20:00 covers any
+// realistic sliding program). Zero-padded HH:MM sort correctly as strings.
+const FLEX_TIME_OPTIONS: string[] = (() => {
+  const out: string[] = []
+  for (let m = 6 * 60; m <= 20 * 60; m += 30) {
+    out.push(`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`)
+  }
+  return out
+})()
 
 export default function Employee360() {
   const { userId } = useParams<{ userId: string }>()
@@ -187,6 +199,9 @@ export default function Employee360() {
         </CardContent>
       </Card>
 
+      {/* Flexible schedule (leave-permit window) */}
+      {canEditEmployee && <FlexScheduleControl emp={emp} userId={uid} />}
+
       {/* Tabs */}
       <Tabs defaultValue="overview">
         <TabsList className="w-full justify-start overflow-x-auto">
@@ -228,6 +243,85 @@ export default function Employee360() {
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+// ── Flexible schedule control (leave-permit window) ──
+
+function FlexScheduleControl({ emp, userId }: { emp: HrEmployee; userId: number }) {
+  const queryClient = useQueryClient()
+  const [flexible, setFlexible] = useState<boolean>(emp.schedule_flexible ?? false)
+  const [start, setStart] = useState<string>((emp.flex_start ?? '08:00').slice(0, 5))
+  const [end, setEnd] = useState<string>((emp.flex_end ?? '18:00').slice(0, 5))
+
+  const mut = useMutation({
+    mutationFn: (payload: Partial<HrEmployee>) => hrApi.updateEmployee(userId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hr', 'employee-overview', userId] })
+      queryClient.invalidateQueries({ queryKey: ['hr', 'employees'] })
+      toast.success('Program flexibil salvat')
+    },
+    onError: () => toast.error('Nu s-a putut salva programul flexibil'),
+  })
+
+  // end must stay after start (zero-padded HH:MM compares lexicographically)
+  const endOptions = FLEX_TIME_OPTIONS.filter((t) => t > start)
+
+  const persist = (next: { flexible: boolean; start: string; end: string }) => {
+    mut.mutate(next.flexible
+      ? { schedule_flexible: true, flex_start: next.start, flex_end: next.end }
+      : { schedule_flexible: false })
+  }
+
+  const onToggle = (checked: boolean) => {
+    setFlexible(checked)
+    persist({ flexible: checked, start, end })
+  }
+  const onStart = (s: string) => {
+    const e = end > s ? end : (FLEX_TIME_OPTIONS.find((t) => t > s) ?? end)
+    setStart(s); setEnd(e)
+    persist({ flexible, start: s, end: e })
+  }
+  const onEnd = (e: string) => {
+    setEnd(e)
+    persist({ flexible, start, end: e })
+  }
+
+  return (
+    <Card>
+      <CardContent className="py-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
+          <div className="flex items-center gap-3">
+            <Clock className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <div className="text-sm font-medium">Program flexibil</div>
+              <div className="text-xs text-muted-foreground">
+                Lărgește intervalul din biletul de învoire, independent de programul din Sincron.
+              </div>
+            </div>
+            <Switch checked={flexible} onCheckedChange={onToggle} disabled={mut.isPending} className="ml-1" />
+          </div>
+          {flexible && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">De la</span>
+              <Select value={start} onValueChange={onStart} disabled={mut.isPending}>
+                <SelectTrigger className="h-8 w-[92px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {FLEX_TIME_OPTIONS.slice(0, -1).map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <span className="text-muted-foreground">până la</span>
+              <Select value={end} onValueChange={onEnd} disabled={mut.isPending}>
+                <SelectTrigger className="h-8 w-[92px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {endOptions.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

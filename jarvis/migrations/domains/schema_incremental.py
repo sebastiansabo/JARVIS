@@ -2154,6 +2154,27 @@ def _create_schema_incremental_continued(conn, cursor):
         ON CONFLICT (setting_key) DO NOTHING;
     ''')
 
+    # ── flexible schedule for the Bilet de Invoire form ──
+    # Marks an employee whose real start/end slides (e.g. 8-17 or 9-18 in Sincron).
+    # When set, the leave form's selectable window widens to [flex_start, flex_end]
+    # instead of the Sincron program window; norma-based day cap & lunch are unchanged.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'schedule_flexible') THEN
+                ALTER TABLE users ADD COLUMN schedule_flexible BOOLEAN DEFAULT FALSE;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'flex_start') THEN
+                ALTER TABLE users ADD COLUMN flex_start VARCHAR(5);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'flex_end') THEN
+                ALTER TABLE users ADD COLUMN flex_end VARCHAR(5);
+            END IF;
+        END $$;
+    ''')
+
     # ── company_id on biostar_employees — maps BioStar group → JARVIS company ──
     cursor.execute('''
         DO $$ BEGIN
